@@ -8,7 +8,7 @@ import {
 } from '@/pages/dataset/dataset/generate-button/generate';
 import random from 'lodash/random';
 import { Shuffle } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { SliderInputFormField } from '../slider-input-form-field';
 import {
@@ -50,10 +50,10 @@ export const showTagItems = (parserId: DocumentParserType) => {
 
 const UseRaptorField = 'parser_config.raptor.use_raptor';
 const RandomSeedField = 'parser_config.raptor.random_seed';
-const MaxTokenField = 'parser_config.raptor.max_token';
-const ThresholdField = 'parser_config.raptor.threshold';
-const MaxCluster = 'parser_config.raptor.max_cluster';
-const Prompt = 'parser_config.raptor.prompt';
+const ClusteringMethodField = 'parser_config.raptor.clustering_method';
+const ClusteringMethodExtField = 'parser_config.raptor.ext.clustering_method';
+const TreeBuilderField = 'parser_config.raptor.tree_builder';
+const MaxClusterMax = 1024;
 
 // The three types "table", "resume" and "one" do not display this configuration.
 
@@ -67,17 +67,48 @@ const RaptorFormFields = ({
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
   const useRaptor = useWatch({ name: UseRaptorField });
+  const clusteringMethod = useWatch({ name: ClusteringMethodField });
+  const extClusteringMethod = useWatch({ name: ClusteringMethodExtField });
+  const selectedClusteringMethod = useMemo(
+    () =>
+      (clusteringMethod ??
+        extClusteringMethod ??
+        form.getValues(ClusteringMethodField) ??
+        form.getValues(ClusteringMethodExtField) ??
+        'gmm') as 'gmm' | 'ahc',
+    [clusteringMethod, extClusteringMethod, form],
+  );
 
   const handleGenerate = useCallback(() => {
     form.setValue(RandomSeedField, random(10000));
   }, [form]);
+
+  const handleClusteringMethodChange = useCallback(
+    (method: 'gmm' | 'ahc') => {
+      form.setValue(ClusteringMethodField, method, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      form.setValue(TreeBuilderField, 'raptor', {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    },
+    [form],
+  );
+
+  useEffect(() => {
+    if (!clusteringMethod && !extClusteringMethod) {
+      handleClusteringMethodChange('gmm');
+    }
+  }, [clusteringMethod, extClusteringMethod, handleClusteringMethodChange]);
 
   return (
     <>
       <FormField
         control={form.control}
         name={UseRaptorField}
-        render={({ field }) => {
+        render={() => {
           return (
             <FormItem
               defaultChecked={false}
@@ -209,11 +240,61 @@ const RaptorFormFields = ({
             sliderTestId="ds-settings-raptor-threshold-slider"
             numberInputTestId="ds-settings-raptor-threshold-input"
           ></SliderInputFormField>
+          <FormField
+            control={form.control}
+            name={ClusteringMethodField}
+            render={({ field }) => {
+              return (
+                <FormItem className=" items-center space-y-0 ">
+                  <div className="flex items-start">
+                    <FormLabel
+                      tooltip={t('clusteringMethodTip')}
+                      className="text-sm  whitespace-nowrap w-1/4"
+                    >
+                      {t('clusteringMethod')}
+                    </FormLabel>
+                    <div className="w-3/4">
+                      <FormControl>
+                        <Radio.Group
+                          {...field}
+                          value={selectedClusteringMethod}
+                          onChange={(value) =>
+                            handleClusteringMethodChange(value as 'gmm' | 'ahc')
+                          }
+                        >
+                          <div
+                            className={'flex gap-4 w-full text-text-secondary '}
+                          >
+                            <Radio
+                              value="gmm"
+                              testId="ds-settings-raptor-clustering-method-option-gmm"
+                            >
+                              {t('clusteringMethodGmm')}
+                            </Radio>
+                            <Radio
+                              value="ahc"
+                              testId="ds-settings-raptor-clustering-method-option-ahc"
+                            >
+                              {t('clusteringMethodAhc')}
+                            </Radio>
+                          </div>
+                        </Radio.Group>
+                      </FormControl>
+                    </div>
+                  </div>
+                  <div className="flex pt-1">
+                    <div className="w-1/4"></div>
+                    <FormMessage />
+                  </div>
+                </FormItem>
+              );
+            }}
+          />
           <SliderInputFormField
             name={'parser_config.raptor.max_cluster'}
             label={t('maxCluster')}
             tooltip={t('maxClusterTip')}
-            max={1024}
+            max={MaxClusterMax}
             min={1}
             layout={FormLayout.Horizontal}
             sliderTestId="ds-settings-raptor-max-cluster-slider"

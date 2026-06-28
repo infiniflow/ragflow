@@ -20,41 +20,93 @@ import (
 	"fmt"
 )
 
-// DummyModel implements ModelDriver for Zhipu AI (智谱 AI)
+// DummyModel implements ModelDriver for Dummy AI
 type DummyModel struct {
-	BaseURL   string
-	URLSuffix URLSuffix
+	baseModel BaseModel
 }
 
-// NewDummyModel creates a new Zhipu AI model instance
-func NewDummyModel(baseURL string, urlSuffix URLSuffix) *DummyModel {
+// NewDummyModel creates a new Dummy AI model instance
+func NewDummyModel(baseURL map[string]string, urlSuffix URLSuffix) *DummyModel {
 	return &DummyModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+		},
 	}
 }
 
-// Chat sends a message and returns response
-func (z *DummyModel) Chat(modelName, apiKey, message *string, genConf map[string]interface{}) (string, error) {
-	return "", fmt.Errorf("not implemented")
+func (d *DummyModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewDummyModel(baseURL, d.baseModel.URLSuffix)
 }
 
-// ChatStreamly sends a message and streams response
-func (z *DummyModel) ChatStreamly(modelName, apiKey, message *string, genConf map[string]interface{}) (<-chan string, error) {
+func (d *DummyModel) Name() string {
+	return "dummy"
+}
+
+// ChatWithMessages sends multiple messages with roles and returns response
+func (d *DummyModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-// ChatStreamlyWithChannel sends a message and streams response to channel (better performance)
-func (z *DummyModel) ChatStreamlyWithChannel(modelName, apiKey, message *string, genConf map[string]interface{}, resultChan chan<- string) error {
+// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
+func (d *DummyModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")
 }
 
-// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *DummyModel) ChatStreamlyWithSender(modelName, apiKey, message *string, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("not implemented")
-}
-
-// EncodeToEmbedding encodes a list of texts into embeddings
-func (z *DummyModel) EncodeToEmbedding(modelName, apiKey *string, texts []string) ([][]float64, error) {
+// Embed embeds a list of texts into embeddings
+func (d *DummyModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
+}
+
+func (d *DummyModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (d *DummyModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("no such method")
+}
+
+func (d *DummyModel) CheckConnection(apiConfig *APIConfig) error {
+	return fmt.Errorf("no such method")
+}
+
+// Rerank calculates similarity scores between query and documents
+func (d *DummyModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", d.Name())
+}
+
+// TranscribeAudio transcribe audio
+func (d *DummyModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
+}
+
+func (d *DummyModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", d.Name())
+}
+
+// AudioSpeech convert text to audio
+func (d *DummyModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
+}
+
+func (d *DummyModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", d.Name())
+}
+
+// OCRFile OCR file
+func (d *DummyModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
+}
+
+// ParseFile parse file
+func (d *DummyModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
+}
+
+func (d *DummyModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
+}
+
+func (d *DummyModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
 }

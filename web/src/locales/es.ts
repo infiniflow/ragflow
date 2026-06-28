@@ -32,6 +32,8 @@ export default {
       preview: 'Vista previa',
       move: 'Mover',
       warn: 'Advertencia',
+      owner: 'Propietario',
+      running: 'Ejecutando...',
     },
     login: {
       login: 'Iniciar sesión',
@@ -300,6 +302,12 @@ export default {
       multiTurnTip:
         'En conversaciones de múltiples rondas, la consulta a la base de conocimiento se optimiza. El gran modelo se llamará para consumir tokens adicionales.',
       description: 'Description of assistant',
+      showChunkMetadata: 'Mostrar metadatos del fragmento',
+      showChunkMetadataTip:
+        'Mostrar metadatos del documento (título, número de página, fecha de carga, etc.) junto a los fragmentos de texto recuperados',
+      metadataFields: 'Campos de metadatos',
+      metadataFieldsTip:
+        'Seleccione qué campos de metadatos mostrar con cada fragmento',
     },
     setting: {
       profile: 'Perfil',
@@ -418,8 +426,8 @@ export default {
       FishAudioLink: 'Cómo usar FishAudio',
       TencentCloudLink: 'Cómo usar TencentCloud ASR',
       volcModelNameMessage: '¡Por favor ingresa el nombre de tu modelo!',
-      addEndpointID: 'EndpointID del modelo',
-      endpointIDMessage: '¡Por favor ingresa el EndpointID del modelo!',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: '¡Por favor ingresa el Model ID del modelo!',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: '¡Por favor ingresa tu ARK_API_KEY!',
       bedrockModelNameMessage: '¡Por favor ingresa el nombre de tu modelo!',
@@ -929,6 +937,11 @@ export default {
         'Si la respuesta está formateada en HTML y solo se desea el contenido principal, actívelo.',
       invalidUrl:
         'Debe ser una URL válida o una URL con marcadores de posición de variables en el formato {nombre_variable} o {componente@variable}',
+      tags: 'Etiquetas',
+      canvasCategory: 'Categoría de canvas',
+      created: 'Creado',
+      id: 'ID',
+      logTitle: 'Título',
     },
     footer: {
       profile: 'Todos los derechos reservados @ React',
@@ -945,6 +958,7 @@ export default {
       bulgarian: 'Búlgaro',
       arabic: 'Árabe',
       turkish: 'Turco',
+      korean: 'Coreano',
     },
   },
 };

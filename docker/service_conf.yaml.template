@@ -31,6 +31,10 @@ os:
   hosts: 'http://${OS_HOST:-opensearch01}:9201'
   username: '${OS_USER:-admin}'
   password: '${OPENSEARCH_PASSWORD:-infini_rag_flow_OS_01}'
+  # Optional hybrid (BM25 + KNN) search tuning. The connector self-provisions the
+  # normalization search pipeline on start-up (requires OpenSearch >= 2.10).
+  # hybrid_search_pipeline: 'ragflow_hybrid_pipeline'
+  # hybrid_search_weights: [0.5, 0.5]   # [text/BM25 leg, vector/KNN leg]
 infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
   postgres_port: 5432
@@ -56,6 +60,9 @@ redis:
   username: '${REDIS_USERNAME:-}'
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
   host: '${REDIS_HOST:-redis}:6379'
+nats:
+  host: ${NATS_HOST:-0.0.0.0}
+  port: ${NATS_PORT:-4222}
 user_default_llm:
   default_models:
     embedding_model:
@@ -170,3 +177,11 @@ user_default_llm:
 #   secret_id: '${TENCENT_SECRET_ID}'
 #   secret_key: '${TENCENT_SECRET_KEY}'
 #   region: '${TENCENT_REGION}'
+# log:
+#   level: info              # debug | info | warn | error
+#   format: text             # text | json (reserved; text only today)
+#   path: server_main.log    # empty/missing = binary default (server_main.log / admin_server.log / ingestion_server.log)
+#   max_size: 100            # MB before rotation
+#   max_backups: 10          # retained rotated files
+#   max_age: 30              # days
+#   compress: true           # gzip rotated files; default true. Set false to disable.

@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
+
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -36,17 +38,21 @@ const DefaultConnectTimeout = 5 * time.Second
 // Config application configuration
 type Config struct {
 	Server           ServerConfig           `mapstructure:"server"`
+	Authentication   AuthenticationConfig   `mapstructure:"authentication"`
 	Database         DatabaseConfig         `mapstructure:"database"`
 	Redis            RedisConfig            `mapstructure:"redis"`
+	Nats             NatsConfig             `mapstructure:"nats"`
 	Log              LogConfig              `mapstructure:"log"`
 	DocEngine        DocEngineConfig        `mapstructure:"doc_engine"`
 	StorageEngine    StorageConfig          `mapstructure:"storage_engine"`
 	RegisterEnabled  int                    `mapstructure:"register_enabled"`
 	OAuth            map[string]OAuthConfig `mapstructure:"oauth"`
+	SMTP             common.SMTPConfig      `mapstructure:"smtp"`
 	Admin            AdminConfig            `mapstructure:"admin"`
 	UserDefaultLLM   UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
 	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`
 	Language         string                 `mapstructure:"language"`
+	TaskExecutor     TaskExecutorConfig     `mapstructure:"task_executor"`
 }
 
 // AdminConfig admin server configuration
@@ -55,10 +61,19 @@ type AdminConfig struct {
 	Port int    `mapstructure:"http_port"`
 }
 
+type AuthenticationConfig struct {
+	DisablePasswordLogin bool `mapstructure:"disable_password_login"`
+	RegisterEnabled      bool `mapstructure:"register_enabled"`
+}
+
 type DefaultSuperUser struct {
 	Email    string `mapstructure:"email"`
 	Password string `mapstructure:"password"`
 	Nickname string `mapstructure:"nickname"`
+}
+
+type TaskExecutorConfig struct {
+	MessageQueueType string `mapstructure:"message_queue_type"`
 }
 
 // UserDefaultLLMConfig user default LLM configuration
@@ -73,6 +88,8 @@ type DefaultModelsConfig struct {
 	RerankModel     ModelConfig `mapstructure:"rerank_model"`
 	ASRModel        ModelConfig `mapstructure:"asr_model"`
 	Image2TextModel ModelConfig `mapstructure:"image2text_model"`
+	OCRModel        ModelConfig `mapstructure:"ocr_model"`
+	TTSModel        ModelConfig `mapstructure:"tts_model"`
 }
 
 // ModelConfig model configuration
@@ -83,16 +100,31 @@ type ModelConfig struct {
 	Factory string `mapstructure:"factory"`
 }
 
-// OAuthConfig OAuth configuration for a channel
+// OAuthConfig OAuth configuration for a channel.
+// Mirrors api/apps/auth/__init__.py's OAUTH_CONFIG entries: a Type that
+// selects the auth client flavor (oauth2 / oidc / github), plus the
+// transport URLs and client credentials. For OIDC the URLs are derived
+// from Issuer via the .well-known/openid-configuration document, so they
+// may be left blank.
 type OAuthConfig struct {
-	DisplayName string `mapstructure:"display_name"`
-	Icon        string `mapstructure:"icon"`
+	DisplayName      string `mapstructure:"display_name"`
+	Icon             string `mapstructure:"icon"`
+	Type             string `mapstructure:"type"`
+	ClientID         string `mapstructure:"client_id"`
+	ClientSecret     string `mapstructure:"client_secret"`
+	AuthorizationURL string `mapstructure:"authorization_url"`
+	TokenURL         string `mapstructure:"token_url"`
+	UserinfoURL      string `mapstructure:"userinfo_url"`
+	RedirectURI      string `mapstructure:"redirect_uri"`
+	Scope            string `mapstructure:"scope"`
+	Issuer           string `mapstructure:"issuer"`
 }
 
 // ServerConfig server configuration
 type ServerConfig struct {
-	Mode string `mapstructure:"mode"` // debug, release
-	Port int    `mapstructure:"port"`
+	Mode      string  `mapstructure:"mode"` // debug, release
+	Port      int     `mapstructure:"port"`
+	SecretKey *string `mapstructure:"secret_key"`
 }
 
 // DatabaseConfig database configuration
@@ -106,10 +138,31 @@ type DatabaseConfig struct {
 	Charset  string `mapstructure:"charset"`
 }
 
-// LogConfig logging configuration
+// LogConfig logging configuration.
+//
+// Path, MaxSize, MaxBackups, MaxAge, and Compress configure the rotated
+// log file. The cmd/* entry points hardcode per-service defaults
+// (e.g. "server_main.log" for the API server, "admin_server.log" for
+// the admin server, "ingestion_server.log" for the ingestion worker),
+// so a typical deployment gets a rotated file without any YAML
+// configuration. When Path is empty (the default) the binary's
+// hardcoded default filename is used — it does NOT disable file
+// output. Set log.path in service_conf.yaml to override the
+// per-service default filename.
+//
+// Compress is a pointer so callers can distinguish "not set" (nil,
+// defaults to true) from "explicitly false" (*bool=false). All other
+// numeric fields use plain int because their zero values are sensible
+// defaults (100 MB / 10 files / 30 days) and there is no operator-meaningful
+// reason to distinguish "not set" from "0".
 type LogConfig struct {
-	Level  string `mapstructure:"level"`  // debug, info, warn, error
-	Format string `mapstructure:"format"` // json, text
+	Level      string `mapstructure:"level"`       // debug, info, warn, error
+	Format     string `mapstructure:"format"`      // json, text (reserved for future use)
+	Path       string `mapstructure:"path"`        // per-binary file override; empty = use cmd/* hardcoded default
+	MaxSize    int    `mapstructure:"max_size"`    // MB before rotation; default 100
+	MaxBackups int    `mapstructure:"max_backups"` // retained rotated files; default 10
+	MaxAge     int    `mapstructure:"max_age"`     // days; default 30
+	Compress   *bool  `mapstructure:"compress"`    // gzip rotated files; nil = default true
 }
 
 // DocEngineConfig document engine configuration
@@ -203,6 +256,11 @@ type RedisConfig struct {
 	Port     int    `mapstructure:"port"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
+}
+
+type NatsConfig struct {
+	Host string `mapstructure:"host"`
+	Port int    `mapstructure:"port"`
 }
 
 var (
@@ -346,6 +404,13 @@ func Init(configPath string) error {
 				"message_queue_type": mqType,
 			}
 			delete(configDict, "message_queue_type")
+		case "nats":
+			host := getString(configDict, "host")
+			port := getInt(configDict, "port")
+			configDict["id"] = id
+			configDict["name"] = "nats"
+			configDict["host"] = host
+			configDict["port"] = port
 		case "admin":
 			// Skip admin section
 			continue
@@ -372,6 +437,31 @@ func Init(configPath string) error {
 }
 
 func FromEnvironments() error {
+	// Secret key
+	if envVal := os.Getenv("RAGFLOW_SECRET_KEY"); envVal != "" {
+		globalConfig.Server.SecretKey = &envVal
+	}
+
+	// Load REGISTER_ENABLED from environment variable (default: true)
+	if envVal := os.Getenv("REGISTER_ENABLED"); envVal != "" {
+		str := strings.ToLower(envVal)
+		if str == "true" || str == "1" || str == "yes" {
+			globalConfig.Authentication.RegisterEnabled = true
+		} else {
+			globalConfig.Authentication.RegisterEnabled = false
+		}
+	}
+
+	// Load DISABLE_PASSWORD_LOGIN from environment variable (default: false)
+	if envVal := os.Getenv("DISABLE_PASSWORD_LOGIN"); envVal != "" {
+		str := strings.ToLower(envVal)
+		if str == "true" || str == "1" || str == "yes" {
+			globalConfig.Authentication.DisablePasswordLogin = true
+		} else {
+			globalConfig.Authentication.DisablePasswordLogin = false
+		}
+	}
+
 	// Doc engine
 	docEngine := strings.ToLower(os.Getenv("DOC_ENGINE"))
 	switch docEngine {
@@ -535,14 +625,23 @@ func FromConfigFile(configPath string) error {
 		globalConfig.Admin.Port += 2
 	}
 
-	// Load REGISTER_ENABLED from environment variable (default: 1)
-	registerEnabled := 1
-	if envVal := os.Getenv("REGISTER_ENABLED"); envVal != "" {
-		if parsed, err := strconv.Atoi(envVal); err == nil {
-			registerEnabled = parsed
+	// authentication section
+	if globalConfig != nil {
+		// Try to map from mysql section
+		globalConfig.Authentication.DisablePasswordLogin = false
+		globalConfig.Authentication.RegisterEnabled = true
+		if v.IsSet("authentication") {
+			authenticationConfig := v.Sub("authentication")
+			if authenticationConfig != nil {
+				if authenticationConfig.IsSet("disable_password_login") {
+					globalConfig.Authentication.DisablePasswordLogin = authenticationConfig.GetBool("disable_password_login")
+				}
+				if authenticationConfig.IsSet("enable_register") {
+					globalConfig.Authentication.RegisterEnabled = authenticationConfig.GetBool("enable_register")
+				}
+			}
 		}
 	}
-	globalConfig.RegisterEnabled = registerEnabled
 
 	// If we loaded service_conf.yaml, map mysql fields to DatabaseConfig
 	if globalConfig != nil && globalConfig.Database.Host == "" {
@@ -572,6 +671,10 @@ func FromConfigFile(configPath string) error {
 				// If mode is not set, default to debug
 				if globalConfig.Server.Mode == "" {
 					globalConfig.Server.Mode = "release"
+				}
+				secretKey := ragflowConfig.GetString("secret_key")
+				if secretKey != "" {
+					globalConfig.Server.SecretKey = &secretKey
 				}
 			}
 		}
@@ -606,20 +709,26 @@ func FromConfigFile(configPath string) error {
 	}
 
 	// Map doc_engine section to DocEngineConfig
-	if globalConfig != nil && globalConfig.DocEngine.Type == "" {
-		if v.IsSet("doc_engine") {
-			docEngineConfig := v.Sub("doc_engine")
-			if docEngineConfig != nil {
-				globalConfig.DocEngine.Type = EngineType(docEngineConfig.GetString("type"))
+	if globalConfig != nil {
+		// First, ensure engine type is set
+		if globalConfig.DocEngine.Type == "" {
+			if v.IsSet("doc_engine") {
+				docEngineConfig := v.Sub("doc_engine")
+				if docEngineConfig != nil {
+					globalConfig.DocEngine.Type = EngineType(docEngineConfig.GetString("type"))
+				}
 			}
 		}
-		// Also check legacy es section for backward compatibility
+
+		// Map es section from top-level (service_conf.yaml format)
 		if v.IsSet("es") {
 			esConfig := v.Sub("es")
 			if esConfig != nil {
+				// Set default engine type if not set
 				if globalConfig.DocEngine.Type == "" {
 					globalConfig.DocEngine.Type = EngineElasticsearch
 				}
+				// Always populate ES config if es section exists
 				if globalConfig.DocEngine.ES == nil {
 					globalConfig.DocEngine.ES = &ElasticsearchConfig{
 						Hosts:    esConfig.GetString("hosts"),
@@ -629,17 +738,23 @@ func FromConfigFile(configPath string) error {
 				}
 			}
 		}
+
+		// Map infinity section from top-level (service_conf.yaml format)
 		if v.IsSet("infinity") {
 			infConfig := v.Sub("infinity")
 			if infConfig != nil {
+				// Set default engine type if not set
 				if globalConfig.DocEngine.Type == "" {
 					globalConfig.DocEngine.Type = EngineInfinity
 				}
+				// Always populate Infinity config if infinity section exists
 				if globalConfig.DocEngine.Infinity == nil {
 					globalConfig.DocEngine.Infinity = &InfinityConfig{
-						URI:          infConfig.GetString("uri"),
-						PostgresPort: infConfig.GetInt("postgres_port"),
-						DBName:       infConfig.GetString("db_name"),
+						URI:                    infConfig.GetString("uri"),
+						PostgresPort:           infConfig.GetInt("postgres_port"),
+						DBName:                 infConfig.GetString("db_name"),
+						MappingFileName:        infConfig.GetString("mapping_file_name"),
+						DocMetaMappingFileName: infConfig.GetString("doc_meta_mapping_file_name"),
 					}
 				}
 			}
@@ -660,6 +775,23 @@ func FromConfigFile(configPath string) error {
 						PrefixPath: minioConfig.GetString("prefix_path"),
 						Verify:     minioConfig.GetBool("verify"),
 						Region:     minioConfig.GetString("region"),
+						Bucket:     minioConfig.GetString("bucket"),
+					}
+				}
+			}
+		}
+
+		if v.IsSet("minio_0") {
+			minioConfig := v.Sub("minio_0")
+			if minioConfig != nil {
+				if globalConfig.StorageEngine.Minio == nil {
+					globalConfig.StorageEngine.Minio = &MinioConfig{
+						Host:       minioConfig.GetString("host"),
+						User:       minioConfig.GetString("user"),
+						Password:   minioConfig.GetString("password"),
+						Secure:     minioConfig.GetBool("secure"),
+						PrefixPath: minioConfig.GetString("prefix_path"),
+						Verify:     minioConfig.GetBool("verify"),
 						Bucket:     minioConfig.GetString("bucket"),
 					}
 				}

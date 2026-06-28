@@ -27,7 +27,7 @@ from typing import Dict, Any, Optional
 
 from api.db.services.system_settings_service import SystemSettingsService
 from agent.sandbox.providers import ProviderManager
-from agent.sandbox.providers.base import ExecutionResult
+from agent.sandbox.providers.base import ExecutionResult, SandboxProviderConfigError
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,6 @@ def get_provider_manager() -> ProviderManager:
     if _provider_manager is not None:
         return _provider_manager
 
-    # Initialize provider manager with system settings
     _provider_manager = ProviderManager()
     _load_provider_from_settings()
 
@@ -59,8 +58,8 @@ def _load_provider_from_settings() -> None:
     """
     Load sandbox provider from system settings and configure the provider manager.
 
-    This function reads the system settings to determine which provider is active
-    and initializes it with the appropriate configuration.
+    This function resolves the active provider type, then loads configuration
+    from system settings.
     """
     global _provider_manager
 
@@ -68,38 +67,24 @@ def _load_provider_from_settings() -> None:
         return
 
     try:
-        # Get active provider type
-        provider_type_settings = SystemSettingsService.get_by_name("sandbox.provider_type")
-        if not provider_type_settings:
-            raise RuntimeError(
-                "Sandbox provider type not configured. Please set 'sandbox.provider_type' in system settings."
-            )
-        provider_type = provider_type_settings[0].value
-
-        # Get provider configuration
-        provider_config_settings = SystemSettingsService.get_by_name(f"sandbox.{provider_type}")
-
-        if not provider_config_settings:
-            logger.warning(f"No configuration found for provider: {provider_type}")
-            config = {}
-        else:
-            try:
-                config = json.loads(provider_config_settings[0].value)
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse sandbox config for {provider_type}: {e}")
-                config = {}
+        provider_type = _resolve_provider_type()
+        config = _load_provider_config(provider_type)
 
         # Import and instantiate the provider
         from agent.sandbox.providers import (
             SelfManagedProvider,
             AliyunCodeInterpreterProvider,
             E2BProvider,
+            LocalProvider,
+            SSHProvider,
         )
 
         provider_classes = {
             "self_managed": SelfManagedProvider,
             "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
             "e2b": E2BProvider,
+            "local": LocalProvider,
+            "ssh": SSHProvider,
         }
 
         if provider_type not in provider_classes:
@@ -111,17 +96,44 @@ def _load_provider_from_settings() -> None:
 
         # Initialize the provider
         if not provider.initialize(config):
-            logger.error(f"Failed to initialize sandbox provider: {provider_type}. Config keys: {list(config.keys())}")
+            message = f"Failed to initialize sandbox provider: {provider_type}. Config keys: {list(config.keys())}"
+            if provider_type in {"local", "ssh"}:
+                raise SandboxProviderConfigError(message)
+            logger.error(message)
             return
 
         # Set the active provider
         _provider_manager.set_provider(provider_type, provider)
         logger.info(f"Sandbox provider '{provider_type}' initialized successfully")
 
+    except SandboxProviderConfigError:
+        raise
     except Exception as e:
         logger.error(f"Failed to load sandbox provider from settings: {e}")
         import traceback
         traceback.print_exc()
+def _load_provider_config_from_settings(provider_type: str) -> Dict[str, Any]:
+    provider_config_settings = SystemSettingsService.get_by_name(f"sandbox.{provider_type}")
+    if not provider_config_settings:
+        logger.warning(f"No configuration found for provider: {provider_type}")
+        return {}
+
+    try:
+        return json.loads(provider_config_settings[0].value)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse sandbox config for {provider_type}: {e}")
+        return {}
+
+
+def _resolve_provider_type() -> str:
+    provider_type_settings = SystemSettingsService.get_by_name("sandbox.provider_type")
+    if not provider_type_settings:
+        return "self_managed"
+    return provider_type_settings[0].value
+
+
+def _load_provider_config(provider_type: str) -> Dict[str, Any]:
+    return _load_provider_config_from_settings(provider_type)
 
 
 def reload_provider() -> None:
@@ -166,6 +178,14 @@ def execute_code(
         )
 
     provider = provider_manager.get_provider()
+    provider_name = provider_manager.get_provider_name() or getattr(provider, "__class__", type(provider)).__name__
+
+    logger.info(
+        "CodeExec using sandbox provider '%s' (language=%s, timeout=%ss)",
+        provider_name,
+        language,
+        timeout,
+    )
 
     # Create a sandbox instance
     instance = provider.create_instance(template=language)

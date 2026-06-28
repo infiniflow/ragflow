@@ -1,11 +1,13 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import {
+  ModelTreeSelectFormField,
+  ModelTypeMap,
+} from '@/components/model-tree-select';
+import {
   SelectWithSearch,
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { LlmModelType } from '@/constants/knowledge';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
@@ -13,8 +15,8 @@ import { useTranslation } from 'react-i18next';
 import {
   FlattenMediaToTextFormField,
   LanguageFormField,
-  LargeModelFormField,
   ParserMethodFormField,
+  RemoveHeaderFooterFormField,
   RmdirFormField,
   TwoColumnCheckFormField,
 } from './common-form-fields';
@@ -37,9 +39,6 @@ export function PdfFormFields({ prefix }: CommonProps) {
   const form = useFormContext();
 
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
-  const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Image2text,
-  ]);
   const parseMethod = useWatch({
     name: parseMethodName,
   });
@@ -104,13 +103,16 @@ export function PdfFormFields({ prefix }: CommonProps) {
     <>
       <TwoColumnCheckFormField prefix={prefix} />
       <RmdirFormField prefix={prefix} />
+      <RemoveHeaderFooterFormField prefix={prefix} />
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
       <FlattenMediaToTextFormField prefix={prefix} />
       {!flattenMediaToText && (
-        <LargeModelFormField
-          prefix={prefix}
-          options={modelOptions}
-        ></LargeModelFormField>
+        <ModelTreeSelectFormField
+          name={buildFieldNameWithPrefix('vlm.llm_id', prefix)}
+          label={t('chat.model')}
+          modelTypes={ModelTypeMap.img2txt_id}
+          allowClear
+        />
       )}
       {languageShown && <LanguageFormField prefix={prefix}></LanguageFormField>}
       {tcadpOptionsShown && (

@@ -45,10 +45,11 @@ const RetrievalForm = () => {
       <FormWrapper>
         <DescriptionField></DescriptionField>
         <MemoryDatasetForm></MemoryDatasetForm>
-        <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
+        <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
             <SimilaritySliderFormField
-              vectorSimilarityWeightName="keywords_similarity_weight"
+              similarityWeightName="keywords_similarity_weight"
+              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
             <TopNFormField></TopNFormField>

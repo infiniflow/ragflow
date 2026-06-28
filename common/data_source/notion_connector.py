@@ -28,9 +28,11 @@ from common.data_source.interfaces import (
 from common.data_source.models import (
     Document,
     GenerateDocumentsOutput,
+    GenerateSlimDocumentOutput,
     NotionBlock,
     NotionPage,
     NotionSearchResponse,
+    SlimDocument,
     TextSection,
 )
 from common.data_source.utils import (
@@ -433,6 +435,45 @@ class NotionConnector(LoadConnector, PollConnector):
 
         return result_blocks, child_pages, attachments
 
+    def _read_slim_blocks(self, base_block_id: str) -> tuple[list[str], list[str]]:
+        child_pages: list[str] = []
+        attachment_ids: list[str] = []
+        cursor = None
+
+        while True:
+            data = self._fetch_child_blocks(base_block_id, cursor)
+
+            if data is None:
+                return child_pages, attachment_ids
+
+            for result in data["results"]:
+                result_block_id = result["id"]
+                result_type = result["type"]
+
+                if result_type in {"file", "image", "pdf", "video", "audio"}:
+                    attachment_ids.append(result_block_id)
+
+                if result["has_children"]:
+                    if result_type == "child_page":
+                        child_pages.append(result_block_id)
+                    else:
+                        nested_child_pages, nested_attachment_ids = self._read_slim_blocks(
+                            result_block_id
+                        )
+                        child_pages.extend(nested_child_pages)
+                        attachment_ids.extend(nested_attachment_ids)
+
+                if result_type == "child_database" and self.recursive_index_enabled:
+                    _, inner_child_pages = self._read_pages_from_database(result_block_id)
+                    child_pages.extend(inner_child_pages)
+
+            if data["next_cursor"] is None:
+                break
+
+            cursor = data["next_cursor"]
+
+        return child_pages, attachment_ids
+
     def _read_page_title(self, page: NotionPage) -> Optional[str]:
         """Extracts the title from a Notion page."""
         if hasattr(page, "database_name") and page.database_name:
@@ -551,6 +592,79 @@ class NotionConnector(LoadConnector, PollConnector):
         logging.info(f"[Notion]: Recursively loading pages from Notion based on root page with ID: {self.root_page_id}")
         pages = [self._fetch_page(page_id=self.root_page_id)]
         yield from batch_generator(self._read_pages(pages, start, end), self.batch_size)
+
+    def _read_pages_for_slim_docs(
+        self,
+        pages: list[NotionPage],
+        slim_indexed_pages: set[str],
+    ) -> Generator[SlimDocument, None, None]:
+        all_child_page_ids: list[str] = []
+
+        for page in pages:
+            if isinstance(page, dict):
+                page = NotionPage(**page)
+            if page.id in slim_indexed_pages:
+                continue
+
+            child_page_ids, attachment_ids = self._read_slim_blocks(page.id)
+            all_child_page_ids.extend(child_page_ids)
+            slim_indexed_pages.add(page.id)
+
+            yield SlimDocument(id=page.id)
+            for attachment_id in attachment_ids:
+                yield SlimDocument(id=attachment_id)
+
+        if self.recursive_index_enabled and all_child_page_ids:
+            for child_page_batch_ids in batch_generator(all_child_page_ids, INDEX_BATCH_SIZE):
+                child_page_batch = [
+                    self._fetch_page(page_id)
+                    for page_id in child_page_batch_ids
+                    if page_id not in slim_indexed_pages
+                ]
+                yield from self._read_pages_for_slim_docs(
+                    child_page_batch,
+                    slim_indexed_pages,
+                )
+
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        slim_indexed_pages: set[str] = set()
+
+        if self.recursive_index_enabled and self.root_page_id:
+            root_pages = [self._fetch_page(page_id=self.root_page_id)]
+            yield from batch_generator(
+                self._read_pages_for_slim_docs(root_pages, slim_indexed_pages),
+                self.batch_size,
+            )
+            return
+
+        query_dict = {
+            "filter": {"property": "object", "value": "page"},
+            "page_size": 100,
+        }
+
+        slim_batch: list[SlimDocument] = []
+        while True:
+            db_res = self._search_notion(query_dict)
+            pages = [NotionPage(**page) for page in db_res.results]
+
+            for doc in self._read_pages_for_slim_docs(pages, slim_indexed_pages):
+                slim_batch.append(doc)
+                if len(slim_batch) >= self.batch_size:
+                    yield slim_batch
+                    slim_batch = []
+                    if callback:
+                        callback.progress("notion_slim_document", 1)
+
+            if db_res.has_more:
+                query_dict["start_cursor"] = db_res.next_cursor
+            else:
+                break
+
+        if slim_batch:
+            yield slim_batch
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """Applies integration token to headers."""

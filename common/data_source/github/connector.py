@@ -964,11 +964,9 @@ class GithubConnector(CheckpointedConnectorWithPermSyncGH[GithubConnectorCheckpo
 
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: Any = None,
     ) -> GenerateSlimDocumentOutput:
-        yield from self.retrieve_slim_document(start=start, end=end, callback=callback)
+        yield from self.retrieve_slim_document(callback=callback)
 
     def build_dummy_checkpoint(self) -> GithubConnectorCheckpoint:
         return GithubConnectorCheckpoint(

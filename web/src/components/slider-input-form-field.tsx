@@ -2,6 +2,7 @@ import { FormLayout } from '@/constants/form';
 import { cn } from '@/lib/utils';
 import { forwardRef, ReactNode, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
+import NumberInput from './originui/number-input';
 import { SingleFormSlider } from './ui/dual-range-slider';
 import {
   FormControl,
@@ -10,7 +11,6 @@ import {
   FormLabel,
   FormMessage,
 } from './ui/form';
-import { NumberInput } from './ui/input';
 
 export type FormLayoutType = {
   layout?: FormLayout;
@@ -92,9 +92,11 @@ export const SliderInputFormField = forwardRef<
               <FormControl>
                 <SingleFormSlider
                   {...field}
-                  value={percentage ? field.value * 100 : field.value}
+                  value={
+                    percentage ? Math.round(field.value * 100) : field.value
+                  }
                   onChange={(value) =>
-                    field.onChange(percentage ? value / 100 : value)
+                    field.onChange(percentage ? Math.round(value) / 100 : value)
                   }
                   max={displayMax}
                   min={displayMin}
@@ -105,21 +107,22 @@ export const SliderInputFormField = forwardRef<
               <FormControl>
                 <NumberInput
                   className={cn(
-                    'h-6 w-10 p-0 text-center bg-bg-input border border-border-button text-text-secondary',
+                    'h-6 w-16 p-0 text-center bg-bg-input border border-border-button text-text-secondary',
                     '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
                     numberInputClassName,
                   )}
                   max={displayMax}
                   min={displayMin}
                   step={displayStep}
+                  hideIcons
                   value={
-                    percentage ? (field.value * 100).toFixed(0) : field.value
+                    percentage ? Math.round(field.value * 100) : field.value
                   }
                   onChange={(val) => {
                     const value = Number(val || 0);
-                    if (!isNaN(value)) {
+                    if (value >= 0) {
                       field.onChange(
-                        percentage ? (value / 100).toFixed(0) : value,
+                        percentage ? Math.round(value) / 100 : value,
                       );
                     }
                   }}

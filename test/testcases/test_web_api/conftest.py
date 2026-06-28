@@ -49,9 +49,9 @@ from utils.file_utils import (
 
 @wait_for(30, 1, "Document parsing timeout")
 def condition(_auth, _kb_id):
-    res = list_documents(_auth, {"id": _kb_id})
+    res = list_documents(_auth, {"kb_id": _kb_id})
     for doc in res["data"]["docs"]:
-        if doc["run"] != "3":
+        if doc["run"] != "DONE":
             return False
     return True
 
@@ -104,7 +104,7 @@ def require_env_flag():
 @pytest.fixture(scope="function")
 def clear_datasets(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth):
     def cleanup():
-        res = list_datasets(WebApiAuth, params={"page_size": 1000})
+        res = list_datasets(WebApiAuth, params={"page_size": 100})
         kb_ids = [kb["id"] for kb in res["data"]]
         delete_datasets(WebApiAuth, {"ids": kb_ids})
 
@@ -122,7 +122,7 @@ def clear_chats(request, WebApiAuth):
 @pytest.fixture(scope="class")
 def add_dataset(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
     def cleanup():
-        res = list_datasets(WebApiAuth, params={"page_size": 1000})
+        res = list_datasets(WebApiAuth, params={"page_size": 100})
         kb_ids = [kb["id"] for kb in res["data"]]
         delete_datasets(WebApiAuth, {"ids": kb_ids})
 
@@ -133,7 +133,7 @@ def add_dataset(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
 @pytest.fixture(scope="function")
 def add_dataset_func(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
     def cleanup():
-        res = list_datasets(WebApiAuth, params={"page_size": 1000})
+        res = list_datasets(WebApiAuth, params={"page_size": 100})
         kb_ids = [kb["id"] for kb in res["data"]]
         delete_datasets(WebApiAuth, {"ids": kb_ids})
 
@@ -157,17 +157,17 @@ def add_document(request, WebApiAuth, add_dataset, ragflow_tmp_dir):
 @pytest.fixture(scope="class")
 def add_chunks(request, WebApiAuth, add_document):
     def cleanup():
-        res = list_chunks(WebApiAuth, {"doc_id": document_id})
+        res = list_chunks(WebApiAuth, dataset_id, document_id)
         if res["code"] == 0:
-            chunk_ids = [chunk["chunk_id"] for chunk in res["data"]["chunks"]]
-            delete_chunks(WebApiAuth, {"doc_id": document_id, "chunk_ids": chunk_ids})
+            chunk_ids = [chunk["id"] for chunk in res["data"]["chunks"]]
+            delete_chunks(WebApiAuth, dataset_id, document_id, {"chunk_ids": chunk_ids})
 
     request.addfinalizer(cleanup)
 
-    kb_id, document_id = add_document
+    dataset_id, document_id = add_document
     parse_documents(WebApiAuth, {"doc_ids": [document_id], "run": "1"})
-    condition(WebApiAuth, kb_id)
-    chunk_ids = batch_add_chunks(WebApiAuth, document_id, 4)
+    condition(WebApiAuth, dataset_id)
+    chunk_ids = batch_add_chunks(WebApiAuth, dataset_id, document_id, 4)
     # issues/6487
     sleep(1)
-    return kb_id, document_id, chunk_ids
+    return dataset_id, document_id, chunk_ids

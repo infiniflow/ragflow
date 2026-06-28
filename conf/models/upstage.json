@@ -1,0 +1,56 @@
+{
+  "name": "Upstage",
+  "url": {
+    "default": "https://api.upstage.ai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings"
+  },
+  "class": "solar",
+  "models": [
+    {
+      "name": "solar-pro3",
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "solar-pro2",
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "solar-pro",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "solar-mini",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "solar-embedding-1-large-query",
+      "max_tokens": 2000,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "solar-embedding-1-large-passage",
+      "max_tokens": 2000,
+      "model_types": [
+        "embedding"
+      ]
+    }
+  ]
+}

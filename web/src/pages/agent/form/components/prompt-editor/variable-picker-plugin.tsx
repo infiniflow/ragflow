@@ -369,7 +369,7 @@ export default function VariablePickerMenuPlugin({
   const filterStructuredOutput = useGetStructuredOutputByValue();
 
   const testTriggerFn = React.useCallback((text: string) => {
-    const triggerRegex = /(^|\s|\()([/]((?:[^/\s\()])*))$/;
+    const triggerRegex = /(^|\s|\()([/]((?:[^/\s()])*))$/;
     const match = triggerRegex.exec(text);
 
     if (match !== null) {

@@ -9,15 +9,6 @@ const {
   setting,
   userInfo,
   tenantInfo,
-  factoriesList,
-  llmList,
-  myLlm,
-  setApiKey,
-  setTenantInfo,
-  addLlm,
-  deleteLlm,
-  enableLlm,
-  deleteFactory,
   getSystemVersion,
   getSystemTokenList,
   removeSystemToken,
@@ -33,7 +24,7 @@ const methods = {
   },
   logout: {
     url: logout,
-    method: 'get',
+    method: 'post',
   },
   register: {
     url: register,
@@ -41,7 +32,7 @@ const methods = {
   },
   setting: {
     url: setting,
-    method: 'post',
+    method: 'patch',
   },
   userInfo: {
     url: userInfo,
@@ -51,45 +42,9 @@ const methods = {
     url: tenantInfo,
     method: 'get',
   },
-  setTenantInfo: {
-    url: setTenantInfo,
-    method: 'post',
-  },
-  factoriesList: {
-    url: factoriesList,
-    method: 'get',
-  },
-  llmList: {
-    url: llmList,
-    method: 'get',
-  },
-  myLlm: {
-    url: myLlm,
-    method: 'get',
-  },
-  setApiKey: {
-    url: setApiKey,
-    method: 'post',
-  },
-  addLlm: {
-    url: addLlm,
-    method: 'post',
-  },
-  deleteLlm: {
-    url: deleteLlm,
-    method: 'post',
-  },
-  enableLlm: {
-    url: enableLlm,
-    method: 'post',
-  },
   getSystemVersion: {
     url: getSystemVersion,
     method: 'get',
-  },
-  deleteFactory: {
-    url: deleteFactory,
-    method: 'post',
   },
   listToken: {
     url: getSystemTokenList,
@@ -139,11 +94,14 @@ export const deleteTenantUser = ({
 }: {
   tenantId: string;
   userId: string;
-}) => request.delete(api.deleteTenantUser(tenantId, userId));
+}) =>
+  request.delete(api.deleteTenantUser(tenantId), {
+    data: { userId },
+  });
 
 export const listTenant = () => request.get(api.listTenant);
 
 export const agreeTenant = (tenantId: string) =>
-  request.put(api.agreeTenant(tenantId));
+  request.patch(api.agreeTenant(tenantId));
 
 export default userService;

@@ -40,6 +40,7 @@ export default {
       openInNewTab: 'Chat em nova aba',
       previousPage: 'Anterior',
       nextPage: 'Próxima',
+      owner: 'Proprietário',
     },
     login: {
       login: 'Entrar',
@@ -329,6 +330,8 @@ export default {
     },
     chunk: {
       chunk: 'Fragmento',
+      createChunk: 'Criar fragmento',
+      editChunk: 'Editar fragmento',
       bulk: 'Em massa',
       selectAll: 'Selecionar tudo',
       enabledSelected: 'Ativar selecionados',
@@ -470,6 +473,12 @@ export default {
         'Isso otimiza as consultas dos usuários usando o contexto em uma conversa de múltiplas rodadas. Quando ativado, consumirá tokens adicionais do LLM.',
       howUseId: 'Como usar o ID do chat?',
       description: 'Descrição do assistente',
+      showChunkMetadata: 'Exibir metadados do trecho',
+      showChunkMetadataTip:
+        'Exibir metadados do documento (título, número de página, data de upload, etc.) junto aos trechos de texto recuperados',
+      metadataFields: 'Campos de metadados',
+      metadataFieldsTip:
+        'Selecione os campos de metadados a exibir em cada trecho',
     },
     setting: {
       profile: 'Perfil',
@@ -584,8 +593,8 @@ export default {
       FishAudioLink: 'Como usar FishAudio',
       TencentCloudLink: 'Como usar TencentCloud ASR',
       volcModelNameMessage: 'Por favor, insira o nome do seu modelo!',
-      addEndpointID: 'EndpointID do modelo',
-      endpointIDMessage: 'Por favor, insira o EndpointID do modelo',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Por favor, insira o Model ID do modelo',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Por favor, insira sua ARK_API_KEY',
       bedrockModelNameMessage: 'Por favor, insira o nome do seu modelo!',
@@ -1193,6 +1202,11 @@ export default {
         'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
       promptMessage: 'O prompt é obrigatório',
       runningHintText: 'está rodando...🕞',
+      canvasCategory: 'Categoria de canvas',
+      tags: 'Tags',
+      created: 'Criado',
+      id: 'ID',
+      logTitle: 'Título',
     },
     footer: {
       profile: 'Todos os direitos reservados @ React',
@@ -1209,6 +1223,7 @@ export default {
       bulgarian: 'Búlgaro',
       arabic: 'Árabe',
       turkish: 'Turco',
+      korean: 'Coreano',
     },
   },
 };

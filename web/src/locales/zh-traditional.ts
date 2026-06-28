@@ -41,6 +41,8 @@ export default {
       previousPage: '上一頁',
       nextPage: '下一頁',
       add: '添加',
+      owner: '擁有者',
+      running: '執行中...',
     },
     login: {
       login: '登入',
@@ -390,7 +392,8 @@ export default {
         '基於知識庫內所有切好的文本塊構建知識圖譜，用以提升多跳和複雜問題回答的正確率。請注意：構建知識圖譜將消耗大量 token 和時間。詳見 https://ragflow.io/docs/dev/construct_knowledge_graph。',
       graphRagMethod: '方法',
       graphRagMethodTip: `Light：實體和關係提取提示來自 GitHub - HKUDS/LightRAG：“LightRAG：簡單快速的檢索增強生成”<br>
- 一般：實體和關係擷取提示來自 GitHub - microsoft/graphrag：基於模組化圖形的檢索增強生成 (RAG) 系統，`,
+ 一般：實體和關係擷取提示來自 GitHub - microsoft/graphrag：基於模組化圖形的檢索增強生成 (RAG) 系統，<br>
+ NER：使用 spaCy NER 和基於規則的關鍵詞提取來抽取實體和關係，無需 LLM 參與提取過程，速度快且資源消耗低`,
       resolution: '實體歸一化',
       resolutionTip: `解析過程會將具有相同意義的實體合併在一起，使知識圖譜更簡潔、更準確。應合併以下實體：川普總統、唐納德·川普、唐納德·J·川普、唐納德·約翰·川普`,
       community: '社群報告生成',
@@ -399,6 +402,8 @@ export default {
     },
     chunk: {
       chunk: '解析塊',
+      createChunk: '建立解析塊',
+      editChunk: '編輯解析塊',
       bulk: '批量',
       selectAll: '選擇所有',
       enabledSelected: '啟用選定的',
@@ -561,6 +566,11 @@ export default {
       tavilyApiKeyHelp: '如何獲取？',
       crossLanguage: '跨語言搜尋',
       crossLanguageTip: `選擇一種或多種語言進行跨語言搜尋。如果沒有選擇語言，系統將使用原始查詢進行搜尋。 `,
+      showChunkMetadata: '顯示區塊中繼資料',
+      showChunkMetadataTip:
+        '在擷取的文字區塊旁顯示文件中繼資料（如標題、頁碼、上傳日期）',
+      metadataFields: '中繼資料欄位',
+      metadataFieldsTip: '選擇要與每個區塊一起顯示的中繼資料欄位',
     },
     setting: {
       profile: '概述',
@@ -681,8 +691,8 @@ export default {
       FishAudioLink: '如何使用Fish Audio',
       TencentCloudLink: '如何使用騰訊雲語音識別',
       volcModelNameMessage: '請輸入模型名稱！',
-      addEndpointID: '模型 EndpointID',
-      endpointIDMessage: '請輸入模型對應的EndpointID',
+      addEndpointID: '模型 ID',
+      endpointIDMessage: '請輸入模型 ID',
       addArkApiKey: '火山 ARK_API_KEY',
       ArkApiKeyMessage: '請輸入火山創建的ARK_API_KEY',
       bedrockModelNameMessage: '請輸入名稱！',
@@ -1277,6 +1287,11 @@ export default {
       openingSwitchTip: '您的用戶將在開始時看到此歡迎訊息。',
       modeTip: '模式定義工作流程如何啟動。 ',
       beginInputTip: `透過定義輸入參數，這些內容可以在後續流程中被其他元件存取。`,
+      canvasCategory: '畫布分類',
+      tags: '標籤',
+      created: '建立於',
+      id: 'ID',
+      logTitle: '標題',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
@@ -1293,6 +1308,7 @@ export default {
       bulgarian: '保加利亞語',
       arabic: '阿拉伯語',
       turkish: '土耳其語',
+      korean: '韓語',
     },
     modal: {
       okText: '確認',
@@ -1307,6 +1323,7 @@ export default {
       id: 'ID',
       copySuccess: '複製成功',
       welcomeBack: '歡迎回來',
+      selectLocalePlaceholder: '選擇語言',
     },
   },
 };

@@ -1,3 +1,4 @@
+import base64
 import logging
 import json
 import os
@@ -48,8 +49,13 @@ class DocGeneratorParam(ComponentParamBase):
         self.watermark_text = ""
         self.add_page_numbers = True
         self.add_timestamp = True
+        self.include_download_info_in_content = False
         self.font_size = 12
         self.outputs = {
+            "doc_id": {"value": "", "type": "string"},
+            "filename": {"value": "", "type": "string"},
+            "mime_type": {"value": "", "type": "string"},
+            "size": {"value": 0, "type": "number"},
             "download": {"value": "", "type": "string"},
         }
 
@@ -113,6 +119,7 @@ class DocGenerator(Message, ABC):
                     raise Exception("Document file is empty")
 
                 file_size = len(file_bytes)
+                file_base64 = base64.b64encode(file_bytes).decode("utf-8")
                 doc_id = get_uuid()
                 settings.STORAGE_IMPL.put(self._canvas.get_tenant_id(), doc_id, file_bytes)
 
@@ -128,7 +135,13 @@ class DocGenerator(Message, ABC):
                     "filename": filename,
                     "mime_type": mime_type,
                     "size": file_size,
+                    "base64": file_base64,
+                    "include_download_info_in_content": self._param.include_download_info_in_content,
                 }
+                self.set_output("doc_id", doc_id)
+                self.set_output("filename", filename)
+                self.set_output("mime_type", mime_type)
+                self.set_output("size", file_size)
                 self.set_output("download", json.dumps(download_info))
                 return download_info
 
@@ -146,35 +159,32 @@ class DocGenerator(Message, ABC):
                 os.remove(file_path)
 
     def _resolve_content(self, kwargs: dict) -> str:
-        content = self._param.content or ""
+        content = self._param.content or kwargs.get("content", "") or ""
         logging.info("Starting document generation, content length: %s chars", len(content))
 
-        if content and self._canvas.is_reff(content.strip()):
-            matches = re.findall(self.variable_ref_patt, content, flags=re.DOTALL)
-            for match in matches:
+        if content:
+            def _replace_variable(match_obj: re.Match[str]) -> str:
+                match = match_obj.group(1)
                 try:
                     var_value = self._canvas.get_variable_value(match)
                     if var_value is None:
-                        continue
+                        return ""
                     if isinstance(var_value, partial):
                         resolved_content = ""
                         for chunk in var_value():
                             resolved_content += chunk
-                        content = content.replace("{" + match + "}", resolved_content)
-                    else:
-                        content = content.replace("{" + match + "}", str(var_value))
+                        return resolved_content
+                    return self._stringify_message_value(var_value, fallback_to_str=True)
                 except Exception as e:
                     logging.warning("Error resolving variable %s: %s", match, str(e))
-                    content = content.replace("{" + match + "}", f"[ERROR: {str(e)}]")
+                    return f"[ERROR: {str(e)}]"
 
-        if content:
-            try:
-                content, _ = self.get_kwargs(content, kwargs)
-            except Exception as e:
-                logging.warning("Error processing content with get_kwargs: %s", str(e))
-
-        if not content:
-            content = kwargs.get("content", "")
+            content = re.sub(
+                self.variable_ref_patt,
+                _replace_variable,
+                content,
+                flags=re.DOTALL,
+            )
 
         return content
 

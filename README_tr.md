@@ -10,9 +10,9 @@
   <a href="./README_tzh.md"><img alt="繁體版中文自述文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
   <a href="./README_ja.md"><img alt="日本語のREADME" src="https://img.shields.io/badge/日本語-DFE0E5"></a>
   <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-DFE0E5"></a>
+  <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DFE0E5"></a>
   <a href="./README_id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-DFE0E5"></a>
   <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DFE0E5"></a>
-  <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DFE0E5"></a>
   <a href="./README_ar.md"><img alt="README in Arabic" src="https://img.shields.io/badge/Arabic-DFE0E5"></a>
   <a href="./README_tr.md"><img alt="Türkçe README" src="https://img.shields.io/badge/Türkçe-DBEDFA"></a>
 </p>
@@ -22,10 +22,10 @@
         <img src="https://img.shields.io/twitter/follow/infiniflow?logo=X&color=%20%23f5f5f5" alt="X(Twitter)'da takip et">
     </a>
     <a href="https://cloud.ragflow.io" target="_blank">
-        <img alt="Çevrimiçi Demo" src="https://img.shields.io/badge/Online-Demo-4e6b99">
+        <img alt="Çevrimiçi Demo" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.24.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Son%20Sürüm" alt="Son Sürüm">
@@ -39,11 +39,10 @@
 </p>
 
 <h4 align="center">
+  <a href="https://cloud.ragflow.io">Cloud</a> |
   <a href="https://ragflow.io/docs/dev/">Dokümantasyon</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/12241">Yol Haritası</a> |
-  <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
-  <a href="https://cloud.ragflow.io">Demo</a>
+  <a href="https://discord.gg/NjYzJD3GM3">Discord</a> 
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -58,11 +57,11 @@
 <summary><b>📕 İçindekiler</b></summary>
 
 - 💡 [RAGFlow Nedir?](#-ragflow-nedir)
-- 🎮 [Demo](#-demo)
+- 🎮 [Başlarken](#-başlarken)
 - 📌 [Son Güncellemeler](#-son-güncellemeler)
 - 🌟 [Temel Özellikler](#-temel-özellikler)
 - 🔎 [Sistem Mimarisi](#-sistem-mimarisi)
-- 🎬 [Başlarken](#-başlarken)
+- 🎬 [Kendi Sunucusunda Barındırma](#-kendi-sunucusunda-barındırma)
 - 🔧 [Yapılandırmalar](#-yapılandırmalar)
 - 🔧 [Docker İmajı Oluşturma](#-docker-i̇majı-oluşturma)
 - 🔨 [Geliştirme İçin Kaynaktan Hizmet Başlatma](#-geliştirme-i̇çin-kaynaktan-hizmet-başlatma)
@@ -77,9 +76,9 @@
 
 [RAGFlow](https://ragflow.io/), derin doküman anlayışına dayalı, açık kaynaklı ve öncü bir Artırılmış Üretim ile Bilgi Erişimi ([RAG](https://ragflow.io/basics/what-is-rag)) motorudur. En son RAG teknolojisini Ajan yetenekleriyle birleştirerek LLM'ler için üstün bir bağlam katmanı oluşturur. Her ölçekteki kuruluşa uyarlanabilir, kolaylaştırılmış bir RAG iş akışı sunar. Yakınsanmış bir [bağlam motoru](https://ragflow.io/basics/what-is-agent-context-engine) ve hazır ajan şablonlarıyla donatılmış RAGFlow, geliştiricilerin karmaşık verileri yüksek doğrulukta, üretime hazır yapay zeka sistemlerine olağanüstü verimlilik ve hassasiyetle dönüştürmesini sağlar.
 
-## 🎮 Demo
+## 🎮 Başlarken
 
-Demomuzu [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyebilirsiniz.
+Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyin.
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -88,6 +87,8 @@ Demomuzu [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyeb
 
 ## 🔥 Son Güncellemeler
 
+- 2026-06-15 Feishu, Discord, Telegram, Line vb. gibi birden fazla sohbet kanalını destekleyin.
+- 2026-04-24 DeepSeek v4 desteği.
 - 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw üzerinden RAGFlow veri setlerine erişmek için resmi bir skill sağlar.
 - 2025-12-26 Yapay zeka ajanı için 'Bellek' desteği eklendi.
 - 2025-11-19 Gemini 3 Pro desteği eklendi.
@@ -97,7 +98,6 @@ Demomuzu [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyeb
 - 2025-08-08 OpenAI'ın en yeni GPT-5 serisi modelleri için destek eklendi.
 - 2025-08-01 Ajanlı iş akışı ve MCP desteği eklendi.
 - 2025-05-23 Ajana Python/JavaScript kod çalıştırıcı bileşeni eklendi.
-- 2025-05-05 Diller arası sorgu desteği eklendi.
 - 2025-03-19 PDF veya DOCX dosyalarındaki görselleri yorumlamak için çok modlu model desteği eklendi.
 
 ## 🎉 Bizi Takip Edin
@@ -142,7 +142,7 @@ Demomuzu [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyeb
 <img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
-## 🎬 Başlarken
+## 🎬 Kendi Sunucusunda Barındırma
 
 ### 📝 Ön Koşullar
 
@@ -150,6 +150,7 @@ Demomuzu [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyeb
 - RAM >= 16 GB
 - Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
+- Python >= 3.13
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Yalnızca RAGFlow'un kod çalıştırıcı (sandbox) özelliğini kullanmayı planlıyorsanız gereklidir.
 
 > [!TIP]
@@ -190,12 +191,12 @@ Demomuzu [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyeb
 > Tüm Docker imajları x86 platformları için oluşturulmuştur. Şu anda ARM64 için Docker imajı sunmuyoruz.
 > ARM64 platformundaysanız, sisteminizle uyumlu bir Docker imajı oluşturmak için [bu kılavuzu](https://ragflow.io/docs/dev/build_docker_image) takip edin.
 
-> Aşağıdaki komut RAGFlow Docker imajının `v0.24.0` sürümünü indirir. Farklı RAGFlow sürümleri için aşağıdaki tabloya bakın. `v0.24.0` dışında bir sürüm indirmek için, `docker compose` ile sunucuyu başlatmadan önce **docker/.env** dosyasındaki `RAGFLOW_IMAGE` değişkenini güncelleyin.
+> Aşağıdaki komut RAGFlow Docker imajının `v0.26.1` sürümünü indirir. Farklı RAGFlow sürümleri için aşağıdaki tabloya bakın. `v0.26.1` dışında bir sürüm indirmek için, `docker compose` ile sunucuyu başlatmadan önce **docker/.env** dosyasındaki `RAGFLOW_IMAGE` değişkenini güncelleyin.
 
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.24.0
+   # git checkout v0.26.1
    # İsteğe bağlı: Kararlı bir etiket kullanın (sürümler: https://github.com/infiniflow/ragflow/releases)
    # Bu adım, koddaki **entrypoint.sh** dosyasının Docker imaj sürümüyle eşleşmesini sağlar.
 
@@ -323,8 +324,8 @@ docker build --platform linux/amd64 \
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.12 # RAGFlow'un bağımlı Python modüllerini yükler
-   uv run python3 download_deps.py
+   uv sync --python 3.13 # RAGFlow'un bağımlı Python modüllerini yükler
+   uv run python3 ragflow_deps/download_deps.py
    pre-commit install
    ```
 3. Bağımlı hizmetleri (MinIO, Elasticsearch, Redis ve MySQL) Docker Compose kullanarak başlatın:
@@ -400,7 +401,7 @@ docker build --platform linux/amd64 \
 ## 🏄 Topluluk
 
 - [Discord](https://discord.gg/NjYzJD3GM3)
-- [Twitter](https://twitter.com/infiniflowai)
+- [X](https://x.com/infiniflowai)
 - [GitHub Tartışmalar](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 Katkıda Bulunma

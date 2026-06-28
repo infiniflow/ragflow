@@ -48,7 +48,7 @@ class VariableAssigner(ComponentBase,ABC):
         else:
             for item in self._param.variables:
                 if any([not item.get("variable"), not item.get("operator"), not item.get("parameter")]):
-                    assert "Variable is not complete."
+                    raise ValueError("Variable is not complete.")
                 variable=item["variable"]
                 operator=item["operator"]
                 parameter=item["parameter"]
@@ -92,12 +92,12 @@ class VariableAssigner(ComponentBase,ABC):
             return ""
         elif isinstance(variable,dict):
             return {}
+        elif isinstance(variable,bool):
+            return False
         elif isinstance(variable,int):
             return 0
         elif isinstance(variable,float):
             return 0.0
-        elif isinstance(variable,bool):
-            return False
         else:
             return None
 
@@ -141,20 +141,18 @@ class VariableAssigner(ComponentBase,ABC):
             return variable + parameter
 
     def _remove_first(self,variable):
-        if len(variable)==0:
-            return variable
         if not isinstance(variable,list):
             return "ERROR:VARIABLE_NOT_LIST"
-        else:
-            return variable[1:]
+        if len(variable)==0:
+            return variable
+        return variable[1:]
 
     def _remove_last(self,variable):
-        if len(variable)==0:
-            return variable
         if not isinstance(variable,list):
             return "ERROR:VARIABLE_NOT_LIST"
-        else:
-            return variable[:-1]
+        if len(variable)==0:
+            return variable
+        return variable[:-1]
 
     def is_number(self, value):
         if isinstance(value, bool):

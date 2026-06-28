@@ -22,6 +22,7 @@ from io import BytesIO
 from timeit import default_timer as timer
 from openpyxl import load_workbook
 
+from common.constants import MAXIMUM_PAGE_NUMBER
 from deepdoc.parser.utils import get_text
 from rag.nlp import is_english, random_choices, qbullets_category, add_positions, has_qbullet, docx_question_level
 from rag.nlp import rag_tokenizer, tokenize_table, concat_img
@@ -77,7 +78,7 @@ class Excel(ExcelParser):
 
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
-                 to_page=100000, zoomin=3, callback=None):
+                 to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):
         start = timer()
         callback(msg="OCR started")
         self.__images__(
@@ -191,7 +192,7 @@ class Docx(DocxParser):
     def __init__(self):
         pass
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, callback=None):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None):
         self.doc = Document(
             filename) if not binary else Document(BytesIO(binary))
         pn = 0
@@ -304,7 +305,7 @@ def mdQuestionLevel(s):
     return (len(match.group(0)), s.lstrip('#').lstrip()) if match else (0, s)
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
         Excel and csv(txt) format files are supported.
         If the file is in Excel format, there should be 2 column question and answer without header.
@@ -449,7 +450,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
         qai_list, tbls = docx_parser(filename, binary,
-                                     from_page=0, to_page=10000, callback=callback)
+                                     from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
         res = tokenize_table(tbls, doc, eng)
         for i, (q, a, image) in enumerate(qai_list):
             res.append(beAdocDocx(deepcopy(doc), q, a, eng, image, i))

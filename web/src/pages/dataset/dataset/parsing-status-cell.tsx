@@ -14,7 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { CircleX } from 'lucide-react';
+import { CircleQuestionMark, CircleX } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DocumentType, RunningStatus } from './constant';
@@ -39,6 +39,9 @@ const IconMap = {
   [RunningStatus.FAIL]: (
     <IconFontFill name="reparse" className="text-accent-primary" />
   ),
+  [RunningStatus.SCHEDULE]: (
+    <IconFontFill name="reparse" className="text-accent-primary" />
+  ),
 };
 
 const ParseStatusStateMap = {
@@ -58,7 +61,7 @@ export function ParseDropdownButton({
   record: IDocumentInfo;
 } & UseChangeDocumentParserShowType) {
   const { t } = useTranslation();
-  const { pipeline_id, pipeline_name, parser_id } = record;
+  const { pipeline_id, pipeline_name, chunk_method } = record;
 
   const handleShowChangeParserModal = useCallback(() => {
     showChangeParserModal(record);
@@ -73,18 +76,18 @@ export function ParseDropdownButton({
               <Button variant="static" size="auto" className="capitalize">
                 {pipeline_id
                   ? pipeline_name || pipeline_id
-                  : parser_id === 'naive'
+                  : chunk_method === 'naive'
                     ? 'general'
-                    : parser_id}
+                    : chunk_method}
               </Button>
             </TooltipTrigger>
             <TooltipContent>
               <p className="capitalize">
                 {pipeline_id
                   ? pipeline_name || pipeline_id
-                  : parser_id === 'naive'
+                  : chunk_method === 'naive'
                     ? 'general'
-                    : parser_id}
+                    : chunk_method}
               </p>
             </TooltipContent>
           </Tooltip>
@@ -106,7 +109,7 @@ export function ParsingStatusCell({
   record: IDocumentInfo;
   showLog: (record: IDocumentInfo) => void;
 } & UseChangeDocumentParserShowType) {
-  const { run, progress, chunk_num, id } = record;
+  const { run, progress, chunk_count, id } = record;
   const operationIcon = IconMap[run];
   const p = Number((progress * 100).toFixed(2));
   const {
@@ -116,7 +119,7 @@ export function ParsingStatusCell({
     hideModal: hideReparseDialogModal,
   } = useHandleRunDocumentByIds(id);
   const isRunning = isParserRunning(run);
-  const isZeroChunk = chunk_num === 0;
+  const isZeroChunk = chunk_count === 0;
 
   const handleOperationIconClick = (option?: {
     delete: boolean;
@@ -150,7 +153,12 @@ export function ParsingStatusCell({
                 onClick={() => handleShowLog(record)}
               >
                 <Progress value={p} className="h-1 flex-1 min-w-10" />
-                {p}%
+                <div className="flex items-center gap-1">
+                  {p}%
+                  <sup className="inline-flex">
+                    <CircleQuestionMark className="size-[1.25em]" />
+                  </sup>
+                </div>
               </Button>
 
               <Button
@@ -192,7 +200,7 @@ export function ParsingStatusCell({
           // hidden={false}
           enable_metadata={record?.parser_config?.enable_metadata}
           handleOperationIconClick={handleOperationIconClick}
-          chunk_num={chunk_num}
+          chunk_num={chunk_count}
           visible={reparseDialogVisible}
           hideModal={hideReparseDialogModal}
         ></ReparseDialog>

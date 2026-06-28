@@ -68,6 +68,7 @@ export default {
       },
       selected: 'Ausgewählt',
       seeAll: 'Alle anzeigen',
+      owner: 'Eigentümer',
     },
     login: {
       loginTitle: 'Melden Sie sich bei Ihrem Konto an',
@@ -194,7 +195,6 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
     },
     knowledgeDetails: {
       metadata: {
-        type: 'Typ',
         fieldNameInvalid:
           'Feldname darf nur Buchstaben oder Unterstriche enthalten.',
         builtIn: 'Eingebaut',
@@ -238,6 +238,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
         value: 'Wert',
         action: 'Aktion',
         field: 'Feld',
+        type: 'Typ',
         description: 'Beschreibung',
         fieldName: 'Feldname',
         editMetadata: 'Metadaten bearbeiten',
@@ -687,8 +688,9 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'Erstellen Sie einen Wissensgraph über Dateiabschnitte der aktuellen Wissensbasis, um die Beantwortung von Fragen mit mehreren Schritten und verschachtelter Logik zu verbessern. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/construct_knowledge_graph.',
       graphRagMethod: 'Methode',
       graphRagMethodTip: `
-      Light: (Standard) Verwendet von github.com/HKUDS/LightRAG bereitgestellte Prompts, um Entitäten und Beziehungen zu extrahieren. Diese Option verbraucht weniger Tokens, weniger Speicher und weniger Rechenressourcen.</br>
-      General: Verwendet von github.com/microsoft/graphrag bereitgestellte Prompts, um Entitäten und Beziehungen zu extrahieren`,
+      Light: (Standard) Verwendet von github.com/HKUDS/LightRAG bereitgestellte Prompts, um Entitäten und Beziehierungen zu extrahieren. Diese Option verbraucht weniger Tokens, weniger Speicher und weniger Rechenressourcen.</br>
+      General: Verwendet von github.com/microsoft/graphrag bereitgestellte Prompts, um Entitäten und Beziehierungen zu extrahieren.</br>
+      NER: Verwendet spaCy NER und regelbasierte Schlüsselwortextraktion, um Entitäten und Beziehungen zu extrahieren. Für die Extraktion selbst ist kein LLM erforderlich, was es schnell und ressourceneffizient macht.`,
       resolution: 'Entitätsauflösung',
       resolutionTip: `Ein Entitäts-Deduplizierungsschalter. Wenn aktiviert, wird das LLM ähnliche Entitäten kombinieren - z.B. '2025' und 'das Jahr 2025' oder 'IT' und 'Informationstechnologie' - um einen genaueren Graphen zu konstruieren`,
       community: 'Generierung von Gemeinschaftsberichten',
@@ -706,6 +708,8 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         text: 'Text',
       },
       chunk: 'Chunk',
+      createChunk: 'Chunk erstellen',
+      editChunk: 'Chunk bearbeiten',
       bulk: 'Masse',
       selectAll: 'Alle auswählen',
       enabledSelected: 'Ausgewählte aktivieren',
@@ -916,6 +920,12 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'Während der Analyse des Dokuments wurden Inhaltsverzeichnisinformationen generiert (siehe Option "Inhaltsverzeichnis-Extraktion aktivieren" in der allgemeinen Methode). Dies ermöglicht es dem großen Modell, Inhaltsverzeichniselemente zurückzugeben, die für die Abfrage des Benutzers relevant sind, und diese Elemente zu verwenden, um verwandte Chunks abzurufen und diese Chunks während des Sortiervorgangs zu gewichten. Dieser Ansatz leitet sich von der Nachahmung der Verhaltenslogik ab, wie Menschen in Büchern nach Wissen suchen.',
       batchDeleteSessions: 'Stapel löschen',
       deleteSelectedConfirm: 'Die ausgewählten {count} Sitzung(en) löschen?',
+      showChunkMetadata: 'Chunk-Metadaten anzeigen',
+      showChunkMetadataTip:
+        'Dokumentmetadaten (z. B. Titel, Seitenzahl, Uploaddatum) neben den abgerufenen Textabschnitten anzeigen',
+      metadataFields: 'Metadatenfelder',
+      metadataFieldsTip:
+        'Wählen Sie aus, welche Metadatenfelder für jeden Abschnitt angezeigt werden sollen',
     },
     setting: {
       deleteModel: 'Modell löschen',
@@ -1242,8 +1252,8 @@ Beispiel: Virtual Hosted Style`,
       FishAudioLink: 'Wie verwende ich FishAudio',
       TencentCloudLink: 'Wie verwende ich TencentCloud ASR',
       volcModelNameMessage: 'Bitte geben Sie Ihren Modellnamen ein!',
-      addEndpointID: 'EndpointID des Modells',
-      endpointIDMessage: 'Bitte geben Sie Ihre EndpointID des Modells ein',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Bitte geben Sie Ihre Model ID ein',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Bitte geben Sie Ihren ARK_API_KEY ein',
       bedrockModelNameMessage: 'Bitte geben Sie Ihren Modellnamen ein!',
@@ -2372,6 +2382,10 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       saveToMemory: 'Im Gedächtnis speichern',
       retrievalFrom: 'Abruf von',
       tocDataSource: 'Datenquelle',
+      tags: 'Tags',
+      canvasCategory: 'Canvas-Kategorie',
+      id: 'ID',
+      logTitle: 'Titel',
     },
     llmTools: {
       bad_calculator: {
@@ -2430,6 +2444,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       okText: 'Speichern',
       cancelText: 'Abbrechen',
       chooseDataset: 'Bitte wählen Sie zuerst einen Datensatz aus',
+      selectLocalePlaceholder: 'Sprache auswählen',
     },
     language: {
       english: 'Englisch',

@@ -33,6 +33,20 @@ def test_not_in_operator():
     assert meta_filter(metas, filters) == ["doc3"]
 
 
+def test_in_operator_with_list_value_is_case_insensitive():
+    metas = {"product": {"F2": ["doc1"], "F11": ["doc2"], "G1": ["doc3"]}}
+    filters = [{"key": "product", "op": "in", "value": ["F2", "F11"]}]
+
+    assert set(meta_filter(metas, filters)) == {"doc1", "doc2"}
+
+
+def test_not_in_operator_with_list_value_is_case_insensitive():
+    metas = {"product": {"F2": ["doc1"], "F11": ["doc2"], "G1": ["doc3"]}}
+    filters = [{"key": "product", "op": "not in", "value": ["F2", "F11"]}]
+
+    assert meta_filter(metas, filters) == ["doc3"]
+
+
 def test_start_with():
     # returns chunk where the metadata starts with the value
     metas = {"name": {"prefix_value": ["doc1"], "other": ["doc2"]}}
@@ -111,3 +125,42 @@ def test_less_than_or_equal():
     filters = [{"key": "score", "op": "≤", "value": "5"}]
 
     assert set(meta_filter(metas, filters)) == {"doc1", "doc3"}
+
+
+def test_and_logic_returns_empty_when_first_condition_matches_nothing():
+    metas = {
+        "author": {"Alice": ["doc1"]},
+        "page_count": {"40": ["doc2"], "10": ["doc3"]},
+    }
+    filters = [
+        {"key": "author", "op": "contains", "value": "Toby"},
+        {"key": "page_count", "op": ">", "value": "30"},
+    ]
+
+    assert meta_filter(metas, filters, logic="and") == []
+
+
+def test_and_logic_intersects_matching_conditions():
+    metas = {
+        "author": {"Toby Jones": ["doc1"], "Alice": ["doc2"]},
+        "page_count": {"40": ["doc1"], "10": ["doc2"]},
+    }
+    filters = [
+        {"key": "author", "op": "contains", "value": "Toby"},
+        {"key": "page_count", "op": ">", "value": "30"},
+    ]
+
+    assert meta_filter(metas, filters, logic="and") == ["doc1"]
+
+
+def test_or_logic_still_unions_after_empty_first_condition():
+    metas = {
+        "author": {"Alice": ["doc1"]},
+        "page_count": {"40": ["doc2"], "10": ["doc3"]},
+    }
+    filters = [
+        {"key": "author", "op": "contains", "value": "Toby"},
+        {"key": "page_count", "op": ">", "value": "30"},
+    ]
+
+    assert set(meta_filter(metas, filters, logic="or")) == {"doc2"}

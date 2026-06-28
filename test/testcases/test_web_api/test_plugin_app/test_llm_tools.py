@@ -74,7 +74,7 @@ def _load_plugin_app(monkeypatch):
     stub_plugin.GlobalPluginManager = _StubGlobalPluginManager
     monkeypatch.setitem(sys.modules, "agent.plugin", stub_plugin)
 
-    module_path = Path(__file__).resolve().parents[4] / "api" / "apps" / "plugin_app.py"
+    module_path = Path(__file__).resolve().parents[4] / "api" / "apps" / "restful_apis" / "plugin_api.py"
     spec = importlib.util.spec_from_file_location("test_plugin_app_unit", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()

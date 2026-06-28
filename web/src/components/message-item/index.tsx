@@ -7,9 +7,11 @@ import {
 } from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import { memo, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
+import { isEmpty } from 'lodash';
 import { DocumentDownloadButton } from '../document-download-button';
 import MarkdownContent from '../markdown-content';
 import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
@@ -50,7 +52,9 @@ const MessageItem = ({
   showLikeButton = true,
   showLoudspeaker = true,
   visibleAvatar = true,
+  nickname,
 }: IProps) => {
+  const { t } = useTranslation();
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
@@ -97,6 +101,7 @@ const MessageItem = ({
                 className="size-10"
                 avatar={avatar ?? '/logo.svg'}
                 isPerson
+                name={nickname}
               />
             ) : avatarDialog ? (
               <RAGFlowAvatar
@@ -134,7 +139,7 @@ const MessageItem = ({
               ></UserGroupButton>
             )}
             {/* Show message content if there's any text besides the download */}
-            {messageContent && (
+            {(messageContent || sendLoading) && (
               <div
                 className={cn(
                   isAssistant
@@ -145,12 +150,16 @@ const MessageItem = ({
                   { '!bg-bg-card': !isAssistant },
                 )}
               >
-                <MarkdownContent
-                  loading={loading}
-                  content={messageContent}
-                  reference={reference}
-                  clickDocumentButton={clickDocumentButton}
-                ></MarkdownContent>
+                {sendLoading && isEmpty(messageContent) ? (
+                  t('common.running')
+                ) : (
+                  <MarkdownContent
+                    loading={loading}
+                    content={messageContent}
+                    reference={reference}
+                    clickDocumentButton={clickDocumentButton}
+                  ></MarkdownContent>
+                )}
               </div>
             )}
             {isAssistant && (

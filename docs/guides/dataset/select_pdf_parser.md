@@ -39,6 +39,7 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
 - Naive: Skip OCR, TSR, and DLR tasks if _all_ your PDFs are plain text.
 - [MinerU](https://github.com/opendatalab/MinerU): (Experimental) An open-source tool that converts PDF into machine-readable formats.
 - [Docling](https://github.com/docling-project/docling): (Experimental) An open-source document processing tool for gen AI.
+- [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf): (Experimental) A deterministic, local-first PDF parser with structured JSON + Markdown output. Runs as a standalone service container so no Java runtime is needed on the RAGFlow host.
 - A third-party visual model from a specific model provider.
 
 :::danger IMPORTANT

@@ -1,3 +1,5 @@
+//go:build ignore
+
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -18,13 +20,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
-	"ragflow/internal/cache"
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
+	"ragflow/internal/engine/redis"
+	"ragflow/internal/utility"
 	"syscall"
 	"time"
 
@@ -33,49 +38,82 @@ import (
 
 	"ragflow/internal/admin"
 	"ragflow/internal/dao"
-	"ragflow/internal/logger"
 	"ragflow/internal/server"
-	"ragflow/internal/utility"
 )
 
-// AdminServer admin server
-type AdminServer struct {
-	router  *admin.Router
-	handler *admin.Handler
-	service *admin.Service
-	engine  *gin.Engine
-	port    string
+func printHelp() {
+	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "RAGFlow Admin Server\n\n")
+	fmt.Fprintf(os.Stderr, "Options:\n")
+	fmt.Fprintf(os.Stderr, "  --config string\tPath to configuration file\n")
+	fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
+	fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
+	fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account\n")
+	fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n")
 }
 
 func main() {
 	var configPath string
 	flag.StringVar(&configPath, "config", "", "Path to configuration file")
+	var debugFlag bool
+	flag.BoolVar(&debugFlag, "debug", false, "Enable debug-level logging")
+	var versionFlag bool
+	flag.BoolVar(&versionFlag, "version", false, "Print version information and exit")
+	var initSuperuser bool
+	flag.BoolVar(&initSuperuser, "init-superuser", false, "Initialize superuser account")
+
+	// Custom help message
+	flag.Usage = printHelp
+
 	flag.Parse()
 
+	// Handle --version flag: print version and exit immediately
+	if versionFlag {
+		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
+		return
+	}
+
 	// Initialize logger
-	if err := logger.Init("info"); err != nil {
+	if err := common.Init("info", common.FileOutput{Path: "admin_server.log"}); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
 	// Initialize configuration
 	if err := server.Init(configPath); err != nil {
-		logger.Error("Failed to initialize configuration", err)
+		common.Error("Failed to initialize configuration", err)
 		os.Exit(1)
 	}
 
 	cfg := server.GetConfig()
 
 	// Reinitialize logger with configured level if different
-	if cfg.Log.Level != "" && cfg.Log.Level != "info" {
-		if err := logger.Init(cfg.Log.Level); err != nil {
-			logger.Error("Failed to reinitialize logger with configured level", err)
-		}
+	logLevel := cfg.Log.Level
+	if logLevel == "" {
+		logLevel = "info"
+	}
+
+	if debugFlag {
+		logLevel = "debug"
+	}
+
+	fileOut := common.FileOutput{
+		Path:       "admin_server.log",
+		MaxSize:    cfg.Log.MaxSize,
+		MaxBackups: cfg.Log.MaxBackups,
+		MaxAge:     cfg.Log.MaxAge,
+		Compress:   common.ResolveCompress(cfg.Log.Compress),
+	}
+	if cfg.Log.Path != "" {
+		fileOut.Path = cfg.Log.Path
+	}
+	if err := common.Init(logLevel, fileOut); err != nil {
+		common.Error("Failed to reinitialize logger with configured level", err)
 	}
 
 	// Set logger for server package
-	server.SetLogger(logger.Logger)
+	server.SetLogger(common.Logger)
 
-	logger.Info("Server mode", zap.String("mode", cfg.Server.Mode))
+	common.Info("Server mode", zap.String("mode", cfg.Server.Mode))
 
 	// Set Gin mode
 	if cfg.Server.Mode == "release" {
@@ -86,34 +124,41 @@ func main() {
 
 	// Initialize database
 	if err := dao.InitDB(); err != nil {
-		logger.Error("Failed to initialize database", err)
+		common.Error("Failed to initialize database", err)
 		os.Exit(1)
 	}
 
 	// Initialize doc engine
 	if err := engine.Init(&cfg.DocEngine); err != nil {
-		logger.Fatal("Failed to initialize doc engine", zap.Error(err))
+		common.Fatal("Failed to initialize doc engine", zap.Error(err))
 	}
 	defer engine.Close()
 
 	// Initialize Redis cache
-	if err := cache.Init(&cfg.Redis); err != nil {
-		logger.Fatal("Failed to initialize Redis", zap.Error(err))
+	if err := redis.Init(&cfg.Redis); err != nil {
+		common.Fatal("Failed to initialize Redis", zap.Error(err))
 	}
-	defer cache.Close()
+	defer redis.Close()
+
+	if err := engine.InitMessageQueueEngine(cfg.TaskExecutor.MessageQueueType); err != nil {
+		common.Error("Failed to initialize message queue engine", err)
+	}
 
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
-	if err := server.InitVariables(cache.Get()); err != nil {
-		logger.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
+	if err := server.InitVariables(redis.Get()); err != nil {
+		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
 	adminService := admin.NewService()
 	adminHandler := admin.NewHandler(adminService)
 
-	// Initialize default admin user
-	if err := adminService.InitDefaultAdmin(); err != nil {
-		logger.Error("Failed to initialize default admin user", err)
+	if initSuperuser {
+		// Initialize default admin user
+		if err := adminService.InitDefaultAdmin(); err != nil {
+			common.Error("Failed to initialize default admin user", err)
+		}
+
 	}
 
 	// Initialize router
@@ -123,15 +168,8 @@ func main() {
 	ginEngine := gin.New()
 
 	// Middleware
-	if cfg.Server.Mode == "debug" {
-		ginEngine.Use(gin.Logger())
-	}
+	ginEngine.Use(common.GinLogger())
 	ginEngine.Use(gin.Recovery())
-	// Log request URL for every request
-	ginEngine.Use(func(c *gin.Context) {
-		logger.Info("HTTP Request", zap.String("url", c.Request.URL.String()), zap.String("method", c.Request.Method))
-		c.Next()
-	})
 
 	// Setup routes
 	r.Setup(ginEngine)
@@ -143,26 +181,25 @@ func main() {
 		Handler: ginEngine,
 	}
 
-	// Print RAGFlow version
-	logger.Info("RAGFlow version", zap.String("version", utility.GetRAGFlowVersion()))
-
 	// Print all configuration settings
 	server.PrintAll()
 
 	// Print RAGFlow Admin logo
-	logger.Info("" +
+	common.Info("" +
 		"\n        ____  ___   ______________                 ___       __          _     \n" +
 		"       / __ \\/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___ \n" +
 		"      / /_/ / /| |/ / __/ /_  / / __ \\ | /| / /  / /| |/ __  / __ `__ \\/ / __ \\ \n" +
 		"     / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / /\n" +
 		"    /_/ |_/_/  |_\\____/_/   /_/\\____/|__/|__/  /_/  |_\\__,_/_/ /_/ /_/_/_/ /_/ \n")
 
-	// Start server in a goroutine
+	// Print RAGFlow version
+	common.Info(fmt.Sprintf("RAGFlow admin version: %s", utility.GetRAGFlowVersion()))
+
+	// Start HTTP server in a goroutine
 	go func() {
-		logger.Info(fmt.Sprintf("Admin Go Version: %s", utility.GetRAGFlowVersion()))
-		logger.Info(fmt.Sprintf("Starting RAGFlow admin server on port: %d", cfg.Admin.Port))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("Failed to start server", zap.Error(err))
+		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", cfg.Admin.Port))
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			common.Fatal("Failed to start server", zap.Error(err))
 		}
 	}()
 
@@ -171,17 +208,17 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
 	sig := <-quit
 
-	logger.Info("Received signal", zap.String("signal", sig.String()))
-	logger.Info("Shutting down server...")
+	common.Info("Received signal", zap.String("signal", sig.String()))
+	common.Info("Shutting down RAGFlow HTTP server...")
 
 	// Create context with timeout for graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Shutdown server
+	// Shutdown HTTP server
 	if err := srv.Shutdown(ctx); err != nil {
-		logger.Fatal("Server forced to shutdown", zap.Error(err))
+		common.Fatal("Server forced to shutdown", zap.Error(err))
 	}
 
-	logger.Info("Server exited")
+	common.Info("Admin HTTP server exited")
 }

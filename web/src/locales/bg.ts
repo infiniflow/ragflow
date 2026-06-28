@@ -64,6 +64,7 @@ export default {
       },
       selected: 'Избрани',
       seeAll: 'Виж всички',
+      owner: 'Собственик',
     },
     login: {
       loginTitle: 'Влезте в акаунта си',
@@ -198,7 +199,6 @@ export default {
     knowledgeDetails: {
       metadata: {
         selectFiles: 'Избрани {{count}} файла',
-        type: 'Тип',
         fieldNameInvalid:
           'Името на полето може да съдържа само букви или долни черти.',
         builtIn: 'Вградени',
@@ -228,6 +228,7 @@ export default {
         value: 'Стойност',
         action: 'Действие',
         field: 'Поле',
+        type: 'Тип',
         description: 'Описание',
         fieldName: 'Име на поле',
         editMetadata: 'Редактирай метаданни',
@@ -680,7 +681,8 @@ The above is the content you need to summarize.`,
       graphRagMethod: 'Метод',
       graphRagMethodTip: `
       Light: (По подразбиране) Използва подсказки от github.com/HKUDS/LightRAG за извличане на обекти и връзки. Тази опция консумира по-малко токени, памет и изчислителни ресурси.</br>
-      General: Използва подсказки от github.com/microsoft/graphrag за извличане на обекти и връзки`,
+      General: Използва подсказки от github.com/microsoft/graphrag за извличане на обекти и връзки.</br>
+      NER: Използва spaCy NER и извличане на ключови думи на базата на правила за извличане на обекти и връзки. Не се изисква LLM за самото извличане, което го прави бързо и ефективно.`,
       resolution: 'Разрешаване на обекти',
       resolutionTip: `Превключвател за дедупликация на обекти. Когато е активиран, LLM ще комбинира подобни обекти — напр. '2025' и 'годината 2025', или 'ИТ' и 'Информационни технологии' — за изграждане на по-точен граф`,
       community: 'Отчети на общности',
@@ -698,6 +700,8 @@ The above is the content you need to summarize.`,
         text: 'Текст',
       },
       chunk: 'Фрагмент',
+      createChunk: 'Създай фрагмент',
+      editChunk: 'Редактирай фрагмент',
       bulk: 'Групово',
       selectAll: 'Избери всички',
       enabledSelected: 'Активирай избраните',
@@ -898,6 +902,12 @@ The above is the content you need to summarize.`,
       tocEnhanceTip: `По време на обработката на документа е генерирана информация за съдържание (вижте опцията 'Активиране на извличане на съдържание' в метода General). Това позволява на големия модел да върне елементи от съдържанието, релевантни на заявката на потребителя, като използва тези елементи за извличане на свързани фрагменти и прилагане на тегло върху тях при сортирането.`,
       batchDeleteSessions: 'Групово изтриване',
       deleteSelectedConfirm: 'Изтриване на избраните {count} сесия(и)?',
+      showChunkMetadata: 'Показване на метаданни за чанк',
+      showChunkMetadataTip:
+        'Показване на метаданни на документа (напр. заглавие, номер на страница, дата на качване) заедно с извлечените текстови чанкове',
+      metadataFields: 'Полета с метаданни',
+      metadataFieldsTip:
+        'Изберете кои полета с метаданни да се показват за всеки чанк',
     },
     setting: {
       Verify: 'Провери',
@@ -1200,8 +1210,8 @@ The above is the content you need to summarize.`,
       FishAudioLink: 'Как да използвате FishAudio',
       TencentCloudLink: 'Как да използвате TencentCloud ASR',
       volcModelNameMessage: 'Моля, въведете името на модела!',
-      addEndpointID: 'EndpointID на модела',
-      endpointIDMessage: 'Моля, въведете EndpointID на модела',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Моля, въведете Model ID на модела',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Моля, въведете вашия ARK_API_KEY',
       bedrockModelNameMessage: 'Моля, въведете името на модела!',
@@ -2313,6 +2323,10 @@ Important structured information may include: names, dates, locations, events, k
       },
       saveToMemory: 'Запази в паметта',
       retrievalFrom: 'Извличане от',
+      tags: 'Тагове',
+      canvasCategory: 'Категория на платно',
+      id: 'ID',
+      logTitle: 'Заглавие',
     },
     llmTools: {
       bad_calculator: {
@@ -2371,6 +2385,7 @@ Important structured information may include: names, dates, locations, events, k
       okText: 'Запази',
       cancelText: 'Отказ',
       chooseDataset: 'Моля, първо изберете набор от данни',
+      selectLocalePlaceholder: 'Изберете локал',
     },
     language: {
       english: 'Английски',

@@ -16,6 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
+from common import list_all_sessions
 from configs import SESSION_WITH_CHAT_NAME_LIMIT
 from ragflow_sdk import RAGFlow
 from ragflow_sdk.modules.session import Session
@@ -30,15 +31,6 @@ class _DummyStreamResponse:
         for line in self._lines:
             yield line
 
-
-@pytest.fixture(scope="session")
-def auth():
-    return "unit-auth"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def set_tenant_info():
-    return None
 
 
 @pytest.mark.usefixtures("clear_session_with_chat_assistants")
@@ -84,7 +76,7 @@ class TestSessionWithChatAssistantCreate:
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
 
-        updated_sessions = chat_assistant.list_sessions(page_size=count * 2)
+        updated_sessions = list_all_sessions(chat_assistant, limit=count + 1)
         assert len(updated_sessions) == count
 
     @pytest.mark.p3
@@ -160,8 +152,10 @@ def test_session_module_streaming_and_helper_paths_unit(monkeypatch):
     assert calls[0][2]["session_id"] == "session-chat"
     assert calls[0][2]["temperature"] == 0.2
     assert calls[0][3] is True
-    assert calls[1][1] == "/agents/agent-1/completions"
-    assert calls[1][2]["question"] == "hello agent"
+    assert calls[1][1] == "/agents/chat/completions"
+    assert calls[1][2]["agent_id"] == "agent-1"
+    assert calls[1][2]["query"] == "hello agent"
     assert calls[1][2]["session_id"] == "session-agent"
+    assert calls[1][2]["openai-compatible"] is False
     assert calls[1][2]["top_p"] == 0.8
     assert calls[1][3] is True

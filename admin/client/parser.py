@@ -264,7 +264,7 @@ generate_key: GENERATE KEY FOR USER quoted_string ";"
 list_keys: LIST KEYS OF quoted_string ";"
 drop_key: DROP KEY quoted_string OF quoted_string ";"
 
-set_variable: SET VAR identifier identifier ";"
+set_variable: SET VAR identifier variable_value ";"
 show_variable: SHOW VAR identifier ";"
 list_variables: LIST VARS ";"
 list_configs: LIST CONFIGS ";"
@@ -378,6 +378,7 @@ update_chunk: UPDATE CHUNK quoted_string OF DATASET quoted_string SET quoted_str
 identifier_list: identifier (COMMA identifier)*
 
 identifier: WORD
+variable_value: WORD | NUMBER | QUOTED_STRING
 quoted_string: QUOTED_STRING
 status: ON | WORD
 

@@ -1,0 +1,79 @@
+{
+  "name": "Novita",
+  "url": {
+    "default": "https://api.novita.ai"
+  },
+  "url_suffix": {
+    "chat": "openai/v1/chat/completions",
+    "models": "openai/v1/models",
+    "embedding": "openai/v1/embeddings",
+    "balance": "openapi/v1/billing/balance/detail",
+    "rerank": "openai/v1/rerank"
+  },
+  "class": "novita",
+  "models": [
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meta-llama/llama-3.3-70b-instruct",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-fp8",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-fp8",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "moonshotai/kimi-k2-instruct",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "google/gemma-3-27b-it",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "mistralai/mistral-nemo",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baai/bge-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "baai/bge-reranker-v2-m3",
+      "max_tokens": 1024,
+      "model_types": [
+        "rerank"
+      ]
+    }
+  ]
+}

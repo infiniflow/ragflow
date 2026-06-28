@@ -268,14 +268,14 @@ class TestDatasetsList:
         params = {"id": "not_uuid"}
         res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert "Invalid UUID format" in res["message"], res
 
     @pytest.mark.p2
     def test_id_not_uuid1(self, HttpApiAuth):
         params = {"id": uuid.uuid4().hex}
         res = list_datasets(HttpApiAuth, params)
-        assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert res["code"] == 102, res
+        assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p2
     def test_id_wrong_uuid(self, HttpApiAuth):
@@ -289,7 +289,7 @@ class TestDatasetsList:
         params = {"id": ""}
         res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert "Invalid UUID format" in res["message"], res
 
     @pytest.mark.p2
     def test_id_none(self, HttpApiAuth):

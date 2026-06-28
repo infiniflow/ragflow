@@ -47,12 +47,12 @@ def test_list_agents_success_and_error(monkeypatch):
         captured["path"] = path
         captured["params"] = params
         captured["json"] = json
-        return _DummyResponse({"code": 0, "data": [{"id": "agent-1", "title": "Agent One"}]})
+        return _DummyResponse({"code": 0, "data": {"canvas": [{"id": "agent-1", "title": "Agent One"}], "total": 1}})
 
     monkeypatch.setattr(client, "get", _ok_get)
-    agents = client.list_agents(title="Agent One")
+    agents = client.list_agents()
     assert captured["path"] == "/agents"
-    assert captured["params"]["title"] == "Agent One"
+    assert captured["params"] == {"page": 1, "page_size": 30, "orderby": "update_time", "desc": True}
     assert isinstance(agents[0], Agent), str(agents)
     assert agents[0].id == "agent-1", str(agents[0])
     assert agents[0].title == "Agent One", str(agents[0])
@@ -80,6 +80,9 @@ def test_create_agent_payload_and_error(monkeypatch):
     client.create_agent("agent-title", {"graph": {}}, description="desc")
     assert calls[-1][1] == {"title": "agent-title", "dsl": {"graph": {}}, "description": "desc"}
 
+    client.create_agent("agent-title", {"graph": {}}, canvas_type="Marketing")
+    assert calls[-1][1] == {"title": "agent-title", "dsl": {"graph": {}}, "canvas_type": "Marketing"}
+
     monkeypatch.setattr(client, "post", lambda *_args, **_kwargs: _DummyResponse({"code": 1, "message": "create boom"}))
     with pytest.raises(Exception) as exception_info:
         client.create_agent("agent-title", {"graph": {}})
@@ -104,6 +107,7 @@ def test_update_agent_payload_matrix_and_error(monkeypatch):
             {"title": "new-title", "description": "new-description", "dsl": {"nodes": []}},
             {"title": "new-title", "description": "new-description", "dsl": {"nodes": []}},
         ),
+        ({"canvas_type": "Agent"}, {"canvas_type": "Agent"}),
     ]
     for kwargs, expected_payload in cases:
         client.update_agent("agent-1", **kwargs)

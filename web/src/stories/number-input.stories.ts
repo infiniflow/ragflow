@@ -43,8 +43,9 @@ function MyComponent() {
 ### Features
 - Increment/decrement buttons for easy value adjustment
 - Keyboard input validation (only allows numeric input)
-- Customizable height and styling
-- Non-negative number validation
+- Customizable height and styling (wrapper and input)
+- Min/max value constraints
+- Option to hide increment/decrement buttons
 - Responsive design with Tailwind CSS
         `,
       },
@@ -63,12 +64,29 @@ function MyComponent() {
       control: false,
     },
     height: {
-      description: 'Custom height for the input component',
+      description:
+        'Custom height for the input component (number or string with px)',
       control: { type: 'text' },
     },
     className: {
-      description: 'Additional CSS classes for styling',
+      description: 'Additional CSS classes for the wrapper',
       control: { type: 'text' },
+    },
+    inputClassName: {
+      description: 'Additional CSS classes for the input element',
+      control: { type: 'text' },
+    },
+    min: {
+      description: 'Minimum allowed value',
+      control: { type: 'number' },
+    },
+    max: {
+      description: 'Maximum allowed value',
+      control: { type: 'number' },
+    },
+    hideIcons: {
+      description: 'Hide the increment/decrement buttons',
+      control: { type: 'boolean' },
     },
   },
   // Use `fn` to spy on the onChange arg, which will appear in the actions panel once invoked: https://storybook.js.org/docs/essentials/actions#action-args
@@ -173,6 +191,89 @@ Shows the number input with custom CSS classes for styling.
 <NumberInput
   value={3}
   className="border-blue-500 bg-blue-50"
+  onChange={(value) => console.log('Value changed:', value)}
+/>
+\`\`\`
+        `,
+      },
+    },
+  },
+  tags: ['!dev'],
+};
+
+export const WithMinMax: Story = {
+  args: {
+    value: 5,
+    min: 0,
+    max: 10,
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: `
+### With Min/Max Constraints
+
+Shows the number input with minimum and maximum value constraints. Values outside the range are rejected.
+
+\`\`\`tsx
+<NumberInput
+  value={5}
+  min={0}
+  max={10}
+  onChange={(value) => console.log('Value changed:', value)}
+/>
+\`\`\`
+        `,
+      },
+    },
+  },
+  tags: ['!dev'],
+};
+
+export const HideIcons: Story = {
+  args: {
+    value: 7,
+    hideIcons: true,
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: `
+### Without Icons
+
+Shows the number input with increment/decrement buttons hidden, leaving only the text input field.
+
+\`\`\`tsx
+<NumberInput
+  value={7}
+  hideIcons
+  onChange={(value) => console.log('Value changed:', value)}
+/>
+\`\`\`
+        `,
+      },
+    },
+  },
+  tags: ['!dev'],
+};
+
+export const WithInputClassName: Story = {
+  args: {
+    value: 4,
+    inputClassName: 'text-red-500 font-bold',
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: `
+### With Input Class Name
+
+Shows the number input with custom CSS classes applied directly to the input element.
+
+\`\`\`tsx
+<NumberInput
+  value={4}
+  inputClassName="text-red-500 font-bold"
   onChange={(value) => console.log('Value changed:', value)}
 />
 \`\`\`

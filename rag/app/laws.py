@@ -16,10 +16,13 @@
 
 import logging
 import re
+from html import escape as html_escape
 from io import BytesIO
 from docx import Document
+from docx.table import Table as DocxTable
+from docx.text.paragraph import Paragraph
 
-from common.constants import ParserType
+from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
 from deepdoc.parser.utils import get_text
 from rag.nlp import bullets_category, remove_contents_table, make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge
 from rag.nlp import rag_tokenizer, Node
@@ -36,7 +39,7 @@ class Docx(DocxParser):
         line = re.sub(r"\u3000", " ", line).strip()
         return line
 
-    def old_call(self, filename, binary=None, from_page=0, to_page=100000):
+    def old_call(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
         self.doc = Document(filename) if not binary else Document(BytesIO(binary))
         pn = 0
         lines = []
@@ -53,15 +56,56 @@ class Docx(DocxParser):
                     pn += 1
         return [line for line in lines if line]
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000):
+    def __table_to_html(self, tb):
+        html = "<table>"
+        for r in tb.rows:
+            html += "<tr>"
+            col_idx = 0
+            try:
+                while col_idx < len(r.cells):
+                    span = 1
+                    c = r.cells[col_idx]
+                    for j in range(col_idx + 1, len(r.cells)):
+                        if c.text == r.cells[j].text:
+                            span += 1
+                            col_idx = j
+                        else:
+                            break
+                    col_idx += 1
+                    cell = html_escape(c.text)
+                    html += f"<td>{cell}</td>" if span == 1 else f"<td colspan='{span}'>{cell}</td>"
+            except Exception as e:
+                logging.warning(f"Error parsing table, ignore: {e}")
+            html += "</tr>"
+        html += "</table>"
+        return html
+
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
         self.doc = Document(filename) if not binary else Document(BytesIO(binary))
         pn = 0
         lines = []
         level_set = set()
         bull = bullets_category([p.text for p in self.doc.paragraphs])
-        for p in self.doc.paragraphs:
+        # Tables carry no heading level; assign a sentinel deeper than any heading so
+        # build_tree merges them into the enclosing section as leaf content (keeping the
+        # section's title path as retrieval context) instead of dropping them.
+        table_level = 10**6
+        # Iterate over the document body so tables are visited in order alongside
+        # paragraphs (self.doc.paragraphs only yields paragraph elements, skipping tables).
+        for block in self.doc._element.body:
             if pn > to_page:
                 break
+
+            if block.tag.endswith("tbl"):
+                html = self.__table_to_html(DocxTable(block, self.doc))
+                if html:
+                    lines.append((table_level, html))
+                continue
+
+            if not block.tag.endswith("p"):
+                continue
+
+            p = Paragraph(block, self.doc)
             question_level, p_text = docx_question_level(p, bull)
             if not p_text.strip("\n"):
                 continue
@@ -76,8 +120,11 @@ class Docx(DocxParser):
 
         sorted_levels = sorted(level_set)
 
-        h2_level = sorted_levels[1] if len(sorted_levels) > 1 else 1
-        h2_level = sorted_levels[-2] if h2_level == sorted_levels[-1] and len(sorted_levels) > 2 else h2_level
+        if not sorted_levels:
+            h2_level = 1
+        else:
+            h2_level = sorted_levels[1] if len(sorted_levels) > 1 else 1
+            h2_level = sorted_levels[-2] if h2_level == sorted_levels[-1] and len(sorted_levels) > 2 else h2_level
 
         root = Node(level=0, depth=h2_level, texts=[])
         root.build_tree(lines)
@@ -95,10 +142,10 @@ class Docx(DocxParser):
 
 class Pdf(PdfParser):
     def __init__(self):
-        self.model_speciess = ParserType.LAWS.value
+        self.model_species = ParserType.LAWS.value
         super().__init__()
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):
         from timeit import default_timer as timer
 
         start = timer()
@@ -117,7 +164,7 @@ class Pdf(PdfParser):
         return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], None
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Supported file formats are docx, pdf, txt.
     """

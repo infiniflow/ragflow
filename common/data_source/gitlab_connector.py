@@ -20,8 +20,11 @@ from common.data_source.interfaces import GenerateDocumentsOutput
 from common.data_source.interfaces import LoadConnector
 from common.data_source.interfaces import PollConnector
 from common.data_source.interfaces import SecondsSinceUnixEpoch
+from common.data_source.interfaces import SlimConnectorWithPermSync
 from common.data_source.models import BasicExpertInfo
 from common.data_source.models import Document
+from common.data_source.models import GenerateSlimDocumentOutput
+from common.data_source.models import SlimDocument
 from common.data_source.utils import get_file_ext
 
 T = TypeVar("T")
@@ -158,7 +161,7 @@ def _should_exclude(path: str) -> bool:
     return any(fnmatch.fnmatch(path, pattern) for pattern in exclude_patterns)
 
 
-class GitlabConnector(LoadConnector, PollConnector):
+class GitlabConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def __init__(
         self,
         project_owner: str,
@@ -312,6 +315,67 @@ class GitlabConnector(LoadConnector, PollConnector):
         start_datetime = datetime.fromtimestamp(start, tz=timezone.utc)
         end_datetime = datetime.fromtimestamp(end, tz=timezone.utc)
         return self._fetch_from_gitlab(start_datetime, end_datetime)
+
+    def retrieve_all_slim_docs_perm_sync(self, callback: Any = None) -> GenerateSlimDocumentOutput:
+        if self.gitlab_client is None:
+            raise ConnectorMissingCredentialError("Gitlab")
+
+        project: Project = self.gitlab_client.projects.get(
+            f"{self.project_owner}/{self.project_name}"
+        )
+
+        slim_batch: list[SlimDocument] = []
+
+        def append_doc(doc_id: str):
+            slim_batch.append(SlimDocument(id=doc_id))
+            if len(slim_batch) >= self.batch_size:
+                batch = slim_batch[:]
+                slim_batch.clear()
+                return batch
+            return None
+
+        if self.include_code_files:
+            default_branch = project.default_branch
+            queue = deque([""])
+            while queue:
+                current_path = queue.popleft()
+                files = project.repository_tree(path=current_path, all=True)
+                for file in files:
+                    if _should_exclude(file["path"]):
+                        continue
+                    if file["type"] == "tree":
+                        queue.append(file["path"])
+                        continue
+                    if file["type"] != "blob":
+                        continue
+
+                    file_url = f"{self.gitlab_client.url}/{self.project_owner}/{self.project_name}/-/blob/{default_branch}/{file['path']}"
+                    batch = append_doc(file_url)
+                    if batch:
+                        yield batch
+
+        if self.include_mrs:
+            merge_requests = project.mergerequests.list(
+                state=self.state_filter,
+                iterator=True,
+            )
+            for mr in merge_requests:
+                batch = append_doc(mr.web_url)
+                if batch:
+                    yield batch
+
+        if self.include_issues:
+            issues = project.issues.list(
+                state=self.state_filter,
+                iterator=True,
+            )
+            for issue in issues:
+                batch = append_doc(issue.web_url)
+                if batch:
+                    yield batch
+
+        if slim_batch:
+            yield slim_batch
 
 
 if __name__ == "__main__":

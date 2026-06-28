@@ -28,6 +28,140 @@ import { Card, CardContent } from '../ui/card';
 import { InputSelect } from '../ui/input-select';
 import { RAGFlowSelect } from '../ui/select';
 
+type ConditionCardsProps = {
+  fieldName: string;
+  index: number;
+  name: string;
+  remove: (index: number) => void;
+  switchOperatorOptions: ReturnType<typeof useBuildSwitchOperatorOptions>;
+  metadata: ReturnType<typeof useFetchKnowledgeMetadata>;
+  canReference?: boolean;
+};
+
+function ConditionCards({
+  fieldName,
+  index,
+  name,
+  remove,
+  switchOperatorOptions,
+  metadata,
+  canReference,
+}: ConditionCardsProps) {
+  const { t } = useTranslation();
+  const form = useFormContext();
+  const op = useWatch({ name: `${name}.${index}.op` });
+  const key = useWatch({ name: fieldName });
+  const valueOptions = useMemo(() => {
+    if (!key || !metadata?.data || !metadata?.data[key]) return [];
+    if (typeof metadata?.data[key] === 'object') {
+      return Object.keys(metadata?.data[key]).map((item: string) => ({
+        value: item,
+        label: item,
+      }));
+    }
+    return [];
+  }, [key, metadata?.data]);
+
+  const handleChangeOp = useCallback(
+    (value: string) => {
+      form.setValue(`${name}.${index}.op`, value);
+      if (!['in', 'not in'].includes(value) && !['in', 'not in'].includes(op)) {
+        return;
+      }
+      if (value === 'in' || value === 'not in') {
+        form.setValue(`${name}.${index}.value`, []);
+      } else {
+        form.setValue(`${name}.${index}.value`, '');
+      }
+    },
+    [form, index, op, name],
+  );
+
+  return (
+    <div className="flex gap-1">
+      <Card
+        className={cn(
+          'relative bg-transparent border-input-border border flex-1 min-w-0',
+        )}
+      >
+        <section className="p-2 bg-bg-card flex justify-between items-center">
+          <FormField
+            control={form.control}
+            name={fieldName}
+            render={({ field }) => (
+              <FormItem className="flex-1 min-w-0">
+                <FormControl>
+                  <Input
+                    {...field}
+                    placeholder={t('common.pleaseInput')}
+                  ></Input>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <div className="flex items-center">
+            <Separator orientation="vertical" className="h-2.5" />
+            <FormField
+              control={form.control}
+              name={`${name}.${index}.op`}
+              render={({ field }) => (
+                <FormItem>
+                  <FormControl>
+                    <RAGFlowSelect
+                      {...field}
+                      onChange={(value) => {
+                        handleChangeOp(value);
+                      }}
+                      options={switchOperatorOptions}
+                      onlyShowSelectedIcon
+                      triggerClassName="w-30 bg-transparent border-none"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+        </section>
+        <CardContent className="p-4 ">
+          <FormField
+            control={form.control}
+            name={`${name}.${index}.value`}
+            render={({ field: valueField }) => {
+              return (
+                <FormItem>
+                  <FormControl>
+                    {canReference ? (
+                      <PromptEditor
+                        {...valueField}
+                        multiLine={false}
+                        showToolbar={false}
+                      ></PromptEditor>
+                    ) : (
+                      <InputSelect
+                        placeholder={t('common.pleaseInput')}
+                        {...valueField}
+                        options={valueOptions}
+                        className="w-full"
+                        multi={op === 'in' || op === 'not in'}
+                      />
+                    )}
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              );
+            }}
+          />
+        </CardContent>
+      </Card>
+      <Button variant={'ghost'} onClick={() => remove(index)}>
+        <X />
+      </Button>
+    </div>
+  );
+}
+
 export function MetadataFilterConditions({
   kbIds,
   prefix = '',
@@ -64,129 +198,6 @@ export function MetadataFilterConditions({
     [append, fields.length, form, logic],
   );
 
-  function ConditionCards({
-    fieldName,
-    index,
-  }: {
-    fieldName: string;
-    index: number;
-  }) {
-    const { t } = useTranslation();
-    const form = useFormContext();
-    const op = useWatch({ name: `${name}.${index}.op` });
-    const key = useWatch({ name: fieldName });
-    const valueOptions = useMemo(() => {
-      if (!key || !metadata?.data || !metadata?.data[key]) return [];
-      if (typeof metadata?.data[key] === 'object') {
-        return Object.keys(metadata?.data[key]).map((item: string) => ({
-          value: item,
-          label: item,
-        }));
-      }
-      return [];
-    }, [key]);
-
-    const handleChangeOp = useCallback(
-      (value: string) => {
-        form.setValue(`${name}.${index}.op`, value);
-        if (
-          !['in', 'not in'].includes(value) &&
-          !['in', 'not in'].includes(op)
-        ) {
-          return;
-        }
-        if (value === 'in' || value === 'not in') {
-          form.setValue(`${name}.${index}.value`, []);
-        } else {
-          form.setValue(`${name}.${index}.value`, '');
-        }
-      },
-      [form, index, op],
-    );
-    return (
-      <div className="flex gap-1">
-        <Card
-          className={cn(
-            'relative bg-transparent border-input-border border flex-1 min-w-0',
-          )}
-        >
-          <section className="p-2 bg-bg-card flex justify-between items-center">
-            <FormField
-              control={form.control}
-              name={fieldName}
-              render={({ field }) => (
-                <FormItem className="flex-1 min-w-0">
-                  <FormControl>
-                    <Input
-                      {...field}
-                      placeholder={t('common.pleaseInput')}
-                    ></Input>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <div className="flex items-center">
-              <Separator orientation="vertical" className="h-2.5" />
-              <FormField
-                control={form.control}
-                name={`${name}.${index}.op`}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <RAGFlowSelect
-                        {...field}
-                        onChange={(value) => {
-                          handleChangeOp(value);
-                        }}
-                        options={switchOperatorOptions}
-                        onlyShowSelectedIcon
-                        triggerClassName="w-30 bg-transparent border-none"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-          </section>
-          <CardContent className="p-4 ">
-            <FormField
-              control={form.control}
-              name={`${name}.${index}.value`}
-              render={({ field: valueField }) => {
-                return (
-                  <FormItem>
-                    <FormControl>
-                      {canReference ? (
-                        <PromptEditor
-                          {...valueField}
-                          multiLine={false}
-                          showToolbar={false}
-                        ></PromptEditor>
-                      ) : (
-                        <InputSelect
-                          placeholder={t('common.pleaseInput')}
-                          {...valueField}
-                          options={valueOptions}
-                          className="w-full"
-                          multi={op === 'in' || op === 'not in'}
-                        />
-                      )}
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                );
-              }}
-            />
-          </CardContent>
-        </Card>
-        <Button variant={'ghost'} onClick={() => remove(index)}>
-          <X />
-        </Button>
-      </div>
-    );
-  }
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
@@ -218,6 +229,11 @@ export function MetadataFilterConditions({
                 key={field.id}
                 fieldName={typeField}
                 index={index}
+                name={name}
+                remove={remove}
+                switchOperatorOptions={switchOperatorOptions}
+                metadata={metadata}
+                canReference={canReference}
               />
             );
           })}

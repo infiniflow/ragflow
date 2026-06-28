@@ -21,105 +21,62 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
-	"ragflow/internal/logger"
+
+	"go.uber.org/zap"
 )
 
-// Delete deletes rows from either a dataset table or metadata table.
-// If indexName starts with "ragflow_doc_meta_", it's a metadata table.
-// Otherwise, it's a dataset table: {indexName}_{datasetID}
-func (e *infinityEngine) Delete(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
-	var tableName string
-	if strings.HasPrefix(indexName, "ragflow_doc_meta_") {
-		tableName = indexName
-	} else {
-		tableName = fmt.Sprintf("%s_%s", indexName, datasetID)
+// dropTable drops a table from Infinity
+func (e *infinityEngine) dropTable(ctx context.Context, tableName string) error {
+	if tableName == "" {
+		return fmt.Errorf("table name cannot be empty")
+	}
+
+	// Check if table exists
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		return fmt.Errorf("failed to check table existence: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("table '%s' does not exist", tableName)
 	}
 
 	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get database: %w", err)
+		return fmt.Errorf("failed to get database: %w", err)
 	}
 
-	table, err := db.GetTable(tableName)
+	_, err = db.DropTable(tableName, infinity.ConflictTypeError)
 	if err != nil {
-		logger.Warn(fmt.Sprintf("Table %s does not exist, skipping delete", tableName))
-		return 0, nil
+		return fmt.Errorf("failed to drop table: %w", err)
 	}
 
-	// Get table columns for building filter
-	clmns := make(map[string]struct {
-		Type    string
-		Default interface{}
-	})
-	colsResp, err := table.ShowColumns()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get columns: %w", err)
-	}
-	result, ok := colsResp.(*infinity.QueryResult)
-	if ok {
-		if nameArr, ok := result.Data["name"]; ok {
-			if typeArr, ok := result.Data["type"]; ok {
-				if defArr, ok := result.Data["default"]; ok {
-					for i := 0; i < len(nameArr); i++ {
-						colName, _ := nameArr[i].(string)
-						colType, _ := typeArr[i].(string)
-						var colDefault interface{}
-						if i < len(defArr) {
-							colDefault = defArr[i]
-						}
-						clmns[colName] = struct {
-							Type    string
-							Default interface{}
-						}{colType, colDefault}
-					}
-				}
-			}
-		}
-	}
-
-	// Build filter from condition
-	filter := buildFilterFromCondition(condition, clmns)
-
-	delResp, err := table.Delete(filter)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete: %w", err)
-	}
-
-	return delResp.DeletedRows, nil
-}
-
-// DropTable deletes a table/index
-func (e *infinityEngine) DropTable(ctx context.Context, indexName string) error {
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
-	if err != nil {
-		return fmt.Errorf("Failed to get database: %w", err)
-	}
-
-	_, err = db.DropTable(indexName, infinity.ConflictTypeIgnore)
-	if err != nil {
-		return fmt.Errorf("Failed to drop table: %w", err)
-	}
+	common.Info("Infinity dropped table", zap.String("tableName", tableName))
 	return nil
 }
 
-// TableExists checks if table/index exists
-func (e *infinityEngine) TableExists(ctx context.Context, indexName string) (bool, error) {
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
-	if err != nil {
-		return false, fmt.Errorf("Failed to get database: %w", err)
+// tableExists checks if a table exists in Infinity
+func (e *infinityEngine) tableExists(ctx context.Context, tableName string) (bool, error) {
+	if tableName == "" {
+		return false, fmt.Errorf("table name cannot be empty")
 	}
 
-	_, err = db.GetTable(indexName)
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
-		// Check if error is "table not found"
-		errLower := strings.ToLower(err.Error())
-		if strings.Contains(errLower, "not found") || strings.Contains(errLower, "notexist") || strings.Contains(errLower, "doesn't exist") {
+		return false, fmt.Errorf("failed to get database: %w", err)
+	}
+
+	// Try to get the table - if it exists, no error
+	_, err = db.GetTable(tableName)
+	if err != nil {
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "doesn't exist") {
 			return false, nil
 		}
-		return false, err
+		return false, fmt.Errorf("failed to check table existence: %w", err)
 	}
 	return true, nil
 }
@@ -127,10 +84,10 @@ func (e *infinityEngine) TableExists(ctx context.Context, indexName string) (boo
 // fieldInfo represents a field in the infinity mapping schema
 type fieldInfo struct {
 	Type      string      `json:"type"`
-	Default  interface{} `json:"default"`
-	Analyzer interface{} `json:"analyzer"`  // string or []string
+	Default   interface{} `json:"default"`
+	Analyzer  interface{} `json:"analyzer"`   // string or []string
 	IndexType interface{} `json:"index_type"` // string or map
-	Comment  string      `json:"comment"`
+	Comment   string      `json:"comment"`
 }
 
 // orderedFields preserves the order of fields as defined in JSON
@@ -176,14 +133,29 @@ func (o *orderedFields) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// existsCondition builds a NOT EXISTS or field!='' condition
+// fieldKeyword checks if field is a keyword field
+func fieldKeyword(fieldName string) bool {
+	if fieldName == "source_id" {
+		return true
+	}
+	if strings.HasSuffix(fieldName, "_kwd") &&
+		fieldName != "knowledge_graph_kwd" &&
+		fieldName != "docnm_kwd" &&
+		fieldName != "important_kwd" &&
+		fieldName != "question_kwd" {
+		return true
+	}
+	return false
+}
+
+// existsCondition builds a NOT EXISTS or field!=" condition
 func existsCondition(field string, tableColumns map[string]struct {
 	Type    string
 	Default interface{}
 }) string {
 	col, colOk := tableColumns[field]
 	if !colOk {
-		logger.Warn(fmt.Sprintf("Column '%s' not found in table columns", field))
+		common.Warn(fmt.Sprintf("Column '%s' not found in table columns", field))
 		return fmt.Sprintf("%s!=null", field)
 	}
 	if strings.Contains(strings.ToLower(col.Type), "char") {
@@ -228,20 +200,29 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 
 		// Handle keyword fields -> filter_fulltext with converted field name
 		if fieldKeyword(k) {
-			if listVal, ok := v.([]interface{}); ok {
-				var orConds []string
-				for _, item := range listVal {
-					if strItem, ok := item.(string); ok {
-						strItem = strings.ReplaceAll(strItem, "'", "''")
-						orConds = append(orConds, fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(k), strItem))
-					}
+			var orConds []string
+			addFullText := func(item string) {
+				item = strings.ReplaceAll(item, "'", "''")
+				orConds = append(orConds, fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(k), item))
+			}
+
+			switch val := v.(type) {
+			case []string:
+				for _, item := range val {
+					addFullText(item)
 				}
-				if len(orConds) > 0 {
-					conditions = append(conditions, "("+strings.Join(orConds, " OR ")+")")
+			case []interface{}:
+				for _, item := range val {
+					addFullText(fmt.Sprintf("%v", item))
 				}
-			} else if strVal, ok := v.(string); ok {
-				strVal = strings.ReplaceAll(strVal, "'", "''")
-				conditions = append(conditions, fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(k), strVal))
+			case string:
+				addFullText(val)
+			default:
+				addFullText(fmt.Sprintf("%v", val))
+			}
+
+			if len(orConds) > 0 {
+				conditions = append(conditions, "("+strings.Join(orConds, " OR ")+")")
 			}
 			continue
 		}
@@ -256,6 +237,17 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 				} else {
 					inVals = append(inVals, fmt.Sprintf("%v", item))
 				}
+			}
+			if len(inVals) > 0 {
+				conditions = append(conditions, fmt.Sprintf("%s IN (%s)", k, strings.Join(inVals, ", ")))
+			}
+			continue
+		}
+		if strListVal, ok := v.([]string); ok {
+			var inVals []string
+			for _, item := range strListVal {
+				item = strings.ReplaceAll(item, "'", "''")
+				inVals = append(inVals, fmt.Sprintf("'%s'", item))
 			}
 			if len(inVals) > 0 {
 				conditions = append(conditions, fmt.Sprintf("%s IN (%s)", k, strings.Join(inVals, ", ")))
@@ -286,4 +278,43 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 		return "1=1"
 	}
 	return strings.Join(conditions, " AND ")
+}
+
+// columnExists checks if a column exists in the table
+func (e *infinityEngine) columnExists(table *infinity.Table, columnName string) (bool, error) {
+	colsResp, err := table.ShowColumns()
+	if err != nil {
+		return false, err
+	}
+
+	result, ok := colsResp.(*infinity.QueryResult)
+	if !ok {
+		return false, fmt.Errorf("unexpected response type: %T", colsResp)
+	}
+
+	// ShowColumns returns a result set where Data contains arrays of column values
+	if nameArr, ok := result.Data["name"]; ok {
+		for i := 0; i < len(nameArr); i++ {
+			colName, _ := nameArr[i].(string)
+			if colName == columnName {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// buildChunkTableName returns the chunk table name for a dataset
+// Skill Table: table name is just baseName (e.g., "skill_abc123_def456")
+// Regular chunk Table: table name is {baseName}_{datasetID}
+func buildChunkTableName(baseName, datasetID string) string {
+	if datasetID == "skill" {
+		return baseName
+	}
+	return fmt.Sprintf("%s_%s", baseName, datasetID)
+}
+
+// buildMetadataTableName returns the metadata table name for a tenant
+func buildMetadataTableName(tenantID string) string {
+	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
 }

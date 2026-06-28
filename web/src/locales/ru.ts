@@ -75,6 +75,7 @@ export default {
       selected: 'Выбрано',
       seeAll: 'Показать все',
       bulkOperate: 'Массовые операции',
+      owner: 'Владелец',
     },
     login: {
       loginTitle: 'Войдите в свою учетную запись',
@@ -212,7 +213,6 @@ export default {
       metadata: {
         fields: 'поля',
         selectFiles: 'Выбрано файлов: {{count}}',
-        type: 'Тип',
         fieldNameInvalid:
           'Имя поля может содержать только буквы или подчёркивания.',
         builtIn: 'Встроенное',
@@ -246,6 +246,7 @@ export default {
         value: 'Значение',
         action: 'Действие',
         field: 'Поле',
+        type: 'Тип',
         description: 'Описание',
         fieldName: 'Имя поля',
         editMetadata: 'Редактировать метаданные',
@@ -719,7 +720,8 @@ export default {
       graphRagMethod: 'Метод',
       graphRagMethodTip: `
       Light: (по умолчанию) Промпты github.com/HKUDS/LightRAG для извлечения сущностей и связей. Меньше токенов, памяти и вычислений.</br>
-      General: Промпты github.com/microsoft/graphrag`,
+      General: Промпты github.com/microsoft/graphrag.</br>
+      NER: Использует spaCy NER и извлечение ключевых слов на основе правил для извлечения сущностей и связей. LLM не требуется для самого извлечения, что делает его быстрым и эффективным.`,
       resolution: 'Разрешение сущностей',
       resolutionTip: `Переключатель дедубликации сущностей. Когда включен, LLM объединяет похожие сущности (например «2025» и «год 2025») для более точного графа`,
       community: 'Отчёты сообществ',
@@ -739,6 +741,8 @@ export default {
       size: 'Размер',
       uploadedTime: 'Время загрузки',
       chunk: 'Чанк',
+      createChunk: 'Создать чанк',
+      editChunk: 'Редактировать чанк',
       bulk: 'Пакетно',
       selectAll: 'Выбрать все',
       enabledSelected: 'Включить выбранные',
@@ -958,6 +962,12 @@ export default {
       tocEnhance: 'Улучшение оглавлением',
       tocEnhanceTip: ` Во время парсинга документа была сгенерирована информация оглавления (см. опцию 'Включить извлечение оглавления' в методе General). Это позволяет большой модели возвращать элементы оглавления, релевантные запросу пользователя, тем самым используя эти элементы для извлечения связанных чанков и применения весов к этим чанкам в процессе сортировки. Этот подход получен из имитации поведенческой логики того, как люди ищут знания в книгах.`,
       deleteSelectedConfirm: 'Удалить выбранные сеансы ({{count}})?',
+      showChunkMetadata: 'Показать метаданные чанка',
+      showChunkMetadataTip:
+        'Отображать метаданные документа (заголовок, номер страницы, дата загрузки и т.д.) рядом с извлечёнными текстовыми чанками',
+      metadataFields: 'Поля метаданных',
+      metadataFieldsTip:
+        'Выберите поля метаданных для отображения рядом с каждым чанком',
     },
     setting: {
       Verify: 'Проверить',
@@ -1308,8 +1318,8 @@ export default {
       FishAudioLink: 'Как использовать FishAudio',
       TencentCloudLink: 'Как использовать TencentCloud ASR',
       volcModelNameMessage: 'Пожалуйста, введите название вашей модели!',
-      addEndpointID: 'EndpointID модели',
-      endpointIDMessage: 'Пожалуйста, введите EndpointID модели',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Пожалуйста, введите Model ID модели',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Пожалуйста, введите ваш ARK_API_KEY',
       bedrockModelNameMessage: 'Пожалуйста, введите название вашей модели!',
@@ -2454,6 +2464,8 @@ export default {
       success: 'Успех',
       failed: 'Ошибка',
       logTitle: 'Заголовок',
+      tags: 'Теги',
+      canvasCategory: 'Категория канваса',
     },
     llmTools: {
       bad_calculator: {
@@ -2512,6 +2524,7 @@ export default {
       okText: 'Сохранить',
       cancelText: 'Отмена',
       chooseDataset: 'Пожалуйста, сначала выберите датасет',
+      selectLocalePlaceholder: 'Выберите локаль',
     },
     language: {
       english: 'Английский',

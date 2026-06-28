@@ -15,7 +15,9 @@
 #
 
 from enum import IntEnum
-from strenum import StrEnum
+from enum import StrEnum
+
+from common.constants import PipelineTaskType
 
 
 class UserTenantRole(StrEnum):
@@ -59,14 +61,6 @@ class CanvasCategory(StrEnum):
     DataFlow = "dataflow_canvas"
 
 
-class PipelineTaskType(StrEnum):
-    PARSE = "Parse"
-    DOWNLOAD = "Download"
-    RAPTOR = "RAPTOR"
-    GRAPH_RAG = "GraphRAG"
-    MINDMAP = "Mindmap"
-
-
 VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP}
 
 
@@ -74,3 +68,4 @@ PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES = {PipelineTaskType.RAPTOR.lower(), 
 
 
 KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"
+SKILLS_FOLDER_NAME="skills"

@@ -25,16 +25,20 @@ from copy import deepcopy
 from urllib.parse import urljoin
 
 import json_repair
+from json.decoder import JSONDecodeError
 import litellm
 import openai
 from openai import AsyncOpenAI, OpenAI
-from strenum import StrEnum
-
-from common.token_utils import num_tokens_from_string, total_token_count_from_response
-from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
-from rag.nlp import is_chinese, is_english
+from enum import StrEnum
 
 from common.misc_utils import thread_pool_exec
+from common.token_utils import num_tokens_from_string, total_token_count_from_response
+from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
+from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.tool_decorator import FunctionToolSession, is_tool
+from rag.nlp import is_chinese, is_english
+
+
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
     ERROR_AUTHENTICATION = "AUTH_ERROR"
@@ -58,6 +62,47 @@ class ReActMode(StrEnum):
 ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
+
+# Generation parameters that are safe to forward to the underlying completion
+# call. `gen_conf` originates from a chat assistant's `llm_setting`, which can
+# also carry RAGFlow-internal metadata (e.g. `model_type`). Anything outside
+# this set is dropped so providers don't reject the request with errors like
+# "Extra inputs are not permitted" / "Unknown parameter: 'model_type'" (#15427).
+ALLOWED_GEN_CONF_KEYS = frozenset(
+    {
+        "temperature",
+        "max_completion_tokens",
+        "top_p",
+        "stream",
+        "stream_options",
+        "stop",
+        "n",
+        "presence_penalty",
+        "frequency_penalty",
+        "functions",
+        "function_call",
+        "logit_bias",
+        "user",
+        "response_format",
+        "seed",
+        "tools",
+        "tool_choice",
+        "logprobs",
+        "top_logprobs",
+        "extra_headers",
+    }
+)
+
+# LiteLLM additionally understands reasoning-control parameters that the
+# model-family policies may inject into `gen_conf` (e.g. `thinking` for
+# Anthropic / Kimi reasoning models, `reasoning_effort` for OpenAI o-series).
+LITELLM_ALLOWED_GEN_CONF_KEYS = ALLOWED_GEN_CONF_KEYS | frozenset(
+    {
+        "thinking",
+        "reasoning_effort",
+        "extra_body",
+    }
+)
 
 
 def _apply_model_family_policies(
@@ -84,11 +129,15 @@ def _apply_model_family_policies(
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
+        elif provider == SupportedLiteLLMProvider.Anthropic and model_name_lower in {"claude-opus-4-7", "claude-opus-4-8"}:
+            for key in ("temperature", "top_p", "top_k"):
+                sanitized_gen_conf.pop(key, None)
+                sanitized_kwargs.pop(key, None)
 
         if provider == SupportedLiteLLMProvider.HunYuan:
             for key in ("presence_penalty", "frequency_penalty"):
                 sanitized_gen_conf.pop(key, None)
-        elif "kimi-k2.5" in model_name_lower:
+        elif "kimi-k2.5" in model_name_lower or "kimi-k2.6" in model_name_lower:
             reasoning = sanitized_gen_conf.pop("reasoning", None)
             thinking = {"type": "enabled"}
             if reasoning is not None:
@@ -157,30 +206,7 @@ class Base(ABC):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
 
-        allowed_conf = {
-            "temperature",
-            "max_completion_tokens",
-            "top_p",
-            "stream",
-            "stream_options",
-            "stop",
-            "n",
-            "presence_penalty",
-            "frequency_penalty",
-            "functions",
-            "function_call",
-            "logit_bias",
-            "user",
-            "response_format",
-            "seed",
-            "tools",
-            "tool_choice",
-            "logprobs",
-            "top_logprobs",
-            "extra_headers",
-        }
-
-        gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}
+        gen_conf = {k: v for k, v in gen_conf.items() if k in ALLOWED_GEN_CONF_KEYS}
         return gen_conf
 
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
@@ -220,7 +246,8 @@ class Base(ABC):
                     ans += LENGTH_NOTIFICATION_EN
             yield ans, tol
 
-    async def async_chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
+    async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
@@ -300,7 +327,7 @@ class Base(ABC):
                 "role": "assistant",
                 "tool_calls": [
                     {
-                        "index": tool_call.index,
+                        "index": getattr(tool_call, "index", None),
                         "id": tool_call.id,
                         "function": {
                             "name": tool_call.function.name,
@@ -324,18 +351,20 @@ class Base(ABC):
         one assistant message containing all tool_calls, followed by one tool message per call.
         results: list of (tool_call, name, args, result, error)
         """
-        hist.append({
-            "role": "assistant",
-            "tool_calls": [
-                {
-                    "index": tc.index,
-                    "id": tc.id,
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                    "type": "function",
-                }
-                for tc, _, _, _, _ in results
-            ],
-        })
+        hist.append(
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "index": getattr(tc, "index", None),
+                        "id": tc.id,
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        "type": "function",
+                    }
+                    for tc, _, _, _, _ in results
+                ],
+            }
+        )
         for tc, _, _, result, err in results:
             if err:
                 content = str(err)
@@ -346,14 +375,37 @@ class Base(ABC):
             hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
         return hist
 
-    def bind_tools(self, toolcall_session, tools):
+    def bind_tools(self, toolcall_session=None, tools=None):
+        """Register tools the LLM can call.
+
+        Two calling styles are accepted:
+
+        * Legacy: ``bind_tools(toolcall_session, tools_schemas)`` where
+          ``toolcall_session`` implements :class:`ToolCallSession` and
+          ``tools_schemas`` is a pre-built list of OpenAI function-schema
+          dicts (used by the agent/dialog layer).
+        * Decorator: ``bind_tools(tools=[fn1, fn2, ...])`` where each ``fn``
+          is decorated with :func:`rag.llm.tool_decorator.tool`. The session
+          and schemas are derived from the callables automatically.
+        """
+        if tools is None and isinstance(toolcall_session, list):
+            tools, toolcall_session = toolcall_session, None
+
+        if tools and toolcall_session is None and all(is_tool(t) for t in tools):
+            session = FunctionToolSession(tools)
+            self.is_tools = True
+            self.toolcall_session = session
+            self.tools = session.schemas
+            return
+
         if not (toolcall_session and tools):
             return
         self.is_tools = True
         self.toolcall_session = toolcall_session
         self.tools = tools
 
-    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
+    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -368,7 +420,7 @@ class Base(ABC):
                     logging.info(f"{self.tools=}")
                     response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
                     tk_count += total_token_count_from_response(response)
-                    if any([not response.choices, not response.choices[0].message]):
+                    if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
@@ -386,6 +438,10 @@ class Base(ABC):
                         name = tc.function.name
                         try:
                             args = json_repair.loads(tc.function.arguments)
+                            if not isinstance(args, dict):
+                                raise TypeError(
+                                    f"Tool arguments for {name} must be a JSON object, got {type(args).__name__}"
+                                )
                             if hasattr(self.toolcall_session, "tool_call_async"):
                                 result = await self.toolcall_session.tool_call_async(name, args)
                             else:
@@ -414,7 +470,8 @@ class Base(ABC):
 
         assert False, "Shouldn't be here."
 
-    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
+    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
         if system and history and history[0].get("role") != "system":
@@ -487,6 +544,10 @@ class Base(ABC):
                         name = tc.function.name
                         try:
                             args = json_repair.loads(tc.function.arguments)
+                            if not isinstance(args, dict):
+                                raise TypeError(
+                                    f"Tool arguments for {name} must be a JSON object, got {type(args).__name__}"
+                                )
                             if hasattr(self.toolcall_session, "tool_call_async"):
                                 result = await self.toolcall_session.tool_call_async(name, args)
                             else:
@@ -573,7 +634,8 @@ class Base(ABC):
             ans = self._length_stop(ans)
         return ans, total_token_count_from_response(response)
 
-    async def async_chat(self, system, history, gen_conf={}, **kwargs):
+    async def async_chat(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
@@ -639,13 +701,16 @@ class BaiChuanChat(Base):
             "top_p": gen_conf.get("top_p", 0.85),
         }
 
-    def _chat(self, history, gen_conf={}, **kwargs):
+    def _chat(self, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=history,
             extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
             **gen_conf,
         )
+        if not response.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
             if is_chinese([ans]):
@@ -654,7 +719,8 @@ class BaiChuanChat(Base):
                 ans += LENGTH_NOTIFICATION_EN
         return ans, total_token_count_from_response(response)
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
@@ -724,9 +790,9 @@ class LocalLLM(Base):
         from rag.svr.jina_server import Generation
 
         answer = ""
+        loop = asyncio.new_event_loop()
         try:
             res = self.client.stream_doc(on=endpoint, inputs=prompt, return_type=Generation)
-            loop = asyncio.get_event_loop()
             try:
                 while True:
                     answer = loop.run_until_complete(res.__anext__()).text
@@ -735,9 +801,12 @@ class LocalLLM(Base):
                 pass
         except Exception as e:
             yield answer + "\n**ERROR**: " + str(e)
+        finally:
+            loop.close()
         yield num_tokens_from_string(answer)
 
-    def chat(self, system, history, gen_conf={}, **kwargs):
+    def chat(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         prompt = self._prepare_prompt(system, history, gen_conf)
@@ -746,7 +815,8 @@ class LocalLLM(Base):
         total_tokens = next(chat_gen)
         return ans, total_tokens
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         prompt = self._prepare_prompt(system, history, gen_conf)
@@ -763,9 +833,12 @@ class VolcEngineChat(Base):
         model_name is for display only
         """
         base_url = base_url if base_url else "https://ark.cn-beijing.volces.com/api/v3"
-        ark_api_key = json.loads(key).get("ark_api_key", "")
-        model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
-        super().__init__(ark_api_key, model_name, base_url, **kwargs)
+        try:
+            ark_api_key = json.loads(key).get("ark_api_key", "")
+            model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+            super().__init__(ark_api_key, model_name, base_url, **kwargs)
+        except JSONDecodeError:
+            super().__init__(key, model_name, base_url, **kwargs)
 
 
 class MistralChat(Base):
@@ -785,9 +858,12 @@ class MistralChat(Base):
                 del gen_conf[k]
         return gen_conf
 
-    def _chat(self, history, gen_conf={}, **kwargs):
+    def _chat(self, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
+        if not response.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content
         if response.choices[0].finish_reason == "length":
             if is_chinese(ans):
@@ -796,7 +872,8 @@ class MistralChat(Base):
                 ans += LENGTH_NOTIFICATION_EN
         return ans, total_token_count_from_response(response)
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
@@ -844,6 +921,15 @@ class OpenAI_APIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class Xiaomi(Base):
+    _FACTORY_NAME = "Xiaomi"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            base_url = "https://api.xiaomimimo.com/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
 class LeptonAIChat(Base):
     _FACTORY_NAME = "LeptonAI"
 
@@ -862,9 +948,10 @@ class ReplicateChat(Base):
         from replicate.client import Client
 
         self.model_name = model_name
-        self.client = Client(api_token=key)
+        self.client = Client(api_token=_normalize_replicate_key(key))
 
-    def _chat(self, history, gen_conf={}, **kwargs):
+    def _chat(self, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
         prompt = "\n".join([item["role"] + ":" + item["content"] for item in history[-5:] if item["role"] != "system"])
         response = self.client.run(
@@ -874,7 +961,8 @@ class ReplicateChat(Base):
         ans = "".join(response)
         return ans, num_tokens_from_string(ans)
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         prompt = "\n".join([item["role"] + ":" + item["content"] for item in history[-5:]])
@@ -892,6 +980,43 @@ class ReplicateChat(Base):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield num_tokens_from_string(ans)
+
+    async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
+        gen_conf = dict(gen_conf or {})
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+
+        def _do_chat():
+            msgs = list(history or [])
+            if system and msgs and msgs[0].get("role") != "system":
+                msgs.insert(0, {"role": "system", "content": system})
+            elif system and not msgs:
+                msgs = [{"role": "system", "content": system}]
+
+            system_msg = msgs[0]["content"] if msgs and msgs[0].get("role") == "system" else ""
+            prompt = "\n".join(
+                [item["role"] + ":" + item["content"] for item in msgs[-5:] if item.get("role") != "system"]
+            )
+            try:
+                response = self.client.run(
+                    self.model_name,
+                    input={"system_prompt": system_msg, "prompt": prompt, **gen_conf},
+                )
+                chunks = []
+                for resp in response:
+                    chunks.append(resp if isinstance(resp, str) else str(resp))
+                answer = "".join(chunks)
+                return chunks or ([answer] if answer else []), num_tokens_from_string(answer), None
+            except Exception as e:
+                return [], 0, e
+
+        chunks, total_tokens, error = await asyncio.to_thread(_do_chat)
+        if error:
+            yield f"**ERROR**: {error}"
+        else:
+            for chunk in chunks:
+                yield chunk
+        yield total_tokens
 
 
 class SparkChat(Base):
@@ -943,7 +1068,8 @@ class BaiduYiyanChat(Base):
         ans = response["result"]
         return ans, total_token_count_from_response(response)
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -964,9 +1090,53 @@ class BaiduYiyanChat(Base):
 
         yield total_tokens
 
+    async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
+        gen_conf = dict(gen_conf or {})
+        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+
+        def _do_chat():
+            system_msg = history[0]["content"] if history and history[0].get("role") == "system" else ""
+            msgs = [h for h in history if h.get("role") != "system"]
+            try:
+                response = self.client.do(model=self.model_name, messages=msgs, system=system_msg, stream=True, **gen_conf)
+                result_text = ""
+                total_tokens = 0
+                for resp in response:
+                    resp = resp.body
+                    result_text = resp["result"]
+                    total_tokens = total_token_count_from_response(resp)
+                return result_text, total_tokens, None
+            except Exception as e:
+                return "", 0, e
+
+        result_text, total_tokens, error = await asyncio.to_thread(_do_chat)
+        if error:
+            yield f"**ERROR**: {error}"
+        else:
+            yield result_text
+        yield total_tokens
+
 
 class GoogleChat(Base):
     _FACTORY_NAME = "Google Cloud"
+
+    @staticmethod
+    def _vertex_http_options(region: str):
+        region_norm = (region or "").strip().lower()
+        multipoint_hosts = {
+            "eu": "https://aiplatform.eu.rep.googleapis.com/",
+            "us": "https://aiplatform.us.rep.googleapis.com/",
+        }
+        base_url = multipoint_hosts.get(region_norm)
+        if base_url:
+            from google.genai.types import HttpOptions
+
+            # Gemini 3.x multi-region endpoints require *.rep hostnames
+            # instead of region-aiplatform host synthesis.
+            return HttpOptions(base_url=base_url, api_version="v1")
+        return None
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
@@ -998,11 +1168,21 @@ class GoogleChat(Base):
         else:
             from google import genai
 
+            client_kwargs = {
+                "vertexai": True,
+                "project": project_id,
+                "location": region,
+            }
+            http_options = self._vertex_http_options(region)
+            if http_options is not None:
+                client_kwargs["http_options"] = http_options
+
             if access_token:
                 credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
-                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
+                client_kwargs["credentials"] = credits
+                self.client = genai.Client(**client_kwargs)
             else:
-                self.client = genai.Client(vertexai=True, project=project_id, location=region)
+                self.client = genai.Client(**client_kwargs)
 
     def _clean_conf(self, gen_conf):
         if "claude" in self.model_name:
@@ -1017,7 +1197,8 @@ class GoogleChat(Base):
                     del gen_conf[k]
         return gen_conf
 
-    def _chat(self, history, gen_conf={}, **kwargs):
+    def _chat(self, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
 
         if "claude" in self.model_name:
@@ -1095,7 +1276,8 @@ class GoogleChat(Base):
 
         return ans, total_tokens
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if "claude" in self.model_name:
             if "max_tokens" in gen_conf:
                 del gen_conf["max_tokens"]
@@ -1208,6 +1390,34 @@ class AvianChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class AstraflowChat(Base):
+    _FACTORY_NAME = "Astraflow"
+
+    def __init__(self, key, model_name, base_url="https://api-us-ca.umodelverse.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api-us-ca.umodelverse.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class AstraflowCNChat(Base):
+    _FACTORY_NAME = "Astraflow-CN"
+
+    def __init__(self, key, model_name, base_url="https://api.modelverse.cn/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.modelverse.cn/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class FuturMixChat(Base):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+        logging.info("[FuturMix] Chat initialized with model %s", model_name)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1262,11 +1472,26 @@ class LiteLLMBase(ABC):
 
         # Factory specific fields
         if self.provider == SupportedLiteLLMProvider.OpenRouter:
-            self.api_key = json.loads(key).get("api_key", "")
-            self.provider_order = json.loads(key).get("provider_order", "")
+            try:
+                self.api_key = json.loads(key).get("api_key", "")
+                self.provider_order = json.loads(key).get("provider_order", "")
+            except JSONDecodeError:
+                self.api_key = key
+                self.provider_order = ""
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
             self.api_key = json.loads(key).get("api_key", "")
             self.api_version = json.loads(key).get("api_version", "2024-02-01")
+        elif self.provider == SupportedLiteLLMProvider.MiniMax:
+            # MiniMax requires GroupId as a query parameter for API authentication
+            try:
+                key_obj = json.loads(key) if isinstance(key, str) else key
+                self.api_key = key_obj.get("api_key", key) if isinstance(key_obj, dict) else key
+                self.group_id = key_obj.get("group_id", "") if isinstance(key_obj, dict) else ""
+            except (json.JSONDecodeError, TypeError):
+                self.api_key = key
+                self.group_id = ""
+        else:
+            self.group_id = ""
 
     def _get_delay(self):
         return self.base_delay * random.uniform(10, 150)
@@ -1301,7 +1526,11 @@ class LiteLLMBase(ABC):
         )
 
         gen_conf.pop("max_tokens", None)
+        gen_conf = {k: v for k, v in gen_conf.items() if k in LITELLM_ALLOWED_GEN_CONF_KEYS}
         return gen_conf
+
+    def _need_reasoning_content_back(self) -> bool:
+        return self.provider == SupportedLiteLLMProvider.DeepSeek
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
         hist = list(history) if history else []
@@ -1328,7 +1557,7 @@ class LiteLLMBase(ABC):
                     timeout=self.timeout,
                 )
 
-                if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
+                if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
                     return "", 0
                 ans = response.choices[0].message.content.strip()
                 if response.choices[0].finish_reason == "length":
@@ -1435,25 +1664,30 @@ class LiteLLMBase(ABC):
         return msg
 
     def _verbose_tool_use(self, name, args, res):
-        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
+        return "<tool_call>" + json.dumps(
+            {"name": name, "args": args, "result": str(res) if isinstance(res, Exception) else res},
+            ensure_ascii=False,
+            indent=2,
+        ) + "</tool_call>"
 
-    def _append_history(self, hist, tool_call, tool_res):
-        hist.append(
-            {
-                "role": "assistant",
-                "tool_calls": [
-                    {
-                        "index": tool_call.index,
-                        "id": tool_call.id,
-                        "function": {
-                            "name": tool_call.function.name,
-                            "arguments": tool_call.function.arguments,
-                        },
-                        "type": "function",
+    def _append_history(self, hist, tool_call, tool_res, reasoning_content=None):
+        assistant_msg = {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "index": getattr(tool_call, "index", None),
+                    "id": tool_call.id,
+                    "function": {
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
                     },
-                ],
-            }
-        )
+                    "type": "function",
+                },
+            ],
+        }
+        if reasoning_content:
+            assistant_msg["reasoning_content"] = reasoning_content
+        hist.append(assistant_msg)
         try:
             if isinstance(tool_res, dict):
                 tool_res = json.dumps(tool_res, ensure_ascii=False)
@@ -1461,24 +1695,27 @@ class LiteLLMBase(ABC):
             hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
         return hist
 
-    def _append_history_batch(self, hist, results):
+    def _append_history_batch(self, hist, results, reasoning_content=None):
         """
         Append a batch of tool calls to history following the OpenAI protocol:
         one assistant message containing all tool_calls, followed by one tool message per call.
         results: list of (tool_call, name, args, result, error)
         """
-        hist.append({
+        assistant_msg = {
             "role": "assistant",
             "tool_calls": [
                 {
-                    "index": tc.index,
+                    "index": getattr(tc, "index", None),
                     "id": tc.id,
                     "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                     "type": "function",
                 }
                 for tc, _, _, _, _ in results
             ],
-        })
+        }
+        if reasoning_content:
+            assistant_msg["reasoning_content"] = reasoning_content
+        hist.append(assistant_msg)
         for tc, _, _, result, err in results:
             if err:
                 content = str(err)
@@ -1489,14 +1726,37 @@ class LiteLLMBase(ABC):
             hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
         return hist
 
-    def bind_tools(self, toolcall_session, tools):
+    def bind_tools(self, toolcall_session=None, tools=None):
+        """Register tools the LLM can call.
+
+        Two calling styles are accepted:
+
+        * Legacy: ``bind_tools(toolcall_session, tools_schemas)`` where
+          ``toolcall_session`` implements :class:`ToolCallSession` and
+          ``tools_schemas`` is a pre-built list of OpenAI function-schema
+          dicts (used by the agent/dialog layer).
+        * Decorator: ``bind_tools(tools=[fn1, fn2, ...])`` where each ``fn``
+          is decorated with :func:`rag.llm.tool_decorator.tool`. The session
+          and schemas are derived from the callables automatically.
+        """
+        if tools is None and isinstance(toolcall_session, list):
+            tools, toolcall_session = toolcall_session, None
+
+        if tools and toolcall_session is None and all(is_tool(t) for t in tools):
+            session = FunctionToolSession(tools)
+            self.is_tools = True
+            self.toolcall_session = session
+            self.tools = session.schemas
+            return
+
         if not (toolcall_session and tools):
             return
         self.is_tools = True
         self.toolcall_session = toolcall_session
         self.tools = tools
 
-    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
+    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -1523,11 +1783,13 @@ class LiteLLMBase(ABC):
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     message = response.choices[0].message
+                    reasoning_content = None
+                    if self._need_reasoning_content_back():
+                        reasoning_content = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
 
                     if not hasattr(message, "tool_calls") or not message.tool_calls:
-                        _reasoning = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
-                        if _reasoning:
-                            ans += f"<think>{_reasoning}</think>"
+                        if reasoning_content:
+                            ans += f"<think>{reasoning_content}</think>"
                         ans += message.content or ""
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
@@ -1537,6 +1799,8 @@ class LiteLLMBase(ABC):
                         name = tc.function.name
                         try:
                             args = json_repair.loads(tc.function.arguments)
+                            if not isinstance(args, dict):
+                                raise TypeError(f"Tool arguments for {name} must be a JSON object, got {type(args).__name__}")
                             if hasattr(self.toolcall_session, "tool_call_async"):
                                 result = await self.toolcall_session.tool_call_async(name, args)
                             else:
@@ -1548,7 +1812,11 @@ class LiteLLMBase(ABC):
 
                     logging.info(f"Response tool_calls={message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in message.tool_calls])
-                    history = self._append_history_batch(history, results)
+                    history = self._append_history_batch(
+                        history,
+                        results,
+                        reasoning_content=reasoning_content if self._need_reasoning_content_back() else None,
+                    )
                     for tc, name, args, result, err in results:
                         ans += self._verbose_tool_use(name, args, err if err else result)
 
@@ -1567,7 +1835,8 @@ class LiteLLMBase(ABC):
 
         assert False, "Shouldn't be here."
 
-    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
+    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
         if system and history and history[0].get("role") != "system":
@@ -1581,6 +1850,7 @@ class LiteLLMBase(ABC):
             try:
                 for _round in range(self.max_rounds + 1):
                     reasoning_start = False
+                    reasoning_content = ""
                     logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
 
                     completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
@@ -1615,6 +1885,8 @@ class LiteLLMBase(ABC):
 
                         _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                         if _reasoning:
+                            if self._need_reasoning_content_back():
+                                reasoning_content += _reasoning
                             ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
@@ -1645,6 +1917,8 @@ class LiteLLMBase(ABC):
                         name = tc.function.name
                         try:
                             args = json_repair.loads(tc.function.arguments)
+                            if not isinstance(args, dict):
+                                raise TypeError(f"Tool arguments for {name} must be a JSON object, got {type(args).__name__}")
                             if hasattr(self.toolcall_session, "tool_call_async"):
                                 result = await self.toolcall_session.tool_call_async(name, args)
                             else:
@@ -1663,7 +1937,11 @@ class LiteLLMBase(ABC):
                             args = {}
                         yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
-                    history = self._append_history_batch(history, results)
+                    history = self._append_history_batch(
+                        history,
+                        results,
+                        reasoning_content=reasoning_content if self._need_reasoning_content_back() else None,
+                    )
                     for tc, name, args, result, err in results:
                         yield self._verbose_tool_use(name, args, err if err else result)
 
@@ -1797,21 +2075,38 @@ class LiteLLMBase(ABC):
         extra_headers = deepcopy(completion_args.get("extra_headers") or {})
         if self.provider == SupportedLiteLLMProvider.Ollama and self.api_key and "Authorization" not in extra_headers:
             extra_headers["Authorization"] = f"Bearer {self.api_key}"
+        # MiniMax requires GroupId as a query parameter for API authentication
+        if self.provider == SupportedLiteLLMProvider.MiniMax and hasattr(self, 'group_id') and self.group_id:
+            api_base = completion_args.get("api_base", self.base_url)
+            separator = "&" if "?" in api_base else "?"
+            completion_args["api_base"] = f"{api_base}{separator}GroupId={self.group_id}"
         if extra_headers:
             completion_args["extra_headers"] = extra_headers
         return completion_args
 
+
 class RAGconChat(Base):
     """
     RAGcon Chat Provider - routes through LiteLLM proxy
-    
+
     All model types are handled through a unified LiteLLM endpoint.
     Default Base URL: https://connect.ragcon.com/v1
     """
+
     _FACTORY_NAME = "RAGcon"
-    
+
     def __init__(self, key, model_name, base_url=None, **kwargs):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
-        
+
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class NewAPIChat(Base):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        model_name = model_name.split("___")[0]
         super().__init__(key, model_name, base_url, **kwargs)

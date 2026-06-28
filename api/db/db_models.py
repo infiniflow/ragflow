@@ -55,7 +55,7 @@ from api.utils.configs import deserialize_b64, serialize_b64
 
 from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
 from common.decorator import singleton
-from common.constants import ParserType
+from common.constants import ParserType, MAXIMUM_TASK_PAGE_NUMBER
 from common import settings
 
 
@@ -705,6 +705,8 @@ def fill_db_model_object(model_object, human_model_dict):
 
 
 class User(DataBaseModel, AuthUser):
+    SENSITIVE_FIELDS = {"password", "access_token", "email"}
+
     id = CharField(max_length=32, primary_key=True)
     access_token = CharField(max_length=255, null=True, index=True)
     nickname = CharField(max_length=100, null=False, help_text="nicky name", index=True)
@@ -726,8 +728,20 @@ class User(DataBaseModel, AuthUser):
         return self.email
 
     def get_id(self):
-        jwt = Serializer(secret_key=settings.SECRET_KEY)
+        jwt = Serializer(secret_key=settings.get_secret_key())
         return jwt.dumps(str(self.access_token))
+
+    def to_safe_dict(self, *, for_self: bool = False):
+        """Return a dict with sensitive fields stripped for API responses.
+
+        Email is treated as sensitive in generic serialization. Pass for_self=True
+        when returning the authenticated user's own record (login, profile, etc.).
+        """
+        result = {k: v for k, v in self.to_dict().items() if k not in self.SENSITIVE_FIELDS}
+        if for_self:
+            result["email"] = self.email
+        logging.debug("User %s serialized safely, filtered fields: %s", self.id, self.SENSITIVE_FIELDS)
+        return result
 
     class Meta:
         db_table = "user"
@@ -749,6 +763,7 @@ class Tenant(DataBaseModel):
     tenant_rerank_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     tts_id = CharField(max_length=256, null=True, help_text="default tts model ID", index=True)
     tenant_tts_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    ocr_id = CharField(max_length=256, null=True, help_text="default OCR model ID", index=True)
     parser_ids = CharField(max_length=256, null=False, help_text="document processors", index=True)
     credit = IntegerField(default=512, index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
@@ -941,11 +956,43 @@ class File2Document(DataBaseModel):
         db_table = "file2document"
 
 
+class FileCommit(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    folder_id = CharField(max_length=32, null=False, help_text="workspace folder id", index=True)
+    parent_id = CharField(max_length=32, null=True, help_text="parent commit id", index=True)
+    message = CharField(max_length=512, default="", help_text="commit message")
+    author_id = CharField(max_length=32, null=False, help_text="user who created the commit", index=True)
+    file_count = IntegerField(default=0, help_text="number of files in this commit")
+    tree_state = LongTextField(null=True, help_text="JSON snapshot of the full folder tree at this commit")
+
+    class Meta:
+        db_table = "file_commit"
+
+
+class FileCommitItem(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    commit_id = CharField(max_length=32, null=False, help_text="commit id", index=True)
+    file_id = CharField(max_length=32, null=False, help_text="file id", index=True)
+    operation = CharField(max_length=16, null=False, help_text="add / modify / delete / rename", index=True)
+    old_hash = CharField(max_length=64, null=True, help_text="old content hash", index=True)
+    new_hash = CharField(max_length=64, null=True, help_text="new content hash", index=True)
+    old_location = CharField(max_length=255, null=True, help_text="old storage location")
+    new_location = CharField(max_length=255, null=True, help_text="new storage location")
+    old_name = CharField(max_length=255, null=True, help_text="old file name (for rename)")
+    new_name = CharField(max_length=255, null=True, help_text="new file name (for rename)")
+
+    class Meta:
+        db_table = "file_commit_item"
+        indexes = (
+            (("commit_id", "file_id"), True),  # unique composite index
+        )
+
+
 class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)
     from_page = IntegerField(default=0)
-    to_page = IntegerField(default=100000000)
+    to_page = IntegerField(default=MAXIMUM_TASK_PAGE_NUMBER)
     task_type = CharField(max_length=32, null=False, default="")
     priority = IntegerField(default=0)
 
@@ -1051,6 +1098,7 @@ class UserCanvas(DataBaseModel):
     description = TextField(null=True, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
     canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
+    tags = CharField(max_length=512, null=False, default="", help_text="Comma-separated tags for organizing agents", index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -1199,6 +1247,22 @@ class Connector2Kb(DataBaseModel):
         db_table = "connector2kb"
 
 
+class ChatChannel(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, help_text="Bot name", index=False)
+    channel = CharField(max_length=128, null=False, help_text="Chat channel type", index=True)
+    config = JSONField(null=False, default={}, help_text="Channel credential & settings")
+    chat_id = CharField(max_length=32, null=True, default=None, help_text="connected chat id", index=True)
+    status = IntegerField(default=1, index=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        db_table = "chat_channel"
+
+
 class DateTimeTzField(CharField):
     field_type = 'VARCHAR'
 
@@ -1223,6 +1287,7 @@ class DateTimeTzField(CharField):
 class SyncLogs(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     connector_id = CharField(max_length=32, index=True)
+    task_type = CharField(max_length=32, null=False, default="sync", index=True)
     status = CharField(max_length=128, null=False, help_text="Processing status", index=True)
     from_beginning = CharField(max_length=1, null=True, help_text="", default="0", index=False)
     new_docs_indexed = IntegerField(default=0, index=False)
@@ -1333,6 +1398,64 @@ class SystemSettings(DataBaseModel):
     value = TextField(null=False, help_text="Configuration value (JSON, string, etc.)")
     class Meta:
         db_table = "system_settings"
+
+class TenantModelProvider(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    provider_name = CharField(max_length=128, null=False, index=False, help_text="LLM provider name")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+
+    class Meta:
+        db_table = "tenant_model_provider"
+        indexes = (
+            (("tenant_id", "provider_name"), True),
+        )
+
+class TenantModelInstance(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    instance_name = CharField(max_length=128, null=False, index=False, help_text="Model instance name")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    api_key = CharField(max_length=512, null=False, index=False, help_text="API key")
+    status = CharField(max_length=32, default="active", index=False)
+    extra = CharField(max_length=512, default="{}", index=False)
+
+    class Meta:
+        db_table = "tenant_model_instance"
+
+
+class TenantModel(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    model_name = CharField(max_length=128, null=True, index=False, help_text="Model name")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    instance_id = CharField(max_length=32, null=False, index=True)
+    model_type = CharField(max_length=32, null=False, index=False, help_text="Model type")
+    status = CharField(max_length=32, default="active", index=False)
+    extra = CharField(max_length=1024, default="{}", index=False)
+
+    class Meta:
+        db_table = "tenant_model"
+
+
+class TenantModelGroup(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    group_type = CharField(max_length=32, null=False, index=False, help_text="Group type")
+    model_name = CharField(max_length=128, null=True, index=False, help_text="Model name")
+    strategy = CharField(max_length=32, default="weighted", index=False, help_text="Routing strategy")
+
+    class Meta:
+        db_table = "tenant_model_group"
+
+class TenantModelGroupMapping(DataBaseModel):
+    group_id = CharField(max_length=32, null=False, index=True, help_text="Group ID")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    instance_id = CharField(max_length=32, null=False, index=False)
+    model_id = CharField(max_length=32, null=False, index=True)
+    weight = IntegerField(default=100, index=False, help_text="Routing weight")
+    status = CharField(max_length=32, default="active", index=False)
+
+    class Meta:
+        db_table = "tenant_model_group_mapping"
+        primary_key = CompositeKey("group_id", "provider_id", "instance_id", "model_id")
+
 
 def alter_db_add_column(migrator, table_name, column_name, column_type):
     try:
@@ -1618,6 +1741,7 @@ def migrate_db():
     alter_db_add_column(migrator, "canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
     alter_db_add_column(migrator, "canvas_template", "canvas_types", ListField(null=True, default=list, help_text="Canvas types"))
     alter_db_add_column(migrator, "knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
+    alter_db_add_column(migrator, "chat_channel", "dialog_id", CharField(max_length=32, null=True, help_text="connected dialog id", index=True))
     alter_db_add_column(migrator, "document", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "raptor_task_id", CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True))
@@ -1631,6 +1755,7 @@ def migrate_db():
     alter_db_add_column(migrator, "llm_factories", "rank", IntegerField(default=0, index=False))
     alter_db_add_column(migrator, "api_4_conversation", "name", CharField(max_length=255, null=True, help_text="conversation name", index=False))
     alter_db_add_column(migrator, "api_4_conversation", "exp_user_id", CharField(max_length=255, null=True, help_text="exp_user_id", index=True))
+    alter_db_add_column(migrator, "sync_logs", "task_type", CharField(max_length=32, null=False, default="sync", index=True))
     # Migrate system_settings.value from CharField to TextField for longer sandbox configs
     alter_db_column_type(migrator, "system_settings", "value", TextField(null=False, help_text="Configuration value (JSON, string, etc.)"))
     alter_db_add_column(migrator, "document", "content_hash", CharField(max_length=32, null=True, help_text="xxhash128 of document content for change detection", default="", index=True))
@@ -1647,9 +1772,37 @@ def migrate_db():
     alter_db_add_column(migrator, "memory", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "memory", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "user_canvas_version", "release", BooleanField(null=False, help_text="is released", default=False, index=True))
+    alter_db_add_column(migrator, "user_canvas", "tags", CharField(max_length=512, null=False, default="", help_text="Comma-separated tags for organizing agents", index=True))
     alter_db_add_column(migrator, "api_4_conversation", "version_title", CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False))
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
+    alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
+    alter_db_column_type(migrator, "chat_channel", "status", IntegerField(default=1, index=True))
+    alter_db_rename_column(migrator, "chat_channel", "dialog_id", "chat_id")
+    # Drop both the explicit "idx_*" name from later migrations AND the
+    # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
+    # original TenantModelInstance definition (commit dc4b82523). Databases
+    # created before #15460 dropped the model's `indexes = ((...,), True)`
+    # tuple still carry the auto-named compound unique index, which makes a
+    # second instance with an empty api_key (e.g. Ollama) fail with
+    # "Duplicate entry ... for key 'tenantmodelinstance_api_key_provider_id'"
+    # — see #15699.
+    legacy_indexes = [
+        ("tenant_model_instance", "idx_api_key_provider_id"),
+        ("tenant_model_instance", "tenantmodelinstance_api_key_provider_id"),
+        ("tenant_model", "idx_provider_model_instance"),
+    ]
+    for table_name, index_name in legacy_indexes:
+        try:
+            migrate(migrator.drop_index(table_name, index_name))
+        except (OperationalError, ProgrammingError) as ex:
+            msg = str(ex)
+            if "1091" in msg or "can't DROP" in msg.lower() or "does not exist" in msg.lower() or "already exists" in msg.lower():
+                pass
+            else:
+                logging.critical(f"Failed to drop index {index_name} on {table_name}: {ex}")
+        except Exception as ex:
+            logging.critical(f"Failed to drop index {index_name} on {table_name}: {ex}")
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)

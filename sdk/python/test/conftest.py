@@ -40,7 +40,7 @@ X8f7fp9c7vUsfOCkM+gHY3PadG+QHa7KI7mzTKgUTZImK6BZtfRBATDTthEUbbaTewY4H0MnWiCeeDhc
 
 
 def register():
-    url = HOST_ADDRESS + "/v1/user/register"
+    url = HOST_ADDRESS + "/api/v1/users"
     name = "user"
     register_data = {"email": EMAIL, "nickname": name, "password": PASSWORD}
     res = requests.post(url=url, json=register_data)
@@ -50,7 +50,7 @@ def register():
 
 
 def login():
-    url = HOST_ADDRESS + "/v1/user/login"
+    url = HOST_ADDRESS + "/api/v1/auth/login"
     login_data = {"email": EMAIL, "password": PASSWORD}
     response = requests.post(url=url, json=login_data)
     res = response.json()
@@ -91,62 +91,89 @@ def get_email():
     return EMAIL
 
 
-def get_my_llms(auth, name):
-    url = HOST_ADDRESS + "/v1/llm/my_llms"
+def get_added_models(auth, factory_name):
+    url = HOST_ADDRESS + "/api/v1/models"
     authorization = {"Authorization": auth}
     response = requests.get(url=url, headers=authorization)
     res = response.json()
     if res.get("code") != 0:
         raise Exception(res.get("message"))
-    if name in res.get("data"):
+    added_factory = {model["provider_name"] for model in res.get("data", [])}
+    if factory_name in added_factory:
         return True
     return False
 
 
-def add_models(auth):
-    url = HOST_ADDRESS + "/v1/llm/set_api_key"
+def add_model_instance(auth):
+    add_provider_api = HOST_ADDRESS + "/api/v1/providers"
     authorization = {"Authorization": auth}
-    models_info = {
-        "ZHIPU-AI": {"llm_factory": "ZHIPU-AI", "api_key": ZHIPU_AI_API_KEY},
-    }
+    add_provider_response = requests.put(url=add_provider_api, headers=authorization, json={"provider_name": "ZHIPU-AI"})
+    add_provider_res = add_provider_response.json()
+    if add_provider_res.get("code") != 0:
+        pytest.exit(f"Critical error in add model provider: {add_provider_res.get('message')}")
 
-    for name, model_info in models_info.items():
-        if not get_my_llms(auth, name):
-            response = requests.post(url=url, headers=authorization, json=model_info)
-            res = response.json()
-            if res.get("code") != 0:
-                pytest.exit(f"Critical error in add_models: {res.get('message')}")
+    add_instance_api = HOST_ADDRESS + "/api/v1/providers/ZHIPU-AI/instances"
+    add_instance_response = requests.post(url=add_instance_api, headers=authorization, json={
+        "instance_name": "CI",
+        "api_key": ZHIPU_AI_API_KEY,
+        "region": "default",
+        "base_url": ""
+    })
+    add_instance_res = add_instance_response.json()
+    if add_instance_res.get("code") != 0:
+        pytest.exit(f"Critical error in add model instance: {add_instance_res.get('message')}")
 
-
-def get_tenant_info(auth):
-    url = HOST_ADDRESS + "/v1/user/tenant_info"
-    authorization = {"Authorization": auth}
-    response = requests.get(url=url, headers=authorization)
-    res = response.json()
-    if res.get("code") != 0:
-        raise Exception(res.get("message"))
-    return res["data"].get("tenant_id")
+    add_success = get_added_models(auth, "ZHIPU-AI")
+    if not add_success:
+        pytest.exit("Critical error in check added model: add model failed")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def set_tenant_info(get_auth):
     auth = get_auth
-    try:
-        add_models(auth)
-        tenant_id = get_tenant_info(auth)
-    except Exception as e:
-        pytest.exit(f"Error in set_tenant_info: {str(e)}")
-    url = HOST_ADDRESS + "/v1/user/set_tenant_info"
+    if not get_added_models(auth, "ZHIPU-AI"):
+        try:
+            add_model_instance(auth)
+        except Exception as e:
+            pytest.exit(f"Error in set_tenant_info: {str(e)}")
+    url = HOST_ADDRESS + "/api/v1/models/default"
     authorization = {"Authorization": get_auth}
-    tenant_info = {
-        "tenant_id": tenant_id,
-        "llm_id": "glm-4-flash@ZHIPU-AI",
-        "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
-        "img2txt_id": "glm-4v@ZHIPU-AI",
-        "asr_id": "",
-        "tts_id": None,
-    }
-    response = requests.post(url=url, headers=authorization, json=tenant_info)
-    res = response.json()
-    if res.get("code") != 0:
-        raise Exception(res.get("message"))
+    # set chat model
+    set_default_llm_response = requests.patch(
+        url=url,
+        headers=authorization,
+        json={
+            "model_provider": "ZHIPU-AI",
+            "model_instance": "CI",
+            "model_type": "chat",
+            "model_name": "glm-4-flash"
+        })
+    llm_res = set_default_llm_response.json()
+    if llm_res.get("code") != 0:
+        raise Exception(llm_res.get("message"))
+    # set embedding model
+    set_default_embedding_response = requests.patch(
+        url=url,
+        headers=authorization,
+        json={
+            "model_provider": "Builtin",
+            "model_instance": "Local",
+            "model_type": "embedding",
+            "model_name": "BAAI/bge-small-en-v1.5"
+        })
+    embd_res = set_default_embedding_response.json()
+    if embd_res.get("code") != 0:
+        raise Exception(embd_res.get("message"))
+    # set image to text model
+    set_default_img2txt_response = requests.patch(
+        url=url,
+        headers=authorization,
+        json={
+            "model_provider": "ZHIPU-AI",
+            "model_instance": "CI",
+            "model_type": "vision",
+            "model_name": "glm-4v"
+        })
+    img2txt_res = set_default_img2txt_response.json()
+    if img2txt_res.get("code") != 0:
+        raise Exception(img2txt_res.get("message"))

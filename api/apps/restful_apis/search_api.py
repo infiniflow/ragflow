@@ -14,7 +14,12 @@
 #  limitations under the License.
 #
 
-from quart import request
+import json
+import logging
+from numbers import Real
+
+from quart import Response, request
+from api.db.services.dialog_service import async_ask
 from api.apps import current_user, login_required
 
 from api.constants import DATASET_NAME_LIMIT
@@ -25,6 +30,13 @@ from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
+from api.utils.pagination_utils import validate_rest_api_page_size
+
+
+def _full_text_weight(vector_similarity_weight):
+    if isinstance(vector_similarity_weight, Real):
+        return 1 - vector_similarity_weight
+    return None
 
 
 @manager.route("/searches", methods=["POST"])  # noqa: F821
@@ -66,7 +78,7 @@ async def create():
 def list_searches():
     keywords = request.args.get("keywords", "")
     page_number = int(request.args.get("page", 0))
-    items_per_page = int(request.args.get("page_size", 0))
+    items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", "true").lower() != "false"
     owner_ids = request.args.getlist("owner_ids")
@@ -138,6 +150,16 @@ async def update(search_id):
         if not isinstance(new_config, dict):
             return get_data_error_result(message="search_config must be a JSON object")
         req["search_config"] = {**current_config, **new_config}
+        logging.debug(
+            "Search update weight: search_id=%s user_id=%s "
+            "incoming_vector_similarity_weight=%s stored_vector_similarity_weight=%s "
+            "stored_full_text_weight=%s",
+            search_id,
+            current_user.id,
+            new_config.get("vector_similarity_weight"),
+            req["search_config"].get("vector_similarity_weight"),
+            _full_text_weight(req["search_config"].get("vector_similarity_weight", 0.3)),
+        )
 
         for field in ("search_id", "tenant_id", "created_by", "update_time", "id"):
             req.pop(field, None)
@@ -168,3 +190,54 @@ def delete_search(search_id):
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route("/searches/<search_id>/completion", methods=["POST"])  # noqa: F821
+@manager.route("/searches/<search_id>/completions", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("question")
+async def completion(search_id):
+    if not SearchService.accessible4deletion(search_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message="No authorization.",
+            code=RetCode.AUTHENTICATION_ERROR,
+        )
+
+    req = await get_request_json()
+    uid = current_user.id
+    search_app = SearchService.get_detail(search_id)
+    if not search_app:
+        return get_data_error_result(message=f"Cannot find search {search_id}")
+
+    search_config = search_app.get("search_config", {})
+    logging.debug(
+        "Search completion loaded weight: search_id=%s user_id=%s "
+        "stored_vector_similarity_weight=%s stored_full_text_weight=%s",
+        search_id,
+        uid,
+        search_config.get("vector_similarity_weight", 0.3),
+        _full_text_weight(search_config.get("vector_similarity_weight", 0.3)),
+    )
+    kb_ids = search_config.get("kb_ids") or req.get("kb_ids") or []
+    if not kb_ids:
+        return get_data_error_result(message="`kb_ids` is required.")
+
+    async def stream():
+        nonlocal req, uid, kb_ids, search_config
+        try:
+            async for ans in async_ask(req["question"], kb_ids, uid, search_config=search_config, search_id=search_id):
+                yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+        except Exception as ex:
+            yield "data:" + json.dumps(
+                {"code": 500, "message": str(ex), "data": {"answer": "**ERROR**: " + str(ex), "reference": []}},
+                ensure_ascii=False,
+            ) + "\n\n"
+        yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+
+    resp = Response(stream(), mimetype="text/event-stream")
+    resp.headers.add_header("Cache-control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+    return resp

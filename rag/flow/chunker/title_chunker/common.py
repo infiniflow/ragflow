@@ -41,6 +41,7 @@ class TitleChunkerParam(ProcessParamBase):
         self.levels = []
         self.hierarchy = None
         self.include_heading_content = False
+        self.root_chunk_as_heading = False
 
     def check(self):
         if self.method in {"hierarchy", "group"}:
@@ -72,25 +73,57 @@ class BaseTitleChunker(ABC):
 
 
     def extract_line_records(self):
-        # Normalize all upstream payloads into an ordered record stream.
-        # Level resolution and chunk construction operate on this stream only,
-        # so strategy code does not depend on source-specific output layouts.
+        """
+        Normalize all upstream input payloads into a unified ordered record stream.
+        All level resolution and chunk construction logic operates on this standard stream,
+        decoupling downstream chunking strategies from different upstream output formats.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+    
+        payload = None
+        # Extract raw content payload based on upstream output format type
         if self.from_upstream.output_format == "markdown":
             payload = self.from_upstream.markdown_result or ""
-            return [{"text": line, "doc_type_kwd": "text", "img_id": None, "layout": "", PDF_POSITIONS_KEY: []} for line in payload.split("\n") if line]
-
-        if self.from_upstream.output_format == "text":
+        elif self.from_upstream.output_format == "text":
             payload = self.from_upstream.text_result or ""
-            return [{"text": line, "doc_type_kwd": "text", "img_id": None, "layout": "", PDF_POSITIONS_KEY: []} for line in payload.split("\n") if line]
-
-        if self.from_upstream.output_format == "html":
+        elif self.from_upstream.output_format == "html":
             payload = self.from_upstream.html_result or ""
-            return [{"text": line, "doc_type_kwd": "text", "img_id": None, "layout": "", PDF_POSITIONS_KEY: []} for line in payload.split("\n") if line]
 
+        # Boundary robustness fix: explicit None check to distinguish `None` and empty string ""
+        # Prevents empty payload from unexpectedly falling through to structured chunk branch
+        if payload is not None:
+            lines = payload.split("\n")
+            input_line_count = len(lines)
+    
+            # Format-branched text processing to preserve original document semantics
+            # Plain text: perform full whitespace stripping and invalid empty line filtering
+            if self.from_upstream.output_format == "text":
+                clean_lines = [line.strip() for line in lines if line.strip()]
+            # Markdown & HTML: retain original indentation/spacing, only filter pure blank lines
+            else:
+                clean_lines = [line for line in lines if line.strip()]
+    
+            output_line_count = len(clean_lines)
+            # Production observability log: added format dimension per project coding guidelines
+            logger.info(
+                f"payload filter: format={self.from_upstream.output_format} before={input_line_count} after={output_line_count}"
+            )
+    
+            return [
+                {
+                    "text": line,
+                    "doc_type_kwd": "text",
+                    "img_id": None,
+                    "layout": "",
+                    PDF_POSITIONS_KEY: []
+                }
+                for line in clean_lines
+            ]
         items = self.from_upstream.chunks if self.from_upstream.output_format == "chunks" else self.from_upstream.json_result
         return [
             {
-                "text": str(item.get("text") or ""),
+                "text": item.get("text") or "",
                 "doc_type_kwd": str(item.get("doc_type_kwd") or "text"),
                 "img_id": item.get("img_id"),
                 "layout": "{} {}".format(item.get("layout_type", ""), item.get("layoutno", "")).strip(),
@@ -98,7 +131,6 @@ class BaseTitleChunker(ABC):
             }
             for item in items or []
         ]
-
 
     def extract_outlines(self):
         file = self.from_upstream.file or {}
@@ -240,30 +272,41 @@ class BaseTitleChunker(ABC):
         # chunk box is defined by merged source positions and the text payload
         # is normalized by removing parser tags.
         if self.from_upstream.output_format in ["markdown", "text", "html"]:
-            return [
+            chunks = [
                 {"text": "".join(record["text"] + "\n" for record in records)}
                 for records in record_groups
                 if records
             ]
+        else:
+            chunks = [
+                (
+                    {
+                        "text": RAGFlowPdfParser.remove_tag("".join(record["text"] + "\n" for record in records)),
+                        "doc_type_kwd": "text",
+                        PDF_POSITIONS_KEY: merge_pdf_positions(records),
+                    }
+                    if records[0]["doc_type_kwd"] == "text"
+                    else {
+                        "text": records[0]["text"],
+                        "doc_type_kwd": records[0]["doc_type_kwd"],
+                        "img_id": records[0]["img_id"],
+                        PDF_POSITIONS_KEY: records[0][PDF_POSITIONS_KEY],
+                    }
+                )
+                for records in record_groups
+                if records
+            ]
+        
+        if self.param.root_chunk_as_heading and len(chunks) > 1:
+            root_chunk = chunks[0]
+            root_text = root_chunk.get("text", "")
 
-        return [
-            (
-                {
-                    "text": RAGFlowPdfParser.remove_tag("".join(record["text"] + "\n" for record in records)),
-                    "doc_type_kwd": "text",
-                    PDF_POSITIONS_KEY: merge_pdf_positions(records),
-                }
-                if records[0]["doc_type_kwd"] == "text"
-                else {
-                    "text": records[0]["text"],
-                    "doc_type_kwd": records[0]["doc_type_kwd"],
-                    "img_id": records[0]["img_id"],
-                    PDF_POSITIONS_KEY: records[0][PDF_POSITIONS_KEY],
-                }
-            )
-            for records in record_groups
-            if records
-        ]
+            for ck in chunks[1:]:
+                ck['text'] = root_text + "\n" + ck.get("text", "")
+            
+            return chunks[1:]
+
+        return chunks
 
 
     async def set_chunks(self, chunks):

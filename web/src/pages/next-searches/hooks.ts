@@ -185,6 +185,10 @@ export interface ISearchAppDetailProps {
       method: string;
       manual: { key: string; op: string; value: string }[];
     };
+    reference_metadata?: {
+      include?: boolean;
+      fields?: string[];
+    };
   };
   tenant_id: string;
   update_time: number;
@@ -290,9 +294,6 @@ export const useUpdateSearch = () => {
         queryKey: ['searchDetail', variables.search_id],
       });
     },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
-    },
   });
 
   const updateSearch = useCallback(
@@ -342,7 +343,6 @@ export const useRenameSearch = () => {
             search_id: search?.id,
           });
           const detail = response.data?.data;
-          console.log('detail-->', detail);
 
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { id, created_by, update_time, ...searchDataTemp } = detail;

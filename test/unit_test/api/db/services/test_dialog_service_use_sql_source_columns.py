@@ -33,6 +33,7 @@ warnings.filterwarnings(
 def _install_cv2_stub_if_unavailable():
     try:
         import cv2  # noqa: F401
+
         return
     except Exception:
         pass
@@ -156,8 +157,42 @@ def test_use_sql_repairs_missing_source_columns_for_non_aggregate(monkeypatch, f
 
     assert result is not None
     assert "|product|Source|" in result["answer"]
+    answer_lines = [ln.strip() for ln in result["answer"].splitlines() if ln.strip().startswith("|")]
+    header, separator = answer_lines[0], answer_lines[1]
+    assert header.count("|") == separator.count("|")
     assert len(chat_model.calls) == 2
     assert len(retriever.sql_calls) == 2
+
+
+@pytest.mark.p2
+def test_use_sql_separator_matches_header_without_doc_name(monkeypatch, force_es_engine):
+    retriever = _StubRetriever(
+        [
+            {
+                "columns": [{"name": "doc_id"}, {"name": "product"}],
+                "rows": [["doc-1", "desk"]],
+            },
+        ]
+    )
+    chat_model = _StubChatModel(["SELECT doc_id, product FROM ragflow_tenant"])
+    monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
+
+    result = asyncio.run(
+        dialog_service.use_sql(
+            question="show product with doc id only",
+            field_map={"product": "product"},
+            tenant_id="tenant-id",
+            chat_mdl=chat_model,
+            quota=True,
+            kb_ids=None,
+        )
+    )
+
+    assert result is not None
+    answer_lines = [ln.strip() for ln in result["answer"].splitlines() if ln.strip().startswith("|")]
+    assert answer_lines[0] == "|product|"
+    assert answer_lines[1] == "|------"
+    assert "|------|------|" not in result["answer"]
 
 
 @pytest.mark.p2
@@ -281,17 +316,20 @@ def test_async_chat_uses_all_docs_when_no_doc_ids_selected(monkeypatch):
     )
 
     monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
-    monkeypatch.setattr(dialog_service.TenantLLMService, "llm_id2llm_type", lambda _llm_id: "chat")
     monkeypatch.setattr(
-        dialog_service.TenantLLMService,
-        "get_model_config",
-        lambda *_args, **_kwargs: {"llm_factory": "unit", "max_tokens": 4096},
+        dialog_service, "get_model_type_by_name",
+        lambda _tid, _llm_id: ["chat"]
+    )
+    monkeypatch.setattr(
+        dialog_service,
+        "get_model_config_from_provider_instance",
+        lambda *_args, **_kwargs: {"llm_factory": "unit", "max_tokens": 4096, "model_type": "chat"},
     )
     monkeypatch.setattr(dialog_service.TenantLangfuseService, "filter_by_tenant", lambda **_kwargs: None)
     monkeypatch.setattr(
         dialog_service,
         "get_models",
-        lambda _dialog: ([SimpleNamespace(tenant_id="tenant-id")], object(), None, chat_model, None),
+        lambda _dialog, **_kwargs: ([SimpleNamespace(tenant_id="tenant-id")], object(), None, chat_model, None),
     )
     monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {})
     monkeypatch.setattr(dialog_service, "label_question", lambda _question, _kbs: None)

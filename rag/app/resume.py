@@ -39,6 +39,9 @@ from io import BytesIO
 from typing import Optional
 import numpy as np
 
+from common import settings
+from common.constants import MAXIMUM_PAGE_NUMBER
+
 # tiktoken for long random string filtering (ref: SmartResume should_remove strategy)
 try:
     import tiktoken
@@ -2463,7 +2466,7 @@ def _blackout_text_regions(image: "np.ndarray", meta_blocks: list[dict], page_id
 
 
 
-def chunk(filename, binary, tenant_id, from_page=0, to_page=100000,
+def chunk(filename, binary, tenant_id, from_page=0, to_page=MAXIMUM_PAGE_NUMBER,
           lang="Chinese", callback=None, **kwargs):
     """
     Resume parsing entry function (compatible with task_executor.py)
@@ -2484,6 +2487,9 @@ def chunk(filename, binary, tenant_id, from_page=0, to_page=100000,
     """
     if callback is None:
         def callback(prog, msg): return None
+
+    if settings.DOC_ENGINE.lower() != "elasticsearch":
+        raise Exception("Resume is supported only with Elasticsearch.")
 
     try:
         callback(0.1, "Starting resume parsing...")

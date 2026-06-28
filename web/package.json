@@ -8,15 +8,18 @@
     "build": "vite build --mode production",
     "build-storybook": "storybook build",
     "dev": "vite --host",
-    "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives",
     "prepare": "cd .. && husky web/.husky",
     "preview": "vite preview",
     "storybook": "storybook dev -p 6006",
-    "test": "jest --no-cache --coverage"
+    "test": "jest --no-cache --coverage",
+    "type-check": "tsc --noEmit"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,css,less,json}": [
-      "prettier --write --ignore-unknown"
+    "*.{css,less,json}": "prettier --write --ignore-unknown",
+    "*.{js,jsx,ts,tsx}": [
+      "prettier --write --ignore-unknown",
+      "eslint"
     ]
   },
   "overrides": {
@@ -27,10 +30,9 @@
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
-    "@ant-design/pro-components": "^2.6.46",
-    "@ant-design/pro-layout": "^7.17.16",
     "@antv/g2": "^5.2.10",
     "@antv/g6": "^5.1.0",
+    "@extend-ai/react-docx": "^0.6.7",
     "@floating-ui/react": "^0.27.19",
     "@hookform/resolvers": "^3.9.1",
     "@js-preview/excel": "^1.7.14",
@@ -92,9 +94,8 @@
     "jsencrypt": "^3.3.2",
     "jsoneditor": "^10.4.2",
     "lexical": "^0.23.1",
-    "lodash": "^4.17.23",
+    "lodash": "^4.18.1",
     "lucide-react": "^1.7.0",
-    "mammoth": "^1.7.2",
     "next-themes": "^0.4.6",
     "openai-speech-stream-player": "^1.0.8",
     "papaparse": "^5.5.3",
@@ -121,6 +122,7 @@
     "recharts": "^2.12.4",
     "rehype-katex": "^7.0.1",
     "rehype-raw": "^7.0.0",
+    "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.0",
     "remark-math": "^6.0.0",
     "sonner": "^1.7.4",
@@ -162,6 +164,7 @@
     "@vitejs/plugin-react": "^5.1.2",
     "autoprefixer": "^10.4.21",
     "cross-env": "^7.0.3",
+    "esbuild-jest": "^0.5.0",
     "eslint": "^8.56.0",
     "eslint-plugin-check-file": "^2.8.0",
     "eslint-plugin-react": "^7.37.5",
@@ -170,6 +173,7 @@
     "eslint-plugin-storybook": "^9.1.4",
     "html-loader": "^5.1.0",
     "husky": "^9.0.11",
+    "identity-obj-proxy": "^3.0.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "less": "^4.4.2",
@@ -181,6 +185,7 @@
     "prettier-plugin-packagejson": "^2.4.9",
     "react-dev-inspector": "^2.0.1",
     "remark-loader": "^6.0.0",
+    "simple-icons": "^16.23.0",
     "storybook": "^9.1.4",
     "tailwindcss": "^3",
     "terser-webpack-plugin": "^5.3.11",

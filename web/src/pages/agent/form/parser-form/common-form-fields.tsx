@@ -1,10 +1,6 @@
 import { crossLanguageOptions } from '@/components/cross-language-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import {
-  LLMFormField,
-  LLMFormFieldProps,
-} from '@/components/llm-setting-items/llm-form-field';
-import {
   SelectWithSearch,
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
@@ -75,19 +71,6 @@ export function ParserMethodFormField({
   );
 }
 
-export function LargeModelFormField({
-  prefix,
-  options,
-}: CommonProps & Pick<LLMFormFieldProps, 'options'>) {
-  return (
-    <LLMFormField
-      name={buildFieldNameWithPrefix('vlm.llm_id', prefix)}
-      options={options}
-      config={{ allowClear: true }}
-    ></LLMFormField>
-  );
-}
-
 export function FlattenMediaToTextFormField({ prefix }: CommonProps) {
   const { t } = useTranslation();
   return (
@@ -142,6 +125,28 @@ export function RmdirFormField({ prefix }: CommonProps) {
       label={t('flow.removeToc')}
       horizontal={true}
       tooltip={t('flow.removeTocTip')}
+      labelClassName="w-full"
+      valueClassName="w-8"
+    >
+      {(field) => (
+        <Switch
+          checked={field.value}
+          onCheckedChange={(checked) => {
+            field.onChange?.(checked);
+          }}
+        />
+      )}
+    </RAGFlowFormItem>
+  );
+}
+
+export function RemoveHeaderFooterFormField({ prefix }: CommonProps) {
+  const { t } = useTranslation();
+  return (
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix(`remove_header_footer`, prefix)}
+      label={t('flow.removeHeaderFooter')}
+      horizontal={true}
       labelClassName="w-full"
       valueClassName="w-8"
     >

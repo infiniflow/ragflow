@@ -1,0 +1,607 @@
+{
+    "id": 29,
+    "title": {
+    "en": "Book",
+    "de": "Buch",
+    "zh": "书籍"
+    },
+    "description": {
+    "en": "This template segments parsed files by book structure. Best for books, long-form manuscripts, literary works, and other documents with defined chapters and sections.",
+    "de": "Diese Vorlage segmentiert die geparste Datei anhand der Struktur eines Buches. Sie eignet sich für Dokumente mit klar definierten Kapiteln und Abschnitten, wie Bücher, längere Manuskripte, literarische Werke und andere kapitelbasierte Texte.",
+    "zh": "此模板将解析后的文件按书籍结构进行切片，适用于具有清晰章节层级的文档类型，如书籍、长篇手稿、文学作品及其他按章节组织的文本。"
+    },
+    "canvas_type": "Ingestion Pipeline",
+    "canvas_category": "dataflow_canvas",
+    "dsl": {
+        "components": {
+            "File": {
+                "downstream": [
+                    "Parser:HipSignsRhyme"
+                ],
+                "obj": {
+                    "component_name": "File",
+                    "params": {}
+                },
+                "upstream": []
+            },
+            "Parser:HipSignsRhyme": {
+                "downstream": [
+                    "TitleChunker:GrumpyGarlicsBake"
+                ],
+                "obj": {
+                    "component_name": "Parser",
+                    "params": {
+                        "outputs": {
+                            "html": {
+                                "type": "string",
+                                "value": ""
+                            },
+                            "json": {
+                                "type": "Array<object>",
+                                "value": []
+                            },
+                            "markdown": {
+                                "type": "string",
+                                "value": ""
+                            },
+                            "text": {
+                                "type": "string",
+                                "value": ""
+                            }
+                        },
+                        "setups": {
+                            "doc": {
+                                "output_format": "json",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "doc"
+                                ]
+                            },
+                            "docx": {
+                                "flatten_media_to_text": false,
+                                "output_format": "json",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "docx"
+                                ],
+                                "vlm": {}
+                            },
+                            "email": {
+                                "fields": [
+                                    "from",
+                                    "to",
+                                    "cc",
+                                    "bcc",
+                                    "date",
+                                    "subject",
+                                    "body",
+                                    "attachments"
+                                ],
+                                "output_format": "text",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "eml",
+                                    "msg"
+                                ]
+                            },
+                            "html": {
+                                "output_format": "json",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "htm",
+                                    "html"
+                                ]
+                            },
+                            "image": {
+                                "output_format": "text",
+                                "parse_method": "ocr",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "jpg",
+                                    "jpeg",
+                                    "png",
+                                    "gif"
+                                ]
+                            },
+                            "markdown": {
+                                "flatten_media_to_text": false,
+                                "output_format": "json",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "md",
+                                    "markdown",
+                                    "mdx"
+                                ],
+                                "vlm": {}
+                            },
+                            "pdf": {
+                                "flatten_media_to_text": false,
+                                "output_format": "json",
+                                "parse_method": "DeepDOC",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "remove_toc": true,
+                                "suffix": [
+                                    "pdf"
+                                ],
+                                "vlm": {}
+                            },
+                            "slides": {
+                                "output_format": "json",
+                                "parse_method": "DeepDOC",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "pptx",
+                                    "ppt"
+                                ]
+                            },
+                            "spreadsheet": {
+                                "flatten_media_to_text": false,
+                                "output_format": "html",
+                                "parse_method": "DeepDOC",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "xls",
+                                    "xlsx",
+                                    "csv"
+                                ],
+                                "vlm": {}
+                            },
+                            "text&code": {
+                                "output_format": "json",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "txt",
+                                    "py",
+                                    "js",
+                                    "java",
+                                    "c",
+                                    "cpp",
+                                    "h",
+                                    "php",
+                                    "go",
+                                    "ts",
+                                    "sh",
+                                    "cs",
+                                    "kt",
+                                    "sql"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "upstream": [
+                    "File"
+                ]
+            },
+            "TitleChunker:GrumpyGarlicsBake": {
+                "downstream": [
+                    "Tokenizer:HotDonutsRing"
+                ],
+                "obj": {
+                    "component_name": "TitleChunker",
+                    "params": {
+                        "hierarchy": 5,
+                        "include_heading_content": true,
+                        "levels": [
+                            [
+                                "^#[^#]",
+                                "^##[^#]",
+                                "^###[^#]",
+                                "^####[^#]"
+                            ],
+                            [
+                                "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+(\u5206?\u7f16|\u90e8\u5206)",
+                                "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u7ae0",
+                                "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u8282",
+                                "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u6761",
+                                "[\\(\uff08][\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e]+[\\)\uff09]"
+                            ],
+                            [
+                                "\u7b2c[0-9]+\u7ae0",
+                                "\u7b2c[0-9]+\u8282",
+                                "[0-9]{1,2}[\\. \u3001]",
+                                "[0-9]{1,2}\\.[0-9]{1,2}($|[^a-zA-Z/%~.-])",
+                                "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}"
+                            ],
+                            [
+                                "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u7ae0",
+                                "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u8282",
+                                "[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e]+[ \u3001]",
+                                "[\\(\uff08][\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e]+[\\)\uff09]",
+                                "[\\(\uff08][0-9]{,2}[\\)\uff09]"
+                            ],
+                            [
+                                "PART (ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)",
+                                "Chapter (I+V?|VI*|XI|IX|X)",
+                                "Section [0-9]+",
+                                "Article [0-9]+"
+                            ]
+                        ],
+                        "method": "hierarchy"
+                    }
+                },
+                "upstream": [
+                    "Parser:HipSignsRhyme"
+                ]
+            },
+            "Tokenizer:HotDonutsRing": {
+                "downstream": [],
+                "obj": {
+                    "component_name": "Tokenizer",
+                    "params": {
+                        "fields": "text",
+                        "filename_embd_weight": 0.1,
+                        "outputs": {},
+                        "search_method": [
+                            "embedding",
+                            "full_text"
+                        ]
+                    }
+                },
+                "upstream": [
+                    "TitleChunker:GrumpyGarlicsBake"
+                ]
+            }
+        },
+        "globals": {
+            "sys.history": []
+        },
+        "graph": {
+            "edges": [
+                {
+                    "id": "xy-edge__Filestart-Parser:HipSignsRhymeend",
+                    "source": "File",
+                    "sourceHandle": "start",
+                    "target": "Parser:HipSignsRhyme",
+                    "targetHandle": "end"
+                },
+                {
+                    "id": "xy-edge__Parser:HipSignsRhymestart-TitleChunker:GrumpyGarlicsBakeend",
+                    "source": "Parser:HipSignsRhyme",
+                    "sourceHandle": "start",
+                    "target": "TitleChunker:GrumpyGarlicsBake",
+                    "targetHandle": "end"
+                },
+                {
+                    "id": "xy-edge__TitleChunker:GrumpyGarlicsBakestart-Tokenizer:HotDonutsRingend",
+                    "source": "TitleChunker:GrumpyGarlicsBake",
+                    "sourceHandle": "start",
+                    "target": "Tokenizer:HotDonutsRing",
+                    "targetHandle": "end"
+                }
+            ],
+            "nodes": [
+                {
+                    "data": {
+                        "label": "File",
+                        "name": "File"
+                    },
+                    "id": "File",
+                    "measured": {
+                        "height": 50,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 50,
+                        "y": 200
+                    },
+                    "sourcePosition": "left",
+                    "targetPosition": "right",
+                    "type": "beginNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "outputs": {
+                                "html": {
+                                    "type": "string",
+                                    "value": ""
+                                },
+                                "json": {
+                                    "type": "Array<object>",
+                                    "value": []
+                                },
+                                "markdown": {
+                                    "type": "string",
+                                    "value": ""
+                                },
+                                "text": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "setups": [
+                                {
+                                    "fileFormat": "pdf",
+                                    "flatten_media_to_text": false,
+                                    "output_format": "json",
+                                    "parse_method": "DeepDOC",
+                                    "preprocess": [
+                                        "main_content"
+                                    ],
+                                    "remove_toc": true,
+                                    "vlm": {}
+                                },
+                                {
+                                    "fileFormat": "spreadsheet",
+                                    "flatten_media_to_text": false,
+                                    "output_format": "html",
+                                    "parse_method": "DeepDOC",
+                                    "preprocess": [
+                                        "main_content"
+                                    ],
+                                    "vlm": {}
+                                },
+                                {
+                                    "fileFormat": "image",
+                                    "output_format": "text",
+                                    "parse_method": "ocr",
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
+                                },
+                                {
+                                    "fields": [
+                                        "from",
+                                        "to",
+                                        "cc",
+                                        "bcc",
+                                        "date",
+                                        "subject",
+                                        "body",
+                                        "attachments"
+                                    ],
+                                    "fileFormat": "email",
+                                    "output_format": "text",
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
+                                },
+                                {
+                                    "fileFormat": "markdown",
+                                    "flatten_media_to_text": false,
+                                    "output_format": "json",
+                                    "preprocess": [
+                                        "main_content"
+                                    ],
+                                    "remove_toc": true,
+                                    "vlm": {}
+                                },
+                                {
+                                    "fileFormat": "text&code",
+                                    "output_format": "json",
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
+                                },
+                                {
+                                    "fileFormat": "html",
+                                    "output_format": "json",
+                                    "preprocess": [
+                                        "main_content"
+                                    ],
+                                    "remove_toc": true
+                                },
+                                {
+                                    "fileFormat": "doc",
+                                    "output_format": "json",
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
+                                },
+                                {
+                                    "fileFormat": "docx",
+                                    "flatten_media_to_text": false,
+                                    "output_format": "json",
+                                    "preprocess": [
+                                        "main_content"
+                                    ],
+                                    "remove_toc": true,
+                                    "vlm": {}
+                                },
+                                {
+                                    "fileFormat": "slides",
+                                    "output_format": "json",
+                                    "parse_method": "DeepDOC",
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
+                                }
+                            ]
+                        },
+                        "label": "Parser",
+                        "name": "Parser_0"
+                    },
+                    "dragging": false,
+                    "id": "Parser:HipSignsRhyme",
+                    "measured": {
+                        "height": 57,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 316.99524094206413,
+                        "y": 195.39629819663406
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "parserNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "hierarchy": "5",
+                            "include_heading_content": true,
+                            "method": "hierarchy",
+                            "outputs": {
+                                "chunks": {
+                                    "type": "Array<Object>",
+                                    "value": []
+                                }
+                            },
+                            "rules": [
+                                {
+                                    "levels": [
+                                        {
+                                            "expression": "^#[^#]"
+                                        },
+                                        {
+                                            "expression": "^##[^#]"
+                                        },
+                                        {
+                                            "expression": "^###[^#]"
+                                        },
+                                        {
+                                            "expression": "^####[^#]"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "levels": [
+                                        {
+                                            "expression": "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+(\u5206?\u7f16|\u90e8\u5206)"
+                                        },
+                                        {
+                                            "expression": "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u7ae0"
+                                        },
+                                        {
+                                            "expression": "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u8282"
+                                        },
+                                        {
+                                            "expression": "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u6761"
+                                        },
+                                        {
+                                            "expression": "[\\(\uff08][\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e]+[\\)\uff09]"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "levels": [
+                                        {
+                                            "expression": "\u7b2c[0-9]+\u7ae0"
+                                        },
+                                        {
+                                            "expression": "\u7b2c[0-9]+\u8282"
+                                        },
+                                        {
+                                            "expression": "[0-9]{1,2}[\\. \u3001]"
+                                        },
+                                        {
+                                            "expression": "[0-9]{1,2}\\.[0-9]{1,2}($|[^a-zA-Z/%~.-])"
+                                        },
+                                        {
+                                            "expression": "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "levels": [
+                                        {
+                                            "expression": "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u7ae0"
+                                        },
+                                        {
+                                            "expression": "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u8282"
+                                        },
+                                        {
+                                            "expression": "[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e]+[ \u3001]"
+                                        },
+                                        {
+                                            "expression": "[\\(\uff08][\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e]+[\\)\uff09]"
+                                        },
+                                        {
+                                            "expression": "[\\(\uff08][0-9]{,2}[\\)\uff09]"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "levels": [
+                                        {
+                                            "expression": "PART (ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)"
+                                        },
+                                        {
+                                            "expression": "Chapter (I+V?|VI*|XI|IX|X)"
+                                        },
+                                        {
+                                            "expression": "Section [0-9]+"
+                                        },
+                                        {
+                                            "expression": "Article [0-9]+"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        "label": "TitleChunker",
+                        "name": "Title Chunker_0"
+                    },
+                    "id": "TitleChunker:GrumpyGarlicsBake",
+                    "measured": {
+                        "height": 74,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 616.9952409420641,
+                        "y": 195.39629819663406
+                    },
+                    "selected": true,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "chunkerNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "fields": "text",
+                            "filename_embd_weight": 0.1,
+                            "outputs": {},
+                            "search_method": [
+                                "embedding",
+                                "full_text"
+                            ]
+                        },
+                        "label": "Tokenizer",
+                        "name": "Indexer_0"
+                    },
+                    "id": "Tokenizer:HotDonutsRing",
+                    "measured": {
+                        "height": 114,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 916.9952409420641,
+                        "y": 195.39629819663406
+                    },
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "tokenizerNode"
+                }
+            ]
+        },
+        "history": [],
+        "messages": [],
+        "path": [],
+        "retrieval": [],
+        "variables": []
+    },
+    "avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAOdEVYdFNvZnR3YXJlAEZpZ21hnrGWYwAAHaRJREFUeAFlW1msZFd13ecONbyq9169oSe73W7bGLttBrcHcEgwkDApiIAU8pOgSCiKFCJFCn/5iZS//PKTj0SKkKIEPpKPIIGUL0eWwEhgbDxgt216cNPz8OZX870na+19zr23Oq9dfvWq6p579rT22nufcoKf11577XTms++5NH2qdDIoJjOZzWbSynNxSSIuTSTNMn5U0iQV772UvhSPf4lL9DdeEPwhfNr84Wedc/rclfy8k4JX8DW85+eFJFjf471iPpeyLKXd6UiSZ3od/+Yaej3+9kUpZYEVnP3N/XCPRVnonrgf3scu8TLHa4J7cB3+ZGkqSZL891Sm3zl79uwlp8JL6zXcZOAyE24+nkiBm6RYOOu0JcVmsKwU4Qa6NG8iJhyvwTZUKG4iDUooE1cpwAUF6FvcPDc9t3vo5vA5Kt3jed7tSAbl6+d4Xwrsw/14n9nclI1rdT/O9uOCYp2uh/+SoEDcJ66RwZC8d5KkO9PSn02SIv0urh9wA1y8hCbjj6O2stRuqgZOxNW2rZ7rq/hAog8I7sT+LsNnuPngHPpW8AxaQ+L7wUISP8MbNrxJvciH16n0sLYawFbU/xLvGzvE+/o/R6vr36oQPqQc5Ln7XpKm6dfiBRTeh5vgdclaLRVefFwuLurtUfpqx7ZhXwmgm6RySlMKN6JKSFwVChKsyteiUsS5hbBZCKG4l/hauD5GoIR1ovX1KR2FXqHhYgZUb0AoZaV7KqFmgoo1VmK80O0dN2uOhRv4Skh1/yC8arislRPMUm2wjNYNipAQKvYIAkYLRyWIKaGKfQnruaD8aGFXe0dKHPFRSb7ag+orPE9crWjzAj9IKKyCDbRSBDdM1fWzsEBZCauCFBavcYNJdFld0MIk8VIrNSomgJnGpxrSa6johsuG2wbvqqzMz7pFZDUr+8ozoxIpYBk8ij9JUE7TI+P1UREJBSdwzQMC02IpXF8aN/E+IG9hm9fPFUUFXgZQZh1/D2q7hhIioruGJFzbhFyQEdclYfMh9plx8DwRV8W9GWFRKAnXWHg6BWcXMMkU6mpcwr9MU9q8qCyat9sADFcJZq5vXuBC/EWBo4tX8riGFI0bxh9VnNTr1Aq+J3cGkbh2EhShXsj7wqy+MMEVWyrh7X5JWeMGPac081ceurAvvKDJvYRlPdMeLR9SRwSb+XymHpoGJI3pxDVijO5daTUIQ2UkYWNMhwRDCpQFt43YEa0mDc/RqyKvCCDnAmZEpSluiGGQ6rgML0j8bHQry25MfWUxDzghVfrOCgMDXZTAxxcn4AGT4UhuvvuK3Ll8TsZ721g/lfWTD8v9Z56R9RMPVimRoVC5ra/Tnv0KeVlqq6jHEBAJvnge7z8ZjWVr665cvXZFWp0lefbpZ2oniQRLre8WPK7WSQDZgIEScCDmXiNg6gtqUMfQw4IZY19RFISHnx1D8Cvn3pBrb7wom8tOHn/29+Tmay/JzUsX5dbd83L+Fy/KiceekWe/8k0AZUv1q8I4c7MqxqRG9jJ4DX/zfuqOI1GBf/nKz+XOrauyt78vx088IO9e+K08ffasnH3qKXhdakAZrKsZyTUAOGKPhPeivGlSG4X70XgBm00z826GIo0AGpKR9ZHmqnvPvFx951V5+b/+WT7zlS/JfZ/6uiTjLekf/VPpvfQDaSFgxjORd869Jj/7zz351Df+WrrIGM7RfZ1RWoYNwTLgyJysDU/Hk7F8cP43cv78e7K/dyDXb9+U61cuySeefV7+8Ot/Iku9ZVXM89vbcvPWbWNxLvKHiPhSh0PwLh8VE7IZP1omIguUPGQTJUPqieYJuEiyna1b4N5LASim8sqP/0MG3UTyxFxa+sfF7V2V9Uefktmt87J78aI88ehxOff+BXnrJz+W577wDcsOuWl3PplCwB25e/eOXLt2Ve5u3ZH3z78rt27dlI3N4xoCW7sH8q0//xaum8jPf/q/8tbrv5Lf/czvQ1kzObKxKQd7h4bexmKq1BjBLgrFFK2oKDUmqf8DJIlZnnGPfy6my0oXxswQgJId7G7B7Q/15pOd67LWnsnxjRW58+6vZHDytOTrp3Qj+fpJSWa7srp7R9340UeOya/f/Ikc/s4XUDQBPKelXLhwUV5//RV5781XpYtscuLUafngymV56MMfld7Khly6fFm+/MUvy+tvvSXrm5uyvrEuLXjNG6/+XC68+4488qHHZDQeS6edB3AL7D+GVVFG8A5sNLHfwbJVyBNbIvipIsuKGHFNlwRVMuV/8dOf/oddWGl1eVXefvnH8uBmrgt02hkKoT4Kk66Uu1clXRqgQoOn7F9VxO0sdWR/a1fy1fvl2vmL8uYvfib/+E/flY996FH5JNz6I2efk+3t27K2fkKeOfsJefLxJ1QBn//MH8jGkU1589dvyxOPPS4ra2tSTA7k7ddfl9W1Tbl85Yp8+PHHFZDV0IGp+pDwmN9jZZdoUZPUwoXPlkEpyiX0JVcBs71fBpDG9Tt3r8ndm5el0+8CmLYEBYI4pIsUWirHu1IM93AFSNJ8opkmO/msgQdusL6+gsrxQObbu/KRp5+X7/zl38jjTz4l/ZVVuXP1srwKoY6trcjWtUuyc/saMCSR2XQi9x07LsePHZP3338fVV9bNo7eJ0ePHZEffP9fpQfFZlke2KBUeTsKskB4IskKmBdJWIqwyZL4vosQEDwAQms6cfo7mRzsM7co+SlLq8tTAECr05LO8kCy/pqk7SUp7/wGiplK7qAcJSde2kBFulcOND+4c1tOrA3kcH9XpqORbN25AeuuS7+/jKovkb2dLXnk9IMogadSTmfykTNnpLe8jLR3TW7vHACIE3jHZ+VthENkNwpskemV1oNgqM5nU5kAVEe4zxQKLbBegj23ey3pr/VkcGSAx6p0l9paz1RAGJSANKHW52uZloqAnP3dXfj1itbkfVxIJHetLshRR/z2RdbPMrt+TiYHe9Lq9sRRKX5fOsOZDAGkBzfwWp4qws9W+nLl+hX5OLzhyH0nZXdnWy5fuiQvvPB5abc7WDOX9tKSrK6vqaynHzgp49GTygU+/vznJGcPAMJrTyI0P8hWZxB8OptIFw2TDvbYQXi2kb4TzURV8g2CQiEw4gTNHWWPwe1rTzCMyVj0kKWdf+OX8sjHnpO7516U7uqq9FfXZHL3iuT0gO4A1meT5Ka01o5J5rCpJAd3WJVB3pf2o48JEEwOtu+oC1744Lycu3hZTj7xrLx/8beyhjj/4pe+KhmAkY2OHPdk6mWDZYaswdBN05a0u8p0ZAhQJmubwsppmsMb21B6SwbYVw62mmhOT2uLxgwZWGEERFaIxladhUkZ06jXkOKnlJm+94tX5Ppvzsuf/d3fy84wlY2dHWnf/6R0j90nwyvndOMdgFnr4efFASeICzsfnJMe8GDy2nlZ/dwL0jl1UpAwZfvmNeT8A3l8lpjQScw9iVqKG2f+ZiahK08REoz3yeEQVp+rq0/Hh3BpJ0tLfRiio/VJ2mqrQFHoiu/fUz5z/bJRD+QIjQk9SVt3VosYLpiSsvHevty8cAEXzOVH3/sX+dpffVt+/T//Jg/7l2V0+5T0HvgoImNdpns3xd18HZbLZbZzR2b9R6V3A/GM9lXn5APaaiJybzz4kHzi6Dflk5Iq8xJgRhnQXHkCawtsiDopGL/8G0IfHmzj76GMD3fw/kwGG0clXVlRL8lF6opTZKFJEmyvIeprilB9xnqZ8wZXiJcYSALj1uToqVNy/sJ5ufbby5J+/9/lj//i2/LuT38k6fkLcuIA3pARFDsyQxyORnNZeuBpKa8OZYY09+DXv9ZogFjstTpd3NNiuPRzFZDan8PatHCOPN8HAHb7x6QF69744D25/M7bcuz+U+KBD5OJxTsBrwQ1Zy7vkmtwHVfXGZrSAq0lG+X981YeXvcaWjn7mYmrCi9zGB8oe8Is1JbHXvi0bD78kL6RLvXk5ZdelEfOPIe0hYtB2ufzkcwcNNnqy2xYyo1z12WwvCIPf/WPxOE3N6ENTaCx8itYdTqdo6ga6kY78JL2UldWN1cQy0vYVK6pLsstnvur63JwuC8n8DeqM7l1547sDeEdSQfXHAmuzl6Fk+lwiFDKrLkZzE3rG2nyqvQsS5Sai3phEholZZUSNQ0yJEiFCUosHo6ePq1IO5xMxE2ncvn9d2HxmcZTmmSyyVy92UGaWZZTZz4GBN/EezMZoVI0FE60re2tMwkrt5AGewpa2lxl/KPBKs0mRnDrDpTY7a/KCOA3mRayDkLEz7aQZgso9vAQr2NtVolqN3X3UoWIjdWKCYYqL2KCujnWGSFbiVjl6qgw9j+hlOz4qUfEKne4C1yXTWF6CMGkYOOQG8HrHViuRVYIDc9AV5nvZxNs7PBAekBnMsNOv1XFOi2URJAKZbIPzZUJrp9D2e0O3LRA8zVry1Gky4M9FF4rR2T77l1gzkQypMUjx9tqzTb2wIyxhPRpXSk2S0JVpxzGh9gvG1mhVoAbWRaIswzGh+e9NzZPWDrAhltAXU0ZiF+t7KjL1AYNBaq6CSx0eLArh9u3cH0pjz71jAIdNemKUis/onuMzYqENMBKFd3KDTRTUxJ3vn70pNxEddjtb2grfjoEUBJD8Ei6bMTMNBP4QIqpwA68zLm61cawillBO0oBB+gltLo1c0stgjQQ8Fq21OsHQTMwqR4LKb2YLeQpND6B+xWBfW3fvSG3Lr8DYIfVV8AN3DMqJL3G6Knx87ghX7W+6g7YGOzNu4kswaPoYTmEopWWN45YdYf/j3HfXq+rLn443IdnYlLE3gAHHNlcN94GkGq7jrQ9tQZuEadMvqxwI+JABpI250bLUDqHYijLAXqaP2ER3ihl/68wRGVJSRffunNVDuGeh+wMzYayBGJSzkhUhtJJV9QK+wcHYGjdulwVa4Ts4voEOJNqmsypadDjVeDL3Ko4bgYW7/ZWISQnUCWE78Hdx2B9M+nSrbHxKXBJlSXW19eGp/Yx0qqBmtrYq8rxzdY6Q3k2tdZ4WSmHCsitA0x6ygVcSRrqtUdINjZEfj7cu6ubYMYAvutNmF52b9+QzoMratmlfp87kyEIzXA4rIoS3qaL97hZtqJyWIth0tFqz/h94lMV7gg6QuQAHRiCbTnKQc8jRjHLEFh91Qj1AMmWFTfYT+xqF4WFYKtKh6UNebK0JgmNn4RDSB1/uZplucATXepQsKwg1rqWtkBLEzw8y0Esur91OwwrBBabyPUbN+Cyh4rgdDtaWZmft7kfUwpDi4XPFCmzKGoL0d1PAJAPd7fVM9Rdnc0Fh/CiFhUWen/RsrNQFE1wb6vvy+o97xf5Qkyb9ICkosjECB9me67Bq52EuAFhGaxBCQMFrk4PmaC1pAoinZ2AspZza3kxzXWB0G14yQQMj+/zeuII05uxNVF+zyyQhBSWMaenqVqzt3YE8T+ClyRokfUQAiYgNcwQmKEQYgebIzwdmobhahQ0DnlU6Y1MYJZOwvSoDlG3OMSp62vt+OaZWryN1Le0OlAKzFF0C9WcLVIqlR0jK5BzsMBhCT3GRtuoIMuAI3RJEh9qieHGEriPkGjBnZOYw8NjCYruL/XVg2gUdppyfIb0mR6mFbyrJ1G0pI7pvTVb1TDeMkQ1zWp4RGSJsa+oHmGIGVsNUnmAjpBTVm0txPcy4m/JhotaumUSBvTgAzvmmvhzOp7qbN+GFKIze1LdFTRImL/zyN68/38uy9eoqLQ3gLAjpcv0Cgo2xd823bXOMpuZaWbWZCbh5ZlmAgtxeqFlhqTCAQ2DMO+sxNTxehwxeFkYeKgXZKaEFjfPzYhliyxt6+Kkl4f720GbiR6ooDUYZ1TEAHXG6uqgMRMoq1kA0+EUVm1aiLn61CMflm10jPPUuEIbayY6qxhrbaDKVdArQjiEgYqTamijHoPw8VXrK+JAHphkbCEhCzgXZ+dOmjO9QLTDBdhIpwd039V29XwKlliCqeHfASpDH0Y13X4PjBEpch4tbCN3bnwIgWmVFPmYXeg+wDXTQYwVTdqJgusvofIkMaW70lqM/TYzR2lF1QhZhhkjTqliie0CO6zAr6wxIXoAP8OKlYwyltJJrSG/iAHBC3wAC1JhYoJOdRAWZRg+lrMCDHE/DC706tCDtDXpwgf7B+qWyyvL6hF8PgWPOAB3YMosYC0qiu7dAUdgt9dDYHqfeh7baHiQDTKdsdhieFH4PLbj5/PAASxzRFe/95hNFo7exAq2UoCv2sZugcwkIS22gMpttMJ0QkuNp3lAE0Hq2qqySB3j9sO47kNwovnu7g6o9L6680S7PbYZtt+U3CiYovNz9IQ2YXkfhgsptg903Bop88rCTKfO1QUSX4suXpa1RzcVII09JrKQFu7l7qKaJNrytEi727fKDjulN3id9pYy3NvRBeOpjxncltbd293DgOQuGqI7umkC1nQy184w8YLVI1OZBNCMwHT0/tOys7WlXmeVJEKgmFUjNi1pEwPuJAxOtPdQSmiVWR3QVEARZphpltYZTz0gWDyewmhqSxXFvJpY4ZKjhe1dEmIus0EntH6wc1eHJz4MJHYh+BhW9lpTpHVF6K0xQo+aK4e3vr0yNfYGQp2/unFMGSDDogtMUQ6B/1NxsUr1pVRT7Mj96zyfBLaaVyBY4wCrQ3td02BUvY//7mk3RWaoYQBOwM6QtpPzjpappc7/JoYDYriRs6VOOgs3Z6zyeaYbL1QxsSokUYp01sfDS2yg9NAfYPlNPpDY3HKsjdKZZo9Ee4rTRsVpjQ4qj0Lz0SzKFo/fiAJx7A4nek5noaV1r/CuopBE5lZAYFvAFMNOzQjtcs3PqR1/46OD4oiCE8npjh2QqB5SKtvZS3h4PZRlzE7z/XSqSiJhakEJxWys1/VQsDFFsmnKTVKpXJf7obBtkCoKb2yRTZy59R7L+nicYULgA+wThnGa6c83g36xilItqcvz3FAbBKVbu1LWlug/u6gWoycR7WMokR6TD/SXjf2xj8+gO9xnmIzA80fqFdy8hJYWN3cMc8kZGiLkE4fIFKJVqo3W4/Gc+XSmIEihJ5Np1XAhRzAgdNI8e1ON1EItoM9jHVDx0dhPCGPneMSMrmhU2Op0ZVFQgMYj4noMILQDC07dd7CxBga4oi7ODbJKPNjfR3WJpgqez1gMsYXmC1UI+3jRhXn7ARo1Q7BMWpc9xTjaJiWmv5u3zMMasetUR3Vcy7rCrlLAQpdIlApbw8I65pGWmvASwoN+ooNIuh17BnBRthTolvPSgHCK9lih3SAXj2fpjTgVYupjZkgDDpAY1T8Rd2wsF4XpLC1jzp/oWC2CWBJKX55eIXcgs1PBilI9ix7GMlhBlhkGCtICKhz+XOgP5PHEaBIAoWwIf2861BrArJshT+eIZUVdzQi5QRquPcDo3E5wKGjoBngTYkEXlaTW+HidG+1gw8QBBUimRE6COCgBcNJjOLEarB9FQ2bfKjkAIitFCmSoz5J6bK1vCD2bGYaMETZUchFosmJU4xheHQappUGepuBJjDK6iPgqlqPW9DctqsVRrjigDCCkSKWhcOURZggVlLBAgaCrKKcZx7T+YA0DS2aSlh3H2d/bkz08VOjp7B7PcBhwnsCgZE8/y/cZrhyGEuDIBi3OvWYbOwBlhR09wtJ6suD6CwqgQfXwVlEuxEh8NF3Gig07eWX0tFMxLy91jT1GJoiHEgyCDFxix2YI1x3hsQNiNERY0OpZYlmCvEALpXBSlVeuHbsfXjOC4tZRkfZUOFaGbLToabbCCiJeU1F374NwYj1C4lbIXIsKMK/KpHGeJgJN80N1FFj8pSBA7AmQFKnqUNiM0DjVzaFzQyuy7VViBxNsdgq3p1takyXVtXO4v7XFM7VmRo/wkYnUXkjmiVigScUOqRLo4N4KgGWI8ZmSKJ0ka7md2Cwi4EXEmfjTbJwQBxLnw+lLaZ7q9FU4uEaNoBlBO0Utu6n4Cuy08MGgZApCVIsiOttjJedCQ4Q/U6Q9up/GuhMFyOpEaOkDPRb9fM5hCMZr7CvQwqU2U0Xxx06HoArlfBKhRbbK7q+xXGvaxJFwkxBRWexUjQ9HkoRqqNYQhS7tFGb8TkAVlQQ9Mj0SFeBAKPiAAx1zL8/8vmVdVwkzfcRuprMDq9NVEVrhFSGN2RBFByYclpbhHJC3Cc7J0x9GrbGnwhI82U7nPIBtcZ4TILGiyyeyWNEu0HlvBy/JGSYYuR3uHCLFjrQ+SRIXy8ZQ/ftwFk8Cd2+0ljQw6QEZW2VL5nLKB8KhJnx2iIovekwHlJgbjEduY6WmgId8rlxdzyHPNXRMERZuLHuZHVYBhIcA18FgIKvoLDFr5ElS7c039haTVxTeGqojFGWHSMcHEB6hM7MOUpQrK1zM+SF/8/UimKBUiLOjZq5unDIM6AFaealLWsubH+H0iIzN+nepAlY8Fapj8dQ21l7u6exRT5iFLg0rRJ1Vuhp7OIApg6tp8USFzaeB4hIYgP6pnXCl35FVzjGY1RMu8KA0HKKy+YGrBiLRo7PIhzXNeVcRoOj5dlg6hECF8Jm1ycEEPfv2Wg9wHbo5CqMRBia9ZfUQncBCKA5SGPdsd9PydL9W1lIw6610NMYra4qdWnc6uYEXrW4AWw6UjutgZF6EapG9AjwvEM/8atDM2nHqlXkWPMpXHh5JLgkbs5nJElE/urjE9BVOXdBtI5Hw4csNeoNcByVl9B6WxyQfjGXkbgme0kUhk4YvXk1hcRZEa3DnjfV1dIj7oMvLeuLM7tvs61vzk8B34sHHjOvD03JkhnZvHWEHLlKSWULI0rytg/0QX7RQYqtMqz1z7MSHw9tlnKyEEBCpNWOaimfu6iKp5gLhs84YobXIdd6Bm7bsibBvtysrcr9+jhSVrI+ZxhhZGXRt/2LGcQ3OoVhBPuIQwwdDCDyQzVNnai90uTVpsjx0dl29f66RhG+kBFmZUzJrGmpFyTPIIVWQB9jF6sJBE7E0FjvdX/f4GlWjTlbzrs710pKBnekJEi6+v3VLjj90RkNKO0fVCS0WPmnjixalWk+/ZhaEZ8NyMpqEM0OljsV5eTvv6m6SUJjFQ5Fp+DKULDR0w/7jfQM1N2WTWsSv0vC8Y2laLSPIBatYpyipNuYNnnWvdhJTlGFlCQR0yOfwhtF4h0nCQAi5nQRHGt5VtU0Tsw7H8PNQAnvl8KWmWCu8OEgtFAMkjLXjCc/YzIxKiF+VkaaNtFli2FQ6CynX8JQkeEjmG2WvxHiQ2hP06E0j3ZRxCXRu2WLmhksUJdwcraQ1O8Ngfxejrk31lAiqHL0XGoPhyy+OVLQVWmwMK18ff6W1eBaY13vrEbiybnB61/gSlEjIHMFYZIV5LIN9ALtElWCd44BnvGcS48bVM7bYI4zfzpRQErvgVj7EIqdG7PGzJVbOEw2JeTlEEdTVdNRBzi2SCKhm1TR1oWWVVkAZv3cYLSM65LBBieFOI/YaP77aiVRhEDmHfZ0mhEWj1kmdC9a1NbLK5RdXltrQsedmjKD6GgobmdLWgqW/cdQIDgoXuv8yhpwGueGoWhhT6RcZysYBRgqdpqFhqma0UFSiMtdY1z0EAGs2bF1DtGr3rv7eQF3ihNAOoO6qs4bWNqcCdiDToEL50G/PEjtpxRG5D51jbYwQA4LrsUMkPP3ZMp6uXHyVfcNu6Bj7Ki+XLtw1CBu/A+QaCBElid8NSCowdtV3kKqPBs+ovsvqazPGEJFAjnxIX83iLvYsOOX8Ff76bJ3j4uZcYzGpqG78JqZZhRo1JqfTV1SIPGil4RE4g1TgagImMayigOKlWYvoidZwrQ8XmaC1m0t04wVpZDGMYv3fUEos3CKeoVD7YVKkxbegmp1qgQbqa+ir4GGRxM4FaFgkIX45KYYbz3g+DwpQF0tqBYbjuZo9XMCWeB+iuwscumq8BKXp7yQJ4dD4LmKjxPUNMKsKgbBGcz1XBYz96MdTt+OS1t8mZ86cuQSGdRYW/mEkPorEYsJX7K80aqpVYrhhWTFHY0PaZvLREnWsukZTJXx7r0LvUmp3XvgGmqvHdHHmp3zFRUNJdbihiWC6pvcLFLgCCqffJ9rBXV4qfHr2zJmHLv0fmt93XiHDmvoAAAAASUVORK5CYII="
+}

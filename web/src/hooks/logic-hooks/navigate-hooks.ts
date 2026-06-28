@@ -52,7 +52,7 @@ export const useNavigatePage = () => {
 
   const navigateToDataFile = useCallback(
     (id: string) => () => {
-      navigate(`${Routes.DatasetBase}${Routes.DatasetBase}/${id}`);
+      navigate(`${Routes.DatasetBase}${Routes.Files}/${id}`);
     },
     [navigate],
   );
@@ -197,6 +197,10 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToModelSetting = useCallback(() => {
+    navigate(`${Routes.UserSetting}${Routes.Model}`);
+  }, [navigate]);
+
   return {
     navigateToDatasetList,
     navigateToDataset,
@@ -223,5 +227,6 @@ export const useNavigatePage = () => {
     navigateToDataSourceDetail,
     navigateToMemory,
     navigateToMemoryList,
+    navigateToModelSetting,
   };
 };

@@ -80,7 +80,7 @@ def stream_chat_completion(
     t0 = time.perf_counter()
     response = client.request(
         "POST",
-        f"/chats_openai/{chat_id}/chat/completions",
+        f"/openai/{chat_id}/chat/completions",
         json_body=payload,
         stream=True,
     )

@@ -10,7 +10,7 @@
 **Install Python dependencies (including test dependencies):**
 
 ```bash
-uv sync --python 3.12 --only-group test --no-default-groups --frozen
+uv sync --python 3.13 --only-group test --no-default-groups --frozen
 
 ```
 
@@ -33,7 +33,7 @@ uv pip install sdk/python
 ```env
 COMPOSE_PROFILES=${COMPOSE_PROFILES},tei-cpu
 TEI_MODEL=BAAI/bge-small-en-v1.5
-RAGFLOW_IMAGE=infiniflow/ragflow:v0.24.0 #Replace with the image you are using
+RAGFLOW_IMAGE=infiniflow/ragflow:v0.26.1 #Replace with the image you are using
 
 ```
 

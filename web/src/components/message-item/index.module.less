@@ -34,9 +34,27 @@
     .messageTextBase();
     padding: 0;
     word-break: break-word;
-    :global(section.think) {
+    :global(details.think) {
       color: rgb(166, 166, 166);
       border-inline-start-color: rgb(78, 78, 86);
+
+      summary {
+        color: rgb(140, 140, 140);
+        &:hover {
+          color: rgb(180, 180, 180);
+        }
+      }
+    }
+    :global(details.retrieving) {
+      color: rgb(166, 166, 166);
+      border-inline-start-color: rgb(60, 100, 90);
+
+      summary {
+        color: rgb(120, 170, 155);
+        &:hover {
+          color: rgb(150, 200, 185);
+        }
+      }
     }
   }
 

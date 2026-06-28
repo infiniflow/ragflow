@@ -17,6 +17,8 @@
 package handler
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"ragflow/internal/common"
@@ -32,15 +34,17 @@ import (
 
 // FileHandler file handler
 type FileHandler struct {
-	fileService *service.FileService
-	userService *service.UserService
+	fileService          *service.FileService
+	userService          *service.UserService
+	file2DocumentService *service.File2DocumentService
 }
 
 // NewFileHandler create file handler
 func NewFileHandler(fileService *service.FileService, userService *service.UserService) *FileHandler {
 	return &FileHandler{
-		fileService: fileService,
-		userService: userService,
+		fileService:          fileService,
+		userService:          userService,
+		file2DocumentService: service.NewFile2DocumentService(),
 	}
 }
 
@@ -104,7 +108,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 
 	result, err := h.fileService.ListFiles(userID, parentID, page, pageSize, orderby, desc, keywords)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -134,7 +138,7 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 	// Get root folder
 	rootFolder, err := h.fileService.GetRootFolder(userID)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -155,11 +159,12 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/file/parent_folder [get]
 func (h *FileHandler) GetParentFolder(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
+	userID := user.ID
 
 	// Get file_id from query
 	fileID := c.Query("file_id")
@@ -168,10 +173,10 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 		return
 	}
 
-	// Get parent folder
-	parentFolder, err := h.fileService.GetParentFolder(fileID)
+	// Get parent folder with permission check
+	parentFolder, err := h.fileService.GetParentFolder(userID, fileID)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -192,11 +197,12 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/file/all_parent_folder [get]
 func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
+	userID := user.ID
 
 	// Get file_id from query
 	fileID := c.Query("file_id")
@@ -205,10 +211,10 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 		return
 	}
 
-	// Get all parent folders
-	parentFolders, err := h.fileService.GetAllParentFolders(fileID)
+	// Get all parent folders with permission check
+	parentFolders, err := h.fileService.GetAllParentFolders(userID, fileID)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -229,11 +235,12 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/files/{id}/ancestors [get]
 func (h *FileHandler) GetFileAncestors(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
+	userID := user.ID
 
 	fileID := c.Param("id")
 	if fileID == "" {
@@ -241,9 +248,10 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 		return
 	}
 
-	parentFolders, err := h.fileService.GetAllParentFolders(fileID)
+	// Get all parent folders with permission check
+	parentFolders, err := h.fileService.GetAllParentFolders(userID, fileID)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -297,7 +305,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		if parentID == "" {
 			rootFolder, err := h.fileService.GetRootFolder(userID)
 			if err != nil {
-				jsonError(c, common.CodeServerError, err.Error())
+				jsonInternalError(c, err)
 				return
 			}
 			parentID = rootFolder["id"].(string)
@@ -344,7 +352,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		if parentID == "" {
 			rootFolder, err := h.fileService.GetRootFolder(userID)
 			if err != nil {
-				jsonError(c, common.CodeServerError, err.Error())
+				jsonInternalError(c, err)
 				return
 			}
 			parentID = rootFolder["id"].(string)
@@ -547,4 +555,70 @@ func (h *FileHandler) Download(c *gin.Context) {
 
 	// Send file data
 	c.Data(http.StatusOK, contentType, blob)
+}
+
+// LinkToDatasets links files (or folder trees) to one or more datasets.
+// Mirrors Python POST /api/v1/files/link-to-datasets (convert).
+// @Summary Link files to datasets
+// @Description Associate files with target knowledge-base datasets, re-indexing
+// as needed. Folder inputs are expanded to their innermost files.
+// The heavy DB work runs in a goroutine; the endpoint returns immediately.
+// @Tags file
+// @Accept json
+// @Produce json
+// @Param request body service.LinkToDatasetsRequest true "file_ids and kb_ids"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/files/link-to-datasets [post]
+func (h *FileHandler) LinkToDatasets(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.LinkToDatasetsRequest
+	// Tolerate bind errors: a malformed or empty body simply leaves the fields
+	// empty, which the validate_request-style check below reports as missing
+	// arguments — matching Python's @validate_request behaviour and code.
+	_ = c.ShouldBindJSON(&req)
+
+	// Mirror Python @validate_request("file_ids", "kb_ids"): missing arguments
+	// return ARGUMENT_ERROR (101) with data=null and the aggregated message.
+	var missing []string
+	if len(req.FileIDs) == 0 {
+		missing = append(missing, "file_ids")
+	}
+	if len(req.KbIDs) == 0 {
+		missing = append(missing, "kb_ids")
+	}
+	if len(missing) > 0 {
+		jsonError(c, common.CodeArgumentError, fmt.Sprintf("required argument are missing: %s; ", strings.Join(missing, ",")))
+		return
+	}
+
+	if err := h.file2DocumentService.LinkToDatasets(user.ID, &req); err != nil {
+		jsonError(c, linkToDatasetsErrorCode(err), err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    true,
+		"message": "success",
+	})
+}
+
+// linkToDatasetsErrorCode maps File2DocumentService sentinel errors to
+// Python-compatible response codes. File/dataset-not-found and no-authorization
+// use DATA_ERROR (102), matching Python's get_data_error_result in convert();
+// any other (internal) error is reported as a server error.
+func linkToDatasetsErrorCode(err error) common.ErrorCode {
+	switch {
+	case errors.Is(err, service.ErrLinkFileNotFound),
+		errors.Is(err, service.ErrLinkDatasetNotFound),
+		errors.Is(err, service.ErrLinkNoAuthorization):
+		return common.CodeDataError
+	default:
+		return common.CodeServerError
+	}
 }

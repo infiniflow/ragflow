@@ -33,6 +33,7 @@ import {
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
+  TitleChunkerMethod,
   TypesWithArray,
   WebhookSecurityAuthType,
 } from './constant';
@@ -231,6 +232,7 @@ function transformParserParams(params: ParserFormSchemaType) {
             flatten_media_to_text: cur.flatten_media_to_text,
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
+            remove_header_footer: cur.remove_header_footer || false,
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -279,7 +281,29 @@ function transformParserParams(params: ParserFormSchemaType) {
             fields: cur.fields,
           };
           break;
+        case FileType.Doc:
+          filteredSetup = {
+            ...filteredSetup,
+            vlm: { llm_id: cur.vlm?.llm_id },
+            flatten_media_to_text: cur.flatten_media_to_text,
+            remove_header_footer: cur.remove_header_footer || false,
+          };
+          break;
         case FileType.Docx:
+          filteredSetup = {
+            ...filteredSetup,
+            vlm: { llm_id: cur.vlm?.llm_id },
+            flatten_media_to_text: cur.flatten_media_to_text,
+            remove_header_footer: cur.remove_header_footer || false,
+          };
+          break;
+        case FileType.Html:
+          filteredSetup = {
+            ...filteredSetup,
+            remove_toc: cur.remove_toc,
+            remove_header_footer: cur.remove_header_footer || false,
+          };
+          break;
         case FileType.TextMarkdown:
           filteredSetup = {
             ...filteredSetup,
@@ -330,14 +354,31 @@ function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
 }
 
 function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
-  const levels = params.rules.map((rule) =>
+  const activeRules =
+    (params.method === TitleChunkerMethod.Group
+      ? params.groupRules
+      : params.hierarchyRules) ?? params.rules;
+
+  const levels = (activeRules || []).map((rule) =>
     transformObjectArrayToPureArray(rule.levels, 'expression'),
   );
 
+  const hierarchyValue =
+    (params.method === TitleChunkerMethod.Group
+      ? params.hierarchyGroup
+      : params.hierarchyHierarchy) ?? params.hierarchy;
+
   return {
+    ...omit(params, [
+      'hierarchyRules',
+      'groupRules',
+      'hierarchyHierarchy',
+      'hierarchyGroup',
+    ]),
     method: params.method,
-    hierarchy: Number(params.hierarchy || 0),
+    hierarchy: Number(hierarchyValue || 0),
     include_heading_content: Boolean(params.include_heading_content),
+    root_chunk_as_heading: Boolean(params.root_chunk_as_heading),
     levels,
   };
 }
@@ -524,8 +565,9 @@ export const buildDslGlobalVariables = (
   return { globals: globalVariablesResult, variables: globalVariables };
 };
 
+// TODO: This is caused by `useSendMessageBySSE`; it is recommended to sort out the logic.
 export const receiveMessageError = (res: any) =>
-  res && (res?.response.status !== 200 || res?.data?.code !== 0);
+  res && res?.response.status !== 200;
 
 // Replace the id in the object with text
 export const replaceIdWithText = (

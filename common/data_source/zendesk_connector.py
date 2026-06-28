@@ -246,6 +246,18 @@ def _article_to_document(
     )
 
 
+def _is_indexable_article(article: dict[str, Any]) -> bool:
+    body = article.get("body")
+    return (
+        bool(body)
+        and not article.get("draft")
+        and not any(
+            label in ZENDESK_CONNECTOR_SKIP_ARTICLE_LABELS
+            for label in article.get("label_names") or []
+        )
+    )
+
+
 def _get_comment_text(
     comment: dict[str, Any],
     author_map: dict[str, BasicExpertInfo],
@@ -331,6 +343,10 @@ def _ticket_to_document(
         primary_owners=[submitter] if submitter else None,
         metadata=metadata,
     )
+
+
+def _is_indexable_ticket(ticket: dict[str, Any]) -> bool:
+    return ticket.get("status") != "deleted"
 
 
 class ZendeskConnectorCheckpoint(ConnectorCheckpoint):
@@ -419,14 +435,7 @@ class ZendeskConnector(
         has_more = response.has_more
         after_cursor = response.meta.get("after_cursor")
         for article in articles:
-            if (
-                article.get("body") is None
-                or article.get("draft")
-                or any(
-                    label in ZENDESK_CONNECTOR_SKIP_ARTICLE_LABELS
-                    for label in article.get("label_names", [])
-                )
-            ):
+            if not _is_indexable_article(article):
                 continue
 
             try:
@@ -498,7 +507,7 @@ class ZendeskConnector(
         has_more = ticket_response.has_more
         next_start_time = ticket_response.meta["end_time"]
         for ticket in tickets:
-            if ticket.get("status") == "deleted":
+            if not _is_indexable_ticket(ticket):
                 continue
 
             try:
@@ -553,16 +562,14 @@ class ZendeskConnector(
 
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: IndexingHeartbeatInterface | None = None,
     ) -> GenerateSlimDocumentOutput:
         slim_doc_batch: list[SlimDocument] = []
         if self.content_type == "articles":
-            articles = _get_articles(
-                self.client, start_time=int(start) if start else None
-            )
+            articles = _get_articles(self.client)
             for article in articles:
+                if not _is_indexable_article(article):
+                    continue
                 slim_doc_batch.append(
                     SlimDocument(
                         id=f"article:{article['id']}",
@@ -572,10 +579,10 @@ class ZendeskConnector(
                     yield slim_doc_batch
                     slim_doc_batch = []
         elif self.content_type == "tickets":
-            tickets = _get_tickets(
-                self.client, start_time=int(start) if start else None
-            )
+            tickets = _get_tickets(self.client)
             for ticket in tickets:
+                if not _is_indexable_ticket(ticket):
+                    continue
                 slim_doc_batch.append(
                     SlimDocument(
                         id=f"zendesk_ticket_{ticket['id']}",

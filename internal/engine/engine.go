@@ -18,7 +18,7 @@ package engine
 
 import (
 	"context"
-
+	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 )
 
@@ -30,38 +30,57 @@ const (
 	EngineInfinity      EngineType = "infinity"
 )
 
-// SearchRequest is an alias for types.SearchRequest
-type SearchRequest = types.SearchRequest
-
-// SearchResponse is an alias for types.SearchResponse
-type SearchResponse = types.SearchResponse
-
 // DocEngine document storage engine interface
 type DocEngine interface {
-	// Search
-	Search(ctx context.Context, req interface{}) (interface{}, error)
-
-	// Dataset operations
-	CreateDataset(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error
-	InsertDataset(ctx context.Context, documents []map[string]interface{}, indexName string, knowledgebaseID string) ([]string, error)
-	UpdateDataset(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, tableNamePrefix string, knowledgebaseID string) error
-
 	// Chunk operations
-	GetChunk(ctx context.Context, indexName, chunkID string, kbIDs []string) (interface{}, error)
+	CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error
+	InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error)
+	UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, baseName string, datasetID string) error
+	DeleteChunks(ctx context.Context, condition map[string]interface{}, baseName string, datasetID string) (int64, error)
+	Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error)
+	GetChunk(ctx context.Context, baseName, chunkID string, datasetIDs []string) (interface{}, error)
+	DropChunkStore(ctx context.Context, baseName, datasetID string) error
+	ChunkStoreExists(ctx context.Context, baseName, datasetID string) (bool, error)
 
 	// Document metadata operations
-	CreateMetadata(ctx context.Context, indexName string) error
-	InsertMetadata(ctx context.Context, documents []map[string]interface{}, tenantID string) ([]string, error)
-	UpdateMetadata(ctx context.Context, docID string, kbID string, metaFields map[string]interface{}, tenantID string) error
+	CreateMetadataStore(ctx context.Context, tenantID string) error
+	InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error)
+	UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error
+	DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error)
+	DeleteMetadataKeys(ctx context.Context, docID string, datasetID string, keys []string, tenantID string) error
+	DropMetadataStore(ctx context.Context, tenantID string) error
+	MetadataStoreExists(ctx context.Context, tenantID string) (bool, error)
+	SearchMetadata(ctx context.Context, req *types.SearchMetadataRequest) (*types.SearchMetadataResult, error)
 
-	// Operations for both dataset and metadata tables
-	Delete(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error)
-    DropTable(ctx context.Context, indexName string) error
-	TableExists(ctx context.Context, indexName string) (bool, error)
+	// Document operations (used by skill indexing)
+	IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error
+	DeleteDocument(ctx context.Context, indexName, docID string) error
+	BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error)
+
+	// Utility functions for search result processing
+	GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{}
+	GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{}
+	GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string
+
+	// Run SQL
+	RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error)
+
+	GetChunkIDs(chunks []map[string]interface{}) []string
+	KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error)
+	GetScores(searchResult map[string]interface{}) map[string]float64
 
 	// Health check
 	Ping(ctx context.Context) error
 	Close() error
+
+	// GetType returns the engine type
+	GetType() string
+
+	// FilterDocIdsByMetaPushdown runs a metadata filter directly against
+	// the doc metadata index, returning matching doc IDs or nil if push-down
+	// is not supported (caller should fall back to in-memory filtering).
+	// conditions is a list of filter objects with keys: key, op, value
+	FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs []string, conditions []map[string]interface{}, logic string) []string
 }
 
 // Type returns the engine type (helper method for runtime type checking)
@@ -71,4 +90,13 @@ func Type(docEngine DocEngine) EngineType {
 	// This is a placeholder that should be implemented differently
 	// or rely on configuration to know the type
 	return EngineType("unknown")
+}
+
+type MessageQueue interface {
+	Init() error
+	InitConsumer(subject string) error
+	PublishTask(subject string, payload []byte) error
+	GetMessages(messageCount int) ([]common.TaskHandle, error)
+	ListMessages(messageType string, pending bool) ([]map[string]string, error)
+	ShowMessageQueue() (map[string]string, error)
 }

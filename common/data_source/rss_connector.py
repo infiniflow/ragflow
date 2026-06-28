@@ -1,44 +1,29 @@
 import hashlib
-import ipaddress
-import socket
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from time import struct_time
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import bs4
 import feedparser
 import requests
 
 from common.data_source.config import INDEX_BATCH_SIZE, REQUEST_TIMEOUT_SECONDS, DocumentSource
-from common.data_source.interfaces import LoadConnector, PollConnector
-from common.data_source.models import Document, GenerateDocumentsOutput, SecondsSinceUnixEpoch
+from common.data_source.interfaces import LoadConnector, PollConnector, SlimConnectorWithPermSync
+from common.data_source.models import (
+    Document,
+    GenerateDocumentsOutput,
+    GenerateSlimDocumentOutput,
+    SecondsSinceUnixEpoch,
+    SlimDocument,
+)
+from common.ssrf_guard import assert_url_is_safe, pin_dns as _pin_dns
+
+_MAX_REDIRECTS = 10
 
 
-def _is_private_ip(ip: str) -> bool:
-    try:
-        ip_obj = ipaddress.ip_address(ip)
-        return ip_obj.is_private or ip_obj.is_link_local or ip_obj.is_loopback
-    except ValueError:
-        return False
-
-
-def _validate_url_no_ssrf(url: str) -> None:
-    parsed = urlparse(url)
-    hostname = parsed.hostname
-    if not hostname:
-        raise ValueError("URL must have a valid hostname")
-
-    try:
-        ip = socket.gethostbyname(hostname)
-        if _is_private_ip(ip):
-            raise ValueError(f"URL resolves to private/internal IP address: {ip}")
-    except socket.gaierror as e:
-        raise ValueError(f"Failed to resolve hostname: {hostname}") from e
-
-
-class RSSConnector(LoadConnector, PollConnector):
+class RSSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def __init__(self, feed_url: str, batch_size: int = INDEX_BATCH_SIZE) -> None:
         self.feed_url = feed_url.strip()
         self.batch_size = batch_size
@@ -60,6 +45,25 @@ class RSSConnector(LoadConnector, PollConnector):
 
     def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> GenerateDocumentsOutput:
         yield from self._load_entries(start=start, end=end)
+
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        del callback
+
+        feed = self._read_feed(require_entries=False)
+        batch: list[SlimDocument] = []
+
+        for entry in feed.entries:
+            batch.append(SlimDocument(id=self._build_document_id(entry)))
+
+            if len(batch) >= self.batch_size:
+                yield batch
+                batch = []
+
+        if batch:
+            yield batch
 
     def _load_entries(
         self,
@@ -87,7 +91,8 @@ class RSSConnector(LoadConnector, PollConnector):
         if batch:
             yield batch
 
-    def _validate_feed_url(self) -> None:
+    def _validate_feed_url(self) -> tuple[str, str]:
+        """Validate ``self.feed_url`` and return ``(hostname, resolved_ip)``."""
         if not self.feed_url:
             raise ValueError("feed_url is required")
 
@@ -95,7 +100,7 @@ class RSSConnector(LoadConnector, PollConnector):
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("feed_url must be a valid http or https URL")
 
-        _validate_url_no_ssrf(self.feed_url)
+        return assert_url_is_safe(self.feed_url)
 
     def _read_feed(self, require_entries: bool) -> Any:
         if self._cached_feed is not None:
@@ -103,14 +108,37 @@ class RSSConnector(LoadConnector, PollConnector):
                 raise ValueError("RSS feed contains no entries")
             return self._cached_feed
 
-        self._validate_feed_url()
+        # Validate once to get the pinned IP for the initial request.
+        current_hostname, current_ip = self._validate_feed_url()
+        current_url = self.feed_url
 
-        response = requests.get(self.feed_url, timeout=REQUEST_TIMEOUT_SECONDS, allow_redirects=True)
+        # Follow redirects manually: each hop is validated and DNS-pinned
+        # *before* the connection is made, closing the TOCTOU rebinding window
+        # that existed when allow_redirects=True was used with post-hoc checks.
+        response: requests.Response | None = None
+        for _ in range(_MAX_REDIRECTS + 1):
+            with _pin_dns(current_hostname, current_ip):
+                response = requests.get(
+                    current_url,
+                    timeout=REQUEST_TIMEOUT_SECONDS,
+                    allow_redirects=False,
+                )
+
+            if response.status_code not in (301, 302, 303, 307, 308):
+                break
+
+            location = response.headers.get("Location")
+            if not location:
+                break  # broken redirect; let raise_for_status() handle it
+
+            redirect_url = urljoin(current_url, location)
+            # Validate redirect target before following it.
+            current_hostname, current_ip = assert_url_is_safe(redirect_url)
+            current_url = redirect_url
+        else:
+            raise ValueError(f"Exceeded {_MAX_REDIRECTS} redirects fetching {self.feed_url!r}")
+
         response.raise_for_status()
-
-        final_url = getattr(response, "url", self.feed_url)
-        if final_url != self.feed_url and urlparse(final_url).hostname:
-            _validate_url_no_ssrf(final_url)
 
         feed = feedparser.parse(response.content)
         if getattr(feed, "bozo", False) and not feed.entries:
@@ -127,7 +155,7 @@ class RSSConnector(LoadConnector, PollConnector):
     def _build_document(self, entry: Any, updated_at: datetime) -> Document:
         link = (entry.get("link") or "").strip()
         title = (entry.get("title") or "").strip()
-        stable_key = (entry.get("id") or link or title or self.feed_url).strip()
+        stable_key = self._resolve_stable_key(entry)
         semantic_identifier = title or link or stable_key
         content = self._build_content(entry, semantic_identifier)
         blob = content.encode("utf-8")
@@ -149,7 +177,7 @@ class RSSConnector(LoadConnector, PollConnector):
             metadata["categories"] = categories
 
         return Document(
-            id=f"rss:{hashlib.md5(stable_key.encode('utf-8')).hexdigest()}",
+            id=self._build_document_id(entry),
             source=DocumentSource.RSS,
             semantic_identifier=semantic_identifier,
             extension=".txt",
@@ -176,6 +204,15 @@ class RSSConnector(LoadConnector, PollConnector):
                 parts.append(normalized)
 
         return "\n\n".join(part for part in parts if part).strip()
+
+    def _build_document_id(self, entry: Any) -> str:
+        stable_key = self._resolve_stable_key(entry)
+        return f"rss:{hashlib.md5(stable_key.encode('utf-8')).hexdigest()}"
+
+    def _resolve_stable_key(self, entry: Any) -> str:
+        link = (entry.get("link") or "").strip()
+        title = (entry.get("title") or "").strip()
+        return (entry.get("id") or link or title or self.feed_url).strip()
 
     def _resolve_entry_time(self, entry: Any) -> datetime:
         for field in ("updated_parsed", "published_parsed"):

@@ -26,6 +26,10 @@ from dataclasses import dataclass
 from typing import Dict, Any, Optional, List
 
 
+class SandboxProviderConfigError(Exception):
+    """Raised when the selected provider is explicitly configured but unusable."""
+
+
 @dataclass
 class SandboxInstance:
     """Represents a sandbox execution instance"""
