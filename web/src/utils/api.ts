@@ -30,6 +30,10 @@ export default {
   addProvider: `${restAPIv1}/providers/`,
   addProviderInstance: ({ llm_factory }: { llm_factory: string }) =>
     `${restAPIv1}/providers/${llm_factory}/instances`,
+  verifyProviderConnection: ({ provider_name }: { provider_name: string }) =>
+    `${restAPIv1}/providers/${provider_name}/connection`,
+  listProviderModels: ({ provider_name }: { provider_name: string }) =>
+    `${restAPIv1}/providers/${provider_name}/models`,
   listProviderInstances: ({ provider_name }: { provider_name: string }) =>
     `${restAPIv1}/providers/${provider_name}/instances`,
   listInstanceModels: ({
@@ -48,6 +52,14 @@ export default {
     instance_name: string;
   }) => `${restAPIv1}/providers/${provider_name}/instances/${instance_name}`,
   addInstanceModel: ({
+    provider_name,
+    instance_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
+  editInstanceModel: ({
     provider_name,
     instance_name,
   }: {
@@ -83,6 +95,15 @@ export default {
     `${restAPIv1}/connectors/google/oauth/web/result?type=${type}`,
   boxWebAuthStart: () => `${restAPIv1}/connectors/box/oauth/web/start`,
   boxWebAuthResult: () => `${restAPIv1}/connectors/box/oauth/web/result`,
+
+  // chat channel
+  chatChannelSet: `${restAPIv1}/chat-channels`,
+  chatChannelList: `${restAPIv1}/chat-channels`,
+  chatChannelDetail: (id: string) => `${restAPIv1}/chat-channels/${id}`,
+  chatChannelUpdate: (id: string) => `${restAPIv1}/chat-channels/${id}`,
+  chatChannelDel: (id: string) => `${restAPIv1}/chat-channels/${id}`,
+  chatChannelRuntime: (id: string) =>
+    `${restAPIv1}/chat-channels/${id}/runtime`,
 
   // plugin
   llmTools: `${restAPIv1}/plugin/tools`,
@@ -120,7 +141,7 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   unbindPipelineTask: (datasetId: string, indexType: string, wipe?: boolean) =>
     `${restAPIv1}/datasets/${datasetId}/${indexType.toLowerCase()}${wipe === false ? '?wipe=false' : ''}`,
-  pipelineRerun: `${webAPI}/canvas/rerun`,
+  pipelineRerun: `${restAPIv1}/agents/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
   updateDocumentsMetadata: (datasetId: string) =>

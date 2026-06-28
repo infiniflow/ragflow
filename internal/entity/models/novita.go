@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -26,79 +25,30 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // NovitaModel implements ModelDriver for Novita.ai
-// (https://novita.ai/docs/api-reference/).
-//
-// Novita exposes an OpenAI-compatible REST API at
-// https://api.novita.ai/v3/openai (chat completions at
-// /chat/completions, list models at /models). It serves a large
-// catalog of third-party models (DeepSeek, Llama, Qwen3, Kimi,
-// Gemma, Mistral, etc.) behind a single OpenAI-shaped surface.
-//
-// The wire shape matches OpenAI standard with ONE notable
-// difference: reasoning models like qwen3-* embed their
-// chain-of-thought INLINE inside content as <think>...</think>
-// tags, rather than in a separate reasoning_content field. The
-// driver detects those tags and routes the inner text to
-// ChatResponse.ReasonContent (non-stream) or the sender's second
-// arg (stream), keeping the answer clean of tag clutter.
 type NovitaModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewNovitaModel creates a new Novita model instance.
-//
-// Same transport convention as other Go drivers in this package:
-// clone http.DefaultTransport, override the connection-pool fields,
-// no client-level Timeout so SSE streams are not capped.
 func NewNovitaModel(baseURL map[string]string, urlSuffix URLSuffix) *NovitaModel {
-	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
-	var transport *http.Transport
-	if ok {
-		transport = defaultTransport.Clone()
-	} else {
-		transport = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		}
-	}
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &NovitaModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (n *NovitaModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewNovitaModel(baseURL, n.URLSuffix)
+	return NewNovitaModel(baseURL, n.baseModel.URLSuffix)
 }
 
 func (n *NovitaModel) Name() string {
 	return "novita"
-}
-
-func (n *NovitaModel) baseURLForRegion(region string) (string, error) {
-	base, ok := n.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("novita: no base URL configured for region %q", region)
-	}
-	// Strip a trailing "/" so callers can safely do
-	// fmt.Sprintf("%s/%s", base, suffix) without producing "//" in
-	// the path. The shipped config has no trailing slash, but a
-	// tenant can override the URL per-instance and may add one.
-	return strings.TrimSuffix(base, "/"), nil
 }
 
 const (
@@ -238,23 +188,19 @@ func (e *novitaThinkExtractor) Flush() *novitaThinkSegment {
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (n *NovitaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := n.baseURLForRegion(region)
+	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, n.URLSuffix.Chat)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -313,7 +259,7 @@ func (n *NovitaModel) ChatWithMessages(modelName string, messages []Message, api
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -386,26 +332,23 @@ func (n *NovitaModel) ChatWithMessages(modelName string, messages []Message, api
 //     across SSE chunk boundaries, then routes content/reasoning to
 //     the first/second sender arg respectively.
 func (n *NovitaModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
-	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := n.baseURLForRegion(region)
+	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, n.URLSuffix.Chat)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -455,7 +398,7 @@ func (n *NovitaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -466,35 +409,20 @@ func (n *NovitaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	extractor := &novitaThinkExtractor{}
 	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(line[5:])
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 		// deepseek-v3.1 / glm-4.5 (and other models that emit reasoning
 		// separately) put chain-of-thought in delta.reasoning_content
@@ -526,8 +454,11 @@ func (n *NovitaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		}
 		if finish, ok := firstChoice["finish_reason"].(string); ok && finish != "" {
 			sawTerminal = true
-			break
 		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
 	// Flush any buffered tail (rare, but covers the case where the
@@ -548,10 +479,7 @@ func (n *NovitaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !sawTerminal {
+	if !done && !sawTerminal {
 		return fmt.Errorf("novita: stream ended before [DONE] or finish_reason")
 	}
 
@@ -564,21 +492,17 @@ func (n *NovitaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 }
 
 // ListModels returns the list of model ids visible to the API key.
-func (n *NovitaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (n *NovitaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := n.baseURLForRegion(region)
+	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, n.URLSuffix.Models)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -590,7 +514,7 @@ func (n *NovitaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -604,29 +528,16 @@ func (n *NovitaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
+	if modelList.Models == nil {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0)
-	for _, model := range data {
-		modelMap, ok := model.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		modelName, ok := modelMap["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, modelName)
-	}
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the API key.
@@ -651,28 +562,24 @@ type novitaEmbeddingResponse struct {
 // /v3/embeddings endpoint. The output has one vector per input, in the
 // same order the inputs were given.
 func (n *NovitaModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := n.baseURLForRegion(region)
+	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, n.URLSuffix.Embedding)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -698,7 +605,7 @@ func (n *NovitaModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -759,29 +666,26 @@ type novitaRerankResponse struct {
 // document in the API's ranking order. Caller may sort by Index to
 // recover original input order.
 func (n *NovitaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
-	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := n.baseURLForRegion(region)
+	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	if n.URLSuffix.Rerank == "" {
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	if n.baseModel.URLSuffix.Rerank == "" {
 		return nil, fmt.Errorf("novita: no rerank URL suffix configured")
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, n.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -811,7 +715,7 @@ func (n *NovitaModel) Rerank(modelName *string, query string, documents []string
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -852,12 +756,15 @@ func (n *NovitaModel) Rerank(modelName *string, query string, documents []string
 
 // Balance Get remaining credit
 func (n *NovitaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", n.BaseURL[region], n.URLSuffix.Balance)
+	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Balance)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -875,7 +782,7 @@ func (n *NovitaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -940,14 +847,14 @@ func (n *NovitaModel) OCRFile(modelName *string, content []byte, url *string, ap
 }
 
 // ParseFile parse file
-func (z *NovitaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (n *NovitaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (z *NovitaModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (n *NovitaModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (z *NovitaModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (n *NovitaModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }

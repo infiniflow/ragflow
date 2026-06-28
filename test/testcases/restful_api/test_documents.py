@@ -120,8 +120,10 @@ def _wait_document_runs(rest_client, dataset_id, document_ids, expected_run="DON
 
 def _download_document_to_file(rest_client, dataset_id, document_id, save_path):
     res = rest_client.get(f"/datasets/{dataset_id}/documents/{document_id}", timeout=60)
-    if res.status_code == 200 and res.headers.get("Content-Type", "").startswith("application/octet-stream"):
-        save_path.write_bytes(res.content)
+    if res.status_code == 200:
+        disposition = res.headers.get("Content-Disposition", "")
+        if disposition and "attachment" in disposition.lower():
+            save_path.write_bytes(res.content)
     return res
 
 

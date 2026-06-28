@@ -16,6 +16,7 @@
 import os
 import logging
 
+from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, ensure_paddleocr_from_env, ensure_opendataloader_from_env
 from common.constants import ActiveStatusEnum, LLMType
 from common.settings import FACTORY_LLM_INFOS
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
@@ -45,6 +46,20 @@ MODEL_TAG_TO_TYPE = {
 }
 
 
+def _to_int(v, default=500):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _factory_model_types(llm: dict) -> list[str]:
+    model_type = llm.get("model_type")
+    if isinstance(model_type, list):
+        return model_type
+    return [model_type] if model_type else []
+
+
 def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     """
     Parse a composite model string (modelName@instanceName@providerName or modelName@providerName)
@@ -61,6 +76,10 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     elif len(parts) == 2:
         model_name, provider_name = parts
         instance_name = "default"
+    elif len(parts) == 1:
+        model_name = parts[0]
+        provider_name = ""
+        instance_name = "default"
     else:
         logging.warning(f"Invalid model string: {default_model}")
         return None
@@ -71,6 +90,22 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
         return {
             "model_provider": provider_name,
             "model_instance": instance_name,
+            "model_name": model_name,
+            "model_type": model_type,
+            "enable": True,
+        }
+
+    # Special case: TEI Builtin embedding model
+    compose_profiles = os.getenv("COMPOSE_PROFILES", "")
+    tei_model = os.getenv("TEI_MODEL", "")
+    if (model_type == "embedding"
+        and "tei-" in compose_profiles
+        and tei_model
+        and model_name == tei_model
+        and (not provider_name or provider_name == "Builtin")):
+        return {
+            "model_provider": "Builtin",
+            "model_instance": "default",
             "model_name": model_name,
             "model_type": model_type,
             "enable": True,
@@ -92,7 +127,7 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     model_entity = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
         provider_obj.id, instance_obj.id, model_type, model_name
     )
-    enable = model_entity is None or model_entity.status != ActiveStatusEnum.INACTIVE.value
+    enable = model_entity is None or model_entity.status == ActiveStatusEnum.ACTIVE.value
 
     if not enable:
         return None
@@ -119,7 +154,7 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
         return None
 
     # Check if the model_type matches
-    if target_llm[0].get("model_type") != model_type:
+    if model_type not in _factory_model_types(target_llm[0]):
         logging.warning(f"Model '{model_name}' isn't a {model_type} model")
         return None
 
@@ -154,7 +189,7 @@ def _check_model_available(tenant_id: str, provider_name: str, instance_name: st
             model_type == LLMType.EMBEDDING.value
             and "tei-" in compose_profiles
             and model_name == os.getenv("TEI_MODEL", "")
-            and (provider_name == "Builtin" or provider_name is None)
+            and (provider_name == "Builtin" or not provider_name)
     )
     if is_tei_builtin_embedding:
         return True, None
@@ -179,7 +214,7 @@ def _check_model_available(tenant_id: str, provider_name: str, instance_name: st
         provider_obj.id, instance_obj.id, model_type, model_name
     )
     if model_entity:
-        if model_entity.status == "inactive":
+        if model_entity.status != ActiveStatusEnum.ACTIVE.value:
             return False, f"Model '{model_name}' isn't available"
         return True, None
 
@@ -189,7 +224,7 @@ def _check_model_available(tenant_id: str, provider_name: str, instance_name: st
         return False, f"Model '{model_name}' not found for provider '{provider_name}'"
 
     if target_llm:
-        if target_llm[0].get("model_type") != model_type:
+        if model_type not in _factory_model_types(target_llm[0]):
             return False, f"Model '{model_name}' isn't a {model_type} model"
 
     return True, None
@@ -274,6 +309,10 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
     if not e:
         return False, "Tenant not found"
 
+    ensure_mineru_from_env(tenant_id)
+    ensure_paddleocr_from_env(tenant_id)
+    ensure_opendataloader_from_env(tenant_id)
+
     if model_type_filter:
         model_type_filter = model_type_filter.lower()
 
@@ -298,7 +337,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
     target_type_records = [record for record in model_records if record.model_type == model_type_filter] if model_type_filter else model_records
     model_record_map = {}
     for model in target_type_records:
-        instance_model_key = f"{model.provider_id}_{model.instance_id}_{model.model_name}"
+        instance_model_key = f"{model.provider_id}@{model.instance_id}@{model.model_name}"
         if model_record_map.get(instance_model_key):
             model_record_map[instance_model_key].append(model)
         else:
@@ -307,6 +346,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
     added_models = []
     model_key_in_factory = []
     provider_names = [provider.provider_name for provider in providers]
+    factory_rank_mapping = {factory["name"]: -_to_int(factory.get("rank", "500")) for factory in FACTORY_LLM_INFOS}
     for factory in FACTORY_LLM_INFOS:
         if factory["name"] not in provider_names:
             continue
@@ -314,16 +354,18 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
         if not factory_instances:
             continue
         for llm in factory["llm"]:
-            if model_type_filter and llm["model_type"] != model_type_filter:
+            factory_model_types = _factory_model_types(llm)
+            if model_type_filter and model_type_filter not in factory_model_types:
                 continue
 
             for factory_instance in factory_instances:
-                model_record_key = f"{factory_instance.provider_id}_{factory_instance.id}_{llm['llm_name']}"
+                model_record_key = f"{factory_instance.provider_id}@{factory_instance.id}@{llm['llm_name']}"
                 model_key_in_factory.append(model_record_key)
                 manual_modified_models = model_record_map.get(model_record_key, [])
                 active_model_types = [manual_model.model_type for manual_model in manual_modified_models if manual_model.status == ActiveStatusEnum.ACTIVE.value]
                 inactive_model_types = [manual_model.model_type for manual_model in manual_modified_models if manual_model.status == ActiveStatusEnum.INACTIVE.value]
-                model_types = list(set([llm["model_type"]] + active_model_types) - set(inactive_model_types))
+                unsupport_model_types = [manual_model.model_type for manual_model in manual_modified_models if manual_model.status == ActiveStatusEnum.UNSUPPORTED.value]
+                model_types = list(set(factory_model_types + active_model_types) - set(inactive_model_types) - set(unsupport_model_types))
                 if not model_types:
                     continue
 
@@ -343,7 +385,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
             model_records = model_record_map.get(model_record_key, [])
             if not model_records:
                 continue
-            provider_id, instance_id, model_name = model_record_key.split("_")
+            provider_id, instance_id, model_name = model_record_key.split("@")
             model_types = [model.model_type for model in model_records if model.status == ActiveStatusEnum.ACTIVE.value]
             if not model_types:
                 continue
@@ -356,5 +398,26 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
                 "instance_id": instance_id,
                 "instance_name": instance_info_map[instance_id].instance_name if instance_info_map.get(instance_id) else ""
             })
+
+    # Add TEI Builtin embedding model if configured
+    compose_profiles = os.getenv("COMPOSE_PROFILES", "")
+    tei_model = os.getenv("TEI_MODEL", "")
+    if "tei-" in compose_profiles and tei_model:
+        if not model_type_filter or model_type_filter == "embedding":
+            tei_already_added = any(
+                m["provider_name"] == "Builtin" and m["name"] == tei_model
+                for m in added_models
+            )
+            if not tei_already_added:
+                added_models.append({
+                    "model_type": ["embedding"],
+                    "name": tei_model,
+                    "provider_id": "",
+                    "provider_name": "Builtin",
+                    "instance_id": "",
+                    "instance_name": "default",
+                })
+
+    added_models.sort(key=lambda x: (factory_rank_mapping.get(x["provider_name"]), x["provider_name"], x["instance_name"]))
 
     return True, added_models

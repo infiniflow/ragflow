@@ -106,10 +106,10 @@ export function InputForm({ onOk }: IModalProps<any>) {
     if (parseType === ParseType.BuiltIn) {
       form.setValue('pipeline_id', '');
     }
-    if (tenantInfo?.embd_id) {
-      form.setValue('embedding_model', tenantInfo?.embd_id);
+    if (defaultModelDictionary?.embd_id) {
+      form.setValue('embedding_model', defaultModelDictionary?.embd_id);
     }
-  }, [parseType, form, tenantInfo]);
+  }, [parseType, form, defaultModelDictionary]);
 
   return (
     <Form {...form}>
@@ -124,11 +124,8 @@ export function InputForm({ onOk }: IModalProps<any>) {
           control={form.control}
           name="name"
           render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                <span className="text-destructive mr-1"> *</span>
-                {t('knowledgeList.name')}
-              </FormLabel>
+            <FormItem className="space-y-1">
+              <FormLabel required>{t('knowledgeList.name')}</FormLabel>
               <FormControl>
                 <Input
                   placeholder={t('knowledgeList.namePlaceholder')}

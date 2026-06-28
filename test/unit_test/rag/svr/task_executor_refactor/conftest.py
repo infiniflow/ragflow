@@ -272,12 +272,16 @@ class MockChatModel:
 
     def __init__(self):
         self.llm_name = "mock_chat"
+        self.max_length = 4096
 
     def __enter__(self):
         return self
 
     def __exit__(self, *args):
         pass
+
+    async def async_chat(self, system_prompt, messages, **kwargs):
+        return '{"key": "value"}'
 
 
 @pytest.fixture
@@ -469,26 +473,293 @@ def mock_chunk_service_factory():
 
 
 # =============================================================================
-# RaptorService Fixtures
+# Unified Mock TaskContext Factory
+# =============================================================================
+
+def make_task_context(**overrides):
+    """Build a MagicMock TaskContext with sensible defaults for all services.
+
+    Every test file that needs a mock ``TaskContext`` should use this factory
+    with keyword-only overrides instead of defining its own ``_create_mock_context``.
+
+    Usage::
+
+        ctx = make_task_context(parser_id="table", kb_parser_config={"tag_kb_ids": ["kb_1"]})
+    """
+    defaults = {
+        "id": "task_1",
+        "tenant_id": "tenant_1",
+        "kb_id": "kb_1",
+        "doc_id": "doc_1",
+        "name": "test.pdf",
+        "location": "/path/to/test.pdf",
+        "language": "en",
+        "parser_id": "naive",
+        "parser_config": {},
+        "kb_parser_config": {},
+        "llm_id": "llm_1",
+        "embd_id": "embd_1",
+        "from_page": 0,
+        "to_page": -1,
+        "size": 1000,
+        "pagerank": 0,
+        "task_type": "standard",
+        "dataflow_id": "",
+        "doc_ids": [],
+        "file": None,
+        "memory_id": "",
+        "source_id": "",
+        "message_dict": {},
+    }
+    ctx = MagicMock()
+    for k, v in defaults.items():
+        setattr(ctx, k, v if k not in overrides else overrides.pop(k))
+
+    # Callbacks
+    ctx.progress_cb = MagicMock()
+    ctx.has_canceled_func = MagicMock(return_value=False)
+    ctx.recording_context = MagicMock()
+    ctx.write_interceptor = None
+
+    # Raw task dict — derive from context attributes
+    ctx.raw_task = MagicMock()
+
+    # Limiters — all use AsyncMockLimiter so services that acquire them work
+    limiter = AsyncMockLimiter()
+    ctx.chunk_limiter = limiter
+    ctx.chat_limiter = limiter
+    ctx.embed_limiter = limiter
+    ctx.kg_limiter = limiter
+    ctx.minio_limiter = limiter
+
+    # Apply remaining overrides
+    for k, v in overrides.items():
+        setattr(ctx, k, v)
+
+    return ctx
+
+
+# =============================================================================
+# RaptorService Fixtures (kept for backward compatibility)
 # =============================================================================
 
 def create_mock_raptor_context():
     """Create a mock TaskContext suitable for RaptorService tests."""
-    ctx = MagicMock()
-    ctx.tenant_id = "tenant_1"
-    ctx.kb_id = "kb_1"
-    ctx.write_interceptor = None
-    ctx.progress_cb = MagicMock()
-    ctx.raw_task = {"type": ""}
-    ctx.parser_id = "naive"
-    ctx.parser_config = {}
-    ctx.name = "test.pdf"
-    ctx.pagerank = 0
-    ctx.id = "task_1"
-    return ctx
+    return make_task_context()
 
 
 @pytest.fixture
 def mock_raptor_context():
     """Provide a mock TaskContext for RaptorService tests."""
-    return create_mock_raptor_context()
+    return make_task_context()
+
+
+# =============================================================================
+# Embedding Binding Patch Helper
+# =============================================================================
+
+class patch_embedding_binding:
+    """Context manager that patches embedding model binding at the external boundary.
+
+    Patches ``LLMBundle``, ``get_model_config_from_provider_instance``, and
+    ``get_tenant_default_model_by_type`` so that ``TaskHandler._bind_embedding_model``
+    executes its real logic without making actual API calls.
+
+    Usage::
+
+        with patch_embedding_binding(vector_size=128):
+            handler = TaskHandler(ctx)
+            await handler.handle()
+    """
+
+    def __init__(self, vector_size: int = 128):
+        self._vector_size = vector_size
+        self._patches = []
+
+    def __enter__(self):
+        mock_model = MagicMock()
+        mock_model.encode = MagicMock(
+            return_value=(
+                np.random.rand(1, self._vector_size).astype(np.float32),
+                10,
+            )
+        )
+        mock_model.max_length = 512
+        mock_model.llm_name = "mock_embedding"
+        mock_model.__enter__ = MagicMock(return_value=mock_model)
+        mock_model.__exit__ = MagicMock(return_value=False)
+
+        self._patches = [
+            patch(
+                "rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "rag.svr.task_executor_refactor.task_handler.LLMBundle",
+                return_value=mock_model,
+            ),
+            patch(
+                "rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type",
+                return_value=MagicMock(),
+            ),
+        ]
+        for p in self._patches:
+            p.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        for p in reversed(self._patches):
+            p.__exit__(*args)
+
+
+# =============================================================================
+# Common mock callbacks
+# =============================================================================
+
+async def mock_thread_return_binary(func, *args, **kwargs):
+    """Reusable mock for thread_pool_exec — returns fake binary."""
+    return b"fake pdf binary"
+
+
+async def mock_thread_return_none(func, *args, **kwargs):
+    """Reusable mock for thread_pool_exec — returns None."""
+    return None
+
+
+# =============================================================================
+# Patch helpers for integration tests
+# =============================================================================
+
+def patch_get_storage_binary():
+    """Patch TaskHandler._get_storage_binary to return fake binary."""
+    return patch("rag.svr.task_executor_refactor.task_handler.TaskHandler._get_storage_binary",
+                 new_callable=AsyncMock, return_value=b"fake pdf binary")
+
+
+def patch_task_handler_settings(mock_settings):
+    """Patch the settings module-level import in task_handler."""
+    return patch("rag.svr.task_executor_refactor.task_handler.settings", mock_settings)
+
+
+# =============================================================================
+# Shared Task Dictionary Factory
+# =============================================================================
+
+def make_task_dict(**overrides):
+    """Build a task dict with sensible defaults for integration tests.
+
+    All ``_create_standard_task_dict`` / ``_create_raptor_task_dict`` / etc.
+    helpers in integration tests should be replaced with this single factory.
+
+    Usage::
+
+        task_dict = make_task_dict(task_type="raptor", doc_ids=["doc1"])
+    """
+    return {
+        "id": f"task_{uuid.uuid4().hex[:8]}",
+        "tenant_id": "tenant_test",
+        "kb_id": "kb_test",
+        "doc_id": "doc_test",
+        "name": "test_document.pdf",
+        "location": "/path/to/test_document.pdf",
+        "size": 1024,
+        "parser_id": "naive",
+        "parser_config": {"auto_keywords": 0, "auto_questions": 0, "enable_metadata": False},
+        "kb_parser_config": {},
+        "language": "en",
+        "llm_id": "llm_test",
+        "embd_id": "embd_test",
+        "from_page": 0,
+        "to_page": -1,
+        "task_type": "standard",
+        "pagerank": 0,
+        **overrides,
+    }
+
+
+# =============================================================================
+# Shared Pipeline Mock Block for Integration Tests
+# =============================================================================
+
+class patch_pipeline_mocks:
+    """Context manager bundling common integration-test mock blocks.
+
+    Patches external boundaries so ``TaskHandler.handle()`` executes without
+    actual API calls.  Use ``mode="raptor"`` or ``mode="graphrag"``.
+
+    Usage::
+
+        with patch_pipeline_mocks() as m:
+            m.get_model_config_from_provider_instance.return_value = MagicMock()
+            handler = TaskHandler(ctx)
+            await handler.handle()
+    """
+
+    _MODULES = {
+        "task_handler": "rag.svr.task_executor_refactor.task_handler",
+        "chunk_service": "rag.svr.task_executor_refactor.chunk_service",
+    }
+
+    # (module_key, attr_name, use_AsyncMock)
+    _COMMON = [
+        ("task_handler", "get_model_config_from_provider_instance", False),
+        ("task_handler", "LLMBundle", False),
+        ("task_handler", "get_tenant_default_model_by_type", False),
+        ("task_handler", "search.index_name", False),
+        ("task_handler", "thread_pool_exec", False),
+        ("task_handler", "DocumentService", False),
+    ]
+
+    _STANDARD = [
+        ("task_handler", "File2DocumentService", False),
+        ("chunk_service", "thread_pool_exec", False),
+        ("task_handler", "ChunkService", False),
+    ]
+
+    _RAPTOR = [
+        ("task_handler", "KnowledgebaseService", False),
+        ("task_handler", "RaptorService", False),
+        ("task_handler", "ChunkService", False),
+    ]
+
+    _GRAPH_RAG = [
+        ("task_handler", "KnowledgebaseService", False),
+        ("task_handler", "run_graphrag_for_kb", True),
+    ]
+
+    def __init__(self, mode: str = "standard"):
+        self._mode = mode
+        self._stack = None
+
+    def __enter__(self):
+        import contextlib
+        from unittest.mock import patch, MagicMock, AsyncMock
+
+        prefixes = list(self._COMMON)
+        if self._mode == "standard":
+            prefixes += self._STANDARD
+        elif self._mode == "raptor":
+            prefixes += self._RAPTOR
+        elif self._mode == "graphrag":
+            prefixes += self._GRAPH_RAG
+
+        mocks = MagicMock()
+        ctx_managers = []
+        for mod_key, attr, use_async in prefixes:
+            target = f"{self._MODULES[mod_key]}.{attr}"
+            if use_async:
+                cm = patch(target, new_callable=AsyncMock)
+            else:
+                cm = patch(target)
+
+            mock_handle = cm.__enter__()
+            setattr(mocks, attr.replace(".", "_"), mock_handle)
+            ctx_managers.append(cm)
+
+        self._stack = contextlib.ExitStack()
+        self._ctx_managers = ctx_managers
+        return mocks
+
+    def __exit__(self, *args):
+        for cm in reversed(self._ctx_managers):
+            cm.__exit__(*args)

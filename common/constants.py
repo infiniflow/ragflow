@@ -69,6 +69,7 @@ class StatusEnum(Enum):
 class ActiveStatusEnum(Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
+    UNSUPPORTED = "unsupported"
 
 
 class ActiveEnum(Enum):
@@ -156,6 +157,8 @@ class FileSource(StrEnum):
     DINGTALK_AI_TABLE = "dingtalk_ai_table"
     ONEDRIVE = "onedrive"
     OUTLOOK = "outlook"
+    SALESFORCE = "salesforce"
+    AZURE_BLOB = "azure_blob"
 
 
 class PipelineTaskType(StrEnum):
@@ -273,8 +276,9 @@ MINERU_DEFAULT_CONFIG = {
     "MINERU_DELETE_OUTPUT": 1,
 }
 
-PADDLEOCR_ENV_KEYS = ["PADDLEOCR_API_URL", "PADDLEOCR_ACCESS_TOKEN", "PADDLEOCR_ALGORITHM"]
+PADDLEOCR_ENV_KEYS = ["PADDLEOCR_BASE_URL", "PADDLEOCR_API_URL", "PADDLEOCR_ACCESS_TOKEN", "PADDLEOCR_ALGORITHM"]
 PADDLEOCR_DEFAULT_CONFIG = {
+    "PADDLEOCR_BASE_URL": "",
     "PADDLEOCR_API_URL": "",
     "PADDLEOCR_ACCESS_TOKEN": None,
     "PADDLEOCR_ALGORITHM": "PaddleOCR-VL",

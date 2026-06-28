@@ -30,11 +30,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
 	"go.uber.org/zap"
 )
+
+// ChinesePunctRegex splits on comma, semicolon, Chinese punctuations, and newlines
+var ChinesePunctRegex = regexp.MustCompile(`[,，;；、\r\n]+`)
 
 // CreateChunkStore creates a chunk table in Infinity
 // baseName is the table name prefix (e.g., "ragflow_<tenant_id>")
@@ -47,7 +49,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 	var tableName string
 	var mappingFile string
 
-    tableName = buildChunkTableName(baseName, datasetID)
+	tableName = buildChunkTableName(baseName, datasetID)
 	if datasetID == "skill" {
 		mappingFile = "skill_infinity_mapping.json"
 		common.Info("Creating skill index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
@@ -341,6 +343,11 @@ func (e *infinityEngine) InsertChunks(ctx context.Context, chunks []map[string]i
 	if len(insertChunks) > 0 {
 		idList := make([]string, len(insertChunks))
 		for i, chunk := range insertChunks {
+			// is a UUID produced by the document ingestion path
+			// (uuid.NewString), not user input. We single-quote it
+			// for Infinity SQL; UUIDs cannot contain single quotes
+			// by construction (RFC 4122 §3).
+			// codeql[go/unsafe-quoting] False positive: chunk["id"]
 			idList[i] = fmt.Sprintf("'%v'", chunk["id"])
 		}
 		filter := fmt.Sprintf("id IN (%s)", strings.Join(idList, ", "))
@@ -574,32 +581,7 @@ func (e *infinityEngine) DeleteChunks(ctx context.Context, condition map[string]
 // It supports three matching types: MatchTextExpr (full-text), MatchDenseExpr (vector), and FusionExpr (combined).
 // If no match expressions are provided, Search relies solely on filter (e.g., doc_id, available_int) to find results.
 func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
-	common.Debug("Search in Infinity started", zap.Any("indexNames", req.IndexNames))
-	if common.IsDebugEnabled() {
-		// Format match expressions for logging
-		var matchExprsStr string
-		for i, expr := range req.MatchExprs {
-			switch e := expr.(type) {
-			case *types.MatchTextExpr:
-				matchExprsStr += fmt.Sprintf("    [%d] MatchTextExpr: fields=%v, matchingText=%s, topN=%d, extraOptions=%v\n", i, e.Fields, e.MatchingText, e.TopN, e.ExtraOptions)
-			case *types.MatchDenseExpr:
-				matchExprsStr += fmt.Sprintf("    [%d] MatchDenseExpr: vectorColumn=%s, vectorSize=%d, topN=%d, extraOptions=%v\n", i, e.VectorColumnName, len(e.EmbeddingData), e.TopN, e.ExtraOptions)
-			case *types.FusionExpr:
-				matchExprsStr += fmt.Sprintf("    [%d] FusionExpr: method=%s, topN=%d, fusionParams=%v\n", i, e.Method, e.TopN, e.FusionParams)
-			default:
-				matchExprsStr += fmt.Sprintf("    [%d] unknown type\n", i)
-			}
-		}
-		common.Debug(fmt.Sprintf("Search request:\n"+
-			"    indexNames=%v\n"+
-			"    KbIDs=%v\n"+
-			"    offset=%d, limit=%d\n"+
-			"    SelectFields=%v\n"+
-			"    Filter=%v\n"+
-			"    MatchExprs:\n%s    orderBy=%v\n"+
-			"    RankFeature=%v",
-			req.IndexNames, req.KbIDs, req.Offset, req.Limit, req.SelectFields, req.Filter, matchExprsStr, req.OrderBy, req.RankFeature))
-	}
+	types.LogSearchRequest("Infinity", req)
 
 	if len(req.IndexNames) == 0 {
 		return nil, fmt.Errorf("index names cannot be empty")
@@ -621,13 +603,8 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
 
-	isMetadataTable := false
 	isSkillIndex := false
 	for _, idx := range req.IndexNames {
-		if strings.HasPrefix(idx, "ragflow_doc_meta_") {
-			isMetadataTable = true
-			break
-		}
 		if strings.HasPrefix(idx, "skill_") {
 			isSkillIndex = true
 			break
@@ -635,9 +612,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 	}
 
 	var outputColumns []string
-	if isMetadataTable {
-		outputColumns = []string{"id", "kb_id", "meta_fields"}
-	} else if isSkillIndex {
+	if isSkillIndex {
 		outputColumns = []string{
 			"skill_id", "space_id", "folder_id", "name", "tags", "description", "content",
 			"version", "status", "create_time", "update_time",
@@ -652,6 +627,11 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 			"doc_type_kwd", "mom_id", "tag_kwd", "pagerank_fea", "tag_feas",
 		}
 		outputColumns = convertSelectFields(outputColumns)
+	}
+
+	// Allow caller to override output columns (used by KG search, etc.)
+	if len(req.SelectFields) > 0 {
+		outputColumns = convertSelectFields(req.SelectFields)
 	}
 
 	hasTextMatch := false
@@ -711,23 +691,31 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		outputColumns = append(outputColumns, "row_id()")
 	}
 
+	// Strip score pseudo-columns when there's no match expression — Infinity
+	// rejects SCORE()/SCORE_FACTORS() without MATCH TEXT/TENSOR/Fusion with
+	// "InfinityException(3013)". This protects callers (e.g. the no-match
+	// fallback in retrieval.go) that reuse a SelectFields list containing
+	// "_score" across both matched and unmatched queries.
+	if !hasTextMatch && !hasVectorMatch {
+		filtered := outputColumns[:0]
+		for _, c := range outputColumns {
+			switch c {
+			case "_score", "SCORE", "score()", "similarity()":
+				continue
+			}
+			filtered = append(filtered, c)
+		}
+		outputColumns = filtered
+	}
+
 	outputColumns = convertSelectFields(outputColumns, isSkillIndex)
 	if hasVectorMatch && matchDense != nil && matchDense.VectorColumnName != "" {
 		outputColumns = append(outputColumns, matchDense.VectorColumnName)
 	}
 
 	var filterParts []string
-	if isMetadataTable && len(req.KbIDs) > 0 && req.KbIDs[0] != "" {
-		kbIDs := req.KbIDs
-		if len(kbIDs) == 1 {
-			filterParts = append(filterParts, fmt.Sprintf("kb_id = '%s'", kbIDs[0]))
-		} else {
-			kbIDStr := strings.Join(kbIDs, "', '")
-			filterParts = append(filterParts, fmt.Sprintf("kb_id IN ('%s')", kbIDStr))
-		}
-	}
 
-	if !isMetadataTable && (hasTextMatch || hasVectorMatch) {
+	if hasTextMatch || hasVectorMatch {
 		if req.Filter != nil {
 			if availInt, ok := req.Filter["available_int"]; ok {
 				filterParts = append(filterParts, fmt.Sprintf("available_int=%v", availInt))
@@ -751,13 +739,10 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 
 	// Build filter string from req.Filter
 	if req.Filter != nil {
-		filterCopy := req.Filter
-		if !isMetadataTable {
-			filterCopy = make(map[string]interface{})
-			for k, v := range req.Filter {
-				if k != "kb_id" {
-					filterCopy[k] = v
-				}
+		filterCopy := make(map[string]interface{})
+		for k, v := range req.Filter {
+			if k != "kb_id" {
+				filterCopy[k] = v
 			}
 		}
 
@@ -802,8 +787,13 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 			}
 		}
 
-		minMatch := 0.3
-
+		// minMatch comes from matchText.ExtraOptions when set (Python parity).
+		// Mirrors rag/utils/infinity_conn.py which reads
+		// matchExpr.extra_options.get("minimum_should_match", 0.0) — for the
+		// English (non-Chinese) path, the Go Question() builder omits
+		// minimum_should_match, so the default is 0.0 to match Python's
+		// effective 0% threshold for English queries.
+		minMatch := 0.0
 		var questionText string
 		var vectorData []float64
 		textTopN := pageSize
@@ -814,6 +804,19 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 			if matchText.ExtraOptions != nil {
 				if oq, ok := matchText.ExtraOptions["original_query"].(string); ok {
 					originalQuery = oq
+				}
+				if v, ok := matchText.ExtraOptions["minimum_should_match"]; ok {
+					switch x := v.(type) {
+					case float64:
+						minMatch = x
+					case int:
+						minMatch = float64(x)
+					case string:
+						s := strings.TrimSuffix(x, "%")
+						if pct, err := strconv.Atoi(s); err == nil {
+							minMatch = float64(pct) / 100
+						}
+					}
 				}
 			}
 		}
@@ -928,13 +931,27 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 					}
 				}
 
-				if hasTextMatch && fusionExpr == nil {
+				if hasTextMatch {
 					fieldsStr := strings.Join(convertedFields, ",")
-					filterFulltext := fmt.Sprintf("filter_fulltext('%s', '%s')", fieldsStr, questionText)
+					// Escape single quotes in user-controlled questionText
+					// before splicing into the filter_fulltext() call.
+					// fieldsStr is sourced from a fixed allowlist (see
+					// textFields above) and is not user-controlled.
+					safeQuery := strings.ReplaceAll(questionText, "'", "''")
+					safeFields := strings.ReplaceAll(fieldsStr, "'", "''")
+					filterFulltext := fmt.Sprintf("filter_fulltext('%s', '%s')", safeFields, safeQuery)
 					denseFilterStr = fmt.Sprintf("(%s) AND %s", denseFilterStr, filterFulltext)
 				}
+				threshold := "0.0"
+				if matchDense != nil && matchDense.ExtraOptions != nil {
+					if sim, ok := matchDense.ExtraOptions["similarity"].(float64); ok {
+						threshold = fmt.Sprintf("%g", sim)
+					} else if s, ok := matchDense.ExtraOptions["threshold"].(string); ok {
+						threshold = s
+					}
+				}
 				extraOptions := map[string]string{
-					"threshold": utility.FloatToString(0.0),
+					"threshold": threshold,
 					"filter":    denseFilterStr,
 				}
 
@@ -1026,7 +1043,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 			// Skill index uses different schema
 			// so we skip the document-specific field mappings
 			if !isSkillIndex {
-				GetFields(searchChunks, nil)
+				applyFieldMappings(searchChunks)
 			} else {
 				// For skill index, only handle ROW_ID -> row_id() mapping
 				for _, chunk := range searchChunks {
@@ -1224,23 +1241,10 @@ func (e *infinityEngine) GetChunk(ctx context.Context, tableName, chunkID string
 	return chunk, nil
 }
 
-// GetFields applies field mappings to chunks and returns a dict keyed by chunk ID.
-// Equivalent to Python's get_fields() in infinity_conn.py.
-// When fields is nil/empty, returns all fields from chunks.
-func GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
-	result := make(map[string]map[string]interface{})
-	if len(chunks) == 0 {
-		return result
-	}
-
-	// If fields is provided, create a set for lookup
-	fieldSet := make(map[string]bool)
-	for _, f := range fields {
-		fieldSet[f] = true
-	}
-
+// applyFieldMappings applies field mappings to chunks (side-effect only).
+// Used by Search() to mutate chunks with derived fields before returning.
+func applyFieldMappings(chunks []map[string]interface{}) {
 	for _, chunk := range chunks {
-		// Apply field mappings
 		// docnm -> docnm_kwd, title_tks, title_sm_tks
 		if val, ok := chunk["docnm"].(string); ok {
 			chunk["docnm_kwd"] = val
@@ -1248,12 +1252,12 @@ func GetFields(chunks []map[string]interface{}, fields []string) map[string]map[
 			chunk["title_sm_tks"] = val
 		}
 
-		// important_keywords -> important_kwd (split by comma), important_tks
+		// important_keywords -> important_kwd (split by comma/semicolon/Chinese punctuations), important_tks
 		if val, ok := chunk["important_keywords"].(string); ok {
 			if val == "" {
 				chunk["important_kwd"] = []interface{}{}
 			} else {
-				parts := strings.Split(val, ",")
+				parts := ChinesePunctRegex.Split(val, -1)
 				chunk["important_kwd"] = parts
 			}
 			chunk["important_tks"] = val
@@ -1289,6 +1293,13 @@ func GetFields(chunks []map[string]interface{}, fields []string) map[string]map[
 			chunk["authors_sm_tks"] = val
 		}
 
+		if val, ok := chunk["message_type_kwd"]; ok {
+			chunk["message_type"] = val
+		}
+		if val, ok := chunk["status_int"]; ok {
+			chunk["status"] = memoryMessageStatusBool(val)
+		}
+
 		// position_int: convert from hex string to array format (grouped by 5)
 		if val, ok := chunk["position_int"].(string); ok {
 			chunk["position_int"] = utility.ConvertHexToPositionIntArray(val)
@@ -1308,7 +1319,7 @@ func GetFields(chunks []map[string]interface{}, fields []string) map[string]map[
 			"important_kwd": true, "question_kwd": true,
 		}
 		arrayFields := []string{
-			"doc_type_kwd", "important_kwd", "important_tks", "question_tks",
+			"important_kwd", "important_tks", "question_tks",
 			"question_kwd", "authors_tks", "authors_sm_tks", "title_tks",
 			"title_sm_tks", "content_ltks", "content_sm_ltks", "tag_kwd",
 		}
@@ -1336,25 +1347,320 @@ func GetFields(chunks []map[string]interface{}, fields []string) map[string]map[
 			chunk["row_id()"] = val
 			delete(chunk, "ROW_ID")
 		}
+	}
+}
 
-		// Build result map keyed by id
-		if id, ok := chunk["id"].(string); ok {
-			fieldMap := make(map[string]interface{})
-			for field, value := range chunk {
-				if len(fieldSet) == 0 || fieldSet[field] {
-					fieldMap[field] = value
+func memoryMessageStatusBool(value interface{}) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	case float64:
+		return v != 0
+	case json.Number:
+		n, err := v.Int64()
+		return err == nil && n != 0
+	case string:
+		return v != "" && v != "0" && !strings.EqualFold(v, "false")
+	default:
+		return false
+	}
+}
+
+// GetFields extracts the requested fields from Infinity search results
+func (e *infinityEngine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
+	result := make(map[string]map[string]interface{})
+
+	// Python: if not fields, return {}
+	if len(fields) == 0 {
+		return result
+	}
+
+	if len(chunks) == 0 {
+		return result
+	}
+
+	// Build field set for lookup (Python lines 713-715)
+	fieldsAll := make(map[string]bool)
+	for _, f := range fields {
+		fieldsAll[f] = true
+	}
+	fieldsAll["id"] = true
+
+	// noneColumns is rebuilt per chunk inside the loop below. The
+	// per-chunk "missing → nil" map MUST be fresh for every iteration; if
+	// it's reused, the first chunk that contains a field removes it from
+	// the shared set, and later chunks missing that same field silently
+	// stop getting the nil placeholder, producing inconsistent shapes
+	// per document.
+
+	// Check if important_kwd is needed (for empty_count handling)
+	needImportantKwdEmptyCount := fieldsAll["important_kwd"]
+
+	for _, chunk := range chunks {
+		// Build column map for case-insensitive lookup (Python line 747)
+		columnMap := make(map[string]string)
+		for k := range chunk {
+			columnMap[strings.ToLower(k)] = k
+		}
+
+		// Apply field mappings first (to get derived fields)
+		// docnm -> docnm_kwd, title_tks, title_sm_tks (Python lines 716-719)
+		// Note: Python checks "docnm" in res.columns regardless of whether fields were requested
+		if val, ok := chunk["docnm"].(string); ok {
+			if fieldsAll["docnm_kwd"] {
+				chunk["docnm_kwd"] = val
+			}
+			if fieldsAll["title_tks"] {
+				chunk["title_tks"] = val
+			}
+			if fieldsAll["title_sm_tks"] {
+				chunk["title_sm_tks"] = val
+			}
+		}
+
+		// important_keywords -> important_kwd (split by comma), important_tks (Python lines 720-732)
+		// Python: v.split(",") if v else [] — empty string yields empty list
+		if fieldsAll["important_kwd"] || fieldsAll["important_tks"] {
+			if val, ok := chunk["important_keywords"].(string); ok && val != "" {
+				if fieldsAll["important_kwd"] {
+					if needImportantKwdEmptyCount {
+						// Check for important_kwd_empty_count (Python lines 722-728)
+						if emptyCountVal, hasEmptyCount := chunk["important_kwd_empty_count"]; hasEmptyCount {
+							tokens := strings.Split(val, ",")
+							var emptyCount int
+							switch v := emptyCountVal.(type) {
+							case float64:
+								emptyCount = int(v)
+							case int:
+								emptyCount = v
+							case string:
+								emptyCount, _ = strconv.Atoi(v)
+							}
+							kwdList := make([]interface{}, 0, len(tokens)+emptyCount)
+							for _, t := range tokens {
+								kwdList = append(kwdList, t)
+							}
+							for i := 0; i < emptyCount; i++ {
+								kwdList = append(kwdList, "")
+							}
+							chunk["important_kwd"] = kwdList
+						} else {
+							parts := strings.Split(val, ",")
+							kwdList := make([]interface{}, len(parts))
+							for i, p := range parts {
+								kwdList[i] = p
+							}
+							chunk["important_kwd"] = kwdList
+						}
+					} else {
+						parts := strings.Split(val, ",")
+						kwdList := make([]interface{}, len(parts))
+						for i, p := range parts {
+							kwdList[i] = p
+						}
+						chunk["important_kwd"] = kwdList
+					}
+				}
+				if fieldsAll["important_tks"] {
+					chunk["important_tks"] = val
+				}
+			} else {
+				if fieldsAll["important_kwd"] {
+					chunk["important_kwd"] = []interface{}{}
+				}
+				if fieldsAll["important_tks"] {
+					chunk["important_tks"] = []interface{}{}
 				}
 			}
-			result[id] = fieldMap
+		}
+
+		// questions -> question_kwd (split by newline), question_tks (Python lines 733-737)
+		// Python: v.splitlines() — empty string yields empty list
+		if fieldsAll["question_kwd"] || fieldsAll["question_tks"] {
+			if val, ok := chunk["questions"].(string); ok && val != "" {
+				if fieldsAll["question_kwd"] {
+					parts := strings.Split(val, "\n")
+					qList := make([]interface{}, len(parts))
+					for i, p := range parts {
+						qList[i] = p
+					}
+					chunk["question_kwd"] = qList
+				}
+				if fieldsAll["question_tks"] {
+					chunk["question_tks"] = val
+				}
+			} else {
+				if fieldsAll["question_kwd"] {
+					chunk["question_kwd"] = []interface{}{}
+				}
+				if fieldsAll["question_tks"] {
+					chunk["question_tks"] = []interface{}{}
+				}
+			}
+		}
+
+		// content -> content_with_weight, content_ltks, content_sm_ltks (Python lines 738-741)
+		if fieldsAll["content_with_weight"] || fieldsAll["content_ltks"] || fieldsAll["content_sm_ltks"] {
+			if val, ok := chunk["content"].(string); ok {
+				if fieldsAll["content_with_weight"] {
+					chunk["content_with_weight"] = val
+				}
+				if fieldsAll["content_ltks"] {
+					chunk["content_ltks"] = val
+				}
+				if fieldsAll["content_sm_ltks"] {
+					chunk["content_sm_ltks"] = val
+				}
+			}
+		}
+
+		// authors -> authors_tks, authors_sm_tks (Python lines 742-745)
+		if fieldsAll["authors_tks"] || fieldsAll["authors_sm_tks"] {
+			if val, ok := chunk["authors"].(string); ok {
+				if fieldsAll["authors_tks"] {
+					chunk["authors_tks"] = val
+				}
+				if fieldsAll["authors_sm_tks"] {
+					chunk["authors_sm_tks"] = val
+				}
+			}
+		}
+
+		// Post-process fields matching Python lines 758-780
+		// This single loop processes all column transformations in Python order
+		kwdNoSplit := map[string]bool{
+			"knowledge_graph_kwd": true, "docnm_kwd": true,
+			"important_kwd": true, "question_kwd": true,
+		}
+		for field, val := range chunk {
+			fieldLower := strings.ToLower(field)
+
+			// field_keyword: split by "###" (Python lines 760-761)
+			needsSplit := false
+			if fieldLower == "source_id" {
+				needsSplit = true
+			} else if strings.HasSuffix(fieldLower, "_kwd") && !kwdNoSplit[fieldLower] {
+				needsSplit = true
+			}
+			if needsSplit {
+				if strVal, ok := val.(string); ok && strings.Contains(strVal, "###") {
+					parts := strings.Split(strVal, "###")
+					var filtered []interface{}
+					for _, p := range parts {
+						if p != "" {
+							filtered = append(filtered, p)
+						}
+					}
+					chunk[field] = filtered
+				}
+				continue
+			}
+
+			// _feas: JSON parse (Python lines 762-763)
+			if strings.HasSuffix(fieldLower, "_feas") {
+				if strVal, ok := val.(string); ok && strVal != "" {
+					var parsed interface{}
+					if err := json.Unmarshal([]byte(strVal), &parsed); err == nil {
+						chunk[field] = parsed
+					}
+				} else {
+					chunk[field] = map[string]interface{}{}
+				}
+				continue
+			}
+
+			// chunk_data: JSON parse (Python lines 764-766)
+			if fieldLower == "chunk_data" {
+				if strVal, ok := val.(string); ok && strVal != "" {
+					var parsed interface{}
+					if err := json.Unmarshal([]byte(strVal), &parsed); err == nil {
+						chunk[field] = parsed
+					}
+				} else if val == nil {
+					// Keep nil
+				}
+				continue
+			}
+
+			// position_int: hex decode with grouping by 5 (Python lines 767-776)
+			if fieldLower == "position_int" && fieldsAll[fieldLower] {
+				// If already converted to slice by applyFieldMappings, skip
+				if _, isSlice := val.([]interface{}); isSlice {
+					continue
+				}
+				// applyFieldMappings returns [][]int, check that too
+				if _, isIntSlice := val.([][]int); isIntSlice {
+					continue
+				}
+				if strVal, ok := val.(string); ok && strVal != "" {
+					chunk[field] = utility.ConvertHexToPositionIntArray(strVal)
+				} else {
+					chunk[field] = []interface{}{}
+				}
+				continue
+			}
+
+			// page_num_int, top_int: hex decode (Python lines 777-778)
+			if (fieldLower == "page_num_int" || fieldLower == "top_int") && fieldsAll[fieldLower] {
+				// If already converted to slice by applyFieldMappings, skip
+				if _, isSlice := val.([]interface{}); isSlice {
+					continue
+				}
+				// applyFieldMappings returns []int, check that too
+				if _, isIntSlice := val.([]int); isIntSlice {
+					continue
+				}
+				if strVal, ok := val.(string); ok && strVal != "" {
+					chunk[field] = utility.ConvertHexToIntArray(strVal)
+				} else {
+					chunk[field] = []interface{}{}
+				}
+				continue
+			}
+		}
+
+		// Handle row_id mapping (Python lines 748-750)
+		if fieldsAll["row_id()"] {
+			if lowerKey, ok := columnMap["row_id"]; ok {
+				chunk["row_id()"] = chunk[lowerKey]
+			}
+		}
+
+		// Delete base columns after mapping (Python lines 781-783)
+		for _, col := range []string{"docnm", "important_keywords", "questions", "content", "authors"} {
+			delete(chunk, col)
+		}
+
+		// Build result map keyed by id
+		if idVal, ok := chunk["id"].(string); ok {
+			fieldMap := make(map[string]interface{})
+			// Rebuild noneColumns for this chunk so that fields missing
+			// from THIS chunk get a nil placeholder. Reusing a set across
+			// chunks would let the first chunk's contents permanently
+			// remove keys, leaving later chunks with inconsistent shapes.
+			noneColumns := make(map[string]bool, len(fieldsAll))
+			for f := range fieldsAll {
+				noneColumns[strings.ToLower(f)] = true
+			}
+			for field, value := range chunk {
+				if fieldsAll[field] {
+					fieldMap[field] = value
+					delete(noneColumns, strings.ToLower(field))
+				}
+			}
+			// Set none_columns to None (Python lines 784-785)
+			for col := range noneColumns {
+				fieldMap[col] = nil
+			}
+			result[idVal] = fieldMap
 		}
 	}
 
 	return result
-}
-
-// GetFields is a method wrapper for infinityEngine to satisfy DocEngine interface
-func (e *infinityEngine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
-	return GetFields(chunks, fields)
 }
 
 // GetAggregation aggregates chunk values by field name.
@@ -1461,12 +1767,8 @@ func (e *infinityEngine) GetAggregation(chunks []map[string]interface{}, fieldNa
 	return result
 }
 
-// GetDocIDs extracts document IDs from search results.
-// Extracts "id" field from each chunk and returns as a list.
-func (e *infinityEngine) GetDocIDs(chunks []map[string]interface{}) []string {
-	if len(chunks) == 0 {
-		return nil
-	}
+// GetChunkIDs extracts chunk IDs from Infinity search results.
+func (e *infinityEngine) GetChunkIDs(chunks []map[string]interface{}) []string {
 	ids := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
 		if id, ok := chunk["id"].(string); ok {
@@ -1484,95 +1786,81 @@ func (e *infinityEngine) GetHighlight(chunks []map[string]interface{}, keywords 
 		return result
 	}
 
-	// Check if field exists
-	hasField := false
-	for _, chunk := range chunks {
-		if _, ok := chunk[fieldName]; ok {
-			hasField = true
-			break
-		}
-	}
-	if !hasField {
-		// Try alternative field names
-		if fieldName == "content_with_weight" {
-			if _, ok := chunks[0]["content"]; ok {
-				fieldName = "content"
-				hasField = true
-			}
-		}
-	}
-	if !hasField {
-		return result
-	}
-
-	emTag := regexp.MustCompile(`<em>[^<>]+</em>`)
-
-	for _, chunk := range chunks {
-		id := ""
-		if idVal, ok := chunk["id"].(string); ok {
-			id = idVal
-		}
-
-		txt, ok := chunk[fieldName].(string)
-		if !ok || txt == "" {
-			continue
-		}
-
-		// Check if already highlighted
-		if emTag.MatchString(txt) {
-			result[id] = txt
-			continue
-		}
-
-		// Replace newlines with spaces
-		txt = regexp.MustCompile(`[\r\n]`).ReplaceAllString(txt, " ")
-
-		// Split by sentence delimiters
-		delimiters := regexp.MustCompile(`[.?!;\n]`)
-		segments := delimiters.Split(txt, -1)
-
-		var highlightedSegments []string
-		for _, segment := range segments {
-			// Check if segment is English or contains keywords
-			englishCount := 0
-			totalCount := 0
-			for _, r := range segment {
-				if unicode.IsLetter(r) {
-					totalCount++
-					if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-						englishCount++
-					}
-				}
-			}
-			isEnglish := totalCount > 0 && float64(englishCount)/float64(totalCount) > 0.5
-			segmentToCheck := segment
-			if isEnglish {
-				// For English: match whole words with boundaries
-				for _, kw := range keywords {
-					re := regexp.MustCompile(`(^|[ .?/'\"\(\)!,:;-])` + regexp.QuoteMeta(kw) + `([ .?/'\"\(\)!,:;-]|$)`)
-					segmentToCheck = re.ReplaceAllString(segmentToCheck, "$1<em>"+kw+"</em>$2")
-				}
-			} else {
-				// For non-English: simple substring match
-				for _, kw := range keywords {
-					segmentToCheck = strings.ReplaceAll(segmentToCheck, kw, "<em>"+kw+"</em>")
-				}
-			}
-			if strings.Contains(segmentToCheck, "<em>") {
-				highlightedSegments = append(highlightedSegments, segmentToCheck)
-			}
-		}
-
-		if len(highlightedSegments) > 0 {
-			result[id] = strings.Join(highlightedSegments, "...")
-		}
-	}
-
+	// For Infinity, scores are already returned in search results (_score column)
+	// So GetScores just extracts scores from chunks, mimicking Python's approach
 	return result
+}
+
+// KNNScores for Infinity - since Infinity normalizes scores during fusion,
+// we just need to return a result structure that GetScores can parse.
+// This matches Python's approach where Infinity doesn't use the two-pass KNN.
+func (e *infinityEngine) KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error) {
+	if len(chunks) == 0 {
+		return nil, nil
+	}
+
+	// Build a result structure that GetScores can parse
+	// For Infinity, scores are already in _score field from the first search
+	result := make(map[string]interface{})
+	hitList := make([]interface{}, 0, len(chunks))
+	for _, chunk := range chunks {
+		if id, ok := chunk["id"].(string); ok {
+			hit := map[string]interface{}{
+				"_id":    id,
+				"_score": chunk["_score"],
+			}
+			hitList = append(hitList, hit)
+		}
+	}
+	result["hits"] = map[string]interface{}{
+		"hits": hitList,
+	}
+	return result, nil
+}
+
+// GetScores extracts similarity scores from KNN search result.
+// For Infinity, it parses the result from KNNScores and extracts _score values.
+func (e *infinityEngine) GetScores(knnResult map[string]interface{}) map[string]float64 {
+	scores := make(map[string]float64)
+	hits, ok := knnResult["hits"].(map[string]interface{})
+	if !ok {
+		return scores
+	}
+	hitList, ok := hits["hits"].([]interface{})
+	if !ok {
+		return scores
+	}
+	for _, h := range hitList {
+		hit, ok := h.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		docID, ok := hit["_id"].(string)
+		if !ok {
+			continue
+		}
+		scoreVal := hit["_score"]
+		if scoreVal == nil {
+			scores[docID] = 0.0
+			continue
+		}
+		score, ok := scoreVal.(float64)
+		if !ok {
+			scores[docID] = 0.0
+			continue
+		}
+		scores[docID] = score
+	}
+	return scores
 }
 
 // convertSelectFields converts field names to Infinity format
 // isSkillIndex indicates if this is a skill index (uses skill_id instead of id)
+//
+// Does NOT mutate the input slice — callers (e.g. retrieval.go) reuse the same
+// SelectFields list both for Search() and GetFields(); mutating it would
+// replace logical names like "content_with_weight" with their Infinity column
+// names ("content"), breaking GetFields's field-presence checks.
 func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 	fieldMapping := map[string]string{
 		"docnm_kwd":           "docnm",
@@ -1587,6 +1875,8 @@ func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 		"content_sm_ltks":     "content",
 		"authors_tks":         "authors",
 		"authors_sm_tks":      "authors",
+		"message_type":        "message_type_kwd",
+		"status":              "status_int",
 	}
 
 	skillIndex := false
@@ -1594,20 +1884,24 @@ func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 		skillIndex = isSkillIndex[0]
 	}
 
+	// Copy + map without mutating the caller's slice.
+	mapped := make([]string, len(output))
 	needEmptyCount := false
 	for i, field := range output {
 		if field == "important_kwd" {
 			needEmptyCount = true
 		}
 		if newField, ok := fieldMapping[field]; ok {
-			output[i] = newField
+			mapped[i] = newField
+		} else {
+			mapped[i] = field
 		}
 	}
 
 	// Remove duplicates
 	seen := make(map[string]bool)
 	result := []string{}
-	for _, f := range output {
+	for _, f := range mapped {
 		if f != "" && !seen[f] {
 			seen[f] = true
 			result = append(result, f)
@@ -1662,6 +1956,7 @@ func convertMatchingField(fieldWeightStr string) string {
 		"authors_tks":         "authors@ft_authors_rag_coarse",
 		"authors_sm_tks":      "authors@ft_authors_rag_fine",
 		"tag_kwd":             "tag_kwd@ft_tag_kwd_whitespace__",
+		"toc_kwd":             "toc_kwd@ft_toc_kwd_whitespace__",
 		// Skill index fields
 		"name":        "name@ft_name_rag_coarse",
 		"tags":        "tags@ft_tags_rag_coarse",
@@ -1748,6 +2043,12 @@ func equivalentConditionToStr(condition map[string]interface{}) string {
 					convertMatchingField(k), escapeFilterValue(fmt.Sprintf("%v", v))))
 			}
 			continue
+		}
+
+		if k == "message_type" {
+			k = "message_type_kwd"
+		} else if k == "status" {
+			k = "status_int"
 		}
 
 		// Handle list values (mixed types - strings get quotes, numbers don't)
@@ -1955,6 +2256,19 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 			d["questions"] = strings.Join(utility.ConvertToStringSlice(v), "\n")
 		case "tag_kwd":
 			d["tag_kwd"] = strings.Join(utility.ConvertToStringSlice(v), "###")
+		case "message_type":
+			d["message_type_kwd"] = v
+		case "status":
+			switch status := v.(type) {
+			case bool:
+				if status {
+					d["status_int"] = 1
+				} else {
+					d["status_int"] = 0
+				}
+			default:
+				d["status_int"] = v
+			}
 		case "question_tks":
 			if _, exists := chunk["question_kwd"]; !exists {
 				d["questions"] = utility.ConvertToString(v)

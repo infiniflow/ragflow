@@ -14,7 +14,7 @@ import {
 } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { memo, useCallback, useContext } from 'react';
+import { memo, useCallback, useContext, useEffect } from 'react';
 import { AgentChatContext } from '../context';
 import DebugContent from '../debug-content';
 import { useAwaitComponentData } from '../hooks/use-chat-logic';
@@ -50,7 +50,17 @@ function AgentChatBox() {
   });
 
   const { setDerivedMessages } = useContext(AgentChatContext);
-  setDerivedMessages?.(derivedMessages);
+  // Sync the derived messages to the AgentChatContext — must run as an
+  // effect, not in the render body. Calling setDerivedMessages(...)
+  // synchronously during render (the previous shape) targets
+  // AgentCanvas's state while AgentChatBox is still rendering, which
+  // triggers React's "Cannot update a component (AgentCanvas) while
+  // rendering a different component (AgentChatBox)" warning. The
+  // effect runs after commit so the setState targets a stable
+  // component subtree.
+  useEffect(() => {
+    setDerivedMessages?.(derivedMessages);
+  }, [derivedMessages, setDerivedMessages]);
 
   const isTaskMode = useIsTaskMode();
 

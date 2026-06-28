@@ -16,6 +16,8 @@
 
 package common
 
+import "errors"
+
 type ErrorCode int
 
 const (
@@ -82,3 +84,15 @@ func (e ErrorCode) Message() string {
 	}
 	return "Unknown error"
 }
+
+var (
+	ErrInvalidToken = errors.New("invalid token")
+	ErrNotAdmin     = errors.New("user is not admin")
+	ErrUserInactive = errors.New("user is inactive")
+	ErrUserNotFound = errors.New("user not found")
+	// ErrNotFound is returned when an object is not found
+	ErrNotFound = errors.New("object not found")
+	// ErrBucketNotFound is returned when a bucket is not found
+	ErrBucketNotFound = errors.New("bucket not found")
+	ErrTaskNotFound   = errors.New("task id not found")
+)

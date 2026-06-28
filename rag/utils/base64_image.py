@@ -93,13 +93,41 @@ async def image2id(d: dict, storage_put_func: partial, objname: str, bucket: str
     del d["image"]
 
 
+def parse_storage_composite_id(composite_id: str) -> tuple[str, str] | None:
+    """Split a ``{bucket}-{object_key}`` storage ID on the first hyphen only.
+
+    ``image2id`` stores ``img_id`` as ``f"{bucket}-{objname}"``. The object key
+    may contain additional hyphens (e.g. ``page-1.jpg``).
+
+    Args:
+        composite_id: Composite storage identifier.
+
+    Returns:
+        ``(bucket, object_key)`` when valid, otherwise ``None``.
+    """
+    parts = composite_id.split("-", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1] or composite_id.endswith("-"):
+        return None
+    return parts[0], parts[1]
+
+
 def id2image(image_id: str | None, storage_get_func: partial):
+    """Load a PIL image from storage using a composite ``img_id``.
+
+    Args:
+        image_id: Value produced by ``image2id`` (``{bucket}-{object_key}``).
+        storage_get_func: Callable ``(bucket=, fnm=)`` returning raw bytes.
+
+    Returns:
+        A PIL ``Image`` instance, or ``None`` when the ID is invalid or load fails.
+    """
     if not image_id:
         return
-    arr = image_id.split("-")
-    if len(arr) != 2:
+    parsed = parse_storage_composite_id(image_id)
+    if not parsed:
+        logging.debug("Invalid image_id composite format: %s", image_id)
         return
-    bkt, nm = image_id.split("-")
+    bkt, nm = parsed
     try:
         blob = storage_get_func(bucket=bkt, fnm=nm)
         if not blob:

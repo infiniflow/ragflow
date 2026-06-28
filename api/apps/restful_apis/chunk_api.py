@@ -25,6 +25,7 @@ from quart import request
 
 from api.apps import login_required
 from api.db.joint_services.tenant_model_service import (
+    split_model_name,
     get_model_config_from_provider_instance,
     get_tenant_default_model_by_type,
 )
@@ -44,7 +45,6 @@ from api.utils.api_utils import (
     get_request_json,
     get_result,
     server_error_response,
-    token_required,
 )
 from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.image_utils import store_chunk_image
@@ -157,9 +157,13 @@ def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=No
 
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
-@token_required
+@login_required
+@add_tenant_id_to_kwargs
 async def parse(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
     if not req.get("document_ids"):
@@ -189,7 +193,16 @@ async def parse(tenant_id, dataset_id):
             == 0
         ):
             return get_error_data_result("Can't parse document that is currently being processed")
-        settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
+        index_name = search.index_name(dataset_tenant_id)
+        if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
+            settings.docStoreConn.delete({"doc_id": id}, index_name, doc[0].kb_id)
+        else:
+            logging.info(
+                "Skipping chunk delete during parse for doc %s: index %s/%s does not exist",
+                id,
+                index_name,
+                doc[0].kb_id,
+            )
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
         doc = doc.to_dict()
@@ -212,9 +225,13 @@ async def parse(tenant_id, dataset_id):
 
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["DELETE"])  # noqa: F821
-@token_required
+@login_required
+@add_tenant_id_to_kwargs
 async def stop_parsing(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
 
@@ -238,7 +255,16 @@ async def stop_parsing(tenant_id, dataset_id):
         cancel_all_task_of(id)
         info = {"run": "2", "progress": 0, "chunk_num": 0}
         DocumentService.update_by_id(id, info)
-        settings.docStoreConn.delete({"doc_id": doc[0].id}, search.index_name(tenant_id), dataset_id)
+        index_name = search.index_name(dataset_tenant_id)
+        if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
+            settings.docStoreConn.delete({"doc_id": doc[0].id}, index_name, doc[0].kb_id)
+        else:
+            logging.info(
+                "Skipping chunk delete during stop_parsing for doc %s: index %s/%s does not exist",
+                doc[0].id,
+                index_name,
+                doc[0].kb_id,
+            )
         success_count += 1
     if duplicate_messages:
         if success_count > 0:
@@ -252,7 +278,8 @@ async def stop_parsing(tenant_id, dataset_id):
 
 
 @manager.route("/retrieval", methods=["POST"])  # noqa: F821
-@token_required
+@login_required
+@add_tenant_id_to_kwargs
 async def retrieval_test(tenant_id):
     req = await get_request_json()
     if not req.get("dataset_ids"):
@@ -264,7 +291,7 @@ async def retrieval_test(tenant_id):
         if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
-    embd_nms = list(set([TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]))
+    embd_nms = list(set([split_model_name(kb.embd_id)[0] for kb in kbs]))
     if len(embd_nms) != 1:
         return get_result(message="Datasets use different embedding models.", code=RetCode.DATA_ERROR)
     if "question" not in req:

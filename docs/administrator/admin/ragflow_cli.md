@@ -16,7 +16,7 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
 2. Install ragflow-cli.
 
    ```bash
-   pip install ragflow-cli==0.25.6
+   pip install ragflow-cli==0.26.1
    ```
 
 3. Launch the CLI client:
