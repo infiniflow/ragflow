@@ -24,7 +24,12 @@ ever reaching the else/end branch.
 
 from types import SimpleNamespace
 
+import pytest
+
 from agent.component.switch import Switch
+
+
+pytestmark = [pytest.mark.p1]
 
 
 class _FakeCanvas:
@@ -56,6 +61,18 @@ def test_empty_condition_falls_through_to_end():
         {
             "logical_operator": "and",
             "items": [{"cpn_id": "", "operator": "contains", "value": "x"}],
+            "to": ["TARGET"],
+        }
+    ]
+    outputs = _make_switch(conditions, end_cpn_ids=["END"])
+    assert outputs["_next"] == ["END"]
+
+
+def test_empty_and_items_fall_through_to_end():
+    conditions = [
+        {
+            "logical_operator": "and",
+            "items": [],
             "to": ["TARGET"],
         }
     ]
