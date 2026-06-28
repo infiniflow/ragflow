@@ -2,7 +2,7 @@
   "name": "ollama",
   "url_suffix": {
     "chat": "api/chat",
-    "models": "api/ps",
+    "models": "api/tags",
     "embedding": "api/embed"
   },
   "class": "local"

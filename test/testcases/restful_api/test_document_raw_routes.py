@@ -20,8 +20,8 @@ from test.testcases.restful_api.helpers.client import RestClient
 
 
 @pytest.mark.p2
-def test_document_image_invalid_id_contract(rest_client_noauth):
-    res = rest_client_noauth.get("/documents/images/not-a-valid-image-id")
+def test_document_image_invalid_id_contract(rest_client):
+    res = rest_client.get("/documents/images/not-a-valid-image-id")
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 102, payload

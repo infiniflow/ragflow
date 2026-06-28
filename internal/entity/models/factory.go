@@ -151,6 +151,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewHuaweiCloudModel(baseURL, urlSuffix), nil
 	case "qiniu":
 		return NewQiniuModel(baseURL, urlSuffix), nil
+	case "xiaomi":
+		return NewXiaomiModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

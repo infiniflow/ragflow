@@ -58,6 +58,20 @@ func newNovitaForTest(baseURL string) *NovitaModel {
 	)
 }
 
+func TestNovitaNewModelWithCustomDefaultTransport(t *testing.T) {
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, nil
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+	})
+
+	if model := NewNovitaModel(map[string]string{"default": "http://unused"}, URLSuffix{}); model == nil {
+		t.Fatal("NewNovitaModel returned nil")
+	}
+}
+
 // newNovitaSSEServer asserts the SSE-chat wire contract (POST, path,
 // Authorization, Content-Type) the same way newNovitaServer does for
 // the JSON-chat path, then writes the supplied SSE payload. Closes
@@ -792,21 +806,26 @@ func TestNovitaRerankRejectsMissingRerankSuffix(t *testing.T) {
 }
 
 func TestNovitaBalanceReturnsNoSuchMethod(t *testing.T) {
-	if _, err := newNovitaForTest("http://unused").Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("got %v", err)
+	// Balance IS implemented (makes HTTP call), not a "no such method" stub.
+	// With dummy key it should reach the HTTP call stage, not fail at APIConfigCheck.
+	apiKey := "test-key"
+	_, err := newNovitaForTest("http://unused").Balance(&APIConfig{ApiKey: &apiKey})
+	if err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("expected non-api-key error (e.g. connection refused), got %v", err)
 	}
 }
 
 func TestNovitaAudioOCRReturnNoSuchMethod(t *testing.T) {
 	m := "x"
+	apiKey := "test-key"
 	v := newNovitaForTest("http://unused")
-	if _, err := v.TranscribeAudio(&m, &m, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := v.TranscribeAudio(&m, &m, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
-	if _, err := v.AudioSpeech(&m, &m, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := v.AudioSpeech(&m, &m, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: %v", err)
 	}
-	if _, err := v.OCRFile(&m, nil, &m, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := v.OCRFile(&m, nil, &m, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }

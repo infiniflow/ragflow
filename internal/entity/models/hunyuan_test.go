@@ -75,7 +75,7 @@ func newHunyuanSSEServer(t *testing.T, expectedPath, ssePayload string) *httptes
 func newHunyuanForTest(baseURL string) *HunyuanModel {
 	return NewHunyuanModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "chat/completions", Models: "models"},
+		URLSuffix{Chat: "chat/completions", Embedding: "embeddings", Models: "models"},
 	)
 }
 
@@ -378,7 +378,7 @@ func TestHunyuanListModelsHappyPath(t *testing.T) {
 		t.Fatalf("ListModels: %v", err)
 	}
 	want := []string{"hunyuan-pro", "hunyuan-standard", "hunyuan-standard-256K"}
-	if strings.Join(models, ",") != strings.Join(want, ",") {
+	if joinModelNames(models, ",") != strings.Join(want, ",") {
 		t.Errorf("models=%v, want %v", models, want)
 	}
 }
@@ -428,11 +428,60 @@ func TestHunyuanBaseURLForRegionUnknown(t *testing.T) {
 	}
 }
 
-func TestHunyuanEmbedReturnsNoSuchMethod(t *testing.T) {
-	model := "x"
-	_, err := newHunyuanForTest("http://unused").Embed(&model, []string{"a"}, &APIConfig{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Embed: want 'no such method', got %v", err)
+func TestHunyuanEmbedHappyPath(t *testing.T) {
+	srv := newHunyuanServer(t, http.MethodPost, "/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["model"] != "hunyuan-embedding" {
+			t.Errorf("model=%v", body["model"])
+		}
+		inputs, ok := body["input"].([]interface{})
+		if !ok || len(inputs) != 2 {
+			t.Errorf("input=%#v", body["input"])
+			http.Error(w, "bad input", http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0.1, 0.2}, "index": 0},
+				{"embedding": []float64{0.3, 0.4}, "index": 1},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "hunyuan-embedding"
+	embeddings, err := newHunyuanForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(embeddings) != 2 || embeddings[1].Index != 1 || embeddings[1].Embedding[0] != 0.3 {
+		t.Errorf("embeddings=%+v", embeddings)
+	}
+}
+
+func TestHunyuanEmbedValidatesInputs(t *testing.T) {
+	apiKey := "test-key"
+	model := "hunyuan-embedding"
+
+	if embeddings, err := newHunyuanForTest("http://unused").Embed(nil, nil, &APIConfig{ApiKey: &apiKey}, nil); err != nil || len(embeddings) != 0 {
+		t.Errorf("empty input: embeddings=%+v err=%v", embeddings, err)
+	}
+	if _, err := newHunyuanForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+		t.Errorf("nil model: %v", err)
+	}
+	emptyModel := ""
+	if _, err := newHunyuanForTest("http://unused").Embed(&emptyModel, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+		t.Errorf("empty model: %v", err)
+	}
+	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("nil api config: %v", err)
+	}
+	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("missing api key: %v", err)
+	}
+	emptyKey := ""
+	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, &APIConfig{ApiKey: &emptyKey}, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("empty api key: %v", err)
 	}
 }
 

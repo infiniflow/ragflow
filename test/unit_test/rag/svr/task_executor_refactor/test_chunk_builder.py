@@ -18,12 +18,13 @@ Unit tests for ChunkBuilder module.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 from rag.svr.task_executor_refactor.chunk_builder import (
     get_parser,
     run_chunking,
     extract_outline,
 )
+from test.unit_test.rag.svr.task_executor_refactor.conftest import make_task_context
 
 
 class TestGetParser:
@@ -49,151 +50,99 @@ class TestGetParser:
 class TestRunChunking:
     """Tests for run_chunking function."""
 
-    def _create_mock_context(self):
-        """Helper to create a mock TaskContext."""
-        ctx = MagicMock()
-        ctx.name = "test.pdf"
-        ctx.location = "/path/to/test.pdf"
-        ctx.from_page = 0
-        ctx.to_page = -1
-        ctx.language = "en"
-        ctx.kb_id = "kb_1"
-        ctx.parser_config = {}
-        ctx.tenant_id = "tenant_1"
-        ctx.progress_cb = MagicMock()
-        ctx.raw_task = {}
-        ctx.chunk_limiter = MagicMock()
-        ctx.chunk_limiter.__aenter__ = AsyncMock()
-        ctx.chunk_limiter.__aexit__ = AsyncMock()
-        return ctx
-
     @pytest.mark.asyncio
     async def test_run_chunking_success(self):
         """Test successful chunking."""
-        ctx = self._create_mock_context()
+        ctx = make_task_context()
 
         mock_chunker = MagicMock()
         mock_chunker.chunk = MagicMock(return_value=[{"content_with_weight": "chunk1"}])
 
         with patch("rag.svr.task_executor_refactor.chunk_builder.thread_pool_exec") as mock_thread:
-            # thread_pool_exec returns an awaitable that returns the list
             mock_thread.return_value = [{"content_with_weight": "chunk1"}]
-
             result = await run_chunking(mock_chunker, b"binary", ctx)
-
             assert result is not None
             assert len(result) == 1
 
     @pytest.mark.asyncio
     async def test_run_chunking_with_parser_config(self):
         """Test chunking merges table parser config."""
-        ctx = self._create_mock_context()
+        ctx = make_task_context()
         ctx.raw_task = {"parser_config": {"chunk_token_num": 128}}
 
         mock_chunker = MagicMock()
         mock_chunker.chunk = MagicMock(return_value=[])
 
-        with patch("rag.svr.task_executor_refactor.chunk_builder.thread_pool_exec") as mock_thread:
+        with patch("rag.svr.task_executor_refactor.chunk_builder.thread_pool_exec") as mock_thread, \
+             patch("rag.svr.task_executor_refactor.chunk_builder.merge_table_parser_config_from_kb") as mock_merge:
             mock_thread.return_value = []
-
-            with patch("rag.svr.task_executor_refactor.chunk_builder.merge_table_parser_config_from_kb") as mock_merge:
-                mock_merge.return_value = {"chunk_token_num": 128}
-
-                await run_chunking(mock_chunker, b"binary", ctx)
-
-                mock_merge.assert_called_once_with(ctx.raw_task)
+            mock_merge.return_value = {"chunk_token_num": 128}
+            await run_chunking(mock_chunker, b"binary", ctx)
+            mock_merge.assert_called_once_with(ctx.raw_task)
 
     @pytest.mark.asyncio
     async def test_run_chunking_exception(self):
         """Test chunking handles exception."""
-        ctx = self._create_mock_context()
+        ctx = make_task_context()
 
         mock_chunker = MagicMock()
         mock_chunker.chunk = MagicMock(side_effect=Exception("Test error"))
 
         with patch("rag.svr.task_executor_refactor.chunk_builder.thread_pool_exec") as mock_thread:
             mock_thread.side_effect = Exception("Test error")
-
             with pytest.raises(Exception):
                 await run_chunking(mock_chunker, b"binary", ctx)
-
-            # Verify progress_cb was called with error message
             ctx.progress_cb.assert_called()
 
 
 class TestExtractOutline:
     """Tests for extract_outline function."""
 
-    def _create_mock_context(self):
-        """Helper to create a mock TaskContext."""
-        ctx = MagicMock()
-        ctx.doc_id = "doc_1"
-        ctx.write_interceptor = None
-        ctx.progress_cb = MagicMock()
+    @staticmethod
+    def _ctx(recording_ctx=None, **overrides):
+        ctx = make_task_context(**overrides)
+        ctx.recording_context = recording_ctx or MagicMock()
         return ctx
 
     @pytest.mark.asyncio
     async def test_extract_outline_with_data(self):
         """Test outline extraction when outline data is present."""
-        ctx = self._create_mock_context()
+        ctx = self._ctx()
 
         outline_data = [{"title": "Chapter 1", "page": 1}]
         cks = [{"__outline__": outline_data}]
 
-        mock_rec_ctx = MagicMock()
-        ctx.recording_context = mock_rec_ctx
-
         with patch("rag.svr.task_executor_refactor.chunk_builder.DocMetadataService") as mock_meta:
             mock_meta.get_document_metadata.return_value = {}
             mock_meta.update_document_metadata = MagicMock()
-
             await extract_outline(cks, ctx)
-
-            mock_rec_ctx.record.assert_called_with("outline_data", outline_data)
-            # Outline should be popped from first chunk
+            ctx.recording_context.record.assert_called_with("outline_data", outline_data)
             assert "__outline__" not in cks[0]
             mock_meta.update_document_metadata.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_extract_outline_without_data(self):
         """Test outline extraction when no outline data."""
-        ctx = self._create_mock_context()
-
+        ctx = self._ctx()
         cks = [{"content_with_weight": "test"}]
-
-        mock_rec_ctx = MagicMock()
-        ctx.recording_context = mock_rec_ctx
-
         await extract_outline(cks, ctx)
-
-        mock_rec_ctx.record.assert_called_with("outline_data", None)
+        ctx.recording_context.record.assert_called_with("outline_data", None)
 
     @pytest.mark.asyncio
     async def test_extract_outline_empty_chunks(self):
         """Test outline extraction with empty chunks list."""
-        ctx = self._create_mock_context()
-
-        mock_rec_ctx = MagicMock()
-        ctx.recording_context = mock_rec_ctx
-
+        ctx = self._ctx()
         await extract_outline([], ctx)
-
-        mock_rec_ctx.record.assert_called_with("outline_data", None)
+        ctx.recording_context.record.assert_called_with("outline_data", None)
 
     @pytest.mark.asyncio
     async def test_extract_outline_with_write_interceptor(self):
         """Test outline extraction with write interceptor."""
-        ctx = self._create_mock_context()
-        ctx.write_interceptor = MagicMock()
+        ctx = self._ctx(write_interceptor=MagicMock())
 
         outline_data = [{"title": "Chapter 1", "page": 1}]
         cks = [{"__outline__": outline_data}]
-
-        mock_rec_ctx = MagicMock()
-        ctx.recording_context = mock_rec_ctx
-
         await extract_outline(cks, ctx)
-
         ctx.write_interceptor.intercept.assert_called_once_with(
             "DocMetadataService.update_document_metadata"
         )
@@ -201,19 +150,13 @@ class TestExtractOutline:
     @pytest.mark.asyncio
     async def test_extract_outline_persistence_exception(self):
         """Test outline extraction handles persistence exception."""
-        ctx = self._create_mock_context()
+        ctx = self._ctx()
 
         outline_data = [{"title": "Chapter 1", "page": 1}]
         cks = [{"__outline__": outline_data}]
 
-        mock_rec_ctx = MagicMock()
-        ctx.recording_context = mock_rec_ctx
-
         with patch("rag.svr.task_executor_refactor.chunk_builder.DocMetadataService") as mock_meta:
             mock_meta.get_document_metadata.return_value = {}
             mock_meta.update_document_metadata.side_effect = Exception("DB error")
-
-            # Should not raise exception, just log warning
             await extract_outline(cks, ctx)
-
-            mock_rec_ctx.record.assert_called_with("outline_data", outline_data)
+            ctx.recording_context.record.assert_called_with("outline_data", outline_data)

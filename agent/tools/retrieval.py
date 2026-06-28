@@ -27,7 +27,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.memory_service import MemoryService
 from api.db.joint_services import memory_message_service
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
 from common import settings
 from common.connection_utils import timeout
 from rag.app.tag import label_question
@@ -121,12 +121,12 @@ class Retrieval(ToolBase, ABC):
         embd_mdl = None
         if embd_nms:
             tenant_id = self._canvas.get_tenant_id()
-            embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_nms[0])
+            embd_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.EMBEDDING, embd_nms[0])
             embd_mdl = LLMBundle(tenant_id, embd_model_config)
 
         rerank_mdl = None
         if self._param.rerank_id:
-            rerank_model_config = get_model_config_by_type_and_name(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
+            rerank_model_config = get_model_config_from_provider_instance(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
             rerank_mdl = LLMBundle(kbs[0].tenant_id, rerank_model_config)
 
         vars = self.get_input_elements_from_text(query_text)

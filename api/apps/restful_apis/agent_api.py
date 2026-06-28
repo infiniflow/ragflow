@@ -51,7 +51,9 @@ from api.db.services.user_service import TenantService, UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
+    check_duplicate_ids,
     get_data_error_result,
+    get_error_data_result,
     get_json_result,
     get_result,
     get_request_json,
@@ -128,6 +130,29 @@ def _normalize_agent_reference_entry(reference):
     }
 
 
+def _normalize_agent_reference_chunk(chunk):
+    if not isinstance(chunk, dict):
+        return {
+            "id": chunk,
+            "content": str(chunk),
+            "document_id": None,
+            "document_name": None,
+            "dataset_id": None,
+            "image_id": None,
+            "positions": None,
+        }
+
+    return {
+        "id": chunk.get("chunk_id", chunk.get("id")),
+        "content": chunk.get("content_with_weight", chunk.get("content")),
+        "document_id": chunk.get("doc_id", chunk.get("document_id")),
+        "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
+        "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
+        "image_id": chunk.get("image_id", chunk.get("img_id")),
+        "positions": chunk.get("positions", chunk.get("position_int")),
+    }
+
+
 def _normalize_agent_session(conv):
     conv["message"] = conv.get("message", [])
     for info in conv["message"]:
@@ -148,18 +173,17 @@ def _normalize_agent_session(conv):
         messages = [message for i, message in enumerate(conv["message"]) if i != 0 and message["role"] != "user"]
         for message, reference in zip(messages, conv["reference"]):
             chunks = reference.get("chunks", [])
-            message["reference"] = [
-                {
-                    "id": chunk.get("chunk_id", chunk.get("id")),
-                    "content": chunk.get("content_with_weight", chunk.get("content")),
-                    "document_id": chunk.get("doc_id", chunk.get("document_id")),
-                    "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
-                    "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
-                    "image_id": chunk.get("image_id", chunk.get("img_id")),
-                    "positions": chunk.get("positions", chunk.get("position_int")),
-                }
-                for chunk in chunks
-            ]
+            if isinstance(chunks, dict):
+                refs = []
+                for citation_id, chunk in chunks.items():
+                    ref = _normalize_agent_reference_chunk(chunk)
+                    ref["citation_id"] = str(citation_id)
+                    refs.append(ref)
+                message["reference"] = refs
+            elif isinstance(chunks, list):
+                message["reference"] = [_normalize_agent_reference_chunk(chunk) for chunk in chunks]
+            else:
+                message["reference"] = []
     del conv["reference"]
     return conv
 
@@ -444,6 +468,61 @@ def delete_agent_session_item(agent_id, session_id, tenant_id):
     return get_json_result(data=API4ConversationService.delete_by_id(session_id))
 
 
+@manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+@_require_canvas_access_async
+async def delete_agent_session(tenant_id, agent_id):
+    errors = []
+    success_count = 0
+    req = await get_request_json()
+    cvs = await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id)
+    if not cvs:
+        return get_error_data_result(f"You don't own the agent {agent_id}")
+
+    if not req:
+        return get_result()
+
+    ids = req.get("ids")
+    if not ids:
+        if req.get("delete_all") is True:
+            ids = [conv.id for conv in await thread_pool_exec(API4ConversationService.query, dialog_id=agent_id)]
+            if not ids:
+                return get_result()
+        else:
+            return get_result()
+
+    conv_list = ids
+
+    unique_conv_ids, duplicate_messages = check_duplicate_ids(conv_list, "session")
+    conv_list = unique_conv_ids
+
+    for session_id in conv_list:
+        conv = await thread_pool_exec(API4ConversationService.query, id=session_id, dialog_id=agent_id)
+        if not conv:
+            errors.append(f"The agent doesn't own the session {session_id}")
+            continue
+        await thread_pool_exec(API4ConversationService.delete_by_id, session_id)
+        success_count += 1
+
+    if errors:
+        if success_count > 0:
+            return get_result(data={"success_count": success_count, "errors": errors},
+                              message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
+        else:
+            return get_error_data_result(message="; ".join(errors))
+
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(
+                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors",
+                data={"success_count": success_count, "errors": duplicate_messages})
+        else:
+            return get_error_data_result(message=";".join(duplicate_messages))
+
+    return get_result()
+
+
 @manager.route("/agents/download", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -649,12 +728,10 @@ async def create_agent(tenant_id):
         )
 
     req["title"] = req["title"].strip()
-    if UserCanvasService.query(
-        user_id=tenant_id,
-        title=req["title"],
-        canvas_category=req["canvas_category"],
-    ):
-        return get_data_error_result(message=f"{req['title']} already exists.")
+    for canvas in UserCanvasService.query(user_id=tenant_id, canvas_category=req["canvas_category"]):
+        canvas_title = getattr(canvas, "title", req["title"])
+        if canvas_title and canvas_title.lower() == req["title"].lower():
+            return get_data_error_result(message=f"{req['title']} already exists.")
 
     req["id"] = get_uuid()
     if not UserCanvasService.save(**req):
@@ -890,10 +967,15 @@ async def update_agent(agent_id, tenant_id):
                 code=RetCode.ARGUMENT_ERROR,
             )
 
+    _, current_agent = UserCanvasService.get_by_id(agent_id)
     if req.get("title") is not None:
         req["title"] = req["title"].strip()
+        canvas_category_for_duplicate_check = req.get("canvas_category") or (current_agent.canvas_category if current_agent else CanvasCategory.Agent)
+        for canvas in UserCanvasService.query(user_id=tenant_id, canvas_category=canvas_category_for_duplicate_check):
+            canvas_title = getattr(canvas, "title", "")
+            if getattr(canvas, "id", None) != agent_id and canvas_title and canvas_title.lower() == req["title"].lower():
+                return get_data_error_result(message=f"{req['title']} already exists.")
 
-    _, current_agent = UserCanvasService.get_by_id(agent_id)
     agent_title_for_version = req.get("title") or (current_agent.title if current_agent else "")
     canvas_category = (
         req.get("canvas_category")
@@ -1128,7 +1210,10 @@ async def test_db_connection():
         return server_error_response(exc)
 
 
-@manager.route("/agents/chat/completion", methods=["POST"])  # noqa: F821
+# NOTE: The singular form `/agents/chat/completion` was a historical typo
+# in earlier releases — no client, SDK, or doc ever used it, and the
+# plural form below is the canonical route. The singular is intentionally
+# NOT registered; clients sending it receive 404.
 @manager.route("/agents/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -1381,6 +1466,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             from agent.canvas import Canvas
 
             canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id, custom_header=custom_header)
+            canvas.clear_history()
         except Exception as exc:
             return server_error_response(exc)
         turn_id = get_uuid()
@@ -1389,7 +1475,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             "dialog_id": cvs.id,
             "user_id": user_id,
             "exp_user_id": user_id,
-            "name": req.get("name", ""),
+            "name": req.get("name") or (query[:250] if query else "") or "",
             "message": [
                 {
                     "role": "user",
@@ -2290,7 +2376,7 @@ async def download_attachment(tenant_id=None, attachment_id=None):
 
     Mirrors the authorization model of the preview endpoint: the user must belong
     to the tenant that owns the document's knowledge base. A denial returns the
-    same "Document not found!" response so the endpoint cannot be used to
+    same "Attachment not found!" response so the endpoint cannot be used to
     enumerate doc ids across tenants.
     """
     try:
@@ -2298,6 +2384,15 @@ async def download_attachment(tenant_id=None, attachment_id=None):
         # pass `attachment_id` instead of the route parameter name.
         ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        if not data:
+            # Storage object missing or empty (orphaned DB metadata, tenant
+            # mismatch). Without this guard `make_response(None)` raises
+            # `TypeError: response value cannot be None` and the caller
+            # sees HTTP 500 — same bug class as #15365 on document
+            # preview. Return the same "Attachment not found!" shape used
+            # by the preview route's missing-record path so byte-streaming
+            # endpoints respond consistently on a not-found.
+            return get_data_error_result(message="Attachment not found!")
         response = await make_response(data)
         content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
         apply_safe_file_response_headers(response, content_type, ext)

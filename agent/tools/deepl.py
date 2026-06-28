@@ -31,7 +31,6 @@ class DeepLParam(ComponentParamBase):
         self.target_lang = 'EN-GB'
 
     def check(self):
-        self.check_positive_integer(self.top_n, "Top N")
         self.check_valid_value(self.source_lang, "Source language",
                                ['AR', 'BG', 'CS', 'DA', 'DE', 'EL', 'EN', 'ES', 'ET', 'FI', 'FR', 'HU', 'ID', 'IT',
                                 'JA', 'KO', 'LT', 'LV', 'NB', 'NL', 'PL', 'PT', 'RO', 'RU', 'SK', 'SL', 'SV', 'TR',
@@ -65,4 +64,4 @@ class DeepL(ComponentBase, ABC):
         except Exception as e:
             if self.check_if_canceled("DeepL processing"):
                 return
-            DeepL.be_output("**Error**:" + str(e))
+            return DeepL.be_output("**Error**:" + str(e))

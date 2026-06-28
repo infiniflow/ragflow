@@ -60,6 +60,58 @@ class TestPostProcessorProcessTableParserMetadata:
 
             mock_merge.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_processes_table_parser_manual_mode(self):
+        """Test that table parser in manual mode aggregates and persists metadata."""
+        ctx = MagicMock()
+        ctx.parser_id = "table"
+        ctx.raw_task = {"parser_config": {}}
+        ctx.write_interceptor = None
+        chunks = [{"col_key": "val"}]
+
+        with (
+            patch("rag.svr.task_executor_refactor.post_processor.merge_table_parser_config_from_kb") as mock_merge,
+            patch("rag.svr.task_executor_refactor.post_processor.aggregate_table_doc_metadata") as mock_agg,
+            patch("rag.svr.task_executor_refactor.post_processor.table_parser_strip_doc_metadata_keys") as mock_strip,
+            patch("rag.svr.task_executor_refactor.post_processor.update_metadata_to") as mock_update,
+            patch("rag.svr.task_executor_refactor.post_processor.DocMetadataService") as mock_meta,
+        ):
+            mock_merge.return_value = {"table_column_mode": "manual"}
+            mock_agg.return_value = {"col_key": ["val1", "val2"]}
+            mock_strip.return_value = set()
+            mock_meta.get_document_metadata.return_value = {}
+            mock_update.return_value = {"col_key": ["val1", "val2"]}
+
+            service = PostProcessor(ctx=ctx)
+            await service.process_table_parser_metadata("doc_1", chunks)
+
+            mock_agg.assert_called_once_with(chunks, ctx.raw_task)
+            mock_meta.update_document_metadata.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_processes_table_parser_with_write_interceptor(self):
+        """Test table parser with write interceptor bypasses DB."""
+        ctx = MagicMock()
+        ctx.parser_id = "table"
+        ctx.raw_task = {}
+        ctx.write_interceptor = MagicMock()
+
+        with (
+            patch("rag.svr.task_executor_refactor.post_processor.merge_table_parser_config_from_kb") as mock_merge,
+            patch("rag.svr.task_executor_refactor.post_processor.aggregate_table_doc_metadata") as mock_agg,
+            patch("rag.svr.task_executor_refactor.post_processor.table_parser_strip_doc_metadata_keys") as mock_strip,
+            patch("rag.svr.task_executor_refactor.post_processor.DocMetadataService") as mock_meta,
+        ):
+            mock_merge.return_value = {"table_column_mode": "manual"}
+            mock_agg.return_value = {"key": ["v"]}
+            mock_strip.return_value = set()
+            mock_meta.get_document_metadata.return_value = {}
+
+            service = PostProcessor(ctx=ctx)
+            await service.process_table_parser_metadata("doc_1", [])
+
+            ctx.write_interceptor.intercept.assert_called_once_with("DocMetadataService.update_document_metadata")
+
 
 class TestPostProcessorInsertTocChunk:
     """Tests for insert_toc_chunk method."""
@@ -108,9 +160,7 @@ class TestPostProcessorInsertTocChunk:
         result = await service.insert_toc_chunk(toc_chunk, chunk_service)
 
         assert result is True
-        chunk_service.insert_chunks.assert_called_once_with(
-            "task_1", "tenant_1", "kb_1", [toc_chunk]
-        )
+        chunk_service.insert_chunks.assert_called_once_with("task_1", "tenant_1", "kb_1", [toc_chunk])
 
     @pytest.mark.asyncio
     async def test_handles_insert_failure(self):
