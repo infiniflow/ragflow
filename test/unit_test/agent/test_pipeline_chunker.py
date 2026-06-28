@@ -24,6 +24,7 @@ end-to-end behavior is intentionally left to higher-level integration tests.
 from __future__ import annotations
 
 import sys
+from importlib import import_module, reload
 from unittest.mock import MagicMock
 
 import pytest
@@ -38,102 +39,90 @@ pytestmark = pytest.mark.p2
 # runtime environment. We track every key we install and restore the prior
 # sys.modules state in teardown_module so the stubs don't leak into other
 # test files.
-_SENTINEL_ABSENT = object()
-_INSTALLED_STUBS: dict[str, object] = {}
+@pytest.fixture(scope="module")
+def pipeline_chunker_module():
+    """Import pipeline_chunker with rag.app parser modules stubbed locally."""
+    stubbed_names = [
+        "api.db.services.file_service",
+        "deepdoc.vision.ocr",
+        "deepdoc.parser.figure_parser",
+        "rag.app.picture",
+        "rag.app.audio",
+        "rag.app.resume",
+        "rag.app.naive",
+        "rag.app.paper",
+        "rag.app.book",
+        "rag.app.presentation",
+        "rag.app.manual",
+        "rag.app.laws",
+        "rag.app.qa",
+        "rag.app.table",
+        "rag.app.one",
+        "rag.app.email",
+        "rag.app.tag",
+    ]
+    original_modules = {name: sys.modules.get(name) for name in stubbed_names}
 
+    file_service_stub = MagicMock()
+    file_service_stub.FileService = MagicMock()
 
-def _install_stub(name: str, stub: object) -> None:
-    """Insert ``stub`` into sys.modules and remember the prior entry."""
-    if name in _INSTALLED_STUBS:
-        return
-    _INSTALLED_STUBS[name] = sys.modules.get(name, _SENTINEL_ABSENT)
-    sys.modules[name] = stub
+    try:
+        sys.modules["api.db.services.file_service"] = file_service_stub
+        for name in stubbed_names[1:]:
+            stub = MagicMock()
+            stub.chunk = MagicMock(return_value=[{"content_with_weight": "stub"}])
+            sys.modules[name] = stub
 
-
-_file_service_stub = MagicMock()
-_file_service_stub.FileService = MagicMock()
-if "api.db.services.file_service" not in sys.modules:
-    _install_stub("api.db.services.file_service", _file_service_stub)
-
-for mod in [
-    "deepdoc.vision.ocr",
-    "deepdoc.parser.figure_parser",
-    "rag.app.picture",
-    "rag.app.audio",
-    "rag.app.resume",
-    "rag.app.naive",
-    "rag.app.paper",
-    "rag.app.book",
-    "rag.app.presentation",
-    "rag.app.manual",
-    "rag.app.laws",
-    "rag.app.qa",
-    "rag.app.table",
-    "rag.app.one",
-    "rag.app.email",
-    "rag.app.tag",
-]:
-    if mod not in sys.modules:
-        stub = MagicMock()
-        stub.chunk = MagicMock(return_value=[{"content_with_weight": "stub"}])
-        _install_stub(mod, stub)
-
-
-def teardown_module(module):
-    """Restore sys.modules to its pre-stub state when this file's tests finish."""
-    for name, original in _INSTALLED_STUBS.items():
-        if original is _SENTINEL_ABSENT:
-            sys.modules.pop(name, None)
-        else:
-            sys.modules[name] = original
-    _INSTALLED_STUBS.clear()
-
-from agent.component.pipeline_chunker import (  # noqa: E402
-    _PARSER_MODULES,
-    PipelineChunkerParam,
-    _load_chunker,
-)
+        module = import_module("agent.component.pipeline_chunker")
+        module = reload(module)
+        yield module
+    finally:
+        for name, original in original_modules.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
 
 
 class TestPipelineChunkerParam:
     """Validate parameter parsing and the strategy whitelist."""
 
-    def test_default_param_validates(self):
+    def test_default_param_validates(self, pipeline_chunker_module):
         """A freshly constructed param object should pass ``check()``."""
-        p = PipelineChunkerParam()
+        p = pipeline_chunker_module.PipelineChunkerParam()
         assert p.check() is True
 
-    def test_accepts_each_known_parser(self):
+    def test_accepts_each_known_parser(self, pipeline_chunker_module):
         """Every parser id in the lookup table must validate."""
-        for parser_id in _PARSER_MODULES:
-            p = PipelineChunkerParam()
+        for parser_id in pipeline_chunker_module._PARSER_MODULES:
+            p = pipeline_chunker_module.PipelineChunkerParam()
             p.parser_id = parser_id
             assert p.check() is True
 
-    def test_rejects_unknown_parser(self):
+    def test_rejects_unknown_parser(self, pipeline_chunker_module):
         """Unknown parser ids must raise ``ValueError`` at validation time."""
-        p = PipelineChunkerParam()
+        p = pipeline_chunker_module.PipelineChunkerParam()
         p.parser_id = "nonsense-parser"
         with pytest.raises(ValueError):
             p.check()
 
-    def test_rejects_non_dict_parser_config(self):
+    def test_rejects_non_dict_parser_config(self, pipeline_chunker_module):
         """``parser_config`` must be a dict; anything else must raise."""
-        p = PipelineChunkerParam()
+        p = pipeline_chunker_module.PipelineChunkerParam()
         p.parser_config = "not a dict"
         with pytest.raises(ValueError):
             p.check()
 
-    def test_rejects_negative_pages(self):
+    def test_rejects_negative_pages(self, pipeline_chunker_module):
         """Negative page indices must raise ``ValueError``."""
-        p = PipelineChunkerParam()
+        p = pipeline_chunker_module.PipelineChunkerParam()
         p.from_page = -1
         with pytest.raises(ValueError):
             p.check()
 
-    def test_rejects_inverted_page_range(self):
+    def test_rejects_inverted_page_range(self, pipeline_chunker_module):
         """``from_page`` greater than ``to_page`` must raise ``ValueError``."""
-        p = PipelineChunkerParam()
+        p = pipeline_chunker_module.PipelineChunkerParam()
         p.from_page = 10
         p.to_page = 5
         with pytest.raises(ValueError, match="from_page must be <= to_page"):
@@ -143,13 +132,13 @@ class TestPipelineChunkerParam:
 class TestLoadChunker:
     """Verify the lazy parser-id -> chunker callable resolver."""
 
-    def test_load_chunker_returns_callable_for_each_known_parser(self):
+    def test_load_chunker_returns_callable_for_each_known_parser(self, pipeline_chunker_module):
         """Every known parser id should resolve to a callable ``chunk`` function."""
-        for parser_id in _PARSER_MODULES:
-            chunker = _load_chunker(parser_id)
+        for parser_id in pipeline_chunker_module._PARSER_MODULES:
+            chunker = pipeline_chunker_module._load_chunker(parser_id)
             assert callable(chunker)
 
-    def test_load_chunker_raises_for_unknown_parser(self):
+    def test_load_chunker_raises_for_unknown_parser(self, pipeline_chunker_module):
         """Unknown parser ids should raise ``KeyError`` from the lookup."""
         with pytest.raises(KeyError):
-            _load_chunker("not-a-real-parser")
+            pipeline_chunker_module._load_chunker("not-a-real-parser")

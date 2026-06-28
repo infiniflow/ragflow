@@ -29,8 +29,8 @@ from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.apps.services.document_api_service import validate_document_update_fields, map_doc_keys, \
     map_doc_keys_with_run_status, update_document_name_only, update_chunk_method, update_document_status_only, \
     reset_document_for_reparse
-from api.db import VALID_FILE_TYPES, FileType, DB
-from api.db.db_models import API4Conversation
+from api.db import VALID_FILE_TYPES, FileType
+from api.db.db_models import API4Conversation, DB
 from api.db.services import duplicate_name
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.db_models import Task

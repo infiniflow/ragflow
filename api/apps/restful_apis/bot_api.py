@@ -24,6 +24,7 @@ from quart import Response, request
 
 from agent.canvas import Canvas
 from api.apps import AUTH_BETA, login_required
+from api.db.db_models import APIToken
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.canvas_service import completion as agent_completion
@@ -51,6 +52,13 @@ from api.utils.reference_metadata_utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _get_sdk_authorization_token():
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return ""
+    return auth_header[len("Bearer "):].strip()
 
 
 @manager.route("/chatbots/<dialog_id>/completions", methods=["POST"])  # noqa: F821
