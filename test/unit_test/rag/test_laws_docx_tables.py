@@ -16,6 +16,7 @@
 
 import sys
 import types
+from importlib import import_module
 from io import BytesIO
 
 import pytest
@@ -37,12 +38,28 @@ class _DummyBase:
         pass
 
 
+_ORIGINAL_MODULES = {
+    name: sys.modules.get(name)
+    for name in (
+        "deepdoc.parser",
+        "deepdoc.parser.utils",
+        "rag.app.naive",
+        "common.parser_config_utils",
+    )
+}
+
 _stub("deepdoc.parser", PdfParser=_DummyBase, DocxParser=_DummyBase, HtmlParser=_DummyBase)
 _stub("deepdoc.parser.utils", get_text=lambda *a, **k: "")
 _stub("rag.app.naive", by_plaintext=lambda *a, **k: ([], [], None), PARSERS={})
 _stub("common.parser_config_utils", normalize_layout_recognizer=lambda x: (x, None))
 
-from rag.app.laws import Docx  # noqa: E402
+Docx = import_module("rag.app.laws").Docx  # noqa: E402
+
+for _name, _module in _ORIGINAL_MODULES.items():
+    if _module is None:
+        sys.modules.pop(_name, None)
+    else:
+        sys.modules[_name] = _module
 
 
 def _build_docx(builder):
