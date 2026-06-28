@@ -562,6 +562,10 @@ class ComponentBase(ABC):
             return None
         return self._param.inputs[key].get("value")
 
+    @staticmethod
+    def be_output(v):
+        return pd.DataFrame([{"content": v}])
+
     def get_component_name(self, cpn_id) -> str:
         return self._canvas.get_component(cpn_id)["obj"].component_name.lower()
 
