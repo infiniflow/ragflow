@@ -65,8 +65,8 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
         calls["completion"] = True
 
         async def _gen():
-            if False:
-                yield ""
+            yield 'data: {"event":"message","data":{"content":"ok"}}\n\n'
+            yield 'data: {"event":"message_end","data":{"content":"ok"}}\n\n'
         return _gen()
 
     _stub(monkeypatch, "quart", Response=lambda *a, **k: SimpleNamespace(headers=SimpleNamespace(add_header=lambda *aa, **kk: None)), request=SimpleNamespace())
@@ -123,7 +123,7 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
 
 
 async def _async_empty_json():
-    return {}
+    return {"stream": False}
 
 
 @pytest.mark.p1
