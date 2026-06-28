@@ -100,6 +100,22 @@ def _require_canvas_owner_sync(func):
     return wrapper
 
 
+def _is_truthy(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
+def _allow_anonymous_webhook(security_cfg: dict) -> bool:
+    if not isinstance(security_cfg, dict):
+        return False
+    return _is_truthy(security_cfg.get("allow_anonymous"))
+
+
 def _get_user_nickname(user_id: str) -> str:
     exists, user = UserService.get_by_id(user_id)
     if not exists:
@@ -1567,9 +1583,26 @@ async def agent_chat_completion(tenant_id, agent_id=None):
 
 
 @manager.route("/agents/<agent_id>/webhook", methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"])  # noqa: F821
-@manager.route("/agents/<agent_id>/webhook/test",methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"],)  # noqa: F821
 async def webhook(agent_id: str):
-    is_test = request.path.startswith(f"/api/v1/agents/{agent_id}/webhook/test")
+    return await _webhook_impl(agent_id, is_test=False)
+
+
+@manager.route("/agents/<agent_id>/webhook/test", methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def webhook_test(agent_id: str, tenant_id: str):
+    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
+        logging.warning(
+            "Webhook test denied: owner check failed agent_id=%s tenant_id=%s method=%s",
+            agent_id,
+            tenant_id,
+            request.method,
+        )
+        return get_json_result(data=False, message="Only the owner of the agent is authorized for this operation.", code=RetCode.OPERATING_ERROR)
+    return await _webhook_impl(agent_id, is_test=True)
+
+
+async def _webhook_impl(agent_id: str, is_test: bool):
     start_ts = time.time()
 
     # 1. Fetch canvas by agent_id
@@ -1605,12 +1638,16 @@ async def webhook(agent_id: str):
             code=RetCode.BAD_REQUEST,message=f"HTTP method '{request_method}' not allowed for this webhook."
         ),RetCode.BAD_REQUEST
 
-    # 6. Validate webhook security
     async def validate_webhook_security(security_cfg: dict):
         """Validate webhook security rules based on security configuration."""
 
-        if not security_cfg:
-            return  # No security config → allowed by default
+        if not isinstance(security_cfg, dict) or not security_cfg:
+            logging.warning(
+                "Webhook denied: missing security config agent_id=%s method=%s",
+                agent_id,
+                request.method,
+            )
+            raise Exception("Webhook security is required. Set allow_anonymous to true to permit unauthenticated webhooks.")
 
         # 1. Validate max body size
         await _validate_max_body_size(security_cfg)
@@ -1625,6 +1662,13 @@ async def webhook(agent_id: str):
         auth_type = security_cfg.get("auth_type", "none")
 
         if auth_type == "none":
+            if not _allow_anonymous_webhook(security_cfg):
+                logging.warning(
+                    "Webhook denied: anonymous access missing explicit opt-in agent_id=%s method=%s",
+                    agent_id,
+                    request.method,
+                )
+                raise Exception("Anonymous webhook access requires allow_anonymous to be true")
             return
 
         if auth_type == "token":
@@ -1643,7 +1687,7 @@ async def webhook(agent_id: str):
         """Check request size does not exceed max_body_size."""
         max_size = security_cfg.get("max_body_size")
         if not max_size:
-            return
+            max_size = "10MB"
 
         # Convert "10MB" → bytes
         units = {"kb": 1024, "mb": 1024**2}
@@ -1688,7 +1732,7 @@ async def webhook(agent_id: str):
         """Simple in-memory rate limiting."""
         rl = security_cfg.get("rate_limit")
         if not rl:
-            return
+            rl = {"limit": 60, "per": "minute"}
 
         limit = int(rl.get("limit", 60))
         if limit <= 0:
