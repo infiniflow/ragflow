@@ -18,6 +18,7 @@ from abc import ABC
 import pandas as pd
 import requests
 from agent.component.base import ComponentBase, ComponentParamBase
+from common.http_client import DEFAULT_TIMEOUT
 
 
 class Jin10Param(ComponentParamBase):
@@ -72,7 +73,7 @@ class Jin10(ComponentBase, ABC):
                 }
                 response = requests.get(
                     url='https://open-data-api.jin10.com/data-api/flash?category=' + self._param.flash_type,
-                    headers=headers, data=json.dumps(params))
+                    headers=headers, data=json.dumps(params), timeout=DEFAULT_TIMEOUT)
                 response = response.json()
                 for i in response['data']:
                     if self.check_if_canceled("Jin10 processing"):
@@ -84,7 +85,7 @@ class Jin10(ComponentBase, ABC):
                 }
                 response = requests.get(
                     url='https://open-data-api.jin10.com/data-api/calendar/' + self._param.calendar_datatype + '?category=' + self._param.calendar_type,
-                    headers=headers, data=json.dumps(params))
+                    headers=headers, data=json.dumps(params), timeout=DEFAULT_TIMEOUT)
 
                 response = response.json()
                 if self.check_if_canceled("Jin10 processing"):
@@ -98,7 +99,7 @@ class Jin10(ComponentBase, ABC):
                     params['codes'] = 'BTCUSD'
                 response = requests.get(
                     url='https://open-data-api.jin10.com/data-api/' + self._param.symbols_datatype + '?type=' + self._param.symbols_type,
-                    headers=headers, data=json.dumps(params))
+                    headers=headers, data=json.dumps(params), timeout=DEFAULT_TIMEOUT)
                 response = response.json()
                 if self.check_if_canceled("Jin10 processing"):
                     return
@@ -134,7 +135,7 @@ class Jin10(ComponentBase, ABC):
                 }
                 response = requests.get(
                     url='https://open-data-api.jin10.com/data-api/news',
-                    headers=headers, data=json.dumps(params))
+                    headers=headers, data=json.dumps(params), timeout=DEFAULT_TIMEOUT)
                 response = response.json()
                 if self.check_if_canceled("Jin10 processing"):
                     return

@@ -224,11 +224,13 @@ def wrap_request_to_handle_ratelimiting(request_fn: R, default_wait_time_sec: in
 
 _rate_limited_get = wrap_request_to_handle_ratelimiting(requests.get)
 _rate_limited_post = wrap_request_to_handle_ratelimiting(requests.post)
+_rate_limited_request = wrap_request_to_handle_ratelimiting(requests.request)
 
 
 class _RateLimitedRequest:
     get = _rate_limited_get
     post = _rate_limited_post
+    request = _rate_limited_request
 
 
 rl_requests = _RateLimitedRequest
