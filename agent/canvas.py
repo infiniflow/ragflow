@@ -35,6 +35,7 @@ from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
 from common.constants import LLMType
+from common.llm_request_context import set_llm_request_context, reset_llm_request_context
 from common.exceptions import TaskCanceledException
 from common.misc_utils import get_uuid, hash_str2int
 from common.token_utils import token_usage_sink, langfuse_run_attrs
@@ -438,6 +439,13 @@ class Canvas(Graph):
             _lf_attrs["session_id"] = str(_session_id)[:200]
         sink_token = token_usage_sink.set(self._run_token_usage)
         attrs_token = langfuse_run_attrs.set(_lf_attrs)
+        # Forward the originating session/user to upstream LLM providers (as the
+        # OpenAI `user` field) for the duration of this run, and reset afterwards so
+        # the value never leaks to later calls in the same task.
+        _req_ctx_token = set_llm_request_context(
+            session_id=kwargs.get("session_id"),
+            user_id=kwargs.get("user_id"),
+        )
         try:
             async for ev in self._run_impl(**kwargs):
                 yield ev
@@ -454,6 +462,7 @@ class Canvas(Graph):
             except ValueError:
                 logging.debug("Failed to reset Langfuse run attributes ContextVar", exc_info=True)
                 langfuse_run_attrs.set(None)
+            reset_llm_request_context(_req_ctx_token)
 
     async def _run_impl(self, **kwargs):
         self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
