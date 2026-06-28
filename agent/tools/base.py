@@ -19,11 +19,12 @@ import time
 from copy import deepcopy
 import asyncio
 from functools import partial
+from collections.abc import Mapping
 from typing import TypedDict, List, Any
 from agent.component.base import ComponentParamBase, ComponentBase
 from common.misc_utils import hash_str2int
 from rag.prompts.generator import kb_prompt
-from common.mcp_tool_call_conn import MCPToolCallSession, ToolCallSession
+from common.mcp_tool_call_conn import MCPToolBinding, MCPToolCallSession, ToolCallSession
 from timeit import default_timer as timer
 
 
@@ -52,16 +53,20 @@ class LLMToolPluginCallSession(ToolCallSession):
         self.tools_map = tools_map
         self.callback = callback
 
-    def tool_call(self, name: str, arguments: dict[str, Any]) -> Any:
-        return asyncio.run(self.tool_call_async(name, arguments))
+    def tool_call(self, name: str, arguments: dict[str, Any], timeout: float | int = 10) -> Any:
+        return asyncio.run(self.tool_call_async(name, arguments, request_timeout=timeout))
 
-    async def tool_call_async(self, name: str, arguments: dict[str, Any]) -> Any:
+    async def tool_call_async(self, name: str, arguments: dict[str, Any], request_timeout: float | int = 10) -> Any:
         assert name in self.tools_map, f"LLM tool {name} does not exist"
         logging.info(f"[ToolCall] invoke name={name} arguments={str(arguments)[:200]}")
+        if not isinstance(arguments, Mapping):
+            raise TypeError(f"Tool arguments for {name} must be an object, got {type(arguments).__name__}")
         st = timer()
         tool_obj = self.tools_map[name]
-        if isinstance(tool_obj, MCPToolCallSession):
-            resp = await thread_pool_exec(tool_obj.tool_call, name, arguments, 60)
+        if isinstance(tool_obj, MCPToolBinding):
+            resp = await thread_pool_exec(tool_obj.session.tool_call, tool_obj.original_name, arguments, request_timeout)
+        elif isinstance(tool_obj, MCPToolCallSession):
+            resp = await thread_pool_exec(tool_obj.tool_call, name, arguments, request_timeout)
         elif hasattr(tool_obj, "invoke_async") and asyncio.iscoroutinefunction(tool_obj.invoke_async):
             resp = await tool_obj.invoke_async(**arguments)
         else:

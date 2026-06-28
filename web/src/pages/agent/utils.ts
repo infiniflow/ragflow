@@ -33,6 +33,7 @@ import {
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
+  TitleChunkerMethod,
   TypesWithArray,
   WebhookSecurityAuthType,
 } from './constant';
@@ -353,13 +354,29 @@ function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
 }
 
 function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
-  const levels = params.rules.map((rule) =>
+  const activeRules =
+    (params.method === TitleChunkerMethod.Group
+      ? params.groupRules
+      : params.hierarchyRules) ?? params.rules;
+
+  const levels = (activeRules || []).map((rule) =>
     transformObjectArrayToPureArray(rule.levels, 'expression'),
   );
 
+  const hierarchyValue =
+    (params.method === TitleChunkerMethod.Group
+      ? params.hierarchyGroup
+      : params.hierarchyHierarchy) ?? params.hierarchy;
+
   return {
+    ...omit(params, [
+      'hierarchyRules',
+      'groupRules',
+      'hierarchyHierarchy',
+      'hierarchyGroup',
+    ]),
     method: params.method,
-    hierarchy: Number(params.hierarchy || 0),
+    hierarchy: Number(hierarchyValue || 0),
     include_heading_content: Boolean(params.include_heading_content),
     root_chunk_as_heading: Boolean(params.root_chunk_as_heading),
     levels,
@@ -548,8 +565,9 @@ export const buildDslGlobalVariables = (
   return { globals: globalVariablesResult, variables: globalVariables };
 };
 
+// TODO: This is caused by `useSendMessageBySSE`; it is recommended to sort out the logic.
 export const receiveMessageError = (res: any) =>
-  res && (res?.response.status !== 200 || res?.data?.code !== 0);
+  res && res?.response.status !== 200;
 
 // Replace the id in the object with text
 export const replaceIdWithText = (

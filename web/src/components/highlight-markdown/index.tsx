@@ -1,3 +1,4 @@
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import classNames from 'classnames';
 import Markdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -7,19 +8,17 @@ import {
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
 
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
 import { preprocessLaTeX } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
+import { omit } from 'lodash';
 import { useIsDarkTheme } from '../theme-provider';
 import styles from './index.module.less';
 
 const HighLightMarkdown = ({
-  className,
   children,
 }: {
   className?: string;
@@ -33,12 +32,12 @@ const HighLightMarkdown = ({
   return (
     <div dir={dir} className={classNames(styles.text)}>
       <Markdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={MarkdownRemarkPlugins}
         rehypePlugins={[rehypeRaw, rehypeKatex]}
         components={
           {
-            p: ({ children, node, ...props }: any) => (
-              <p {...props}>{children}</p>
+            p: ({ children, ...props }: any) => (
+              <p {...omit(props, 'node')}>{children}</p>
             ),
             code(props: any) {
               const { children, className, ...rest } = props;

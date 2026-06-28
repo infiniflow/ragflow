@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
+
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -39,15 +41,18 @@ type Config struct {
 	Authentication   AuthenticationConfig   `mapstructure:"authentication"`
 	Database         DatabaseConfig         `mapstructure:"database"`
 	Redis            RedisConfig            `mapstructure:"redis"`
+	Nats             NatsConfig             `mapstructure:"nats"`
 	Log              LogConfig              `mapstructure:"log"`
 	DocEngine        DocEngineConfig        `mapstructure:"doc_engine"`
 	StorageEngine    StorageConfig          `mapstructure:"storage_engine"`
 	RegisterEnabled  int                    `mapstructure:"register_enabled"`
 	OAuth            map[string]OAuthConfig `mapstructure:"oauth"`
+	SMTP             common.SMTPConfig      `mapstructure:"smtp"`
 	Admin            AdminConfig            `mapstructure:"admin"`
 	UserDefaultLLM   UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
 	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`
 	Language         string                 `mapstructure:"language"`
+	TaskExecutor     TaskExecutorConfig     `mapstructure:"task_executor"`
 }
 
 // AdminConfig admin server configuration
@@ -67,6 +72,10 @@ type DefaultSuperUser struct {
 	Nickname string `mapstructure:"nickname"`
 }
 
+type TaskExecutorConfig struct {
+	MessageQueueType string `mapstructure:"message_queue_type"`
+}
+
 // UserDefaultLLMConfig user default LLM configuration
 type UserDefaultLLMConfig struct {
 	DefaultModels DefaultModelsConfig `mapstructure:"default_models"`
@@ -79,6 +88,8 @@ type DefaultModelsConfig struct {
 	RerankModel     ModelConfig `mapstructure:"rerank_model"`
 	ASRModel        ModelConfig `mapstructure:"asr_model"`
 	Image2TextModel ModelConfig `mapstructure:"image2text_model"`
+	OCRModel        ModelConfig `mapstructure:"ocr_model"`
+	TTSModel        ModelConfig `mapstructure:"tts_model"`
 }
 
 // ModelConfig model configuration
@@ -89,10 +100,24 @@ type ModelConfig struct {
 	Factory string `mapstructure:"factory"`
 }
 
-// OAuthConfig OAuth configuration for a channel
+// OAuthConfig OAuth configuration for a channel.
+// Mirrors api/apps/auth/__init__.py's OAUTH_CONFIG entries: a Type that
+// selects the auth client flavor (oauth2 / oidc / github), plus the
+// transport URLs and client credentials. For OIDC the URLs are derived
+// from Issuer via the .well-known/openid-configuration document, so they
+// may be left blank.
 type OAuthConfig struct {
-	DisplayName string `mapstructure:"display_name"`
-	Icon        string `mapstructure:"icon"`
+	DisplayName      string `mapstructure:"display_name"`
+	Icon             string `mapstructure:"icon"`
+	Type             string `mapstructure:"type"`
+	ClientID         string `mapstructure:"client_id"`
+	ClientSecret     string `mapstructure:"client_secret"`
+	AuthorizationURL string `mapstructure:"authorization_url"`
+	TokenURL         string `mapstructure:"token_url"`
+	UserinfoURL      string `mapstructure:"userinfo_url"`
+	RedirectURI      string `mapstructure:"redirect_uri"`
+	Scope            string `mapstructure:"scope"`
+	Issuer           string `mapstructure:"issuer"`
 }
 
 // ServerConfig server configuration
@@ -113,10 +138,31 @@ type DatabaseConfig struct {
 	Charset  string `mapstructure:"charset"`
 }
 
-// LogConfig logging configuration
+// LogConfig logging configuration.
+//
+// Path, MaxSize, MaxBackups, MaxAge, and Compress configure the rotated
+// log file. The cmd/* entry points hardcode per-service defaults
+// (e.g. "server_main.log" for the API server, "admin_server.log" for
+// the admin server, "ingestion_server.log" for the ingestion worker),
+// so a typical deployment gets a rotated file without any YAML
+// configuration. When Path is empty (the default) the binary's
+// hardcoded default filename is used — it does NOT disable file
+// output. Set log.path in service_conf.yaml to override the
+// per-service default filename.
+//
+// Compress is a pointer so callers can distinguish "not set" (nil,
+// defaults to true) from "explicitly false" (*bool=false). All other
+// numeric fields use plain int because their zero values are sensible
+// defaults (100 MB / 10 files / 30 days) and there is no operator-meaningful
+// reason to distinguish "not set" from "0".
 type LogConfig struct {
-	Level  string `mapstructure:"level"`  // debug, info, warn, error
-	Format string `mapstructure:"format"` // json, text
+	Level      string `mapstructure:"level"`       // debug, info, warn, error
+	Format     string `mapstructure:"format"`      // json, text (reserved for future use)
+	Path       string `mapstructure:"path"`        // per-binary file override; empty = use cmd/* hardcoded default
+	MaxSize    int    `mapstructure:"max_size"`    // MB before rotation; default 100
+	MaxBackups int    `mapstructure:"max_backups"` // retained rotated files; default 10
+	MaxAge     int    `mapstructure:"max_age"`     // days; default 30
+	Compress   *bool  `mapstructure:"compress"`    // gzip rotated files; nil = default true
 }
 
 // DocEngineConfig document engine configuration
@@ -210,6 +256,11 @@ type RedisConfig struct {
 	Port     int    `mapstructure:"port"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
+}
+
+type NatsConfig struct {
+	Host string `mapstructure:"host"`
+	Port int    `mapstructure:"port"`
 }
 
 var (
@@ -353,6 +404,13 @@ func Init(configPath string) error {
 				"message_queue_type": mqType,
 			}
 			delete(configDict, "message_queue_type")
+		case "nats":
+			host := getString(configDict, "host")
+			port := getInt(configDict, "port")
+			configDict["id"] = id
+			configDict["name"] = "nats"
+			configDict["host"] = host
+			configDict["port"] = port
 		case "admin":
 			// Skip admin section
 			continue
@@ -717,6 +775,23 @@ func FromConfigFile(configPath string) error {
 						PrefixPath: minioConfig.GetString("prefix_path"),
 						Verify:     minioConfig.GetBool("verify"),
 						Region:     minioConfig.GetString("region"),
+						Bucket:     minioConfig.GetString("bucket"),
+					}
+				}
+			}
+		}
+
+		if v.IsSet("minio_0") {
+			minioConfig := v.Sub("minio_0")
+			if minioConfig != nil {
+				if globalConfig.StorageEngine.Minio == nil {
+					globalConfig.StorageEngine.Minio = &MinioConfig{
+						Host:       minioConfig.GetString("host"),
+						User:       minioConfig.GetString("user"),
+						Password:   minioConfig.GetString("password"),
+						Secure:     minioConfig.GetBool("secure"),
+						PrefixPath: minioConfig.GetString("prefix_path"),
+						Verify:     minioConfig.GetBool("verify"),
 						Bucket:     minioConfig.GetString("bucket"),
 					}
 				}

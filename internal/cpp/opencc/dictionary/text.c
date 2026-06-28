@@ -20,7 +20,7 @@
 #include "../encoding.h"
 
 #define INITIAL_DICTIONARY_SIZE 1024
-#define ENTRY_BUFF_SIZE 128
+#define ENTRY_BUFF_SIZE 4096
 #define ENTRY_WBUFF_SIZE ENTRY_BUFF_SIZE / sizeof(size_t)
 
 struct _text_dictionary {
@@ -69,10 +69,14 @@ int parse_entry(const char *buff, entry *entry_i) {
         if (ucs4_buff == (ucs4_t *)-1) {
             /* 發生錯誤 回退內存申請 */
             ssize_t i;
-            for (i = value_i - 1; i >= 0; --i)
+            for (i = value_i - 1; i >= 0; --i) {
                 free(entry_i->value[i]);
+                entry_i->value[i] = NULL;
+            }
             free(entry_i->value);
+            entry_i->value = NULL;
             free(entry_i->key);
+            entry_i->key = NULL;
             return -1;
         }
 
@@ -95,7 +99,7 @@ dictionary_t dictionary_text_open(const char *filename) {
     text_dictionary->lexicon = (entry *)malloc(sizeof(entry) * text_dictionary->entry_count);
     text_dictionary->word_buff = NULL;
 
-    static char buff[ENTRY_BUFF_SIZE];
+    char buff[ENTRY_BUFF_SIZE];
 
     FILE *fp = fopen(filename, "rb");
     if (fp == NULL) {
@@ -105,6 +109,17 @@ dictionary_t dictionary_text_open(const char *filename) {
 
     size_t i = 0;
     while (fgets(buff, ENTRY_BUFF_SIZE, fp)) {
+        /* Detect line truncation: if buffer is full and last char is not newline,
+         * the line was longer than ENTRY_BUFF_SIZE-1 bytes. Drain the remainder
+         * and skip this malformed entry to prevent parsing partial data. */
+        size_t buff_len = strlen(buff);
+        if (buff_len == ENTRY_BUFF_SIZE - 1 && buff[buff_len - 1] != '\n') {
+            int c;
+            while ((c = fgetc(fp)) != '\n' && c != EOF)
+                ;
+            continue;
+        }
+
         if (i >= text_dictionary->entry_count) {
             text_dictionary->entry_count += text_dictionary->entry_count;
             text_dictionary->lexicon = (entry *)realloc(text_dictionary->lexicon, sizeof(entry) * text_dictionary->entry_count);

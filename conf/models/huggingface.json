@@ -1,7 +1,7 @@
 {
   "name": "HuggingFace",
   "url": {
-    "default": "https://router.huggingface.co/v1/"
+    "default": "https://router.huggingface.co/v1"
   },
   "url-suffix": {
     "chat": "chat/completions",

@@ -365,7 +365,7 @@ def _load_chat_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
 
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
-    tenant_model_service_mod.get_model_config_by_type_and_name = lambda *_args, **_kwargs: {}
+    tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
@@ -412,10 +412,6 @@ def _load_chat_module(monkeypatch):
     api_utils_mod.server_error_response = lambda ex: {"code": 500, "data": None, "message": str(ex)}
     api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda func: func)
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
-
-    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
-    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, req: req
-    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
 
     rag_pkg = ModuleType("rag")
     rag_pkg.__path__ = [str(repo_root / "rag")]

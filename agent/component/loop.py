@@ -43,6 +43,32 @@ class LoopParam(ComponentParamBase):
 class Loop(ComponentBase, ABC):
     component_name = "Loop"
 
+    @staticmethod
+    def _is_missing_required_field(value):
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return value == ""
+        return False
+
+    @classmethod
+    def _is_incomplete_loop_variable(cls, item):
+        if any(
+            [
+                cls._is_missing_required_field(item.get("variable")),
+                cls._is_missing_required_field(item.get("input_mode")),
+                cls._is_missing_required_field(item.get("type")),
+            ]
+        ):
+            return True
+
+        input_mode = item.get("input_mode")
+        if input_mode == "variable":
+            return cls._is_missing_required_field(item.get("value"))
+        if input_mode == "constant":
+            return item.get("value") is None
+        return True
+
     def get_start(self):
         for cid in self._canvas.components.keys():
             if self._canvas.get_component(cid)["obj"].component_name.lower() != "loopitem":
@@ -55,8 +81,8 @@ class Loop(ComponentBase, ABC):
             return
 
         for item in self._param.loop_variables:
-            if any([not item.get("variable"), not item.get("input_mode"), not item.get("value"),not item.get("type")]):
-                assert "Loop Variable is not complete."
+            if self._is_incomplete_loop_variable(item):
+                raise ValueError("Loop Variable is not complete.")
             if item["input_mode"]=="variable":
                 self.set_output(item["variable"],self._canvas.get_variable_value(item["value"]))
             elif item["input_mode"]=="constant":

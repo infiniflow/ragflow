@@ -103,6 +103,7 @@ export default function DatasetSettings() {
           use_graphrag: true,
           entity_types: initialEntityTypes,
           method: MethodValue.Light,
+          batch_chunk_token_size: 4096,
         },
         metadata: {
           type: 'object',

@@ -294,10 +294,13 @@ class InfinityConnection(InfinityConnectionBase):
             df_list = list()
             assert isinstance(knowledgebase_ids, list)
             table_list = list()
-            if index_name.startswith("ragflow_doc_meta_"):
-                table_names_to_search = [index_name]
-            else:
-                table_names_to_search = [f"{index_name}_{kb_id}" for kb_id in knowledgebase_ids]
+            if not knowledgebase_ids:
+                self.logger.warning("INFINITY get called with empty knowledgebase_ids for index %s", index_name)
+                return None
+            table_names_to_search = [f"{index_name}_{kb_id}" for kb_id in knowledgebase_ids if kb_id]
+            if not table_names_to_search:
+                self.logger.warning("INFINITY get has only blank knowledgebase_ids for index %s", index_name)
+                return None
             for table_name in table_names_to_search:
                 table_list.append(table_name)
                 try:
@@ -318,7 +321,10 @@ class InfinityConnection(InfinityConnectionBase):
                       "authors_sm_tks"]:
             fields.add(field)
         res_fields = self.get_fields(res, list(fields))
-        return res_fields.get(chunk_id, None)
+        chunk = res_fields.get(chunk_id, None)
+        if chunk is not None:
+            chunk["id"] = chunk_id
+        return chunk
 
     def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None) -> list[str]:
         '''
@@ -435,6 +441,16 @@ class InfinityConnection(InfinityConnectionBase):
                             d[k] = json.dumps(v)
                         else:
                             d[k] = v
+                    elif k == "extra":
+                        # RAPTOR writes {"raptor_method": ...} as a dict; Infinity's
+                        # `extra` column is varchar so we serialize on the write path.
+                        # The read path (raptor_utils._as_extra_dict) already accepts
+                        # both dict and JSON-string. Other backends (OceanBase JSON
+                        # column, ES/OpenSearch) keep dict shape — this is Infinity-only.
+                        if isinstance(v, dict):
+                            d[k] = json.dumps(v)
+                        else:
+                            d[k] = v if v else ""
                     elif k == "kb_id":
                         if isinstance(d[k], list):
                             d[k] = d[k][0]  # since d[k] is a list, but we need a str
@@ -452,7 +468,8 @@ class InfinityConnection(InfinityConnectionBase):
                             d[k] = v if v else "{}"
                     else:
                         d[k] = v
-                for k in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "content_with_weight",
+                for k in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks",
+                          "content_with_weight",
                           "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks", "question_kwd",
                           "question_tks"]:
                     if k in d:
@@ -572,7 +589,8 @@ class InfinityConnection(InfinityConnectionBase):
                 else:
                     new_value[k] = v
             for k in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "content_with_weight",
-                      "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks", "question_kwd", "question_tks"]:
+                      "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks", "question_kwd",
+                      "question_tks"]:
                 if k in new_value:
                     del new_value[k]
 
@@ -580,7 +598,8 @@ class InfinityConnection(InfinityConnectionBase):
             if removeValue:
                 col_to_remove = list(removeValue.keys())
                 row_to_opt = table_instance.output(col_to_remove + ["id"]).filter(filter).to_df()
-                self.logger.debug(f"INFINITY search table {str(table_name)}, filter {filter}, result: {str(row_to_opt[0])}")
+                self.logger.debug(
+                    f"INFINITY search table {str(table_name)}, filter {filter}, result: {str(row_to_opt[0])}")
                 row_to_opt = self.get_fields(row_to_opt, col_to_remove)
                 for id, old_v in row_to_opt.items():
                     for k, remove_v in removeValue.items():
@@ -605,15 +624,15 @@ class InfinityConnection(InfinityConnectionBase):
         return True
 
     def adjust_chunk_pagerank_fea(
-        self,
-        chunk_id: str,
-        index_name: str,
-        knowledgebase_id: str,
-        delta: int,
-        min_weight: int,
-        max_weight: int,
-        row_id: int | None = None,
-        max_retries: int = 2,
+            self,
+            chunk_id: str,
+            index_name: str,
+            knowledgebase_id: str,
+            delta: int,
+            min_weight: int,
+            max_weight: int,
+            row_id: int | None = None,
+            max_retries: int = 2,
     ) -> bool:
         """Adjust pagerank_fea on one chunk row in Infinity.
 

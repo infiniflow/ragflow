@@ -68,6 +68,7 @@ export default {
       },
       selected: 'Ausgewählt',
       seeAll: 'Alle anzeigen',
+      owner: 'Eigentümer',
     },
     login: {
       loginTitle: 'Melden Sie sich bei Ihrem Konto an',
@@ -194,7 +195,6 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
     },
     knowledgeDetails: {
       metadata: {
-        type: 'Typ',
         fieldNameInvalid:
           'Feldname darf nur Buchstaben oder Unterstriche enthalten.',
         builtIn: 'Eingebaut',
@@ -238,6 +238,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
         value: 'Wert',
         action: 'Aktion',
         field: 'Feld',
+        type: 'Typ',
         description: 'Beschreibung',
         fieldName: 'Feldname',
         editMetadata: 'Metadaten bearbeiten',
@@ -707,6 +708,8 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         text: 'Text',
       },
       chunk: 'Chunk',
+      createChunk: 'Chunk erstellen',
+      editChunk: 'Chunk bearbeiten',
       bulk: 'Masse',
       selectAll: 'Alle auswählen',
       enabledSelected: 'Ausgewählte aktivieren',
@@ -917,6 +920,12 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'Während der Analyse des Dokuments wurden Inhaltsverzeichnisinformationen generiert (siehe Option "Inhaltsverzeichnis-Extraktion aktivieren" in der allgemeinen Methode). Dies ermöglicht es dem großen Modell, Inhaltsverzeichniselemente zurückzugeben, die für die Abfrage des Benutzers relevant sind, und diese Elemente zu verwenden, um verwandte Chunks abzurufen und diese Chunks während des Sortiervorgangs zu gewichten. Dieser Ansatz leitet sich von der Nachahmung der Verhaltenslogik ab, wie Menschen in Büchern nach Wissen suchen.',
       batchDeleteSessions: 'Stapel löschen',
       deleteSelectedConfirm: 'Die ausgewählten {count} Sitzung(en) löschen?',
+      showChunkMetadata: 'Chunk-Metadaten anzeigen',
+      showChunkMetadataTip:
+        'Dokumentmetadaten (z. B. Titel, Seitenzahl, Uploaddatum) neben den abgerufenen Textabschnitten anzeigen',
+      metadataFields: 'Metadatenfelder',
+      metadataFieldsTip:
+        'Wählen Sie aus, welche Metadatenfelder für jeden Abschnitt angezeigt werden sollen',
     },
     setting: {
       deleteModel: 'Modell löschen',
@@ -1243,8 +1252,8 @@ Beispiel: Virtual Hosted Style`,
       FishAudioLink: 'Wie verwende ich FishAudio',
       TencentCloudLink: 'Wie verwende ich TencentCloud ASR',
       volcModelNameMessage: 'Bitte geben Sie Ihren Modellnamen ein!',
-      addEndpointID: 'EndpointID des Modells',
-      endpointIDMessage: 'Bitte geben Sie Ihre EndpointID des Modells ein',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Bitte geben Sie Ihre Model ID ein',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Bitte geben Sie Ihren ARK_API_KEY ein',
       bedrockModelNameMessage: 'Bitte geben Sie Ihren Modellnamen ein!',
@@ -2373,6 +2382,10 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       saveToMemory: 'Im Gedächtnis speichern',
       retrievalFrom: 'Abruf von',
       tocDataSource: 'Datenquelle',
+      tags: 'Tags',
+      canvasCategory: 'Canvas-Kategorie',
+      id: 'ID',
+      logTitle: 'Titel',
     },
     llmTools: {
       bad_calculator: {
@@ -2431,6 +2444,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       okText: 'Speichern',
       cancelText: 'Abbrechen',
       chooseDataset: 'Bitte wählen Sie zuerst einen Datensatz aus',
+      selectLocalePlaceholder: 'Sprache auswählen',
     },
     language: {
       english: 'Englisch',

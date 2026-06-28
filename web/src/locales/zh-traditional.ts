@@ -41,6 +41,8 @@ export default {
       previousPage: '上一頁',
       nextPage: '下一頁',
       add: '添加',
+      owner: '擁有者',
+      running: '執行中...',
     },
     login: {
       login: '登入',
@@ -400,6 +402,8 @@ export default {
     },
     chunk: {
       chunk: '解析塊',
+      createChunk: '建立解析塊',
+      editChunk: '編輯解析塊',
       bulk: '批量',
       selectAll: '選擇所有',
       enabledSelected: '啟用選定的',
@@ -562,6 +566,11 @@ export default {
       tavilyApiKeyHelp: '如何獲取？',
       crossLanguage: '跨語言搜尋',
       crossLanguageTip: `選擇一種或多種語言進行跨語言搜尋。如果沒有選擇語言，系統將使用原始查詢進行搜尋。 `,
+      showChunkMetadata: '顯示區塊中繼資料',
+      showChunkMetadataTip:
+        '在擷取的文字區塊旁顯示文件中繼資料（如標題、頁碼、上傳日期）',
+      metadataFields: '中繼資料欄位',
+      metadataFieldsTip: '選擇要與每個區塊一起顯示的中繼資料欄位',
     },
     setting: {
       profile: '概述',
@@ -682,8 +691,8 @@ export default {
       FishAudioLink: '如何使用Fish Audio',
       TencentCloudLink: '如何使用騰訊雲語音識別',
       volcModelNameMessage: '請輸入模型名稱！',
-      addEndpointID: '模型 EndpointID',
-      endpointIDMessage: '請輸入模型對應的EndpointID',
+      addEndpointID: '模型 ID',
+      endpointIDMessage: '請輸入模型 ID',
       addArkApiKey: '火山 ARK_API_KEY',
       ArkApiKeyMessage: '請輸入火山創建的ARK_API_KEY',
       bedrockModelNameMessage: '請輸入名稱！',
@@ -1278,6 +1287,11 @@ export default {
       openingSwitchTip: '您的用戶將在開始時看到此歡迎訊息。',
       modeTip: '模式定義工作流程如何啟動。 ',
       beginInputTip: `透過定義輸入參數，這些內容可以在後續流程中被其他元件存取。`,
+      canvasCategory: '畫布分類',
+      tags: '標籤',
+      created: '建立於',
+      id: 'ID',
+      logTitle: '標題',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
@@ -1294,6 +1308,7 @@ export default {
       bulgarian: '保加利亞語',
       arabic: '阿拉伯語',
       turkish: '土耳其語',
+      korean: '韓語',
     },
     modal: {
       okText: '確認',
@@ -1308,6 +1323,7 @@ export default {
       id: 'ID',
       copySuccess: '複製成功',
       welcomeBack: '歡迎回來',
+      selectLocalePlaceholder: '選擇語言',
     },
   },
 };

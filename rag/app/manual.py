@@ -32,7 +32,7 @@ from common.parser_config_utils import normalize_layout_recognizer
 
 class Pdf(PdfParser):
     def __init__(self):
-        self.model_speciess = ParserType.MANUAL.value
+        self.model_species = ParserType.MANUAL.value
         super().__init__()
 
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):

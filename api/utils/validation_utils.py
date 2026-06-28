@@ -29,6 +29,7 @@ from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT
 from api.db import FileType
+from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import RetCode
 
 
@@ -278,16 +279,20 @@ def normalize_str(v: Any) -> Any:
 
 def validate_uuid1_hex(v: Any) -> str:
     """
-    Validates and converts input to a UUID version 1 hexadecimal string.
+    Validates and converts input to a UUID hexadecimal string.
 
-    This function performs strict validation and normalization:
+    The function name is retained for backward compatibility; only UUID
+    *format* is enforced (any version is accepted), because some IDs in the
+    system originate from external imports and use non-v1 UUIDs.
+
+    This function performs validation and normalization:
     1. Accepts either UUID objects or UUID-formatted strings
-    2. Verifies the UUID is version 1 (time-based)
-    3. Returns the 32-character hexadecimal representation
+    2. Returns the 32-character hexadecimal representation
+    3. Rejects anything that is not a valid UUID
 
     Args:
         v (Any): Input value to validate. Can be:
-                - UUID object (must be version 1)
+                - UUID object (any version)
                 - String in UUID format (e.g. "550e8400-e29b-41d4-a716-446655440000")
 
     Returns:
@@ -295,9 +300,8 @@ def validate_uuid1_hex(v: Any) -> str:
              Example: "550e8400e29b41d4a716446655440000"
 
     Raises:
-        PydanticCustomError: With code "invalid_UUID1_format" when:
+        PydanticCustomError: With code "invalid_uuid_format" when:
             - Input is not a UUID object or valid UUID string
-            - UUID version is not 1
             - String doesn't match UUID format
 
     Examples:
@@ -310,20 +314,22 @@ def validate_uuid1_hex(v: Any) -> str:
         Invalid cases:
             >>> validate_uuid1_hex("not-a-uuid")  # raises PydanticCustomError
             >>> validate_uuid1_hex(12345)  # raises PydanticCustomError
-            >>> validate_uuid1_hex(UUID(int=0))  # v4, raises PydanticCustomError
 
     Notes:
         - Uses Python's built-in UUID parser for format validation
-        - Version check prevents accidental use of other UUID versions
+        - UUID version is no longer enforced (v1, v4, v7, etc. all accepted)
         - Hyphens in input strings are automatically removed in output
     """
     try:
-        uuid_obj = UUID(v) if isinstance(v, str) else v
-        if uuid_obj.version != 1:
-            raise PydanticCustomError("invalid_UUID1_format", "Must be a UUID1 format")
+        if isinstance(v, UUID):
+            uuid_obj = v
+        elif isinstance(v, str):
+            uuid_obj = UUID(v)
+        else:
+            raise TypeError
         return uuid_obj.hex
     except (AttributeError, ValueError, TypeError):
-        raise PydanticCustomError("invalid_UUID1_format", "Invalid UUID1 format")
+        raise PydanticCustomError("invalid_uuid_format", "Invalid UUID format")
 
 
 class Base(BaseModel):
@@ -362,6 +368,16 @@ class GraphragConfig(Base):
     method: Annotated[Literal["light", "general", "ner"], Field(default="light")]
     community: Annotated[bool, Field(default=False)]
     resolution: Annotated[bool, Field(default=False)]
+    batch_chunk_token_size: Annotated[int, Field(default=4096, ge=512, le=8196)]
+    retry_attempts: Annotated[int, Field(default=2, ge=1, le=10)]
+    retry_backoff_seconds: Annotated[float, Field(default=2.0, ge=0.0, le=600.0)]
+    retry_backoff_max_seconds: Annotated[float, Field(default=60.0, ge=0.0, le=3600.0)]
+    build_subgraph_timeout_per_chunk_seconds: Annotated[int, Field(default=300, ge=1, le=86400)]
+    build_subgraph_min_timeout_seconds: Annotated[int, Field(default=600, ge=1, le=86400)]
+    merge_timeout_seconds: Annotated[int, Field(default=180, ge=0, le=86400)]
+    resolution_timeout_seconds: Annotated[int, Field(default=1800, ge=0, le=86400)]
+    community_timeout_seconds: Annotated[int, Field(default=1800, ge=0, le=86400)]
+    lock_acquire_timeout_seconds: Annotated[int, Field(default=600, ge=0, le=86400)]
 
 
 class ParentChildConfig(Base):
@@ -547,7 +563,7 @@ class CreateDatasetReq(Base):
             CreateDatasetReq(avatar="data:video/mp4;base64,...")  # Unsupported MIME type
             ```
         """
-        if v is None:
+        if not v: # cover both None and empty string
             return v
 
         if "," in v:
@@ -790,7 +806,7 @@ class DeleteReq(Base):
 
         This post-processing validator performs:
         1. None input handling (pass-through)
-        2. UUID version 1 validation for each list item
+        2. UUID format validation for each list item (any version accepted)
         3. Duplicate value detection
         4. Returns normalized UUID hex strings or None
 
@@ -803,18 +819,18 @@ class DeleteReq(Base):
             - None if input was None
             - List of normalized UUID hex strings otherwise:
             * 32-character lowercase
-            * Valid UUID version 1
+            * Valid UUID format (any version)
             * Unique within list
 
         Raises:
             PydanticCustomError: With structured error details when:
-                - "invalid_UUID1_format": Any string fails UUIDv1 validation
+                - "invalid_uuid_format": Any string fails UUID format validation
                 - "duplicate_uuids": If duplicate IDs are detected
 
         Validation Rules:
             - None input returns None
             - Empty list returns empty list
-            - All non-None items must be valid UUIDv1
+            - All non-None items must be valid UUIDs (any version)
             - No duplicates permitted
             - Original order preserved
 
@@ -829,12 +845,12 @@ class DeleteReq(Base):
 
             Invalid cases:
                 >>> validate_ids(["invalid"])
-                # raises PydanticCustomError(invalid_UUID1_format)
+                # raises PydanticCustomError(invalid_uuid_format)
                 >>> validate_ids(["550e...", "550e..."])
                 # raises PydanticCustomError(duplicate_uuids)
 
         Security Notes:
-            - Validates UUID version to prevent version spoofing
+            - Validates UUID format (any version)
             - Duplicate check prevents data injection
             - None handling maintains pipeline integrity
         """
@@ -950,6 +966,11 @@ class BaseListReq(BaseModel):
         """Validate and normalize an optional list filter id."""
         return validate_uuid1_hex(v)
 
+    @field_validator("page_size")
+    @classmethod
+    def validate_page_size(cls, v: int) -> int:
+        return validate_rest_api_page_size(v)
+
 
 class ListDatasetReq(BaseListReq):
     """Request model for listing datasets."""
@@ -1000,9 +1021,14 @@ class ListFileReq(BaseModel):
     parent_id: Annotated[str | None, Field(default=None)]
     keywords: Annotated[str, Field(default="")]
     page: Annotated[int, Field(default=1, ge=1)]
-    page_size: Annotated[int, Field(default=15, ge=1, le=100)]
+    page_size: Annotated[int, Field(default=15, ge=1)]
     orderby: Annotated[str, Field(default="create_time")]
     desc: Annotated[bool, Field(default=True)]
+
+    @field_validator("page_size")
+    @classmethod
+    def validate_page_size(cls, v: int) -> int:
+        return validate_rest_api_page_size(v)
 
 
 def validate_immutable_fields(update_doc_req: UpdateDocumentReq, doc):
@@ -1020,13 +1046,13 @@ def validate_immutable_fields(update_doc_req: UpdateDocumentReq, doc):
         A tuple of (error_message, error_code) if validation fails,
         or (None, None) if validation passes.
     """
-    if update_doc_req.chunk_count and update_doc_req.chunk_count != int(getattr(doc, "chunk_num", -1)):
+    if update_doc_req.chunk_count is not None and update_doc_req.chunk_count != int(getattr(doc, "chunk_num", -1)):
         return "Can't change `chunk_count`.", RetCode.DATA_ERROR
 
-    if update_doc_req.token_count and update_doc_req.token_count != int(getattr(doc, "token_num", -1)):
+    if update_doc_req.token_count is not None and update_doc_req.token_count != int(getattr(doc, "token_num", -1)):
         return "Can't change `token_count`.", RetCode.DATA_ERROR
 
-    if update_doc_req.progress:
+    if update_doc_req.progress is not None:
         progress_from_db = float(getattr(doc, "progress", -1.0))
         # should not use "==" to compare two float values
         if not math.isclose(update_doc_req.progress, progress_from_db):

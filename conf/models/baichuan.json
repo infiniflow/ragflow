@@ -1,0 +1,90 @@
+{
+  "name": "Baichuan",
+  "url": {
+    "default": "https://api.baichuan-ai.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "embedding": "embeddings"
+  },
+  "class": "baichuan",
+  "models": [
+    {
+      "name": "Baichuan4",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "Baichuan4-Air",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "Baichuan4-Turbo",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "Baichuan-M3",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "Baichuan-M3-plus",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "Baichuan-M2-plus",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "Baichuan-M2",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "Baichuan3-Turbo",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "Baichuan3-Turbo-128k",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "Baichuan2-Turbo",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "Baichuan-Text-Embedding",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    }
+  ]
+}

@@ -226,7 +226,7 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 	indexName := getSkillIndexName(req.TenantID, req.SpaceID)
 	common.Debug("Searching skills", zap.String("indexName", indexName), zap.String("query", req.Query))
 
-	indexExists, err := docEngine.TableExists(ctx, indexName)
+	indexExists, err := docEngine.ChunkStoreExists(ctx, indexName, "skill")
 	if err != nil {
 		common.Error("Failed to check index existence", err)
 		return nil, common.CodeOperatingError, fmt.Errorf("failed to check index existence: %w", err)

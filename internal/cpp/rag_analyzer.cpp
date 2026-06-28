@@ -22,6 +22,7 @@
 #include "re2/re2.h"
 
 #include <cassert>
+#include <sstream>   // std::ostringstream / std::istringstream — explicit for libc++ (macOS)
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -143,7 +144,10 @@ std::string Join(const std::vector<T> &tokens, int start, int end, const std::st
 
 template <typename T>
 std::string Join(const std::vector<T> &tokens, int start, const std::string &delim = " ") {
-    return Join(tokens, start, tokens.size(), delim);
+    // C++23 strict overload resolution refuses the implicit size_t → int
+    // narrowing conversion; the explicit cast makes the 4-arg overload above
+    // unambiguous on libc++ (macOS) without changing behaviour on libstdc++.
+    return Join(tokens, start, static_cast<int>(tokens.size()), delim);
 }
 
 std::string Join(const TermList &tokens, int start, int end, const std::string &delim = " ") {
@@ -680,35 +684,38 @@ RAGAnalyzer::~RAGAnalyzer() {
 
 int32_t RAGAnalyzer::Load() {
     fs::path root(dict_path_);
-    fs::path dict_path(root / DICT_PATH);
 
+    fs::path dict_path(root / DICT_PATH);
+    printf("Validate dict file: %s\n", dict_path.string().c_str());
     if (!fs::exists(dict_path)) {
-        printf("Invalid analyzer file: %s", dict_path.string().c_str());
-        // return Status::InvalidAnalyzerFile(dict_path);
+        printf("Invalid dict file: %s\n", dict_path.string().c_str());
         return -1;
     }
 
     fs::path pos_def_path(root / POS_DEF_PATH);
+    printf("Validate pos file: %s\n", pos_def_path.string().c_str());
     if (!fs::exists(pos_def_path)) {
-        printf("Invalid post file: %s", pos_def_path.string().c_str());
-        // return Status::InvalidAnalyzerFile(pos_def_path);
-        return -1;
+        printf("Invalid pos file: %s\n", pos_def_path.string().c_str());
+        return -2;
     }
     own_dict_ = true;
     trie_ = new DartsTrie();
     pos_table_ = new POSTable(pos_def_path.string());
+    printf("Load pos file: %s\n", pos_def_path.string().c_str());
     if (pos_table_->Load() != 0) {
-        printf("Fail to load post table: %s", pos_def_path.string().c_str());
-        return -1;
-        // return Status::InvalidAnalyzerFile("Failed to load RAGAnalyzer POS definition");
+        printf("Fail to load pos file: %s\n", pos_def_path.string().c_str());
+        return -3;
     }
 
     fs::path trie_path(root / TRIE_PATH);
+    printf("Validate trie file: %s\n", trie_path.string().c_str());
     if (fs::exists(trie_path)) {
+        printf("Load trie file: %s\n", trie_path.string().c_str());
         trie_->Load(trie_path.string());
     } else {
         // Build trie
         try {
+            printf("Build trie file: %s\n", dict_path.string().c_str());
             std::ifstream from(dict_path.string());
             std::string line;
             re2::RE2 re_pattern(R"([\r\n]+)");
@@ -733,36 +740,35 @@ int32_t RAGAnalyzer::Load() {
             }
             trie_->Build();
         } catch (const std::exception &e) {
-            return -1;
-            // return Status::InvalidAnalyzerFile("Failed to load RAGAnalyzer analyzer");
+            printf("Fail to build trie: %s\n", e.what());
+            return -4;
         }
+        printf("Save trie file: %s\n", trie_path.string().c_str());
         trie_->Save(trie_path.string());
     }
 
     fs::path lemma_path(root / WORDNET_PATH);
     if (!fs::exists(lemma_path)) {
-        printf("Fail to load wordnet: %s", lemma_path.string().c_str());
-        return -1;
-        // return Status::InvalidAnalyzerFile(lemma_path);
+        printf("Fail to load wordnet: %s\n", lemma_path.string().c_str());
+        return -5;
     }
 
     wordnet_lemma_ = new WordNetLemmatizer(lemma_path.string());
 
     fs::path opencc_path(root / OPENCC_PATH);
-
+    printf("Validate opencc file: %s\n", opencc_path.string().c_str());
     if (!fs::exists(opencc_path)) {
-        printf("Fail to load opencc_path: %s", opencc_path.string().c_str());
-        return -1;
-        // return Status::InvalidAnalyzerFile(opencc_path);
+        printf("opencc_path not exists: %s\n", opencc_path.string().c_str());
+        return -6;
     }
     try {
+        printf("Load opencc file: %s\n", opencc_path.string().c_str());
         opencc_ = new ::OpenCC(opencc_path.string());
     } catch (const std::exception &e) {
-        return -1;
-        // return Status::InvalidAnalyzerFile("Failed to load OpenCC");
+        printf("Fail to open opencc: %s\n", opencc_path.string().c_str());
+        return -7;
     }
 
-    // return Status::OK();
     return 0;
 }
 

@@ -77,8 +77,8 @@ class RAGFlowPdfParser:
         if layout_recognizer_type not in ["onnx", "ascend"]:
             raise RuntimeError("Unsupported layout recognizer type.")
 
-        if hasattr(self, "model_speciess"):
-            recognizer_domain = "layout." + self.model_speciess
+        if hasattr(self, "model_species"):
+            recognizer_domain = "layout." + self.model_species
         else:
             recognizer_domain = "layout"
 
@@ -2053,7 +2053,7 @@ class VisionParser(RAGFlowPdfParser):
         all_docs = []
 
         for idx, img_binary in enumerate(self.page_images or []):
-            pdf_page_num = idx  # 0-based
+            pdf_page_num = from_page + idx  # 0-based
             if pdf_page_num < start_page or pdf_page_num >= end_page:
                 continue
 

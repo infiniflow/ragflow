@@ -82,6 +82,7 @@ export declare interface IFlow {
   release_time?: number;
   last_publish_time?: number;
   datasets?: Pick<IDataset, 'id' | 'name' | 'avatar'>[];
+  tags?: string;
 }
 
 export interface IFlowTemplate {

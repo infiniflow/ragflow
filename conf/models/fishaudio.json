@@ -5,10 +5,32 @@
   },
   "url_suffix": {
     "models": "model",
-    "balance": "self/package"
+    "balance": "self/package",
+    "tts": "v1/tts",
+    "asr": "v1/asr"
   },
   "class": "fishaudio",
   "models": [
-
+    {
+      "name": "s2-pro",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "s1",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "transcribe-1",
+      "max_tokens": 8192,
+      "model_types": [
+        "asr"
+      ]
+    }
   ]
 }

@@ -104,8 +104,8 @@ func (e *Engine) resolveProvider(path string) (Provider, string, error) {
 
 // List lists nodes at the given path
 // If path is empty, returns:
-//   1. Built-in providers (e.g., datasets)
-//   2. Top-level directories from files provider (if any)
+//  1. Built-in providers (e.g., datasets)
+//  2. Top-level directories from files provider (if any)
 func (e *Engine) List(ctx stdctx.Context, path string, opts *ListOptions) (*Result, error) {
 	// Normalize path
 	path = normalizePath(path)

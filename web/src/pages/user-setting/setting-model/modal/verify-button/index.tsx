@@ -12,12 +12,16 @@ interface IVerifyButton {
   onVerify: (params: any) => Promise<VerifyResult>;
   isAbsolute?: boolean;
   params?: any;
+  className?: string;
+  verifyCallback?: (result: VerifyResult | null) => void;
 }
 
 const VerifyButton: React.FC<IVerifyButton> = ({
   onVerify,
   isAbsolute = true,
   params,
+  className,
+  verifyCallback,
 }) => {
   const { t, i18n } = useTranslate('setting');
   const isArabic = (i18n.resolvedLanguage || i18n.language || '')
@@ -41,6 +45,7 @@ const VerifyButton: React.FC<IVerifyButton> = ({
         ...params,
       } as ApiKeyPostBody & { verify: boolean });
       setVerifyResult(result);
+      verifyCallback?.(result);
     } catch (error: any) {
       let logs = '';
 
@@ -54,11 +59,15 @@ const VerifyButton: React.FC<IVerifyButton> = ({
         isValid: false,
         logs: logs,
       });
+      verifyCallback?.({
+        isValid: false,
+        logs: logs,
+      });
     } finally {
       // setVerifyLoading(false);
     }
-  }, [form, onVerify, params]);
-  const handleVerify = async () => {
+  }, [form, onVerify, params, verifyCallback]);
+  const handleVerify = useCallback(async () => {
     setVerifyResult({
       isValid: null,
       logs: '',
@@ -67,14 +76,16 @@ const VerifyButton: React.FC<IVerifyButton> = ({
     try {
       await onHandleVerify();
     } catch (error) {
-      setVerifyResult({
+      const res = {
         isValid: false,
         logs: (error as Error).message || 'Unknown error',
-      });
+      };
+      setVerifyResult(res);
+      verifyCallback?.(res);
     } finally {
       setIsVerifying(false);
     }
-  };
+  }, [onHandleVerify, verifyCallback]);
 
   return (
     <div
@@ -82,6 +93,7 @@ const VerifyButton: React.FC<IVerifyButton> = ({
         !isAbsolute || (verifyResult && verifyResult.isValid === false)
           ? 'flex flex-col gap-5 w-full '
           : `absolute bottom-6 z-[100] ${isArabic ? 'right-6' : 'left-6'}`,
+        className,
       )}
     >
       <div className="flex gap-2 items-center">
@@ -89,7 +101,7 @@ const VerifyButton: React.FC<IVerifyButton> = ({
           type="button"
           onClick={handleVerify}
           disabled={isVerifying}
-          variant={'ghost'}
+          variant={'outline'}
         >
           <RefreshCcw
             size={14}

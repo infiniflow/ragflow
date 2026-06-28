@@ -21,7 +21,7 @@ from abc import ABC
 
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 from agent.component.llm import LLMParam, LLM
 from common.connection_utils import timeout
 from rag.llm.chat_model import ERROR_PREFIX
@@ -40,7 +40,8 @@ class CategorizeParam(LLMParam):
         self.update_prompt()
 
     def check(self):
-        self.check_positive_integer(self.message_history_window_size, "[Categorize] Message window size > 0")
+        if not isinstance(self.message_history_window_size, int) or self.message_history_window_size < 0:
+            raise ValueError("[Categorize] Message window size cannot be negative")
         self.check_empty(self.category_description, "[Categorize] Category examples")
         for k, v in self.category_description.items():
             if not k:
@@ -123,7 +124,7 @@ class Categorize(LLM, ABC):
         msg[-1]["content"] = query_value
         self.set_input_value(query_key, msg[-1]["content"])
         self._param.update_prompt()
-        chat_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
+        chat_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config)
 
         user_prompt = """

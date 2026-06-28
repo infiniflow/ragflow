@@ -103,6 +103,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
       try {
         currentData = editorRef.current.get();
       } catch (e) {
+        console.error(e);
         // If there's an error getting data, use the passed value or empty object
         currentData = value || {};
       }
@@ -127,6 +128,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
                   const updatedJson = editorRef.current.get();
                   onChange(updatedJson);
                 } catch (err) {
+                  console.error(err);
                   // Do not trigger onChange when parsing error occurs
                 }
               }
@@ -157,6 +159,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
           editorRef.current.set(value);
         }
       } catch (err) {
+        console.error(err);
         // Skip update if there is a syntax error in the current editor
         editorRef.current.set(value);
       }

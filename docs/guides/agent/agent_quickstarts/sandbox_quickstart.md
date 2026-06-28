@@ -7,19 +7,37 @@ sidebar_custom_props: {
 ---
 # Sandbox quickstart
 
-A secure, pluggable code execution backend designed for RAGFlow and other applications requiring isolated code execution environments.
+RAGFlow's `CodeExec` agent component needs a sandbox provider to run Python and JavaScript code.
 
-## Features: 
+The simplest setup flow is:
 
-- Seamless RAGFlow Integration — Works out-of-the-box with the code component of RAGFlow.
-- High Security — Uses gVisor for syscall-level sandboxing to isolate execution.
-- Customisable Sandboxing — Modify seccomp profiles easily to tailor syscall restrictions.
-- Pluggable Runtime Support — Extendable to support any programming language runtime.
-- Developer Friendly — Quick setup with a convenient Makefile.
+1. Start the required sandbox services.
+2. Open the RAGFlow admin page.
+3. Go to **Admin > Sandbox Settings**.
+4. Choose a provider and save the configuration.
+5. Test the connection in the same page.
 
-## Architecture
+## Admin page
 
-The architecture consists of isolated Docker base images for each supported language runtime, managed by the executor manager service. The executor manager orchestrates sandboxed code execution using gVisor for syscall interception and optional seccomp profiles for enhanced syscall filtering.
+Configure sandbox providers from the admin page:
+
+- `self_managed`: Uses the executor manager service.
+- `local`: Runs code on the current machine.
+- `ssh`: Runs code on a remote machine over SSH.
+- `aliyun_codeinterpreter` and `e2b`: Cloud providers.
+
+<img width="2547" height="1475" alt="admin-sandbox-settings" src="https://github.com/user-attachments/assets/59ab948e-b98a-45a8-9db4-f1afbf6c3685" />
+
+## Provider options
+
+
+RAGFlow supports multiple sandbox providers. Configure the active provider in
+Admin > Sandbox Settings after the services are up.
+
+- `self_managed`: Runs code inside Docker-managed sandbox containers. This is the default provider.
+- `local`: Runs code as local Python or Node.js subprocesses. Use this only in trusted development environments.
+- `ssh`: Runs code on a remote machine over SSH.
+- `aliyun_codeinterpreter` and `e2b`: Cloud-hosted providers that remain available in the admin provider list.
 
 ## Prerequisites
 
@@ -31,14 +49,16 @@ The architecture consists of isolated Docker base images for each supported lang
 - (Optional) GNU Make for simplified command-line management.
 
 :::tip NOTE
-The error message `client version 1.43 is too old. Minimum supported API version is 1.44` indicates that your executor manager image's built-in Docker CLI version is lower than `29.1.0` required by the Docker daemon in use. To solve this issue, pull the latest `infiniflow/sandbox-executor-manager:latest` from Docker Hub or rebuild it in `./sandbox/executor_manager`.
+The error message `client version 1.43 is too old. Minimum supported API version is 1.44` indicates that your executor manager image's built-in Docker CLI version is lower than `29.1.0` required by the Docker daemon in use.
 :::
 
 ## Build Docker base images
 
-The sandbox uses isolated base images for secure containerised execution environments.
+The sandbox uses isolated base images for secure containerized execution environments.
 
-Build the base images manually:
+### Option 1: Build from source
+
+Build the runtime base images:
 
 ```bash
 docker build -t sandbox-base-python:latest ./sandbox_base_image/python
@@ -51,10 +71,29 @@ Alternatively, build all base images at once using the Makefile:
 make build
 ```
 
-Next, build the executor manager image:
+Build the executor manager image:
 
 ```bash
 docker build -t sandbox-executor-manager:latest ./executor_manager
+```
+
+### Option 2: Pull base images from Docker Hub
+
+If you do not need to customize runtime dependencies, pull the published base images and tag them with the names used by standalone Docker Compose:
+
+```bash
+docker pull infiniflow/sandbox-base-python:latest
+docker pull infiniflow/sandbox-base-nodejs:latest
+
+docker tag infiniflow/sandbox-base-python:latest sandbox-base-python:latest
+docker tag infiniflow/sandbox-base-nodejs:latest sandbox-base-nodejs:latest
+```
+
+Then restart the standalone sandbox services:
+
+```bash
+docker compose -f docker-compose.yml down
+docker compose -f docker-compose.yml up -d
 ```
 
 ## Running with RAGFlow 
@@ -63,8 +102,12 @@ docker build -t sandbox-executor-manager:latest ./executor_manager
 
 2. Configure the .env file located at docker/.env:
 
-- Uncomment sandbox-related environment variables.
-- Enable the sandbox profile at the bottom of the file.
+- Set `SANDBOX_ENABLED=1`.
+- Include `sandbox` in `COMPOSE_PROFILES` if you want the default
+  `self_managed` executor-manager service.
+- Keep the self-managed deployment defaults in `.env` if you need to change the
+  sandbox-executor-manager image, pool size, base images, seccomp, memory, or
+  timeout.
 
 3. Add the following entry to your /etc/hosts file to resolve the executor manager service:
 
@@ -73,6 +116,54 @@ docker build -t sandbox-executor-manager:latest ./executor_manager
     ```
 
 4. Start the RAGFlow service as usual.
+5. Open **Admin > Sandbox Settings**.
+6. Select a provider.
+7. Fill in the required fields.
+8. Click **Save**.
+9. Click **Test Connection** if needed.
+
+## Environment variables
+
+The variables in `docker/.env` are grouped by scope.
+
+### System-level variables
+
+These variables apply to sandbox support in general:
+
+- `SANDBOX_ENABLED`: Enables sandbox support in RAGFlow.
+- `COMPOSE_PROFILES`: Include `sandbox` to start the default self-managed executor-manager service.
+- `SANDBOX_ARTIFACT_BUCKET`: MinIO bucket used for files generated by sandbox code.
+- `SANDBOX_ARTIFACT_EXPIRE_DAYS`: Number of days before sandbox artifacts expire.
+
+### Self-managed deployment defaults
+
+These variables are shown in Admin as deployment defaults for `self_managed`.
+Changing them requires restarting `sandbox-executor-manager`.
+
+- `SANDBOX_EXECUTOR_MANAGER_IMAGE`: Docker image for the executor manager service.
+- `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE`: Number of Python and Node.js sandbox containers kept in the pool.
+- `SANDBOX_BASE_PYTHON_IMAGE`: Python runtime image used by executor-managed containers.
+- `SANDBOX_BASE_NODEJS_IMAGE`: Node.js runtime image used by executor-managed containers.
+- `SANDBOX_EXECUTOR_MANAGER_PORT`: Host port exposed by the executor manager.
+- `SANDBOX_ENABLE_SECCOMP`: Enables the optional seccomp profile for sandbox containers.
+- `SANDBOX_MAX_MEMORY`: Memory limit for each sandbox runtime container.
+- `SANDBOX_TIMEOUT`: Default execution timeout.
+
+### Admin-managed runtime settings
+
+Provider selection and runtime settings are configured in **Admin > Sandbox Settings**.
+
+Examples:
+
+- Choose the active provider
+- Configure `self_managed` runtime settings
+- Configure all `local` settings
+- Configure all `ssh` settings
+
+For `self_managed`:
+
+- Runtime settings are editable in Admin
+- Deployment defaults come from `.env` and are shown as read-only values
 
 ## Running standalone
 

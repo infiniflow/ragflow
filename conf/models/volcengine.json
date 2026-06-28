@@ -6,7 +6,8 @@
   "url_suffix": {
     "chat": "chat/completions",
     "files": "files",
-    "embedding": "embeddings/multimodal"
+    "embedding": "embeddings/multimodal",
+    "models": "models"
   },
   "class": "volcengine",
   "models": [

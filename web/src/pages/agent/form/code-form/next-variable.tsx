@@ -93,13 +93,20 @@ export function DynamicVariableForm({ name = 'arguments', isOutputs }: IProps) {
                 </FormItem>
               )}
             />
-            <Button variant={'ghost'} onClick={() => remove(index)}>
+            <Button
+              variant={'ghost'}
+              type="button"
+              onClick={() => remove(index)}
+            >
               <X className="text-text-sub-title-invert " />
             </Button>
           </div>
         );
       })}
-      <BlockButton onClick={() => append({ name: '', type: undefined })}>
+      <BlockButton
+        type="button"
+        onClick={() => append({ name: '', type: undefined })}
+      >
         {t('flow.addVariable')}
       </BlockButton>
     </div>

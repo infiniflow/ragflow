@@ -27,7 +27,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.memory_service import MemoryService
 from api.db.joint_services import memory_message_service
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
 from common import settings
 from common.connection_utils import timeout
 from rag.app.tag import label_question
@@ -121,12 +121,12 @@ class Retrieval(ToolBase, ABC):
         embd_mdl = None
         if embd_nms:
             tenant_id = self._canvas.get_tenant_id()
-            embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_nms[0])
+            embd_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.EMBEDDING, embd_nms[0])
             embd_mdl = LLMBundle(tenant_id, embd_model_config)
 
         rerank_mdl = None
         if self._param.rerank_id:
-            rerank_model_config = get_model_config_by_type_and_name(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
+            rerank_model_config = get_model_config_from_provider_instance(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
             rerank_mdl = LLMBundle(kbs[0].tenant_id, rerank_model_config)
 
         vars = self.get_input_elements_from_text(query_text)
@@ -142,6 +142,11 @@ class Retrieval(ToolBase, ABC):
                 return DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
 
             def _resolve_manual_filter(flt: dict) -> dict:
+                # Return a new dict instead of mutating `flt` in place. The
+                # caller passes filters straight out of self._param.meta_data_filter,
+                # so mutating them would replace the variable reference with its
+                # resolved value and every subsequent invocation (e.g. inside an
+                # Iteration component) would reuse that stale value.
                 pat = re.compile(self.variable_ref_patt)
                 s = flt.get("value", "")
                 out_parts = []
@@ -167,8 +172,9 @@ class Retrieval(ToolBase, ABC):
                     last = m.end()
 
                 out_parts.append(s[last:])
-                flt["value"] = "".join(out_parts)
-                return flt
+                resolved = dict(flt)
+                resolved["value"] = "".join(out_parts)
+                return resolved
 
             chat_mdl = None
             if self._param.meta_data_filter.get("method") in ["auto", "semi_auto"]:
@@ -201,6 +207,7 @@ class Retrieval(ToolBase, ABC):
                 self._param.top_n,
                 self._param.similarity_threshold,
                 1 - self._param.keywords_similarity_weight,
+                top=self._param.top_k,
                 doc_ids=doc_ids,
                 aggs=True,
                 rerank_mdl=rerank_mdl,

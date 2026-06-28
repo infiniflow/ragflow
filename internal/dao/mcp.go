@@ -1,0 +1,159 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package dao
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+
+	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
+)
+
+// MCPServerDAO MCP server data access object.
+type MCPServerDAO struct{}
+
+// InvalidMCPServerOrderByError matches the Python list endpoint's error shape
+// for unknown MCPServer ordering fields.
+type InvalidMCPServerOrderByError struct {
+	Field string
+}
+
+func (e *InvalidMCPServerOrderByError) Error() string {
+	return fmt.Sprintf("AttributeError(%q)", fmt.Sprintf("type object 'MCPServer' has no attribute '%s'", e.Field))
+}
+
+// NewMCPServerDAO creates an MCP server DAO.
+func NewMCPServerDAO() *MCPServerDAO {
+	return &MCPServerDAO{}
+}
+
+// GetByID returns an MCP server by ID.
+func (dao *MCPServerDAO) GetByID(id string) (*entity.MCPServer, error) {
+	var server entity.MCPServer
+	if err := DB.Where("id = ?", id).First(&server).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &server, nil
+}
+
+// ExistsByNameAndTenant returns whether an MCP server name already exists for a tenant.
+func (dao *MCPServerDAO) ExistsByNameAndTenant(name, tenantID string) (bool, error) {
+	var count int64
+	if err := DB.Model(&entity.MCPServer{}).
+		Where("name = ? AND tenant_id = ?", name, tenantID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// CreateMCPServer creates an MCP server.
+func (dao *MCPServerDAO) CreateMCPServer(server *entity.MCPServer) error {
+	return DB.Create(server).Error
+}
+
+// ListMCPServers returns MCP servers for a tenant with optional filtering.
+func (dao *MCPServerDAO) ListMCPServers(tenantID string, ids []string, keywords string, orderby string, desc bool) ([]*entity.MCPServer, int64, error) {
+	var servers []*entity.MCPServer
+	var total int64
+
+	query := DB.Model(&entity.MCPServer{}).Where("tenant_id = ?", tenantID)
+
+	if len(ids) > 0 {
+		query = query.Where("id IN ?", ids)
+	}
+
+	if keywords != "" {
+		query = query.Where("LOWER(name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	orderColumn, err := mcpServerOrderColumn(orderby)
+	if err != nil {
+		return nil, 0, err
+	}
+	orderDirection := "ASC"
+	if desc {
+		orderDirection = "DESC"
+	}
+	query = query.Order(orderColumn + " " + orderDirection)
+
+	if err := query.
+		Select("id", "name", "server_type", "url", "description", "variables", "create_date", "update_date").
+		Find(&servers).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return servers, total, nil
+}
+
+// GetByIDAndTenant returns an MCP server owned by a tenant.
+func (dao *MCPServerDAO) GetByIDAndTenant(id, tenantID string) (*entity.MCPServer, error) {
+	var server entity.MCPServer
+	if err := DB.Where("id = ? AND tenant_id = ?", id, tenantID).First(&server).Error; err != nil {
+		return nil, err
+	}
+	return &server, nil
+}
+
+// DeleteMCPServer deletes an MCP server owned by a tenant.
+func (dao *MCPServerDAO) DeleteMCPServer(id, tenantID string) (bool, error) {
+	result := DB.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&entity.MCPServer{})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+// UpdateMCPServer updates an MCP server owned by a tenant.
+func (dao *MCPServerDAO) UpdateMCPServer(id, tenantID string, updates map[string]interface{}) (bool, error) {
+	result := DB.Model(&entity.MCPServer{}).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Updates(updates)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+func mcpServerOrderColumn(orderby string) (string, error) {
+	switch orderby {
+	case "id":
+		return "id", nil
+	case "name":
+		return "name", nil
+	case "server_type":
+		return "server_type", nil
+	case "url":
+		return "url", nil
+	case "update_time", "update_date":
+		return "update_date", nil
+	case "create_time", "create_date":
+		return "create_date", nil
+	default:
+		return "", &InvalidMCPServerOrderByError{Field: orderby}
+	}
+}

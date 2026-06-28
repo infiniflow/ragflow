@@ -19,7 +19,6 @@ package dao
 import (
 	"ragflow/internal/entity"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -109,7 +108,6 @@ func (dao *SkillSearchConfigDAO) GetOrCreate(tenantID, spaceID, embdID string) (
 // CreateWithTenantSpace creates a new config for tenant+space
 func (dao *SkillSearchConfigDAO) CreateWithTenantSpace(tenantID, spaceID, embdID string) (*entity.SkillSearchConfig, error) {
 	spaceID = normalizeSpaceID(spaceID)
-	timestamp := time.Now().UnixMilli()
 	defaultFieldConfig := entity.DefaultFieldConfig()
 	fieldConfigMap := entity.JSONMap{
 		"name": map[string]interface{}{
@@ -140,7 +138,6 @@ func (dao *SkillSearchConfigDAO) CreateWithTenantSpace(tenantID, spaceID, embdID
 		FieldConfig:            fieldConfigMap,
 		TopK:                   10,
 		Status:                 "1",
-		CreateTime:             &timestamp,
 	}
 
 	if err := dao.Create(defaultConfig); err != nil {
@@ -167,20 +164,17 @@ func (dao *SkillSearchConfigDAO) DeleteAllByTenantSpaceExceptID(tenantID, spaceI
 
 // Update updates a skill search config with the given updates map
 func (dao *SkillSearchConfigDAO) Update(id string, updates map[string]interface{}) error {
-	updates["update_time"] = time.Now()
 	return DB.Model(&entity.SkillSearchConfig{}).Where("id = ? AND status = ?", id, "1").Updates(updates).Error
 }
 
 // UpdateByTenantID updates config by tenant ID
 func (dao *SkillSearchConfigDAO) UpdateByTenantID(tenantID, spaceID string, updates map[string]interface{}) error {
-	updates["update_time"] = time.Now()
 	result := DB.Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND space_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), "1").Updates(updates)
 	return result.Error
 }
 
 // UpdateByTenantAndEmbdID updates config by tenant ID and embedding ID
 func (dao *SkillSearchConfigDAO) UpdateByTenantAndEmbdID(tenantID, spaceID, embdID string, updates map[string]interface{}) error {
-	updates["update_time"] = time.Now()
 	result := DB.Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND space_id = ? AND embd_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), embdID, "1").Updates(updates)
 	return result.Error
 }

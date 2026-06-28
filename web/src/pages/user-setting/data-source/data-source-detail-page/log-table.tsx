@@ -1,6 +1,5 @@
 import FileStatusBadge from '@/components/file-status-badge';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
   Table,
@@ -15,11 +14,6 @@ import { RunningStatus } from '@/pages/dataset/dataset/constant';
 import { Routes } from '@/routes';
 import { formatDate } from '@/utils/date';
 import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '@radix-ui/react-hover-card';
-import {
   ColumnDef,
   flexRender,
   getCoreRowModel,
@@ -30,15 +24,86 @@ import {
 } from '@tanstack/react-table';
 import { t } from 'i18next';
 import { pick } from 'lodash';
-import { Eye } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useLogListDataSource } from '../hooks';
+import { IDataSourceLog } from '../interface';
+
+const formatDuration = (seconds: number) => {
+  const safeSeconds = Math.max(0, seconds);
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const remainingSeconds = safeSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${remainingSeconds}s`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${remainingSeconds}s`;
+  }
+  return `${remainingSeconds}s`;
+};
+
+const getTaskCountdownSeconds = (row: IDataSourceLog, now: number) => {
+  const freqMinutes =
+    row.task_type === 'prune'
+      ? Number(row.prune_freq || 0)
+      : Number(row.refresh_freq || 0);
+  const scheduledAt = row.time_started
+    ? new Date(row.time_started).getTime()
+    : 0;
+
+  if (!freqMinutes || !scheduledAt) {
+    return null;
+  }
+
+  const nextRunAt = scheduledAt + freqMinutes * 60 * 1000;
+  return Math.ceil((nextRunAt - now) / 1000);
+};
+
+const TaskCountdown = ({ row, now }: { row: IDataSourceLog; now: number }) => {
+  const remainingSeconds = getTaskCountdownSeconds(row, now);
+
+  if (remainingSeconds === null) {
+    return '';
+  }
+
+  return <span>Task starts in {formatDuration(remainingSeconds)}</span>;
+};
+
+const getSummary = (row: IDataSourceLog, now: number) => {
+  if (row.status === RunningStatus.SCHEDULE || row.status === '5') {
+    return <TaskCountdown row={row} now={now} />;
+  }
+
+  if (row.status === RunningStatus.RUNNING || row.status === '1') {
+    return row.task_type === 'prune' ? 'Prune in progress' : 'Sync in progress';
+  }
+
+  if (row.status === RunningStatus.FAIL || row.status === '4') {
+    return row.error_msg || 'Task failed';
+  }
+
+  if (row.status === RunningStatus.CANCEL || row.status === '2') {
+    return '';
+  }
+
+  if (row.task_type === 'prune') {
+    return `deleted=${row.docs_removed_from_index || 0}, error=${row.error_count || 0}`;
+  }
+
+  return `total=${row.total_docs_indexed || 0}, added=${row.new_docs_indexed || 0}, updated=${Math.max(
+    0,
+    (row.total_docs_indexed || 0) - (row.new_docs_indexed || 0),
+  )}, error=${row.error_count || 0}`;
+};
 
 const columns = ({
   handleToDataSetDetail,
+  now,
 }: {
   handleToDataSetDetail: (id: string) => void;
+  now: number;
 }) => {
   return [
     {
@@ -71,7 +136,6 @@ const columns = ({
           <div
             className="flex items-center gap-2 text-text-primary cursor-pointer"
             onClick={() => {
-              console.log('handleToDataSetDetail', row.original.kb_id);
               handleToDataSetDetail(row.original.kb_id);
             }}
           >
@@ -86,39 +150,16 @@ const columns = ({
       },
     },
     {
-      accessorKey: 'new_docs_indexed',
-      header: t('setting.newDocs'),
+      accessorKey: 'task_type',
+      header: 'Task Type',
+      cell: ({ row }) => row.original.task_type || 'sync',
     },
-
     {
-      id: 'operations',
-      header: t('setting.errorMsg'),
+      id: 'summary',
+      header: 'Summary',
       cell: ({ row }) => (
-        <div className="flex gap-1 items-center">
-          {row.original.error_msg}
-          {row.original.error_msg && (
-            <div className="flex justify-start space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <HoverCard>
-                <HoverCardTrigger>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="p-1"
-                    // onClick={() => {
-                    //   showLog(row, LogTabs.FILE_LOGS);
-                    // }}
-                  >
-                    <Eye />
-                  </Button>
-                </HoverCardTrigger>
-                <HoverCardContent className="w-[40vw] max-h-[40vh] overflow-auto bg-bg-base z-[999] px-3 py-2 rounded-md border border-border-default">
-                  <div className="space-y-2">
-                    {row.original.full_exception_trace}
-                  </div>
-                </HoverCardContent>
-              </HoverCard>
-            </div>
-          )}
+        <div className="max-w-[32rem] whitespace-normal break-words text-text-primary">
+          {getSummary(row.original as IDataSourceLog, now)}
         </div>
       ),
     },
@@ -131,14 +172,22 @@ const columns = ({
 //   total: 0,
 // };
 export const DataSourceLogsTable = ({
-  refresh_freq,
+  autoRefresh,
 }: {
-  refresh_freq: number | false;
+  autoRefresh: boolean;
 }) => {
-  // const [pagination, setPagination] = useState(paginationInit);
-  const { data, pagination, setPagination } =
-    useLogListDataSource(refresh_freq);
+  const { data, pagination, setPagination } = useLogListDataSource(autoRefresh);
   const navigate = useNavigate();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
   const currentPagination = useMemo(
     () => ({
       pageIndex: (pagination.current || 1) - 1,
@@ -149,15 +198,14 @@ export const DataSourceLogsTable = ({
 
   const handleToDataSetDetail = useCallback(
     (id: string) => {
-      console.log('handleToDataSetDetail', id);
-      navigate(`${Routes.DatasetBase}${Routes.DatasetBase}/${id}`);
+      navigate(`${Routes.Dataset}/${id}`);
     },
     [navigate],
   );
 
   const table = useReactTable<any>({
     data: data || [],
-    columns: columns({ handleToDataSetDetail }),
+    columns: columns({ handleToDataSetDetail, now }),
     manualPagination: true,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),

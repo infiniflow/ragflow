@@ -74,6 +74,7 @@ interface Parserconfig {
 
 interface Raptor {
   clustering_method?: 'gmm' | 'ahc';
+  ext?: { clustering_method: 'gmm' | 'ahc'; tree_builder: 'raptor' | 'psi' };
   max_cluster: number;
   max_token: number;
   prompt: string;
@@ -89,6 +90,7 @@ interface Parentchild {
 }
 
 interface Graphrag {
+  batch_chunk_token_size?: number;
   entity_types: string[];
   method: string;
   use_graphrag: boolean;

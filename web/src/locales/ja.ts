@@ -38,6 +38,7 @@ export default {
       pleaseInput: '入力してください',
       submit: '送信',
       japanese: '日本語',
+      owner: '所有者',
     },
     login: {
       login: 'ログイン',
@@ -330,6 +331,8 @@ export default {
     },
     chunk: {
       chunk: 'チャンク',
+      createChunk: 'チャンクを作成',
+      editChunk: 'チャンクを編集',
       bulk: '一括',
       selectAll: 'すべて選択',
       enabledSelected: '選択を有効化',
@@ -514,6 +517,12 @@ export default {
       },
       cancel: 'キャンセル',
       chatSetting: 'チャット設定',
+      showChunkMetadata: 'チャンクのメタデータを表示',
+      showChunkMetadataTip:
+        '取得したテキストチャンクの横に文書メタデータ（タイトル、ページ番号、アップロード日など）を表示します',
+      metadataFields: 'メタデータフィールド',
+      metadataFieldsTip:
+        '各チャンクに表示するメタデータフィールドを選択してください',
     },
     setting: {
       profile: 'プロファイル',
@@ -628,8 +637,8 @@ export default {
       FishAudioLink: 'FishAudioの使用方法',
       TencentCloudLink: 'TencentCloud ASRの使用方法',
       volcModelNameMessage: 'モデル名を入力してください！',
-      addEndpointID: 'モデルのエンドポイントID',
-      endpointIDMessage: 'モデルのエンドポイントIDを入力してください',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'モデルのModel IDを入力してください',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'ARK_API_KEYを入力してください',
       bedrockModelNameMessage: 'モデル名を入力してください！',
@@ -1193,6 +1202,11 @@ export default {
         'LLMのタスクを説明し、どのように応答すべきかを指定し、他のさまざまな要件を概説するためにシステムプロンプトを使用します。システムプロンプトは、LLMのさまざまなデータ入力として機能するキー（変数）と共に使用されることがよくあります。使用するキーを表示するには、スラッシュ `/` または (x) ボタンを使用します。',
       promptMessage: 'プロンプトは必須です',
       runningHintText: '動作中です...🕞 ',
+      tags: 'タグ',
+      canvasCategory: 'キャンバスカテゴリ',
+      created: '作成日',
+      id: 'ID',
+      logTitle: 'タイトル',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1209,6 +1223,7 @@ export default {
       bulgarian: 'ブルガリア語',
       arabic: 'アラビア語',
       turkish: 'トルコ語',
+      korean: '韓国語',
     },
   },
 };

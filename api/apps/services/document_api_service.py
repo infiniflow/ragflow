@@ -39,7 +39,8 @@ def update_document_name_only(document_id, req_doc_name):
     informs = File2DocumentService.get_by_document_id(document_id)
     if informs:
         e, file = FileService.get_by_id(informs[0].file_id)
-        FileService.update_by_id(file.id, {"name": req_doc_name})
+        if e and file:
+            FileService.update_by_id(file.id, {"name": req_doc_name})
     # Add logic to update index - refer to rename method in document_app.py
     tenant_id = DocumentService.get_tenant_id(document_id)
     title_tks = rag_tokenizer.tokenize(req_doc_name)
@@ -122,13 +123,16 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
 
     # Delete chunks from document store
     if doc.token_num > 0:
-        e = DocumentService.increment_chunk_num(
-            doc.id,
-            doc.kb_id,
-            doc.token_num * -1,
-            doc.chunk_num * -1,
-            doc.process_duration * -1,
-        )
+        try:
+            e = DocumentService.increment_chunk_num(
+                doc.id,
+                doc.kb_id,
+                doc.token_num * -1,
+                doc.chunk_num * -1,
+                doc.process_duration * -1,
+            )
+        except LookupError:
+            return get_error_data_result(message="Document not found!")
         if not e:
             return get_error_data_result(message="Document not found!")
         settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)

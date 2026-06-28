@@ -23,9 +23,9 @@ from typing import Any, AsyncGenerator
 import json_repair
 from functools import partial
 from common.constants import LLMType
+from api.db.services.dialog_service import _stream_with_think_delta
 from api.db.services.llm_service import LLMBundle
-from api.db.services.tenant_llm_service import TenantLLMService
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
 from agent.component.base import ComponentBase, ComponentParamBase
 from common.connection_utils import timeout
 from rag.prompts.generator import tool_call_summary, message_fit_in, citation_prompt, structured_output_prompt
@@ -85,7 +85,9 @@ class LLM(ComponentBase):
 
     def __init__(self, canvas, component_id, param: ComponentParamBase):
         super().__init__(canvas, component_id, param)
-        chat_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id), self._param.llm_id)
+        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
+        model_type = "chat" if "chat" in model_types else model_types[0]
+        chat_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
         self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config,
                                   max_retries=self._param.max_retries,
                                   retry_interval=self._param.delay_after_error)
@@ -247,9 +249,16 @@ class LLM(ComponentBase):
             self.set_input_value(k, args[k])
 
         self.imgs = self._uniq_images(self.imgs + extracted_imgs)
-        if self.imgs and TenantLLMService.llm_id2llm_type(self._param.llm_id) == LLMType.CHAT.value:
-            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT.value,
-                                      self._param.llm_id, max_retries=self._param.max_retries,
+        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
+        if self.imgs and LLMType.IMAGE2TEXT.value in model_types:
+            model_type = LLMType.IMAGE2TEXT.value
+        elif LLMType.CHAT.value in model_types:
+            model_type = LLMType.CHAT.value
+        else:
+            model_type = model_types[0]
+        model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
+        if self.imgs:
+            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), model_config, max_retries=self._param.max_retries,
                                       retry_interval=self._param.delay_after_error
                                       )
 
@@ -276,81 +285,22 @@ class LLM(ComponentBase):
         return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
 
     async def _generate_streamly(self, msg: list[dict], **kwargs) -> AsyncGenerator[str, None]:
-        async def delta_wrapper(txt_iter):
-            ans = ""
-            last_idx = 0
-            endswith_think = False
-
-            def delta(txt):
-                nonlocal ans, last_idx, endswith_think
-                delta_ans = txt[last_idx:]
-                ans = txt
-
-                if delta_ans.find("<think>") == 0:
-                    last_idx += len("<think>")
-                    return "<think>"
-                elif delta_ans.find("<think>") > 0:
-                    delta_ans = txt[last_idx:last_idx + delta_ans.find("<think>")]
-                    last_idx += delta_ans.find("<think>")
-                    return delta_ans
-                elif delta_ans.endswith("</think>"):
-                    endswith_think = True
-                elif endswith_think:
-                    endswith_think = False
-                    return "</think>"
-
-                last_idx = len(ans)
-                if ans.endswith("</think>"):
-                    last_idx -= len("</think>")
-                return re.sub(r"(<think>|</think>)", "", delta_ans)
-
-            async for t in txt_iter:
-                yield delta(t)
-
-        if not self.imgs:
-            async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)):
-                yield t
-            return
-
-        async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)):
-            yield t
+        stream_kwargs = {"images": self.imgs} if self.imgs else {}
+        stream_kwargs.update(kwargs)
+        stream = self.chat_mdl.async_chat_streamly_delta(msg[0]["content"], msg[1:], self._param.gen_conf(), **stream_kwargs)
+        async for _, value, _ in _stream_with_think_delta(stream, min_tokens=0):
+            yield value
 
     async def _stream_output_async(self, prompt, msg):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
         answer = ""
-        last_idx = 0
-        endswith_think = False
-
-        def delta(txt):
-            nonlocal answer, last_idx, endswith_think
-            delta_ans = txt[last_idx:]
-            answer = txt
-
-            if delta_ans.find("<think>") == 0:
-                last_idx += len("<think>")
-                return "<think>"
-            elif delta_ans.find("<think>") > 0:
-                delta_ans = txt[last_idx:last_idx + delta_ans.find("<think>")]
-                last_idx += delta_ans.find("<think>")
-                return delta_ans
-            elif delta_ans.endswith("</think>"):
-                endswith_think = True
-            elif endswith_think:
-                endswith_think = False
-                return "</think>"
-
-            last_idx = len(answer)
-            if answer.endswith("</think>"):
-                last_idx -= len("</think>")
-            return re.sub(r"(<think>|</think>)", "", delta_ans)
-
         stream_kwargs = {"images": self.imgs} if self.imgs else {}
-        async for ans in self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **stream_kwargs):
+        extra_chat_kwargs = self._get_chat_template_kwargs()
+        stream_kwargs.update(extra_chat_kwargs)
+        stream = self.chat_mdl.async_chat_streamly_delta(msg[0]["content"], msg[1:], self._param.gen_conf(), **stream_kwargs)
+        async for _, ans, _ in _stream_with_think_delta(stream, min_tokens=0):
             if self.check_if_canceled("LLM streaming"):
                 return
-
-            if isinstance(ans, int):
-                continue
 
             if ans.find("**ERROR**") >= 0:
                 if self.get_exception_default_value():
@@ -360,7 +310,8 @@ class LLM(ComponentBase):
                     self.set_output("_ERROR", ans)
                 return
 
-            yield delta(ans)
+            answer += ans
+            yield ans
 
         self.set_output("content", answer)
 
@@ -375,6 +326,7 @@ class LLM(ComponentBase):
             return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
 
         prompt, msg, _ = self._prepare_prompt_variables()
+        extra_chat_kwargs = self._get_chat_template_kwargs()
         error: str = ""
         output_structure = None
         try:
@@ -393,7 +345,7 @@ class LLM(ComponentBase):
                     int(self.chat_mdl.max_length * 0.97),
                 )
                 error = ""
-                ans = await self._generate_async(msg_fit)
+                ans = await self._generate_async(msg_fit, **extra_chat_kwargs)
                 msg_fit.pop(0)
                 if ans.find("**ERROR**") >= 0:
                     logging.error(f"LLM response error: {ans}")
@@ -426,7 +378,7 @@ class LLM(ComponentBase):
                 [{"role": "system", "content": prompt}, *deepcopy(msg)], int(self.chat_mdl.max_length * 0.97)
             )
             error = ""
-            ans = await self._generate_async(msg_fit)
+            ans = await self._generate_async(msg_fit, **extra_chat_kwargs)
             msg_fit.pop(0)
             if ans.find("**ERROR**") >= 0:
                 logging.error(f"LLM response error: {ans}")
@@ -444,6 +396,24 @@ class LLM(ComponentBase):
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         return asyncio.run(self._invoke_async(**kwargs))
+
+    def _get_chat_template_kwargs(self) -> dict[str, Any]:
+        chat_template_kwargs = self._canvas.globals.get("sys.chat_template_kwargs")
+        if chat_template_kwargs is None:
+            return {}
+
+        # The API should pass this as a JSON object, but accept a JSON string for compatibility.
+        if isinstance(chat_template_kwargs, str):
+            try:
+                chat_template_kwargs = json_repair.loads(chat_template_kwargs)
+            except Exception:
+                logging.warning("Ignore invalid sys.chat_template_kwargs: expected JSON object or JSON string object.")
+                return {}
+
+        if not isinstance(chat_template_kwargs, dict):
+            logging.warning("Ignore invalid sys.chat_template_kwargs type: %s", type(chat_template_kwargs).__name__)
+            return {}
+        return {"chat_template_kwargs": chat_template_kwargs}
 
     async def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str, user_defined_prompt:dict={}):
         summ = await tool_call_summary(self.chat_mdl, func_name, params, results, user_defined_prompt)
