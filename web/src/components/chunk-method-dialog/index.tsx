@@ -247,7 +247,7 @@ export function ChunkMethodDialog({
         pipeline_id: pipelineId || '',
         parseType: pipelineId ? ParseType.Pipeline : ParseType.BuiltIn,
         parser_config: fillDefaultParserValue({
-          pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
+          pages: pages.length > 0 ? pages : [{ from: 1, to: 100000 }],
           ...omit(parserConfig, 'pages'),
           image_table_context_window:
             parserConfig?.image_table_context_window ??

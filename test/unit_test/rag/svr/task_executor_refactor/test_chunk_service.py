@@ -29,6 +29,7 @@ This test file now focuses on ChunkService-specific functionality:
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from rag.svr.task_executor_refactor.chunk_service import ChunkService
+from test.unit_test.rag.svr.task_executor_refactor.conftest import make_task_context
 
 
 class TestChunkServiceInit:
@@ -44,40 +45,11 @@ class TestChunkServiceInit:
 class TestChunkServiceBuildChunks:
     """Tests for build_chunks method."""
 
-    def _create_mock_context(self, parser_id="naive", size=1000, parser_config=None, kb_parser_config=None):
-        """Helper to create a mock TaskContext."""
-        ctx = MagicMock()
-        ctx.parser_id = parser_id
-        ctx.name = "test.pdf"
-        ctx.size = size
-        ctx.from_page = 0
-        ctx.to_page = -1
-        ctx.parser_config = parser_config or {}
-        ctx.kb_parser_config = kb_parser_config or {}
-        ctx.language = "en"
-        ctx.id = "task_1"
-        ctx.tenant_id = "tenant_1"
-        ctx.kb_id = "kb_1"
-        ctx.doc_id = "doc_1"
-        ctx.progress_cb = MagicMock()
-        ctx.has_canceled_func = MagicMock(return_value=False)
-        ctx.write_interceptor = None
-        ctx.raw_task = {}
-        ctx.llm_id = "llm_1"
-        ctx.pagerank = 0
-        ctx.location = "/path/to/test.pdf"
-        ctx.chunk_limiter = MagicMock()
-        ctx.chunk_limiter.__aenter__ = AsyncMock()
-        ctx.chunk_limiter.__aexit__ = AsyncMock()
-        ctx.chat_limiter = MagicMock()
-        ctx.chat_limiter.__aenter__ = AsyncMock()
-        ctx.chat_limiter.__aexit__ = AsyncMock()
-        return ctx
 
     @pytest.mark.asyncio
     async def test_build_chunks_file_size_exceeded(self):
         """Test build_chunks returns empty list when file size exceeds limit."""
-        ctx = self._create_mock_context(size=1000000000)  # Very large size
+        ctx = make_task_context(size=1000000000)  # Very large size
 
         service = ChunkService(ctx=ctx)
 
@@ -95,7 +67,7 @@ class TestChunkServiceBuildChunks:
     @pytest.mark.asyncio
     async def test_build_chunks_file_size_ok(self):
         """Test build_chunks proceeds when file size is within limit."""
-        ctx = self._create_mock_context(size=1000)
+        ctx = make_task_context(size=1000)
 
         service = ChunkService(ctx=ctx)
 
@@ -123,138 +95,43 @@ class TestChunkServiceBuildChunks:
                             mock_get_parser.assert_called_once_with("naive")
 
     @pytest.mark.asyncio
-    async def test_build_chunks_with_auto_keywords(self):
-        """Test build_chunks triggers keyword extraction when configured."""
-        ctx = self._create_mock_context(parser_config={"auto_keywords": 5})
-
+    @pytest.mark.parametrize("task_kwargs,func_path,func_name", [
+        ({"parser_config": {"auto_keywords": 5}}, "extract_keywords", "extract_keywords"),
+        ({"parser_config": {"auto_questions": 3}}, "generate_questions", "generate_questions"),
+        ({"kb_parser_config": {"tag_kb_ids": ["kb_1"]}}, "apply_tags", "apply_tags"),
+        ({"parser_config": {"enable_metadata": True, "metadata": [{"name": "category", "type": "string"}]}},
+         "generate_metadata", "generate_metadata"),
+    ])
+    async def test_build_chunks_with_post_processing(self, task_kwargs, func_path, func_name):
+        """Test build_chunks triggers post-processing when configured."""
+        ctx = make_task_context(**task_kwargs)
         service = ChunkService(ctx=ctx)
 
-        with patch("rag.svr.task_executor_refactor.chunk_service.settings") as mock_settings:
+        mock_rec_ctx = MagicMock()
+        ctx.recording_context = mock_rec_ctx
+
+        with patch("rag.svr.task_executor_refactor.chunk_service.settings") as mock_settings, \
+             patch("rag.svr.task_executor_refactor.chunk_service.get_parser") as mock_get_parser, \
+             patch("rag.svr.task_executor_refactor.chunk_service.run_chunking", new_callable=AsyncMock) as mock_run_chunking, \
+             patch("rag.svr.task_executor_refactor.chunk_service.extract_outline", new_callable=AsyncMock), \
+             patch.object(service, '_prepare_docs_and_upload', new_callable=AsyncMock) as mock_prepare, \
+             patch(f"rag.svr.task_executor_refactor.chunk_service.{func_path}", new_callable=AsyncMock) as mock_fn:
             mock_settings.DOC_MAXIMUM_SIZE = 10000000
-
-            mock_rec_ctx = MagicMock()
-            ctx.recording_context = mock_rec_ctx
-
-            with patch("rag.svr.task_executor_refactor.chunk_service.get_parser") as mock_get_parser:
-                mock_get_parser.return_value = MagicMock()
-
-                with patch("rag.svr.task_executor_refactor.chunk_service.run_chunking", new_callable=AsyncMock) as mock_run_chunking:
-                    mock_run_chunking.return_value = []
-
-                    with patch("rag.svr.task_executor_refactor.chunk_service.extract_outline", new_callable=AsyncMock):
-                        with patch.object(service, '_prepare_docs_and_upload', new_callable=AsyncMock) as mock_prepare:
-                            mock_prepare.return_value = [{"id": "chunk_1", "content_with_weight": "test"}]
-
-                            with patch("rag.svr.task_executor_refactor.chunk_service.extract_keywords", new_callable=AsyncMock) as mock_extract:
-                                await service.build_chunks(b"test binary")
-                                mock_extract.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_build_chunks_with_auto_questions(self):
-        """Test build_chunks triggers question generation when configured."""
-        ctx = self._create_mock_context(parser_config={"auto_questions": 3})
-
-        service = ChunkService(ctx=ctx)
-
-        with patch("rag.svr.task_executor_refactor.chunk_service.settings") as mock_settings:
-            mock_settings.DOC_MAXIMUM_SIZE = 10000000
-
-            mock_rec_ctx = MagicMock()
-            ctx.recording_context = mock_rec_ctx
-
-            with patch("rag.svr.task_executor_refactor.chunk_service.get_parser") as mock_get_parser:
-                mock_get_parser.return_value = MagicMock()
-
-                with patch("rag.svr.task_executor_refactor.chunk_service.run_chunking", new_callable=AsyncMock) as mock_run_chunking:
-                    mock_run_chunking.return_value = []
-
-                    with patch("rag.svr.task_executor_refactor.chunk_service.extract_outline", new_callable=AsyncMock):
-                        with patch.object(service, '_prepare_docs_and_upload', new_callable=AsyncMock) as mock_prepare:
-                            mock_prepare.return_value = [{"id": "chunk_1", "content_with_weight": "test"}]
-
-                            with patch("rag.svr.task_executor_refactor.chunk_service.generate_questions", new_callable=AsyncMock) as mock_gen:
-                                await service.build_chunks(b"test binary")
-                                mock_gen.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_build_chunks_with_tag_kb_ids(self):
-        """Test build_chunks triggers tag application when tag_kb_ids configured."""
-        ctx = self._create_mock_context(kb_parser_config={"tag_kb_ids": ["kb_1"]})
-
-        service = ChunkService(ctx=ctx)
-
-        with patch("rag.svr.task_executor_refactor.chunk_service.settings") as mock_settings:
-            mock_settings.DOC_MAXIMUM_SIZE = 10000000
-
-            mock_rec_ctx = MagicMock()
-            ctx.recording_context = mock_rec_ctx
-
-            with patch("rag.svr.task_executor_refactor.chunk_service.get_parser") as mock_get_parser:
-                mock_get_parser.return_value = MagicMock()
-
-                with patch("rag.svr.task_executor_refactor.chunk_service.run_chunking", new_callable=AsyncMock) as mock_run_chunking:
-                    mock_run_chunking.return_value = []
-
-                    with patch("rag.svr.task_executor_refactor.chunk_service.extract_outline", new_callable=AsyncMock):
-                        with patch.object(service, '_prepare_docs_and_upload', new_callable=AsyncMock) as mock_prepare:
-                            mock_prepare.return_value = [{"id": "chunk_1", "content_with_weight": "test"}]
-
-                            with patch("rag.svr.task_executor_refactor.chunk_service.apply_tags", new_callable=AsyncMock) as mock_apply:
-                                await service.build_chunks(b"test binary")
-                                mock_apply.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_build_chunks_with_metadata(self):
-        """Test build_chunks triggers metadata generation when configured."""
-        ctx = self._create_mock_context(
-            parser_config={
-                "enable_metadata": True,
-                "metadata": [{"name": "category", "type": "string"}]
-            }
-        )
-
-        service = ChunkService(ctx=ctx)
-
-        with patch("rag.svr.task_executor_refactor.chunk_service.settings") as mock_settings:
-            mock_settings.DOC_MAXIMUM_SIZE = 10000000
-
-            mock_rec_ctx = MagicMock()
-            ctx.recording_context = mock_rec_ctx
-
-            with patch("rag.svr.task_executor_refactor.chunk_service.get_parser") as mock_get_parser:
-                mock_get_parser.return_value = MagicMock()
-
-                with patch("rag.svr.task_executor_refactor.chunk_service.run_chunking", new_callable=AsyncMock) as mock_run_chunking:
-                    mock_run_chunking.return_value = []
-
-                    with patch("rag.svr.task_executor_refactor.chunk_service.extract_outline", new_callable=AsyncMock):
-                        with patch.object(service, '_prepare_docs_and_upload', new_callable=AsyncMock) as mock_prepare:
-                            mock_prepare.return_value = [{"id": "chunk_1", "content_with_weight": "test"}]
-
-                            with patch("rag.svr.task_executor_refactor.chunk_service.generate_metadata", new_callable=AsyncMock) as mock_meta:
-                                await service.build_chunks(b"test binary")
-                                mock_meta.assert_called_once()
+            mock_get_parser.return_value = MagicMock()
+            mock_run_chunking.return_value = []
+            mock_prepare.return_value = [{"id": "chunk_1", "content_with_weight": "test"}]
+            await service.build_chunks(b"test binary")
+            mock_fn.assert_called_once()
 
 
 class TestChunkServicePrepareDocsAndUpload:
     """Tests for _prepare_docs_and_upload method."""
 
-    def _create_mock_context(self):
-        """Helper to create a mock TaskContext."""
-        ctx = MagicMock()
-        ctx.doc_id = "doc_1"
-        ctx.kb_id = "kb_1"
-        ctx.tenant_id = "tenant_1"
-        ctx.name = "test.pdf"
-        ctx.location = "/path/to/test.pdf"
-        ctx.pagerank = 0
-        ctx.progress_cb = MagicMock()
-        return ctx
 
     @pytest.mark.asyncio
     async def test_prepare_docs_and_upload_basic(self):
         """Test basic document preparation."""
-        ctx = self._create_mock_context()
+        ctx = make_task_context()
         service = ChunkService(ctx=ctx)
 
         cks = [{"content_with_weight": "test chunk"}]
@@ -274,7 +151,7 @@ class TestChunkServicePrepareDocsAndUpload:
     @pytest.mark.asyncio
     async def test_prepare_docs_and_upload_with_pagerank(self):
         """Test document preparation with pagerank."""
-        ctx = self._create_mock_context()
+        ctx = make_task_context()
         ctx.pagerank = 5
         service = ChunkService(ctx=ctx)
 
@@ -293,23 +170,11 @@ class TestChunkServicePrepareDocsAndUpload:
 class TestChunkServiceInsertChunks:
     """Tests for insert_chunks method."""
 
-    def _create_mock_context(self):
-        """Helper to create a mock TaskContext."""
-        ctx = MagicMock()
-        ctx.id = "task_1"
-        ctx.tenant_id = "tenant_1"
-        ctx.kb_id = "kb_1"
-        ctx.doc_id = "doc_1"
-        ctx.parser_id = "naive"
-        ctx.progress_cb = MagicMock()
-        ctx.has_canceled_func = MagicMock(return_value=False)
-        ctx.write_interceptor = None
-        return ctx
 
     @pytest.mark.asyncio
     async def test_insert_chunks_success(self):
         """Test successful chunk insertion."""
-        ctx = self._create_mock_context()
+        ctx = make_task_context()
         service = ChunkService(ctx=ctx)
 
         chunks = [
@@ -338,7 +203,7 @@ class TestChunkServiceInsertChunks:
     @pytest.mark.asyncio
     async def test_insert_chunks_canceled(self):
         """Test chunk insertion when task is canceled."""
-        ctx = self._create_mock_context()
+        ctx = make_task_context()
         ctx.has_canceled_func = MagicMock(return_value=True)
         service = ChunkService(ctx=ctx)
 
@@ -363,7 +228,7 @@ class TestChunkServiceInsertChunks:
     @pytest.mark.asyncio
     async def test_insert_chunks_doc_store_error(self):
         """Test chunk insertion when doc store returns error."""
-        ctx = self._create_mock_context()
+        ctx = make_task_context()
         service = ChunkService(ctx=ctx)
 
         chunks = [{"id": "chunk_1", "content_with_weight": "test1"}]

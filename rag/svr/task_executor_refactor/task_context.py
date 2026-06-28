@@ -224,7 +224,7 @@ class TaskContext:
         "parser_id": "",
         "parser_config": {},
         "kb_parser_config": {},
-        "language": "en",
+        "language": "Chinese",
         "llm_id": "",
         "embd_id": "",
         "from_page": 0,

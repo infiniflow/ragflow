@@ -3,10 +3,8 @@ import {
   FormFieldType,
   RenderField,
 } from '@/components/dynamic-form';
-import {
-  SelectWithSearch,
-  SelectWithSearchFlagOptionType,
-} from '@/components/originui/select-with-search';
+import { ModelTreeSelect, ModelTypeMap } from '@/components/model-tree-select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,9 +17,8 @@ import {
 import { Radio } from '@/components/ui/radio';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
-import { LlmModelType, ParseType } from '@/constants/knowledge';
+import { ParseType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
 import { history } from '@/utils/simple-history-util';
 import { t } from 'i18next';
@@ -51,7 +48,6 @@ import {
   useHandleKbEmbedding,
   useHasParsedDocument,
   useSelectChunkMethodList,
-  useSelectEmbeddingModelOptions,
 } from '../hooks';
 interface IProps {
   line?: 1 | 2;
@@ -71,8 +67,10 @@ export function ChunkMethodItem(props: IProps) {
       control={form.control}
       name={name}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-1">
-          <div className={line === 1 ? 'flex items-center' : ''}>
+        <FormItem className="items-center gap-1">
+          <div
+            className={line === 1 ? 'flex items-center' : 'flex flex-col gap-1'}
+          >
             <FormLabel
               required
               tooltip={t('chunkMethodTip')}
@@ -82,7 +80,7 @@ export function ChunkMethodItem(props: IProps) {
             >
               {t('builtIn')}
             </FormLabel>
-            <div className={line === 1 ? 'w-3/4 ' : 'w-full'}>
+            <div className={line === 1 ? 'w-3/4' : 'w-full'}>
               <FormControl>
                 <SelectWithSearch
                   {...field}
@@ -117,29 +115,28 @@ export const EmbeddingSelect = ({
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
-  const embeddingModelOptions = useSelectEmbeddingModelOptions();
   const { handleChange } = useHandleKbEmbedding();
 
   const oldValue = useMemo(() => {
     const embdStr = form.getValues(name || 'embedding_model');
     return embdStr || '';
-  }, [form]);
+  }, [form, name]);
   const [loading, setLoading] = useState(false);
   return (
     <Spin
       spinning={loading}
-      className={cn(' rounded-lg after:bg-bg-base', {
+      className={cn('rounded-lg after:bg-bg-base', {
         'opacity-20': loading,
       })}
     >
-      <SelectWithSearch
+      <ModelTreeSelect
+        modelTypes={ModelTypeMap.embd_id}
         onChange={async (value) => {
           field.onChange(value);
           if (isEdit && disabled) {
             setLoading(true);
             const res = await handleChange({
               embed_id: value,
-              // callback: field.onChange,
             });
             if (res.code !== 0) {
               field.onChange(oldValue);
@@ -149,7 +146,6 @@ export const EmbeddingSelect = ({
         }}
         disabled={disabled && !isEdit}
         value={field.value}
-        options={embeddingModelOptions}
         placeholder={t('embeddingModelPlaceholder')}
         testId={testId}
       />
@@ -167,17 +163,17 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
         control={form.control}
         name={'embedding_model'}
         render={({ field }) => (
-          <FormItem className={cn(' items-center space-y-0 ')}>
+          <FormItem className={cn('items-center space-y-0')}>
             <div
               className={cn('flex', {
-                ' items-center': line === 1,
+                'items-center': line === 1,
                 'flex-col gap-1': line === 2,
               })}
             >
               <FormLabel
                 required
                 tooltip={t('embeddingModelTip')}
-                className={cn('text-sm  whitespace-wrap ', {
+                className={cn('text-sm whitespace-wrap', {
                   'w-1/4': line === 1,
                 })}
               >
@@ -222,10 +218,10 @@ export function ParseTypeItem({
       control={form.control}
       name={name}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
+        <FormItem className="items-center space-y-0">
           <div
             className={cn('flex', {
-              ' items-center': line === 1,
+              'items-center': line === 1,
               'flex-col gap-1': line === 2,
             })}
           >
@@ -274,7 +270,7 @@ export function EnableAutoGenerateItem() {
       control={form.control}
       name={'enableAutoGenerate'}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
+        <FormItem className="items-center space-y-0">
           <div className="flex items-center">
             <FormLabel
               tooltip={t('enableAutoGenerateTip')}
@@ -310,7 +306,7 @@ export function EnableTocToggle() {
       control={form.control}
       name={'parser_config.toc_extraction'}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
+        <FormItem className="items-center space-y-0">
           <div className="flex items-center">
             <FormLabel
               tooltip={t('tocExtractionTip')}
@@ -544,18 +540,14 @@ export const LLMSelect = ({
   disabled?: boolean;
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
-  const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Chat,
-    LlmModelType.Image2text,
-  ]);
   return (
-    <SelectWithSearch
-      onChange={async (value) => {
+    <ModelTreeSelect
+      modelTypes={ModelTypeMap.llm_id}
+      onChange={(value) => {
         field.onChange(value);
       }}
       disabled={disabled && !isEdit}
       value={field.value}
-      options={modelOptions as SelectWithSearchFlagOptionType[]}
       placeholder={t('embeddingModelPlaceholder')}
     />
   );
@@ -571,10 +563,10 @@ export function LLMModelItem({ line = 1, isEdit, label, name }: IProps) {
         control={form.control}
         name={name ?? 'llm_id'}
         render={({ field }) => (
-          <FormItem className={cn(' items-center space-y-0 ')}>
+          <FormItem className={cn('items-center space-y-0')}>
             <div
               className={cn('flex', {
-                ' items-center': line === 1,
+                'items-center': line === 1,
                 'flex-col gap-1': line === 2,
               })}
             >

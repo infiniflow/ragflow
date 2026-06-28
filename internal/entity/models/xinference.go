@@ -16,7 +16,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -32,25 +31,11 @@ import (
 	"time"
 )
 
-// xinferenceStreamIdleTimeout bounds how long a stream can go without
-// receiving any SSE line. Self-hosted models can be slow, but a stream
-// that stays silent for a full minute is more useful as a surfaced error
-// than as a stuck goroutine.
 var xinferenceStreamIdleTimeout = 60 * time.Second
 
 // XinferenceModel implements ModelDriver for Xinference chat models.
-//
-// Xinference exposes an OpenAI-compatible API under <endpoint>/v1. The
-// tenant may configure either the root endpoint (http://127.0.0.1:9997)
-// or the OpenAI-compatible endpoint (http://127.0.0.1:9997/v1); the
-// driver normalizes both to the root endpoint before adding URLSuffix
-// values that match Xinference docs, such as v1/chat/completions.
-// Authentication is optional: no-auth deployments ignore API keys, while
-// auth-enabled deployments require Authorization: Bearer <api_key>.
 type XinferenceModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 type xinferenceChatChoice struct {
@@ -67,45 +52,27 @@ type xinferenceChatResponse struct {
 }
 
 type xinferenceModelListResponse struct {
-	Data []struct {
-		ID string `json:"id"`
-	} `json:"data"`
+	Data []DSModel `json:"data"`
 }
 
 // NewXinferenceModel creates a new Xinference model instance.
 func NewXinferenceModel(baseURL map[string]string, urlSuffix URLSuffix) *XinferenceModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &XinferenceModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
+			httpClient:       NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (x *XinferenceModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewXinferenceModel(baseURL, x.URLSuffix)
+	return NewXinferenceModel(baseURL, x.baseModel.URLSuffix)
 }
 
 func (x *XinferenceModel) Name() string {
 	return "xinference"
-}
-
-func (x *XinferenceModel) baseURLForRegion(region string) (string, error) {
-	if base, ok := x.BaseURL[region]; ok && strings.TrimSpace(base) != "" {
-		return normalizeXinferenceBaseURL(base), nil
-	}
-	if base, ok := x.BaseURL["default"]; ok && strings.TrimSpace(base) != "" {
-		return normalizeXinferenceBaseURL(base), nil
-	}
-	return "", fmt.Errorf("xinference: missing base URL, configure the Xinference endpoint (e.g., http://127.0.0.1:9997 or http://127.0.0.1:9997/v1)")
 }
 
 func normalizeXinferenceBaseURL(base string) string {
@@ -117,20 +84,6 @@ func normalizeXinferenceBaseURL(base string) string {
 		return strings.TrimSuffix(trimmed, "/v1")
 	}
 	return trimmed
-}
-
-func setXinferenceAuth(req *http.Request, apiConfig *APIConfig) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return
-	}
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-}
-
-func xinferenceRegion(apiConfig *APIConfig) string {
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		return *apiConfig.Region
-	}
-	return "default"
 }
 
 func xinferenceReasoningFromStrings(reasoningContent string, reasoning string, thinking string) string {
@@ -190,15 +143,20 @@ func buildXinferenceChatBody(modelName string, messages []Message, stream bool, 
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (x *XinferenceModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := x.baseURLForRegion(xinferenceRegion(apiConfig))
+	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, x.URLSuffix.Chat)
+	baseURL = normalizeXinferenceBaseURL(baseURL)
+	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	reqBody := buildXinferenceChatBody(modelName, messages, false, chatModelConfig)
 	jsonData, err := json.Marshal(reqBody)
@@ -214,9 +172,11 @@ func (x *XinferenceModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	setXinferenceAuth(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -253,6 +213,10 @@ func (x *XinferenceModel) ChatWithMessages(modelName string, messages []Message,
 
 // ChatStreamlyWithSender sends messages and streams response via sender.
 func (x *XinferenceModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -263,11 +227,12 @@ func (x *XinferenceModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 	}
 
-	baseURL, err := x.baseURLForRegion(xinferenceRegion(apiConfig))
+	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, x.URLSuffix.Chat)
+	baseURL = normalizeXinferenceBaseURL(baseURL)
+	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	reqBody := buildXinferenceChatBody(modelName, messages, true, chatModelConfig)
 	jsonData, err := json.Marshal(reqBody)
@@ -283,9 +248,11 @@ func (x *XinferenceModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	setXinferenceAuth(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -318,36 +285,19 @@ func (x *XinferenceModel) ChatStreamlyWithSender(modelName string, messages []Me
 		}
 	}()
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
+	sseDone, parseErr := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		lastActiveMu.Lock()
 		lastActive = time.Now()
 		lastActiveMu.Unlock()
 
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(line[5:])
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		if delta, ok := firstChoice["delta"].(map[string]interface{}); ok {
@@ -365,17 +315,16 @@ func (x *XinferenceModel) ChatStreamlyWithSender(modelName string, messages []Me
 
 		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if parseErr != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("xinference: stream idle for more than %s, aborted", xinferenceStreamIdleTimeout)
 		}
-		return fmt.Errorf("failed to scan response body: %w", err)
+		return fmt.Errorf("failed to scan response body: %w", parseErr)
 	}
-	if !sawTerminal {
+	if !sseDone && !sawTerminal {
 		return fmt.Errorf("xinference: stream ended before [DONE] or finish_reason")
 	}
 
@@ -391,22 +340,12 @@ type xinferenceEmbeddingResponse struct {
 	} `json:"data"`
 }
 
-// Embed POSTs the input texts to the tenant's Xinference /v1/embeddings
-// endpoint and returns one EmbeddingData per input in the original input
-// order.
-//
-// Mirrors the Python XinferenceEmbed class in rag/llm/embedding_model.py
-// for payload shape (OpenAI-compatible: model + input → data[*].index +
-// data[*].embedding) and tolerates the same no-auth default Xinference
-// deployments use. Authorization: Bearer <api_key> is only set when the
-// tenant configured a non-empty API key, via setXinferenceAuth.
-//
-// The response is validated by index: duplicate, missing, or
-// out-of-range data[*].index values fail with a clear error rather than
-// silently producing misaligned vectors. EmbeddingConfig.Dimension, when
-// > 0, is forwarded as the OpenAI-style "dimensions" field for models
-// that support truncated output vectors.
+// Embed POSTs the input texts to the tenant's Xinference
 func (x *XinferenceModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -414,14 +353,15 @@ func (x *XinferenceModel) Embed(modelName *string, texts []string, apiConfig *AP
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := x.baseURLForRegion(xinferenceRegion(apiConfig))
+	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	if x.URLSuffix.Embedding == "" {
+	baseURL = normalizeXinferenceBaseURL(baseURL)
+	if x.baseModel.URLSuffix.Embedding == "" {
 		return nil, fmt.Errorf("xinference: no embedding URL suffix configured")
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, x.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -444,9 +384,11 @@ func (x *XinferenceModel) Embed(modelName *string, texts []string, apiConfig *AP
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	setXinferenceAuth(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -508,6 +450,10 @@ type xinferenceRerankResponse struct {
 // original input order. Xinference rerank models are launched with
 // --model-type rerank and exposed under the OpenAI-compatible base URL.
 func (x *XinferenceModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -515,14 +461,15 @@ func (x *XinferenceModel) Rerank(modelName *string, query string, documents []st
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := x.baseURLForRegion(xinferenceRegion(apiConfig))
+	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	if x.URLSuffix.Rerank == "" {
+	baseURL = normalizeXinferenceBaseURL(baseURL)
+	if x.baseModel.URLSuffix.Rerank == "" {
 		return nil, fmt.Errorf("xinference: no rerank URL suffix configured")
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, x.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -550,9 +497,11 @@ func (x *XinferenceModel) Rerank(modelName *string, query string, documents []st
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	setXinferenceAuth(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -592,21 +541,26 @@ func (x *XinferenceModel) Rerank(modelName *string, query string, documents []st
 }
 
 func (x *XinferenceModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", x.BaseURL[region], x.URLSuffix.ASR)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.ASR)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
 	// audio file
+
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
 	audioFile, err := os.Open(*file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
@@ -661,10 +615,12 @@ func (x *XinferenceModel) TranscribeAudio(modelName *string, file *string, apiCo
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -698,16 +654,19 @@ func (x *XinferenceModel) TranscribeAudioWithSender(modelName *string, file *str
 }
 
 func (x *XinferenceModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("text content is missing")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", x.BaseURL[region], x.URLSuffix.TTS)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -734,9 +693,11 @@ func (x *XinferenceModel) AudioSpeech(modelName *string, audioContent *string, a
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -768,12 +729,17 @@ func (x *XinferenceModel) ParseFile(modelName *string, content []byte, url *stri
 
 // ListModels returns the model IDs exposed by Xinference's OpenAI-compatible
 // /v1/models endpoint.
-func (x *XinferenceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	baseURL, err := x.baseURLForRegion(xinferenceRegion(apiConfig))
+func (x *XinferenceModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, x.URLSuffix.Models)
+	baseURL = normalizeXinferenceBaseURL(baseURL)
+	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -782,9 +748,13 @@ func (x *XinferenceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	setXinferenceAuth(req, apiConfig)
 
-	resp, err := x.httpClient.Do(req)
+	req.Header.Set("Content-Type", "application/json")
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -803,13 +773,7 @@ func (x *XinferenceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result.Data))
-	for _, model := range result.Data {
-		if model.ID != "" {
-			models = append(models, model.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
 func (x *XinferenceModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

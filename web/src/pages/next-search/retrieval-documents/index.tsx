@@ -23,6 +23,7 @@ import {
 import { cn } from '@/lib/utils';
 import { CheckIcon, ChevronDown, Files, XIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface IProps {
   onTesting(documentIds: string[]): void;
@@ -37,6 +38,7 @@ const RetrievalDocuments = ({
   setSelectedDocumentIds,
   setLoading,
 }: IProps) => {
+  const { t } = useTranslation();
   const { documents: documentsAll } = useAllTestingResult();
   const { documents } = useSelectTestingResult();
   const isTesting = useChunkIsTesting();
@@ -126,7 +128,7 @@ const RetrievalDocuments = ({
                 <span>
                   {selectedDocumentIds?.length ?? 0}/{useDocuments?.length ?? 0}
                 </span>
-                Files
+                {t('knowledgeDetails.subbarFiles')}
               </div>
               <div className="flex items-center justify-between">
                 <XIcon
@@ -153,11 +155,11 @@ const RetrievalDocuments = ({
       >
         <Command>
           <CommandInput
-            placeholder="Search..."
+            placeholder={t('common.search')}
             onKeyDown={handleInputKeyDown}
           />
           <CommandList>
-            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandEmpty>{t('common.noResults')}</CommandEmpty>
             <CommandGroup>
               {!multiOptions.some((x) => 'options' in x) &&
                 (multiOptions as unknown as MultiSelectOptionType[]).map(
@@ -226,7 +228,7 @@ const RetrievalDocuments = ({
                       onSelect={handleClear}
                       className="flex-1 justify-center cursor-pointer"
                     >
-                      Clear
+                      {t('common.clear')}
                     </CommandItem>
                     <Separator
                       orientation="vertical"
@@ -238,7 +240,7 @@ const RetrievalDocuments = ({
                   onSelect={() => setIsPopoverOpen(false)}
                   className="flex-1 justify-center cursor-pointer max-w-full"
                 >
-                  Close
+                  {t('common.close')}
                 </CommandItem>
               </div>
             </CommandGroup>

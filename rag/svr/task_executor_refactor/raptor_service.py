@@ -31,6 +31,7 @@ import numpy as np
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID
 from common import settings
+from common.connection_utils import timeout
 from common.constants import PAGERANK_FLD
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
@@ -68,6 +69,7 @@ class RaptorService:
         """
         self._task_context = ctx
 
+    @timeout(3600)
     async def run_raptor_for_kb(
         self,
         kb_parser_config: Dict,
@@ -166,8 +168,8 @@ class RaptorService:
                         doc_id, tree_builder, cleanup_raptor_chunks
                     )
                     self._task_context.progress_cb(msg=f"[RAPTOR] doc:{doc_id} will remove old RAPTOR summaries after insert.")
-                    self._task_context.progress_cb(msg=f"[RAPTOR] doc:{doc_id} already has {tree_builder} RAPTOR chunks, skipping.")
-                    self._task_context.progress_cb(prog=(x + 1.) / len(doc_ids))
+                self._task_context.progress_cb(msg=f"[RAPTOR] doc:{doc_id} already has {tree_builder} RAPTOR chunks, skipping.")
+                self._task_context.progress_cb(prog=(x + 1.) / len(doc_ids))
                 continue
 
             if existing_methods:
@@ -370,7 +372,8 @@ class RaptorService:
         from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 
         raptor_ext_config = raptor_config.get("ext") or {}
-        vctr_nm = "q_%d_vec" % len(chunks[0][1]) if chunks else "q_768_vec"
+        assert chunks, "_generate_raptor must not be called with empty chunks"
+        vctr_nm = "q_%d_vec" % len(chunks[0][1])
 
         raptor = Raptor(
             raptor_config.get("max_cluster", 64),

@@ -19,6 +19,45 @@ from common.http_client import sync_request
 from .oauth import OAuthClient
 
 
+# Asymmetric signing algorithms safe to accept for OIDC ID tokens.
+# Symmetric HMAC algorithms (HS*) are intentionally excluded — when the
+# verification key is the asymmetric public key fetched from the provider's
+# JWKS (as it is for every OIDC ID token), accepting HS256 lets an attacker
+# forge tokens by HMAC-signing them with the public key bytes
+# (RSA/HMAC algorithm-confusion attack, CWE-347). "none" is excluded for the
+# obvious reason that it disables signature verification entirely.
+_ALLOWED_OIDC_SIGNING_ALGS = frozenset({
+    "RS256", "RS384", "RS512",
+    "ES256", "ES384", "ES512",
+    "PS256", "PS384", "PS512",
+    "EdDSA",
+})
+
+# OIDC Core 1.0 § 2 makes RS256 the spec-default ``id_token_signing_alg``,
+# so this is the safe fallback when a provider's discovery document does not
+# advertise ``id_token_signing_alg_values_supported`` (or advertises only
+# algorithms outside the safe allowlist).
+_DEFAULT_OIDC_SIGNING_ALGS = ("RS256",)
+
+
+def _resolve_id_token_signing_algs(metadata):
+    """Return the algorithms to pass to ``jwt.decode(..., algorithms=...)``.
+
+    Intersects the provider-advertised
+    ``id_token_signing_alg_values_supported`` with
+    :data:`_ALLOWED_OIDC_SIGNING_ALGS`. Falls back to
+    :data:`_DEFAULT_OIDC_SIGNING_ALGS` when the provider does not advertise
+    the field or advertises only algorithms outside the safe allowlist —
+    crucially, the fallback is to RS256, **never** to whatever the JWT
+    header claims at verification time.
+    """
+    advertised = metadata.get("id_token_signing_alg_values_supported") or []
+    if not isinstance(advertised, (list, tuple)):
+        advertised = []
+    safe = [a for a in advertised if isinstance(a, str) and a in _ALLOWED_OIDC_SIGNING_ALGS]
+    return safe or list(_DEFAULT_OIDC_SIGNING_ALGS)
+
+
 class OIDCClient(OAuthClient):
     def __init__(self, config):
         """
@@ -32,7 +71,7 @@ class OIDCClient(OAuthClient):
         oidc_metadata = self._load_oidc_metadata(self.issuer)
         config.update({
             'issuer': oidc_metadata['issuer'],
-            'jwks_uri': oidc_metadata['jwks_uri'], 
+            'jwks_uri': oidc_metadata['jwks_uri'],
             'authorization_url': oidc_metadata['authorization_endpoint'],
             'token_url': oidc_metadata['token_endpoint'],
             'userinfo_url': oidc_metadata['userinfo_endpoint']
@@ -41,6 +80,11 @@ class OIDCClient(OAuthClient):
         super().__init__(config)
         self.issuer = config['issuer']
         self.jwks_uri = config['jwks_uri']
+        # Pin the accepted ID-token signing algorithms at construction time
+        # from a trusted source (provider metadata + safe allowlist) so the
+        # JWT verification step in :meth:`parse_id_token` cannot be tricked
+        # by attacker-controlled JWT headers (CWE-345 / CWE-347).
+        self.id_token_signing_algs = _resolve_id_token_signing_algs(oidc_metadata)
 
 
     @staticmethod
@@ -60,23 +104,29 @@ class OIDCClient(OAuthClient):
     def parse_id_token(self, id_token):
         """
         Parse and validate OIDC ID Token (JWT format) with signature verification.
+
+        The accepted signing algorithms come from ``self.id_token_signing_algs``
+        (pinned at construction time from the provider's discovery metadata,
+        intersected with :data:`_ALLOWED_OIDC_SIGNING_ALGS`). We deliberately
+        do **not** read the algorithm from the unverified JWT header — doing
+        so would let an attacker bypass signature verification by setting
+        ``"alg": "none"`` or pull off the classic RSA / HMAC algorithm
+        confusion by setting ``"alg": "HS256"`` and signing with the public
+        key fetched from the provider's JWKS (CWE-345 / CWE-347).
         """
         try:
-            # Decode JWT header without verifying signature
-            headers = jwt.get_unverified_header(id_token)
-            
-            # OIDC usually uses `RS256` for signing
-            alg = headers.get("alg", "RS256")
-
-            # Use PyJWT's PyJWKClient to fetch JWKS and find signing key
+            # Use PyJWT's PyJWKClient to fetch JWKS and find signing key.
+            # The client reads the ``kid`` from the JWT header internally to
+            # look up the key — that's fine: ``kid`` is not a security
+            # decision, the signature still proves which key was used.
             jwks_cli = jwt.PyJWKClient(self.jwks_uri)
             signing_key = jwks_cli.get_signing_key_from_jwt(id_token).key
 
-            # Decode and verify signature
+            # Decode and verify signature against the pinned allowlist.
             decoded_token = jwt.decode(
                 id_token,
                 key=signing_key,
-                algorithms=[alg],  
+                algorithms=list(self.id_token_signing_algs),
                 audience=str(self.client_id),
                 issuer=self.issuer,
             )

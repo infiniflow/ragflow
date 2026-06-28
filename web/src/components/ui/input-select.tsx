@@ -1,17 +1,38 @@
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
-import { X } from 'lucide-react';
+import { ChevronDown, X } from 'lucide-react';
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
+
+/**
+ * Extracts text content from a ReactNode for filtering purposes.
+ * Handles strings, numbers, JSX elements with nested text, and arrays.
+ */
+const getNodeText = (node: React.ReactNode): string => {
+  if (typeof node === 'string' || typeof node === 'number') {
+    return String(node);
+  }
+  if (React.isValidElement(node)) {
+    const children = (node.props as { children?: React.ReactNode }).children;
+    if (children) {
+      return getNodeText(children);
+    }
+    return '';
+  }
+  if (Array.isArray(node)) {
+    return node.map(getNodeText).join('');
+  }
+  return '';
+};
 
 /** Interface for tag select options */
 export interface InputSelectOption {
   /** Value of the option */
   value: string;
   /** Display label of the option */
-  label: string;
+  label: string | React.ReactNode;
 }
 
 /** Properties for the InputSelect component */
@@ -36,6 +57,61 @@ export interface InputSelectProps {
   type?: 'text' | 'number' | 'date' | 'datetime';
 }
 
+/** Internal display for single-select selected value. Click label to re-edit (string labels only). */
+const SingleSelectDisplay: React.FC<{
+  value: string | number | Date;
+  options: InputSelectOption[];
+  type: 'text' | 'number' | 'date' | 'datetime';
+  onEdit: (editText: string) => void;
+  onRemove: () => void;
+}> = ({ value, options, type, onEdit, onRemove }) => {
+  const selectedOption = options.find((opt) =>
+    type === 'number'
+      ? Number(opt.value) === Number(value)
+      : type === 'date' || type === 'datetime'
+        ? new Date(opt.value).getTime() === new Date(value as any).getTime()
+        : String(opt.value) === String(value),
+  );
+
+  const label =
+    selectedOption?.label ??
+    (type === 'number'
+      ? String(value)
+      : type === 'date' || type === 'datetime'
+        ? new Date(value as any).toLocaleString()
+        : String(value));
+
+  const canEdit = typeof label === 'string';
+
+  return (
+    <div className={cn('flex items-center max-w-full')}>
+      <div
+        className={cn(
+          'flex-1 truncate',
+          canEdit ? 'cursor-text' : 'cursor-default',
+        )}
+        onClick={(e) => {
+          if (!canEdit) return;
+          e.stopPropagation();
+          onEdit(getNodeText(label));
+        }}
+      >
+        {label}
+      </div>
+      <button
+        type="button"
+        className="ml-2 flex-[0_0_24px] text-text-secondary hover:text-text-primary focus:outline-none"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </div>
+  );
+};
+
 const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
   (
     {
@@ -55,6 +131,10 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
     const [isFocused, setIsFocused] = React.useState(false);
     const inputRef = React.useRef<HTMLInputElement>(null);
     const { t } = useTranslation();
+
+    React.useImperativeHandle(ref, () => inputRef.current as HTMLInputElement, [
+      inputRef,
+    ]);
 
     // Normalize value to array for consistent handling based on type
     const normalizedValue = React.useMemo(() => {
@@ -170,6 +250,50 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
       setOpen(!!newValue); // Open popover when there's input
     };
 
+    /**
+     * Commits the current inputValue to the selected values, matching by label first,
+     * then falling back to the typed value. No-op when inputValue is empty/whitespace.
+     * Used by Enter key handler and blur handler.
+     */
+    const commitInputValue = () => {
+      if (inputValue.trim() === '') return;
+
+      // Match by label text first
+      const matchedOption = options.find(
+        (opt) =>
+          getNodeText(opt.label).toLowerCase() === inputValue.toLowerCase(),
+      );
+      if (matchedOption) {
+        handleAddTag(matchedOption.value);
+        return;
+      }
+
+      // Otherwise, validate by type and add as a new value
+      let valueToAdd: any;
+      if (type === 'number') {
+        const numValue = Number(inputValue);
+        if (isNaN(numValue)) return;
+        valueToAdd = numValue;
+      } else if (type === 'date' || type === 'datetime') {
+        const dateValue = new Date(inputValue);
+        if (isNaN(dateValue.getTime())) return;
+        valueToAdd = dateValue;
+      } else {
+        valueToAdd = inputValue;
+      }
+
+      // Skip if value is already selected
+      const isAlreadySelected = normalizedValue.some((v) =>
+        type === 'number'
+          ? Number(v) === Number(valueToAdd)
+          : type === 'date' || type === 'datetime'
+            ? new Date(v as any).getTime() === valueToAdd.getTime()
+            : String(v) === valueToAdd,
+      );
+      if (!isAlreadySelected) {
+        handleAddTag(valueToAdd);
+      }
+    };
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (
         e.key === 'Backspace' &&
@@ -182,7 +306,13 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
         // Return single value if not multi-select, otherwise return array
         let result: string | number | Date | string[] | number[] | Date[];
         if (multi) {
-          result = newValue;
+          if (type === 'number') {
+            result = newValue as number[];
+          } else if (type === 'date' || type === 'datetime') {
+            result = newValue as Date[];
+          } else {
+            result = newValue as string[];
+          }
         } else {
           if (type === 'number') {
             result = newValue[0] || 0;
@@ -196,43 +326,7 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
         onChange?.(result);
       } else if (e.key === 'Enter' && inputValue.trim() !== '') {
         e.preventDefault();
-
-        let valueToAdd: any;
-
-        if (type === 'number') {
-          const numValue = Number(inputValue);
-          if (isNaN(numValue)) return; // Don't add invalid numbers
-          valueToAdd = numValue;
-        } else if (type === 'date' || type === 'datetime') {
-          const dateValue = new Date(inputValue);
-          if (isNaN(dateValue.getTime())) return; // Don't add invalid dates
-          valueToAdd = dateValue;
-        } else {
-          valueToAdd = inputValue;
-        }
-
-        // Add input value as a new tag if it doesn't exist in options
-        const matchedOption = options.find(
-          (opt) => opt.label.toLowerCase() === inputValue.toLowerCase(),
-        );
-
-        if (matchedOption) {
-          handleAddTag(matchedOption.value);
-        } else {
-          // If not in options, create a new tag with the input value
-          if (
-            !normalizedValue.some((v) =>
-              type === 'number'
-                ? Number(v) === Number(valueToAdd)
-                : type === 'date' || type === 'datetime'
-                  ? new Date(v as any).getTime() === valueToAdd.getTime()
-                  : String(v) === valueToAdd,
-            ) &&
-            inputValue.trim() !== ''
-          ) {
-            handleAddTag(valueToAdd);
-          }
-        }
+        commitInputValue();
       } else if (e.key === 'Escape') {
         inputRef.current?.blur();
         setOpen(false);
@@ -254,8 +348,9 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
     };
 
     const handleInputBlur = () => {
-      // Delay closing to allow click on options
+      // Delay closing to allow click on options to register
       setTimeout(() => {
+        commitInputValue();
         setOpen(false);
         setIsFocused(false);
       }, 150);
@@ -279,7 +374,7 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
     const filteredOptions = availableOptions.filter(
       (option) =>
         !inputValue ||
-        option.label
+        getNodeText(option.label)
           .toLowerCase()
           .includes(inputValue.toString().toLowerCase()),
     );
@@ -290,7 +385,8 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
 
       const hasLabelMatch = options.some(
         (option) =>
-          option.label.toLowerCase() === inputValue.toString().toLowerCase(),
+          getNodeText(option.label).toLowerCase() ===
+          inputValue.toString().toLowerCase(),
       );
 
       let isAlreadySelected = false;
@@ -318,7 +414,7 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
     const triggerElement = (
       <div
         className={cn(
-          'flex flex-wrap items-center gap-1 w-full rounded-md border-0.5 border-border-button bg-bg-input px-3 py-1 min-h-8 cursor-text',
+          'flex items-center gap-1 w-full rounded-md border-0.5 border-border-button bg-bg-input px-3 py-1 min-h-8 cursor-text',
           'outline-none transition-colors',
           'focus-within:outline-none focus-within:ring-1 focus-within:ring-accent-primary',
           className,
@@ -326,109 +422,110 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
         style={style}
         onClick={handleContainerClick}
       >
-        {/* Render selected tags - only show tags if multi is true or if single select has a value */}
-        {multi &&
-          normalizedValue.map((tagValue, index) => {
-            const option = options.find((opt) =>
-              type === 'number'
-                ? Number(opt.value) === Number(tagValue)
-                : type === 'date' || type === 'datetime'
-                  ? new Date(opt.value).getTime() ===
-                    new Date(tagValue).getTime()
-                  : String(opt.value) === String(tagValue),
-            ) || {
-              value: String(tagValue),
-              label: String(tagValue),
-            };
-
-            return (
-              <div
-                key={`${tagValue}-${index}`}
-                className="flex items-center bg-bg-card text-text-primary rounded px-2 py-1 text-xs mr-1 mb-1 border border-border-card truncate"
-              >
-                <div className="flex-1  truncate">{option.label}</div>
-                <button
-                  type="button"
-                  className="ml-1 text-text-secondary hover:text-text-primary focus:outline-none"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRemoveTag(tagValue);
-                  }}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            );
-          })}
-
-        {/* For single select, show the selected value as text instead of a tag */}
-        {!multi && !isEmpty(normalizedValue[0]) && (
-          <div className={cn('flex items-center max-w-full')}>
-            <div className="flex-1  truncate">
-              {options.find((opt) =>
+        {/* Wrapper for tags and input - this part wraps */}
+        <div className="flex flex-wrap items-center gap-1 flex-1 min-w-0">
+          {/* Render selected tags - only show tags if multi is true or if single select has a value */}
+          {multi &&
+            normalizedValue.map((tagValue, index) => {
+              const option = options.find((opt) =>
                 type === 'number'
-                  ? Number(opt.value) === Number(normalizedValue[0])
+                  ? Number(opt.value) === Number(tagValue)
                   : type === 'date' || type === 'datetime'
                     ? new Date(opt.value).getTime() ===
-                      new Date(normalizedValue[0]).getTime()
-                    : String(opt.value) === String(normalizedValue[0]),
-              )?.label ||
-                (type === 'number'
-                  ? String(normalizedValue[0])
-                  : type === 'date' || type === 'datetime'
-                    ? new Date(normalizedValue[0] as any).toLocaleString()
-                    : String(normalizedValue[0]))}
-            </div>
-            <button
-              type="button"
-              className="ml-2 flex-[0_0_24px] text-text-secondary hover:text-text-primary focus:outline-none"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRemoveTag(normalizedValue[0]);
-              }}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        )}
+                      new Date(tagValue).getTime()
+                    : String(opt.value) === String(tagValue),
+              ) || {
+                value: String(tagValue),
+                label: String(tagValue),
+              };
 
-        {/* Input field for adding new tags - hide if single select and value is already selected, or in multi select when not focused */}
-        {(multi ? isFocused : multi || isEmpty(normalizedValue[0])) && (
-          <Input
-            ref={inputRef}
-            type={
-              type === 'date'
-                ? 'date'
-                : type === 'datetime'
-                  ? 'datetime-local'
-                  : type === 'number'
-                    ? 'number'
-                    : 'text'
-            }
-            value={
-              type === 'number' && inputValue
-                ? String(inputValue)
-                : type === 'date' || type === 'datetime'
-                  ? inputValue
-                  : inputValue
-            }
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              (
-                multi
-                  ? normalizedValue.length === 0
-                  : isEmpty(normalizedValue[0])
-              )
-                ? placeholder
-                : ''
-            }
-            className="flex-grow min-w-[50px] border-none px-1 py-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 h-auto "
-            onClick={(e) => e.stopPropagation()}
-            onFocus={handleInputFocus}
-            onBlur={handleInputBlur}
-          />
-        )}
+              return (
+                <div
+                  key={`${tagValue}-${index}`}
+                  className="flex items-center bg-bg-card text-text-primary rounded px-2 py-1 text-xs mr-1 mb-1 border border-border-card truncate"
+                >
+                  <div className="flex-1  truncate">{option.label}</div>
+                  <button
+                    type="button"
+                    className="ml-1 text-text-secondary hover:text-text-primary focus:outline-none"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveTag(tagValue);
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              );
+            })}
+
+          {/* For single select, show the selected value as text instead of a tag */}
+          {!multi && !isEmpty(normalizedValue[0]) && (
+            <SingleSelectDisplay
+              value={normalizedValue[0]}
+              options={options}
+              type={type}
+              onEdit={(editText) => {
+                handleRemoveTag(normalizedValue[0]);
+                setInputValue(editText);
+                setIsFocused(true);
+                setOpen(true);
+                requestAnimationFrame(() => {
+                  const input = inputRef.current;
+                  if (input) {
+                    input.focus();
+                    input.setSelectionRange(editText.length, editText.length);
+                  }
+                });
+              }}
+              onRemove={() => handleRemoveTag(normalizedValue[0])}
+            />
+          )}
+
+          {/* Input field for adding new tags - hide if single select and value is already selected, or in multi select when not focused */}
+          {(multi ? isFocused : multi || isEmpty(normalizedValue[0])) && (
+            <Input
+              ref={inputRef}
+              type={
+                type === 'date'
+                  ? 'date'
+                  : type === 'datetime'
+                    ? 'datetime-local'
+                    : type === 'number'
+                      ? 'number'
+                      : 'text'
+              }
+              value={
+                type === 'number' && inputValue
+                  ? String(inputValue)
+                  : type === 'date' || type === 'datetime'
+                    ? inputValue
+                    : inputValue
+              }
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                (
+                  multi
+                    ? normalizedValue.length === 0
+                    : isEmpty(normalizedValue[0])
+                )
+                  ? placeholder
+                  : ''
+              }
+              className="flex-grow min-w-[50px] border-none px-1 py-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 h-auto "
+              onClick={(e) => e.stopPropagation()}
+              onFocus={handleInputFocus}
+              onBlur={handleInputBlur}
+            />
+          )}
+        </div>
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 text-text-secondary shrink-0 transition-transform',
+            open && 'rotate-180',
+          )}
+        />
       </div>
     );
 

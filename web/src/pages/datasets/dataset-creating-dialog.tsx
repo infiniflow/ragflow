@@ -19,7 +19,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { FormLayout } from '@/constants/form';
 import { ParseType } from '@/constants/knowledge';
-import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
+import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { omit } from 'lodash';
@@ -39,7 +39,7 @@ const ChunkMethodName = 'chunk_method';
 
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
-  const { data: tenantInfo } = useFetchTenantInfo();
+  const defaultModelDictionary = useFetchDefaultModelDictionary();
 
   const FormSchema = z
     .object({
@@ -87,7 +87,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
       name: '',
       parseType: ParseType.BuiltIn,
       [ChunkMethodName]: '',
-      embedding_model: tenantInfo?.embd_id,
+      embedding_model: defaultModelDictionary?.embd_id,
     },
   });
 
@@ -106,10 +106,10 @@ export function InputForm({ onOk }: IModalProps<any>) {
     if (parseType === ParseType.BuiltIn) {
       form.setValue('pipeline_id', '');
     }
-    if (tenantInfo?.embd_id) {
-      form.setValue('embedding_model', tenantInfo?.embd_id);
+    if (defaultModelDictionary?.embd_id) {
+      form.setValue('embedding_model', defaultModelDictionary?.embd_id);
     }
-  }, [parseType, form, tenantInfo]);
+  }, [parseType, form, defaultModelDictionary]);
 
   return (
     <Form {...form}>
@@ -124,11 +124,8 @@ export function InputForm({ onOk }: IModalProps<any>) {
           control={form.control}
           name="name"
           render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                <span className="text-destructive mr-1"> *</span>
-                {t('knowledgeList.name')}
-              </FormLabel>
+            <FormItem className="space-y-1">
+              <FormLabel required>{t('knowledgeList.name')}</FormLabel>
               <FormControl>
                 <Input
                   placeholder={t('knowledgeList.namePlaceholder')}
