@@ -23,9 +23,16 @@ import agent.tools.googlescholar as gs_module  # noqa: E402
 from agent.tools.googlescholar import GoogleScholar, GoogleScholarParam  # noqa: E402
 
 
-def _fake_pubs(n):
-    """A lazy generator, exactly like scholarly.search_pubs."""
+def _fake_pubs(n, consumed=None):
+    """A lazy generator, exactly like scholarly.search_pubs.
+
+    When ``consumed`` (a one-element list) is passed, it counts how many items
+    are actually pulled from the generator, so a test can prove the tool stops
+    after top_n instead of draining the whole result stream.
+    """
     for i in range(n):
+        if consumed is not None:
+            consumed[0] += 1
         yield {"bib": {"title": f"t{i}", "author": ["A"], "abstract": "x"}, "pub_url": f"u{i}"}
 
 
@@ -56,11 +63,15 @@ def _make_tool(top_n):
 
 def test_respects_top_n(monkeypatch):
     # Regression: top_n was never applied; the unbounded generator was passed
-    # straight to _retrieve_chunks.
-    monkeypatch.setattr(gs_module.scholarly, "search_pubs", lambda *a, **k: _fake_pubs(30))
+    # straight to _retrieve_chunks. Assert both that _retrieve_chunks saw a
+    # sliced list AND that only top_n items were actually pulled from the
+    # generator (the stream is not drained past top_n).
+    consumed = [0]
+    monkeypatch.setattr(gs_module.scholarly, "search_pubs", lambda *a, **k: _fake_pubs(30, consumed))
     gs, captured, _ = _make_tool(top_n=5)
     gs._invoke(query="q")
     assert captured["chunks_count"] == 5
+    assert consumed[0] == 5
 
 
 def test_json_output_not_exhausted(monkeypatch):
@@ -73,7 +84,18 @@ def test_json_output_not_exhausted(monkeypatch):
 
 
 def test_empty_query_short_circuits(monkeypatch):
-    monkeypatch.setattr(gs_module.scholarly, "search_pubs", lambda *a, **k: _fake_pubs(30))
+    # An empty query must short-circuit without hitting the SDK, and must clear
+    # json so a reused instance can't surface stale results from a prior call.
+    calls = [0]
+
+    def spy(*a, **k):
+        calls[0] += 1
+        return _fake_pubs(30)
+
+    monkeypatch.setattr(gs_module.scholarly, "search_pubs", spy)
     gs, _, out = _make_tool(top_n=5)
+    out["json"] = ["stale"]  # simulate leftover output from a previous call
     assert gs._invoke(query="") == ""
+    assert calls[0] == 0, "search_pubs must not be called for an empty query"
     assert out.get("formalized_content") == ""
+    assert out.get("json") == []

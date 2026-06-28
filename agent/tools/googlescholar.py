@@ -71,6 +71,9 @@ class GoogleScholar(ToolBase, ABC):
 
         if not kwargs.get("query"):
             self.set_output("formalized_content", "")
+            # Reset json too, otherwise a reused instance keeps stale results
+            # from a previous successful call.
+            self.set_output("json", [])
             return ""
 
         last_e = ""
