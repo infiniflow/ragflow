@@ -23,6 +23,9 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
     cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 
 ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.3.0.jar"
+# Point tiktoken at the cached encoding file copied above so that no network
+# access (openaipublic.blob.core.windows.net) is required at runtime (#15943).
+ENV TIKTOKEN_CACHE_DIR=/ragflow
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Setup apt

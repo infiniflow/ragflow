@@ -14,6 +14,9 @@
 #  limitations under the License.
 #
 
+import importlib
+import os
+
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, truncate, encoder
 import pytest
 
@@ -371,3 +374,48 @@ class TestTruncate:
 
         result = truncate(number_string, max_len)
         assert len(encoder.encode(result)) == max_len
+
+
+class TestTiktokenCacheDir:
+    """Regression tests for the offline tiktoken cache configuration (#15943).
+
+    The container ships the cl100k_base encoding cache under the project root,
+    so ``common.token_utils`` must make tiktoken use it via ``TIKTOKEN_CACHE_DIR``
+    instead of reaching out to ``openaipublic.blob.core.windows.net`` at runtime.
+    """
+
+    def test_import_sets_cache_dir_when_unset(self, monkeypatch):
+        """Importing the module sets TIKTOKEN_CACHE_DIR to the project root."""
+        import common.token_utils as token_utils
+        from common.file_utils import get_project_base_directory
+
+        monkeypatch.delenv("TIKTOKEN_CACHE_DIR", raising=False)
+        importlib.reload(token_utils)
+
+        assert os.environ.get("TIKTOKEN_CACHE_DIR") == get_project_base_directory()
+
+    def test_import_does_not_override_existing_cache_dir(self, monkeypatch, tmp_path):
+        """An operator-provided TIKTOKEN_CACHE_DIR must be preserved (setdefault)."""
+        import common.token_utils as token_utils
+
+        custom_dir = str(tmp_path)
+        monkeypatch.setenv("TIKTOKEN_CACHE_DIR", custom_dir)
+        importlib.reload(token_utils)
+
+        assert os.environ.get("TIKTOKEN_CACHE_DIR") == custom_dir
+
+    def test_encoder_available_after_reload(self, monkeypatch):
+        """The module-level encoder still loads correctly via the cache path."""
+        import common.token_utils as token_utils
+
+        monkeypatch.delenv("TIKTOKEN_CACHE_DIR", raising=False)
+        importlib.reload(token_utils)
+
+        assert token_utils.encoder is not None
+        assert token_utils.num_tokens_from_string("hello") == 1
+
+    def teardown_method(self):
+        """Reload once more so other test modules see a clean module state."""
+        import common.token_utils as token_utils
+
+        importlib.reload(token_utils)
