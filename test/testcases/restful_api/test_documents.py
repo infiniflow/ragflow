@@ -1503,7 +1503,7 @@ def test_documents_download_requires_auth_and_invalid_id_contract(rest_client, c
     assert invalid_doc_res.status_code == 200
     invalid_doc_payload = invalid_doc_res.json()
     assert invalid_doc_payload["code"] == 102, invalid_doc_payload
-    assert "The dataset not own the document invalid_document_id." in invalid_doc_payload["message"], invalid_doc_payload
+    assert invalid_doc_payload["message"] == "Document not found!", invalid_doc_payload
 
     invalid_dataset_path = tmp_path / "invalid_dataset_download.txt"
     invalid_dataset_res = _download_document_to_file(rest_client, "invalid_dataset_id", document_id, invalid_dataset_path)
