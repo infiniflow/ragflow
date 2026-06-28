@@ -1046,6 +1046,12 @@ async def rerun_agent(tenant_id):
         return get_data_error_result(message="Document not found.")
     doc = doc[0]
     if not DocumentService.accessible(doc["id"], tenant_id):
+        logging.warning(
+            "rerun_agent denied: tenant_id=%s log_id=%s doc_id=%s",
+            tenant_id,
+            req["id"],
+            doc["id"],
+        )
         return get_data_error_result(message="Document not found.")
     if 0 < doc["progress"] < 1:
         return get_data_error_result(message=f"`{doc['name']}` is processing...")
