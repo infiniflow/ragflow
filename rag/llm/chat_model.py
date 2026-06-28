@@ -1122,6 +1122,22 @@ class BaiduYiyanChat(Base):
 class GoogleChat(Base):
     _FACTORY_NAME = "Google Cloud"
 
+    @staticmethod
+    def _vertex_http_options(region: str):
+        region_norm = (region or "").strip().lower()
+        multipoint_hosts = {
+            "eu": "https://aiplatform.eu.rep.googleapis.com/",
+            "us": "https://aiplatform.us.rep.googleapis.com/",
+        }
+        base_url = multipoint_hosts.get(region_norm)
+        if base_url:
+            from google.genai.types import HttpOptions
+
+            # Gemini 3.x multi-region endpoints require *.rep hostnames
+            # instead of region-aiplatform host synthesis.
+            return HttpOptions(base_url=base_url, api_version="v1")
+        return None
+
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
@@ -1152,11 +1168,21 @@ class GoogleChat(Base):
         else:
             from google import genai
 
+            client_kwargs = {
+                "vertexai": True,
+                "project": project_id,
+                "location": region,
+            }
+            http_options = self._vertex_http_options(region)
+            if http_options is not None:
+                client_kwargs["http_options"] = http_options
+
             if access_token:
                 credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
-                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
+                client_kwargs["credentials"] = credits
+                self.client = genai.Client(**client_kwargs)
             else:
-                self.client = genai.Client(vertexai=True, project=project_id, location=region)
+                self.client = genai.Client(**client_kwargs)
 
     def _clean_conf(self, gen_conf):
         if "claude" in self.model_name:
@@ -2073,4 +2099,14 @@ class RAGconChat(Base):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
 
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class NewAPIChat(Base):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        model_name = model_name.split("___")[0]
         super().__init__(key, model_name, base_url, **kwargs)

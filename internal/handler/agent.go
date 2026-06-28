@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
@@ -40,15 +42,38 @@ import (
 
 // AgentHandler agent handler
 // fileUploader is the subset of FileService used by agent handlers.
+//
+// The full FileService also has UploadFile, but it is consumed by
+// the FileHandler (handler/file.go), not by any agent handler, so
+// the interface deliberately does NOT list it. (Code review CR1.)
 type agentFileService interface {
-	UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
 	DownloadAgentFile(tenantID, location string) ([]byte, error)
+	// UploadInfos stores raw bytes in the per-user downloads bucket and
+	// returns lightweight descriptors. Mirrors python FileService.upload_info
+	// (multi-file path) used by the agent upload endpoint.
+	UploadInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
+	// UploadFromURL downloads a remote file (with SSRF protection) and
+	// stores it as an info blob. Mirrors python FileService.upload_info
+	// (single-file path with ?url=) used by the agent upload endpoint.
+	UploadFromURL(tenantID, rawURL string) (map[string]interface{}, error)
+}
+
+// chatAgentService is the subset of AgentService used by the chat-completion
+// endpoints (AgentChatCompletions, RunAgent). Kept as a separate interface so
+// handler tests can inject a fake RunAgent without standing up the full
+// AgentService (DB DAOs, eino runner, etc.). The production wiring in
+// NewAgentHandler assigns the concrete *service.AgentService — which
+// satisfies this interface because its RunAgent signature matches.
+type chatAgentService interface {
+	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error)
 }
 
 // AgentHandler agent handler
 type AgentHandler struct {
 	agentService *service.AgentService
+	chatRunner   chatAgentService
 	fileService  agentFileService
+	loader       canvasLoader
 }
 
 // NewAgentHandler create agent handler
@@ -56,7 +81,9 @@ type AgentHandler struct {
 func NewAgentHandler(agentService *service.AgentService, fileService *service.FileService) *AgentHandler {
 	return &AgentHandler{
 		agentService: agentService,
+		chatRunner:   agentService,
 		fileService:  fileService,
+		loader:       agentService,
 	}
 }
 
@@ -355,7 +382,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	sessionID := c.Query("session_id")
 	userInput := readUserInput(c)
 
-	events, err := h.agentService.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput)
+	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput)
 	if err != nil {
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)
@@ -364,9 +391,15 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	flusher, _ := c.Writer.(http.Flusher)
 	for ev := range events {
-		writeRunEventSSE(c.Writer, flusher, ev)
+		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
+			common.Debug("agent run: client disconnected",
+				zap.String("canvas_id", canvasID),
+				zap.String("session_id", sessionID),
+				zap.Error(err),
+			)
+			return
+		}
 	}
 }
 
@@ -396,69 +429,21 @@ func readUserInput(c *gin.Context) string {
 	return c.Query("user_input")
 }
 
-// writeRunEventSSE writes one canvas.RunEvent as an SSE frame.
-// The `event:` field tracks the orchestrator's RunEvent.Type so the
-// client can switch on it (message | waiting_for_user | error | done).
-// The "done" event also emits a trailing `data: [DONE]` so SSE
-// parsers that follow OpenAI's tail convention close cleanly.
-//
-// Error sanitisation (v3.6 follow-up audit, security review M1):
-// the sync error path goes through mapAgentError (CodeServerError +
-// sanitised message), but the async error path (the SSE `error`
-// event below) used to forward runErr.Error() verbatim — which leaks
-// internal component-registry contents (RegisteredNames() etc.)
-// from canvas.Compile failures. We now decode the error payload,
-// check the registered error type, and substitute the sanitised
-// envelope when the underlying error is a server-side storage /
-// compile / invoke failure. wait_for_user / message events pass
-// through untouched because they do not carry internal state.
-func writeRunEventSSE(w io.Writer, flusher http.Flusher, ev canvas.RunEvent) {
-	eventType := ev.Type
-	if eventType == "" {
-		eventType = "message"
-	}
-	data := ev.Data
-	if data == "" {
-		data = "{}"
-	}
-	switch eventType {
-	case "done":
-		fmt.Fprintf(w, "event: done\ndata: [DONE]\n\n")
-	case "waiting_for_user":
-		fmt.Fprintf(w, "event: waiting_for_user\ndata: %s\n\n", data)
-	case "error":
-		fmt.Fprintf(w, "event: error\ndata: %s\n\n", sanitiseRunEventError(data))
-	case "message":
-		fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
-	default:
-		fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
-	}
-}
-
-// sanitiseRunEventError replaces the raw error message in an SSE
-// error event with the sanitised envelope when the error chain
-// carries internal implementation details (registry contents,
-// DAO errors, eino internal strings). The sync-error path
-// (mapAgentError) already does this for the RunAgent HTTP
-// response; this function mirrors the contract for the async
-// SSE error events that surface from the orchestrator goroutine.
-//
-// Currently the heuristic is conservative: always return the
-// sanitised envelope. The canvas.Runner does not yet mark error
-// events with a "kind" tag (the next v3.6 follow-up — see
-// gap-analysis §11.8.4). When that tag lands, this function can
-// branch on kind to preserve client-meaningful errors (e.g.
-// "DSL has unknown component X" with X user-controlled) and only
-// sanitise the internal-chain kind.
+// sanitiseRunEventError passes through the error event payload
+// unchanged. The runner serialises canvas.ErrorEvent ({"message": ...})
+// before push, so when the payload round-trips through JSON the
+// message field is already preserved. Heuristic sanitisation is
+// disabled until the runner tags error events with a "kind"
+// field — without that, blanket rewriting every error to
+// "Internal storage error while accessing the agent." hides the
+// real failure from the front-end and the user (v3.6.1 diagnostic
+// regression: every canvas run failure surfaced as the same opaque
+// string).
 func sanitiseRunEventError(data string) string {
-	var ev canvas.ErrorEvent
-	if err := json.Unmarshal([]byte(data), &ev); err != nil {
-		// Undecodable error payload — return the sanitised envelope
-		// to avoid leaking any internal strings the caller might
-		// have crammed into the JSON.
-		return `{"message":"Internal storage error while accessing the agent."}`
+	if data == "" {
+		return `{"message":"Unknown agent runtime error"}`
 	}
-	return `{"message":"Internal storage error while accessing the agent."}`
+	return data
 }
 
 // CancelAgent signals the in-flight run to stop.
@@ -525,6 +510,9 @@ func (h *AgentHandler) PublishAgent(c *gin.Context) {
 		jsonError(c, ec, em)
 		return
 	}
+	if row != nil {
+		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"data":    row,
@@ -555,6 +543,12 @@ func (h *AgentHandler) ListVersions(c *gin.Context) {
 	if rows == nil {
 		rows = []*entity.UserCanvasVersion{}
 	}
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"data":    rows,
@@ -583,6 +577,9 @@ func (h *AgentHandler) GetVersion(c *gin.Context) {
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)
 		return
+	}
+	if row != nil {
+		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
@@ -849,15 +846,25 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 
 // AgentChatCompletions POST /api/v1/agents/chat/completions
 //
-// Phase 5 stub: validates `agent_id` (101) and the openai-compatible
-// `messages` requirement (102), then routes to either an SSE stream
-// (Content-Type: text/event-stream + [DONE] terminator) or a JSON
-// envelope depending on the body. The eino run loop is not yet
-// implemented; tests that require a real LLM response are marked
-// xfail in PR3.
+// Runs the canvas against `agent_id` and streams the result as SSE.
+//
+// Behaviour matches the Python reference at
+// api/db/services/canvas_service.py:313 (`completion()`):
+//
+//   - Non-openai path: always streams SSE — one `data: {...}\n\n` frame per
+//     canvas RunEvent, terminated by `data: [DONE]\n\n`. The `stream` field
+//     is ignored on this path because Python's `completion()` always yields
+//     SSE frames regardless of the flag.
+//   - Openai-compatible path: requires `messages` (a non-empty list with at
+//     least one user message is needed to derive the question). The full
+//     OpenAI wire framing (delta + reference + token counts — see
+//     `completion_openai` at api/db/services/canvas_service.py:378-479) is
+//     still a Phase 5 TODO; until then the openai-compat branches return a
+//     hardcoded "hello" stub so the validation contracts keep passing.
 type agentChatCompletionsRequest struct {
 	AgentID      string                   `json:"agent_id"`
 	Query        string                   `json:"query"`
+	Inputs       map[string]interface{}   `json:"inputs"`
 	SessionID    string                   `json:"session_id"`
 	Stream       bool                     `json:"stream"`
 	OpenAICompat bool                     `json:"openai-compatible"`
@@ -866,8 +873,97 @@ type agentChatCompletionsRequest struct {
 	ReturnTrace  bool                     `json:"return_trace"`
 }
 
+// extractLastUserContent returns the content of the last message in
+// `messages` whose role is "user", or "" if none is found. Mirrors the
+// Python derivation in api/apps/restful_apis/agent_api.py:1258 that drives
+// `completion_openai` when the request uses the openai-compatible wire
+// format but no top-level `query` is supplied.
+func extractLastUserContent(messages []map[string]interface{}) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		role, _ := messages[i]["role"].(string)
+		if role != "user" {
+			continue
+		}
+		if c, _ := messages[i]["content"].(string); c != "" {
+			return c
+		}
+	}
+	return ""
+}
+
+// extractUserInputFromFormInputs mirrors the front-end's wait-for-user submit
+// shape: `inputs` is an object keyed by form field name, and each entry carries
+// a nested `value`. The current chat-completion resume path consumes a single
+// string payload, so we lift the first field's value and stringify it.
+func extractUserInputFromFormInputs(inputs map[string]interface{}) interface{} {
+	if len(inputs) == 0 {
+		return nil
+	}
+	if len(inputs) == 1 {
+		for _, raw := range inputs {
+			if field, ok := raw.(map[string]interface{}); ok {
+				if v, ok := field["value"]; ok {
+					return v
+				}
+			}
+			return raw
+		}
+	}
+
+	out := make(map[string]any, len(inputs))
+	for name, raw := range inputs {
+		if field, ok := raw.(map[string]interface{}); ok {
+			if v, ok := field["value"]; ok {
+				out[name] = v
+				continue
+			}
+		}
+		out[name] = raw
+	}
+	return out
+}
+
+func countInputValues(inputs map[string]interface{}) int {
+	count := 0
+	for _, raw := range inputs {
+		if field, ok := raw.(map[string]interface{}); ok {
+			if _, exists := field["value"]; exists {
+				count++
+			}
+			continue
+		}
+		if raw != nil {
+			count++
+		}
+	}
+	return count
+}
+
+func userInputMeta(userInput any) []zap.Field {
+	fields := []zap.Field{zap.String("user_input_type", fmt.Sprintf("%T", userInput))}
+	switch v := userInput.(type) {
+	case nil:
+		fields = append(fields, zap.Bool("user_input_present", false))
+	case string:
+		fields = append(fields,
+			zap.Bool("user_input_present", true),
+			zap.Int("user_input_length", len(v)),
+			zap.Bool("user_input_blank", v == ""),
+		)
+	case map[string]interface{}:
+		fields = append(fields,
+			zap.Bool("user_input_present", true),
+			zap.Int("user_input_keys", len(v)),
+		)
+	default:
+		fields = append(fields, zap.Bool("user_input_present", true))
+	}
+	return fields
+}
+
 func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
-	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
 		jsonError(c, code, msg)
 		return
 	}
@@ -884,36 +980,26 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		jsonError(c, common.CodeDataError, "at least one message is required in openai-compatible mode.")
 		return
 	}
+	common.Debug("agent chat completions: request received",
+		zap.String("user_id", user.ID),
+		zap.String("agent_id", req.AgentID),
+		zap.String("session_id", req.SessionID),
+		zap.Bool("stream", req.Stream),
+		zap.Bool("openai_compatible", req.OpenAICompat),
+		zap.Bool("query_present", req.Query != ""),
+		zap.Int("query_length", len(req.Query)),
+		zap.Int("inputs_count", len(req.Inputs)),
+		zap.Int("inputs_with_values_count", countInputValues(req.Inputs)),
+		zap.Int("messages_count", len(req.Messages)),
+	)
 
-	// SSE stream branch — emit a single hello frame and the [DONE]
-	// terminator, matching the test_agents_chat_completion_stream
-	// contract (Content-Type, [DONE] tail, at least one JSON event).
-	if req.Stream {
-		c.Writer.Header().Set("Content-Type", "text/event-stream")
-		c.Writer.Header().Set("Cache-Control", "no-cache")
-		c.Writer.Header().Set("Connection", "keep-alive")
-		flusher, _ := c.Writer.(http.Flusher)
-		payload, _ := json.Marshal(map[string]interface{}{
-			"event": "message",
-			"data": map[string]interface{}{
-				"answer":    "hello",
-				"reference": []interface{}{},
-			},
-		})
-		fmt.Fprintf(c.Writer, "data: %s\n\n", payload)
-		if flusher != nil {
-			flusher.Flush()
-		}
-		fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
-		if flusher != nil {
-			flusher.Flush()
-		}
-		return
-	}
-
-	// Non-stream branch — JSON envelope. OpenAI-compatible mode
-	// surfaces "choices" at the top level (not inside data) so the
-	// test contract `"choices" in nonstream_payload` is satisfied.
+	// TODO(phase5-openai-framing): the openai-compat branches below are
+	// stubs. They keep the existing "choices"-shape contract for the
+	// openai-compat tests, but the production wire format must mirror
+	// api/db/services/canvas_service.py:378-479 (`completion_openai`):
+	// per-token `delta.content`, cumulative token counts, `[DONE]`
+	// terminator, `reference` attached to the final choice. Land that
+	// once the chat path needs to interop with OpenAI clients.
 	if req.OpenAICompat {
 		c.JSON(http.StatusOK, gin.H{
 			"code": common.CodeSuccess,
@@ -924,14 +1010,76 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": gin.H{
-			"session_id": req.SessionID,
-			"data":       gin.H{"content": "hello"},
-		},
-		"message": "success",
-	})
+
+	// Real canvas run — derive userInput from `query` first, then fall
+	// back to the last user message (covers the front-end that posts
+	// running_hint_text without a top-level `query`).
+	var userInput any = req.Query
+	if req.Query == "" {
+		if extracted := extractUserInputFromFormInputs(req.Inputs); extracted != nil {
+			userInput = extracted
+		} else if extracted := extractLastUserContent(req.Messages); extracted != "" {
+			userInput = extracted
+		}
+	}
+	common.Debug("agent chat completions: derived user input",
+		append([]zap.Field{
+			zap.String("agent_id", req.AgentID),
+			zap.String("session_id", req.SessionID),
+		}, userInputMeta(userInput)...)...,
+	)
+
+	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput)
+	if err != nil {
+		common.Warn("agent chat completions: RunAgent failed",
+			append([]zap.Field{
+				zap.String("user_id", user.ID),
+				zap.String("agent_id", req.AgentID),
+				zap.String("session_id", req.SessionID),
+				zap.Error(err),
+			}, userInputMeta(userInput)...)...,
+		)
+		ec, em := mapAgentError(err)
+		jsonError(c, ec, em)
+		return
+	}
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	// SSE wire format is the unified python envelope used by both
+	// /api/v1/agents/chat/completions and /api/v1/agentbots/<id>/completions.
+	// One frame per canvas event, all routed through
+	// service.WriteChatbotRunEvent so the two paths share one writer
+	// and one shape — see internal/service/bot_completion.go for the
+	// frame definition. The same unified envelope is used by the
+	// /api/v1/agents/{canvas_id}/run and /api/v1/agentbots/<id>/completions
+	// endpoints, all going through service.WriteChatbotRunEvent. The
+	// channel close is signalled by `data: [DONE]\n\n`. We do NOT emit
+	// an SSE `event:` line — the front-end's `use-send-message.ts`
+	// parser feeds each `data:` line directly into JSON.parse and
+	// breaks on the `e` of `event:` (browser console: "SyntaxError:
+	// Unexpected token 'e', \"event: mes\"…").
+	for ev := range events {
+		common.Debug("agent chat completions: streaming event",
+			zap.String("agent_id", req.AgentID),
+			zap.String("session_id", req.SessionID),
+			zap.String("event_type", ev.Type),
+			zap.String("message_id", ev.MessageID),
+			zap.String("task_id", ev.TaskID),
+		)
+		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
+			common.Debug("agent chat completions: client disconnected",
+				zap.String("agent_id", req.AgentID),
+				zap.Error(err),
+			)
+			return
+		}
+	}
+	common.Debug("agent chat completions: stream closed",
+		zap.String("agent_id", req.AgentID),
+		zap.String("session_id", req.SessionID),
+	)
 }
 
 // RerunAgent POST /api/v1/agents/rerun — requires id, dsl, and
@@ -1093,4 +1241,48 @@ func (h *AgentHandler) checkCanvasAccessForHandler(c *gin.Context, userID, canva
 		return false, common.CodeOperatingError, "Make sure you have permission to access the agent."
 	}
 	return true, common.CodeSuccess, ""
+}
+
+// ResetAgent clears the per-run state of a canvas (history, retrieval,
+// memory, path) and zeroes every "sys.*" / "env.*" global. Mirrors
+// POST /api/v1/agents/:canvas_id/reset from the Python backend at
+// api/apps/restful_apis/agent_api.py:992 — but unlike the Python
+// implementation this handler does not sync a Canvas replica.
+// `api.apps.services.canvas_replica_service.CanvasReplicaService` is
+// the Python Redis-backed runtime replica (distributed lock + 3h TTL);
+// it is intentionally NOT ported to Go. The Go agent port runs every
+// agent through eino's compose.Workflow.Invoke, which is reconstructed
+// from the DSL on each run, so the replica's read-side acceleration
+// is unnecessary and its write-side adds an out-of-band DB/cache sync
+// for no benefit. UpdateAgent / CreateAgent / RerunAgent follow the
+// same convention — DSL write only, no Redis replica. See the
+// "canvas-replica-not-porting" project memory for the design rationale.
+//
+// The reset DSL is returned in the response body so the front-end
+// can render the new state without an extra GET, matching the
+// Python handler's `return get_json_result(data=dsl)` line.
+// @Summary Reset Agent
+// @Tags agents
+// @Produce json
+// @Param canvas_id path string true "canvas id"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{canvas_id}/reset [post]
+func (h *AgentHandler) ResetAgent(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		jsonError(c, code, msg)
+		return
+	}
+	canvasID := c.Param("canvas_id")
+	dsl, err := h.agentService.ResetAgent(c.Request.Context(), user.ID, canvasID)
+	if err != nil {
+		ec, em := mapAgentError(err)
+		jsonError(c, ec, em)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    dsl,
+		"message": "success",
+	})
 }

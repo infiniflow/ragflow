@@ -1266,7 +1266,7 @@ func TestGraph_50WayFanIn(t *testing.T) {
 	sg.AddEdge("merge", constants.End)
 
 	compiled, err := sg.Compile(
-		graph.WithRecursionLimit(branchCount + 10),
+		graph.WithRecursionLimit(branchCount+10),
 		graph.WithNodeTriggerMode(types.NodeTriggerAllPredecessor),
 	)
 	if err != nil {

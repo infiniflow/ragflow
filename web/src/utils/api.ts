@@ -102,6 +102,8 @@ export default {
   chatChannelDetail: (id: string) => `${restAPIv1}/chat-channels/${id}`,
   chatChannelUpdate: (id: string) => `${restAPIv1}/chat-channels/${id}`,
   chatChannelDel: (id: string) => `${restAPIv1}/chat-channels/${id}`,
+  chatChannelRuntime: (id: string) =>
+    `${restAPIv1}/chat-channels/${id}/runtime`,
 
   // plugin
   llmTools: `${restAPIv1}/plugin/tools`,
@@ -139,7 +141,7 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   unbindPipelineTask: (datasetId: string, indexType: string, wipe?: boolean) =>
     `${restAPIv1}/datasets/${datasetId}/${indexType.toLowerCase()}${wipe === false ? '?wipe=false' : ''}`,
-  pipelineRerun: `${webAPI}/canvas/rerun`,
+  pipelineRerun: `${restAPIv1}/agents/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
   updateDocumentsMetadata: (datasetId: string) =>

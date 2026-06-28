@@ -287,24 +287,27 @@ class DialogService(CommonService):
 
 
 async def async_chat_solo(dialog, messages, stream=True, session_id=None):
-    llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
     attachments = ""
     image_attachments = []
     image_files = []
-    if "files" in messages[-1]:
-        if "chat" in llm_types:
-            text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
-        else:
-            text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
-        attachments = "\n\n".join(text_attachments)
 
     if dialog.llm_id:
-        model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+        if "chat" in llm_types:
+            model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        else:
+            model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
     chat_mdl = LLMBundle(dialog.tenant_id, model_config, langfuse_session_id=session_id)
     factory = model_config.get("llm_factory", "") if model_config else ""
+    if "files" in messages[-1]:
+        if model_config["model_type"] == "chat":
+            text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
+        else:
+            text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
+        attachments = "\n\n".join(text_attachments)
 
     prompt_config = dialog.prompt_config
     tts_mdl = None
@@ -314,10 +317,10 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"]
     if attachments and msg:
         msg[-1]["content"] += attachments
-    if "chat" in llm_types and image_attachments:
+    if model_config["model_type"] == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
     if stream:
-        if "chat" in llm_types:
+        if model_config["model_type"] == "chat":
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
@@ -328,7 +331,7 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
                 continue
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
     else:
-        if "chat" in llm_types:
+        if model_config["model_type"] == "chat":
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
@@ -552,10 +555,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     chat_start_ts = timer()
     if dialog.llm_id:
         llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
-        if "image2text" in llm_types:
-            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
-        else:
+        if "chat" in llm_types:
             llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        else:
+            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         llm_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
@@ -759,10 +762,21 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res), "final": True}
         return
 
-    kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
+    # Only overwrite kwargs["knowledge"] when retrieval produced something;
+    # otherwise preserve any caller-supplied value.
+    knowledge_text = "\n\n------\n\n".join(knowledges)
+    if knowledge_text:
+        kwargs["knowledge"] = "\n------\n" + knowledge_text
+    else:
+        kwargs.setdefault("knowledge", "")
     gen_conf = dialog.llm_setting
 
-    msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs) + attachments_}]
+    system_content = prompt_config["system"].format(**kwargs) + attachments_
+    # If knowledge was retrieved but the template has no {knowledge}
+    # placeholder, auto-append it so the LLM still sees the context.
+    if knowledges and "{knowledge}" not in prompt_config.get("system", ""):
+        system_content += kwargs["knowledge"]
+    msg = [{"role": "system", "content": system_content}]
     prompt4citation = ""
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         prompt4citation = citation_prompt()
@@ -1056,7 +1070,9 @@ RULES:
    - Question mentions "not null" or "excluding null"
    - Add NULL check for count specific column
    - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. Output ONLY the SQL, no explanations"""
+7. json_extract_string() returns JSON-quoted strings ("value"), so WHERE comparisons MUST wrap values in double-quotes inside single-quotes (no spaces between quotes): '"value"' (e.g. WHERE json_extract_string(chunk_data, '$.name') = '"Alice"')
+8. For partial text search, use LIKE with wildcards: '"%value%"' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '"%Alice%"')
+9. Output ONLY the SQL, no explanations"""
         user_prompt = """Table: {}
 Fields (EXACT case): {}
 {}
@@ -1128,9 +1144,13 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
         logging.debug(f"use_sql: Executing SQL retrieval (attempt {tried_times})")
         tbl = settings.retriever.sql_retrieval(sql, format="json")
         if tbl is None:
-            logging.debug("use_sql: SQL retrieval returned None")
+            logging.debug("use_sql: SQL retrieval failed (returned None)")
             return None, sql
-        logging.debug(f"use_sql: SQL retrieval completed, got {len(tbl.get('rows', []))} rows")
+        row_count = len(tbl.get("rows", []))
+        if row_count == 0:
+            logging.debug("use_sql: SQL execution succeeded but returned 0 rows")
+        else:
+            logging.debug(f"use_sql: SQL retrieval completed, got {row_count} rows")
         return tbl, sql
 
     async def repair_table_for_missing_source_columns(previous_sql):
@@ -1289,7 +1309,7 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
     # compose Markdown table
     columns = "|" + "|".join([map_column_name(tbl["columns"][i]["name"]) for i in column_idx]) + ("|Source|" if docid_idx and doc_name_idx else "|")
 
-    line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and docid_idx else "")
+    line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and doc_name_idx else "")
 
     # Build rows ensuring column names match values - create a dict for each row
     # keyed by column name to handle any SQL column order

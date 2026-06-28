@@ -66,6 +66,8 @@ export default {
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
       selected: '已选择',
       seeAll: '查看全部',
+      owner: '所有者',
+      running: '运行中...',
     },
     login: {
       loginTitle: '登录账户',
@@ -343,7 +345,6 @@ export default {
       metadata: {
         fields: '字段',
         selectFiles: '已选择 {{count}} 个文件',
-        type: '类型',
         fieldNameInvalid: '字段名称只能包含字母或下划线。',
         builtIn: '内置',
         generation: '生成',
@@ -370,6 +371,7 @@ export default {
         value: '值',
         action: '操作',
         field: '字段',
+        type: '类型',
         description: '描述',
         fieldName: '字段名称',
         editMetadata: '编辑元数据',
@@ -832,6 +834,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
     },
     chunk: {
       chunk: '解析块',
+      createChunk: '创建解析块',
+      editChunk: '编辑解析块',
       bulk: '批量',
       selectAll: '选择所有',
       enabledSelected: '启用选定的',
@@ -1043,6 +1047,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
       deleteSelectedConfirm: '删除选中的 {{count}} 个会话？',
+      showChunkMetadata: '显示块元数据',
+      showChunkMetadataTip:
+        '在检索到的文本块旁边显示文档元数据（如标题、页码、上传日期）',
+      metadataFields: '元数据字段',
+      metadataFieldsTip: '选择每个块要显示的元数据字段',
     },
     setting: {
       Verify: '验证',
@@ -1226,6 +1235,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       chatChannelDesc: {
         clickclack: '连接 ClickClack 机器人',
         discord: '连接 Discord 机器人',
+        dingtalk: '连接钉钉机器人',
         feishu: '连接飞书 / Lark 机器人',
         googlechat: '连接 Google Chat 机器人',
         irc: '连接 IRC 服务器',
@@ -1598,6 +1608,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         author: '作者',
         sectionTitle: '章节标题',
       },
+      canvasCategory: '画布分类',
+      tags: '标签',
+      created: '创建于',
       editTags: '编辑标签',
       editTagsDescription: '添加标签以整理和筛选你的智能体。按回车或逗号添加。',
       tagsPlaceholder: '输入标签后按回车',
@@ -2574,6 +2587,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       okText: '保存',
       cancelText: '返回',
       chooseDataset: '请先选择知识库',
+      selectLocalePlaceholder: '选择语言',
     },
     language: {
       english: '英语',

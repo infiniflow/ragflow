@@ -207,3 +207,18 @@ func TestNewNLPRetrievalAdapter_NilService(t *testing.T) {
 		t.Errorf("err = %v, want ErrRetrievalServiceMissing", err)
 	}
 }
+
+func TestNLPRetrievalAdapter_ResolveTenantIDsStaysWithinRequestTenant(t *testing.T) {
+	a := &NLPRetrievalAdapter{}
+	got := a.resolveTenantIDs(RetrievalRequest{
+		TenantID:   "tenant-a",
+		DatasetIDs: []string{"kb-1", "kb-2", "kb-missing"},
+	})
+
+	if len(got) != 1 {
+		t.Fatalf("tenantIDs len=%d want 1, got=%v", len(got), got)
+	}
+	if got[0] != "tenant-a" {
+		t.Fatalf("tenantIDs=%v want [tenant-a]", got)
+	}
+}

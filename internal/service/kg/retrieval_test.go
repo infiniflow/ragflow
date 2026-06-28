@@ -100,9 +100,9 @@ func TestEntityFromChunk_MissingFields(t *testing.T) {
 
 func TestRelationFromChunk_Basic(t *testing.T) {
 	chunk := map[string]interface{}{
-		"from_entity_kwd":    "Elon Musk",
-		"to_entity_kwd":      "SpaceX",
-		"weight_int":         float64(5),
+		"from_entity_kwd":     "Elon Musk",
+		"to_entity_kwd":       "SpaceX",
+		"weight_int":          float64(5),
 		"content_with_weight": "Founder",
 	}
 	edge, rel := relationFromChunk(chunk)
@@ -488,7 +488,6 @@ func TestDefaultValuesMatchPython(t *testing.T) {
 type assertError string
 
 func (e assertError) Error() string { return string(e) }
-
 
 // --- indexName ---
 

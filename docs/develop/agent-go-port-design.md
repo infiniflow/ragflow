@@ -1048,7 +1048,7 @@ data: [DONE]
 可操作的下一轮跟进项 (按优先级)：
 
 1. **Compile LRU cache** — LRU 按 `(canvasID, versionID, DSL-hash)` 缓存编译产物；仅在 profiling 显示 `Compile` 主导热路径时启动。1-2 周。
-2. **Browser Playwright parity** — Python `browser.py` 29.4K vs Go 8.9K，差 3.3×。需要 scope 决策：完整 Playwright 移植 vs 缩减到核心场景。1 周。
+2. **Browser Playwright parity** — ✅ Done via `stagehand-go` local mode (see `~/.claude/plans/tingly-weaving-orbit.md`). v1 implements `Sessions.Start → Execute → End` for the natural-language `prompts` task; the v1 fixture loads and emits `content` + `downloaded_files` (always `[]` until the storage write path is ported). `upload_sources` / `persist_session` / `enable_default_extensions` / `chromium_sandbox` accepted in Update but ignored at Invoke. Multi-tenant `MODEL_API_KEY` recycling via process-singleton `StagehandRuntime`.
 3. **ExcelProcessor pandas-fidelity audit** — Python 端 15.5K vs Go 当前 happy-path 覆盖。1 天 audit + 修补。
 4. **Phase 8b real MemorySaver completion** — 端口 `internal/service/memory_message_service.go` 完整实现。1-2 周，user-deferred。
 5. **Phase 5c DB2 support** — CGO + `github.com/ibmdb/go_ibmdb` + native client lib。仅在 e2e 需求浮现时启动。0.5-1 周。
@@ -1321,7 +1321,7 @@ All tools extend `ToolBase`, expose `get_meta()` (OpenAI function-call schema), 
 | OQ #19 | Phase 8b real MemorySaver completion | ⏸️ Open | 1-2 weeks |
 | OQ #20 | Phase 5c DB2 e2e demand | ⏸️ Open (CGO + native lib) | 0.5-1 week if needed |
 | OQ #21 | Compile LRU cache | ⏸️ Open — defer until profiling | 1-2 weeks |
-| OQ #22 | Phase 6 component hardening | ⏸️ Open — Browser Playwright parity + ExcelProcessor audit | 1-2 weeks |
+| OQ #22 | Phase 6 component hardening | ✅ Done — Browser on stagehand-go local mode (see `~/.claude/plans/tingly-weaving-orbit.md`); `downloaded_files` / `upload_sources` / `persist_session` deferred to follow-up PRs; ExcelProcessor audit still ⏸️ Open | — |
 | OQ #23 | `tools/gen-component-parity` script | ✅ Done | — |
 
 ---

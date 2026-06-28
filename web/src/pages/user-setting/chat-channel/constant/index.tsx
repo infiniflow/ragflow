@@ -8,6 +8,7 @@ import { IChatChannelInfoMap } from '../interface';
 export enum ChatChannelKey {
   CLICKCLACK = 'clickclack',
   DISCORD = 'discord',
+  DINGTALK = 'dingtalk',
   FEISHU = 'feishu',
   GOOGLECHAT = 'googlechat',
   IRC = 'irc',
@@ -48,6 +49,7 @@ const channelIcon = (key: ChatChannelKey) => (
 const CHANNEL_NAMES: Record<ChatChannelKey, string> = {
   [ChatChannelKey.CLICKCLACK]: 'ClickClack',
   [ChatChannelKey.DISCORD]: 'Discord',
+  [ChatChannelKey.DINGTALK]: 'DingTalk',
   [ChatChannelKey.FEISHU]: 'Feishu / Lark',
   [ChatChannelKey.GOOGLECHAT]: 'Google Chat',
   [ChatChannelKey.IRC]: 'IRC',
@@ -89,6 +91,60 @@ export const useChatChannelInfo = () => {
     setChatChannelInfo(generateChatChannelInfo(t) as IChatChannelInfoMap);
   }, [t]);
   return { chatChannelInfo };
+};
+
+export const getChatChannelRuntimeStatusClass = (status?: string) => {
+  const normalized = (status || '').toLowerCase();
+  if (normalized === 'connected') {
+    return 'bg-state-success/10 text-state-success border-state-success/20';
+  }
+  if (
+    normalized === 'connecting' ||
+    normalized === 'reconnecting' ||
+    normalized === 'qr'
+  ) {
+    return 'bg-state-warning/10 text-state-warning border-state-warning/20';
+  }
+  if (normalized === 'waiting') {
+    return 'bg-state-warning/10 text-state-warning border-state-warning/20';
+  }
+  if (
+    normalized === 'error' ||
+    normalized === 'disconnected' ||
+    normalized === 'stopped'
+  ) {
+    return 'bg-state-error/10 text-state-error border-state-error/20';
+  }
+  return 'bg-gray-500/10 text-text-secondary border-border-button';
+};
+
+export const getChatChannelRuntimeStatusText = (status?: string) => {
+  const normalized = (status || '').toLowerCase();
+  if (normalized === 'connected') {
+    return 'Connected';
+  }
+  if (normalized === 'connecting') {
+    return 'Connecting...';
+  }
+  if (normalized === 'reconnecting') {
+    return 'Reconnecting...';
+  }
+  if (normalized === 'qr') {
+    return 'Scan the QR code below';
+  }
+  if (normalized === 'waiting') {
+    return 'Waiting for the channel to start';
+  }
+  if (normalized === 'error') {
+    return 'Runtime error';
+  }
+  if (normalized === 'disconnected') {
+    return 'Disconnected';
+  }
+  if (normalized === 'stopped') {
+    return 'Stopped';
+  }
+  return 'Waiting for runtime...';
 };
 
 const isPlainObject = (value: unknown): value is Record<string, any> =>
@@ -158,6 +214,21 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         type: FormFieldType.Text,
         required: false,
         placeholder: '1234567890',
+      },
+    ],
+    [ChatChannelKey.DINGTALK]: [
+      {
+        label: 'Client ID',
+        name: 'config.credential.client_id',
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: 'dingxxxxxxxxxxxx',
+      },
+      {
+        label: 'Client Secret',
+        name: 'config.credential.client_secret',
+        type: FormFieldType.Password,
+        required: true,
       },
     ],
     [ChatChannelKey.FEISHU]: [
@@ -541,11 +612,40 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
     ],
     [ChatChannelKey.WECOM]: [
       {
+        label: 'Connection Type',
+        name: 'config.credential.connection_type',
+        type: FormFieldType.Select,
+        required: true,
+        defaultValue: 'webhook',
+        options: [
+          { label: 'Webhook', value: 'webhook' },
+          { label: 'WebSocket', value: 'websocket' },
+        ],
+      },
+      {
+        label: 'Bot ID',
+        name: 'config.credential.bot_id',
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: 'AIBOTID',
+        shouldRender: (values: any) =>
+          values?.config?.credential?.connection_type === 'websocket',
+      },
+      {
+        label: 'Secret',
+        name: 'config.credential.secret',
+        type: FormFieldType.Password,
+        required: true,
+        placeholder: 'App Secret / Long-connection Secret',
+      },
+      {
         label: 'Corp ID',
         name: 'config.credential.corp_id',
         type: FormFieldType.Text,
         required: true,
         placeholder: 'ww1234567890abcdef',
+        shouldRender: (values: any) =>
+          values?.config?.credential?.connection_type !== 'websocket',
       },
       {
         label: 'Agent ID',
@@ -553,18 +653,16 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         type: FormFieldType.Number,
         required: true,
         placeholder: '1000001',
-      },
-      {
-        label: 'Secret',
-        name: 'config.credential.secret',
-        type: FormFieldType.Password,
-        required: true,
+        shouldRender: (values: any) =>
+          values?.config?.credential?.connection_type !== 'websocket',
       },
       {
         label: 'Token',
         name: 'config.credential.token',
         type: FormFieldType.Password,
         required: true,
+        shouldRender: (values: any) =>
+          values?.config?.credential?.connection_type !== 'websocket',
       },
       {
         label: 'AES Key',
@@ -572,6 +670,8 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         type: FormFieldType.Password,
         required: true,
         placeholder: '43 chars',
+        shouldRender: (values: any) =>
+          values?.config?.credential?.connection_type !== 'websocket',
       },
     ],
     [ChatChannelKey.WHATSAPP]: [],
@@ -646,7 +746,11 @@ export const ChatChannelFormDefaultValues: Record<
 // googlechat carries a non-credential discriminator (auth_mode).
 ChatChannelFormDefaultValues[ChatChannelKey.GOOGLECHAT].config.auth_mode =
   'webhook_url';
-
+ChatChannelFormDefaultValues[
+  ChatChannelKey.WECOM
+].config.credential.connection_type = 'webhook';
+ChatChannelFormDefaultValues[ChatChannelKey.FEISHU].config.credential.domain =
+  'feishu';
 export const getChatChannelFields = (
   key?: ChatChannelKey,
 ): FormFieldConfig[] => {

@@ -21,7 +21,7 @@ RESTful API migration. Each deprecated route forwards to the corresponding
 new API implementation.
 
 Deprecated APIs and their replacements:
-- POST /api/v1/agents/{agent_id}/completions -> POST /api/v1/agents/chat/completion
+- POST /api/v1/agents/{agent_id}/completions -> POST /api/v1/agents/chat/completions
 - POST /api/v1/agents_openai/{agent_id}/chat/completions -> POST /api/v1/agents/chat/completions
 - POST /api/v1/chats/{chat_id}/completions -> POST /api/v1/chat/completions
 - POST /api/v1/chats_openai/{chat_id}/chat/completions -> POST /api/v1/openai/{chat_id}/chat/completions
@@ -34,6 +34,7 @@ Deprecated APIs and their replacements:
 - PUT /api/v1/chats/{chat_id}/sessions/{session_id} -> PATCH /api/v1/chats/{chat_id}/sessions/{session_id}
 - DELETE /api/v1/chats -> DELETE /api/v1/chats/{chat_id} (with body)
 - POST /api/v1/file/convert -> POST /api/v1/files/link-to-datasets
+- POST /v1/document/upload_info -> POST /api/v1/documents/upload
 - GET /api/v1/file/* -> GET /api/v1/files*
 - POST /api/v1/file/* -> POST /api/v1/files*
 - GET /api/v1/document/get/{doc_id} -> GET /api/v1/documents/{doc_id}/preview
@@ -559,6 +560,25 @@ async def deprecated_file_upload_info():
     )
     # Forward to the new API implementation
     # Need to pass tenant_id explicitly since we're calling the function directly
+    tenant_id = current_user.id
+    return await document_api.upload_info(tenant_id=tenant_id)
+
+
+@legacy_v1_manager.route("/document/upload_info", methods=["POST"])
+@login_required
+async def deprecated_legacy_document_upload_info():
+    """
+    Deprecated: Use POST /api/v1/documents/upload instead.
+
+    Old path: POST /v1/document/upload_info
+    New path: POST /api/v1/documents/upload
+    """
+    from api.apps import current_user
+
+    logging.warning(
+        "API endpoint /v1/document/upload_info is deprecated. "
+        "Please use POST /api/v1/documents/upload instead."
+    )
     tenant_id = current_user.id
     return await document_api.upload_info(tenant_id=tenant_id)
 

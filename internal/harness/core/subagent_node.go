@@ -227,5 +227,3 @@ func subAgentCollectOutput(cfg *SubAgentNodeConfig, ctx context.Context, state i
 	}
 	return st, nil
 }
-
-

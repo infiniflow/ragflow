@@ -328,8 +328,12 @@ func TestValidate(t *testing.T) {
 func TestFilterMiddlewareByTypeName(t *testing.T) {
 	defer resetRegistries()
 
-	type mockMW struct{ core.BaseMiddleware[*schema.Message] }
-	type excludedMW struct{ core.BaseMiddleware[*schema.Message] }
+	type mockMW struct {
+		core.BaseMiddleware[*schema.Message]
+	}
+	type excludedMW struct {
+		core.BaseMiddleware[*schema.Message]
+	}
 
 	mws := []core.ReActMiddleware{
 		&mockMW{},
@@ -488,7 +492,7 @@ func TestExcludedToolNames(t *testing.T) {
 		},
 	})
 	RegisterHarness(&HarnessProfile{
-		Name:             "limited",
+		Name:              "limited",
 		ExcludedToolNames: []string{"dangerous_tool"},
 	})
 
@@ -514,8 +518,8 @@ type simpleTool struct {
 	desc string
 }
 
-func (t *simpleTool) Name() string             { return t.name }
-func (t *simpleTool) Description() string       { return t.desc }
+func (t *simpleTool) Name() string        { return t.name }
+func (t *simpleTool) Description() string { return t.desc }
 func (t *simpleTool) Invoke(ctx context.Context, args string, opts ...core.ToolOption) (string, error) {
 	return "result", nil
 }

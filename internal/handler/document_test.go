@@ -17,8 +17,10 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -44,6 +46,39 @@ type fakeDocumentService struct {
 	metadataErr     error
 	metadataKBID    string
 	metadataDocIDs  []string
+	uploadLocalData []map[string]interface{}
+	uploadLocalErrs []string
+	uploadLocalKB   *entity.Knowledgebase
+	uploadLocalPath string
+	uploadOverride  map[string]interface{}
+	ingestCode      common.ErrorCode
+	ingestErr       error
+	ingestUserID    string
+	ingestReq       *service.IngestDocumentRequest
+}
+
+func (f *fakeDocumentService) Ingest(userID string, req *service.IngestDocumentRequest) (common.ErrorCode, error) {
+	f.ingestUserID = userID
+	f.ingestReq = req
+	if f.ingestCode != 0 || f.ingestErr != nil {
+		return f.ingestCode, f.ingestErr
+	}
+	return common.CodeSuccess, nil
+}
+
+const uploadTestDatasetID = "123e4567-e89b-12d3-a456-426614174000"
+
+func (f *fakeDocumentService) UpdateDatasetDocument(userID, datasetID, documentID string, req *service.UpdateDatasetDocumentRequest, present map[string]bool) (*service.UpdateDatasetDocumentResponse, common.ErrorCode, error) {
+	return nil, common.CodeSuccess, nil
+}
+func (f *fakeDocumentService) BatchUpdateDocumentMetadatas(datasetID string, selector *service.DocumentMetadataSelector, updates []service.DocumentMetadataUpdate, deletes []service.DocumentMetadataDelete) (*service.BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error) {
+	return nil, common.CodeSuccess, nil
+}
+func (f *fakeDocumentService) UploadDocumentInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error) {
+	return nil, common.CodeSuccess, nil
+}
+func (f *fakeDocumentService) UploadDocumentInfoByURL(userID, rawURL string) (map[string]interface{}, common.ErrorCode, error) {
+	return nil, common.CodeSuccess, nil
 }
 
 func (f *fakeDocumentService) GetDocumentArtifact(filename string) (*service.ArtifactResponse, error) {
@@ -107,6 +142,9 @@ func (f *fakeDocumentService) ListDocuments(page, pageSize int) ([]*service.Docu
 func (f *fakeDocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	return nil, 0, nil
 }
+func (f *fakeDocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
+	return map[string]interface{}{}, common.CodeSuccess, nil
+}
 func (f *fakeDocumentService) GetThumbnail(docID string) (*service.ThumbnailResponse, error) {
 	return nil, nil
 }
@@ -133,6 +171,18 @@ func (f *fakeDocumentService) DeleteDocumentAllMetadata(docID string) error {
 func (f *fakeDocumentService) GetDocumentMetadataByID(docID string) (map[string]interface{}, error) {
 	return nil, nil
 }
+func (f *fakeDocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
+	f.uploadLocalKB = kb
+	f.uploadLocalPath = parentPath
+	f.uploadOverride = parserConfigOverride
+	return f.uploadLocalData, f.uploadLocalErrs
+}
+func (f *fakeDocumentService) UploadWebDocument(kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error) {
+	return nil, common.CodeServerError, fmt.Errorf("not implemented")
+}
+func (f *fakeDocumentService) UploadEmptyDocument(kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
+	return nil, common.CodeServerError, fmt.Errorf("not implemented")
+}
 
 func (f *fakeDocumentService) ListIngestionTasks(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	return nil, nil
@@ -157,6 +207,96 @@ func setupGinContextWithUser(method, path, body string) (*gin.Context, *httptest
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
 	return c, w
+}
+
+func setupUploadHandlerDB(t *testing.T, role string) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+		TranslateError: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&entity.User{},
+		&entity.Tenant{},
+		&entity.UserTenant{},
+		&entity.Knowledgebase{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+	if err := db.Create(&entity.User{ID: "user-1", Nickname: "test", Email: "test@test.com", Password: sptr("x")}).Error; err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	if err := db.Create(&entity.Tenant{ID: "tenant-1", LLMID: "llm-1", EmbdID: "embd-1", ASRID: "asr-1", Status: sptr(string(entity.StatusValid))}).Error; err != nil {
+		t.Fatalf("insert tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-1", TenantID: "tenant-1", Role: role, Status: sptr(string(entity.StatusValid))}).Error; err != nil {
+		t.Fatalf("insert user_tenant: %v", err)
+	}
+	pipelineID := "pipe-1"
+	if err := db.Create(&entity.Knowledgebase{
+		ID:           "123e4567e89b12d3a456426614174000",
+		TenantID:     "tenant-1",
+		Name:         "kb-upload",
+		EmbdID:       "embd-1",
+		CreatedBy:    "user-1",
+		Permission:   string(entity.TenantPermissionTeam),
+		ParserID:     "naive",
+		PipelineID:   &pipelineID,
+		ParserConfig: entity.JSONMap{"base": "cfg"},
+		Status:       sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert knowledgebase: %v", err)
+	}
+	return db
+}
+
+func setupUploadContext(t *testing.T, path string, fields map[string]string, fileName string, fileContent []byte) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for k, v := range fields {
+		if err := writer.WriteField(k, v); err != nil {
+			t.Fatalf("write field %s: %v", k, err)
+		}
+	}
+	part, err := writer.CreateFormFile("file", fileName)
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := part.Write(fileContent); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, path, &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Set("user", &entity.User{ID: "user-1"})
+	c.Set("user_id", "user-1")
+	c.Params = gin.Params{{Key: "dataset_id", Value: uploadTestDatasetID}}
+	return c, w
+}
+
+func setupDocumentIngestRoute(userID string, svc *fakeDocumentService) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: svc,
+		datasetService:  service.NewDatasetService(),
+	}
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: userID})
+		c.Set("user_id", userID)
+	})
+	r.POST("/api/v1/documents/ingest", h.Ingest)
+	return r
 }
 
 func TestDeleteDocumentsHandler_Success(t *testing.T) {
@@ -185,6 +325,115 @@ func TestDeleteDocumentsHandler_Success(t *testing.T) {
 	data := resp["data"].(map[string]interface{})
 	if data["deleted"] != float64(3) {
 		t.Fatalf("expected deleted=3, got %v", data["deleted"])
+	}
+}
+
+func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{
+		uploadLocalData: []map[string]interface{}{
+			{"id": "doc-1", "kb_id": "ds-1", "parser_id": "naive", "chunk_num": int64(0), "token_num": int64(0), "name": "a.txt"},
+		},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", map[string]string{
+		"parent_path":   "nested/path",
+		"parser_config": "{bad json",
+	}, "a.txt", []byte("abc"))
+
+	h.UploadDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if fake.uploadLocalKB == nil {
+		t.Fatalf("UploadLocalDocuments was not called, response=%s", w.Body.String())
+	}
+	if fake.uploadLocalKB.TenantID != "tenant-1" || fake.uploadLocalKB.Name != "kb-upload" || fake.uploadLocalKB.ParserID != "naive" {
+		t.Fatalf("incomplete kb passed to service: %+v", fake.uploadLocalKB)
+	}
+	if fake.uploadLocalPath != "nested/path" {
+		t.Fatalf("parent path=%q, want nested/path", fake.uploadLocalPath)
+	}
+	if fake.uploadOverride != nil {
+		t.Fatalf("bad parser_config should be ignored, got %v", fake.uploadOverride)
+	}
+}
+
+func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{
+		uploadLocalData: []map[string]interface{}{
+			{"id": "doc-1", "kb_id": "ds-1", "parser_id": "naive", "chunk_num": int64(0), "token_num": int64(0), "name": "ok.txt"},
+		},
+		uploadLocalErrs: []string{"bad.exe: This type of file has not been supported yet!"},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", nil, "ok.txt", []byte("abc"))
+	h.UploadDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected success for partial upload, got %v", resp)
+	}
+	data := resp["data"].(map[string]interface{})
+	if len(data["documents"].([]interface{})) != 1 {
+		t.Fatalf("expected one successful document, got %v", data["documents"])
+	}
+	if len(data["errors"].([]interface{})) != 1 {
+		t.Fatalf("expected one file error, got %v", data["errors"])
+	}
+}
+
+func TestUploadDocumentsHandler_DeniesNonNormalTeamRole(t *testing.T) {
+	db := setupUploadHandlerDB(t, "admin")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", nil, "a.txt", []byte("abc"))
+	h.UploadDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp["code"] == float64(common.CodeSuccess) {
+		t.Fatalf("expected authorization error, got %v", resp)
+	}
+	if fake.uploadLocalKB != nil {
+		t.Fatal("service should not be called on denied upload")
 	}
 }
 
@@ -303,6 +552,116 @@ func TestDeleteDocumentsHandler_MissingDatasetID(t *testing.T) {
 	code, _ := resp["code"].(float64)
 	if code == float64(common.CodeSuccess) {
 		t.Fatal("expected error for missing dataset_id")
+	}
+}
+
+func TestDocumentHandlerIngestMatchesPythonResponseShape(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("POST", "/api/v1/documents/ingest", `{"doc_ids":["doc-1"],"run":"1"}`)
+	h.Ingest(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected top-level code 0, got %v", resp["code"])
+	}
+	if resp["data"] != true {
+		t.Fatalf("expected top-level data=true, got %#v", resp["data"])
+	}
+	if _, ok := resp["data"].(map[string]interface{}); ok {
+		t.Fatalf("response must not nest code/message under data: %#v", resp["data"])
+	}
+	if fake.ingestUserID != "user-1" {
+		t.Fatalf("expected user-1, got %q", fake.ingestUserID)
+	}
+	if fake.ingestReq == nil || len(fake.ingestReq.DocIDs) != 1 || fake.ingestReq.DocIDs[0] != "doc-1" {
+		t.Fatalf("unexpected ingest request: %#v", fake.ingestReq)
+	}
+}
+
+func TestDocumentIngestRoutePassesPythonBodyToService(t *testing.T) {
+	fake := &fakeDocumentService{}
+	r := setupDocumentIngestRoute("user-1", fake)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/documents/ingest", strings.NewReader(`{"doc_ids":["doc-1","doc-2"],"run":1,"delete":true,"apply_kb":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) || resp["data"] != true {
+		t.Fatalf("unexpected response: %s", w.Body.String())
+	}
+	if fake.ingestUserID != "user-1" {
+		t.Fatalf("userID = %q, want user-1", fake.ingestUserID)
+	}
+	if fake.ingestReq == nil {
+		t.Fatal("service did not receive ingest request")
+	}
+	if len(fake.ingestReq.DocIDs) != 2 || fake.ingestReq.DocIDs[0] != "doc-1" || fake.ingestReq.DocIDs[1] != "doc-2" {
+		t.Fatalf("doc_ids = %#v, want [doc-1 doc-2]", fake.ingestReq.DocIDs)
+	}
+	if fmt.Sprint(fake.ingestReq.Run) != "1" {
+		t.Fatalf("run = %#v, want 1", fake.ingestReq.Run)
+	}
+	if !fake.ingestReq.Delete {
+		t.Fatal("delete = false, want true")
+	}
+	if !fake.ingestReq.ApplyKB {
+		t.Fatal("apply_kb = false, want true")
+	}
+}
+
+func TestDocumentHandlerIngestPropagatesServiceErrorCode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{
+		ingestCode: common.CodeAuthenticationError,
+		ingestErr:  fmt.Errorf("No authorization."),
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("POST", "/api/v1/documents/ingest", `{"doc_ids":["doc-1"],"run":"1"}`)
+	h.Ingest(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeAuthenticationError) {
+		t.Fatalf("expected auth error code, got %v", resp["code"])
+	}
+	if resp["message"] != "No authorization." {
+		t.Fatalf("unexpected message: %v", resp["message"])
+	}
+	if resp["data"] != nil {
+		t.Fatalf("expected nil data, got %#v", resp["data"])
 	}
 }
 

@@ -93,10 +93,9 @@ func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   false,
 	}
 
 	if chatModelConfig != nil {
@@ -121,16 +120,18 @@ func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 		}
 
 		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "enabled",
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
+			// SiliconFlow's chat completions API expects a boolean
+			// `enable_thinking` field, not a `thinking: {type: ...}` map
+			// (the latter is the DeepSeek format and is silently ignored
+			// by SiliconFlow, breaking the thinking feature).
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
 		}
+	}
+
+	// Qwen3 family: disable thinking by default (matches Python's
+	// _apply_model_family_policies in rag/llm/chat_model.py:119-121).
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -243,10 +244,9 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []M
 
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   true,
 	}
 
 	if chatModelConfig != nil {
@@ -273,18 +273,12 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []M
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+	}
 
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "enabled",
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
-		}
+	// Qwen3 family: disable thinking by default (matches Python's
+	// _apply_model_family_policies in rag/llm/chat_model.py:119-121).
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -743,6 +737,8 @@ func (s *SiliconflowModel) TranscribeAudio(modelName *string, file *string, apiC
 	writer := multipart.NewWriter(&body)
 
 	// open audio file
+
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
 	audioFile, err := os.Open(*file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
