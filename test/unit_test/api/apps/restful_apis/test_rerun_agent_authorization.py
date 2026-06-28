@@ -119,7 +119,9 @@ def _load_agent_api_for_rerun(monkeypatch, *, documents_info, accessible):
         monkeypatch,
         "api.utils.api_utils",
         add_tenant_id_to_kwargs=lambda func: func,
+        check_duplicate_ids=lambda ids, _kind="item": (ids, []),
         get_data_error_result=lambda message="Sorry": {"code": 102, "message": message, "data": None},
+        get_error_data_result=lambda message="Sorry", code=102: {"code": code, "message": message, "data": None},
         get_json_result=lambda code=0, message="", data=None: {"code": code, "message": message, "data": data},
         get_result=lambda **kwargs: kwargs,
         get_request_json=lambda: _awaitable(request_body),
@@ -131,7 +133,14 @@ def _load_agent_api_for_rerun(monkeypatch, *, documents_info, accessible):
         index_exist=lambda *_a, **_k: True,
         delete=lambda *_a, **_k: destructive_calls.__setitem__("index_delete", destructive_calls["index_delete"] + 1),
     )
-    _stub(monkeypatch, "common.settings", retriever=SimpleNamespace(), kg_retriever=SimpleNamespace(), docStoreConn=doc_store)
+    common_settings = _stub(
+        monkeypatch,
+        "common.settings",
+        retriever=SimpleNamespace(),
+        kg_retriever=SimpleNamespace(),
+        docStoreConn=doc_store,
+    )
+    monkeypatch.setitem(sys.modules, "common", SimpleNamespace(settings=common_settings))
     _stub(monkeypatch, "common.ssrf_guard", assert_host_is_safe=lambda *_a, **_k: None)
     _stub(monkeypatch, "common.constants", RetCode=SimpleNamespace(OPERATING_ERROR=109))
     _stub(
