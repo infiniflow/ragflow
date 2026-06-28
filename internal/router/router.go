@@ -145,6 +145,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// the RAGFlow auth middleware.
 	engine.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 	engine.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+	engine.GET("/connectors/box/oauth/web/callback", r.connectorHandler.BoxWebOAuthCallback)
 
 	apiNoAuth := engine.Group("/api/v1")
 	{
@@ -175,9 +176,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Document images are embedded directly in pages and match Python's public route.
 		apiNoAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 
-		// Google redirects here after Gmail / Google Drive web OAuth completes.
+		// OAuth callbacks — Gmail, Google Drive, and Box redirect the user's browser here;
+		// no auth middleware is applied on this group.
 		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+		apiNoAuth.GET("/connectors/box/oauth/web/callback", r.connectorHandler.BoxWebOAuthCallback)
+
 		// Forgot-password flow (fixes #15282).
 		// Routes are intentionally registered before any auth middleware:
 		// a user who has forgotten their password is, by definition,
@@ -549,6 +553,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.POST("/", r.connectorHandler.CreateConnector)
 				connector.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connector.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
+				connector.POST("/box/oauth/web/start", r.connectorHandler.StartBoxWebOAuth)
+				connector.POST("/box/oauth/web/result", r.connectorHandler.PollBoxWebOAuthResult)
 				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
 				connector.PATCH("/:connector_id", r.connectorHandler.UpdateConnector)
 				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)

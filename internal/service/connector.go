@@ -50,6 +50,9 @@ const (
 	googleOAuthAuthorizeURL  = "https://accounts.google.com/o/oauth2/auth"
 	googleOAuthTokenURL      = "https://oauth2.googleapis.com/token"
 	googleOAuthHTTPTimeout   = 7 * time.Second
+	boxOAuthTokenURL         = "https://api.box.com/oauth2/token"
+	boxOAuthAuthorizeURL     = "https://account.box.com/api/oauth2/authorize"
+	boxOAuthHTTPTimeout      = 7 * time.Second
 )
 
 var (
@@ -981,4 +984,269 @@ func (s *ConnectorService) ListLog(connectorID, userID string, page, pageSize in
 		logs = []*entity.ConnectorSyncLog{}
 	}
 	return logs, total, common.CodeSuccess, nil
+}
+
+// ── Box OAuth ─────────────────────────────────────────────────────────────────
+
+// boxWebOAuthState is the Redis state written by the Box OAuth start endpoint.
+// Mirrors Python: {"user_id", "auth_url", "client_id", "client_secret", "created_at"}.
+type boxWebOAuthState struct {
+	UserID       string `json:"user_id"`
+	AuthURL      string `json:"auth_url"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	RedirectURI  string `json:"redirect_uri,omitempty"`
+	CreatedAt    int64  `json:"created_at"`
+}
+
+// boxWebOAuthResult is stored in Redis after a successful token exchange.
+// Mirrors Python: {"user_id", "client_id", "client_secret", "access_token", "refresh_token"}.
+type boxWebOAuthResult struct {
+	UserID       string `json:"user_id"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+// boxOAuthTokenResponse is the JSON payload returned by Box's token endpoint.
+type boxOAuthTokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int64  `json:"expires_in"`
+	Error        string `json:"error"`
+	ErrorDesc    string `json:"error_description"`
+}
+
+// StartBoxWebOAuthRequest is the request body for POST /connectors/box/oauth/web/start.
+type StartBoxWebOAuthRequest struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	RedirectURI  string `json:"redirect_uri,omitempty"`
+}
+
+// StartBoxWebOAuthResponse is returned by the Box OAuth start endpoint and tells
+// the caller where to send the browser plus how long the flow stays valid.
+type StartBoxWebOAuthResponse struct {
+	FlowID           string `json:"flow_id"`
+	AuthorizationURL string `json:"authorization_url"`
+	ExpiresIn        int64  `json:"expires_in"`
+}
+
+// PollBoxWebOAuthResultRequest is the request body for POST /connectors/box/oauth/web/result.
+type PollBoxWebOAuthResultRequest struct {
+	FlowID string `json:"flow_id"`
+}
+
+// PollBoxWebOAuthResultResponse contains the full Box credential set.
+type PollBoxWebOAuthResultResponse struct {
+	Credentials *boxWebOAuthResult `json:"credentials"`
+}
+
+// StartBoxWebOAuth initiates the Box OAuth web flow. It validates the supplied
+// client credentials, generates a flow ID, builds the Box authorization URL, and
+// persists the initial state in Redis (keyed by flow ID) so the later callback
+// can recover the credentials. Returns the authorization URL the browser should
+// open and the flow's TTL. Mirrors Python start_box_web_oauth.
+func (s *ConnectorService) StartBoxWebOAuth(userID string, req *StartBoxWebOAuthRequest) (*StartBoxWebOAuthResponse, common.ErrorCode, error) {
+	if req == nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("Box client_id and client_secret are required.")
+	}
+	clientID := strings.TrimSpace(req.ClientID)
+	clientSecret := strings.TrimSpace(req.ClientSecret)
+	if clientID == "" || clientSecret == "" {
+		return nil, common.CodeArgumentError, fmt.Errorf("Box client_id and client_secret are required.")
+	}
+
+	redirectURI := strings.TrimSpace(req.RedirectURI)
+	if redirectURI == "" {
+		redirectURI = defaultBoxWebOAuthRedirectURI()
+	}
+
+	flowID := common.GenerateUUID()
+	authURL := buildBoxAuthorizationURL(clientID, redirectURI, flowID)
+
+	redisClient := cache.Get()
+	if redisClient == nil {
+		return nil, common.CodeServerError, fmt.Errorf("Redis is not configured on the server.")
+	}
+
+	state := boxWebOAuthState{
+		UserID:       userID,
+		AuthURL:      authURL,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		RedirectURI:  redirectURI,
+		CreatedAt:    time.Now().Unix(),
+	}
+	if ok := redisClient.SetObj(webStateCacheKey(flowID, "box"), state, webFlowTTL); !ok {
+		return nil, common.CodeServerError, fmt.Errorf("Failed to initialize Box OAuth flow.")
+	}
+
+	return &StartBoxWebOAuthResponse{
+		FlowID:           flowID,
+		AuthorizationURL: authURL,
+		ExpiresIn:        int64(webFlowTTL.Seconds()),
+	}, common.CodeSuccess, nil
+}
+
+// buildBoxAuthorizationURL builds the Box OAuth2 authorize URL for the given
+// client, redirect target, and state (flow ID). Equivalent to the URL produced
+// by the Box SDK's get_authorize_url.
+func buildBoxAuthorizationURL(clientID, redirectURI, state string) string {
+	q := url.Values{}
+	q.Set("client_id", clientID)
+	q.Set("response_type", "code")
+	q.Set("state", state)
+	if redirectURI != "" {
+		q.Set("redirect_uri", redirectURI)
+	}
+	return boxOAuthAuthorizeURL + "?" + q.Encode()
+}
+
+// BoxWebOAuthCallback handles the redirect from Box after the user grants access.
+// It exchanges the authorization code for tokens and stores the result in Redis.
+// Returns an HTML popup page (same shape as Google OAuth, source="box").
+func (s *ConnectorService) BoxWebOAuthCallback(stateID, oauthError, errorDescription, code string) string {
+	stateID = strings.TrimSpace(stateID)
+	if stateID == "" {
+		return renderGoogleWebOAuthPopup("", false, "Missing OAuth state parameter.", "box")
+	}
+
+	redisClient := cache.Get()
+	if redisClient == nil {
+		return renderGoogleWebOAuthPopup(stateID, false, "Authorization session expired. Please restart from the main window.", "box")
+	}
+
+	stateKey := webStateCacheKey(stateID, "box")
+	var state boxWebOAuthState
+	if ok := redisClient.GetObj(stateKey, &state); !ok {
+		return renderGoogleWebOAuthPopup(stateID, false, "Authorization session expired. Please restart from the main window.", "box")
+	}
+
+	if strings.TrimSpace(oauthError) != "" {
+		redisClient.Delete(stateKey)
+		message := strings.TrimSpace(errorDescription)
+		if message == "" {
+			message = strings.TrimSpace(oauthError)
+		}
+		if message == "" {
+			message = "Authorization was cancelled."
+		}
+		return renderGoogleWebOAuthPopup(stateID, false, message, "box")
+	}
+
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return renderGoogleWebOAuthPopup(stateID, false, "Missing authorization code from Box.", "box")
+	}
+
+	accessToken, refreshToken, err := exchangeBoxOAuthCode(state.ClientID, state.ClientSecret, state.RedirectURI, code)
+	if err != nil {
+		redisClient.Delete(stateKey)
+		return renderGoogleWebOAuthPopup(stateID, false, "Failed to exchange tokens with Box. Please retry.", "box")
+	}
+
+	result := boxWebOAuthResult{
+		UserID:       state.UserID,
+		ClientID:     state.ClientID,
+		ClientSecret: state.ClientSecret,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	}
+	if ok := redisClient.SetObj(webResultCacheKey(stateID, "box"), result, webFlowTTL); !ok {
+		redisClient.Delete(stateKey)
+		return renderGoogleWebOAuthPopup(stateID, false, "Failed to store authorization result. Please retry.", "box")
+	}
+	redisClient.Delete(stateKey)
+
+	return renderGoogleWebOAuthPopup(stateID, true, "Authorization completed successfully.", "box")
+}
+
+// PollBoxWebOAuthResult retrieves the Box OAuth result for the given flow.
+// Mirrors Python poll_box_web_result: verifies caller owns the flow, then returns
+// the stored credential set and deletes it from Redis.
+func (s *ConnectorService) PollBoxWebOAuthResult(userID string, req *PollBoxWebOAuthResultRequest) (*PollBoxWebOAuthResultResponse, common.ErrorCode, error) {
+	if req == nil || strings.TrimSpace(req.FlowID) == "" {
+		return nil, common.CodeArgumentError, fmt.Errorf("required argument is missing: flow_id")
+	}
+
+	redisClient := cache.Get()
+	if redisClient == nil {
+		return nil, common.CodeRunning, fmt.Errorf("Authorization is still pending.")
+	}
+
+	resultKey := webResultCacheKey(strings.TrimSpace(req.FlowID), "box")
+	var result boxWebOAuthResult
+	if ok := redisClient.GetObj(resultKey, &result); !ok {
+		return nil, common.CodeRunning, fmt.Errorf("Authorization is still pending.")
+	}
+
+	if result.UserID != userID {
+		return nil, common.CodePermissionError, fmt.Errorf("You are not allowed to access this authorization result.")
+	}
+
+	redisClient.Delete(resultKey)
+	return &PollBoxWebOAuthResultResponse{Credentials: &result}, common.CodeSuccess, nil
+}
+
+// exchangeBoxOAuthCode exchanges an authorization code for Box access + refresh tokens.
+// Box token endpoint: POST https://api.box.com/oauth2/token
+func exchangeBoxOAuthCode(clientID, clientSecret, redirectURI, code string) (accessToken, refreshToken string, err error) {
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", code)
+	form.Set("client_id", clientID)
+	form.Set("client_secret", clientSecret)
+
+	if redirectURI != "" {
+		form.Set("redirect_uri", redirectURI)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), boxOAuthHTTPTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, boxOAuthTokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, httpErr := http.DefaultClient.Do(req)
+	if httpErr != nil {
+		return "", "", httpErr
+	}
+	defer resp.Body.Close()
+
+	body, httpErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if httpErr != nil {
+		return "", "", httpErr
+	}
+
+	var token boxOAuthTokenResponse
+	if err := json.Unmarshal(body, &token); err != nil {
+		return "", "", err
+	}
+	if resp.StatusCode >= http.StatusBadRequest || token.Error != "" {
+		if token.ErrorDesc != "" {
+			return "", "", errors.New(token.ErrorDesc)
+		}
+		if token.Error != "" {
+			return "", "", errors.New(token.Error)
+		}
+		return "", "", fmt.Errorf("box token exchange failed: HTTP %d", resp.StatusCode)
+	}
+	if token.AccessToken == "" {
+		return "", "", fmt.Errorf("box token exchange returned empty access_token")
+	}
+	return token.AccessToken, token.RefreshToken, nil
+}
+
+// defaultBoxWebOAuthRedirectURI returns the configured Box OAuth redirect URI
+// from the BOX_WEB_OAUTH_REDIRECT_URI environment variable, falling back to
+// the same default as Python: http://localhost:9380/v1/connector/box/oauth/web/callback.
+func defaultBoxWebOAuthRedirectURI() string {
+	return getenvDefault("BOX_WEB_OAUTH_REDIRECT_URI", "http://localhost:9380/v1/connector/box/oauth/web/callback")
 }
