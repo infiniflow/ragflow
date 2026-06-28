@@ -6,7 +6,7 @@
   "url_suffix": {
     "chat": "v2/chat",
     "models": "v1/models",
-    "embeddings": "v2/embed",
+    "embedding": "v2/embed",
     "rerank": "v2/rerank",
     "asr": "audio/transcriptions"
   },

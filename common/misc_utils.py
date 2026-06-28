@@ -16,6 +16,7 @@
 
 import asyncio
 import base64
+import contextvars
 import functools
 import hashlib
 import logging
@@ -95,8 +96,8 @@ async def download_img(url):
                             location = response.headers.get("location")
                             if not location:
                                 logger.warning(
-                                    "download_img redirect missing Location header: url=%r status=%s redirect_hops=%s",
-                                    current_url,
+                                    "download_img redirect missing Location header: status=%s redirect_hops=%s",
+                                
                                     response.status_code,
                                     redirect_hops,
                                 )
@@ -104,8 +105,8 @@ async def download_img(url):
                             return ("redirect", urljoin(current_url, location))
                         if response.status_code != 200:
                             logger.warning(
-                                "download_img non-200 response: url=%r status=%s redirect_hops=%s",
-                                current_url,
+                                "download_img non-200 response: status=%s redirect_hops=%s",
+                                
                                 response.status_code,
                                 redirect_hops,
                             )
@@ -114,8 +115,14 @@ async def download_img(url):
                         async for chunk in response.aiter_bytes():
                             if len(body) + len(chunk) > _OAUTH_AVATAR_MAX_BYTES:
                                 logger.warning(
-                                    "download_img response exceeded max size: url=%r max_bytes=%s",
-                                    current_url,
+                                    # codeql[py/clear-text-logging-sensitive-data]
+                                    # False positive: current_url was dropped
+                                    # from the format args in this branch to
+                                    # avoid leaking OAuth tokens embedded in
+                                    # the URL query string. Only the static
+                                    # threshold value is logged.
+                                    "download_img response exceeded max size: max_bytes=%s",
+
                                     _OAUTH_AVATAR_MAX_BYTES,
                                 )
                                 await response.aclose()
@@ -134,16 +141,14 @@ async def download_img(url):
             kind, payload = await asyncio.wait_for(_stream_one_get(), timeout=request_timeout)
         except asyncio.TimeoutError:
             logger.warning(
-                "download_img total wall-clock timeout: url=%r redirect_hops=%s timeout=%s",
-                current_url,
+                "download_img total wall-clock timeout: redirect_hops=%s timeout=%s",
                 redirect_hops,
                 request_timeout,
             )
             return ""
         except Exception as exc:
             logger.warning(
-                "download_img request failed: url=%r redirect_hops=%s err=%s",
-                current_url,
+                "download_img request failed: redirect_hops=%s err=%s",
                 redirect_hops,
                 exc,
             )
@@ -157,9 +162,13 @@ async def download_img(url):
             return ""
         return str(payload)
 
+    # codeql[py/clear-text-logging-sensitive-data]
+    # False positive: current_url was already dropped from the format
+    # args in this branch to avoid leaking OAuth tokens. Only the
+    # hop count and configured max are logged.
     logger.warning(
-        "download_img redirect hop limit exceeded: url=%r redirect_hops=%s max_redirects=%s",
-        current_url,
+        "download_img redirect hop limit exceeded: redirect_hops=%s max_redirects=%s",
+
         redirect_hops,
         _OAUTH_AVATAR_MAX_REDIRECTS,
     )
@@ -250,8 +259,13 @@ def _thread_pool_executor():
 
 
 async def thread_pool_exec(func, *args, **kwargs):
+    # loop.run_in_executor() submits the callable without propagating the caller's
+    # contextvars (unlike asyncio.to_thread, which copies the context). Copy the
+    # current context and run the callable inside it so ContextVars set by the
+    # caller (e.g. tracing / per-request state) are visible in the worker thread.
     loop = asyncio.get_running_loop()
+    ctx = contextvars.copy_context()
     if kwargs:
-        func = functools.partial(func, *args, **kwargs)
-        return await loop.run_in_executor(_thread_pool_executor(), func)
-    return await loop.run_in_executor(_thread_pool_executor(), func, *args)
+        inner = functools.partial(func, *args, **kwargs)
+        return await loop.run_in_executor(_thread_pool_executor(), ctx.run, inner)
+    return await loop.run_in_executor(_thread_pool_executor(), ctx.run, func, *args)

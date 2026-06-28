@@ -154,8 +154,8 @@ class TestGenerateMetadata(_BasePostProcessorTest):
         ctx = make_task_context(
             parser_config={
                 "enable_metadata": True,
-                "metadata": [{"name": "category", "type": "string"}],
-                "built_in_metadata": ["author", "date"],
+                "metadata": [{"key": "category", "type": "string"}],
+                "built_in_metadata": [{"key": "update_time", "type": "time"}],
             },
         )
         docs = [{"content_with_weight": "This is test content"}]
@@ -164,12 +164,8 @@ class TestGenerateMetadata(_BasePostProcessorTest):
         p3 = patch("rag.svr.task_executor_refactor.chunk_post_processor.get_llm_cache",
                    return_value=None)
         p4 = patch("rag.svr.task_executor_refactor.chunk_post_processor.set_llm_cache")
-        p5 = self._patch_prompt_func(
-            "rag.svr.task_executor_refactor.chunk_post_processor.gen_metadata",
-            return_value={"category": "test"},
-        )
-        p6 = patch("rag.svr.task_executor_refactor.chunk_post_processor.DocMetadataService")
-        with p1, p2, p3, p4, p5, p6 as mock_meta:
+        p5 = patch("rag.svr.task_executor_refactor.chunk_post_processor.DocMetadataService")
+        with p1, p2, p3, p4, p5 as mock_meta:
             mock_meta.get_document_metadata.return_value = {}
             mock_meta.update_document_metadata = MagicMock()
             await generate_metadata(docs, ctx)
@@ -181,8 +177,8 @@ class TestGenerateMetadata(_BasePostProcessorTest):
         ctx = make_task_context(
             parser_config={
                 "enable_metadata": True,
-                "metadata": [{"name": "category", "type": "string"}],
-                "built_in_metadata": ["author", "date"],
+                "metadata": [{"key": "category", "type": "string"}],
+                "built_in_metadata": [{"key": "update_time", "type": "time"}],
             },
             write_interceptor=MagicMock(),
         )
@@ -192,16 +188,78 @@ class TestGenerateMetadata(_BasePostProcessorTest):
         p3 = patch("rag.svr.task_executor_refactor.chunk_post_processor.get_llm_cache",
                    return_value=None)
         p4 = patch("rag.svr.task_executor_refactor.chunk_post_processor.set_llm_cache")
-        p5 = self._patch_prompt_func(
-            "rag.svr.task_executor_refactor.chunk_post_processor.gen_metadata",
-            return_value={"category": "test"},
-        )
-        p6 = patch("rag.svr.task_executor_refactor.chunk_post_processor.DocMetadataService")
-        with p1, p2, p3, p4, p5, p6:
+        p5 = patch("rag.svr.task_executor_refactor.chunk_post_processor.DocMetadataService")
+        with p1, p2, p3, p4, p5:
             await generate_metadata(docs, ctx)
             ctx.write_interceptor.intercept.assert_called_once_with(
                 "DocMetadataService.update_document_metadata"
             )
+
+    @pytest.mark.asyncio
+    async def test_generate_metadata_empty_config_does_not_crash(self):
+        """Empty parser_config — no metadata configured — should not crash."""
+        ctx = make_task_context(parser_config={})
+        docs = [{"content_with_weight": "test"}]
+        p1, p2 = self._mock_llm_binding()
+        p3 = patch("rag.svr.task_executor_refactor.chunk_post_processor.DocMetadataService")
+        with p1, p2, p3:
+            await generate_metadata(docs, ctx)  # no exception = pass
+
+    @pytest.mark.asyncio
+    async def test_generate_metadata_enum_none_accepted(self):
+        """enum: None in metadata — treated as absent, should not crash."""
+        ctx = make_task_context(
+            parser_config={
+                "enable_metadata": True,
+                "metadata": [{"key": "format", "type": "string", "enum": None}],
+            },
+        )
+        docs = [{"content_with_weight": "test"}]
+        p1, p2 = self._mock_llm_binding()
+        p3 = patch("rag.svr.task_executor_refactor.chunk_post_processor.get_llm_cache",
+                   return_value=None)
+        p4 = patch("rag.svr.task_executor_refactor.chunk_post_processor.set_llm_cache")
+        p5 = patch("rag.svr.task_executor_refactor.chunk_post_processor.DocMetadataService")
+        with p1, p2, p3, p4, p5:
+            await generate_metadata(docs, ctx)  # no exception = pass
+
+    @pytest.mark.asyncio
+    async def test_generate_metadata_description_none_accepted(self):
+        """description: None in metadata — should not crash."""
+        ctx = make_task_context(
+            parser_config={
+                "enable_metadata": True,
+                "metadata": [{"key": "test", "type": "string", "description": None}],
+            },
+        )
+        docs = [{"content_with_weight": "test"}]
+        p1, p2 = self._mock_llm_binding()
+        p3 = patch("rag.svr.task_executor_refactor.chunk_post_processor.get_llm_cache",
+                   return_value=None)
+        p4 = patch("rag.svr.task_executor_refactor.chunk_post_processor.set_llm_cache")
+        p5 = patch("rag.svr.task_executor_refactor.chunk_post_processor.DocMetadataService")
+        with p1, p2, p3, p4, p5:
+            await generate_metadata(docs, ctx)  # no exception = pass
+
+    @pytest.mark.asyncio
+    async def test_generate_metadata_built_in_with_enum_none(self):
+        """built_in_metadata with enum: None — should not crash."""
+        ctx = make_task_context(
+            parser_config={
+                "enable_metadata": True,
+                "built_in_metadata": [
+                    {"key": "update_time", "type": "time", "description": None, "enum": None},
+                ],
+            },
+        )
+        docs = [{"content_with_weight": "test"}]
+        p1, p2 = self._mock_llm_binding()
+        p3 = patch("rag.svr.task_executor_refactor.chunk_post_processor.get_llm_cache",
+                   return_value=None)
+        p4 = patch("rag.svr.task_executor_refactor.chunk_post_processor.set_llm_cache")
+        p5 = patch("rag.svr.task_executor_refactor.chunk_post_processor.DocMetadataService")
+        with p1, p2, p3, p4, p5:
+            await generate_metadata(docs, ctx)  # no exception = pass
 
 
 class TestApplyTags(_BasePostProcessorTest):

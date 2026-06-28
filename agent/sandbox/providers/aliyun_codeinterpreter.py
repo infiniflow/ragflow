@@ -226,7 +226,7 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
             # Connect to existing sandbox instance
             sandbox = Sandbox.connect(sandbox_id=instance_id, config=self._config)
 
-            # agentrun-sdk 0.0.26 only exposes CodeLanguage.PYTHON; keep JS as string fallback.
+            # CodeLanguage enum only exposes PYTHON across agentrun-sdk 0.0.26+; keep JS as string fallback.
             code_language = CodeLanguage.PYTHON if normalized_lang == "python" else "javascript"
 
             # Wrap code to call main() function
@@ -355,7 +355,7 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
             # Try to list templates to verify connection
             from agentrun.sandbox import Template
 
-            templates = Template.list(config=self._config)
+            templates = Template.list_templates(config=self._config)
             return templates is not None
 
         except Exception as e:

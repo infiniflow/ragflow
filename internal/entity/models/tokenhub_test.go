@@ -274,7 +274,7 @@ func TestTokenHubEmbedHappyPath(t *testing.T) {
 
 func TestTokenHubEmbedValidatesInputs(t *testing.T) {
 	apiKey := "test-key"
-	if embeddings, err := newTokenHubForTest("http://unused").Embed(nil, nil, nil, nil); err != nil || len(embeddings) != 0 {
+	if embeddings, err := newTokenHubForTest("http://unused").Embed(nil, nil, &APIConfig{ApiKey: &apiKey}, nil); err != nil || len(embeddings) != 0 {
 		t.Fatalf("empty input should return empty embeddings, got %#v err=%v", embeddings, err)
 	}
 	if _, err := newTokenHubForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
@@ -305,7 +305,7 @@ func TestTokenHubListModelsHappyPathSkipsMalformedItems(t *testing.T) {
 		t.Fatalf("ListModels: %v", err)
 	}
 	want := []string{"gpt-4o-mini", "gpt-4o"}
-	if strings.Join(models, ",") != strings.Join(want, ",") {
+	if joinModelNames(models, ",") != strings.Join(want, ",") {
 		t.Fatalf("models=%v, want %v", models, want)
 	}
 }

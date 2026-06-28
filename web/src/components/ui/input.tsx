@@ -84,7 +84,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
               !!prefix && prefixWidth ? `${prefixWidth}px` : '',
             paddingInlineEnd: isPasswordInput
               ? '40px'
-              : !!suffix
+              : suffix
                 ? `${suffixWidth}px`
                 : '',
           }}
@@ -154,9 +154,6 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
 );
 
 Input.displayName = 'Input';
-
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
-export interface ExpandedInputProps extends InputProps {}
 
 const ExpandedInput = Input;
 

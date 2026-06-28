@@ -43,6 +43,7 @@ int32_t POSTable::Load() {
         x.second = index++;
         pos_vec_.push_back(x.first);
     }
+    table_size_ = static_cast<int32_t>(pos_vec_.size());
     return 0;
     // return Status::OK();
 }

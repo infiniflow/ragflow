@@ -24,9 +24,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	infinity "github.com/infiniflow/infinity-go-sdk"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
+
+	infinity "github.com/infiniflow/infinity-go-sdk"
 
 	"go.uber.org/zap"
 )
@@ -110,6 +113,17 @@ func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID strin
 		return fmt.Errorf("Failed to create secondary index on kb_id: %w", err)
 	}
 
+	// Create secondary index on meta_fields for metadata filter queries
+	_, err = table.CreateIndex(
+		fmt.Sprintf("idx_%s_meta_fields", tableName),
+		infinity.NewIndexInfo("meta_fields", infinity.IndexTypeSecondary, nil),
+		infinity.ConflictTypeIgnore,
+		"",
+	)
+	if err != nil {
+		return fmt.Errorf("Failed to create secondary index on meta_fields: %w", err)
+	}
+
 	return nil
 }
 
@@ -188,8 +202,31 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 }
 
 // UpdateMetadata updates or inserts document metadata in tenant's metadata table.
-// If a row with the given docID and datasetID exists, it merges the new metadata with existing.
-// If no row exists, it inserts a new row.
+//
+// "Updates" here means MERGE, not replace. The supplied metaFields are
+// overlaid on top of the row's existing meta_fields map: keys already
+// present are overwritten with the new value, keys not in the input
+// are preserved, and brand-new keys are added. If no row exists for
+// (docID, datasetID), one is inserted containing exactly metaFields.
+//
+// Examples (existing row → input → resulting meta_fields):
+//
+//	{character:["曹操","孙权"], year:2025}
+//	  + {author:["John","Tom"], category:"tech"}
+//	  = {character:["曹操","孙权"], year:2025, author:["John","Tom"], category:"tech"}
+//
+//	{character:["曹操","孙权"], year:2025}
+//	  + {year:2025}
+//	  = {character:["曹操","孙权"], year:2025}    // year value unchanged, character preserved
+//
+//	(empty / row absent) + {author:"Tom"} = {author:"Tom"}
+//
+// Note: this is at odds with the SET-METADATA CLI's name, which a
+// reader naturally parses as "replace". The merge semantics exist so
+// that user-driven metadata edits compose with auto-extracted fields
+// produced by the LLM extraction pipeline. See the CLI parser in
+// internal/cli/user_parser.go (parseSetMeta) for the user-facing
+// surface that drives this engine method.
 func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.UpdateMetadata called", zap.String("tableName", tableName), zap.String("docID", docID), zap.String("datasetID", datasetID))
@@ -499,4 +536,402 @@ func (e *infinityEngine) DropMetadataStore(ctx context.Context, tenantID string)
 func (e *infinityEngine) MetadataStoreExists(ctx context.Context, tenantID string) (bool, error) {
 	tableName := buildMetadataTableName(tenantID)
 	return e.tableExists(ctx, tableName)
+}
+
+// SearchMetadata executes search specifically for metadata tables
+// This is separate from Search() which handles only chunk tables
+func (e *infinityEngine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
+	tenantID := req.TenantID
+	common.Debug("SearchMetadata in Infinity started", zap.String("tenantID", tenantID))
+
+	// Validate inputs
+	if tenantID == "" {
+		return nil, fmt.Errorf("tenantID cannot be empty")
+	}
+
+	// Build table name from tenantID
+	tableName := buildMetadataTableName(tenantID)
+
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		common.Warn("Infinity SearchMetadata table existence check failed", zap.String("table", tableName), zap.Error(err))
+		return nil, fmt.Errorf("failed to check metadata table existence: %w", err)
+	}
+	if !exists {
+		common.Debug("Infinity SearchMetadata table absent, returning empty result", zap.String("table", tableName))
+		// Return an empty (non-nil) slice — Python returns `[]`, and a
+		// nil slice is read by callers as "fall back to in-memory". A
+		// zero-match against an absent table is a definitive answer,
+		// not a missing-data condition.
+		return &types.SearchMetadataResult{
+			MetadataRecords: []map[string]interface{}{},
+			Total:           0,
+		}, nil
+	}
+
+	// Build output columns: use caller-specified fields, or "*" for all columns
+	var outputColumns []string
+	if len(req.SelectFields) > 0 {
+		outputColumns = req.SelectFields
+	} else {
+		outputColumns = []string{"*"}
+	}
+
+	// Pagination defaults
+	pageSize := req.Limit
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Build filter from req.Filter
+	var filterStr string
+	if req.Filter != nil {
+		filterStr = equivalentConditionToStr(req.Filter)
+	}
+
+	// Get database and table
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database: %w", err)
+	}
+
+	tbl, err := db.GetTable(tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metadata table %s: %w", tableName, err)
+	}
+
+	// Build Infinity query (chainable API)
+	table := tbl.Output(outputColumns)
+	if filterStr != "" {
+		table = table.Filter(filterStr)
+	}
+
+	// Add order_by if provided
+	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
+		var sortFields [][2]interface{}
+		for _, orderField := range req.OrderBy.Fields {
+			sortType := infinity.SortTypeAsc
+			if orderField.Type == types.SortDesc {
+				sortType = infinity.SortTypeDesc
+			}
+			sortFields = append(sortFields, [2]interface{}{orderField.Field, sortType})
+		}
+		table = table.Sort(sortFields)
+	}
+
+	table = table.Limit(pageSize)
+	if offset > 0 {
+		table = table.Offset(offset)
+	}
+	table = table.Option(map[string]interface{}{"total_hits_count": true})
+
+	// Execute query
+	df, err := table.ToDataFrame()
+	if err != nil {
+		common.Warn("Infinity SearchMetadata query failed",
+			zap.String("tableName", tableName),
+			zap.Error(err))
+		return nil, fmt.Errorf("metadata query failed: %w", err)
+	}
+
+	// Convert column-oriented DataFrame to row-oriented records
+	records := make([]map[string]interface{}, 0)
+	for colName, colData := range df.ColumnData {
+		for i, val := range colData {
+			for len(records) <= i {
+				records = append(records, make(map[string]interface{}))
+			}
+			records[i][colName] = val
+		}
+	}
+
+	// Handle ROW_ID -> row_id() mapping (Infinity internal column)
+	for _, rec := range records {
+		if val, ok := rec["ROW_ID"]; ok {
+			rec["row_id()"] = val
+			delete(rec, "ROW_ID")
+		}
+	}
+
+	// Realign meta_fields column for multi-row queries (Infinity may
+	// concatenate values into one blob with 4-byte length prefix)
+	realignMetaFieldsColumn(records)
+
+	// Parse total_hits_count from ExtraInfo
+	var totalHits int64
+	if df.ExtraInfo != "" {
+		if t, ok := totalHitsFromInfinityExtraInfo(df.ExtraInfo); ok {
+			totalHits = t
+		}
+	}
+
+	common.Debug("SearchMetadata in Infinity completed",
+		zap.Int("rows", len(records)),
+		zap.Int64("total", totalHits))
+
+	return &types.SearchMetadataResult{
+		MetadataRecords: records,
+		Total:           totalHits,
+	}, nil
+}
+
+// parseLengthPrefixedJSON parses Infinity's length-prefixed JSON format
+// (a sequence of [4-byte little-endian length][JSON] records) and returns
+// each parsed JSON object. This is the same on-the-wire format that the
+// service layer's ParseAllLengthPrefixedJSON understands; duplicated here
+// to keep the engine package free of service-layer dependencies.
+//
+// The format is what Infinity's SDK returns for VARCHAR/TEXT columns
+// when a query matches multiple rows: instead of giving us a list of
+// per-row byte arrays, it concatenates all rows' values into a single
+// blob, prefixing each with a 4-byte little-endian length.
+//
+// Returns nil if `data` is too short to be valid, or if no JSON
+// objects could be extracted.
+func parseLengthPrefixedJSON(data []byte) []map[string]interface{} {
+	if len(data) < 4 {
+		return nil
+	}
+	var results []map[string]interface{}
+	offset := 0
+	for offset+4 <= len(data) {
+		// Read 4-byte length (little-endian)
+		length := uint32(data[offset]) |
+			uint32(data[offset+1])<<8 |
+			uint32(data[offset+2])<<16 |
+			uint32(data[offset+3])<<24
+		if length == 0 || offset+4+int(length) > len(data) {
+			// Length invalid; bail out.
+			break
+		}
+		jsonStart := offset + 4
+		jsonEnd := jsonStart + int(length)
+		var result map[string]interface{}
+		if err := json.Unmarshal(data[jsonStart:jsonEnd], &result); err == nil {
+			results = append(results, result)
+			offset = jsonEnd
+			continue
+		}
+		break
+	}
+	return results
+}
+
+// realignMetaFieldsColumn fixes a column-oriented data-frame
+// misalignment that happens when Infinity's SDK returns the
+// `meta_fields` column for a multi-row query as a single
+// length-prefixed byte array instead of one entry per row. After the
+// column→row loop has run, the first matching chunk holds the entire
+// concatenated blob and the rest are missing the field. This function
+// splits the blob into per-row JSON objects and reattaches them in
+// order to the chunks that need them.
+//
+// Safe no-op when:
+//   - there are no chunks
+//   - the `meta_fields` column is already aligned (one byte array per
+//     chunk), so a length-prefixed parse of any single value yields
+//     exactly one object
+//   - the byte array doesn't parse as length-prefixed JSON
+func realignMetaFieldsColumn(chunks []map[string]interface{}) {
+	if len(chunks) < 2 {
+		return
+	}
+	firstVal, ok := chunks[0]["meta_fields"]
+	if !ok {
+		return
+	}
+	firstBytes, ok := firstVal.([]byte)
+	if !ok {
+		return
+	}
+	parsed := parseLengthPrefixedJSON(firstBytes)
+	if len(parsed) != len(chunks) {
+		// Either the blob didn't parse as length-prefixed, or it
+		// parsed to a different count than the number of chunks we
+		// built. In either case, don't risk misattributing data.
+		return
+	}
+	for i, meta := range parsed {
+		chunks[i]["meta_fields"] = meta
+	}
+}
+
+// metaPushdownMaxSize caps how many doc IDs the metadata push-down is
+// willing to return in one shot. Matches the Python reference
+// (DocMetadataService.filter_doc_ids_by_meta_pushdown, default limit=10000)
+// and ES's default index.max_result_window.
+//
+// When the underlying query matches more than this, the push-down
+// returns nil and the caller falls back to the in-memory meta_filter,
+// which is correct (just slower for very large result sets). Returning
+// a truncated slice as a definitive answer would silently drop docs.
+const metaPushdownMaxSize = 10000
+
+// FilterDocIdsByMetaPushdown runs a metadata filter directly against the Infinity table.
+//
+// Return value convention (matching Python's filter_doc_ids_by_meta_pushdown):
+//
+//	nil        -> push-down was not viable / errored / result overflowed the
+//	              push-down cap (caller should fall back to in-memory)
+//	[]string{} -> push-down succeeded but found 0 matching docs (empty result is definitive)
+func (e *infinityEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs []string, conditions []map[string]interface{}, logic string) []string {
+	if len(conditions) == 0 || len(kbIDs) == 0 {
+		return nil
+	}
+
+	// Check if push-down is supported
+	if !IsPushdownSupported(conditions) {
+		common.Debug("FilterDocIdsByMetaPushdown: push-down not supported for some filters")
+		return nil
+	}
+
+	// Get tenant ID from first KB
+	tenantID, err := dao.GetTenantIDByKBID(kbIDs[0])
+	if err != nil {
+		common.Warn("FilterDocIdsByMetaPushdown: failed to get tenant for KB", zap.String("kbID", kbIDs[0]), zap.Error(err))
+		return nil
+	}
+
+	tableName := buildMetadataTableName(tenantID)
+
+	// Build SQL WHERE clause using the full meta_filter logic
+	whereClause, err := BuildInfinityFilter(conditions, logic)
+	if err != nil {
+		common.Debug("FilterDocIdsByMetaPushdown: build filter failed", zap.String("error", err.Error()))
+		return nil
+	}
+
+	// Add KB filter using IN clause. Escape any single quotes in the IDs
+	// defensively — KB IDs are normally UUIDs, but malformed input must
+	// not be able to break out of the literal and alter the query.
+	quotedKBIDs := make([]string, len(kbIDs))
+	for i, kbID := range kbIDs {
+		quotedKBIDs[i] = "'" + strings.ReplaceAll(kbID, "'", "''") + "'"
+	}
+	kbFilter := "kb_id IN (" + strings.Join(quotedKBIDs, ", ") + ")"
+	// Wrap the translated predicate in parens so the AND with the KB clause
+	// doesn't get re-grouped by an internal OR. Without the parens,
+	// `kbFilter AND a OR b` parses as `(kbFilter AND a) OR b`, which can
+	// match rows in other KBs.
+	whereClause = kbFilter + " AND (" + whereClause + ")"
+
+	// Use Infinity connection to execute query
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil || db == nil {
+		return nil
+	}
+
+	table, err := db.GetTable(tableName)
+	if err != nil || table == nil {
+		return nil
+	}
+
+	// Execute query using chainable API: Output(...).Filter(...)
+	// .Limit(metaPushdownMaxSize) caps the page size, and
+	// .Option({total_hits_count: true}) makes the exact match count
+	// available in QueryResult.ExtraInfo so we can detect overflow and
+	// fall back to the in-memory meta_filter rather than silently
+	// returning a truncated slice (which the caller treats as definitive).
+	common.Debug("FilterDocIdsByMetaPushdown executing Infinity query", zap.String("whereClause", whereClause))
+	queryTable := table.Output([]string{"id"}).Filter(whereClause)
+	queryTable = queryTable.Limit(metaPushdownMaxSize)
+	queryTable = queryTable.Option(map[string]interface{}{"total_hits_count": true})
+	result, err := queryTable.ToResult()
+	if err != nil {
+		return nil
+	}
+
+	qr, ok := result.(*infinity.QueryResult)
+	if !ok || qr == nil {
+		return nil
+	}
+
+	// Detect overflow via the SDK's ExtraInfo payload (a JSON string set
+	// when total_hits_count is requested). If we can't parse it, log
+	// and fall through — the in-memory path is still correct, just
+	// slower.
+	if total, parsed := totalHitsFromInfinityExtraInfo(qr.ExtraInfo); parsed {
+		if total > int64(metaPushdownMaxSize) {
+			common.Warn("FilterDocIdsByMetaPushdown: result exceeds push-down cap, falling back to in-memory",
+				zap.Int64("total", total),
+				zap.Int("cap", metaPushdownMaxSize),
+				zap.Strings("kbIDs", kbIDs),
+			)
+			return nil
+		}
+	} else if qr.ExtraInfo != "" {
+		// ExtraInfo was non-empty but didn't carry total_hits_count in the
+		// expected shape — unusual, but worth flagging so we don't quietly
+		// lose the overflow signal if Infinity changes its payload.
+		common.Debug("FilterDocIdsByMetaPushdown: Infinity ExtraInfo present but total_hits_count missing",
+			zap.String("extraInfo", qr.ExtraInfo),
+		)
+	}
+
+	// Extract doc IDs from the result.
+	docIDs := make([]string, 0)
+	if idData, exists := qr.Data["id"]; exists {
+		for _, id := range idData {
+			if idStr, ok := id.(string); ok {
+				docIDs = append(docIDs, idStr)
+			}
+		}
+	}
+
+	common.Debug("FilterDocIdsByMetaPushdown returned doc IDs", zap.Int("count", len(docIDs)))
+	return docIDs
+}
+
+// totalHitsFromInfinityExtraInfo parses the JSON blob Infinity returns
+// in QueryResult.ExtraInfo when the total_hits_count option is set. The
+// shape is not part of the public SDK contract today (it's a string
+// field with an undocumented layout), so we accept several common
+// spellings and stay tolerant of future changes.
+//
+// Returns (total, true) when a non-negative integer is found, otherwise
+// (0, false) so the caller can decide how to react.
+func totalHitsFromInfinityExtraInfo(extraInfo string) (int64, bool) {
+	if extraInfo == "" {
+		return 0, false
+	}
+	// Try a permissive decode first — Infinity has historically
+	// returned things like {"total_hits_count": 42} but we don't want
+	// to bind to that exact shape forever.
+	var generic map[string]interface{}
+	if err := json.Unmarshal([]byte(extraInfo), &generic); err != nil {
+		return 0, false
+	}
+	for _, key := range []string{"total_hits_count", "totalHitsCount", "total"} {
+		raw, ok := generic[key]
+		if !ok {
+			continue
+		}
+		switch v := raw.(type) {
+		case float64:
+			if v < 0 {
+				return 0, false
+			}
+			return int64(v), true
+		case int64:
+			if v < 0 {
+				return 0, false
+			}
+			return v, true
+		case int:
+			if v < 0 {
+				return 0, false
+			}
+			return int64(v), true
+		case json.Number:
+			n, err := v.Int64()
+			if err == nil && n >= 0 {
+				return n, true
+			}
+		}
+	}
+	return 0, false
 }
