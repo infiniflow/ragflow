@@ -353,6 +353,8 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
         "files": files,
         "user_id": user_id,
         "inputs": inputs,
+        # Forwarded to upstream LLM providers as the `user` field for session correlation.
+        "session_id": session_id,
     }
     if chat_template_kwargs is not None:
         run_kwargs["chat_template_kwargs"] = chat_template_kwargs

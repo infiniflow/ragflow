@@ -34,6 +34,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from common.constants import LLMType
+from common.llm_request_context import set_llm_request_context, reset_llm_request_context
 from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
 from rag.prompts.generator import chunks_format
@@ -378,6 +379,20 @@ class Canvas(Graph):
                     self.globals[k] = ""
 
     async def run(self, **kwargs):
+        # Forward the originating session/user to upstream LLM providers (as the
+        # OpenAI `user` field) for the duration of this run, and reset afterwards so
+        # the value never leaks to later calls in the same task.
+        _req_ctx_token = set_llm_request_context(
+            session_id=kwargs.get("session_id"),
+            user_id=kwargs.get("user_id"),
+        )
+        try:
+            async for ev in self._run_impl(**kwargs):
+                yield ev
+        finally:
+            reset_llm_request_context(_req_ctx_token)
+
+    async def _run_impl(self, **kwargs):
         self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         st = time.perf_counter()
         self._loop = asyncio.get_running_loop()
