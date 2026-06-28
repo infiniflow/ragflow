@@ -26,6 +26,7 @@ import agentService, {
   fetchAgentLogsByCanvasId,
   fetchAgentLogsById,
   fetchPipeLineList,
+  fetchSharedTrace,
   fetchTrace,
   fetchWebhookTrace,
   updateAgent,
@@ -529,8 +530,12 @@ export const useUploadAgentFileWithProgress = (identifier?: string | null) => {
   return { data, loading, uploadAgentFile: mutateAsync };
 };
 
-export const useFetchMessageTrace = (canvasId?: string) => {
+export const useFetchMessageTrace = (canvasId?: string, isShare?: boolean) => {
   const { id } = useParams();
+  // In shared mode there's no :id route param and `canvasId` actually carries
+  // the share (beta) APIToken — route through fetchSharedTrace so the request
+  // hits the beta-token-aware endpoint instead of /agents/<id>/logs which
+  // requires a session login (fixes #14985).
   const queryId = id || canvasId;
   const [messageId, setMessageId] = useState('');
   const [isStopFetchTrace, setISStopFetchTrace] = useState(false);
@@ -540,7 +545,7 @@ export const useFetchMessageTrace = (canvasId?: string) => {
     isFetching: loading,
     refetch,
   } = useQuery<ITraceData[]>({
-    queryKey: [AgentApiAction.Trace, queryId, messageId],
+    queryKey: [AgentApiAction.Trace, queryId, messageId, !!isShare],
     refetchOnReconnect: false,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
@@ -548,10 +553,15 @@ export const useFetchMessageTrace = (canvasId?: string) => {
     enabled: !!queryId && !!messageId,
     refetchInterval: !isStopFetchTrace ? 3000 : false,
     queryFn: async () => {
-      const { data } = await fetchTrace({
-        canvas_id: queryId as string,
-        message_id: messageId,
-      });
+      const { data } = isShare
+        ? await fetchSharedTrace({
+            shared_id: queryId as string,
+            message_id: messageId,
+          })
+        : await fetchTrace({
+            canvas_id: queryId as string,
+            message_id: messageId,
+          });
 
       return Array.isArray(data?.data) ? data?.data : [];
     },
