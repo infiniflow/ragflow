@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import hashlib
 import os
 import shutil
 import tiktoken
@@ -26,7 +27,8 @@ def _ensure_tiktoken_cache() -> str:
     os.environ["TIKTOKEN_CACHE_DIR"] = cache_dir
 
     bundled_encoding_path = get_project_base_directory("ragflow_deps", "cl100k_base.tiktoken")
-    cached_encoding_path = os.path.join(cache_dir, "9b5ad71b2ce5302211f9c61530b329a4922fc6a4")
+    encoding_url = "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
+    cached_encoding_path = os.path.join(cache_dir, hashlib.sha1(encoding_url.encode()).hexdigest())
 
     if os.path.exists(bundled_encoding_path) and not os.path.exists(cached_encoding_path):
         shutil.copyfile(bundled_encoding_path, cached_encoding_path)
