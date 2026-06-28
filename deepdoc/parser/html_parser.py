@@ -70,7 +70,8 @@ class RAGFlowHtmlParser:
         for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
             comment.extract()
 
-        cls.read_text_recursively(soup.body, temp_sections, chunk_token_num=chunk_token_num)
+        root = soup.body or soup
+        cls.read_text_recursively(root, temp_sections, chunk_token_num=chunk_token_num)
         block_txt_list, table_list = cls.merge_block_text(temp_sections)
         sections = cls.chunk_block(block_txt_list, chunk_token_num=chunk_token_num)
         for table in table_list:
