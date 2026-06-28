@@ -52,6 +52,7 @@ type Router struct {
 	modelHandler         *handler.ModelHandler
 	fileCommitHandler    *handler.FileCommitHandler
 	adminRuntimeHandler  *handler.AdminRuntimeHandler
+	botHandler           *handler.BotHandler
 }
 
 // NewRouter create router
@@ -84,6 +85,7 @@ func NewRouter(
 	fileCommitHandler *handler.FileCommitHandler,
 	adminRuntimeHandler *handler.AdminRuntimeHandler,
 	openaiChatHandler *handler.OpenAIChatHandler,
+	botHandler *handler.BotHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -114,6 +116,7 @@ func NewRouter(
 		modelHandler:         modelHandler,
 		fileCommitHandler:    fileCommitHandler,
 		adminRuntimeHandler:  adminRuntimeHandler,
+		botHandler:           botHandler,
 	}
 }
 
@@ -183,6 +186,20 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/forgot/otp", r.userHandler.ForgotSendOTP)
 		apiNoAuth.POST("/auth/password/forgot/otp/verify", r.userHandler.ForgotVerifyOTP)
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
+
+		// Public bot endpoints — beta API token only, NOT regular
+		// user session. Mirrors python's
+		// @login_required(auth_types=AUTH_BETA) on bot_api.py:55,126,157,239.
+		// Mounted on apiNoAuth (not on the auth-protected v1 tree) so
+		// external widgets / iframes / downloads can hit them with
+		// only a beta token. Risk R0 of the plan.
+		if r.botHandler != nil {
+			betaMW := r.authHandler.BetaAuthMiddleware()
+			chatbotGroup := apiNoAuth.Group("/chatbots")
+			RegisterChatbotRoutes(chatbotGroup, betaMW, r.botHandler)
+			agentbotGroup := apiNoAuth.Group("/agentbots")
+			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
+		}
 	}
 
 	// Protected routes
@@ -253,10 +270,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chats := v1.Group("/chats")
 			{
 				chats.GET("", r.chatHandler.ListChats)
+				chats.POST("", r.chatHandler.Create)
 				chats.DELETE("", r.chatHandler.BulkDeleteChats)
 				chats.DELETE("/:chat_id", r.chatHandler.DeleteChat)
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
+				chats.PUT("/:chat_id", r.chatHandler.UpdateChat)
+				chats.PATCH("/:chat_id", r.chatHandler.PatchChat)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
+				chats.POST("/:chat_id/sessions", r.chatSessionHandler.CreateSession)
+				chats.DELETE("/:chat_id/sessions", r.chatSessionHandler.DeleteSessions)
 				chats.GET("/:chat_id/sessions/:session_id", r.chatSessionHandler.GetSession)
 				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
 			}
@@ -418,6 +440,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			message := v1.Group("/messages")
 			{
 				message.GET("", r.memoryHandler.GetMessages)
+				message.POST("", r.memoryHandler.AddMessage)
 				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
 				message.PUT("/:memory_message", r.memoryHandler.UpdateMessage)
 				message.GET("/:memory_message/content", r.memoryHandler.GetMessageContent)

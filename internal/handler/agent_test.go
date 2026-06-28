@@ -447,7 +447,7 @@ func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, enti
 func (f *fullFakeAgentService) DeleteAgent(context.Context, string, string) error {
 	return nil
 }
-func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string, string, string) (<-chan canvas.RunEvent, error) {
+func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string, string, any) (<-chan canvas.RunEvent, error) {
 	ch := make(chan canvas.RunEvent)
 	close(ch)
 	return ch, nil
@@ -715,7 +715,7 @@ type stubChatRunner struct {
 	err    error
 }
 
-func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _, _ string) (<-chan canvas.RunEvent, error) {
+func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _ string, _ any) (<-chan canvas.RunEvent, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -729,9 +729,11 @@ func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _, _ string) (<-ch
 
 // TestAgentChatCompletions_StreamSetsContentType covers the SSE
 // path: the handler streams canvas.RunEvent frames as
-// `data: {...}\n\n` with a trailing `data: [DONE]\n\n` terminator,
-// matching the Python `completion()` wire format in
-// api/db/services/canvas_service.py:368.
+// `data: {...}\n\n` with a trailing `data: [DONE]\n\n` terminator.
+// The frame shape is the unified python envelope
+// {code:0, message:"", data:{answer, reference, audio_binary, id,
+// session_id}} — the same shape /api/v1/agentbots/<id>/completions
+// emits. See service.WriteChatbotRunEvent and WriteChatbotFrame.
 //
 // The stubChatRunner emits one `message` frame and one `done` frame
 // so the test verifies the body contains both the framed event and
@@ -757,8 +759,12 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/event-stream", got)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "\"event\":\"message\"") || !strings.Contains(body, "\"answer\":\"hi back\"") {
-		t.Errorf("body should contain framed message event, got %q", body)
+	// Body must contain the unified python envelope (`code/data.answer`)
+	// and the [DONE] terminator. The iframe SDK JSON.parse()s `answer`
+	// to extract the inner fields, so the embedded JSON is double-encoded
+	// (escaped quotes inside the outer `"answer"` string).
+	if !strings.Contains(body, "\"code\":0") || !strings.Contains(body, `"answer":"{\"answer\":\"hi back\",\"reference\":[]}"`) {
+		t.Errorf("body should contain unified python envelope with answer, got %q", body)
 	}
 	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
 		t.Errorf("body should end with [DONE] terminator, got %q", body)
@@ -768,9 +774,9 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 // TestAgentChatCompletions_DefaultBranchStreamsSSE covers the
 // scenario the user actually hit: `openai-compatible: false` with no
 // `stream` field on the body. The handler must still invoke the
-// canvas runner and stream the result as SSE — matching Python's
-// `completion()` which always yields SSE on the non-openai path
-// regardless of the stream flag.
+// canvas runner and stream the result as SSE — the SSE envelope is
+// the unified python shape shared with
+// /api/v1/agentbots/<id>/completions regardless of the stream flag.
 func TestAgentChatCompletions_DefaultBranchStreamsSSE(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -792,8 +798,8 @@ func TestAgentChatCompletions_DefaultBranchStreamsSSE(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/event-stream (default branch must stream)", got)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "\"event\":\"message\"") || !strings.Contains(body, "\"answer\":\"hello back\"") {
-		t.Errorf("body should contain framed message event, got %q", body)
+	if !strings.Contains(body, "\"code\":0") || !strings.Contains(body, `"answer":"{\"answer\":\"hello back\",\"reference\":[]}"`) {
+		t.Errorf("body should contain unified python envelope with answer, got %q", body)
 	}
 	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
 		t.Errorf("body should end with [DONE] terminator, got %q", body)
@@ -815,13 +821,61 @@ func TestAgentChatCompletions_DerivesUserInputFromMessages(t *testing.T) {
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	var captured string
+	var captured any
 	runner := &captureChatRunner{captured: &captured}
 	h := &AgentHandler{chatRunner: runner}
 	h.AgentChatCompletions(c)
 
 	if captured != "from-messages" {
-		t.Errorf("userInput = %q, want %q (last user message content)", captured, "from-messages")
+		t.Errorf("userInput = %#v, want %q (last user message content)", captured, "from-messages")
+	}
+}
+
+// TestAgentChatCompletions_DerivesUserInputFromInputs covers the wait-for-user
+// resume path used by the front-end: the follow-up submit posts `inputs`
+// instead of a top-level `query`. The handler must lift the nested field value
+// and pass it through as the resumed user input.
+func TestAgentChatCompletions_DerivesUserInputFromInputs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","session_id":"s1","inputs":{"text":{"name":"text","value":"a b c d e","type":"line"}}}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured any
+	runner := &captureChatRunner{captured: &captured}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if captured != "a b c d e" {
+		t.Errorf("userInput = %#v, want %q (nested inputs.value)", captured, "a b c d e")
+	}
+}
+
+func TestAgentChatCompletions_DerivesStructuredUserInputFromInputs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","session_id":"s1","inputs":{"kb":{"name":"KB","value":"da1","type":"line"},"query":{"name":"Query","value":"合同","type":"line"}}}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured any
+	runner := &captureChatRunner{captured: &captured}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	got, ok := captured.(map[string]any)
+	if !ok {
+		t.Fatalf("userInput type = %T, want map[string]any", captured)
+	}
+	if got["kb"] != "da1" || got["query"] != "合同" {
+		t.Fatalf("userInput = %#v, want kb=da1 query=合同", got)
 	}
 }
 
@@ -829,10 +883,10 @@ func TestAgentChatCompletions_DerivesUserInputFromMessages(t *testing.T) {
 // returns an empty (closed) channel. Used to assert on argument
 // derivation without exercising the runner.
 type captureChatRunner struct {
-	captured *string
+	captured *any
 }
 
-func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _, userInput string) (<-chan canvas.RunEvent, error) {
+func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _ string, userInput any) (<-chan canvas.RunEvent, error) {
 	*c.captured = userInput
 	ch := make(chan canvas.RunEvent)
 	close(ch)

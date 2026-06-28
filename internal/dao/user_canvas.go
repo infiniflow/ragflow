@@ -28,6 +28,33 @@ import (
 // missing or the caller has no read access. We deliberately do not
 // distinguish "missing" from "forbidden" so the response cannot be used
 // to enumerate other users' canvas ids — see plan §4.8 (IDOR mitigation).
+
+// userCanvasOrderableColumns whitelists the columns that may appear in an
+// ORDER BY clause. Keeps user-supplied `orderby` query params from being
+// spliced straight into SQL.
+var userCanvasOrderableColumns = map[string]struct{}{
+	"id":              {},
+	"user_id":         {},
+	"title":           {},
+	"permission":      {},
+	"canvas_type":     {},
+	"canvas_category": {},
+	"create_time":     {},
+	"create_date":     {},
+	"update_time":     {},
+	"update_date":     {},
+}
+
+func userCanvasOrderClause(orderby string, desc bool) string {
+	if _, ok := userCanvasOrderableColumns[orderby]; !ok {
+		orderby = "create_time"
+	}
+	if desc {
+		return orderby + " DESC"
+	}
+	return orderby + " ASC"
+}
+
 var ErrUserCanvasNotFound = errors.New("user_canvas: not found or access denied")
 
 // UserCanvasDAO user canvas data access object
@@ -166,11 +193,12 @@ func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int,
 	}
 
 	// Order by
-	if desc {
-		query = query.Order(orderby + " DESC")
-	} else {
-		query = query.Order(orderby + " ASC")
-	}
+	// Route orderby through userCanvasOrderClause above so user-supplied
+	// query params can never reach Order() verbatim. The helper validates
+	// against userCanvasOrderableColumns (a closed allowlist) and falls
+	// back to "create_time" on any miss, so the string spliced into the
+	// SQL fragment is always one of a fixed set of column names.
+	query = query.Order(userCanvasOrderClause(orderby, desc))
 
 	// Pagination
 	if pageNumber > 0 && itemsPerPage > 0 {
@@ -229,12 +257,12 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page
 		return nil, 0, err
 	}
 
-	order := orderby
-	if desc {
-		order += " DESC"
-	} else {
-		order += " ASC"
-	}
+	order := userCanvasOrderClause(orderby, desc)
+	// codeql[go/sql-injection] False positive: `order` was just derived
+	// from userCanvasOrderClause above, which validates `orderby`
+	// against userCanvasOrderableColumns (a closed allowlist) and
+	// defaults to "create_time" on miss. The string spliced into
+	// Order() is always one of a fixed set of column names.
 	query := base.Order(order)
 
 	if page > 0 && pageSize > 0 {

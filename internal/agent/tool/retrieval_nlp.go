@@ -62,6 +62,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/entity"
 	"ragflow/internal/service/nlp"
 )
 
@@ -71,13 +72,21 @@ import (
 // beyond its docEngine + documentDAO handles, both of which the
 // nlp package treats as concurrent-safe.
 type NLPRetrievalAdapter struct {
-	svc *nlp.RetrievalService
+	svc   *nlp.RetrievalService
+	kbDAO knowledgebaseLookup
+}
+
+type knowledgebaseLookup interface {
+	GetByIDs(ids []string) ([]*entity.Knowledgebase, error)
 }
 
 // NewNLPRetrievalAdapter wraps an already-constructed
 // *nlp.RetrievalService.
 func NewNLPRetrievalAdapter(svc *nlp.RetrievalService) *NLPRetrievalAdapter {
-	return &NLPRetrievalAdapter{svc: svc}
+	return &NLPRetrievalAdapter{
+		svc:   svc,
+		kbDAO: dao.NewKnowledgebaseDAO(),
+	}
 }
 
 // NewNLPRetrievalAdapterFromDeps is the convenience constructor
@@ -88,7 +97,10 @@ func NewNLPRetrievalAdapter(svc *nlp.RetrievalService) *NLPRetrievalAdapter {
 // matches chat_session.go's newChatSessionServiceWithRetrieval
 // call site.
 func NewNLPRetrievalAdapterFromDeps(docEngine engine.DocEngine, documentDAO *dao.DocumentDAO) *NLPRetrievalAdapter {
-	return &NLPRetrievalAdapter{svc: nlp.NewRetrievalService(docEngine, documentDAO)}
+	return &NLPRetrievalAdapter{
+		svc:   nlp.NewRetrievalService(docEngine, documentDAO),
+		kbDAO: dao.NewKnowledgebaseDAO(),
+	}
 }
 
 // Search implements RetrievalService. The translation rules live
@@ -120,6 +132,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, req RetrievalRequest) 
 	// headroom — matches the chat_session.go call pattern).
 	nlpReq := &nlp.RetrievalRequest{
 		Question:  req.Query,
+		TenantIDs: a.resolveTenantIDs(req),
 		KbIDs:     append([]string(nil), req.DatasetIDs...),
 		Page:      1,
 		PageSize:  topN,
@@ -146,6 +159,24 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, req RetrievalRequest) 
 		out = append(out, translateChunk(raw))
 	}
 	return out, nil
+}
+
+func (a *NLPRetrievalAdapter) resolveTenantIDs(req RetrievalRequest) []string {
+	seen := map[string]struct{}{}
+	tenantIDs := make([]string, 0, 1)
+	appendTenantID := func(tenantID string) {
+		if tenantID == "" {
+			return
+		}
+		if _, ok := seen[tenantID]; ok {
+			return
+		}
+		seen[tenantID] = struct{}{}
+		tenantIDs = append(tenantIDs, tenantID)
+	}
+
+	appendTenantID(req.TenantID)
+	return tenantIDs
 }
 
 // translateChunk converts one nlp chunk map into a RetrievalChunk.

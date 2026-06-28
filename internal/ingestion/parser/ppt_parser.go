@@ -38,7 +38,6 @@ func NewPPTParser(libType string) (*PPTParser, error) {
 }
 
 func (p *PPTParser) Parse(filename string, data []byte) error {
-	fmt.Printf("Parsing PPT file: %s\n", filename)
 	switch p.libType {
 	case OfficeOxide:
 		return p.OfficeOxideParse(data)

@@ -1382,7 +1382,8 @@ async def search_datasets(tenant_id: str, req: dict):
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
     if meta_data_filter:
-        logging.debug(f"Metadata filter: {meta_data_filter}, question: {question}, chat_mdl={'None' if chat_mdl is None else chat_mdl.llm_name}")
+        logging.debug("Metadata filter applied: %s, question length: %d, chat_mdl=%s",
+                      meta_data_filter, len(question), 'None' if chat_mdl is None else 'configured')
         local_doc_ids = await apply_meta_data_filter(
             meta_data_filter,
             None,

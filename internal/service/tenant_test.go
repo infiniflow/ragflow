@@ -17,8 +17,8 @@
 package service
 
 import (
-	_ "unsafe"
 	"testing"
+	_ "unsafe"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
