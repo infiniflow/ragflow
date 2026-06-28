@@ -164,8 +164,15 @@ func (s *KnowledgebaseService) UpdateKB(req *UpdateKBRequest, userID string) (ma
 	return result, common.CodeSuccess, nil
 }
 
-// UpdateMetadataSetting updates the metadata settings for a knowledge base
-func (s *KnowledgebaseService) UpdateMetadataSetting(req *UpdateMetadataSettingRequest) (map[string]interface{}, common.ErrorCode, error) {
+// UpdateMetadataSetting updates the metadata settings for a knowledge base.
+// The userID must be a member of the owning tenant; this is the same authorization
+// boundary applied by GetDetail and the handler-level guard, duplicated here so
+// the security check cannot be regressed by future handler refactors that drop it.
+func (s *KnowledgebaseService) UpdateMetadataSetting(req *UpdateMetadataSettingRequest, userID string) (map[string]interface{}, common.ErrorCode, error) {
+	if !s.kbDAO.Accessible(req.KBID, userID) {
+		return nil, common.CodeOperatingError, errors.New("only owner of dataset authorized for this operation")
+	}
+
 	kb, err := s.kbDAO.GetByID(req.KBID)
 	if err != nil {
 		return nil, common.CodeDataError, errors.New("database error (knowledgebase not found)")

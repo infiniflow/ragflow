@@ -259,7 +259,7 @@ func TestPerplexityListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "sonar,sonar-pro,pplx-embed-v1-0.6b" {
+	if joinModelNames(models, ",") != "sonar,sonar-pro,pplx-embed-v1-0.6b" {
 		t.Errorf("models=%v", models)
 	}
 	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
@@ -281,7 +281,7 @@ func TestPerplexityListModelsAcceptsBareArray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "sonar,sonar-pro" {
+	if joinModelNames(models, ",") != "sonar,sonar-pro" {
 		t.Errorf("models=%v", models)
 	}
 }

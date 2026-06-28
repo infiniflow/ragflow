@@ -9,12 +9,6 @@ import (
 	"testing"
 )
 
-type roundTripperFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
-	return f(r)
-}
-
 func newPPIOServer(t *testing.T, handler func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -382,7 +376,7 @@ func TestPPIOListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "deepseek/deepseek-r1,qwen/qwen-2.5-72b-instruct" {
+	if joinModelNames(models, ",") != "deepseek/deepseek-r1,qwen/qwen-2.5-72b-instruct" {
 		t.Errorf("models=%v", models)
 	}
 	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
@@ -415,7 +409,7 @@ func TestPPIOListModelsRejectsProviderError(t *testing.T) {
 func TestPPIOEndpointTrimsTrailingSlash(t *testing.T) {
 	model := NewPPIOModel(map[string]string{"default": "https://example.test/base/"}, URLSuffix{Chat: "/chat/completions"})
 	apiKey := "test-key"
-	endpoint, err := model.endpoint(&APIConfig{ApiKey: &apiKey}, model.URLSuffix.Chat)
+	endpoint, err := model.endpoint(&APIConfig{ApiKey: &apiKey}, model.baseModel.URLSuffix.Chat)
 	if err != nil {
 		t.Fatalf("endpoint: %v", err)
 	}
@@ -427,7 +421,7 @@ func TestPPIOEndpointTrimsTrailingSlash(t *testing.T) {
 func TestPPIODefaultEndpointUsesPPIOAPI(t *testing.T) {
 	model := NewPPIOModel(map[string]string{"default": "https://api.ppio.com/openai/v1"}, URLSuffix{Chat: "chat/completions"})
 	apiKey := "test-key"
-	endpoint, err := model.endpoint(&APIConfig{ApiKey: &apiKey}, model.URLSuffix.Chat)
+	endpoint, err := model.endpoint(&APIConfig{ApiKey: &apiKey}, model.baseModel.URLSuffix.Chat)
 	if err != nil {
 		t.Fatalf("endpoint: %v", err)
 	}
@@ -440,7 +434,7 @@ func TestPPIOEmptyRegionCustomBaseURL(t *testing.T) {
 	model := NewPPIOModel(map[string]string{"": "https://custom.example/openai/v1"}, URLSuffix{Models: "models"})
 	apiKey := "test-key"
 	region := ""
-	endpoint, err := model.endpoint(&APIConfig{ApiKey: &apiKey, Region: &region}, model.URLSuffix.Models)
+	endpoint, err := model.endpoint(&APIConfig{ApiKey: &apiKey, Region: &region}, model.baseModel.URLSuffix.Models)
 	if err != nil {
 		t.Fatalf("endpoint: %v", err)
 	}
@@ -456,7 +450,7 @@ func TestPPIONamedRegionBaseURL(t *testing.T) {
 	}, URLSuffix{Chat: "chat/completions"})
 	apiKey := "test-key"
 	region := "us"
-	endpoint, err := model.endpoint(&APIConfig{ApiKey: &apiKey, Region: &region}, model.URLSuffix.Chat)
+	endpoint, err := model.endpoint(&APIConfig{ApiKey: &apiKey, Region: &region}, model.baseModel.URLSuffix.Chat)
 	if err != nil {
 		t.Fatalf("endpoint: %v", err)
 	}
@@ -469,7 +463,7 @@ func TestPPIOMissingRegionBaseURL(t *testing.T) {
 	model := NewPPIOModel(map[string]string{"default": "https://api.ppinfra.com/v3/openai"}, URLSuffix{Models: "models"})
 	apiKey := "test-key"
 	region := "missing"
-	_, err := model.endpoint(&APIConfig{ApiKey: &apiKey, Region: &region}, model.URLSuffix.Models)
+	_, err := model.endpoint(&APIConfig{ApiKey: &apiKey, Region: &region}, model.baseModel.URLSuffix.Models)
 	if err == nil || !strings.Contains(err.Error(), "no base URL configured") {
 		t.Errorf("expected base URL error, got %v", err)
 	}

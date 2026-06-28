@@ -3,6 +3,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 from webdav4.client import Client as WebDAVClient
 
@@ -59,6 +60,49 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def _is_supported_file(self, file_name: str) -> bool:
         file_ext = get_file_ext(file_name)
         return is_accepted_file_ext(file_ext, self._build_extension_type())
+
+    @staticmethod
+    def _coerce_size_bytes(size_bytes: Any) -> int | None:
+        if isinstance(size_bytes, bool):
+            return None
+        if isinstance(size_bytes, int):
+            return size_bytes if size_bytes >= 0 else None
+        if isinstance(size_bytes, str):
+            size_text = size_bytes.strip()
+            if not size_text or len(size_text) > 20 or not size_text.isdecimal():
+                return None
+            parsed_size = int(size_text)
+            return parsed_size if parsed_size >= 0 else None
+        return None
+
+    @classmethod
+    def _get_size_bytes(cls, file_info: dict[str, Any]) -> int | None:
+        # webdav4's Client.ls(detail=True) reports the size under "content_length"
+        # (see webdav4.multistatus.Response.as_dict); other servers/libraries or
+        # webdav4's fsspec wrapper may instead use "size" or the raw
+        # "getcontentlength" property. Try each so the size guard isn't silently
+        # skipped — otherwise file_info.get("size") is always None and every file
+        # trips the missing-metadata warning.
+        for key in ("size", "content_length", "getcontentlength"):
+            if key not in file_info:
+                continue
+            size_bytes = cls._coerce_size_bytes(file_info[key])
+            if size_bytes is not None:
+                return size_bytes
+        return None
+
+    @staticmethod
+    def _get_log_file_identifier(file_info: dict[str, Any], fallback_path: str) -> str:
+        raw_identifier = str(file_info.get("name") or file_info.get("href") or fallback_path)
+        try:
+            parsed_identifier = urlsplit(raw_identifier)
+            identifier_path = parsed_identifier.path if parsed_identifier.scheme else raw_identifier
+        except ValueError:
+            identifier_path = fallback_path if "://" not in fallback_path else ""
+        identifier_path = identifier_path.split("?", 1)[0].split("#", 1)[0]
+        fallback_identifier = "" if "://" in fallback_path else os.path.basename(fallback_path.rstrip("/"))
+        identifier = os.path.basename(identifier_path.rstrip("/")) or fallback_identifier or "<unknown>"
+        return identifier.encode("unicode_escape").decode("ascii")
 
     def set_allow_images(self, allow_images: bool) -> None:
         """Set whether to process images"""
@@ -228,14 +272,23 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 logging.debug(f"Skipping file {file_path} due to unsupported extension.")
                 continue
             
-            size_bytes = file_info.get('size', 0)
+            size_bytes = self._get_size_bytes(file_info)
+            if self.size_threshold is not None and size_bytes is None:
+                file_identifier = self._get_log_file_identifier(file_info, file_path)
+                logging.warning(
+                    f"{file_identifier}: size metadata missing from WebDAV server response, "
+                    f"skipping to avoid processing potentially large files."
+                )
+                continue
             if (
                 self.size_threshold is not None
-                and isinstance(size_bytes, int)
+                and size_bytes is not None
                 and size_bytes > self.size_threshold
             ):
+                file_identifier = self._get_log_file_identifier(file_info, file_path)
                 logging.warning(
-                    f"{file_name} exceeds size threshold of {self.size_threshold}. Skipping."
+                    f"{file_identifier} exceeds size threshold of {self.size_threshold} "
+                    f"(size_bytes={size_bytes}). Skipping."
                 )
                 continue
             
@@ -289,7 +342,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                         semantic_identifier=semantic_id,
                         extension=get_file_ext(file_name),
                         doc_updated_at=modified,
-                        size_bytes=size_bytes if size_bytes else 0
+                        size_bytes=size_bytes if size_bytes is not None else 0
                     )
                 )
                 
@@ -367,12 +420,24 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             file_name = os.path.basename(file_path)
             if not self._is_supported_file(file_name):
                 continue
-            size_bytes = file_info.get("size", 0)
+            size_bytes = self._get_size_bytes(file_info)
+            if self.size_threshold is not None and size_bytes is None:
+                file_identifier = self._get_log_file_identifier(file_info, file_path)
+                logging.warning(
+                    f"{file_identifier}: size metadata missing from WebDAV server response, "
+                    f"skipping to avoid processing potentially large files."
+                )
+                continue
             if (
                 self.size_threshold is not None
-                and isinstance(size_bytes, int)
+                and size_bytes is not None
                 and size_bytes > self.size_threshold
             ):
+                file_identifier = self._get_log_file_identifier(file_info, file_path)
+                logging.warning(
+                    f"{file_identifier} exceeds size threshold of {self.size_threshold} "
+                    f"(size_bytes={size_bytes}). Skipping."
+                )
                 continue
             batch.append(
                 SlimDocument(id=f"webdav:{self.base_url}:{file_path}")

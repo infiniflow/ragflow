@@ -129,7 +129,9 @@ async def set_api_key():
             except Exception as e:
                 msg += f"\nFail to access model({llm.fid}/{llm.llm_name}) using this api key." + str(e)
         elif not rerank_passed and llm.model_type == LLMType.RERANK.value:
-            assert factory in RerankModel, f"Re-rank model from {factory} is not supported yet."
+            if factory not in RerankModel:
+                msg += f"\nRerank model from {factory} is not supported yet."
+                continue
             mdl = RerankModel[factory](req["api_key"], llm.llm_name, base_url=base_url)
             try:
                 arr, tc = await asyncio.wait_for(
@@ -350,19 +352,21 @@ async def add_llm():
                 msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
 
         case LLMType.RERANK.value:
-            assert factory in RerankModel, f"RE-rank model from {factory} is not supported yet."
-            try:
-                mdl = RerankModel[factory](key=model_api_key, model_name=mdl_nm, base_url=model_base_url)
-                arr, tc = await asyncio.wait_for(
-                    asyncio.to_thread(mdl.similarity, "Hello~ RAGFlower!", ["Hi, there!", "Ohh, my friend!"]),
-                    timeout=timeout_seconds,
-                )
-                if len(arr) == 0:
-                    raise Exception("Not known.")
-            except KeyError:
-                msg += f"{factory} does not support this model({factory}/{mdl_nm})"
-            except Exception as e:
-                msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
+            if factory not in RerankModel:
+                msg += f"\nRerank model from {factory} is not supported yet."
+            else:
+                try:
+                    mdl = RerankModel[factory](key=model_api_key, model_name=mdl_nm, base_url=model_base_url)
+                    arr, tc = await asyncio.wait_for(
+                        asyncio.to_thread(mdl.similarity, "Hello~ RAGFlower!", ["Hi, there!", "Ohh, my friend!"]),
+                        timeout=timeout_seconds,
+                    )
+                    if len(arr) == 0:
+                        raise Exception("Not known.")
+                except KeyError:
+                    msg += f"{factory} does not support this model({factory}/{mdl_nm})"
+                except Exception as e:
+                    msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
 
         case LLMType.IMAGE2TEXT.value:
             from rag.utils.base64_image import test_image

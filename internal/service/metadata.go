@@ -22,10 +22,19 @@ import (
 	"fmt"
 	"strconv"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 )
+
+// KBDocIDsMap maps a KB ID to its document IDs.
+// Example: {"kb1": ["doc1", "doc2"], "kb2": ["doc3"]}
+type KBDocIDsMap map[string][]string
+
+// DocMetaMap maps a document ID to its metadata fields.
+// Example: {"doc1": {"author": "Zhang San", "date": "2024-01-01"}}
+type DocMetaMap map[string]map[string]interface{}
 
 // MetadataService provides common metadata operations
 type MetadataService struct {
@@ -48,11 +57,7 @@ func BuildMetadataIndexName(tenantID string) string {
 
 // GetTenantIDByKBID retrieves tenant ID from knowledge base ID
 func (s *MetadataService) GetTenantIDByKBID(kbID string) (string, error) {
-	kb, err := s.kbDAO.GetByID(kbID)
-	if err != nil {
-		return "", fmt.Errorf("knowledgebase not found: %w", err)
-	}
-	return kb.TenantID, nil
+	return dao.GetTenantIDByKBID(kbID)
 }
 
 // GetTenantIDByKBIDs retrieves tenant ID from the first knowledge base ID in the list
@@ -60,48 +65,42 @@ func (s *MetadataService) GetTenantIDByKBIDs(kbIDs []string) (string, error) {
 	if len(kbIDs) == 0 {
 		return "", fmt.Errorf("no kb_ids provided")
 	}
-	kb, err := s.kbDAO.GetByID(kbIDs[0])
-	if err != nil {
-		return "", fmt.Errorf("knowledgebase not found: %w", err)
-	}
-	return kb.TenantID, nil
+	return dao.GetTenantIDByKBID(kbIDs[0])
 }
 
-// SearchMetadataResult holds the result of a metadata search
-type SearchMetadataResult struct {
-	IndexName string
-	Chunks    []map[string]interface{}
+// SearchMetadataResponse holds the result of a metadata search
+type SearchMetadataResponse struct {
+	IndexName       string
+	MetadataRecords []map[string]interface{}
 }
 
 // SearchMetadata searches the metadata index with the given parameters
-func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string, size int) (*SearchMetadataResult, error) {
-	indexName := BuildMetadataIndexName(tenantID)
-
-	searchReq := &types.SearchRequest{
-		IndexNames: []string{indexName},
-		KbIDs:      []string{kbID},
-		Offset:     0,
-		Limit:      size,
+func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string, size int) (*SearchMetadataResponse, error) {
+	searchReq := &types.SearchMetadataRequest{
+		TenantID: tenantID,
+		Offset:   0,
+		Limit:    size,
 		Filter: map[string]interface{}{
-			"doc_id": docIDs,
+			"id":    docIDs,
+			"kb_id": kbID,
 		},
 	}
 
-	searchResult, err := s.docEngine.Search(context.Background(), searchReq)
+	searchResult, err := s.docEngine.SearchMetadata(context.Background(), searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
-	return &SearchMetadataResult{
-		IndexName: indexName,
-		Chunks:    searchResult.Chunks,
+	return &SearchMetadataResponse{
+		IndexName:       BuildMetadataIndexName(tenantID),
+		MetadataRecords: searchResult.MetadataRecords,
 	}, nil
 }
 
 // SearchMetadataByKBs searches the metadata index for multiple knowledge bases
-func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*SearchMetadataResult, error) {
+func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*SearchMetadataResponse, error) {
 	if len(kbIDs) == 0 {
-		return &SearchMetadataResult{Chunks: []map[string]interface{}{}}, nil
+		return &SearchMetadataResponse{MetadataRecords: []map[string]interface{}{}}, nil
 	}
 
 	tenantID, err := s.GetTenantIDByKBIDs(kbIDs)
@@ -109,31 +108,31 @@ func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*Search
 		return nil, err
 	}
 
-	indexName := BuildMetadataIndexName(tenantID)
-
-	searchReq := &types.SearchRequest{
-		IndexNames: []string{indexName},
-		KbIDs:      kbIDs,
-		Offset:     0,
-		Limit:      size,
+	searchReq := &types.SearchMetadataRequest{
+		TenantID: tenantID,
+		Offset:   0,
+		Limit:    size,
+		Filter: map[string]interface{}{
+			"kb_id": kbIDs,
+		},
 	}
 
-	searchResult, err := s.docEngine.Search(context.Background(), searchReq)
+	searchResult, err := s.docEngine.SearchMetadata(context.Background(), searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
-	return &SearchMetadataResult{
-		IndexName: indexName,
-		Chunks:    searchResult.Chunks,
+	return &SearchMetadataResponse{
+		IndexName:       BuildMetadataIndexName(tenantID),
+		MetadataRecords: searchResult.MetadataRecords,
 	}, nil
 }
 
 // GetFlattedMetaByKBs returns flattened metadata in the format:
 // {field_name: {value: [doc_ids]}}
-func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (map[string]interface{}, error) {
+func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (common.MetaData, error) {
 	if len(kbIDs) == 0 {
-		return make(map[string]interface{}), nil
+		return make(common.MetaData), nil
 	}
 
 	// Get metadata for all docs in KBs (use large limit like Python's 10000)
@@ -142,9 +141,9 @@ func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (map[string]interf
 		return nil, err
 	}
 
-	flattedMeta := make(map[string]interface{})
+	flattedMeta := make(common.MetaData)
 
-	for _, chunk := range result.Chunks {
+	for _, chunk := range result.MetadataRecords {
 		// Extract doc_id from chunk
 		docID := ""
 		if id, ok := chunk["id"].(string); ok {
@@ -171,13 +170,10 @@ func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (map[string]interf
 
 			// Initialize field map if not exists
 			if _, exists := flattedMeta[fieldName]; !exists {
-				flattedMeta[fieldName] = make(map[string]interface{})
+				flattedMeta[fieldName] = make(common.MetaValueDocs)
 			}
 
-			valueMap, ok := flattedMeta[fieldName].(map[string]interface{})
-			if !ok {
-				continue
-			}
+			valueMap := flattedMeta[fieldName]
 
 			// Handle string, number (float64/int), and list of string/number
 			switch v := fieldValue.(type) {
@@ -239,6 +235,129 @@ func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (map[string]interf
 	}
 
 	return flattedMeta, nil
+}
+
+// CollectDocIDsByKB collects unique (kb_id, doc_id) pairs from chunks.
+func CollectDocIDsByKB(chunks []map[string]interface{}) KBDocIDsMap {
+	seen := make(map[string]struct{})
+	result := make(KBDocIDsMap)
+	for _, chunk := range chunks {
+		kbID := extractKBID(chunk)
+		docID := extractDocID(chunk)
+		if kbID == "" || docID == "" {
+			continue
+		}
+		key := kbID + ":" + docID
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result[kbID] = append(result[kbID], docID)
+	}
+	return result
+}
+
+// ConvertSearchResultToDocMeta converts SearchMetadataResult chunks into a DocMetaMap.
+// Pure function, no dependencies.
+func ConvertSearchResultToDocMeta(chunks []map[string]interface{}) DocMetaMap {
+	metaByDoc := make(DocMetaMap)
+	for _, metaChunk := range chunks {
+		docID := extractDocID(metaChunk)
+		if docID == "" {
+			continue
+		}
+		metaFields, err := ExtractMetaFields(metaChunk)
+		if err != nil || len(metaFields) == 0 {
+			continue
+		}
+		metaByDoc[docID] = metaFields
+	}
+	return metaByDoc
+}
+
+// FetchDocMetaByKB fetches document metadata from ES for each KB.
+func (s *MetadataService) FetchDocMetaByKB(docIDsByKB KBDocIDsMap, tenantID string) DocMetaMap {
+	metaByDoc := make(DocMetaMap)
+	for kbID, docIDs := range docIDsByKB {
+		result, err := s.SearchMetadata(kbID, tenantID, docIDs, len(docIDs))
+		if err != nil {
+			continue
+		}
+		for docID, meta := range ConvertSearchResultToDocMeta(result.MetadataRecords) {
+			metaByDoc[docID] = meta
+		}
+	}
+	return metaByDoc
+}
+
+// AttachDocMetaToChunks attaches document metadata to matching chunks in-place.
+func AttachDocMetaToChunks(chunks []map[string]interface{}, metaByDoc DocMetaMap, metadataFields []string) {
+	filter := make(map[string]struct{}, len(metadataFields))
+	for _, f := range metadataFields {
+		filter[f] = struct{}{}
+	}
+	for _, chunk := range chunks {
+		docID := extractDocID(chunk)
+		if docID == "" {
+			continue
+		}
+		meta, ok := metaByDoc[docID]
+		if !ok {
+			continue
+		}
+		if len(filter) > 0 {
+			filtered := make(map[string]interface{}, len(filter))
+			for k, v := range meta {
+				if _, ok := filter[k]; ok {
+					filtered[k] = v
+				}
+			}
+			if len(filtered) > 0 {
+				chunk["document_metadata"] = filtered
+			}
+		} else {
+			chunk["document_metadata"] = meta
+		}
+	}
+}
+
+// EnrichChunksWithDocMetadata attaches document metadata to each chunk in-place.
+// Combines CollectDocIDsByKB, FetchDocMetaByKB, and AttachDocMetaToChunks.
+func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interface{}, tenantID string, metadataFields []string) {
+	if len(chunks) == 0 || s.docEngine == nil {
+		return
+	}
+	docIDsByKB := CollectDocIDsByKB(chunks)
+	if len(docIDsByKB) == 0 {
+		return
+	}
+	metaByDoc := s.FetchDocMetaByKB(docIDsByKB, tenantID)
+	if len(metaByDoc) == 0 {
+		return
+	}
+	AttachDocMetaToChunks(chunks, metaByDoc, metadataFields)
+}
+
+// extractKBID extracts the KB ID from a chunk, checking common field names.
+func extractKBID(chunk map[string]interface{}) string {
+	if id, ok := chunk["kb_id"].(string); ok && id != "" {
+		return id
+	}
+	if id, ok := chunk["dataset_id"].(string); ok && id != "" {
+		return id
+	}
+	return ""
+}
+
+// extractDocID extracts the document ID from a chunk, checking both id and doc_id.
+func extractDocID(chunk map[string]interface{}) string {
+	if id, ok := chunk["id"].(string); ok {
+		return id
+	}
+	if id, ok := chunk["doc_id"].(string); ok {
+		return id
+	}
+	return ""
 }
 
 // ExtractDocumentID extracts the document ID from a chunk
@@ -303,7 +422,13 @@ func mergeFieldValues(existing, new interface{}) []interface{} {
 			if val != "" {
 				result = append(result, val)
 			}
+		case float64, float32, int, int8, int16, int32, int64, bool:
+			result = append(result, val)
 		case []interface{}:
+			for _, item := range val {
+				addValue(item)
+			}
+		case []string:
 			for _, item := range val {
 				addValue(item)
 			}

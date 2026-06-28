@@ -22,8 +22,8 @@ import (
 	"ragflow/internal/utility"
 )
 
-// TokenResponse token response
-type TokenResponse struct {
+// APIKeyResponse key response
+type APIKeyResponse struct {
 	TenantID   string  `json:"tenant_id"`
 	Token      string  `json:"token"`
 	DialogID   *string `json:"dialog_id,omitempty"`
@@ -33,69 +33,82 @@ type TokenResponse struct {
 	UpdateTime *int64  `json:"update_time,omitempty"`
 }
 
-// ListAPITokens list all API tokens for a tenant
-func (s *SystemService) ListAPITokens(tenantID string) ([]*TokenResponse, error) {
+// ListAPIKeys list all API keys for a tenant
+func (s *SystemService) ListAPIKeys(tenantID string) ([]*APIKeyResponse, error) {
 	APITokenDAO := dao.NewAPITokenDAO()
-	tokens, err := APITokenDAO.GetByTenantID(tenantID)
+	keys, err := APITokenDAO.GetByTenantID(tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	responses := make([]*TokenResponse, len(tokens))
-	for i, token := range tokens {
-		responses[i] = &TokenResponse{
-			TenantID:   token.TenantID,
-			Token:      token.Token,
-			DialogID:   token.DialogID,
-			Source:     token.Source,
-			Beta:       token.Beta,
-			CreateTime: token.CreateTime,
-			UpdateTime: token.UpdateTime,
+	responses := make([]*APIKeyResponse, len(keys))
+	for i, key := range keys {
+		beta := key.Beta
+		if beta == nil || *beta == "" {
+			generatedBeta := utility.GenerateBetaAPIToken(utility.GenerateAPIToken())
+			if err = dao.DB.Model(&entity.APIToken{}).
+				Where("tenant_id = ? AND token = ?", tenantID, key.Token).
+				Updates(map[string]interface{}{
+					"beta": generatedBeta,
+				}).Error; err != nil {
+				return nil, err
+			}
+			beta = &generatedBeta
+			key.Beta = beta
+		}
+
+		responses[i] = &APIKeyResponse{
+			TenantID:   key.TenantID,
+			Token:      key.Token,
+			DialogID:   key.DialogID,
+			Source:     key.Source,
+			Beta:       beta,
+			CreateTime: key.CreateTime,
+			UpdateTime: key.UpdateTime,
 		}
 	}
 
 	return responses, nil
 }
 
-// CreateAPITokenRequest create token request
-type CreateAPITokenRequest struct {
+// CreateAPIKeyRequest create key request
+type CreateAPIKeyRequest struct {
 	Name string `json:"name" form:"name"`
 }
 
-// CreateAPIToken creates a new API token for a tenant
-func (s *SystemService) CreateAPIToken(tenantID string, req *CreateAPITokenRequest) (*TokenResponse, error) {
+// CreateAPIKey creates a new API key for a tenant
+func (s *SystemService) CreateAPIKey(tenantID string, req *CreateAPIKeyRequest) (*APIKeyResponse, error) {
 	APITokenDAO := dao.NewAPITokenDAO()
 
-	// Generate token and beta values
-	// token: "ragflow-" + secrets.token_urlsafe(32)
+	// Generate key and beta values
+	// key: "ragflow-" + secrets.token_urlsafe(32)
 	APIToken := utility.GenerateAPIToken()
 	// beta: generate_confirmation_token().replace("ragflow-", "")[:32]
-	betaAPIKey := utility.GenerateBetaAPIToken(APIToken)
+	betaAPIKey := utility.GenerateBetaAPIToken(utility.GenerateAPIToken())
 
-	APITokenData := &entity.APIToken{
+	APIKeyData := &entity.APIToken{
 		TenantID: tenantID,
 		Token:    APIToken,
 		Beta:     &betaAPIKey,
 	}
 
-	if err := APITokenDAO.Create(APITokenData); err != nil {
+	if err := APITokenDAO.Create(APIKeyData); err != nil {
 		return nil, err
 	}
 
-	return &TokenResponse{
-		TenantID:   APITokenData.TenantID,
-		Token:      APITokenData.Token,
-		DialogID:   APITokenData.DialogID,
-		Source:     APITokenData.Source,
-		Beta:       APITokenData.Beta,
-		CreateTime: APITokenData.CreateTime,
-		UpdateTime: APITokenData.UpdateTime,
+	return &APIKeyResponse{
+		TenantID:   APIKeyData.TenantID,
+		Token:      APIKeyData.Token,
+		DialogID:   APIKeyData.DialogID,
+		Source:     APIKeyData.Source,
+		Beta:       APIKeyData.Beta,
+		CreateTime: APIKeyData.CreateTime,
+		UpdateTime: APIKeyData.UpdateTime,
 	}, nil
 }
 
-// DeleteAPIToken deletes an API token by tenant ID and token value
-func (s *SystemService) DeleteAPIToken(tenantID, token string) error {
+func (s *SystemService) DeleteAPIKey(tenantID, key string) error {
 	APITokenDAO := dao.NewAPITokenDAO()
-	_, err := APITokenDAO.DeleteByTenantIDAndToken(tenantID, token)
+	_, err := APITokenDAO.DeleteByTenantIDAndToken(tenantID, key)
 	return err
 }

@@ -26,12 +26,12 @@ import (
 )
 
 type googleModelPage struct {
-	items         []string
+	items         []DSModel
 	nextPageToken string
 }
 
-func collectGoogleModelNames(ctx context.Context, listPage func(context.Context, string) (googleModelPage, error)) ([]string, error) {
-	var modelNames []string
+func collectGoogleModelNames(ctx context.Context, listPage func(context.Context, string) (googleModelPage, error)) ([]ListModelResponse, error) {
+	var models []DSModel
 	pageToken := ""
 
 	for {
@@ -40,19 +40,16 @@ func collectGoogleModelNames(ctx context.Context, listPage func(context.Context,
 			return nil, err
 		}
 
-		modelNames = append(modelNames, page.items...)
+		models = append(models, page.items...)
 		if page.nextPageToken == "" {
-			return modelNames, nil
+			return ParseListModel(ModelList{Models: models}), nil
 		}
 		pageToken = page.nextPageToken
 	}
 }
 
-var googleListModels = func(ctx context.Context, apiKey string) ([]string, error) {
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:  apiKey,
-		Backend: genai.BackendGeminiAPI,
-	})
+var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]ListModelResponse, error) {
+	client, err := genai.NewClient(ctx, config)
 	if err != nil {
 		return nil, err
 	}
@@ -63,9 +60,18 @@ var googleListModels = func(ctx context.Context, apiKey string) ([]string, error
 			return googleModelPage{}, err
 		}
 
-		var modelNames []string
+		var modelNames []DSModel
 		for _, m := range models.Items {
-			modelNames = append(modelNames, m.Name)
+			modelName := strings.TrimSpace(m.DisplayName)
+			if modelName == "" {
+				modelName = strings.TrimSpace(m.Name)
+			}
+			if modelName != "" {
+				modelNames = append(modelNames, DSModel{
+					ID:      modelName,
+					OwnedBy: "Google",
+				})
+			}
 		}
 		return googleModelPage{items: modelNames, nextPageToken: models.NextPageToken}, nil
 	})
@@ -73,29 +79,52 @@ var googleListModels = func(ctx context.Context, apiKey string) ([]string, error
 
 // GoogleModel implements ModelDriver for Google AI
 type GoogleModel struct {
-	BaseURL   map[string]string
-	URLSuffix URLSuffix
+	baseModel BaseModel
 }
 
 // NewGoogleModel creates a new Google AI model instance
 func NewGoogleModel(baseURL map[string]string, urlSuffix URLSuffix) *GoogleModel {
 	return &GoogleModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+		},
 	}
 }
 
 func (g *GoogleModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewGoogleModel(baseURL, g.baseModel.URLSuffix)
 }
 
 func (g *GoogleModel) Name() string {
 	return "google"
 }
 
+func (g *GoogleModel) clientConfig(apiKey string, apiConfig *APIConfig) *genai.ClientConfig {
+	return &genai.ClientConfig{APIKey: apiKey, Backend: genai.BackendGeminiAPI, HTTPOptions: genai.HTTPOptions{BaseURL: g.baseURL(apiConfig)}}
+}
+
+func (g *GoogleModel) baseURL(apiConfig *APIConfig) string {
+	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		defaultConfig := &APIConfig{}
+		if apiConfig != nil {
+			defaultConfig.BaseURL = apiConfig.BaseURL
+		}
+		baseURL, err = g.baseModel.GetBaseURL(defaultConfig)
+		if err != nil {
+			return ""
+		}
+	}
+	return strings.TrimSpace(baseURL)
+}
+
 func (g *GoogleModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is nil or empty")
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(modelName) == "" {
+		return nil, fmt.Errorf("model name is empty")
 	}
 
 	if len(messages) == 0 {
@@ -103,10 +132,7 @@ func (g *GoogleModel) ChatWithMessages(modelName string, messages []Message, api
 	}
 
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:  *apiConfig.ApiKey,
-		Backend: genai.BackendGeminiAPI,
-	})
+	client, err := genai.NewClient(ctx, g.clientConfig(strings.TrimSpace(*apiConfig.ApiKey), apiConfig))
 	if err != nil {
 		return nil, err
 	}
@@ -168,15 +194,22 @@ func (g *GoogleModel) ChatWithMessages(modelName string, messages []Message, api
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (g *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
+	if strings.TrimSpace(modelName) == "" {
+		return fmt.Errorf("model name is empty")
+	}
+	if sender == nil {
+		return fmt.Errorf("sender is nil")
+	}
 
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:  *apiConfig.ApiKey,
-		Backend: genai.BackendGeminiAPI,
-	})
+	client, err := genai.NewClient(ctx, g.clientConfig(strings.TrimSpace(*apiConfig.ApiKey), apiConfig))
 	if err != nil {
 		return err
 	}
@@ -238,7 +271,11 @@ func (g *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Messag
 
 		var responseContent string
 		if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-			responseContent = response.Candidates[0].Content.Parts[0].Text
+			if len(response.Candidates) > 0 &&
+				response.Candidates[0].Content != nil &&
+				len(response.Candidates[0].Content.Parts) > 0 {
+				responseContent = response.Candidates[0].Content.Parts[0].Text
+			}
 		}
 
 		if responseContent != "" {
@@ -262,8 +299,8 @@ func (g *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Messag
 // Embed generates embeddings for a batch of texts using the Gemini embeddings API.
 // The SDK routes to batchEmbedContents internally, so all texts are sent in one request.
 func (g *GoogleModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -275,10 +312,7 @@ func (g *GoogleModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:  *apiConfig.ApiKey,
-		Backend: genai.BackendGeminiAPI,
-	})
+	client, err := genai.NewClient(ctx, g.clientConfig(strings.TrimSpace(*apiConfig.ApiKey), apiConfig))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
@@ -318,12 +352,12 @@ func (g *GoogleModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	return result, nil
 }
 
-func (g *GoogleModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return nil, fmt.Errorf("api key is required")
+func (g *GoogleModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	return googleListModels(context.Background(), *apiConfig.ApiKey)
+	return googleListModels(context.Background(), g.clientConfig(strings.TrimSpace(*apiConfig.ApiKey), apiConfig))
 }
 
 func (g *GoogleModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
@@ -345,8 +379,8 @@ func (g *GoogleModel) TranscribeAudio(modelName *string, file *string, apiConfig
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (z *GoogleModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (g *GoogleModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", g.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -354,8 +388,8 @@ func (g *GoogleModel) AudioSpeech(modelName *string, audioContent *string, apiCo
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (z *GoogleModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (g *GoogleModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", g.Name())
 }
 
 // OCRFile OCR file
@@ -364,14 +398,14 @@ func (g *GoogleModel) OCRFile(modelName *string, content []byte, url *string, ap
 }
 
 // ParseFile parse file
-func (z *GoogleModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (g *GoogleModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (z *GoogleModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (g *GoogleModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (z *GoogleModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (g *GoogleModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
