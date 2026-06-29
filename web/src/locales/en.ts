@@ -124,6 +124,9 @@ export default {
       welcome: 'Welcome to',
       dataset: 'Dataset',
       memories: 'Memory',
+      discord: 'Discord',
+      github: 'GitHub',
+      help: 'Help',
     },
     skills: {
       title: 'Skills',
@@ -2697,6 +2700,8 @@ This process aggregates variables from multiple branches into a single variable 
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
+      duplicate: 'Duplicate',
+      copyOfAgentName: '{{name}} (copy)',
       ceateAgent: 'Workflow',
       createPipeline: 'Ingestion pipeline',
       chooseAgentType: 'Choose agent type',

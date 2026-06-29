@@ -40,6 +40,8 @@ from rag.prompts.generator import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.tts_cache import synthesize_with_cache
 
+_logger = logging.getLogger(__name__)
+
 class Graph:
     """
         dsl = {
@@ -438,6 +440,11 @@ class Canvas(Graph):
 
         if not is_resume:
             yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
+            _logger.debug(
+                "[Canvas] Workflow started. Path: %s, Inputs: %s",
+                [self.get_component_name(c) for c in self.path],
+                json.dumps(kwargs.get("inputs", {}), ensure_ascii=False, default=str)[:500],
+            )
         self.retrieval.append({"chunks": {}, "doc_aggs": {}})
 
         async def _run_batch(f, t):
@@ -482,6 +489,13 @@ class Canvas(Graph):
                 if task_fn is None:
                     continue
 
+                _logger.debug(
+                    "[Canvas] Invoking component '%s' (%s) with inputs: %s",
+                    self.get_component_name(self.path[i - 1]),
+                    cpn.component_name,
+                    json.dumps(call_kwargs, ensure_ascii=False, default=str)[:500],
+                )
+
                 fn_invoke_async = getattr(cpn, "_invoke_async", None)
                 use_async = (fn_invoke_async and asyncio.iscoroutinefunction(fn_invoke_async)) or asyncio.iscoroutinefunction(getattr(cpn, "_invoke", None))
                 tasks.append(asyncio.create_task(_invoke_one(cpn, task_fn, call_kwargs, use_async)))
@@ -490,9 +504,17 @@ class Canvas(Graph):
                 await asyncio.gather(*tasks)
 
         def _node_finished(cpn_obj):
+            outputs = cpn_obj.output()
+            _logger.debug(
+                "[Canvas] Component '%s' (%s) finished. Outputs: %s, Error: %s",
+                self.get_component_name(cpn_obj._id),
+                self.get_component_type(cpn_obj._id),
+                json.dumps(outputs, ensure_ascii=False, default=str)[:500],
+                cpn_obj.error(),
+            )
             return decorate("node_finished",{
                            "inputs": cpn_obj.get_input_values(),
-                           "outputs": cpn_obj.output(),
+                           "outputs": outputs,
                            "component_id": cpn_obj._id,
                            "component_name": self.get_component_name(cpn_obj._id),
                            "component_type": self.get_component_type(cpn_obj._id),
