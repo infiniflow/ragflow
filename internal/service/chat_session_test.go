@@ -566,10 +566,12 @@ func TestUpdateSession_Success(t *testing.T) {
 	}
 	store.dialogExists["user-1|chat-1"] = true
 
+	feedback := &fakeChunkFeedbackApplier{}
 	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
+		chatSessionDAO:       store,
+		userTenantDAO:        &fakeTenantStore{},
+		pipeline:             &fakePipeline{},
+		chunkFeedbackApplier: feedback,
 	}
 
 	longName := "  " + strings.Repeat("x", 260) + "  "
