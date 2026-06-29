@@ -198,7 +198,13 @@ class Graph:
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
         if exp.find("@") < 0:
             return self.globals[exp]
-        cpn_id, var_nm = exp.split("@")
+        # Split from the left with maxsplit=1 so the trailing var_nm can
+        # legitimately contain '@' characters (defensive: although the
+        # upstream regex in `get_value_with_variable` constrains `var_nm`
+        # to `[A-Za-z0-9_.-]+`, direct callers of this method may pass
+        # any string and should not raise `ValueError: too many values
+        # to unpack`). `cpn_id` is system-generated and never contains '@'.
+        cpn_id, var_nm = exp.split("@", 1)
         cpn = self.get_component(cpn_id)
         if not cpn:
             raise Exception(f"Can't find variable: '{cpn_id}@{var_nm}'")
@@ -245,7 +251,10 @@ class Graph:
         if exp.find("@") < 0:
             self.globals[exp] = value
             return
-        cpn_id, var_nm = exp.split("@")
+        # See `get_variable_value` above for rationale on `maxsplit=1`.
+        # Without it, a var_nm containing '@' would raise
+        # `ValueError: too many values to unpack` instead of being preserved.
+        cpn_id, var_nm = exp.split("@", 1)
         cpn = self.get_component(cpn_id)
         if not cpn:
             raise Exception(f"Can't find variable: '{cpn_id}@{var_nm}'")
