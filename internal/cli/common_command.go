@@ -695,12 +695,12 @@ func (c *CLI) CommonCheckProviderWithKeyCommand(cmd *Command) (ResponseIf, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to check provider connection with key: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
 
 	switch c.Config.CLIMode {
 	case AdminMode:
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		}
 		var result CommonDataResponse
 		if err = json.Unmarshal(resp.Body, &result); err != nil {
 			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
@@ -711,15 +711,7 @@ func (c *CLI) CommonCheckProviderWithKeyCommand(cmd *Command) (ResponseIf, error
 		result.Duration = resp.Duration
 		return &result, nil
 	case APIMode:
-		var result SimpleResponse
-		if err = json.Unmarshal(resp.Body, &result); err != nil {
-			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
-		}
-		if result.Code != 0 {
-			return nil, fmt.Errorf("%s", result.Message)
-		}
-		result.Duration = resp.Duration
-		return &result, nil
+		return HandleSimpleResponse(resp, "check provider connection with key")
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -754,12 +746,12 @@ func (c *CLI) CommonCheckProviderConnectionCommand(cmd *Command) (ResponseIf, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to check provider connection: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
 
 	switch c.Config.CLIMode {
 	case AdminMode:
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		}
 		var result CommonDataResponse
 		if err = json.Unmarshal(resp.Body, &result); err != nil {
 			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
@@ -770,15 +762,7 @@ func (c *CLI) CommonCheckProviderConnectionCommand(cmd *Command) (ResponseIf, er
 		result.Duration = resp.Duration
 		return &result, nil
 	case APIMode:
-		var result SimpleResponse
-		if err = json.Unmarshal(resp.Body, &result); err != nil {
-			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
-		}
-		if result.Code != 0 {
-			return nil, fmt.Errorf("%s", result.Message)
-		}
-		result.Duration = resp.Duration
-		return &result, nil
+		return HandleSimpleResponse(resp, "check provider connection")
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -827,15 +811,14 @@ func (c *CLI) CommonAlterProviderInstanceCommand(cmd *Command) (ResponseIf, erro
 		return nil, fmt.Errorf("failed to alter instance: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to alter instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
 	switch c.Config.CLIMode {
 	case AdminMode:
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("failed to alter instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		}
 		var result CommonDataResponse
 		if err = json.Unmarshal(resp.Body, &result); err != nil {
-			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+			return nil, fmt.Errorf("alter instance failed: invalid JSON (%w)", err)
 		}
 		if result.Code != 0 {
 			return nil, fmt.Errorf("%s", result.Message)
@@ -843,15 +826,7 @@ func (c *CLI) CommonAlterProviderInstanceCommand(cmd *Command) (ResponseIf, erro
 		result.Duration = resp.Duration
 		return &result, nil
 	case APIMode:
-		var result SimpleResponse
-		if err = json.Unmarshal(resp.Body, &result); err != nil {
-			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
-		}
-		if result.Code != 0 {
-			return nil, fmt.Errorf("%s", result.Message)
-		}
-		result.Duration = resp.Duration
-		return &result, nil
+		return HandleSimpleResponse(resp, "alter instance")
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -895,15 +870,15 @@ func (c *CLI) CommonEnableOrDisableModelCommand(cmd *Command, status string) (Re
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable/disable model: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to enable/disable model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
 
 	switch c.Config.CLIMode {
 	case AdminMode:
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("failed to enable/disable model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		}
 		var result CommonDataResponse
 		if err = json.Unmarshal(resp.Body, &result); err != nil {
-			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+			return nil, fmt.Errorf("enable/disable model failed: invalid JSON (%w)", err)
 		}
 		if result.Code != 0 {
 			return nil, fmt.Errorf("%s", result.Message)
@@ -911,15 +886,7 @@ func (c *CLI) CommonEnableOrDisableModelCommand(cmd *Command, status string) (Re
 		result.Duration = resp.Duration
 		return &result, nil
 	case APIMode:
-		var result SimpleResponse
-		if err = json.Unmarshal(resp.Body, &result); err != nil {
-			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
-		}
-		if result.Code != 0 {
-			return nil, fmt.Errorf("%s", result.Message)
-		}
-		result.Duration = resp.Duration
-		return &result, nil
+		return HandleSimpleResponse(resp, "enable/disable model")
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -965,20 +932,7 @@ func (c *CLI) APISetDefaultModelCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to set default model: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to set default model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("failed to set default model: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "set default model")
 }
 
 func (c *CLI) APIResetDefaultModelCommand(cmd *Command) (ResponseIf, error) {
@@ -1007,20 +961,7 @@ func (c *CLI) APIResetDefaultModelCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to reset default model: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to reset default model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("failed to reset default model: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "reset default model")
 }
 
 func (c *CLI) APIListDefaultModelsCommand(cmd *Command) (ResponseIf, error) {

@@ -349,21 +349,7 @@ func (c *CLI) APIListDatasetsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list datasets failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-
-	return &result, nil
+	return HandleCommonResponse(resp, "list datasets")
 }
 
 func (c *CLI) APIListDatasetDocumentsCommand(cmd *Command) (ResponseIf, error) {
@@ -1229,20 +1215,7 @@ func (c *CLI) APIListAPIKeysCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list keys: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list keys: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list keys failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list keys")
 }
 
 // APIDeleteAPIKeyCommand deletes an API key
@@ -1674,21 +1647,7 @@ func (c *CLI) APIListProvidersCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list providers: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list providers failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list providers")
 }
 
 // APIDeleteProviderCommand deletes a provider
@@ -2481,18 +2440,8 @@ func (c *CLI) APIRerankUserDocumentCommand(cmd *Command) (ResponseIf, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to rerank document: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to rerank document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("rerank document failed: invalid JSON (%w)", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+
+	return HandleCommonResponse(resp, "rerank document")
 }
 
 func (c *CLI) APITTSUserCommand(cmd *Command) (ResponseIf, error) {
@@ -3028,20 +2977,10 @@ func (c *CLI) APIListModelInstanceTasksCommand(cmd *Command) (ResponseIf, error)
 
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list tasks: %w", err)
+		return nil, fmt.Errorf("failed to list model parsing tasks: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list tasks: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list tasks failed: invalid JSON (%w)", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+
+	return HandleCommonResponse(resp, "list model parsing tasks")
 }
 
 // APIShowProviderInstanceTaskCommand shows the details of a task
@@ -3744,21 +3683,7 @@ func (c *CLI) APIListIngestionTasks(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list ingestion tasks: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list ingestion tasks:: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list ingestion tasks: failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list ingestion tasks")
 }
 
 // APIShowLogLevelCommand sets the log level for the system.
@@ -3805,21 +3730,7 @@ func (c *CLI) APIListEnvironmentsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list environments: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list environments: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list environments failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list environments")
 }
 
 // APIListVariablesCommand lists all system variables (api mode only).
@@ -3837,21 +3748,7 @@ func (c *CLI) APIListVariablesCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list variables: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list variables: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list environments failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list variables")
 }
 
 func (c *CLI) APIStartIngestionCommand(cmd *Command) (ResponseIf, error) {
@@ -3885,21 +3782,7 @@ func (c *CLI) APIStartIngestionCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to ingest file: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "ingest file")
 }
 
 func (c *CLI) APIStopIngestionCommand(cmd *Command) (ResponseIf, error) {
@@ -3921,24 +3804,10 @@ func (c *CLI) APIStopIngestionCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("PUT", "/datasets/ingestion/tasks", "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to ingest file: %w", err)
+		return nil, fmt.Errorf("failed to stop ingestion: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "stop ingestion")
 }
 
 func (c *CLI) APIRemoveTaskCommand(cmd *Command) (ResponseIf, error) {
