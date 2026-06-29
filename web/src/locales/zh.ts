@@ -447,6 +447,7 @@ export default {
       graph: '图谱',
       graphPlaceholder: '图谱视图占位',
       llmWiki: 'LLM Wiki',
+      skills: '技能',
       contents: '目录',
       entity: '实体',
       selectArtifact: '从目录中选择一个条目以查看详情',
@@ -1596,6 +1597,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         page_index: 'Page index',
         empty: '空',
       },
+    },
+    datasetSkill: {
+      folders: '技能',
+      empty: '暂无技能',
+      selectFolder: '选择一个技能以查看详情',
+      currentFolder: '技能',
+      noContent: '无内容',
     },
     message: {
       registered: '注册成功',

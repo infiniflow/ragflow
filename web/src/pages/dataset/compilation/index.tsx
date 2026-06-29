@@ -1,4 +1,5 @@
 import BackButton from '@/components/back-button';
+import MarkdownEditor from '@/components/markdown-editor';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -18,16 +19,19 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useFetchDatasetSkillPage } from '@/hooks/use-dataset-skill-request';
 import {
   useFetchKnowledgeBaseConfiguration,
   useFetchKnowledgeGraph,
 } from '@/hooks/use-knowledge-request';
 import { IArtifact } from '@/interfaces/database/dataset';
 import KnowledgeForceGraph from '@/pages/dataset/compilation/knowledge-force-graph';
+import { SkillsLeftPanel } from '@/pages/dataset/compilation/skills-left-panel';
 
 enum ViewMode {
   Graph = 'graph',
   LlmWiki = 'llm-wiki',
+  Skills = 'skills',
 }
 
 export default function Compilation() {
@@ -41,6 +45,8 @@ export default function Compilation() {
   const [selectedArtifact, setSelectedArtifact] = useState<IArtifact | null>(
     null,
   );
+  const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
+  const { data: skillPage } = useFetchDatasetSkillPage(selectedSkill);
 
   const handleSwitchToGraph = useCallback(() => {
     setViewMode(ViewMode.Graph);
@@ -48,6 +54,10 @@ export default function Compilation() {
 
   const handleSwitchToLlmWiki = useCallback(() => {
     setViewMode(ViewMode.LlmWiki);
+  }, []);
+
+  const handleSwitchToSkills = useCallback(() => {
+    setViewMode(ViewMode.Skills);
   }, []);
 
   const handleLeftTabChange = useCallback((value: string) => {
@@ -96,6 +106,13 @@ export default function Compilation() {
             >
               {t('knowledgeDetails.llmWiki')}
             </Button>
+            <Button
+              variant={viewMode === ViewMode.Skills ? 'default' : 'outline'}
+              size="sm"
+              onClick={handleSwitchToSkills}
+            >
+              {t('knowledgeDetails.skills')}
+            </Button>
           </div>
         </section>
       </header>
@@ -104,7 +121,7 @@ export default function Compilation() {
         <div className="flex-1 min-h-0 flex flex-col">
           <KnowledgeForceGraph data={knowledgeGraph?.graph} show />
         </div>
-      ) : (
+      ) : viewMode === ViewMode.LlmWiki ? (
         <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
           <ResizablePanelGroup direction="horizontal" className="flex-1">
             <ResizablePanel defaultSize={33} minSize={20} maxSize={50}>
@@ -118,6 +135,24 @@ export default function Compilation() {
             <ResizableHandle withHandle />
             <ResizablePanel>
               <WikiDetailContent selectedArtifact={selectedArtifact} />
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </Card>
+      ) : (
+        <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
+          <ResizablePanelGroup direction="horizontal" className="flex-1">
+            <ResizablePanel defaultSize={33} minSize={20} maxSize={50}>
+              <SkillsLeftPanel
+                selectedSkill={selectedSkill}
+                onSelectSkill={setSelectedSkill}
+              />
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel className="flex flex-col">
+              <MarkdownEditor
+                content={skillPage?.md_with_weight ?? ''}
+                readOnly
+              />
             </ResizablePanel>
           </ResizablePanelGroup>
         </Card>

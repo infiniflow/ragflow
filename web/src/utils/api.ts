@@ -130,6 +130,13 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/artifacts`,
   getArtifactPage: (datasetId: string, pageType: string, slug: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/${pageType}/${slug}`,
+  getDatasetSkillTree: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills`,
+  getDatasetSkillPage: (datasetId: string, skillKwd: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills/${skillKwd
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
   // data pipeline log
   fetchDataPipelineLog: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
