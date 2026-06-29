@@ -23,6 +23,14 @@ RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 OFFICE_OXIDE_PREFIX="${HOME}/.office_oxide"
 OFFICE_OXIDE_VERSION="0.1.2"
 
+# pdfium native library settings (from pypdfium2_raw PyPI wheel)
+PDFIUM_PREFIX="${HOME}/.pdfium"
+PDFIUM_VERSION="0.5.0"
+
+# pdf_oxide native library settings (from GitHub Release)
+PDF_OXIDE_PREFIX="${HOME}/.pdf_oxide"
+PDF_OXIDE_VERSION="0.3.63"
+
 echo -e "${GREEN}=== RAGFlow Go Server Build Script ===${NC}"
 
 # Function to print section headers
@@ -179,6 +187,132 @@ check_office_oxide_deps() {
     echo -e "${GREEN}✓ office_oxide native library installed${NC}"
 }
 
+# Check / install pdfium native library (libpdfium.so from pypdfium2_raw wheel).
+check_pdfium_deps() {
+    local lib_path="${PDFIUM_PREFIX}/libpdfium.so"
+
+    if [ -f "$lib_path" ]; then
+        echo "  pdfium          → ${PDFIUM_PREFIX}"
+        return 0
+    fi
+
+    echo "  pdfium not found, installing..."
+
+    # Map platform to PyPI wheel platform tag.
+    local whl_platform
+    case "$(uname -s)" in
+        Linux)
+            case "$(uname -m)" in
+                x86_64)  whl_platform="manylinux_2_17_x86_64.manylinux2014_x86_64" ;;
+                aarch64|arm64) whl_platform="manylinux_2_17_aarch64.manylinux2014_aarch64" ;;
+                *) echo "  pdfium          → unsupported arch: $(uname -m)"; return 1 ;;
+            esac
+            ;;
+        Darwin)
+            case "$(uname -m)" in
+                x86_64)  whl_platform="macosx_11_0_x86_64" ;;
+                arm64)   whl_platform="macosx_11_0_arm64" ;;
+                *) echo "  pdfium          → unsupported arch: $(uname -m)"; return 1 ;;
+            esac
+            ;;
+        *) echo "  pdfium          → unsupported OS"; return 1 ;;
+    esac
+
+    # Resolve the exact download URL from PyPI JSON API.
+    local whl_url
+    whl_url=$(curl -fsSL "https://pypi.org/pypi/pypdfium2_raw/${PDFIUM_VERSION}/json" 2>/dev/null         | grep -o '"url":"[^"]*'${whl_platform}'[^"]*"'         | head -1         | cut -d'"' -f4)
+
+    if [ -z "$whl_url" ]; then
+        # Fallback: try pip install then copy from site-packages.
+        local pip=""
+        command -v pip3 >/dev/null 2>&1 && pip="pip3"
+        [ -z "$pip" ] && command -v pip >/dev/null 2>&1 && pip="pip"
+        if [ -n "$pip" ]; then
+            echo "  Installing pypdfium2_raw via $pip..."
+            $pip install --quiet pypdfium2_raw=="${PDFIUM_VERSION}" 2>&1
+            local so_path
+            so_path=$($pip show -f pypdfium2_raw 2>/dev/null | grep 'libpdfium.so' | awk '{print $1}')
+            [ -z "$so_path" ] && so_path=$(python3 -c "import pypdfium2_raw,os;print(os.path.join(os.path.dirname(pypdfium2_raw.__file__),'libpdfium.so'))" 2>/dev/null)
+            if [ -n "$so_path" ] && [ -f "$so_path" ]; then
+                mkdir -p "${PDFIUM_PREFIX}"
+                cp "$so_path" "$lib_path"
+            fi
+        fi
+    else
+        mkdir -p "${PDFIUM_PREFIX}"
+        local tmp_whl="$(mktemp)"
+        echo "  Downloading pypdfium2_raw wheel..."
+        if command -v curl >/dev/null 2>&1; then
+            curl -fsSL "$whl_url" -o "$tmp_whl"
+        elif command -v wget >/dev/null 2>&1; then
+            wget -q "$whl_url" -O "$tmp_whl"
+        fi
+        # Wheel is a zip; extract libpdfium.so.
+        if command -v unzip >/dev/null 2>&1; then
+            unzip -q -o "$tmp_whl" -d "${PDFIUM_PREFIX}" 'pypdfium2_raw/libpdfium.so' 2>/dev/null
+            [ -f "${PDFIUM_PREFIX}/pypdfium2_raw/libpdfium.so" ] && mv "${PDFIUM_PREFIX}/pypdfium2_raw/libpdfium.so" "$lib_path"
+            rm -rf "${PDFIUM_PREFIX}/pypdfium2_raw"
+        fi
+        rm -f "$tmp_whl"
+    fi
+
+    if [ -f "$lib_path" ]; then
+        echo -e "${GREEN}✓ pdfium installed to ${PDFIUM_PREFIX}${NC}"
+    else
+        echo "  pdfium          → install failed"
+    fi
+}
+
+# Check / install pdf_oxide native library (Rust -> C FFI library).
+check_pdf_oxide_deps() {
+    local lib_path="${PDF_OXIDE_PREFIX}/libpdf_oxide.so"
+
+    if [ -f "$lib_path" ]; then
+        echo "  pdf_oxide       → ${PDF_OXIDE_PREFIX} (shared)"
+        return 0
+    fi
+
+    # Also check for static library (user's local installation).
+    local static_path="${PDF_OXIDE_PREFIX}/libpdf_oxide.a"
+    if [ -f "$static_path" ]; then
+        echo "  pdf_oxide       → ${PDF_OXIDE_PREFIX} (static)"
+        return 0
+    fi
+
+    echo "  pdf_oxide not found, installing..."
+
+    # Map platform to the release asset name.
+    local asset_name
+    case "$(uname -s)" in
+        Linux)
+            case "$(uname -m)" in
+                x86_64)  asset_name="libpdf_oxide-v${PDF_OXIDE_VERSION}-linux-x86_64" ;;
+                aarch64|arm64) asset_name="libpdf_oxide-v${PDF_OXIDE_VERSION}-linux-aarch64" ;;
+                *) echo "  pdf_oxide       → unsupported arch"; return 1 ;;
+            esac
+            ;;
+        Darwin)
+            case "$(uname -m)" in
+                x86_64)  asset_name="libpdf_oxide-v${PDF_OXIDE_VERSION}-darwin-x86_64" ;;
+                arm64)   asset_name="libpdf_oxide-v${PDF_OXIDE_VERSION}-darwin-arm64" ;;
+                *) echo "  pdf_oxide       → unsupported arch"; return 1 ;;
+            esac
+            ;;
+        *) echo "  pdf_oxide       → unsupported OS"; return 1 ;;
+    esac
+
+    local release_url="https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/${asset_name}.tar.gz"
+
+    mkdir -p "${PDF_OXIDE_PREFIX}"
+    _download_and_extract "$release_url" "${PDF_OXIDE_PREFIX}"
+
+    if [ -f "$lib_path" ]; then
+        echo -e "${GREEN}✓ pdf_oxide installed to ${PDF_OXIDE_PREFIX}${NC}"
+    else
+        echo "  pdf_oxide       → install failed"
+    fi
+}
+
 # Build C++ static library
 build_cpp() {
     print_section "Building C++ static library"
@@ -297,34 +431,22 @@ setup_cgo_env() {
     check_office_oxide_deps
     export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
     export CGO_LDFLAGS="-L${OFFICE_OXIDE_PREFIX}/lib -loffice_oxide -Wl,-rpath,${OFFICE_OXIDE_PREFIX}/lib"
-    # Make the .so discoverable to test binaries spawned without rpath.
     export LD_LIBRARY_PATH="${OFFICE_OXIDE_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-    # ── pdfium (from .venv pypdfium2_raw) ─────────────────────────────
-    local venv_python="${PROJECT_ROOT}/.venv/bin/python3"
-    if [ -x "$venv_python" ]; then
-        local pdfium_dir=$("$venv_python" -c "
-import pypdfium2_raw, os
-print(os.path.dirname(pypdfium2_raw.__file__))
-" 2>/dev/null)
-        if [ -n "$pdfium_dir" ] && [ -f "$pdfium_dir/libpdfium.so" ]; then
-            export CGO_LDFLAGS="$CGO_LDFLAGS -L${pdfium_dir} -Wl,-rpath,${pdfium_dir}"
-            export LD_LIBRARY_PATH="${pdfium_dir}:${LD_LIBRARY_PATH}"
-            echo "  pdfium          → ${pdfium_dir}"
-        else
-            echo "  pdfium          → not found (pypdfium2_raw missing from .venv)"
-        fi
-    else
-        echo "  pdfium          → skipped (.venv not found)"
+    # ── pdfium ────────────────────────────────────────────────────────
+    check_pdfium_deps
+    if [ -f "${PDFIUM_PREFIX}/libpdfium.so" ]; then
+        export CGO_LDFLAGS="$CGO_LDFLAGS -L${PDFIUM_PREFIX} -Wl,-rpath,${PDFIUM_PREFIX}"
+        export LD_LIBRARY_PATH="${PDFIUM_PREFIX}:${LD_LIBRARY_PATH}"
     fi
 
-    # ── pdf_oxide (from env var or default location) ──────────────────
-    local pdf_oxide_lib="${PDF_OXIDE_LIB:-${HOME}/pdf_oxide/v0.3.63/lib/linux_amd64/libpdf_oxide.a}"
-    if [ -f "$pdf_oxide_lib" ]; then
-        export CGO_LDFLAGS="$CGO_LDFLAGS $pdf_oxide_lib"
-        echo "  pdf_oxide       → ${pdf_oxide_lib}"
-    else
-        echo "  pdf_oxide       → not found (set PDF_OXIDE_LIB or install to ~/pdf_oxide)"
+    # ── pdf_oxide ─────────────────────────────────────────────────────
+    check_pdf_oxide_deps
+    if [ -f "${PDF_OXIDE_PREFIX}/libpdf_oxide.so" ]; then
+        export CGO_LDFLAGS="$CGO_LDFLAGS -L${PDF_OXIDE_PREFIX} -lpdf_oxide -Wl,-rpath,${PDF_OXIDE_PREFIX}"
+        export LD_LIBRARY_PATH="${PDF_OXIDE_PREFIX}:${LD_LIBRARY_PATH}"
+    elif [ -f "${PDF_OXIDE_PREFIX}/libpdf_oxide.a" ]; then
+        export CGO_LDFLAGS="$CGO_LDFLAGS ${PDF_OXIDE_PREFIX}/libpdf_oxide.a"
     fi
 
     echo "CGO_CFLAGS:   $CGO_CFLAGS"

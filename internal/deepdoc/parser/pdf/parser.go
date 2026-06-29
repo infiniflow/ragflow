@@ -124,10 +124,22 @@ func (p *Parser) Parse(ctx context.Context, engine pdf.PDFEngine) (*pdf.ParseRes
 	isEnglish := util.DetectEnglish(prescanChars, totalPages, p.SampleChars)
 	scanNoise := util.IsScanNoise(util.FullTextFromChars(prescanChars))
 
+	// ── Extract PDF outlines/bookmarks (best-effort, non-fatal) ──
+	outlines, outlineErr := engine.Outlines()
+	if outlineErr != nil {
+		slog.Warn("Failed to extract PDF outlines; continuing without them", "err", outlineErr)
+		outlines = nil
+	}
+
 	// ── Small document: process all at once (no batching overhead) ──
 	if totalPages <= batchSize {
-		return p.processPages(ctx, engine, fromPage, toPage,
+		result, err := p.processPages(ctx, engine, fromPage, toPage,
 			prescanChars, prescanMedianH, prescanMedianW, isEnglish, scanNoise)
+		if err != nil {
+			return nil, err
+		}
+		result.Outlines = outlines
+		return result, nil
 	}
 
 	// ── Large document: process in batches to bound memory ──
@@ -168,6 +180,7 @@ func (p *Parser) Parse(ctx context.Context, engine pdf.PDFEngine) (*pdf.ParseRes
 		result.Metrics.BoxesFinal += batch.Metrics.BoxesFinal
 		result.Metrics.TablesCount += batch.Metrics.TablesCount
 	}
+	result.Outlines = outlines
 	return result, nil
 }
 

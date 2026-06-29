@@ -297,6 +297,7 @@ func TestPostProcess_FullPipeline(t *testing.T) {
 		ConfigKeyPageWidth: 600.0,
 		ConfigKeyZoom:      1.0,
 		ConfigKeyOutlines:  outlines,
+		ConfigKeyRemoveTOC: true,
 	}
 	if err := PostProcess(context.Background(), result, config); err != nil {
 		t.Fatal(err)

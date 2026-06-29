@@ -23,6 +23,7 @@ const (
 	ConfigKeyFlattenMediaToText = "flatten_media_to_text"
 	ConfigKeyTenantID           = "tenant_id"
 	ConfigKeyVLMLLMID           = "vlm_llm_id"
+	ConfigKeyRemoveTOC          = "remove_toc"
 )
 
 // PipelineConfig is a key-value map that post-processing reads
@@ -133,9 +134,13 @@ func PostProcess(ctx context.Context, result *pdftype.ParseResult, config Pipeli
 		reorderMultiColumn(result, pw, zoom)
 	}
 
-	// 2. Remove TOC pages
+	// 2. Remove TOC pages (only when explicitly enabled).
+	// Outlines from config take precedence; otherwise read from ParseResult.
 	outlines := config.Outlines()
-	if len(outlines) > 0 {
+	if len(outlines) == 0 {
+		outlines = result.Outlines
+	}
+	if config.Bool(ConfigKeyRemoveTOC) && len(outlines) > 0 {
 		removeTOCByOutlines(result, outlines)
 	}
 

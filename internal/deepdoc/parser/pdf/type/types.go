@@ -26,6 +26,7 @@ type ParseResult struct {
 	Tables     []TableItem
 	PageImages map[int]image.Image
 	Metrics    PipelineMetrics
+	Outlines   []Outline // PDF outlines/bookmarks extracted from the document
 
 	DLADebug []DLAPageRegions
 	TSRDebug []TSRRawCell

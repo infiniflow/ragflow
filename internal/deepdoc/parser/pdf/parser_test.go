@@ -4,6 +4,7 @@ import (
 	"context"
 	"image"
 	"strings"
+	"sync"
 	"testing"
 
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
@@ -551,3 +552,23 @@ func TestTableSectionCaptionInHTML(t *testing.T) {
 // text boxes that are mostly OUTSIDE the cell, even with cellIsEmpty=true.
 // The 0.3 threshold should not match a wide box that barely touches a
 // narrow cell — this would cause body text to leak into table cells.
+// TestParser_ConcurrentSafety verifies that Parser.Parse() is safe for
+// concurrent use. 8 goroutines each call Parse 5 times on the same Parser
+// instance. Run with -race.
+func TestParser_ConcurrentSafety(t *testing.T) {
+	p := NewParser(pdf.DefaultParserConfig(), &MockDocAnalyzer{Healthy: false})
+
+	var wg sync.WaitGroup
+	n := 8
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 5 {
+				eng := &mockEngine{pageCount: 2}
+				_, _ = p.Parse(context.Background(), eng)
+			}
+		}()
+	}
+	wg.Wait()
+}
