@@ -344,6 +344,19 @@ func TestPythonExtractorRelations(t *testing.T) {
 	}
 }
 
+// zhTests define Chinese test cases for zh_core_web_sm.
+var zhTests = []EnTestSpec{
+	{name: "founded_by_zh", text: "腾讯由马化腾创立",
+		wantEntities: [][2]string{{"腾讯", "ORG"}, {"马化腾", "PERSON"}},
+		wantRels:     []relSpec{{"腾讯", "founded_by", "马化腾"}}},
+	{name: "located_in_zh", text: "美国位于北美洲",
+		wantEntities: [][2]string{{"美国", "GPE"}, {"北美洲", "LOC"}},
+		wantRels:     []relSpec{{"美国", "located_in", "北美洲"}}},
+	{name: "works_for_zh", text: "张三维就职于华为",
+		wantEntities: [][2]string{{"张三维", "PERSON"}, {"华为", "GPE"}},
+		wantRels:     []relSpec{{"张三维", "works_for", "华为"}}},
+}
+
 // ---------------------------------------------------------------------------
 // Test 4: Go regex + Python entities matches Python regex + Python entities
 //
@@ -370,6 +383,54 @@ func TestFullTripleIdentity(t *testing.T) {
 			goRels := ExtractRelations(tc.text, goEntities, "en")
 
 			// Compare typed triples (exclude related_to)
+			pyTriples := make(map[string]bool)
+			for _, r := range py.Rels {
+				if r.Predicate == "related_to" {
+					continue
+				}
+				key := r.Subject.Text + "|" + r.Predicate + "|" + r.Object.Text
+				pyTriples[key] = true
+			}
+			goTriples := make(map[string]bool)
+			for _, r := range goRels {
+				if r.Predicate == "related_to" {
+					continue
+				}
+				key := r.Subject.Text + "|" + r.Predicate + "|" + r.Object.Text
+				goTriples[key] = true
+			}
+
+			for key := range pyTriples {
+				if !goTriples[key] {
+					t.Errorf("Go missing triple: %s\n  Python triples: %v\n  Go triples: %v\n  Python entities: %+v",
+						key, pyTriples, goTriples, py.Entities)
+				}
+			}
+			for key := range goTriples {
+				if !pyTriples[key] {
+					t.Errorf("Go extra triple not in Python: %s\n  Python triples: %v\n  Go triples: %v\n  Python entities: %+v",
+						key, pyTriples, goTriples, py.Entities)
+				}
+			}
+		})
+	}
+}
+
+func TestZhFullTripleIdentity(t *testing.T) {
+	for _, tc := range zhTests {
+		t.Run(tc.name, func(t *testing.T) {
+			py, err := runPythonExtractor(tc.text, "zh")
+			if err != nil {
+				t.Skip("Python spaCy zh not available:", err)
+			}
+
+			goEntities := make([]Entity, len(py.Entities))
+			for i, e := range py.Entities {
+				goEntities[i] = Entity{Text: e.Text, Label: e.Label, StartChar: e.StartChar, EndChar: e.EndChar}
+			}
+
+			goRels := ExtractRelations(tc.text, goEntities, "zh")
+
 			pyTriples := make(map[string]bool)
 			for _, r := range py.Rels {
 				if r.Predicate == "related_to" {

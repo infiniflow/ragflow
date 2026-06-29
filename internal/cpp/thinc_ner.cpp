@@ -125,19 +125,48 @@ struct HashEmbed {
 };
 
 // =========================================================================
-// Features
+// Features — dynamic based on n_embed
+//   en (6): NORM, PREFIX, SUFFIX, SHAPE, SPACY, IS_SPACE
+//   zh (5): NORM, PREFIX, SUFFIX, SHAPE, IS_SPACE
 // =========================================================================
-struct Feat { uint64_t nid,pid,sid,shid,spid,isid; };
-static Feat extract(const std::string& t) {
-    Feat f; std::string lo=t; std::transform(lo.begin(),lo.end(),lo.begin(),::tolower);
-    f.nid=hash_feat(lo);
-    f.pid=hash_feat(t.empty()?"":std::string(1,t[0]));
-    f.sid=hash_feat(t.size()>=3?t.substr(t.size()-3):t);
-    std::string sh; for(char c:t){unsigned char uc=(unsigned char)c;if(std::isupper(uc))sh+='X';else if(std::islower(uc))sh+='x';else if(std::isdigit(uc))sh+='d';else sh+=c;}
-    f.shid=hash_feat(sh);
-    f.spid=1;  // SPACY attr returns 1 for non-space tokens (NOT 0!)
-    f.isid=0;  // IS_SPACE attr returns 0 for non-space tokens
-    return f;
+static uint64_t feat_norm(const std::string& t) {
+    std::string lo=t; std::transform(lo.begin(),lo.end(),lo.begin(),::tolower);
+    return hash_feat(lo);
+}
+static uint64_t feat_prefix(const std::string& t) {
+    return hash_feat(t.empty()?"":std::string(1,t[0]));
+}
+static uint64_t feat_suffix(const std::string& t) {
+    return hash_feat(t.size()>=3?t.substr(t.size()-3):t);
+}
+static uint64_t feat_shape(const std::string& t) {
+    std::string sh;
+    for(unsigned char c:t){
+        if(c>0x7F)sh+='x';                    // CJK → 'x' (matches spaCy zh shape)
+        else if(std::isupper(c))sh+='X';
+        else if(std::islower(c))sh+='x';
+        else if(std::isdigit(c))sh+='d';
+        else sh+=c;
+    }
+    return hash_feat(sh);
+}
+// Extract features based on n_embed count. Returns vector of hash values.
+// en (6): NORM, PREFIX, SUFFIX, SHAPE, SPACY, IS_SPACE
+// zh (5): NORM, PREFIX, SUFFIX, SHAPE, IS_SPACE
+// Feature order matches the HashEmbed table order in the model.
+static std::vector<uint64_t> extract_features(const std::string& t, int n_embed) {
+    std::vector<uint64_t> ids;
+    ids.push_back(feat_norm(t));     // #0: NORM (all models)
+    ids.push_back(feat_prefix(t));   // #1: PREFIX
+    ids.push_back(feat_suffix(t));   // #2: SUFFIX
+    ids.push_back(feat_shape(t));    // #3: SHAPE
+    if(n_embed==6) {
+        ids.push_back(1);            // #4: SPACY (1 for non-space) — en only
+        ids.push_back(0);            // #5: IS_SPACE (0 for non-space) — en only
+    } else {
+        ids.push_back(0);            // #4: IS_SPACE (0 for non-space) — zh only
+    }
+    return ids;
 }
 
 // =========================================================================
@@ -274,13 +303,13 @@ static bool load(const std::string& dir, State* s) {
         return!v->empty();
     };
 
-    // HashEmbeds
-    for(int ei=0;ei<6;ei++){
-        auto* e=ck.get("embed_"+std::to_string(ei)+"_E"); if(!e)return false;
+    // HashEmbeds — dynamic count (6 for en, 5 for zh, etc.)
+    for(int ei=0;;ei++){
+        auto* e=ck.get("embed_"+std::to_string(ei)+"_E"); if(!e)break;
         auto sv=e->get("shape"),ov=e->get("offset"),cv=e->get("count");
-        if(!sv||!ov||!cv)return false;
+        if(!sv||!ov||!cv)break;
         int rs=sv->arr[0].as_int(),nO=sv->arr[1].as_int();
-        auto d=sl(ov->as_i64(),cv->as_i64()); if(d.empty())return false;
+        auto d=sl(ov->as_i64(),cv->as_i64()); if(d.empty())break;
         s->embeds.emplace_back(); s->embeds.back().load(rs,nO,d.data());
     }
     // Seeds
@@ -333,12 +362,12 @@ char* ThincNER_Predict(ThincNERHandle h, const char* tj) {
     std::vector<std::string> tok; std::string j(tj); size_t p=0;
     while((p=j.find('"',p))!=std::string::npos){auto e=j.find('"',p+1);if(e==std::string::npos)break;std::string t=j.substr(p+1,e-p-1);if(!t.empty())tok.push_back(t);p=e+1;}
     int n=(int)tok.size(); if(!n)return strdup("[]");
-    int D=96,NE=6,EC=576;
+    int NE=(int)s->embeds.size(), D=96, EC=NE*D;
 
-    // ---- Step 1: HashEmbed → concat (576) ----
+    // ---- Step 1: HashEmbed → concat (variable dims: 6×96=576 en, 5×96=480 zh) ----
     std::vector<float> emb((size_t)n*EC,0);
     for(int i=0;i<n;i++){
-        auto f=extract(tok[i]); uint64_t ids[]={f.nid,f.pid,f.sid,f.shid,f.spid,f.isid};
+        auto ids=extract_features(tok[i],NE);
         size_t b=(size_t)i*EC;
         for(int e=0;e<NE&&e<(int)s->embeds.size();e++)s->embeds[e].embed(ids[e],emb.data()+b+(size_t)e*D);
     }

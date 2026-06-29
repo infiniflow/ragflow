@@ -204,6 +204,7 @@ func (e *Extractor) findModelDir() string {
 	candidates := []string{
 		"./models/" + modelName,
 		"models/" + modelName,
+		"/usr/share/infinity/resource/spacy/" + modelName,
 		"/usr/local/lib/python3.10/site-packages/" + modelName + "/" + modelName + "-3.8.0",
 		"/usr/lib/python3.10/site-packages/" + modelName + "/" + modelName + "-3.8.0",
 		"/opt/conda/lib/python3.10/site-packages/" + modelName + "/" + modelName + "-3.8.0",
