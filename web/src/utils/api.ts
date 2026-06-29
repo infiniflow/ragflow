@@ -312,6 +312,30 @@ export default {
   getRelatedQuestionsShare: `${restAPIv1}/searchbots/related_questions`,
   retrievalTestShare: `${restAPIv1}/searchbots/retrieval_test`,
 
+  // evaluation
+  listEvaluationDatasets: `${restAPIv1}/evaluations/datasets`,
+  createEvaluationDataset: `${restAPIv1}/evaluations/datasets`,
+  getEvaluationDataset: (id: string) => `${restAPIv1}/evaluations/datasets/${id}`,
+  updateEvaluationDataset: (id: string) => `${restAPIv1}/evaluations/datasets/${id}`,
+  deleteEvaluationDataset: (id: string) => `${restAPIv1}/evaluations/datasets/${id}`,
+  listEvaluationCases: (datasetId: string) =>
+    `${restAPIv1}/evaluations/datasets/${datasetId}/cases`,
+  addEvaluationCase: (datasetId: string) =>
+    `${restAPIv1}/evaluations/datasets/${datasetId}/cases`,
+  importEvaluationCases: (datasetId: string) =>
+    `${restAPIv1}/evaluations/datasets/${datasetId}/cases/import`,
+  deleteEvaluationCase: (datasetId: string, caseId: string) =>
+    `${restAPIv1}/evaluations/datasets/${datasetId}/cases/${caseId}`,
+  listEvaluationRuns: (datasetId: string) =>
+    `${restAPIv1}/evaluations/datasets/${datasetId}/runs`,
+  startEvaluationRun: (datasetId: string) =>
+    `${restAPIv1}/evaluations/datasets/${datasetId}/runs`,
+  getEvaluationRun: (runId: string) => `${restAPIv1}/evaluations/runs/${runId}`,
+  getEvaluationRunResults: (runId: string) =>
+    `${restAPIv1}/evaluations/runs/${runId}/results`,
+  getEvaluationRecommendations: (runId: string) =>
+    `${restAPIv1}/evaluations/runs/${runId}/recommendations`,
+
   // memory
   createMemory: `${restAPIv1}/memories`,
   getMemoryList: `${restAPIv1}/memories`,

@@ -42,10 +42,26 @@ from common.constants import StatusEnum
 from common.token_utils import num_tokens_from_string
 
 
+def _case_to_dict(case) -> Dict[str, Any]:
+    data = case.to_dict()
+    if "metadata" in data:
+        data["case_metadata"] = data.pop("metadata")
+    return data
+
+
 class EvaluationService(CommonService):
     """Service for managing RAG evaluations"""
 
     model = EvaluationDataset
+
+    @classmethod
+    def _get_dataset_for_tenant(cls, dataset_id: str, tenant_id: str) -> Optional[Dict[str, Any]]:
+        dataset = cls.get_dataset(dataset_id)
+        if not dataset or dataset.get("tenant_id") != tenant_id:
+            return None
+        if dataset.get("status") != StatusEnum.VALID.value:
+            return None
+        return dataset
 
     # ==================== Dataset Management ====================
 
@@ -196,7 +212,7 @@ class EvaluationService(CommonService):
                 EvaluationCase.dataset_id == dataset_id
             ).order_by(EvaluationCase.create_time)
 
-            return [c.to_dict() for c in cases]
+            return [_case_to_dict(c) for c in cases]
         except Exception as e:
             logging.error(f"Error getting test cases for dataset {dataset_id}: {e}")
             return []
@@ -263,7 +279,8 @@ class EvaluationService(CommonService):
 
     @classmethod
     def start_evaluation(cls, dataset_id: str, dialog_id: str,
-                        user_id: str, name: Optional[str] = None) -> Tuple[bool, str]:
+                        user_id: str, name: Optional[str] = None,
+                        background: bool = True) -> Tuple[bool, str]:
         """
         Start an evaluation run.
 
@@ -272,17 +289,16 @@ class EvaluationService(CommonService):
             dialog_id: Dialog configuration to evaluate
             user_id: User ID who starts the run
             name: Optional run name
+            background: When True, run evaluation in a background thread
 
         Returns:
             (success, run_id or error_message)
         """
         try:
-            # Get dialog configuration
             success, dialog = DialogService.get_by_id(dialog_id)
             if not success:
                 return False, "Dialog not found"
 
-            # Create evaluation run
             run_id = get_uuid()
             if not name:
                 name = f"Evaluation Run {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
@@ -303,14 +319,43 @@ class EvaluationService(CommonService):
             if not EvaluationRun.create(**run):
                 return False, "Failed to create evaluation run"
 
-            # Execute evaluation asynchronously (in production, use task queue)
-            # For now, we'll execute synchronously
-            cls._execute_evaluation(run_id, dataset_id, dialog)
+            if background:
+                threading.Thread(
+                    target=cls._execute_evaluation,
+                    args=(run_id, dataset_id, dialog),
+                    daemon=True,
+                ).start()
+            else:
+                cls._execute_evaluation(run_id, dataset_id, dialog)
 
             return True, run_id
         except Exception as e:
             logging.error(f"Error starting evaluation: {e}")
             return False, str(e)
+
+    @classmethod
+    def list_runs(cls, dataset_id: str) -> List[Dict[str, Any]]:
+        """List evaluation runs for a dataset."""
+        try:
+            runs = EvaluationRun.select().where(
+                EvaluationRun.dataset_id == dataset_id
+            ).order_by(EvaluationRun.create_time.desc())
+            return [r.to_dict() for r in runs]
+        except Exception as e:
+            logging.error(f"Error listing runs for dataset {dataset_id}: {e}")
+            return []
+
+    @classmethod
+    def get_run(cls, run_id: str) -> Optional[Dict[str, Any]]:
+        """Get a single evaluation run."""
+        try:
+            run = EvaluationRun.get_by_id(run_id)
+            if run:
+                return run.to_dict()
+            return None
+        except Exception as e:
+            logging.error(f"Error getting run {run_id}: {e}")
+            return None
 
     @classmethod
     def _execute_evaluation(cls, run_id: str, dataset_id: str, dialog: Any):

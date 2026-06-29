@@ -24,6 +24,8 @@ export enum Routes {
   Explore = '/explore',
   AgentExplore = `${Routes.Agent}/:id/explore`,
   Memories = '/memories',
+  Evaluations = '/evaluations',
+  Evaluation = '/evaluation',
   Memory = '/memory',
   MemoryMessage = '/memory-message',
   MemorySetting = '/memory-setting',
@@ -230,6 +232,14 @@ const routeConfigOptions = [
       {
         path: Routes.Memories,
         Component: () => import('@/pages/memories'),
+      },
+      {
+        path: Routes.Evaluations,
+        Component: () => import('@/pages/evaluations'),
+      },
+      {
+        path: `${Routes.Evaluation}/:id`,
+        Component: () => import('@/pages/evaluation'),
       },
       {
         path: `${Routes.Memory}`,

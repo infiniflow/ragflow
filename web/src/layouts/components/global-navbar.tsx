@@ -14,6 +14,7 @@ const PathMap = {
   [Routes.Searches]: [Routes.Searches, Routes.Search],
   [Routes.Agents]: [Routes.Agents, Routes.AgentTemplates],
   [Routes.Memories]: [Routes.Memories, Routes.Memory, Routes.MemoryMessage],
+  [Routes.Evaluations]: [Routes.Evaluations, Routes.Evaluation],
   [Routes.Files]: [Routes.Files],
 } as const;
 
@@ -41,6 +42,7 @@ const menuItems = [
     /* icon: Cpu, */ 'data-testid': 'nav-agent',
   },
   { path: Routes.Memories, name: 'header.memories' /* icon: Cpu, */ },
+  { path: Routes.Evaluations, name: 'header.evaluations' },
   { path: Routes.Files, name: 'header.fileManager' /* icon: File, */ },
 ];
 
