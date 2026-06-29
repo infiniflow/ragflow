@@ -558,8 +558,8 @@ func (h *ProviderHandler) ShowTask(c *gin.Context) {
 }
 
 type AlterProviderInstanceRequest struct {
-	ModelName string `json:"model_name"`
-	APIKey    string `json:"api_key"`
+	InstanceName string `json:"instance_name"`
+	APIKey       string `json:"api_key"`
 }
 
 func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
@@ -599,7 +599,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	code, err := h.modelProviderService.AlterProviderInstance(userID, providerName, instanceName, req.ModelName, req.APIKey)
+	code, err := h.modelProviderService.AlterProviderInstance(userID, providerName, instanceName, req.InstanceName, req.APIKey)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,

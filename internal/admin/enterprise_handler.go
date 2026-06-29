@@ -584,8 +584,8 @@ func (h *Handler) CheckProviderConnection(c *gin.Context) {
 }
 
 type AlterProviderInstanceRequest struct {
-	ModelName string `json:"model_name"`
-	APIKey    string `json:"api_key"`
+	InstanceName string `json:"instance_name"`
+	APIKey       string `json:"api_key"`
 }
 
 func (h *Handler) AlterProviderInstance(c *gin.Context) {
@@ -625,7 +625,7 @@ func (h *Handler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.AlterProviderInstance(userID, providerName, instanceName, req.ModelName, req.APIKey)
+	result, err := h.service.AlterProviderInstance(userID, providerName, instanceName, req.InstanceName, req.APIKey)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
