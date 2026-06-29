@@ -799,9 +799,9 @@ func (c *CLI) CommonAlterProviderInstanceCommand(cmd *Command) (ResponseIf, erro
 
 	payload := map[string]interface{}{}
 
-	newName, ok := cmd.Params["new_model_name"].(string)
+	newName, ok := cmd.Params["new_instance_name"].(string)
 	if ok {
-		payload["model_name"] = newName
+		payload["instance_name"] = newName
 	}
 
 	newAPIKey, ok := cmd.Params["new_api_key"].(string)
@@ -1387,7 +1387,7 @@ func (c *CLI) GetAPIServerInfo(serverName string) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ListAllModels(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonListAllModels(cmd *Command) (ResponseIf, error) {
 
 	page, ok := cmd.Params["page"].(int)
 	if !ok {
