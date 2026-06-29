@@ -83,6 +83,19 @@ async def resolve_temporal_retrieval_context(
         metas_loader=metas_loader,
         extra_conditions=extra_conditions,
     )
+    temporal_field = temporal_retrieval.get("temporal_field") if isinstance(temporal_retrieval, dict) else None
+    logging.info(
+        "Temporal retrieval context resolved: intent=%s strategy=%s skipped_reason=%s temporal_field=%s rank_enabled=%s extra_conditions=%d base_doc_count=%s output_doc_count=%s kb_count=%d",
+        resolved.intent,
+        resolved.strategy,
+        resolved.skipped_reason,
+        temporal_field,
+        bool(resolved.rank_plan),
+        len(extra_conditions),
+        "none" if base_doc_ids is None else len(base_doc_ids),
+        "none" if doc_ids is None else len(doc_ids),
+        len(kb_ids),
+    )
 
     return TemporalRetrievalContext(
         doc_ids=doc_ids,

@@ -101,6 +101,21 @@ export interface IDatasetListResult {
   total_datasets: number;
 }
 
+export interface ITemporalFieldProfile {
+  temporal_field: string;
+  detected_format: string | null;
+  parsed_percentage: number;
+  missing_percentage: number;
+  invalid_percentage: number;
+  oldest_date: string | null;
+  newest_date: string | null;
+  supports_hard_filter: boolean;
+  supports_freshness_score: boolean;
+  total_documents: number;
+  parsed_documents: number;
+  sampled_documents?: number;
+}
+
 // Types migrated from knowledge.ts
 
 export interface IKnowledgeFileParserConfig {

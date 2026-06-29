@@ -702,6 +702,15 @@ def profile_temporal_field(dataset_ids: list[str], temporal_field: str, tenant_i
     )
     profile = profile_metadata_documents(metadata_by_doc, temporal_field)
     profile["sampled_documents"] = sampled_total
+    logging.info(
+        "Temporal field profile generated: dataset_count=%d field=%s sampled_documents=%d parsed_percentage=%s detected_format=%s supports_hard_filter=%s",
+        len(dataset_ids),
+        temporal_field,
+        sampled_total,
+        profile.get("parsed_percentage"),
+        profile.get("detected_format"),
+        profile.get("supports_hard_filter"),
+    )
     return True, profile
 
 

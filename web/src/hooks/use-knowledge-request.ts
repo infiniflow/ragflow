@@ -8,9 +8,13 @@ import {
   IKnowledgeGraph,
   INextTestingResult,
   IRenameTag,
+  ITemporalFieldProfile,
   ITestingResult,
 } from '@/interfaces/database/dataset';
-import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
+import {
+  IGetTemporalMetadataProfileRequest,
+  ITestRetrievalRequestBody,
+} from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
   deleteKnowledgeGraph,
@@ -399,17 +403,22 @@ export function useFetchTemporalMetadataProfile(
 ) {
   const sortedKbIds = useMemo(() => [...kbIds].sort(), [kbIds]);
   const normalizedField = temporalField.trim();
-  const { data, isFetching: loading, isError, error } = useQuery<Record<string, any>>({
-    queryKey: KnowledgeKeys.temporalMetadataProfile(sortedKbIds, normalizedField),
-    initialData: {},
+  const { data, isFetching: loading, isError, error } = useQuery<
+    ITemporalFieldProfile | undefined
+  >({
+    queryKey: KnowledgeKeys.temporalMetadataProfile(
+      sortedKbIds,
+      normalizedField,
+    ),
     enabled: sortedKbIds.length > 0 && normalizedField.length > 0,
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await kbService.getTemporalMetadataProfile({
+      const params: IGetTemporalMetadataProfileRequest = {
         kb_ids: sortedKbIds.join(','),
         temporal_field: normalizedField,
-      });
-      return data?.data ?? {};
+      };
+      const { data } = await kbService.getTemporalMetadataProfile(params);
+      return data?.data;
     },
   });
 

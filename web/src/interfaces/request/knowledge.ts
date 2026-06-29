@@ -40,3 +40,8 @@ export interface IFetchDocumentListRequestBody {
   return_empty_metadata?: boolean;
   metadata?: Record<string, string[]>;
 }
+
+export interface IGetTemporalMetadataProfileRequest {
+  kb_ids: string;
+  temporal_field: string;
+}

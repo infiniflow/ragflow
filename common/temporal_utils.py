@@ -472,6 +472,13 @@ class TemporalRetrievalPolicy:
         )
         explicit_window = extract_date_window(raw_query) or extract_date_window(refined_query)
         intent, confidence = _detect_temporal_intent(query_text, explicit_window)
+        detected_intent, detected_confidence = intent, confidence
+        logging.debug(
+            "Temporal intent detected: intent=%s confidence=%s window_source=%s",
+            detected_intent,
+            detected_confidence,
+            explicit_window.source if explicit_window else None,
+        )
 
         if mode == "latest":
             intent, confidence = "latest", 0.95
@@ -482,8 +489,19 @@ class TemporalRetrievalPolicy:
         elif mode != "auto":
             logging.debug("Temporal retrieval skipped: invalid mode=%s", mode)
             return _skipped_policy("invalid_mode")
+        if mode != "auto":
+            logging.debug(
+                "Temporal mode override: mode=%s detected_intent=%s detected_confidence=%s intent=%s confidence=%s explicit_window=%s",
+                mode,
+                detected_intent,
+                detected_confidence,
+                intent,
+                confidence,
+                explicit_window.to_dict() if explicit_window else None,
+            )
 
         if intent == "evergreen":
+            logging.debug("Temporal retrieval skipped: reason=evergreen_query confidence=%s", confidence)
             return ResolvedTemporalPolicy(
                 intent="evergreen",
                 strategy="baseline",
@@ -500,6 +518,12 @@ class TemporalRetrievalPolicy:
                 filter_plan = TemporalFilterPlan(explicit_window.to_conditions(filter_field))
             else:
                 filter_plan = TemporalFilterPlan([], "date_range_without_hard_filter")
+                logging.debug(
+                    "Temporal filter skipped: reason=%s supports_hard_filter=%s explicit_window=%s",
+                    filter_plan.skipped_reason,
+                    bool(config.get("supports_hard_filter", False)),
+                    explicit_window.to_dict() if explicit_window else None,
+                )
 
         rank_enabled = intent in {"latest", "balanced"} or (intent == "date_range" and not filter_plan.conditions)
         rank_plan = None
@@ -516,11 +540,16 @@ class TemporalRetrievalPolicy:
 
         strategy = "metadata_filter" if filter_plan.conditions else "freshness_rerank" if rank_plan else "baseline"
         logging.debug(
-            "Temporal policy resolved: intent=%s strategy=%s field=%s window=%s future_date_policy=%s",
+            "Temporal policy resolved: mode=%s intent=%s strategy=%s confidence=%s field=%s window=%s rank_enabled=%s filter_conditions=%d skipped_reason=%s future_date_policy=%s",
+            mode,
             intent,
             strategy,
+            confidence,
             temporal_field,
             explicit_window.to_dict() if explicit_window else None,
+            bool(rank_plan),
+            len(filter_plan.conditions),
+            filter_plan.skipped_reason,
             rank_plan.future_date_policy if rank_plan else None,
         )
         return ResolvedTemporalPolicy(
@@ -652,6 +681,7 @@ def _positive_float(value: Any, default: float) -> float:
 
 def _skipped_policy(reason: str) -> ResolvedTemporalPolicy:
     """Build a baseline policy with a machine-readable skipped reason."""
+    logging.debug("Temporal retrieval skipped: reason=%s", reason)
     return ResolvedTemporalPolicy(
         intent="disabled",
         strategy="baseline",

@@ -236,19 +236,48 @@ async def apply_meta_data_filter(
 
     def _run_metadata_filter(conditions: list[dict], logic: str) -> list[str]:
         """Run conditions through ES/Infinity push-down when possible, in-memory otherwise."""
+        condition_count = len(conditions)
+        kb_count = len(kb_ids or [])
         if conditions and kb_ids:
             try:
                 from api.db.services.doc_metadata_service import DocMetadataService
                 doc_ids = DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
                 logging.debug(f"Doc ids filtered by metadata: {doc_ids}")
                 if doc_ids is not None:
+                    logging.info(
+                        "Metadata filter applied: path=pushdown kb_count=%d condition_count=%d logic=%s result_count=%d",
+                        kb_count,
+                        condition_count,
+                        logic,
+                        len(doc_ids),
+                    )
                     return doc_ids
+                logging.info(
+                    "Metadata filter pushdown unavailable: kb_count=%d condition_count=%d logic=%s fallback_reason=unsupported_or_empty",
+                    kb_count,
+                    condition_count,
+                    logic,
+                )
             except Exception as e:
                 logging.error(f"Metadata filter push down errored: {e}")
+                logging.info(
+                    "Metadata filter pushdown unavailable: kb_count=%d condition_count=%d logic=%s fallback_reason=error",
+                    kb_count,
+                    condition_count,
+                    logic,
+                )
 
         # In-memory fallback
         logging.debug("Metadata filter falls back to in-memory filter")
-        return meta_filter(_get_metas(), conditions, logic)
+        doc_ids = meta_filter(_get_metas(), conditions, logic)
+        logging.info(
+            "Metadata filter applied: path=in_memory kb_count=%d condition_count=%d logic=%s result_count=%d",
+            kb_count,
+            condition_count,
+            logic,
+            len(doc_ids),
+        )
+        return doc_ids
 
     def _scope_to_base(filtered_doc_ids: list[str]) -> list[str]:
         if base_doc_ids is None:

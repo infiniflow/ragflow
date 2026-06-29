@@ -1,9 +1,13 @@
+import logging
+import sys
+import types
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from common.metadata_utils import apply_meta_data_filter
+from common.temporal_retrieval import resolve_temporal_retrieval_context
 from common.temporal_utils import (
     TemporalRetrievalPolicy,
     extract_date_window,
@@ -238,6 +242,120 @@ def test_temporal_policy_invalid_mode_type_skips_without_crashing():
 
     assert resolved.strategy == "baseline"
     assert resolved.skipped_reason == "invalid_mode"
+
+
+@pytest.mark.p1
+def test_temporal_policy_logs_mode_override(caplog):
+    caplog.set_level(logging.DEBUG)
+
+    resolved = TemporalRetrievalPolicy.resolve(
+        "evergreen background",
+        "evergreen background",
+        {"enabled": True, "mode": "latest", "temporal_field": "post_date"},
+        ["kb-1"],
+    )
+
+    assert resolved.intent == "latest"
+    assert "Temporal intent detected: intent=evergreen" in caplog.text
+    assert "Temporal mode override: mode=latest" in caplog.text
+    assert "Temporal policy resolved: mode=latest" in caplog.text
+
+
+@pytest.mark.p1
+def test_temporal_policy_logs_evergreen_skip(caplog):
+    caplog.set_level(logging.DEBUG)
+
+    resolved = TemporalRetrievalPolicy.resolve(
+        "what is revenue recognition",
+        "what is revenue recognition",
+        {"enabled": True, "mode": "auto", "temporal_field": "post_date"},
+        ["kb-1"],
+    )
+
+    assert resolved.intent == "evergreen"
+    assert resolved.skipped_reason == "evergreen_query"
+    assert "Temporal retrieval skipped: reason=evergreen_query" in caplog.text
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_temporal_context_logs_filter_outcome(caplog):
+    caplog.set_level(logging.INFO)
+
+    async def metadata_filter_func(*args, **kwargs):
+        assert len(kwargs["extra_conditions"]) == 2
+        return ["doc-1"]
+
+    context = await resolve_temporal_retrieval_context(
+        raw_query="reports from 2026-01-01 to 2026-01-31",
+        refined_query="reports from 2026-01-01 to 2026-01-31",
+        retrieval_query="reports from 2026-01-01 to 2026-01-31",
+        meta_data_filter={},
+        temporal_retrieval={
+            "enabled": True,
+            "mode": "auto",
+            "temporal_field": "post_date",
+            "supports_hard_filter": True,
+        },
+        kb_ids=["kb-1"],
+        metadata_filter_func=metadata_filter_func,
+    )
+
+    assert context.doc_ids == ["doc-1"]
+    assert "Temporal retrieval context resolved: intent=date_range" in caplog.text
+    assert "strategy=metadata_filter" in caplog.text
+    assert "output_doc_count=1" in caplog.text
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_apply_meta_data_filter_logs_pushdown_success(caplog):
+    caplog.set_level(logging.INFO)
+
+    class FakeDocMetadataService:
+        @staticmethod
+        def filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic):
+            return ["doc-1"]
+
+    module = types.ModuleType("api.db.services.doc_metadata_service")
+    module.DocMetadataService = FakeDocMetadataService
+
+    with patch.dict(sys.modules, {"api.db.services.doc_metadata_service": module}):
+        doc_ids = await apply_meta_data_filter(
+            {"method": "manual", "manual": [{"key": "topic", "op": "=", "value": "news"}], "logic": "and"},
+            metas={"topic": {"news": ["doc-2"]}},
+            kb_ids=["kb-1"],
+        )
+
+    assert doc_ids == ["doc-1"]
+    assert "Metadata filter applied: path=pushdown" in caplog.text
+    assert "result_count=1" in caplog.text
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_apply_meta_data_filter_logs_pushdown_fallback(caplog):
+    caplog.set_level(logging.INFO)
+
+    class FakeDocMetadataService:
+        @staticmethod
+        def filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic):
+            return None
+
+    module = types.ModuleType("api.db.services.doc_metadata_service")
+    module.DocMetadataService = FakeDocMetadataService
+
+    with patch.dict(sys.modules, {"api.db.services.doc_metadata_service": module}):
+        doc_ids = await apply_meta_data_filter(
+            {"method": "manual", "manual": [{"key": "topic", "op": "=", "value": "news"}], "logic": "and"},
+            metas={"topic": {"news": ["doc-2"]}},
+            kb_ids=["kb-1"],
+        )
+
+    assert doc_ids == ["doc-2"]
+    assert "Metadata filter pushdown unavailable" in caplog.text
+    assert "fallback_reason=unsupported_or_empty" in caplog.text
+    assert "Metadata filter applied: path=in_memory" in caplog.text
 
 
 @pytest.mark.p1
