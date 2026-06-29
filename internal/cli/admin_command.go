@@ -2372,16 +2372,16 @@ func (c *CLI) AdminShowDataSummaryCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get users summary: %w", err)
+		return nil, fmt.Errorf("failed to get data summary: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get users summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to get data summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get users summary failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("get data summary failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -2409,7 +2409,7 @@ func (c *CLI) AdminShowDataOrphanCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get orphan data: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get orphan data failed: invalid JSON (%w)", err)
 	}
@@ -2439,7 +2439,7 @@ func (c *CLI) AdminShowDataStorageCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get data storage: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get data storage failed: invalid JSON (%w)", err)
 	}
@@ -2469,7 +2469,7 @@ func (c *CLI) AdminShowDataIndexCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get data index: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get data index failed: invalid JSON (%w)", err)
 	}
@@ -2499,7 +2499,7 @@ func (c *CLI) AdminShowQuotaSummaryCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get users quota summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result QuotaSummaryResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get users quota summary failed: invalid JSON (%w)", err)
 	}
@@ -2522,16 +2522,16 @@ func (c *CLI) AdminShowTasksSummaryCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get users quota summary: %w", err)
+		return nil, fmt.Errorf("failed to get tasks summary: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get users quota summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to get tasks summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get users quota summary failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("get tasks summary failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -2721,7 +2721,7 @@ func (c *CLI) AdminListUserIngestionTasksCommand(cmd *Command) (ResponseIf, erro
 		return nil, fmt.Errorf("failed to list user %s ingestion tasks: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
+	var result OrderedCommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list user %s ingestion tasks failed: invalid JSON (%w)", userName, err)
 	}
