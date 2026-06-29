@@ -24,7 +24,7 @@ from api.db import CanvasCategory, TenantPermission
 from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation, UserCanvasVersion
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
-from api.db.services.user_canvas_version import UserCanvasVersionService
+from api.db.services.user_canvas_version import CanvasBranchService, UserCanvasVersionService
 from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.api_utils import get_data_openai
 import tiktoken
@@ -332,7 +332,27 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
         cvs, dsl = await thread_pool_exec(UserCanvasService.get_agent_dsl_with_release, agent_id, release_mode=release_mode == "true", tenant_id=tenant_id)
 
         session_id = get_uuid()
-        canvas = Canvas(dsl, tenant_id, agent_id, canvas_id=cvs.id, custom_header=custom_header)
+
+        # Branch routing: if any active branches have weight > 0, route this session deterministically.
+        branch = await thread_pool_exec(CanvasBranchService.resolve_branch_for_session, session_id, agent_id)
+        branch_id = None
+        if branch is not None:
+            branch_dsl = branch.dsl_snapshot
+            if not isinstance(branch_dsl, str):
+                branch_dsl = json.dumps(branch_dsl, ensure_ascii=False)
+            dsl = branch_dsl
+            branch_id = branch.id
+            logging.info("A/B routing: session=%s agent=%s → branch=%s", session_id, agent_id, branch_id)
+        else:
+            has_active_branches = await thread_pool_exec(CanvasBranchService.has_active_branches, agent_id)
+            if has_active_branches:
+                logging.info("A/B routing: session=%s agent=%s → control (weighted fallthrough)", session_id, agent_id)
+            else:
+                logging.info("A/B routing: session=%s agent=%s → control (no active branch)", session_id, agent_id)
+
+        canvas = Canvas(
+            dsl, tenant_id, agent_id, canvas_id=cvs.id, custom_header=custom_header, branch_id=branch_id
+        )
         canvas.reset()
         # Get the version title based on release_mode
         version_title = await thread_pool_exec(UserCanvasVersionService.get_latest_version_title, cvs.id, release_mode=release_mode == "true")

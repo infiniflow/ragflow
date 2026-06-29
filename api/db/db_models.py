@@ -1369,6 +1369,22 @@ class EvaluationResult(DataBaseModel):
         db_table = "evaluation_results"
 
 
+class CanvasBranch(DataBaseModel):
+    """Named branch of a canvas DSL snapshot with a traffic-split weight."""
+    id = CharField(max_length=32, primary_key=True)
+    canvas_id = CharField(max_length=32, null=False, index=True, help_text="FK to user_canvas")
+    branch_name = CharField(max_length=128, null=False, help_text="Human-readable branch label")
+    dsl_snapshot = JSONField(null=False, default={}, help_text="Frozen DSL for this branch")
+    traffic_weight = IntegerField(default=0, help_text="0-100 share of traffic routed here")
+    is_active = BooleanField(default=True, index=True, help_text="Whether this branch receives traffic")
+
+    class Meta:
+        db_table = "canvas_branch"
+        indexes = (
+            (("canvas_id", "branch_name"), True),
+        )
+
+
 class Memory(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     name = CharField(max_length=128, null=False, index=False, help_text="Memory name")
@@ -1803,6 +1819,8 @@ def migrate_db():
                 logging.critical(f"Failed to drop index {index_name} on {table_name}: {ex}")
         except Exception as ex:
             logging.critical(f"Failed to drop index {index_name} on {table_name}: {ex}")
+    alter_db_add_column(migrator, "canvas_branch", "traffic_weight", IntegerField(default=0, help_text="0-100 share of traffic routed here"))
+    alter_db_add_column(migrator, "canvas_branch", "is_active", BooleanField(default=True, index=True, help_text="Whether this branch receives traffic"))
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)

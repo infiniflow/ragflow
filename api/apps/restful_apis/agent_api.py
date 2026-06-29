@@ -48,7 +48,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, TaskService, queue_dataflow
 from api.db.services.user_service import TenantService, UserService
-from api.db.services.user_canvas_version import UserCanvasVersionService
+from api.db.services.user_canvas_version import CanvasBranchService, UserCanvasVersionService
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     check_duplicate_ids,
@@ -1598,6 +1598,132 @@ async def agent_chat_completion(tenant_id, agent_id=None):
     if return_trace and final_ans:
         final_ans["data"]["trace"] = trace_items
     return get_result(data=final_ans)
+
+
+@manager.route("/agents/<agent_id>/branches", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+@_require_canvas_access_sync
+def list_agent_branches(agent_id, tenant_id):
+    """Return all active branches for the agent."""
+    branches = CanvasBranchService.get_active_branches(agent_id)
+    return get_json_result(data=branches)
+
+
+@manager.route("/agents/<agent_id>/branches", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+@_require_canvas_access_async
+async def create_agent_branch(agent_id, tenant_id):
+    """Snapshot the current live DSL into a new named branch."""
+    req = await get_request_json()
+    branch_name = (req.get("branch_name") or "").strip()
+    if not branch_name:
+        return get_data_error_result(message="`branch_name` is required.")
+    try:
+        traffic_weight = int(req.get("traffic_weight", 0))
+    except (TypeError, ValueError):
+        return get_data_error_result(message="`traffic_weight` must be an integer.")
+    if not (0 <= traffic_weight <= 100):
+        return get_data_error_result(message="`traffic_weight` must be between 0 and 100.")
+
+    exists, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
+    if not exists:
+        return get_data_error_result(message="Agent not found.")
+
+    dsl_snapshot = cvs.dsl if isinstance(cvs.dsl, dict) else json.loads(cvs.dsl or "{}")
+    branch = await thread_pool_exec(
+        CanvasBranchService.create_branch, agent_id, branch_name, dsl_snapshot, traffic_weight
+    )
+    if not branch:
+        return get_data_error_result(message="Failed to create branch.")
+    return get_json_result(data=branch)
+
+
+@manager.route("/agents/<agent_id>/branches/<branch_id>/weight", methods=["PATCH"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+@_require_canvas_access_async
+async def update_branch_weight(agent_id, branch_id, tenant_id):
+    """Adjust a branch's traffic weight (0-100) without restarting the server."""
+    req = await get_request_json()
+    weight = req.get("traffic_weight")
+    if weight is None:
+        return get_data_error_result(message="`traffic_weight` is required.")
+    try:
+        weight = int(weight)
+    except (TypeError, ValueError):
+        return get_data_error_result(message="`traffic_weight` must be an integer.")
+    if not (0 <= weight <= 100):
+        return get_data_error_result(message="`traffic_weight` must be between 0 and 100.")
+
+    ok = await thread_pool_exec(CanvasBranchService.set_traffic_split, agent_id, branch_id, weight)
+    if not ok:
+        return get_data_error_result(message="Branch not found.")
+    return get_json_result(data=True)
+
+
+@manager.route("/agents/<agent_id>/branches/<branch_id>/promote", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+@_require_canvas_access_async
+async def promote_agent_branch(agent_id, branch_id, tenant_id):
+    """Replace the live DSL with branch_id's snapshot and zero all traffic weights."""
+    branch = await thread_pool_exec(CanvasBranchService.promote_branch, agent_id, branch_id)
+    if not branch:
+        return get_data_error_result(message="Branch not found or does not belong to this agent.")
+
+    owner_nickname = _get_user_nickname(tenant_id)
+    exists, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
+    if exists and cvs:
+        UserCanvasVersionService.save_or_replace_latest(
+            user_canvas_id=agent_id,
+            title=UserCanvasVersionService.build_version_title(owner_nickname, cvs.title),
+            dsl=branch.get("dsl_snapshot", {}),
+            release=False,
+        )
+    return get_json_result(data=branch)
+
+
+@manager.route("/agents/<agent_id>/branches/<branch_id>/rollback", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+@_require_canvas_access_async
+async def rollback_agent_branch(agent_id, branch_id, tenant_id):
+    """Restore canvas DSL from branch_id and clear all traffic weights."""
+    ok = await thread_pool_exec(CanvasBranchService.rollback_branch, agent_id, branch_id)
+    if not ok:
+        return get_data_error_result(message="Branch not found or does not belong to this agent.")
+    return get_json_result(data=True)
+
+
+@manager.route("/agents/<agent_id>/branches/<branch_id>/metrics", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+@_require_canvas_access_async
+async def get_branch_metrics(agent_id, branch_id, tenant_id):
+    """Return recent per-turn metrics for branch_id (latency, turns)."""
+    exists, branch = await thread_pool_exec(CanvasBranchService.get_by_id, branch_id)
+    if not exists or str(branch.canvas_id) != str(agent_id):
+        return get_data_error_result(message="Branch not found or does not belong to this agent.")
+
+    try:
+        since = float(request.args.get("since", 0))
+    except (TypeError, ValueError):
+        return get_data_error_result(message="`since` must be a number.")
+    if since < 0:
+        since = 0.0
+
+    try:
+        limit = int(request.args.get("limit", 200))
+    except (TypeError, ValueError):
+        return get_data_error_result(message="`limit` must be an integer.")
+    limit = max(1, min(limit, 1000))
+
+    from rag.utils.redis_conn import REDIS_CONN
+
+    metrics = await thread_pool_exec(REDIS_CONN.read_branch_metrics, branch_id, since, limit)
+    return get_json_result(data=metrics)
 
 
 @manager.route("/agents/<agent_id>/webhook", methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"])  # noqa: F821

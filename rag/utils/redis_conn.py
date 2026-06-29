@@ -534,6 +534,39 @@ class RedisDB:
             self.__open__()
         return False
 
+    # ── A/B branch metrics ────────────────────────────────────────────────────
+
+    def append_branch_metric(self, branch_id: str, payload: dict, ttl: int = 3600) -> bool:
+        """Append a metric event to the branch's Redis list (newest-first)."""
+        key = f"branch-metrics-{branch_id}"
+        try:
+            self.REDIS.lpush(key, json.dumps(payload, ensure_ascii=False))
+            self.REDIS.expire(key, ttl)
+            return True
+        except Exception as e:
+            logging.warning("RedisDB.append_branch_metric %s got exception: %s", branch_id, e)
+            self.__open__()
+        return False
+
+    def read_branch_metrics(self, branch_id: str, since: float = 0.0, limit: int = 500) -> list:
+        """Return metric events for branch_id that are newer than *since* timestamp."""
+        key = f"branch-metrics-{branch_id}"
+        try:
+            raw_items = self.REDIS.lrange(key, 0, limit - 1)
+            results = []
+            for raw in raw_items:
+                try:
+                    item = json.loads(raw)
+                    if item.get("ts", 0) > since:
+                        results.append(item)
+                except Exception:
+                    pass
+            return results
+        except Exception as e:
+            logging.warning("RedisDB.read_branch_metrics %s got exception: %s", branch_id, e)
+            self.__open__()
+        return []
+
 
 REDIS_CONN = RedisDB()
 

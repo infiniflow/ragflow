@@ -284,7 +284,7 @@ class Graph:
 
 class Canvas(Graph):
 
-    def __init__(self, dsl: str, tenant_id=None, task_id=None, canvas_id=None, custom_header=None):
+    def __init__(self, dsl: str, tenant_id=None, task_id=None, canvas_id=None, custom_header=None, branch_id=None):
         self.globals = {
             "sys.query": "",
             "sys.user_id": tenant_id,
@@ -296,6 +296,7 @@ class Canvas(Graph):
         self.variables = {}
         super().__init__(dsl, tenant_id, task_id, custom_header=custom_header)
         self._id = canvas_id
+        self._branch_id = branch_id or self.globals.get("sys.branch_id")
 
     def load(self):
         super().load()
@@ -661,15 +662,26 @@ class Canvas(Graph):
                 return
         self.path = self.path[:idx]
         if not self.error:
+            elapsed = time.perf_counter() - st
             yield decorate("workflow_finished",
                        {
                            "inputs": kwargs.get("inputs"),
                            "outputs": self.get_component_obj(self.path[-1]).output(),
-                           "elapsed_time": time.perf_counter() - st,
+                           "elapsed_time": elapsed,
                            "created_at": st,
                        })
             self.history.append(("assistant", self.get_component_obj(self.path[-1]).output()))
             self.globals["sys.history"].append(f"{self.history[-1][0]}: {self.history[-1][1]}")
+            branch_id = self._branch_id or self.globals.get("sys.branch_id")
+            if branch_id:
+                try:
+                    REDIS_CONN.append_branch_metric(branch_id, {
+                        "ts": time.time(),
+                        "elapsed": elapsed,
+                        "turns": self.globals.get("sys.conversation_turns", 0),
+                    })
+                except Exception as _bm_exc:
+                    logging.debug("branch metric write failed: %s", _bm_exc)
         elif "Task has been canceled" in self.error:
             yield decorate("workflow_finished",
                        {
