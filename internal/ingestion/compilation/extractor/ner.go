@@ -200,14 +200,23 @@ func (e *Extractor) findModelDir() string {
 	if modelName == "" {
 		modelName = "en_core_web_sm"
 	}
-	// Standard spaCy data paths
+	// Standard spaCy data paths (with exported model.ckpt+model.bin)
 	candidates := []string{
+		"./models/" + modelName,
+		"models/" + modelName,
 		"/usr/local/lib/python3.10/site-packages/" + modelName + "/" + modelName + "-3.8.0",
 		"/usr/lib/python3.10/site-packages/" + modelName + "/" + modelName + "-3.8.0",
 		"/opt/conda/lib/python3.10/site-packages/" + modelName + "/" + modelName + "-3.8.0",
-		"./models/" + modelName,
-		"models/" + modelName,
 	}
+	// Also search .venv paths
+	venvCandidates := []string{
+		".venv/lib/python3.13/site-packages/" + modelName + "/" + modelName + "-3.8.0",
+		".venv/lib/python3.12/site-packages/" + modelName + "/" + modelName + "-3.8.0",
+		".venv/lib/python3.11/site-packages/" + modelName + "/" + modelName + "-3.8.0",
+		".venv/lib/python3.10/site-packages/" + modelName + "/" + modelName + "-3.8.0",
+	}
+	candidates = append(candidates, venvCandidates...)
+
 	for _, c := range candidates {
 		if dirExists(c) {
 			return c

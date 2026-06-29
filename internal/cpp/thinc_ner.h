@@ -37,7 +37,6 @@ void ThincNER_FreeString(char* ptr);
 // Utility: tokenize text using spaCy-compatible rules.
 // Returns JSON array of token strings.
 char* ThincNER_Tokenize(const char* text, const char* lang);
-void  ThincNER_FreeString(char* ptr);
 
 #ifdef __cplusplus
 }
