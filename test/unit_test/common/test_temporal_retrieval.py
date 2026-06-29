@@ -2,7 +2,7 @@ import logging
 import sys
 import types
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
