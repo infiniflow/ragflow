@@ -1,7 +1,7 @@
 import { Collapse } from '@/components/collapse';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { DialogClose, DialogFooter } from '@/components/ui/dialog';
+import { DialogClose } from '@/components/ui/dialog';
 import { Modal } from '@/components/ui/modal/modal';
 import { useGetMcpServer, useTestMcpServer } from '@/hooks/use-mcp-request';
 import { IModalProps } from '@/interfaces/common';
@@ -105,7 +105,7 @@ export function EditMcpDialog({
       : tools;
   }, [data.variables?.tools, tools]);
 
-  const disabled = !!!tools?.length || testLoading || fieldChanged;
+  const disabled = !tools?.length || testLoading || fieldChanged;
 
   return (
     // <Dialog open onOpenChange={hideModal}>
@@ -175,7 +175,7 @@ export function EditMcpDialog({
       cancelText={t('common.cancel')}
       okText={t('common.save')}
       footer={
-        <DialogFooter>
+        <div className="flex flex-row flex-wrap justify-end gap-2">
           <DialogClose asChild>
             <Button variant="outline">{t('common.cancel')}</Button>
           </DialogClose>
@@ -188,7 +188,7 @@ export function EditMcpDialog({
           >
             {t('common.save')}
           </ButtonLoading>
-        </DialogFooter>
+        </div>
       }
     >
       <EditMcpForm

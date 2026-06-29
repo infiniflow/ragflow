@@ -318,8 +318,8 @@ export function FileUploader(props: FileUploaderProps) {
           <div
             {...getRootProps()}
             className={cn(
-              'group relative grid h-72 w-full cursor-pointer place-items-center rounded-lg border border-dashed border-border-default',
-              'px-5 py-2.5 text-center transition hover:bg-bg-card outline-none',
+              'group relative grid min-h-72 h-auto w-full cursor-pointer place-items-center rounded-lg border border-dashed border-border-default',
+              'px-5 py-4 text-center transition hover:bg-bg-card outline-none',
               'focus-visible:border-accent-primary focus-visible:bg-bg-card',
               isDragActive && 'border-border-button',
               isDisabled && 'pointer-events-none opacity-60',
@@ -329,7 +329,7 @@ export function FileUploader(props: FileUploaderProps) {
           >
             {!isFolderMode && <input {...getInputProps()} />}
             {isDragActive && !isFolderMode ? (
-              <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
+              <div className="flex w-full flex-col items-center justify-center gap-4 px-1 sm:px-5">
                 <div>
                   <Upload
                     className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
@@ -342,7 +342,7 @@ export function FileUploader(props: FileUploaderProps) {
               </div>
             ) : (
               <div
-                className="flex flex-col items-center justify-center gap-4 sm:px-5"
+                className="flex w-full flex-col items-center justify-center gap-3 px-1 sm:px-5"
                 onClick={() => {
                   if (isFolderMode && !isDisabled) {
                     folderInputRef.current?.click();
@@ -361,7 +361,7 @@ export function FileUploader(props: FileUploaderProps) {
                       : t('knowledgeDetails.uploadTitle'))}
                 </p>
 
-                <p className="text-sm text-text-disabled">
+                <p className="w-full whitespace-normal break-words text-center text-sm text-text-disabled">
                   {description ||
                     (isFolderMode
                       ? t(
@@ -379,7 +379,7 @@ export function FileUploader(props: FileUploaderProps) {
   };
 
   return (
-    <div className="relative flex flex-col gap-4 overflow-hidden">
+    <div className="relative flex flex-col gap-4">
       {!(hideDropzoneOnMaxFileCount && reachesMaxFileCount) && (
         <Tabs defaultValue="file" className="w-full">
           <TabsList className="w-fit justify-start">
