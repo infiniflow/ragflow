@@ -753,7 +753,7 @@ def list_docs(dataset_id, tenant_id):
     renamed_doc_list = [map_doc_keys(doc) for doc in payload]
     for doc_item in renamed_doc_list:
         if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-            doc_item["thumbnail"] = f"/api/v1/documents/images/{dataset_id}-{doc_item['thumbnail']}"
+            doc_item["thumbnail"] = f"/api/v1/documents/{doc_item['id']}/thumbnail"
         if doc_item.get("source_type"):
             doc_item["source_type"] = doc_item["source_type"].split("/")[0]
         if doc_item["parser_config"].get("metadata"):
@@ -1224,7 +1224,7 @@ def list_thumbnails():
 
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-                doc_item["thumbnail"] = f"/api/v1/documents/images/{doc_item['kb_id']}-{doc_item['thumbnail']}"
+                doc_item["thumbnail"] = f"/api/v1/documents/{doc_item['id']}/thumbnail"
 
         return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
     except Exception as e:
@@ -1699,6 +1699,56 @@ def _content_type_for_document_image(object_name, data):
     return "application/octet-stream"
 
 
+@manager.route("/documents/<doc_id>/thumbnail", methods=["GET"])  # noqa: F821
+@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
+async def get_document_thumbnail(doc_id):
+    """
+    Get a document thumbnail by document ID.
+    ---
+    tags:
+      - Documents
+    parameters:
+      - name: doc_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Document ID
+    responses:
+      200:
+        description: Thumbnail image file
+        content:
+          image/png:
+            schema:
+              type: string
+              format: binary
+    """
+    try:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            logging.warning(f"Unauthorized thumbnail access for document {doc_id} by user {current_user.id}")
+            return get_data_error_result(message="No authorization.")
+        e, doc = DocumentService.get_by_id(doc_id)
+        if not e:
+            logging.info(f"Thumbnail requested for non-existent document {doc_id}")
+            return get_data_error_result(message="Document not found.")
+        if not doc.thumbnail:
+            logging.info(f"No thumbnail available for document {doc_id}")
+            return get_data_error_result(message="Image not found.")
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, doc.kb_id, doc.thumbnail)
+        if not data:
+            logging.info(f"Thumbnail data not found in storage for document {doc_id}")
+            return get_data_error_result(message="Image not found.")
+        content_type = _content_type_for_document_image(doc.thumbnail, data)
+        if not content_type.startswith("image/"):
+            logging.warning(f"Thumbnail endpoint refused non-image payload for document {doc_id} (detected {content_type})")
+            return get_data_error_result(message="Image not found.")
+        response = await make_response(data)
+        response.headers.set("Content-Type", content_type)
+        return response
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/documents/images/<image_id>", methods=["GET"])  # noqa: F821
 @login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
 async def get_document_image(image_id):
@@ -1728,6 +1778,9 @@ async def get_document_image(image_id):
         if not parsed:
             return get_data_error_result(message="Image not found.")
         bkt, nm = parsed
+        if not KnowledgebaseService.accessible(bkt, current_user.id):
+            logging.warning(f"Unauthorized image access for kb {bkt} by user {current_user.id}")
+            return get_data_error_result(message="No authorization.")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         if not data:
             return get_data_error_result(message="Image not found.")
