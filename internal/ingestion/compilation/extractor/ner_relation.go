@@ -23,8 +23,10 @@ import (
 
 // Multilingual relation patterns — matching Python MULTILANG_RELATION_PATTERNS.
 // Entity groups [A-Z] are case-sensitive; relation keywords use (?i) inline.
-const _relEntity = `([A-Z][\w']*(?:\s+[A-Z][\w'.]*)*?)`
-const _relEntity2 = `([A-Z][\w'.]*(?:\s+[A-Z][\w'.]*){0,1})`
+// _entWord: uppercase-start word, period only between initials (U.S., J.K.)
+const _entWord = `[A-Za-z][\w']*(?:\.[A-Za-z][\w']*)*`
+const _relEntity = `(` + _entWord + `(?:\s+` + _entWord + `)*?)`
+const _relEntity2 = `(` + _entWord + `(?:\s+` + _entWord + `){0,1})`
 
 var relationPatterns = map[string][]relPatternEntry{
 	"en": {

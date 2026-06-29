@@ -32,6 +32,7 @@ import "C"
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"unsafe"
@@ -220,14 +221,12 @@ func (e *Extractor) findModelDir() string {
 }
 
 func dirExists(path string) bool {
-	// Simple directory check via Go
-	// In production, use os.Stat
-	return false // simplified; production code should check real FS
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func getenv(key string) string {
-	// Placeholder — in real code, use os.Getenv
-	return ""
+	return os.Getenv(key)
 }
 
 // DetectLanguage detects text language based on Unicode ranges.
@@ -250,14 +249,15 @@ func DetectLanguage(text string) string {
 	if total == 0 {
 		return "en"
 	}
-	// CJK majority
+	// CJK majority — extractor only supports "en" and "zh"
 	if float64(han+hira+kata)/float64(total) > 0.3 {
 		if hira+kata > han {
-			return "ja"
+			return "en" // Japanese-heavy → fallback to en (no ja extractor)
 		}
 		if han > 0 {
-			return "zh"
+			return "zh" // Han-heavy → treat as Chinese
 		}
+		return "en"
 	}
 	return "en"
 }

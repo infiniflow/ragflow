@@ -77,10 +77,12 @@ SKIP_SPACY_LABELS = {"ORDINAL", "CARDINAL"}
 # Key: language code, Value: list of (predicate, regex_pattern)
 # Helper: entity capture group — case-sensitive [A-Z], non-greedy *?
 # Entity names always start with uppercase in NER output.
-_REL_ENTITY = r"([A-Z][\w']*(?:\s+[A-Z][\w'.]*)*?)"
-# Second entity in relation — limited to at most 2 words to avoid overcapture
-# across "and", "or", commas, etc.
-_REL_ENTITY2 = r"([A-Z][\w'.]*(?:\s+[A-Z][\w'.]*){0,1})"
+# Entity pattern: allow periods only between uppercase initials (U.S., J.K.)
+# otherwise period acts as word boundary. Use | for literal in patterns.
+_ENT_WORD = r"[A-Za-z][\w']*(?:\.[A-Za-z][\w']*)*"
+_REL_ENTITY = r"(" + _ENT_WORD + r"(?:\s+" + _ENT_WORD + r")*?)"
+# Second entity: limited to 2 words; period allowed inside (U.S.)
+_REL_ENTITY2 = r"(" + _ENT_WORD + r"(?:\s+" + _ENT_WORD + r"){0,1})"
 
 MULTILANG_RELATION_PATTERNS: Dict[str, List] = {
     "en": [

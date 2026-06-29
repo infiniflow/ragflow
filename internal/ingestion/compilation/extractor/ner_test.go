@@ -142,8 +142,10 @@ type pyResult struct {
 	Rels     []pyRelation `json:"relations"`
 }
 type pyEntity struct {
-	Text  string `json:"text"`
-	Label string `json:"label"`
+	Text      string `json:"text"`
+	Label     string `json:"label"`
+	StartChar int    `json:"start_char"`
+	EndChar   int    `json:"end_char"`
 }
 type pyRelation struct {
 	Subject   pyEntity `json:"subject"`
@@ -163,7 +165,8 @@ data = json.loads(sys.stdin.read())
 ext = Extractor(language=data["lang"])
 result = ext.extract(data["text"])
 out = {
-    "entities": [{"text": e.text, "label": e.label} for e in result.entities],
+    "entities": [{"text": e.text, "label": e.label, "start_char": e.start_char, "end_char": e.end_char}
+                  for e in result.entities],
     "relations": [{"subject": {"text": r.subject.text, "label": r.subject.label},
                     "predicate": r.predicate,
                     "object": {"text": r.obj.text, "label": r.obj.label}}
@@ -222,7 +225,7 @@ func TestRelExtractorsIdentical(t *testing.T) {
 			// Go relation extractor using SAME entities from Python spaCy
 			goEntities := make([]Entity, len(py.Entities))
 			for i, e := range py.Entities {
-				goEntities[i] = Entity{Text: e.Text, Label: e.Label}
+				goEntities[i] = Entity{Text: e.Text, Label: e.Label, StartChar: e.StartChar, EndChar: e.EndChar}
 			}
 			goRels := ExtractRelations(tc.text, goEntities, "en")
 
@@ -356,10 +359,10 @@ func TestFullTripleIdentity(t *testing.T) {
 				t.Skip("Python spaCy not available:", err)
 			}
 
-			// Build Go entities from Python NER output
+			// Build Go entities from Python NER output (with offsets)
 			goEntities := make([]Entity, len(py.Entities))
 			for i, e := range py.Entities {
-				goEntities[i] = Entity{Text: e.Text, Label: e.Label}
+				goEntities[i] = Entity{Text: e.Text, Label: e.Label, StartChar: e.StartChar, EndChar: e.EndChar}
 			}
 
 			// Run Go relation extractor on same entities
@@ -410,7 +413,7 @@ func TestDetectLanguage(t *testing.T) {
 	}{
 		{"Hello world", "en"},
 		{"你好世界", "zh"},
-		{"こんにちは世界", "ja"},
+		{"こんにちは世界", "en"}, // Japanese mapped to en (no dedicated extractor)
 		{"阿里巴巴由马云创立", "zh"},
 	}
 	for _, tt := range tests {

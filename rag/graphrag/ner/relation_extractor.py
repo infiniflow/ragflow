@@ -41,7 +41,7 @@ class RelationExtractor:
     def __init__(
         self,
         language: str = "en",
-        confidence_threshold: float = 0.5,
+        confidence_threshold: float = 0.3,
         max_distance: int = 100,
     ):
         self.language = language
@@ -87,33 +87,52 @@ class RelationExtractor:
         co_rels = self._extract_cooccurrence(text, entities)
         relations.extend(co_rels)
 
-        return self._deduplicate(relations)
+        # Apply threshold filter
+        relations = self._deduplicate(relations)
+        return [r for r in relations if r.confidence >= self.confidence_threshold]
 
     def _extract_with_patterns(self, text: str, entities: List[Entity]) -> List[Relation]:
-        """Extract typed relations via regex patterns."""
+        """Extract typed relations via regex patterns.
+
+        Prevents cross-sentence false matches by checking entity positions
+        when entities have meaningful offsets (non-zero).
+        """
         relations = []
         entity_map = self._build_entity_map(entities)
 
+        # Detect if entities have proper offsets from spaCy
+        has_offsets = any(e.start_char != 0 or e.end_char != 0 for e in entities)
+
+        # Build sentence spans if we have offsets
+        sentence_spans = []
+        if has_offsets:
+            import re as _re
+            for _m in _re.finditer(r'[^.!?]+(?:[.!?](?=\s|$))+', text):
+                sentence_spans.append((_m.start(), _m.end()))
+
         def _normalize(t: str) -> str:
-            """Strip trailing punctuation for entity matching."""
             t = t.strip()
             while t and t[-1] in ".,;:!?":
                 t = t[:-1].strip()
             return t
 
         def _find_entity(text: str, entity_map) -> Entity | None:
-            """Find entity by text, trying exact and partial match."""
             text = _normalize(text)
             key = text.lower()
             if key in entity_map:
                 return entity_map[key]
-            # Try removing trailing "and ..." (e.g. "Larry Page and Sergey Brin" → "Larry Page")
             for sep in (" and ", " or ", ", "):
                 if sep in key:
                     candidate = key[:key.index(sep)]
                     if candidate in entity_map:
                         return entity_map[candidate]
             return None
+
+        def _same_sentence(c1, c2):
+            for ss, se in sentence_spans:
+                if ss <= c1 < se and ss <= c2 < se:
+                    return True
+            return False
 
         for pattern, predicate in self._patterns:
             for m in pattern.finditer(text):
@@ -123,6 +142,10 @@ class RelationExtractor:
                 obj = _find_entity(obj_text, entity_map)
                 if subj is None or obj is None:
                     continue
+                # Sentence-boundary check: skip cross-sentence matches when offsets available
+                if has_offsets and sentence_spans:
+                    if not _same_sentence(subj.start_char, obj.start_char):
+                        continue
                 ctx_start = max(0, m.start() - 30)
                 ctx_end = min(len(text), m.end() + 30)
                 relations.append(Relation(
@@ -136,14 +159,31 @@ class RelationExtractor:
         return relations
 
     def _extract_cooccurrence(self, text: str, entities: List[Entity]) -> List[Relation]:
-        """Sentence co-occurrence fallback (LinearRAG-style)."""
+        """Sentence-bounded co-occurrence fallback (LinearRAG-style).
+        Only emits related_to for entities within the same sentence."""
         relations = []
         if len(entities) < 2:
             return relations
 
+        # Split text into sentence spans (char ranges)
+        # Split on .!? followed by space or end-of-string (not on abbreviations)
+        import re as _re
+        sentence_spans = []
+        for m in _re.finditer(r'[^.!?]+(?:[.!?](?=\s|$))+', text):
+            sentence_spans.append((m.start(), m.end()))
+
+        def same_sentence(c1: int, c2: int) -> bool:
+            for ss, se in sentence_spans:
+                if ss <= c1 < se and ss <= c2 < se:
+                    return True
+            return False
+
         for i in range(len(entities)):
             for j in range(i + 1, len(entities)):
                 e1, e2 = entities[i], entities[j]
+                # Must be in same sentence
+                if not same_sentence(e1.start_char, e2.start_char):
+                    continue
                 distance = abs(e2.start_char - e1.end_char)
                 if distance > self.max_distance:
                     continue

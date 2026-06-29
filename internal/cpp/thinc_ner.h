@@ -39,10 +39,6 @@ void ThincNER_FreeString(char* ptr);
 char* ThincNER_Tokenize(const char* text, const char* lang);
 void  ThincNER_FreeString(char* ptr);
 
-// Set model search path for auto-location of spaCy model directories.
-// Must be called before ThincNER_Create with relative path lookups.
-void ThincNER_SetModelPath(const char* path);
-
 #ifdef __cplusplus
 }
 #endif

@@ -37,7 +37,10 @@ _nlp_model_name = ""
 
 
 def _load_spacy_model(model_name: str = "en_core_web_sm"):
-    """Load (or return cached) spaCy language model."""
+    """Load (or return cached) spaCy language model.
+    Does NOT auto-download — model must be pre-installed via:
+        python -m spacy download <model_name>
+    """
     global _nlp, _nlp_model_name
     if _nlp is not None and _nlp_model_name == model_name:
         return _nlp
@@ -48,12 +51,7 @@ def _load_spacy_model(model_name: str = "en_core_web_sm"):
             "spaCy is required. Install with: pip install spacy && "
             "python -m spacy download en_core_web_sm"
         )
-    try:
-        _nlp = spacy.load(model_name)
-    except OSError:
-        from spacy.cli import download as spacy_download
-        spacy_download(model_name)
-        _nlp = spacy.load(model_name)
+    _nlp = spacy.load(model_name)
     _nlp_model_name = model_name
     return _nlp
 
@@ -112,10 +110,13 @@ class NerExtractor:
         Extract named entities from text.
 
         Uses spaCy NER first; falls back to regex patterns if unavailable.
+        Chinese fallback returns [] since regex fallback is English-only.
         """
         self._ensure_model()
         if self._nlp is not None:
             return self._extract_with_spacy(text, options)
+        if self.model_name.startswith("zh"):
+            return []  # no Chinese-compatible fallback
         return self._extract_fallback(text)
 
     def extract_batch(self, texts: List[str], **options) -> List[List[Entity]]:
