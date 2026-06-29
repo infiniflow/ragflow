@@ -33,6 +33,20 @@ pytestmark = pytest.mark.p2
 
 
 def _stub(monkeypatch, name, **attrs):
+    """Register a stub module in `sys.modules` with the given attributes.
+
+    For dotted names (e.g. `api.db.services.user_service`) the stub is also
+    attached as an attribute of the parent module so that code which already
+    imported the parent and references `parent.child` sees the stub.
+
+    Args:
+        monkeypatch: pytest monkeypatch fixture.
+        name: Fully qualified module name to stub.
+        **attrs: Attributes to set on the stub module.
+
+    Returns:
+        The created `types.ModuleType` instance.
+    """
     mod = ModuleType(name)
     for key, value in attrs.items():
         setattr(mod, key, value)
@@ -146,6 +160,22 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
 
 
 def _make_model_record(model_name, model_type="embedding", status=1):
+    """Build a `SimpleNamespace` mimicking a `TenantModel` ORM row.
+
+    The default provider_id/instance_id pair (`provider-1`/`instance-1`)
+    matches the fixtures wired up by `_load_module` so the resulting key
+    `provider-1@instance-1@<model_name>` round-trips through
+    `list_tenant_added_models` as expected.
+
+    Args:
+        model_name: Model name; may contain `@` characters.
+        model_type: Model type filter (default `embedding`).
+        status: `ActiveStatusEnum` value (default `1` = ACTIVE).
+
+    Returns:
+        A `SimpleNamespace` with the fields read by
+        `list_tenant_added_models`.
+    """
     return SimpleNamespace(
         provider_id="provider-1",
         instance_id="instance-1",
