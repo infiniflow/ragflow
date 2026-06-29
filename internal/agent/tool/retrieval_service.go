@@ -43,6 +43,7 @@ type RetrievalChunk struct {
 type RetrievalRequest struct {
 	Query               string
 	DatasetIDs          []string
+	DocumentIDs         []string
 	TopN                int
 	UseKG               bool
 	UseRerank           bool

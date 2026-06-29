@@ -985,9 +985,10 @@ func (c *retrievalComponent) Name() string { return "Retrieval" }
 
 func (c *retrievalComponent) Inputs() map[string]string {
 	return map[string]string{
-		"query":       "Natural-language search query.",
-		"dataset_ids": "Optional list of dataset IDs to restrict the search to (overrides node-level kb_ids).",
-		"top_n":       "Maximum chunks to return (default 8, overrides node-level top_n).",
+		"query":        "Natural-language search query.",
+		"dataset_ids":  "Optional list of dataset IDs to restrict the search to (overrides node-level kb_ids).",
+		"document_ids": "Optional list of document IDs to restrict retrieval scope.",
+		"top_n":        "Maximum chunks to return (default 8, overrides node-level top_n).",
 		"use_kg":      "GraphRAG toggle (returns ErrKGRetrievalServiceMissing until a kg adapter is registered).",
 	}
 }

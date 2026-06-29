@@ -97,6 +97,7 @@ export const initialRetrievalValues = {
   toc_enhance: false,
   cross_languages: [],
   retrieval_from: RetrievalFrom.Dataset,
+  document_ids: '',
   outputs: {
     formalized_content: {
       type: 'string',

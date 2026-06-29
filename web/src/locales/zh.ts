@@ -2468,6 +2468,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       query: '查询变量',
       queryRequired: '查询变量是必填项',
       queryTip: '选择您想要使用的变量',
+      documentIds: '文档 ID 列表',
+      documentIdsTip: '可选，限制检索范围的文档 ID 列表，支持引用上游变量',
       agent: '智能体',
       addAgent: '添加智能体',
       agentDescription: '构建具备推理、工具调用和多智能体协同的智能体组件。',

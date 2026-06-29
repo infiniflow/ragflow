@@ -55,10 +55,11 @@ const retrievalToolDescription = "This tool can be utilized for relevant content
 // accept both `query` (canonical) and `dataset_ids` / `use_kg` etc. to
 // match the Python ToolMeta field set.
 type retrievalArgs struct {
-	Query      string   `json:"query"`
-	DatasetIDs []string `json:"dataset_ids,omitempty"`
-	TopN       int      `json:"top_n,omitempty"`
-	UseKG      bool     `json:"use_kg,omitempty"`
+	Query       string   `json:"query"`
+	DatasetIDs  []string `json:"dataset_ids,omitempty"`
+	DocumentIDs []string `json:"document_ids,omitempty"`
+	TopN        int      `json:"top_n,omitempty"`
+	UseKG       bool     `json:"use_kg,omitempty"`
 }
 
 // retrievalResult is the JSON shape returned to the model. The `_ERROR`
@@ -111,6 +112,11 @@ func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 				Desc:     "Optional list of dataset IDs to restrict the search to.",
 				Required: false,
 			},
+			"document_ids": {
+				Type:     schema.Array,
+				Desc:     "Optional list of document IDs to restrict retrieval scope.",
+				Required: false,
+			},
 			"top_n": {
 				Type:     schema.Integer,
 				Desc:     "Number of top chunks to return. Defaults to 8 if omitted.",
@@ -139,6 +145,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	common.Debug("agent retrieval tool: parsed arguments",
 		zap.String("query", args.Query),
 		zap.Strings("dataset_ids", args.DatasetIDs),
+		zap.Strings("document_ids", args.DocumentIDs),
 		zap.Int("top_n", args.TopN),
 		zap.Bool("use_kg", args.UseKG),
 	)
@@ -161,6 +168,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	chunks, err := svc.Search(ctx, RetrievalRequest{
 		Query:          args.Query,
 		DatasetIDs:     args.DatasetIDs,
+		DocumentIDs:    args.DocumentIDs,
 		TopN:           args.TopN,
 		UseKG:          args.UseKG,
 		UseRerank:      false, // future enhancement
