@@ -26,6 +26,7 @@ from api.db.services.document_service import DocumentService, queue_raptor_o_gra
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.audit_log_service import AuditLogService
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
@@ -106,6 +107,9 @@ async def create_dataset(tenant_id: str, req: dict):
     if not ok:
         return False, "Dataset created failed"
     response_data = remap_dictionary_keys(k.to_dict())
+    # Audit trail (issue #14598): record the dataset creation. Best-effort — never
+    # let an audit failure break dataset creation.
+    AuditLogService.log_safe(tenant_id, "insert", "dataset", resource_id=create_dict["id"], resource_name=k.name)
     return True, response_data
 
 
@@ -176,6 +180,8 @@ async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = F
             errors.append(f"Delete dataset error for {kb_id}")
             continue
         success_count += 1
+        # Audit trail (issue #14598): record the dataset deletion.
+        AuditLogService.log_safe(tenant_id, "delete", "dataset", resource_id=kb_id, resource_name=kb.name)
 
     if not errors:
         return True, {"success_count": success_count}

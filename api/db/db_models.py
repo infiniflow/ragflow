@@ -1217,6 +1217,24 @@ class PipelineOperationLog(DataBaseModel):
         db_table = "pipeline_operation_log"
 
 
+class AuditLog(DataBaseModel):
+    """Audit trail of mutating operations (issue #14598): who did what, to which
+    resource, and when. One row per insert/update/delete on an auditable resource
+    (dataset, document, file, ...). Auto-registered by init_database_tables."""
+
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, help_text="Tenant the operation belongs to", index=True)
+    user_id = CharField(max_length=32, null=True, help_text="Actor user id", index=True)
+    operation = CharField(max_length=16, null=False, help_text="insert / update / delete", index=True)
+    resource_type = CharField(max_length=32, null=False, help_text="dataset / document / file / ...", index=True)
+    resource_id = CharField(max_length=32, null=True, help_text="Affected resource id", index=True)
+    resource_name = CharField(max_length=255, null=True, help_text="Affected resource name", default="")
+    detail = JSONField(null=True, default=dict, help_text="Extra structured context for the operation")
+
+    class Meta:
+        db_table = "audit_log"
+
+
 class Connector(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     tenant_id = CharField(max_length=32, null=False, index=True)
