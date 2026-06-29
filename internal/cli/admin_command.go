@@ -2283,6 +2283,36 @@ func (c *CLI) AdminShowUsersActivityCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+func (c *CLI) AdminShowUsersPlanCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	apiURL := "/admin/users/plan/summary"
+
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get users activity: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get users plan: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("get users plan failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // ListUsers lists all users (admin mode only)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *CLI) AdminListUsersCommand(cmd *Command) (ResponseIf, error) {
