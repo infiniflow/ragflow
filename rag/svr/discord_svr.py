@@ -49,9 +49,23 @@ async def on_message(message):
         if len(message.content.split('> ')) == 1:
             await message.channel.send("Hi~ How can I help you? ")
         else:
-            JSON_DATA['word'] = message.content.split('> ')[1]
-            response = requests.post(URL, json=JSON_DATA)
-            response_data = response.json().get('data', [])
+            # Build an isolated payload per message; mutating the shared global
+            # JSON_DATA would race once messages are handled concurrently.
+            payload = {**JSON_DATA, "word": message.content.split('> ')[1]}
+            try:
+                response = await asyncio.to_thread(
+                    requests.post, URL, json=payload, timeout=30
+                )
+                response.raise_for_status()
+                response_data = response.json().get('data', [])
+            except (requests.exceptions.RequestException, ValueError):
+                logging.exception("Discord handler failed to query the RAGFlow backend")
+                await message.channel.send(
+                    f"{message.author.mention} Sorry, something went wrong handling your request."
+                )
+                return
+
+            res = ""
             image_bool = False
 
             for i in response_data:
