@@ -1558,12 +1558,11 @@ func TestBuildSessionPayload_EmptyCollectionsEncodeAsEmptyArrays(t *testing.T) {
 	}
 }
 
-func TestParseCollections_ReturnEmptySlicesForMissingNullOrInvalid(t *testing.T) {
+func TestParseCollections_ReturnEmptySlicesForMissingOrNull(t *testing.T) {
 	messageInputs := []json.RawMessage{
 		nil,
 		json.RawMessage(`null`),
 		json.RawMessage(`{"messages":null}`),
-		json.RawMessage(`not-json`),
 	}
 	for _, input := range messageInputs {
 		got := parseMessages(input)
@@ -1575,12 +1574,33 @@ func TestParseCollections_ReturnEmptySlicesForMissingNullOrInvalid(t *testing.T)
 	referenceInputs := []json.RawMessage{
 		nil,
 		json.RawMessage(`null`),
-		json.RawMessage(`not-json`),
 	}
 	for _, input := range referenceInputs {
 		got := parseReferenceList(input)
 		if got == nil || len(got) != 0 {
 			t.Fatalf("parseReferenceList(%s)=%#v", string(input), got)
+		}
+	}
+}
+
+func TestParseCollections_ReturnNilForMalformedData(t *testing.T) {
+	messageInputs := []json.RawMessage{
+		json.RawMessage(`not-json`),
+		json.RawMessage(`{"unexpected":[]}`),
+	}
+	for _, input := range messageInputs {
+		if got := parseMessages(input); got != nil {
+			t.Fatalf("parseMessages(%s)=%#v, want nil", string(input), got)
+		}
+	}
+
+	referenceInputs := []json.RawMessage{
+		json.RawMessage(`not-json`),
+		json.RawMessage(`{"unexpected":[]}`),
+	}
+	for _, input := range referenceInputs {
+		if got := parseReferenceList(input); got != nil {
+			t.Fatalf("parseReferenceList(%s)=%#v, want nil", string(input), got)
 		}
 	}
 }
