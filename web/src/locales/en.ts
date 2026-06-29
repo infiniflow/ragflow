@@ -973,6 +973,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       questionTip: `If there are given questions, the embedding of the chunk will be based on them.`,
       chunkResult: 'Chunk result',
       chunkResultTip: `View the chunked segments used for embedding and retrieval.`,
+      representation: 'Representation',
       enable: 'Enable',
       disable: 'Disable',
       delete: 'Delete',
