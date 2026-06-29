@@ -108,6 +108,9 @@ export default {
       welcome: '欢迎来到',
       dataset: '知识库',
       memories: '记忆',
+      discord: 'Discord',
+      github: 'GitHub',
+      help: '帮助',
     },
     skills: {
       title: '技能',
