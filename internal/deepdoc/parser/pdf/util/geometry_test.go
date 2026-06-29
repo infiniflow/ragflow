@@ -152,3 +152,64 @@ func TestMedianCharWidth(t *testing.T) {
 		t.Errorf("MedianCharWidth(empty) = %v, want 5", w)
 	}
 }
+
+// textBox implements Rectangular for testing.
+type textBox struct{ x0, y0, x1, y1 float64 }
+
+func (b textBox) Bounds() (float64, float64, float64, float64) {
+	return b.x0, b.y0, b.x1, b.y1
+}
+
+func TestArea(t *testing.T) {
+	tests := []struct {
+		name string
+		r    pdf.Rectangular
+		want float64
+	}{
+		{"normal", textBox{0, 0, 10, 20}, 200},
+		{"zero width", textBox{5, 0, 5, 10}, 0},
+		{"zero height", textBox{0, 5, 10, 5}, 0},
+		{"degenerate", textBox{10, 10, 5, 5}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Area(tt.r); got != tt.want {
+				t.Errorf("Area = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOverlapInter(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b pdf.Rectangular
+		want float64
+	}{
+		{"full overlap", textBox{0, 0, 10, 10}, textBox{0, 0, 10, 10}, 100},
+		{"partial", textBox{0, 0, 10, 10}, textBox{5, 5, 15, 15}, 25},
+		{"no overlap", textBox{0, 0, 10, 10}, textBox{20, 20, 30, 30}, 0},
+		{"edge touching", textBox{0, 0, 10, 10}, textBox{10, 0, 20, 10}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := OverlapInter(tt.a, tt.b); got != tt.want {
+				t.Errorf("OverlapInter = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOverlapRatioA(t *testing.T) {
+	a := textBox{0, 0, 10, 10} // area = 100
+	b := textBox{5, 5, 15, 15} // overlap = 25
+	if got := OverlapRatioA(a, b); got != 0.25 {
+		t.Errorf("OverlapRatioA = %v, want 0.25", got)
+	}
+	// no overlap
+	c := textBox{0, 0, 10, 10}
+	d := textBox{20, 20, 30, 30}
+	if got := OverlapRatioA(c, d); got != 0 {
+		t.Errorf("OverlapRatioA no overlap = %v, want 0", got)
+	}
+}

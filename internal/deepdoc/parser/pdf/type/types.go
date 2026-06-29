@@ -310,49 +310,6 @@ type Rectangular interface {
 	Bounds() (x0, y0, x1, y1 float64)
 }
 
-// ── Geometry helpers (pure functions, no package dependencies) ─────────
-
-// Area returns the area of a Rectangular. Returns 0 for degenerate rects.
-func Area(r Rectangular) float64 {
-	x0, y0, x1, y1 := r.Bounds()
-	if x1 <= x0 || y1 <= y0 {
-		return 0
-	}
-	return (x1 - x0) * (y1 - y0)
-}
-
-// rectOverlapInter returns the intersection area of two axis-aligned rectangles.
-func rectOverlapInter(x0a, y0a, x1a, y1a, x0b, y0b, x1b, y1b float64) float64 {
-	x0 := max(x0a, x0b)
-	y0 := max(y0a, y0b)
-	x1 := min(x1a, x1b)
-	y1 := min(y1a, y1b)
-	if x0 >= x1 || y0 >= y1 {
-		return 0
-	}
-	return (x1 - x0) * (y1 - y0)
-}
-
-// OverlapInter returns the raw intersection area of two rectangles.
-func OverlapInter(a, b Rectangular) float64 {
-	ax0, ay0, ax1, ay1 := a.Bounds()
-	bx0, by0, bx1, by1 := b.Bounds()
-	return rectOverlapInter(ax0, ay0, ax1, ay1, bx0, by0, bx1, by1)
-}
-
-// OverlapRatioA returns intersection(a,b) / Area(a).
-func OverlapRatioA(a, b Rectangular) float64 {
-	inter := OverlapInter(a, b)
-	if inter <= 0 {
-		return 0
-	}
-	d := Area(a)
-	if d <= 0 {
-		return 0
-	}
-	return inter / d
-}
-
 // IsCJK reports whether r is a CJK character.
 func IsCJK(r rune) bool {
 	return unicode.Is(unicode.Han, r) ||

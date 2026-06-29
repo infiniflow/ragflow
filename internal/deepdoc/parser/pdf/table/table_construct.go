@@ -163,7 +163,7 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 		rows = item.Grid
 	}
 	if rows == nil && len(cells) > 0 && HasAnyText(cells) {
-		rows = groupTSRCellsToRows(cells)
+		rows = GroupTSRCellsToRows(cells)
 	}
 	if len(rows) > 0 && HasText(rows) {
 		hdrs := HeaderSetWithBlockType(rows)

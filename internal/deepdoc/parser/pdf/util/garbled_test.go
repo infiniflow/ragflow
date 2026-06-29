@@ -116,20 +116,3 @@ func TestIsGarbledByFontEncoding(t *testing.T) {
 		}
 	})
 }
-
-func TestDetectGarbled(t *testing.T) {
-	chars := make([]pdf.TextChar, 30)
-	for i := range chars {
-		chars[i] = pdf.TextChar{Text: "正常文本", FontName: "SimSun"}
-	}
-	if DetectGarbled(chars) {
-		t.Error("normal CJK should not be garbled")
-	}
-	var garbled []pdf.TextChar
-	for i := 0; i < 30; i++ {
-		garbled = append(garbled, pdf.TextChar{Text: "!", FontName: "DY1+SimSun"})
-	}
-	if !DetectGarbled(garbled) {
-		t.Error("subset font with punctuation should be garbled")
-	}
-}

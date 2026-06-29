@@ -100,7 +100,7 @@ check_cpp_deps() {
 
 check_go_deps() {
     print_section "Checking go dependencies"
-    
+
     command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
 
     echo "✓ Required tools are available"
@@ -182,21 +182,21 @@ check_office_oxide_deps() {
 # Build C++ static library
 build_cpp() {
     print_section "Building C++ static library"
-    
+
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR"
-    
+
     echo "Running cmake..."
     cmake .. -DCMAKE_BUILD_TYPE=Release
-    
+
     echo "Building librag_tokenizer_c_api.a..."
     make rag_tokenizer_c_api -j$(nproc)
-    
+
     if [ ! -f "$BUILD_DIR/librag_tokenizer_c_api.a" ]; then
         echo -e "${RED}Error: Failed to build C++ static library${NC}"
         exit 1
     fi
-    
+
     echo -e "${GREEN}✓ C++ static library built successfully${NC}"
 }
 
@@ -290,17 +290,47 @@ build_go() {
     echo -e "${GREEN}✓ Go ingestor built successfully: $INGESTOR_BINARY${NC}"
 }
 
-# Configure CGO flags for the office_oxide native library and the runtime
-# rpath used by test binaries. Call before any `go build` / `go test` step
-# that links against office_oxide.
+# Configure CGO flags for native libraries (office_oxide, pdfium, pdf_oxide).
+# Call before any `go build` / `go test` step that links against these libraries.
 setup_cgo_env() {
+    # ── office_oxide ──────────────────────────────────────────────────
     check_office_oxide_deps
     export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
-    echo "Exporting CGO_CFLAGS: $CGO_CFLAGS"
-    export CGO_LDFLAGS="-L${OFFICE_OXIDE_PREFIX}/lib -loffice_oxide -Wl,-rpath,${OFFICE_OXIDE_PREFIX}/lib${CGO_LDFLAGS:+ $CGO_LDFLAGS}"
-    echo "Exporting CGO_LDFLAGS: $CGO_LDFLAGS"
+    export CGO_LDFLAGS="-L${OFFICE_OXIDE_PREFIX}/lib -loffice_oxide -Wl,-rpath,${OFFICE_OXIDE_PREFIX}/lib"
     # Make the .so discoverable to test binaries spawned without rpath.
     export LD_LIBRARY_PATH="${OFFICE_OXIDE_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+    # ── pdfium (from .venv pypdfium2_raw) ─────────────────────────────
+    local venv_python="${PROJECT_ROOT}/.venv/bin/python3"
+    if [ -x "$venv_python" ]; then
+        local pdfium_dir=$("$venv_python" -c "
+import pypdfium2_raw, os
+print(os.path.dirname(pypdfium2_raw.__file__))
+" 2>/dev/null)
+        if [ -n "$pdfium_dir" ] && [ -f "$pdfium_dir/libpdfium.so" ]; then
+            export CGO_LDFLAGS="$CGO_LDFLAGS -L${pdfium_dir} -Wl,-rpath,${pdfium_dir}"
+            export LD_LIBRARY_PATH="${pdfium_dir}:${LD_LIBRARY_PATH}"
+            echo "  pdfium          → ${pdfium_dir}"
+        else
+            echo "  pdfium          → not found (pypdfium2_raw missing from .venv)"
+        fi
+    else
+        echo "  pdfium          → skipped (.venv not found)"
+    fi
+
+    # ── pdf_oxide (from env var or default location) ──────────────────
+    local pdf_oxide_lib="${PDF_OXIDE_LIB:-${HOME}/pdf_oxide/v0.3.63/lib/linux_amd64/libpdf_oxide.a}"
+    if [ -f "$pdf_oxide_lib" ]; then
+        export CGO_LDFLAGS="$CGO_LDFLAGS $pdf_oxide_lib"
+        echo "  pdf_oxide       → ${pdf_oxide_lib}"
+    else
+        echo "  pdf_oxide       → not found (set PDF_OXIDE_LIB or install to ~/pdf_oxide)"
+    fi
+
+    echo "CGO_CFLAGS:   $CGO_CFLAGS"
+    echo "Exporting CGO_CFLAGS: $CGO_CFLAGS"
+    echo "CGO_LDFLAGS:  $CGO_LDFLAGS"
+    echo "Exporting CGO_LDFLAGS: $CGO_LDFLAGS"
 }
 
 # Run Go unit tests with the same CGO env as `build_go`. Pass any extra args
@@ -322,7 +352,7 @@ run_go_tests() {
 # Clean build artifacts
 clean() {
     print_section "Cleaning build artifacts"
-    
+
     rm -rf "$BUILD_DIR"
     rm -f "$RAGFLOW_SERVER_BINARY"
     rm -f "$ADMIN_SERVER_BINARY"

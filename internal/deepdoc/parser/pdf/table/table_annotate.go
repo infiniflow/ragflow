@@ -24,8 +24,8 @@ func regionOverlapsBox(region pdf.DLARegion, box pdf.TextBox, scale float64) boo
 	rx1 := region.X1 / scale
 	ry1 := region.Y1 / scale
 	scaledR := pdf.DLARegion{X0: rx0, Y0: ry0, X1: rx1, Y1: ry1}
-	inter := pdf.OverlapInter(&scaledR, &box)
-	boxArea := pdf.Area(&box)
+	inter := util.OverlapInter(&scaledR, &box)
+	boxArea := util.Area(&box)
 	if boxArea <= 0 {
 		return false
 	}

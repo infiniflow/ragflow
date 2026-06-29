@@ -8,47 +8,47 @@ import (
 
 // ---- boxOverlapsCell ----
 
-func TestBoxOverlapsCell_FullOverlap(t *testing.T) {
+func TestBoxMatchesCell_FullOverlap(t *testing.T) {
 	// Box is entirely inside cell → ≥85% of box area inside cell → match.
 	cell := pdf.TSRCell{X0: 0, Y0: 0, X1: 100, Y1: 50}
 	box := pdf.TextBox{X0: 0, X1: 100, Top: 0, Bottom: 50, Text: "hello"}
-	if !BoxOverlapsCell(cell, box) {
+	if !BoxMatchesCell(cell, box, false) {
 		t.Error("full overlap should return true")
 	}
 	// Box is still entirely inside cell → box→cell = 100% ≥ 85% → match.
 	box2 := pdf.TextBox{X0: 10, X1: 90, Top: 10, Bottom: 40, Text: "partial"}
-	if !BoxOverlapsCell(cell, box2) {
+	if !BoxMatchesCell(cell, box2, false) {
 		t.Error("box entirely inside cell (100% of box) should match")
 	}
 }
 
-func TestBoxOverlapsCell_NoOverlap(t *testing.T) {
+func TestBoxMatchesCell_NoOverlap(t *testing.T) {
 	cell := pdf.TSRCell{X0: 0, Y0: 0, X1: 100, Y1: 50}
 	box := pdf.TextBox{X0: 200, X1: 300, Top: 10, Bottom: 40, Text: "away"}
-	if BoxOverlapsCell(cell, box) {
+	if BoxMatchesCell(cell, box, false) {
 		t.Error("no X overlap should return false")
 	}
 }
 
-func TestBoxOverlapsCell_PartialOverlap(t *testing.T) {
+func TestBoxMatchesCell_PartialOverlap(t *testing.T) {
 	// Box is entirely inside cell (100% of box area) → matches.
 	// boxOverlapsCell uses box→cell overlap (≥85% of box area inside cell).
 	cell := pdf.TSRCell{X0: 0, Y0: 0, X1: 100, Y1: 50}
 	box := pdf.TextBox{X0: 0, X1: 30, Top: 0, Bottom: 25, Text: "small"}
-	if !BoxOverlapsCell(cell, box) {
+	if !BoxMatchesCell(cell, box, false) {
 		t.Error("box entirely inside cell should match")
 	}
 	// Box straddles cell boundary (< 85% of box inside cell) → no match.
 	box2 := pdf.TextBox{X0: 80, X1: 180, Top: 0, Bottom: 25, Text: "spill"}
-	if BoxOverlapsCell(cell, box2) {
+	if BoxMatchesCell(cell, box2, false) {
 		t.Error("box straddling boundary (<85% inside) should NOT match")
 	}
 }
 
-func TestBoxOverlapsCell_ZeroArea(t *testing.T) {
+func TestBoxMatchesCell_ZeroArea(t *testing.T) {
 	cell := pdf.TSRCell{X0: 0, Y0: 0, X1: 0, Y1: 50}
 	box := pdf.TextBox{X0: 0, X1: 10, Top: 0, Bottom: 10, Text: "x"}
-	if BoxOverlapsCell(cell, box) {
+	if BoxMatchesCell(cell, box, false) {
 		t.Error("zero cell area should return false")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"math"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/deepdoc/parser/pdf/util"
 	"regexp"
 	"sort"
 	"strings"
@@ -15,10 +16,6 @@ import (
 // This is the basic fallback grouping used when model-specific grouping
 // (e.g. EE label-aware grouping) is not applicable.
 func GroupTSRCellsToRows(cells []pdf.TSRCell) [][]pdf.TSRCell {
-	return groupTSRCellsToRows(cells)
-}
-
-func groupTSRCellsToRows(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	if len(cells) == 0 {
 		return nil
 	}
@@ -108,8 +105,8 @@ func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
 // is empty, any overlap suffices — matching Python's _table_transformer_job
 // which fills cells from overlapping PDF boxes with thr=0.3.
 func BoxMatchesCell(cell pdf.TSRCell, box pdf.TextBox, cellIsEmpty bool) bool {
-	inter := pdf.OverlapInter(&cell, &box)
-	boxArea := pdf.Area(&box)
+	inter := util.OverlapInter(&cell, &box)
+	boxArea := util.Area(&box)
 	if boxArea <= 0 {
 		return false
 	}
@@ -117,12 +114,6 @@ func BoxMatchesCell(cell pdf.TSRCell, box pdf.TextBox, cellIsEmpty bool) bool {
 		return inter/boxArea >= 0.3 // Python's find_overlapped_with_threshold default
 	}
 	return inter/boxArea >= 0.85
-}
-
-// boxOverlapsCell is kept for backward compat — same as boxMatchesCell
-// with cellIsEmpty=false (strict 85% threshold).
-func BoxOverlapsCell(cell pdf.TSRCell, box pdf.TextBox) bool {
-	return BoxMatchesCell(cell, box, false)
 }
 
 // isCaptionBox checks if a text box is a table/figure caption,

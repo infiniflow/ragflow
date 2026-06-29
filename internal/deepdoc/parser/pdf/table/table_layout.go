@@ -3,6 +3,7 @@ package table
 import (
 	"math"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/deepdoc/parser/pdf/util"
 	"sort"
 )
 
@@ -12,13 +13,6 @@ import (
 // within threshold Y pixels, sort by X instead (same-row ordering).
 // Python: Recognizer.sort_Y_firstly(arr, threshold)
 func SortYFirstly(cells []pdf.TSRCell, threshold float64) {
-	sortYFirstly(cells, threshold)
-}
-
-// sortYFirstly sorts cells by top, with fuzzy threshold: if two cells are
-// within threshold Y pixels, sort by X instead (same-row ordering).
-// Python: Recognizer.sort_Y_firstly(arr, threshold)
-func sortYFirstly(cells []pdf.TSRCell, threshold float64) {
 	sort.Slice(cells, func(i, j int) bool {
 		diff := cells[i].Y0 - cells[j].Y0
 		if math.Abs(diff) < threshold {
@@ -30,11 +24,6 @@ func sortYFirstly(cells []pdf.TSRCell, threshold float64) {
 
 // SortXFirstly sorts cells by x0, with fuzzy threshold for top.
 func SortXFirstly(cells []pdf.TSRCell, threshold float64) {
-	sortXFirstly(cells, threshold)
-}
-
-// sortXFirstly sorts cells by x0, with fuzzy threshold for top.
-func sortXFirstly(cells []pdf.TSRCell, threshold float64) {
 	sort.Slice(cells, func(i, j int) bool {
 		diff := cells[i].X0 - cells[j].X0
 		if math.Abs(diff) < threshold {
@@ -70,8 +59,8 @@ func layoutCleanup(cells []pdf.TSRCell, boxes []pdf.TextBox, far int, thr float6
 			continue
 		}
 		// Cells i and j overlap and have same type. Keep one.
-		areaI := pdf.OverlapRatioA(&out[i], &out[j])
-		areaJ := pdf.OverlapRatioA(&out[j], &out[i])
+		areaI := util.OverlapRatioA(&out[i], &out[j])
+		areaJ := util.OverlapRatioA(&out[j], &out[i])
 		if areaI < thr && areaJ < thr {
 			i++
 			continue
@@ -81,10 +70,10 @@ func layoutCleanup(cells []pdf.TSRCell, boxes []pdf.TextBox, far int, thr float6
 		boxAreaI, boxAreaJ := 0.0, 0.0
 		for _, b := range boxes {
 			if !tsrBoxOverlap(b, out[i]) {
-				boxAreaI += pdf.OverlapInter(&b, &out[i])
+				boxAreaI += util.OverlapInter(&b, &out[i])
 			}
 			if !tsrBoxOverlap(b, out[j]) {
-				boxAreaJ += pdf.OverlapInter(&b, &out[j])
+				boxAreaJ += util.OverlapInter(&b, &out[j])
 			}
 		}
 		if boxAreaI >= boxAreaJ {
@@ -111,18 +100,18 @@ func tsrBoxOverlap(b pdf.TextBox, c pdf.TSRCell) bool {
 // Python: Recognizer.find_overlapped_with_threshold(box, boxes, thr=0.3)
 // Python uses max(boxRatio, cellRatio) for both gate and scoring.
 func findOverlappedWithThreshold(box pdf.TextBox, cells []pdf.TSRCell, thr float64) int {
-	boxArea := pdf.Area(&box)
+	boxArea := util.Area(&box)
 	if boxArea <= 0 {
 		return -1
 	}
 	bestIdx := -1
 	bestOverlap := thr // Python: max_overlap starts at thr
 	for i, c := range cells {
-		cellArea := pdf.Area(&c)
+		cellArea := util.Area(&c)
 		if cellArea <= 0 {
 			continue
 		}
-		ol := pdf.OverlapInter(&box, &c)
+		ol := util.OverlapInter(&box, &c)
 		if ol <= 0 {
 			continue
 		}
@@ -171,8 +160,8 @@ func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 		headers = grid[0]
 		clmns = append(clmns, grid[0]...)
 	}
-	sortYFirstly(headers, 10)
-	sortXFirstly(clmns, 10)
+	SortYFirstly(headers, 10)
+	SortXFirstly(clmns, 10)
 
 	for i := range boxes {
 		if boxes[i].LayoutType != pdf.LayoutTypeTable {

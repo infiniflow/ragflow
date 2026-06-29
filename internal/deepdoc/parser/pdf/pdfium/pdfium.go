@@ -5,8 +5,7 @@
 package pdfium
 
 /*
-#cgo LDFLAGS: -L/home/shenyushi/cc-workspace/ragflow/.venv/lib/python3.13/site-packages/pypdfium2_raw -lpdfium -lm -lpthread -ldl
-#cgo linux LDFLAGS: -Wl,-rpath,/home/shenyushi/cc-workspace/ragflow/.venv/lib/python3.13/site-packages/pypdfium2_raw
+#cgo LDFLAGS: -lpdfium -lm -lpthread -ldl
 
 #include <stdint.h>
 #include <stdlib.h>

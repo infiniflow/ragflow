@@ -45,7 +45,7 @@ func TestSortYFirstly(t *testing.T) {
 			{X0: 10, Y0: 10, Label: "a"},
 			{X0: 10, Y0: 30, Label: "b"},
 		}
-		sortYFirstly(cells, 5)
+		SortYFirstly(cells, 5)
 		if cells[0].Label != "a" || cells[1].Label != "b" || cells[2].Label != "c" {
 			t.Errorf("sort order wrong: %v", cells)
 		}
@@ -56,7 +56,7 @@ func TestSortYFirstly(t *testing.T) {
 			{X0: 90, Y0: 10, Label: "right"},
 			{X0: 10, Y0: 10, Label: "left"},
 		}
-		sortYFirstly(cells, 5)
+		SortYFirstly(cells, 5)
 		if cells[0].Label != "left" || cells[1].Label != "right" {
 			t.Errorf("same Y should sort X ascending: %v", cells)
 		}
@@ -146,7 +146,7 @@ func TestAnnotateTableBoxes(t *testing.T) {
 	cells := makeMockTableCells()
 	boxes := makeMockBoxes()
 
-	AnnotateTableBoxes(boxes, groupTSRCellsToRows(cells))
+	AnnotateTableBoxes(boxes, GroupTSRCellsToRows(cells))
 
 	b := boxes[0]
 
@@ -166,13 +166,13 @@ func TestAnnotateTableBoxes(t *testing.T) {
 	}
 }
 
-// ── groupTSRCellsToRows ─────────────────────────────────────────
+// ── GroupTSRCellsToRows ─────────────────────────────────────────
 
 func TestGroupTSRCellsToRowsLabeled(t *testing.T) {
 	cells := makeMockTableCells()
 
 	t.Run("label-based grouping", func(t *testing.T) {
-		rows := groupTSRCellsToRows(cells)
+		rows := GroupTSRCellsToRows(cells)
 		if len(rows) < 2 {
 			t.Errorf("expected >= 2 rows, got %d", len(rows))
 		}
@@ -189,7 +189,7 @@ func TestGroupTSRCellsToRowsLabeled(t *testing.T) {
 			{X0: 10, Y0: 10, X1: 50, Y1: 20, Label: ""},
 			{X0: 10, Y0: 30, X1: 50, Y1: 40, Label: ""},
 		}
-		rows := groupTSRCellsToRows(unlabeled)
+		rows := GroupTSRCellsToRows(unlabeled)
 		if len(rows) < 2 {
 			t.Errorf("fallback: expected >= 2 rows, got %d", len(rows))
 		}
@@ -197,7 +197,7 @@ func TestGroupTSRCellsToRowsLabeled(t *testing.T) {
 
 	t.Run("single cell", func(t *testing.T) {
 		cells := []pdf.TSRCell{{X0: 0, Y0: 0, X1: 10, Y1: 10, Label: "table row"}}
-		rows := groupTSRCellsToRows(cells)
+		rows := GroupTSRCellsToRows(cells)
 		if len(rows) != 1 {
 			t.Errorf("expected 1 row, got %d", len(rows))
 		}
@@ -215,7 +215,7 @@ func TestAnnotateTableBoxes_PixelSpace(t *testing.T) {
 		{X0: 150, Y0: 350, X1: 750, Y1: 380, Label: "table row"},
 		{X0: 150, Y0: 380, X1: 750, Y1: 420, Label: "table row"},
 	}
-	AnnotateTableBoxes(boxes, groupTSRCellsToRows(cells))
+	AnnotateTableBoxes(boxes, GroupTSRCellsToRows(cells))
 	if boxes[0].R < 0 {
 		t.Error("row index should be set (pixel-space matching)")
 	}
@@ -334,7 +334,7 @@ func TestGroupTSRCellsToRowsLabeled_FallbackY(t *testing.T) {
 			}
 		}
 	}
-	rows := groupTSRCellsToRows(cells)
+	rows := GroupTSRCellsToRows(cells)
 	if len(rows) != 4 {
 		t.Fatalf("fallback Y-grouping: expected 4 rows, got %d", len(rows))
 	}
@@ -377,7 +377,7 @@ func TestGroupTSRCellsToRowsLabeled_Irregular(t *testing.T) {
 		{X0: 0, Y0: 60, X1: 80, Y1: 85, Label: "table"},
 		{X0: 90, Y0: 61, X1: 170, Y1: 86, Label: "table"},
 	}
-	rows := groupTSRCellsToRows(cells)
+	rows := GroupTSRCellsToRows(cells)
 	if len(rows) != 3 {
 		t.Fatalf("irregular: expected 3 rows, got %d", len(rows))
 	}
@@ -460,7 +460,7 @@ func TestGroupTSRCellsToRowsLabeled_ColumnAlignment(t *testing.T) {
 		{X0: 100, Y0: 30, X1: 200, Y1: 60, Label: "table row"},
 		{X0: 200, Y0: 30, X1: 300, Y1: 60, Label: "table row"},
 	}
-	rows := groupTSRCellsToRows(cells)
+	rows := GroupTSRCellsToRows(cells)
 	if len(rows) != 2 {
 		t.Fatalf("expected 2 rows, got %d", len(rows))
 	}
@@ -496,7 +496,7 @@ func TestAnnotateTableBoxes_RealTSRLabels(t *testing.T) {
 		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "E", LayoutType: "table"},
 		{X0: 210, X1: 290, Top: 35, Bottom: 65, Text: "F", LayoutType: "table"},
 	}
-	AnnotateTableBoxes(boxes, groupTSRCellsToRows(cells))
+	AnnotateTableBoxes(boxes, GroupTSRCellsToRows(cells))
 
 	// Verify R (row) assignments — should be 0 for top row, 1 for bottom row.
 	for i, b := range boxes {

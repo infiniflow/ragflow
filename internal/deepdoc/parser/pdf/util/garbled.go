@@ -227,18 +227,7 @@ func catOf(r rune) string {
 	return ""
 }
 
-// DetectGarbled returns true if a page's text is likely garbled due to
-// font encoding issues, indicating OCR is needed.
-func DetectGarbled(chars []pdf.TextChar) bool {
-	return IsGarbledByFontEncoding(chars, 20)
-}
-
-// HasColor checks if a character has visible color.
-func HasColor(c pdf.TextChar) bool {
-	return true
-}
-
-// isGarbledPage returns true if a page is garbled by PUA ratio, font encoding,
+// IsGarbledPage returns true if a page is garbled by PUA ratio, font encoding,
 // pdf_oxide unmapped glyphs, or scan noise (no real words).
 func IsGarbledPage(chars []pdf.TextChar) bool {
 	if len(chars) < 20 {

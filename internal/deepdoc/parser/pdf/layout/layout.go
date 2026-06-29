@@ -378,10 +378,6 @@ func startsWithOneOf(s, set string) bool {
 	return strings.ContainsRune(set, r)
 }
 
-// containsRune returns true if the string set contains the given rune.
-func containsRune(set string, r rune) bool {
-	return strings.ContainsRune(set, r)
-}
 
 // MergeSameBullet merges adjacent boxes that start with the same bullet/number
 // character, combining their text with a newline separator.

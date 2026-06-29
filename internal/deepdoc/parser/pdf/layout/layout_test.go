@@ -66,10 +66,10 @@ func TestFinalReadingOrderMerge(t *testing.T) {
 }
 
 func TestContainsRune(t *testing.T) {
-	if !containsRune("。？！", '。') {
+	if !strings.ContainsRune("。？！", '。') {
 		t.Error("should find 。")
 	}
-	if containsRune("abc", 'z') {
+	if strings.ContainsRune("abc", 'z') {
 		t.Error("should not find z")
 	}
 }
@@ -90,12 +90,6 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if cfg.ToPage != -1 {
 		t.Error("default to_page should be -1")
-	}
-}
-
-func TestHasColor(t *testing.T) {
-	if !util.HasColor(pdf.TextChar{}) {
-		t.Error("HasColor should return true by default")
 	}
 }
 

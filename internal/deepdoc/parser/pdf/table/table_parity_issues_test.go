@@ -179,7 +179,7 @@ func TestConstructTable_BlockTypeChangesHeaderDetection(t *testing.T) {
 		{X0: 101, Y0: 105, X1: 200, Y1: 135, Text: "28", Label: "table row"},
 	}
 
-	html := ConstructTable(cells, nil, "", &pdf.TableItem{Grid: groupTSRCellsToRows(cells)})
+	html := ConstructTable(cells, nil, "", &pdf.TableItem{Grid: GroupTSRCellsToRows(cells)})
 
 	// blockType analysis:
 	// "姓名"(Tx), "年龄"(Tx), "张三"(Ot), "25"(Nu), "李四"(Ot), "30"(Nu), "王五"(Ot), "28"(Nu)
@@ -238,7 +238,7 @@ func TestRowsToHTML_NoColspanRowspan(t *testing.T) {
 // TestConstructTable_SpannedTable_NoMerge documents the full constructTable
 // path with spanning cells — no colspan/rowspan in output.
 func TestConstructTable_SpannedTable_NoMerge(t *testing.T) {
-	// Spanning cell at same Y as row cells so groupTSRCellsToRows
+	// Spanning cell at same Y as row cells so GroupTSRCellsToRows
 	// puts them in the same row group. The spanning cell covers X=0-200
 	// (both columns); Python's __cal_spans would give it colspan=2.
 	cells := []pdf.TSRCell{

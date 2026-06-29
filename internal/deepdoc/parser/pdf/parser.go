@@ -546,6 +546,3 @@ func (p *Parser) fillSectionImages(result *pdf.ParseResult) {
 		}
 	}
 }
-
-// isASCIIPrintable returns true for characters that match Python's
-// is_english regex: [ a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]
