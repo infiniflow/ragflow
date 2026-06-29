@@ -66,6 +66,52 @@ func createChatRESTUpdateServiceTestChat(t *testing.T, db *gorm.DB, id, tenantID
 	}
 }
 
+func assertEmptyMetaDataFilter(t *testing.T, value interface{}) {
+	t.Helper()
+
+	switch typed := value.(type) {
+	case entity.JSONMap:
+		if len(typed) != 0 {
+			t.Fatalf("expected empty meta_data_filter, got %+v", typed)
+		}
+	case map[string]interface{}:
+		if len(typed) != 0 {
+			t.Fatalf("expected empty meta_data_filter, got %+v", typed)
+		}
+	default:
+		t.Fatalf("expected meta_data_filter object, got %T: %+v", value, value)
+	}
+}
+
+func TestChatServiceCreateDefaultsMetaDataFilter(t *testing.T) {
+	setupChatRESTUpdateServiceTestDB(t)
+
+	svc := NewChatService()
+	resp, code, err := svc.Create("user-1", map[string]interface{}{
+		"name": "created chat",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("unexpected code: %v", code)
+	}
+	assertEmptyMetaDataFilter(t, resp["meta_data_filter"])
+
+	chatID, ok := resp["id"].(string)
+	if !ok || chatID == "" {
+		t.Fatalf("expected created chat id, got %+v", resp["id"])
+	}
+	chat, err := svc.chatDAO.GetByID(chatID)
+	if err != nil {
+		t.Fatalf("failed to fetch created chat: %v", err)
+	}
+	if chat.MetaDataFilter == nil {
+		t.Fatal("expected persisted meta_data_filter to be non-nil")
+	}
+	assertEmptyMetaDataFilter(t, *chat.MetaDataFilter)
+}
+
 func TestChatServicePatchChatMergesPromptConfigAndLLMSetting(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
@@ -160,6 +206,29 @@ func TestChatServiceUpdateChatAcceptsMetaDataFilterObject(t *testing.T) {
 	if chat.MetaDataFilter == nil || (*chat.MetaDataFilter)["method"] != "disabled" {
 		t.Fatalf("expected meta_data_filter to be persisted, got %+v", chat.MetaDataFilter)
 	}
+}
+
+func TestChatServiceUpdateChatBackfillsNilMetaDataFilter(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	svc := NewChatService()
+	resp, err := svc.UpdateChat("user-1", "chat-1", map[string]interface{}{
+		"name": "chat-chat-1",
+	})
+	if err != nil {
+		t.Fatalf("UpdateChat failed: %v", err)
+	}
+	assertEmptyMetaDataFilter(t, resp["meta_data_filter"])
+
+	chat, err := svc.chatDAO.GetByID("chat-1")
+	if err != nil {
+		t.Fatalf("failed to fetch chat: %v", err)
+	}
+	if chat.MetaDataFilter == nil {
+		t.Fatal("expected meta_data_filter to be backfilled")
+	}
+	assertEmptyMetaDataFilter(t, *chat.MetaDataFilter)
 }
 
 func TestChatServicePatchChatIgnoresTenantIDAndUpdatesName(t *testing.T) {

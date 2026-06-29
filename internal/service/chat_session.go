@@ -661,11 +661,14 @@ func (s *ChatSessionService) buildSessionPayload(session *entity.ChatSession, di
 }
 
 func parseMessages(raw json.RawMessage) []map[string]interface{} {
-	var messages []map[string]interface{}
+	messages := make([]map[string]interface{}, 0)
 	if len(raw) == 0 {
 		return messages
 	}
 	if err := json.Unmarshal(raw, &messages); err == nil {
+		if messages == nil {
+			return make([]map[string]interface{}, 0)
+		}
 		return messages
 	}
 
@@ -673,19 +676,25 @@ func parseMessages(raw json.RawMessage) []map[string]interface{} {
 		Messages []map[string]interface{} `json:"messages"`
 	}
 	if err := json.Unmarshal(raw, &wrapped); err != nil {
-		return nil
+		return make([]map[string]interface{}, 0)
+	}
+	if wrapped.Messages == nil {
+		return make([]map[string]interface{}, 0)
 	}
 	return wrapped.Messages
 }
 
 func parseReferenceList(raw json.RawMessage) []interface{} {
-	var references []interface{}
+	references := make([]interface{}, 0)
 	if len(raw) == 0 {
 		return references
 	}
 	err := json.Unmarshal(raw, &references)
 	if err != nil {
-		return nil
+		return make([]interface{}, 0)
+	}
+	if references == nil {
+		return make([]interface{}, 0)
 	}
 	return references
 }

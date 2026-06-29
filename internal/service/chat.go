@@ -244,6 +244,9 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 	if _, ok := req["icon"]; !ok {
 		req["icon"] = ""
 	}
+	if _, ok := req["meta_data_filter"]; !ok || req["meta_data_filter"] == nil {
+		req["meta_data_filter"] = map[string]interface{}{}
+	}
 
 	applyCreatePromptDefaults(req)
 	filterCreateChatPersistedFields(req)
@@ -481,6 +484,9 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 	if metaDataFilter, ok := mapFromValue(req["meta_data_filter"]); ok {
 		metaDataFilterJSON := entity.JSONMap(metaDataFilter)
 		chat.MetaDataFilter = &metaDataFilterJSON
+	} else {
+		metaDataFilterJSON := entity.JSONMap{}
+		chat.MetaDataFilter = &metaDataFilterJSON
 	}
 	return chat
 }
@@ -494,6 +500,7 @@ func (s *ChatService) buildCreateChatResponse(chat *entity.Chat) (map[string]int
 	data["dataset_ids"] = datasetIDs
 	delete(data, "kb_ids")
 	data["kb_names"] = kbNames
+	data["meta_data_filter"] = normalizeMetaDataFilter(chat.MetaDataFilter)
 	return data, nil
 }
 
@@ -531,6 +538,13 @@ func mapFromValue(value interface{}) (map[string]interface{}, bool) {
 	default:
 		return nil, false
 	}
+}
+
+func normalizeMetaDataFilter(value *entity.JSONMap) entity.JSONMap {
+	if value == nil || *value == nil {
+		return entity.JSONMap{}
+	}
+	return *value
 }
 
 func listFromValue(value interface{}) ([]interface{}, bool) {
@@ -1303,12 +1317,18 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 		}
 	}
 
-	if value, ok := req["meta_data_filter"]; ok && value != nil {
-		metaDataFilter, ok := mapFromValue(value)
-		if !ok {
-			return nil, errors.New("`meta_data_filter` should be an object.")
+	if value, ok := req["meta_data_filter"]; ok {
+		if value == nil {
+			req["meta_data_filter"] = entity.JSONMap{}
+		} else {
+			metaDataFilter, ok := mapFromValue(value)
+			if !ok {
+				return nil, errors.New("`meta_data_filter` should be an object.")
+			}
+			req["meta_data_filter"] = entity.JSONMap(metaDataFilter)
 		}
-		req["meta_data_filter"] = entity.JSONMap(metaDataFilter)
+	} else if currentChat.MetaDataFilter == nil || *currentChat.MetaDataFilter == nil {
+		req["meta_data_filter"] = entity.JSONMap{}
 	}
 
 	updates := filterRESTChatUpdates(req)
@@ -1492,7 +1512,7 @@ func (s *ChatService) buildRESTChatResponse(chat *entity.Chat) map[string]interf
 		"llm_setting":              chat.LLMSetting,
 		"prompt_type":              chat.PromptType,
 		"prompt_config":            chat.PromptConfig,
-		"meta_data_filter":         chat.MetaDataFilter,
+		"meta_data_filter":         normalizeMetaDataFilter(chat.MetaDataFilter),
 		"similarity_threshold":     chat.SimilarityThreshold,
 		"vector_similarity_weight": chat.VectorSimilarityWeight,
 		"top_n":                    chat.TopN,
