@@ -1097,6 +1097,16 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       rssDescription:
         '连接公开的 RSS 或 Atom feed，并将 feed 条目同步到知识库。',
       confluenceDescription: '连接你的 Confluence 工作区以搜索文档内容。',
+      trinoDescription:
+        '连接 Trino，将联邦 SQL 查询结果同步到知识库。',
+      trinoServerUrlTip:
+        'Trino coordinator 的基础 URL，例如 https://trino.example.com。',
+      trinoQueryTip:
+        '用于从 Trino 提取行数据的 SQL 查询。选定列会映射为文档。',
+      trinoContentColumnsTip:
+        '作为文档内容合并的列名，多个用逗号分隔。',
+      trinoTimestampColumnTip:
+        '可选：用于过滤增量同步窗口的时间戳列。',
       s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
       google_cloud_storageDescription:
         '连接你的 Google Cloud Storage 存储桶以导入和同步文件。',

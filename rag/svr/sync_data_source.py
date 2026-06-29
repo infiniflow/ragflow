@@ -79,6 +79,7 @@ from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.data_source.exceptions import ConnectorValidationError
+from common.data_source.trino_connector import TrinoConnector
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
@@ -2140,6 +2141,37 @@ class REST_API(SyncBase):
         return document_generator
 
 
+class Trino(SyncBase):
+    SOURCE_NAME: str = FileSource.TRINO
+
+    async def _generate(self, task: dict):
+        self.connector = TrinoConnector(
+            server_url=self.conf.get("server_url", ""),
+            catalog=self.conf.get("catalog", ""),
+            schema=self.conf.get("schema", ""),
+            query=self.conf.get("query", ""),
+            content_columns=self.conf.get("content_columns", ""),
+            metadata_columns=self.conf.get("metadata_columns", ""),
+            id_column=self.conf.get("id_column", ""),
+            timestamp_column=self.conf.get("timestamp_column", ""),
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+        self.connector.load_credentials(self.conf.get("credentials") or {})
+        self.connector.validate_connector_settings()
+
+        poll_start = task.get("poll_range_start")
+        if task.get("reindex") == "1" or poll_start is None:
+            document_generator = self.connector.load_from_state()
+        else:
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+
+        self.log_connection("Trino", self.conf.get("server_url", ""), task)
+        return document_generator
+
+
 func_factory = {
     FileSource.RSS: RSS,
     FileSource.S3: S3,
@@ -2175,6 +2207,7 @@ func_factory = {
     FileSource.POSTGRESQL: PostgreSQL,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
     FileSource.REST_API: REST_API,
+    FileSource.TRINO: Trino,
 }
 
 

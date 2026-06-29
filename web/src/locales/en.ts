@@ -1226,6 +1226,16 @@ Example: Virtual Hosted Style`,
         'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
       confluenceDescription:
         'Integrate your Confluence workspace to search documentation.',
+      trinoDescription:
+        'Connect Trino to sync federated SQL query results into your knowledge base.',
+      trinoServerUrlTip:
+        'The base URL of your Trino coordinator, e.g. https://trino.example.com.',
+      trinoQueryTip:
+        'SQL query used to extract rows from Trino. The selected columns are mapped into documents.',
+      trinoContentColumnsTip:
+        'Comma-separated column names whose values will be combined as document content.',
+      trinoTimestampColumnTip:
+        'Optional timestamp column used to filter incremental sync windows.',
       s3Description:
         'Connect to your AWS S3 bucket to import and sync stored files.',
       google_cloud_storageDescription:

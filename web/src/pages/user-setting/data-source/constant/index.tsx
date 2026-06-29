@@ -2,7 +2,7 @@ import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
-import { Mail, Rss } from 'lucide-react';
+import { Database, Mail, Rss } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -50,6 +50,7 @@ export enum DataSourceKey {
   TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
+  TRINO = 'trino',
 }
 
 type DataSourceFeatureVisibility = {
@@ -158,6 +159,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.POSTGRESQL]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.TRINO]: {
     syncDeletedFiles: true,
   },
 };
@@ -332,6 +336,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'PostgreSQL',
       description: t(`setting.${DataSourceKey.POSTGRESQL}Description`),
       icon: <SvgIcon name={'data-source/postgresql'} width={38} />,
+    },
+    [DataSourceKey.TRINO]: {
+      name: 'Trino',
+      description: t(`setting.${DataSourceKey.TRINO}Description`),
+      icon: <Database className="text-text-primary" size={22} />,
     },
     [DataSourceKey.ONEDRIVE]: {
       name: 'OneDrive',
@@ -1483,6 +1492,86 @@ export const DataSourceFormFields = {
       tooltip: t('setting.postgresqlTimestampColumnTip'),
     },
   ],
+  [DataSourceKey.TRINO]: [
+    {
+      label: 'Server URL',
+      name: 'config.server_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://trino.example.com',
+      tooltip: t('setting.trinoServerUrlTip'),
+    },
+    {
+      label: 'Catalog',
+      name: 'config.catalog',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'hive',
+    },
+    {
+      label: 'Schema',
+      name: 'config.schema',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'default',
+    },
+    {
+      label: 'SQL Query',
+      name: 'config.query',
+      type: FormFieldType.Textarea,
+      required: true,
+      placeholder: 'SELECT id, title, body, updated_at FROM docs',
+      tooltip: t('setting.trinoQueryTip'),
+    },
+    {
+      label: 'Content Columns',
+      name: 'config.content_columns',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'title,body',
+      tooltip: t('setting.trinoContentColumnsTip'),
+    },
+    {
+      label: 'Metadata Columns',
+      name: 'config.metadata_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at,category',
+    },
+    {
+      label: 'ID Column',
+      name: 'config.id_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id',
+    },
+    {
+      label: 'Timestamp Column',
+      name: 'config.timestamp_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at',
+      tooltip: t('setting.trinoTimestampColumnTip'),
+    },
+    {
+      label: 'Username',
+      name: 'config.credentials.trino_username',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.trino_password',
+      type: FormFieldType.Password,
+      required: false,
+    },
+    {
+      label: 'Bearer Token',
+      name: 'config.credentials.trino_bearer_token',
+      type: FormFieldType.Password,
+      required: false,
+    },
+  ],
   [DataSourceKey.REST_API]: [
     // ── Essential fields ──────────────────────────────────────────────
     {
@@ -2147,6 +2236,26 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         username: '',
         password: '',
+      },
+    },
+  },
+  [DataSourceKey.TRINO]: {
+    name: '',
+    source: DataSourceKey.TRINO,
+    config: {
+      server_url: '',
+      catalog: '',
+      schema: '',
+      query: '',
+      content_columns: '',
+      metadata_columns: '',
+      id_column: '',
+      timestamp_column: '',
+      batch_size: 2,
+      credentials: {
+        trino_username: '',
+        trino_password: '',
+        trino_bearer_token: '',
       },
     },
   },
