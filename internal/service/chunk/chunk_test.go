@@ -112,7 +112,7 @@ func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := knowledgebaseEmbeddingKey(tt.kb); got != tt.want {
+			if got := knowledgebaseEmbeddingKey(tt.kb, tt.kb.TenantID); got != tt.want {
 				t.Fatalf("knowledgebaseEmbeddingKey() = %q, want %q", got, tt.want)
 			}
 		})
