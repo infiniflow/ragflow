@@ -893,6 +893,10 @@ def update_model(tenant_id: str, provider_id_or_name: str, instance_id_or_name: 
         db_extra = json.loads(model_obj.extra)
         db_extra.update(**new_extra)
         to_update.update({"extra": json.dumps(db_extra)})
+    if "model_type" in update_dict:
+        target_model_type = calculate_model_type(update_dict["model_type"])
+        if target_model_type != model_obj.model_type:
+            to_update.update({"model_type": target_model_type})
 
     if to_update:
         TenantModelService.update_model(model_obj.id, to_update)
