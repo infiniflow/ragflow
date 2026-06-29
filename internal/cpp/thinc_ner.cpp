@@ -34,11 +34,11 @@ struct JParser {
     JVal po() { JVal v;v.type=JVal::OBJ; nx(); while(pk()!='}'){auto k=ps();nx();v.obj[k.str]=pv();if(pk()==',')nx();else break;}nx();return v; }
     JVal pa() { JVal v;v.type=JVal::ARR; nx(); while(pk()!=']'){v.arr.push_back(pv());if(pk()==',')nx();else break;}nx();return v; }
     JVal ps() { JVal v;v.type=JVal::STR; nx();while(p<e&&*p!='"'){if(*p=='\\'){++p;if(p<e)v.str+=*p++;}else v.str+=*p++;}if(p<e)++p;return v; }
-    JVal pn() { JVal v;v.type=JVal::NUM; auto s=p; if(*p=='-')++p; while(p<e&&(*p>='0'&&*p<='9'))++p;
+    JVal pn() { JVal v;v.type=JVal::NUM; auto s=p; if(p<e&&*p=='-')++p; while(p<e&&(*p>='0'&&*p<='9'))++p;
         if(p<e&&*p=='.'){++p;while(p<e&&(*p>='0'&&*p<='9'))++p;}
-        if(p<e&&(*p=='e'||*p=='E')){++p;if(*p=='+'||*p=='-')++p;while(p<e&&(*p>='0'&&*p<='9'))++p;}
-        v.num=std::stod(std::string(s,p-s)); return v; }
-    JVal pb() { JVal v;v.type=JVal::BOOL; if(*p=='t'){v.str="true";p+=4;}else{v.str="false";p+=5;} return v; }
+        if(p<e&&(*p=='e'||*p=='E')){++p;if(p<e&&(*p=='+'||*p=='-'))++p;while(p<e&&(*p>='0'&&*p<='9'))++p;}
+        if(s<p){try{v.num=std::stod(std::string(s,p-s));}catch(...){v.num=0;}} return v; }
+    JVal pb() { JVal v;v.type=JVal::BOOL; if(e-p>=4&&*p=='t'){v.str="true";p+=4;}else if(e-p>=5&&*p=='f'){v.str="false";p+=5;} return v; }
     JVal parse(const std::string& j) { p=j.data(); e=p+j.size(); return pv(); }
 };
 
@@ -309,6 +309,8 @@ static bool load(const std::string& dir, State* s) {
         auto sv=e->get("shape"),ov=e->get("offset"),cv=e->get("count");
         if(!sv||!ov||!cv)break;
         int rs=sv->arr[0].as_int(),nO=sv->arr[1].as_int();
+        int64_t expected=(int64_t)rs*nO;
+        if(cv->as_i64()<expected)break; // count too short → malformed
         auto d=sl(ov->as_i64(),cv->as_i64()); if(d.empty())break;
         s->embeds.emplace_back(); s->embeds.back().load(rs,nO,d.data());
     }
@@ -339,9 +341,9 @@ static bool load_labels(const std::string& dir, State* s) {
     std::stringstream b;b<<f.rdbuf();
     auto d=JParser().parse(b.str()); auto* am=d.get("action_to_label");
     if(!am||am->type!=JVal::OBJ)return false;
-    int mx=0; for(auto&[k,v]:am->obj){int a=std::stoi(k);if(a>mx)mx=a;}
+    int mx=0; for(auto&[k,v]:am->obj){try{int a=std::stoi(k);if(a>mx)mx=a;}catch(...){}};
     int n=s->nAct>0?s->nAct:mx+1; s->actLbl.resize(n,"O");
-    for(auto&[k,v]:am->obj){int a=std::stoi(k);if(a>=0&&a<n)s->actLbl[a]=v.str;}
+    for(auto&[k,v]:am->obj){try{int a=std::stoi(k);if(a>=0&&a<n)s->actLbl[a]=v.str;}catch(...){}}
     return!s->actLbl.empty();
 }
 
@@ -357,6 +359,7 @@ void ThincNER_Destroy(ThincNERHandle h) { delete (State*)h; }
 
 char* ThincNER_Predict(ThincNERHandle h, const char* tj) {
     auto* s=(State*)h; if(!s)return strdup("[]");
+    if(!tj)return strdup("[]");
 
     // Parse tokens
     std::vector<std::string> tok; std::string j(tj); size_t p=0;
