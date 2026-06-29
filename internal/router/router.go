@@ -172,9 +172,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
 
-		// Document images are embedded directly in pages and match Python's public route.
-		apiNoAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
-
 		// Google redirects here after Gmail / Google Drive web OAuth completes.
 		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
@@ -186,20 +183,27 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/forgot/otp", r.userHandler.ForgotSendOTP)
 		apiNoAuth.POST("/auth/password/forgot/otp/verify", r.userHandler.ForgotVerifyOTP)
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
+	}
 
-		// Public bot endpoints — beta API token only, NOT regular
-		// user session. Mirrors python's
-		// @login_required(auth_types=AUTH_BETA) on bot_api.py:55,126,157,239.
-		// Mounted on apiNoAuth (not on the auth-protected v1 tree) so
-		// external widgets / iframes / downloads can hit them with
-		// only a beta token. Risk R0 of the plan.
+	// Beta-token routes. Mirrors python's
+	// @login_required(auth_types=AUTH_BETA) on bot_api.py bot endpoints.
+	apiBetaAuth := engine.Group("/api/v1")
+	apiBetaAuth.Use(r.authHandler.BetaAuthMiddleware())
+	{
+		searchbotGroup := apiBetaAuth.Group("/searchbots")
+		searchbotGroup.POST("/related_questions", r.searchBotHandler.Handle)
+		searchbotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
+		searchbotGroup.POST("/ask", r.searchBotHandler.Ask)
+
 		if r.botHandler != nil {
-			betaMW := r.authHandler.BetaAuthMiddleware()
-			chatbotGroup := apiNoAuth.Group("/chatbots")
-			RegisterChatbotRoutes(chatbotGroup, betaMW, r.botHandler)
-			agentbotGroup := apiNoAuth.Group("/agentbots")
-			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
+			chatbotGroup := apiBetaAuth.Group("/chatbots")
+			RegisterChatbotRoutes(chatbotGroup, r.botHandler)
+			agentbotGroup := apiBetaAuth.Group("/agentbots")
+			RegisterAgentbotRoutes(agentbotGroup, r.botHandler)
 		}
+		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
+		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
+		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
 	}
 
 	// Protected routes
@@ -259,7 +263,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.POST("/upload", r.documentHandler.UploadInfo)
 				documents.GET("", r.documentHandler.ListDocuments)
 				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
-				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
@@ -281,6 +284,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.DELETE("/:chat_id/sessions", r.chatSessionHandler.DeleteSessions)
 				chats.GET("/:chat_id/sessions/:session_id", r.chatSessionHandler.GetSession)
 				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
+				chats.DELETE("/:chat_id/sessions/:session_id/messages/:msg_id", r.chatSessionHandler.DeleteSessionMessage)
+				chats.PUT("/:chat_id/sessions/:session_id/messages/:msg_id/feedback", r.chatSessionHandler.UpdateMessageFeedback)
 			}
 
 			// OpenAI-compatible chat completions route
@@ -288,11 +293,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				openai.POST("/:chat_id/chat/completions", r.openaiChatHandler.OpenAIChatCompletions)
 			}
-
-			// Searchbot routes
-			v1.POST("/searchbots/related_questions", r.searchBotHandler.Handle)
-			v1.POST("/searchbots/retrieval_test", r.searchBotHandler.RetrievalTest)
-			v1.POST("/searchbots/ask", r.searchBotHandler.Ask)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")
@@ -364,6 +364,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				searches.GET("/:search_id", r.searchHandler.GetSearch)
 				searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
 				searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
+				searches.POST("/:search_id/completion", r.searchHandler.Completion)
+				searches.POST("/:search_id/completions", r.searchHandler.Completion)
 			}
 
 			file := v1.Group("/files")
@@ -662,8 +664,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			doc.POST("/set_meta", r.documentHandler.SetMeta)
 			doc.POST("/delete_meta", r.documentHandler.DeleteMeta) // Internal API only for GO
 		}
-
-		v1.GET("/thumbnails", r.documentHandler.GetThumbnail)
 
 		// Chunk routes
 		chunk := v1.Group("/chunk")

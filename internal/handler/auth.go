@@ -49,17 +49,16 @@ func NewAuthHandler() *AuthHandler {
 	}
 }
 
-// BetaAuthMiddleware resolves a `beta` API token from the Authorization
-// header and sets the user on the gin.Context, mirroring Python's
-// @login_required(auth_types=AUTH_BETA) used by /chatbots and
-// /agentbots route groups.
+// BetaAuthMiddleware resolves a user token, API token, or `beta` API token
+// from the Authorization header and sets the user on the gin.Context.
 //
-// A beta token can also be a regular user JWT — in that case we
-// delegate to the existing AuthMiddleware logic. Order of precedence:
+// A beta token can also be a regular user JWT or API token. Order of
+// precedence:
 //
 //  1. JWT (regular session) → existing UserService.GetUserByToken
-//  2. Beta API token          → GetUserByBetaAPIToken
-//  3. Fall through            → 401
+//  2. API token              → GetUserByAPIToken
+//  3. Beta API token         → GetUserByBetaAPIToken
+//  4. Fall through           → 401
 //
 // IMPORTANT: the regular-user branch is NOT gated on a "Bearer "
 // prefix. UserService.GetUserByToken accepts the raw Authorization
@@ -79,6 +78,12 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		// raw access_token — same dispatch as AuthMiddleware()).
 		if u, code, err := h.userService.GetUserByToken(auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
+			c.Next()
+			return
+		}
+		if u, code, err := h.userService.GetUserByAPIToken(auth); err == nil && code == common.CodeSuccess {
+			c.Set("user", u)
+			c.Set("auth_via_api_token", true)
 			c.Next()
 			return
 		}
@@ -129,6 +134,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 				"code":    common.CodeForbidden,
 				"message": "Super user shouldn't access the URL",
 			})
+			c.Abort()
 			return
 		}
 
@@ -141,6 +147,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 				"message": errMsg,
 				"data":    "No",
 			})
+			c.Abort()
 			return
 		}
 

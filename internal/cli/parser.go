@@ -148,6 +148,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseAPILogout()
 	case TokenPing:
 		return p.parseAPIPingServer()
+	case TokenRegister:
+		return p.parseAPIRegister()
 	case TokenList:
 		return p.parseAPIListCommands()
 	case TokenShow:
@@ -157,73 +159,71 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	case TokenDrop:
 		return p.parseAPIDropCommands()
 	case TokenAdd:
-		return p.parseAddCommand()
+		return p.parseAPIAddCommands()
 	case TokenDelete:
-		return p.parseDeleteCommand()
+		return p.parseAPIDeleteCommands()
 	case TokenAlter:
-		return p.parseAlterCommand()
+		return p.parseAPIAlterCommands()
 	case TokenSet:
 		return p.parseAPISetCommands()
 	case TokenReset:
 		return p.parseAPIResetCommands()
 	case TokenImport:
-		return p.parseImportCommand()
+		return p.parseAPIImport()
 	case TokenInsert:
-		return p.parseInsertCommand()
+		// Use for development only
+		return p.parseDevInsertCommand()
 	case TokenRetrieve:
-		return p.parseRetrieveCommand()
+		return p.parseAPIRetrieve()
 	case TokenParse:
-		return p.parseParseCommand()
+		return p.parseParseCommands()
 	case TokenBenchmark:
 		return p.parseBenchmarkCommand()
-	case TokenRegister:
-		return p.parseAPIRegisterCommand()
 	case TokenEnable:
-		return p.parseEnableCommand()
+		return p.parseAPIEnable()
 	case TokenDisable:
-		return p.parseDisableCommand()
-	case TokenStream:
-		return p.parseStreamCommand()
+		return p.parseAPIDisable()
 	case TokenChat:
-		return p.parseChatCommand()
-	case TokenOpenaiChat:
-		return p.parseOpenaiChatCommand()
+		return p.parseAPIChat()
+	case TokenStream:
+		return p.parseAPIStream()
 	case TokenThink:
-		return p.parseThinkCommand()
+		return p.parseAPIThink()
 	case TokenEmbed:
-		return p.parseEmbedCommand()
+		return p.parseAPIEmbed()
 	case TokenRerank:
-		return p.parseRerankCommand()
+		return p.parseAPIRerank()
 	case TokenASR:
-		return p.parseASRCommand()
+		return p.parseAPIASR()
 	case TokenTTS:
-		return p.parseTTSCommand()
+		return p.parseAPITTS()
 	case TokenOCR:
-		return p.parseOCRCommand()
+		return p.parseAPIOCR()
 	case TokenCheck:
-		return p.parseCheckCommand()
+		return p.parseAPICheck()
 	case TokenStart:
 		return p.parseUserStartIngestion()
 	case TokenStop:
 		return p.parseUserStopIngestion()
 	case TokenSave:
-		return p.parseAPISaveCommand()
+		return p.parseAPISave()
 	case TokenUse:
 		return p.parseAPIUseCommands()
 	case TokenUpdate:
-		return p.parseUpdateCommand()
+		return p.parseDevUpdateCommand()
 	case TokenRemove:
-		return p.parseRemoveCommand()
+		return p.parseAPIRemove()
 	case TokenGet:
-		return p.parseGetCommand()
+		return p.parseDevGetCommand()
 	case TokenExplain:
-		return p.parseExplainCommand()
+		return p.parseDevExplain()
 	case TokenChunk:
-		return p.parseChunkCommand(false)
-
+		return p.parseDevChunk(false)
+	case TokenOpenaiChat:
+		return p.parseOpenaiChat()
 	case TokenLS, TokenCat, TokenSearch:
 		// For context engine
-		return p.parseFileSystemCommand()
+		return p.parseFileSystemCommands()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -388,7 +388,7 @@ func tokenTypeToString(t int) string {
 	return fmt.Sprintf("token(%d)", t)
 }
 
-func (p *Parser) parseFileSystemCommand() (*Command, error) {
+func (p *Parser) parseFileSystemCommands() (*Command, error) {
 	p.nextToken() // consume COMMAND
 
 	cmd := NewCommand("file_system_command")
