@@ -378,7 +378,6 @@ func startsWithOneOf(s, set string) bool {
 	return strings.ContainsRune(set, r)
 }
 
-
 // MergeSameBullet merges adjacent boxes that start with the same bullet/number
 // character, combining their text with a newline separator.
 func MergeSameBullet(boxes []pdf.TextBox, tok pdf.Tokenizer) []pdf.TextBox {
