@@ -226,7 +226,13 @@ jobs:
             -v "${PWD}/internal/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
+          uv sync --python 3.13 --group test --frozen
           ./build.sh --go
+
+      - name: Prepare Python test environment
+        run: |
+          uv sync --python 3.13 --group test --frozen
+          uv pip install -e sdk/python
 
       - name: Run Go unit tests
         # Runs after `./build.sh --go`, which guarantees the C++ static
@@ -262,11 +268,6 @@ jobs:
           set -euo pipefail
           sudo docker pull ubuntu:24.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
-
-      - name: Prepare Python test environment
-        run: |
-          uv sync --python 3.13 --group test --frozen
-          uv pip install -e sdk/python
 
       - name: Prepare function test environment
         working-directory: docker
@@ -394,7 +395,7 @@ jobs:
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu,deepdoc"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
@@ -669,7 +670,13 @@ jobs:
             -v "${PWD}/internal/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
+          uv sync --python 3.13 --group test --frozen
           ./build.sh --go
+
+      - name: Prepare Python test environment
+        run: |
+          uv sync --python 3.13 --group test --frozen
+          uv pip install -e sdk/python
 
       - name: Run Go unit tests
         # Runs after `./build.sh --go`, which guarantees the C++ static
@@ -705,11 +712,6 @@ jobs:
           set -euo pipefail
           sudo docker pull ubuntu:24.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
-
-      - name: Prepare Python test environment
-        run: |
-          uv sync --python 3.13 --group test --frozen
-          uv pip install -e sdk/python
 
       - name: Prepare function test environment
         working-directory: docker
@@ -837,7 +839,7 @@ jobs:
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu,deepdoc"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"

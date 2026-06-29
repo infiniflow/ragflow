@@ -188,7 +188,6 @@ func mcpDetailError(c *gin.Context, code common.ErrorCode, err error) {
 	})
 }
 
-
 // UpdateMCPServer updates an MCP server for the current user.
 func (h *MCPHandler) UpdateMCPServer(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)

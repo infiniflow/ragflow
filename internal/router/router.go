@@ -35,6 +35,7 @@ type Router struct {
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
 	chatChannelHandler   *handler.ChatChannelHandler
+	langfuseHandler      *handler.LangfuseHandler
 	openaiChatHandler    *handler.OpenAIChatHandler
 	chatSessionHandler   *handler.ChatSessionHandler
 	connectorHandler     *handler.ConnectorHandler
@@ -51,6 +52,7 @@ type Router struct {
 	modelHandler         *handler.ModelHandler
 	fileCommitHandler    *handler.FileCommitHandler
 	adminRuntimeHandler  *handler.AdminRuntimeHandler
+	botHandler           *handler.BotHandler
 }
 
 // NewRouter create router
@@ -66,6 +68,7 @@ func NewRouter(
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
 	chatChannelHandler *handler.ChatChannelHandler,
+	langfuseHandler *handler.LangfuseHandler,
 	chatSessionHandler *handler.ChatSessionHandler,
 	connectorHandler *handler.ConnectorHandler,
 	searchHandler *handler.SearchHandler,
@@ -82,6 +85,7 @@ func NewRouter(
 	fileCommitHandler *handler.FileCommitHandler,
 	adminRuntimeHandler *handler.AdminRuntimeHandler,
 	openaiChatHandler *handler.OpenAIChatHandler,
+	botHandler *handler.BotHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -95,6 +99,7 @@ func NewRouter(
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
 		chatChannelHandler:   chatChannelHandler,
+		langfuseHandler:      langfuseHandler,
 		openaiChatHandler:    openaiChatHandler,
 		chatSessionHandler:   chatSessionHandler,
 		connectorHandler:     connectorHandler,
@@ -111,6 +116,7 @@ func NewRouter(
 		modelHandler:         modelHandler,
 		fileCommitHandler:    fileCommitHandler,
 		adminRuntimeHandler:  adminRuntimeHandler,
+		botHandler:           botHandler,
 	}
 }
 
@@ -182,6 +188,24 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 	}
 
+	// Beta-token routes. Mirrors python's
+	// @login_required(auth_types=AUTH_BETA) on bot_api.py bot endpoints.
+	apiBetaAuth := engine.Group("/api/v1")
+	apiBetaAuth.Use(r.authHandler.BetaAuthMiddleware())
+	{
+		searchbotGroup := apiBetaAuth.Group("/searchbots")
+		searchbotGroup.POST("/related_questions", r.searchBotHandler.Handle)
+		searchbotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
+		searchbotGroup.POST("/ask", r.searchBotHandler.Ask)
+
+		if r.botHandler != nil {
+			chatbotGroup := apiBetaAuth.Group("/chatbots")
+			RegisterChatbotRoutes(chatbotGroup, r.botHandler)
+			agentbotGroup := apiBetaAuth.Group("/agentbots")
+			RegisterAgentbotRoutes(agentbotGroup, r.botHandler)
+		}
+	}
+
 	// Protected routes
 	authorized := engine.Group("")
 	authorized.Use(r.authHandler.AuthMiddleware())
@@ -250,12 +274,19 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chats := v1.Group("/chats")
 			{
 				chats.GET("", r.chatHandler.ListChats)
+				chats.POST("", r.chatHandler.Create)
 				chats.DELETE("", r.chatHandler.BulkDeleteChats)
 				chats.DELETE("/:chat_id", r.chatHandler.DeleteChat)
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
+				chats.PUT("/:chat_id", r.chatHandler.UpdateChat)
+				chats.PATCH("/:chat_id", r.chatHandler.PatchChat)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
+				chats.POST("/:chat_id/sessions", r.chatSessionHandler.CreateSession)
+				chats.DELETE("/:chat_id/sessions", r.chatSessionHandler.DeleteSessions)
 				chats.GET("/:chat_id/sessions/:session_id", r.chatSessionHandler.GetSession)
 				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
+				chats.DELETE("/:chat_id/sessions/:session_id/messages/:msg_id", r.chatSessionHandler.DeleteSessionMessage)
+				chats.PUT("/:chat_id/sessions/:session_id/messages/:msg_id/feedback", r.chatSessionHandler.UpdateMessageFeedback)
 			}
 
 			// OpenAI-compatible chat completions route
@@ -263,11 +294,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				openai.POST("/:chat_id/chat/completions", r.openaiChatHandler.OpenAIChatCompletions)
 			}
-
-			// Searchbot routes
-			v1.POST("/searchbots/related_questions", r.searchBotHandler.Handle)
-			v1.POST("/searchbots/retrieval_test", r.searchBotHandler.RetrievalTest)
-			v1.POST("/searchbots/ask", r.searchBotHandler.Ask)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")
@@ -291,6 +317,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
+				datasets.POST("/:dataset_id/search", r.datasetsHandler.SearchDataset)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
 				datasets.GET("/:dataset_id/metadata/summary", r.documentHandler.MetadataSummaryByDataset)
 
@@ -305,9 +332,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
+				datasets.POST("/:dataset_id/documents", r.documentHandler.UploadDocuments)
 				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
 				datasets.PATCH("/:dataset_id/documents/:document_id", r.documentHandler.UpdateDatasetDocument)
 				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
+				datasets.POST("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.AddChunk)
 
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.ListChunks)
@@ -411,8 +440,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Message routes
 			message := v1.Group("/messages")
 			{
+				message.GET("", r.memoryHandler.GetMessages)
+				message.POST("", r.memoryHandler.AddMessage)
 				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
 				message.PUT("/:memory_message", r.memoryHandler.UpdateMessage)
+				message.GET("/:memory_message/content", r.memoryHandler.GetMessageContent)
+				message.GET("/search", r.memoryHandler.SearchMessage)
 			}
 
 			// Skill search routes
@@ -492,6 +525,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			allModels := v1.Group("/all-models")
 			{
 				allModels.GET("", r.modelHandler.ListAllModels)
+				allModels.GET("/:model_name", r.modelHandler.ShowModel)
 			}
 
 			// Agent routes
@@ -517,6 +551,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connector.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
 				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+				connector.PATCH("/:connector_id", r.connectorHandler.UpdateConnector)
 				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
 				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
 				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
@@ -550,6 +585,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 					config.GET("/log", r.systemHandler.GetLogLevel)
 					config.PUT("/log", r.systemHandler.SetLogLevel)
 				}
+
+				// Variables/Settings
+				system.GET("/variables", r.systemHandler.ListVariables)
+				system.PUT("/variables", r.systemHandler.SetVariable)
+				system.GET("/variables/:var_name", r.systemHandler.ShowVariable)
+
+				// Environments
+				system.GET("/environments", r.systemHandler.ListEnvironments)
 
 				//log := system.Group("/log")
 				//{
@@ -646,6 +689,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chanChannel.GET("/:channel_id", r.chatChannelHandler.GetChatChannel)
 			chanChannel.PATCH("/:channel_id", r.chatChannelHandler.UpdateChatChannel)
 			chanChannel.DELETE("/:channel_id", r.chatChannelHandler.DeleteChatChannel)
+		}
+
+		// Langfuse tracing keys
+		langfuse := v1.Group("/langfuse")
+		{
+			langfuse.POST("/api-key", r.langfuseHandler.SetAPIKey)
+			langfuse.PUT("/api-key", r.langfuseHandler.SetAPIKey)
+			langfuse.GET("/api-key", r.langfuseHandler.GetAPIKey)
+			langfuse.DELETE("/api-key", r.langfuseHandler.DeleteAPIKey)
 		}
 
 		// Chat session (conversation) routes

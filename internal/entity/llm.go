@@ -62,6 +62,18 @@ func (TenantLangfuse) TableName() string {
 	return "tenant_langfuse"
 }
 
+// LangfuseInfoResponse is the GET /langfuse/api-key payload: the stored
+// credentials enriched with the resolved Langfuse project id/name. Field
+// order mirrors the Python filter_by_tenant_with_info dict plus project info.
+type LangfuseInfoResponse struct {
+	TenantID    string `json:"tenant_id"`
+	Host        string `json:"host"`
+	SecretKey   string `json:"secret_key"`
+	PublicKey   string `json:"public_key"`
+	ProjectID   string `json:"project_id"`
+	ProjectName string `json:"project_name"`
+}
+
 // MyLLM represents LLM information for a tenant with factory details
 type MyLLM struct {
 	ID         string  `gorm:"column:id" json:"id"`

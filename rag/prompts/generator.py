@@ -97,13 +97,20 @@ def message_fit_in(msg, max_length=4000):
     ll2 = num_tokens_from_string(msg_[-1]["content"])
     total = ll + ll2
     if total <= 0:
+        # Don't include the per-message role list in cleartext: CodeQL
+        # flags this as clear-text-logging-sensitive-data because msg
+        # carries user-controlled conversation content. The token
+        # counts already capture what this debug line needs to convey.
+        # codeql[py/clear-text-logging-sensitive-data] False positive:
+        # only token counts and limits are logged; the message contents
+        # were intentionally dropped from this debug call (see prior
+        # commit) because they carried user content.
         logging.debug(
-            "message_fit_in degenerate token counts total=%s max_length=%s ll=%s ll2=%s preserved_roles=%s",
+            "message_fit_in degenerate token counts total=%s max_length=%s ll=%s ll2=%s",
             total,
             max_length,
             ll,
             ll2,
-            [m.get("role") for m in msg],
         )
         return 0, msg
 

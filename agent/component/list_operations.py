@@ -38,9 +38,17 @@ class ListOperationsParam(ComponentParamBase):
                 "type": "?"
             }
         }
+
+    @staticmethod
+    def _normalize_operation_name(operation):
+        op = "" if operation is None else str(operation).strip()
+        if op.lower() == "topn":
+            return "head"
+        return op or "nth"
     
     def check(self):
         self.check_empty(self.query, "query")
+        self.operations = self._normalize_operation_name(self.operations)
         self.check_valid_value(
             self.operations,
             "Support operations",

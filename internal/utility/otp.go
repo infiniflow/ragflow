@@ -32,23 +32,23 @@ import (
 
 // Forgot-password constants — match api/utils/web_utils.py.
 const (
-	OTPLength               = 4
-	OTPTTL                  = 5 * time.Minute
-	OTPAttemptLimit         = 5
-	OTPAttemptLockDuration  = 30 * time.Minute
-	OTPResendCooldown       = 60 * time.Second
+	OTPLength              = 4
+	OTPTTL                 = 5 * time.Minute
+	OTPAttemptLimit        = 5
+	OTPAttemptLockDuration = 30 * time.Minute
+	OTPResendCooldown      = 60 * time.Second
 )
 
 // otpUpperAlphabet is the OTP alphabet (uppercase letters, same as
-// Python ``string.ascii_uppercase``).
+// Python “string.ascii_uppercase“).
 const otpUpperAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 // captchaAlphabet is the captcha alphabet (uppercase letters + digits,
-// same as Python ``string.ascii_uppercase + string.digits``).
+// same as Python “string.ascii_uppercase + string.digits“).
 const captchaAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 // normalizeEmail lowercases and trims an email address for keying. Mirrors
-// the leading ``email = (email or "").strip().lower()`` in Python's
+// the leading “email = (email or "").strip().lower()“ in Python's
 // otp_keys helper.
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
@@ -58,7 +58,7 @@ func normalizeEmail(email string) string {
 // for a server-issued captcha_id. The handler returns the id to the
 // client and never the code itself, so an attacker cannot read the
 // expected answer from the response. Diverges from Python's
-// email-keyed ``captcha_key`` on purpose — captchas are 60s-lived
+// email-keyed “captcha_key“ on purpose — captchas are 60s-lived
 // and never cross between Go and Python in practice, so there is no
 // shared-state requirement.
 func CaptchaIDRedisKey(captchaID string) string {
@@ -66,7 +66,7 @@ func CaptchaIDRedisKey(captchaID string) string {
 }
 
 // OTPRedisKeys returns the four Redis keys used by the forgot-password
-// flow, in the same order as Python's ``otp_keys`` helper:
+// flow, in the same order as Python's “otp_keys“ helper:
 //
 //	code, attempts, last_sent, lock
 func OTPRedisKeys(email string) (codeKey, attemptsKey, lastSentKey, lockKey string) {
@@ -79,13 +79,13 @@ func OTPRedisKeys(email string) (codeKey, attemptsKey, lastSentKey, lockKey stri
 
 // OTPVerifiedRedisKey returns the Redis key that records a successful OTP
 // verification, used as the gate for the password-reset step (matches
-// Python ``_verified_key``).
+// Python “_verified_key“).
 func OTPVerifiedRedisKey(email string) string {
 	return "otp:verified:" + normalizeEmail(email)
 }
 
 // HashOTPCode computes the HMAC-SHA256 of an OTP using the given salt and
-// returns its hex digest, matching Python's ``hash_code`` helper.
+// returns its hex digest, matching Python's “hash_code“ helper.
 func HashOTPCode(code string, salt []byte) string {
 	mac := hmac.New(sha256.New, salt)
 	mac.Write([]byte(code))
@@ -93,7 +93,7 @@ func HashOTPCode(code string, salt []byte) string {
 }
 
 // GenerateOTPSalt returns a cryptographically random 16-byte salt for
-// hashing an OTP — same width as Python ``os.urandom(16)``.
+// hashing an OTP — same width as Python “os.urandom(16)“.
 func GenerateOTPSalt() ([]byte, error) {
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
@@ -102,22 +102,22 @@ func GenerateOTPSalt() ([]byte, error) {
 	return salt, nil
 }
 
-// GenerateOTPCode generates an OTP of length ``OTPLength`` drawn uniformly
-// from ``otpUpperAlphabet`` using crypto/rand (matches Python
-// ``secrets.choice``).
+// GenerateOTPCode generates an OTP of length “OTPLength“ drawn uniformly
+// from “otpUpperAlphabet“ using crypto/rand (matches Python
+// “secrets.choice“).
 func GenerateOTPCode() (string, error) {
 	return randomStringFromAlphabet(otpUpperAlphabet, OTPLength)
 }
 
-// GenerateCaptchaCode generates a captcha of length ``OTPLength`` drawn
-// uniformly from ``captchaAlphabet`` using crypto/rand. The shared length
-// is intentional — Python uses ``OTP_LENGTH`` for both.
+// GenerateCaptchaCode generates a captcha of length “OTPLength“ drawn
+// uniformly from “captchaAlphabet“ using crypto/rand. The shared length
+// is intentional — Python uses “OTP_LENGTH“ for both.
 func GenerateCaptchaCode() (string, error) {
 	return randomStringFromAlphabet(captchaAlphabet, OTPLength)
 }
 
 // EncodeOTPStorageValue serializes the (hash, salt) pair the way Python
-// stores it in Redis: ``"<hex_hash>:<hex_salt>"``. Returning the salt's
+// stores it in Redis: “"<hex_hash>:<hex_salt>"“. Returning the salt's
 // hex form (not raw bytes) keeps the value safe to store as a Redis
 // string and matches the Python encoding so either backend can verify a
 // code minted by the other.
@@ -125,7 +125,7 @@ func EncodeOTPStorageValue(codeHash string, salt []byte) string {
 	return codeHash + ":" + hex.EncodeToString(salt)
 }
 
-// DecodeOTPStorageValue reverses ``EncodeOTPStorageValue``. Returns the
+// DecodeOTPStorageValue reverses “EncodeOTPStorageValue“. Returns the
 // stored hash, decoded salt bytes, and a non-nil error if the value is
 // malformed.
 func DecodeOTPStorageValue(stored string) (codeHash string, salt []byte, err error) {

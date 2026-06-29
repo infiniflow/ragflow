@@ -1418,3 +1418,16 @@ class BedrockCV(Base):
 
     def describe(self, image):
         return self.describe_with_prompt(image)
+
+
+class NewAPICv(GptV4):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name.split("___")[0]
+        self.lang = lang
+        Base.__init__(self, **kwargs)

@@ -969,6 +969,16 @@ func (s *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 	}
 
 	total := int(totalResult.Total)
+	// Cap n to a sane upper bound so a hostile caller can't force a
+	// huge preallocation. The downstream `samples` slice is sized
+	// directly from n.
+	const maxEmbeddingSamples = 1024
+	if n < 0 {
+		return nil, fmt.Errorf("invalid sample size: %d", n)
+	}
+	if n > maxEmbeddingSamples {
+		n = maxEmbeddingSamples
+	}
 	if n > total {
 		n = total
 	}
@@ -984,6 +994,10 @@ func (s *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 	sort.Ints(offsets)
 
 	baseFields := []string{"docnm_kwd", "doc_id", "content_with_weight", "page_num_int", "position_int", "top_int"}
+	// codeql[go/uncontrolled-allocation-size] False positive: n is
+	// bounded to maxEmbeddingSamples (1024) at the top of this
+	// function, so the samples slice cannot exceed ~1 MiB
+	// (embeddingCheckSample is a small struct).
 	samples := make([]embeddingCheckSample, 0, n)
 	for _, offset := range offsets {
 		searchResult, err := s.docEngine.Search(ctx, &enginetypes.SearchRequest{
@@ -1704,6 +1718,54 @@ type SearchDatasetsResponse struct {
 	Total   int64                    `json:"total"`
 }
 
+// SearchDatasetRequest is the request structure for searching chunks within one dataset.
+type SearchDatasetRequest struct {
+	Question               string                 `json:"question"`
+	Page                   *int                   `json:"page,omitempty"`
+	Size                   *int                   `json:"size,omitempty"`
+	DocIDs                 []string               `json:"doc_ids,omitempty"`
+	UseKG                  *bool                  `json:"use_kg,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"`
+	CrossLanguages         []string               `json:"cross_languages,omitempty"`
+	SearchID               *string                `json:"search_id,omitempty"`
+	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
+	RerankID               *string                `json:"rerank_id,omitempty"`
+	Keyword                *bool                  `json:"keyword,omitempty"`
+	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
+	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+}
+
+// ToSearchDatasetsRequest converts a single-dataset search request into the multi-dataset form.
+func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *SearchDatasetsRequest {
+	if req == nil {
+		return &SearchDatasetsRequest{DatasetIDs: []string{datasetID}}
+	}
+	return &SearchDatasetsRequest{
+		DatasetIDs:             []string{datasetID},
+		Question:               req.Question,
+		Page:                   req.Page,
+		Size:                   req.Size,
+		DocIDs:                 req.DocIDs,
+		UseKG:                  req.UseKG,
+		TopK:                   req.TopK,
+		CrossLanguages:         req.CrossLanguages,
+		SearchID:               req.SearchID,
+		MetadataFilter:         req.MetadataFilter,
+		RerankID:               req.RerankID,
+		Keyword:                req.Keyword,
+		SimilarityThreshold:    req.SimilarityThreshold,
+		VectorSimilarityWeight: req.VectorSimilarityWeight,
+	}
+}
+
+// SearchDataset searches chunks within one knowledge base based on a question.
+func (s *DatasetService) SearchDataset(datasetID, userID string, req *SearchDatasetRequest) (*SearchDatasetsResponse, error) {
+	if datasetID == "" {
+		return nil, fmt.Errorf("dataset_id is required")
+	}
+	return s.SearchDatasets(req.ToSearchDatasetsRequest(datasetID), userID)
+}
+
 // SearchDatasets searches chunks across one or more knowledge bases based on a question.
 // It retrieves relevant chunks using embedding and optional reranking, applying filters,
 // cross-language translation, and keyword extraction as configured.
@@ -1813,7 +1875,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		firstEmbdID := kbRecords[0].EmbdID
 		for i := 1; i < len(kbRecords); i++ {
 			if kbRecords[i].EmbdID != firstEmbdID {
-				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
+				return nil, fmt.Errorf("Datasets use different embedding models.")
 			}
 		}
 	}
@@ -1821,9 +1883,14 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	// Override request fields with values from saved search config (if search_id is provided)
 	var chatID string
 	if searchID != "" {
+		if s.searchService == nil {
+			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("Invalid search_id")
+		}
 		searchDetail, err := s.searchService.GetDetail(searchID)
-		if err != nil {
-			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", searchID), zap.Error(err))
+		if err != nil || searchDetail == nil || len(searchDetail) == 0 {
+			common.Warn("Invalid search_id", zap.String("searchID", searchID), zap.Error(err))
+			return nil, fmt.Errorf("Invalid search_id")
 		} else if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				metadataFilter = scMetadataFilter
@@ -1874,7 +1941,8 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 				zap.String("chatID", chatID),
 				zap.Bool("useKG", useKG))
 		} else {
-			common.Warn("No search_config found in search detail", zap.String("searchID", searchID))
+			common.Warn("Invalid search_id: search_config missing or invalid", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("Invalid search_id")
 		}
 	}
 
@@ -2420,7 +2488,7 @@ func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		kb.Language = language
 	}
 
-	if err := s.kbDAO.Create(kb); err != nil {
+	if err = s.kbDAO.Create(kb); err != nil {
 		return nil, common.CodeServerError, errors.New("Failed to save dataset")
 	}
 
@@ -2986,6 +3054,25 @@ func (s *DatasetService) UpdateMetadataConfig(datasetID, tenantID string, req *M
 // Accessible checks if a knowledge base is accessible by a user
 func (s *DatasetService) Accessible(kbID, userID string) bool {
 	return s.kbDAO.Accessible(kbID, userID)
+}
+
+// GetKnowledgebaseByID resolves a dataset entity without applying permission
+// checks. Upload needs the same existence-then-auth ordering as Python.
+func (s *DatasetService) GetKnowledgebaseByID(datasetID string) (*entity.Knowledgebase, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	if datasetID == "" {
+		return nil, errors.New("Lack of \"Dataset ID\"")
+	}
+	normalizedID, err := normalizeDatasetID(datasetID)
+	if err != nil {
+		return nil, err
+	}
+	return s.kbDAO.GetByID(normalizedID)
+}
+
+// CheckKBTeamPermission mirrors Python check_kb_team_permission.
+func (s *DatasetService) CheckKBTeamPermission(kb *entity.Knowledgebase, userID string) bool {
+	return hasKBTeamPermission(kb, userID, s.tenantDAO)
 }
 
 func (s *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
