@@ -247,10 +247,6 @@ func (c *CLI) APISetLogLevelCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to change log level: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to change log level: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
 	return HandleSimpleResponse(resp, "change log level")
 }
 
@@ -1052,10 +1048,6 @@ func (c *CLI) APICreateDatasetCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to create dataset: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create dataset: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
 	return HandleSimpleResponse(resp, "create dataset")
 }
 
@@ -1267,10 +1259,6 @@ func (c *CLI) APIDeleteAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", fmt.Sprintf("/system/keys/%s", apiKey), "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete key: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete key: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	return HandleSimpleResponse(resp, "delete key")
@@ -1672,10 +1660,6 @@ func (c *CLI) APIAddProviderCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to add provider: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to add provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
 	return HandleSimpleResponse(resp, "add provider")
 }
 
@@ -1731,10 +1715,6 @@ func (c *CLI) APIDeleteProviderCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to delete provider: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
 	return HandleSimpleResponse(resp, "delete provider")
 }
 
@@ -1767,14 +1747,10 @@ func (c *CLI) APIDropDatasetCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := httpClient.Request("DELETE", "/datasets", "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create dataset: %w", err)
+		return nil, fmt.Errorf("failed to drop dataset: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create dataset: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "create provider instance")
+	return HandleSimpleResponse(resp, "drop dataset")
 }
 
 // APIDropAgentCommand DROP AGENT 'agent_name'
@@ -1806,14 +1782,10 @@ func (c *CLI) APIDropAgentCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := httpClient.Request("DELETE", "/agents", "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create agent: %w", err)
+		return nil, fmt.Errorf("failed to drop agent: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create agent: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "delete agent")
+	return HandleSimpleResponse(resp, "drop agent")
 }
 
 // APIDropChatCommand DROP CHAT 'chat_name'
@@ -1845,14 +1817,10 @@ func (c *CLI) APIDropChatCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := httpClient.Request("DELETE", "/chats", "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create chat: %w", err)
+		return nil, fmt.Errorf("failed to drop chat: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create chat: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "delete chat")
+	return HandleSimpleResponse(resp, "drop chat")
 }
 
 // APIDropSearchCommand DROP SEARCH 'search_name'
@@ -1881,14 +1849,10 @@ func (c *CLI) APIDropSearchCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := httpClient.Request("DELETE", endPoint, "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete search: %w", err)
+		return nil, fmt.Errorf("failed to drop search: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete search: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "delete search")
+	return HandleSimpleResponse(resp, "drop search")
 }
 
 // APIDropMemoryCommand DROP MEMORY 'memory_name'
@@ -1917,14 +1881,10 @@ func (c *CLI) APIDropMemoryCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := httpClient.Request("DELETE", endPoint, "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete memory: %w", err)
+		return nil, fmt.Errorf("failed to drop memory: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete memory: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "delete memory")
+	return HandleSimpleResponse(resp, "drop memory")
 }
 
 // APIAddProviderInstanceCommand creates a new provider instance
@@ -1975,14 +1935,10 @@ func (c *CLI) APIAddProviderInstanceCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := httpClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create provider instance: %w", err)
+		return nil, fmt.Errorf("failed to add provider instance: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create provider instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "create provider instance")
+	return HandleSimpleResponse(resp, "add provider instance")
 }
 
 // ShowInstanceBalance shows balance of a specific instance
@@ -2050,14 +2006,10 @@ func (c *CLI) APIDeleteProviderInstanceCommand(cmd *Command) (ResponseIf, error)
 
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", url, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop instance: %w", err)
+		return nil, fmt.Errorf("failed to drop provider instance: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "drop instance")
+	return HandleSimpleResponse(resp, "drop provider instance")
 }
 
 // DELETE PROVIDER <name> INSTANCE <instance_name> MODELS <name1 name2 name3>
@@ -2089,14 +2041,10 @@ func (c *CLI) APIDeleteProviderInstanceModelCommand(cmd *Command) (ResponseIf, e
 
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", url, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop model: %w", err)
+		return nil, fmt.Errorf("failed to delete model: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "drop model")
+	return HandleSimpleResponse(resp, "delete model")
 }
 
 func isValidURL(str string) bool {
@@ -3220,9 +3168,6 @@ func (c *CLI) APIAddCustomModelCommand(cmd *Command) (ResponseIf, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to add custom model: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to add custom model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
 
 	return HandleSimpleResponse(resp, "add custom model")
 }
@@ -3647,7 +3592,8 @@ func (c *CLI) DevRemoveChunksCommand(cmd *Command) (ResponseIf, error) {
 		case float64:
 			deletedCount = int64(data)
 		case map[string]interface{}:
-			if count, ok := data["deleted_count"].(float64); ok {
+			var count float64
+			if count, ok = data["deleted_count"].(float64); ok {
 				deletedCount = int64(count)
 			}
 		}
@@ -3659,7 +3605,7 @@ func (c *CLI) DevRemoveChunksCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) APIParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIParseDocumentsCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -3687,14 +3633,10 @@ func (c *CLI) APIParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
 	// Normal mode
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", url, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list documents: %w", err)
+		return nil, fmt.Errorf("failed to parse documents: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list documents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "list documents")
+	return HandleSimpleResponse(resp, "parse documents")
 }
 
 func (c *CLI) APIParseLocalFileCommand(cmd *Command) (ResponseIf, error) {

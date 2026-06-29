@@ -451,6 +451,10 @@ func (r *SimpleResponse) PrintOut() {
 }
 
 func HandleSimpleResponse(response *Response, command string) (ResponseIf, error) {
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to %s: HTTP %d, body: %s", command, response.StatusCode, string(response.Body))
+	}
+
 	var result SimpleResponse
 	if err := json.Unmarshal(response.Body, &result); err != nil {
 		return nil, fmt.Errorf("%s failed: invalid JSON (%w)", command, err)
@@ -912,7 +916,7 @@ func printReferenceChunks(raw json.RawMessage) {
 
 	fmt.Println("Reference:")
 	for i, chunk := range chunks {
-		id := chunkID(chunk)
+		id := getChunkID(chunk)
 		content := chunkContent(chunk)
 		docName := chunkDocName(chunk)
 		fmt.Printf("  [ID:%d] id=%s content=%q", i, id, truncateStr(content, 120))
@@ -930,7 +934,7 @@ func printReferenceChunks(raw json.RawMessage) {
 	}
 }
 
-func chunkID(c map[string]interface{}) string {
+func getChunkID(c map[string]interface{}) string {
 	for _, key := range []string{"chunk_id", "id"} {
 		if v, ok := c[key]; ok {
 			return fmt.Sprint(v)
