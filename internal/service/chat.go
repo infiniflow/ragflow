@@ -214,6 +214,12 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 		}
 	}
 
+	if metaDataFilterValue, ok := req["meta_data_filter"]; ok && metaDataFilterValue != nil {
+		if _, ok := mapFromValue(metaDataFilterValue); !ok {
+			return nil, common.CodeDataError, errors.New("`meta_data_filter` should be an object.")
+		}
+	}
+
 	if _, ok := req["kb_ids"]; !ok {
 		req["kb_ids"] = []string{}
 	}

@@ -6,6 +6,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
@@ -93,7 +94,7 @@ func TestChatServiceCreateDefaultsMetaDataFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
-	if code != 0 {
+	if code != common.CodeSuccess {
 		t.Fatalf("unexpected code: %v", code)
 	}
 	assertEmptyMetaDataFilter(t, resp["meta_data_filter"])
@@ -110,6 +111,39 @@ func TestChatServiceCreateDefaultsMetaDataFilter(t *testing.T) {
 		t.Fatal("expected persisted meta_data_filter to be non-nil")
 	}
 	assertEmptyMetaDataFilter(t, *chat.MetaDataFilter)
+}
+
+func TestChatServiceCreateAcceptsNilMetaDataFilter(t *testing.T) {
+	setupChatRESTUpdateServiceTestDB(t)
+
+	svc := NewChatService()
+	resp, code, err := svc.Create("user-1", map[string]interface{}{
+		"name":             "created chat",
+		"meta_data_filter": nil,
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("unexpected code: %v", code)
+	}
+	assertEmptyMetaDataFilter(t, resp["meta_data_filter"])
+}
+
+func TestChatServiceCreateRejectsInvalidMetaDataFilter(t *testing.T) {
+	setupChatRESTUpdateServiceTestDB(t)
+
+	svc := NewChatService()
+	_, code, err := svc.Create("user-1", map[string]interface{}{
+		"name":             "created chat",
+		"meta_data_filter": []interface{}{"invalid"},
+	})
+	if err == nil || err.Error() != "`meta_data_filter` should be an object." {
+		t.Fatalf("expected meta_data_filter error, got %v", err)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("unexpected code: %v", code)
+	}
 }
 
 func TestChatServicePatchChatMergesPromptConfigAndLLMSetting(t *testing.T) {
