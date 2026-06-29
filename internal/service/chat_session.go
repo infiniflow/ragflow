@@ -1067,12 +1067,29 @@ func (s *ChatSessionService) updateChunkWeight(ctx context.Context, tenantID, ch
 	if docEngine == nil {
 		return false
 	}
-	adjuster, ok := docEngine.(atomicChunkPagerankAdjuster)
+	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+
+	if adjuster, ok := docEngine.(atomicChunkPagerankAdjuster); ok {
+		return adjuster.AdjustChunkPagerank(ctx, indexName, chunkID, kbID, float64(delta), 0, 100) == nil
+	}
+
+	rawChunk, err := docEngine.GetChunk(ctx, indexName, chunkID, []string{kbID})
+	if err != nil || rawChunk == nil {
+		return false
+	}
+	chunk, ok := rawChunk.(map[string]interface{})
 	if !ok {
 		return false
 	}
-	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	return adjuster.AdjustChunkPagerank(ctx, indexName, chunkID, kbID, float64(delta), 0, 100) == nil
+	currentWeight := floatFromValue(chunk[common.PAGERANK_FLD])
+	newWeight := currentWeight + float64(delta)
+	if newWeight < 0 {
+		newWeight = 0
+	}
+	if newWeight > 100 {
+		newWeight = 100
+	}
+	return docEngine.UpdateChunks(ctx, map[string]interface{}{"id": chunkID}, map[string]interface{}{common.PAGERANK_FLD: newWeight}, indexName, kbID) == nil
 }
 
 func formatReferenceChunks(reference map[string]interface{}) []FormattedChunk {
