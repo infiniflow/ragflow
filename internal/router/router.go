@@ -286,7 +286,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
 				chats.DELETE("/:chat_id/sessions/:session_id/messages/:msg_id", r.chatSessionHandler.DeleteSessionMessage)
 				chats.PUT("/:chat_id/sessions/:session_id/messages/:msg_id/feedback", r.chatSessionHandler.UpdateMessageFeedback)
+
+				// Chat audio routes (TTS / ASR) — mirrors Python's
+				// /chat/audio/speech and /chat/audio/transcription.
+				chats.POST("/audio/speech", r.chatHandler.TTS)
+				chats.POST("/audio/transcription", r.chatHandler.Transcription)
 			}
+
+			// Frontend-compatible chat audio routes (singular /chat/)
+			v1.POST("/chat/audio/speech", r.chatHandler.TTS)
+			v1.POST("/chat/audio/transcription", r.chatHandler.Transcription)
 
 			// OpenAI-compatible chat completions route
 			openai := v1.Group("/openai")
@@ -706,6 +715,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 			session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
 			session.GET("/list", r.chatSessionHandler.ListChatSessions)
 			session.POST("/completion", r.chatSessionHandler.Completion)
+		}
+
+		// Chat audio routes (Python-compatible, TTS / ASR)
+		audio := authorized.Group("/v1/chat/audio")
+		{
+			audio.POST("/speech", r.chatHandler.TTS)
+			audio.POST("/transcription", r.chatHandler.Transcription)
 		}
 
 		// Connector routes

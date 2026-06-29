@@ -17,27 +17,61 @@
 package handler
 
 import (
+	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"ragflow/internal/common"
+	"ragflow/internal/config"
+	"ragflow/internal/entity"
+	"ragflow/internal/logger"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"ragflow/internal/service"
 )
 
-// ChatHandler chat handler
-type ChatHandler struct {
-	chatService *service.ChatService
-	userService *service.UserService
+// allowedAudioExts maps allowed file extensions to their expected MIME types for validation.
+var allowedAudioExts = map[string][]string{
+	".wav":  {"audio/wav", "audio/x-wav"},
+	".mp3":  {"audio/mpeg", "audio/mp3"},
+	".m4a":  {"audio/mp4", "audio/x-m4a", "audio/m4a"},
+	".aac":  {"audio/aac"},
+	".flac": {"audio/flac"},
+	".ogg":  {"audio/ogg"},
+	".webm": {"audio/webm", "video/webm"},
+	".opus": {"audio/ogg"}, // Opus in OGG container
+	".wma":  {"audio/x-ms-wma"},
 }
 
-// NewChatHandler create chat handler
-func NewChatHandler(chatService *service.ChatService, userService *service.UserService) *ChatHandler {
+// ErrNotChatOwner is returned when a non-owner tries to modify a chat.
+var ErrNotChatOwner = errors.New("only owner of chat authorized for this operation")
+
+// maxAudioUploadBytes caps the size of an uploaded audio file for transcription (default: 50 MB).
+// Initialized from centralized AudioConfig to avoid magic numbers.
+var maxAudioUploadBytes int64 = func() int64 {
+	return config.GetAudioConfig().MaxUploadBytes
+}()
+
+// ChatHandler handles chat-related HTTP requests including TTS and Transcription
+type ChatHandler struct {
+	chatService  *service.ChatService
+	userService  *service.UserService
+	audioService *service.AudioService
+}
+
+// NewChatHandler creates a new ChatHandler with required dependencies
+func NewChatHandler(chatService *service.ChatService, userService *service.UserService, audioService *service.AudioService) *ChatHandler {
 	return &ChatHandler{
-		chatService: chatService,
-		userService: userService,
+		chatService:  chatService,
+		userService:  userService,
+		audioService: audioService,
 	}
 }
 
@@ -597,4 +631,251 @@ func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
 	}
 
 	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// SpeechRequest is the request body for the TTS endpoint
+type SpeechRequest struct {
+	Text  string `json:"text" binding:"required"`
+	Voice string `json:"voice"`
+}
+
+// TTS synthesizes speech from text using the tenant's default TTS model
+// Reference: Python api/apps/restful_apis/chat_api.py::tts
+func (h *ChatHandler) TTS(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	tenantID := user.ID
+
+	var req SpeechRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Text) == "" {
+		jsonError(c, common.CodeDataError, "`text` is required")
+		return
+	}
+
+	ttsModel, segments, err := h.audioService.PrepareSpeech(c.Request.Context(), tenantID, req.Text, req.Voice)
+	if err != nil {
+		logger.Error("TTS PrepareSpeech failed", err)
+		jsonError(c, common.CodeServerError, "Failed to prepare speech")
+		return
+	}
+
+	c.Header("Content-Type", "audio/mpeg")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	flusher, _ := c.Writer.(interface{ Flush() })
+
+	err = h.audioService.StreamSpeech(c.Request.Context(), ttsModel, segments, func(chunk []byte) error {
+		if _, err := c.Writer.Write(chunk); err != nil {
+			return err
+		}
+		if flusher != nil {
+			flusher.Flush()
+		}
+		return nil
+	})
+	if err != nil {
+		// At this point audio headers have already been sent; we cannot switch to JSON.
+		// Log the error and return - the client will see an incomplete/truncated response.
+		logger.Error("TTS streaming error after headers sent", err)
+	}
+}
+
+// Transcription transcribes an uploaded audio file to text using enhanced security validation
+// Reference: Python api/apps/restful_apis/chat_api.py::transcription
+func (h *ChatHandler) Transcription(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	tenantID := user.ID
+
+	streamMode := strings.ToLower(c.PostForm("stream")) == "true"
+
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		jsonError(c, common.CodeDataError, "Missing 'file' in multipart form-data")
+		return
+	}
+
+	// Security validation: size check
+	if fileHeader.Size > maxAudioUploadBytes {
+		logger.Warn("Audio upload exceeds size limit",
+			zap.Int64("size", fileHeader.Size),
+			zap.Int64("max", maxAudioUploadBytes),
+			zap.String("user", user.ID))
+		jsonError(c, common.CodeBadRequest,
+			fmt.Sprintf("Audio file too large: %d bytes (max %d)", fileHeader.Size, maxAudioUploadBytes))
+		return
+	}
+
+	// Security validation: extension check
+	suffix := strings.ToLower(filepath.Ext(fileHeader.Filename))
+	allowedMIMEs, extAllowed := allowedAudioExts[suffix]
+	if !extAllowed {
+		allowed := make([]string, 0, len(allowedAudioExts))
+		for ext := range allowedAudioExts {
+			allowed = append(allowed, ext)
+		}
+		logger.Warn("Unsupported audio format upload attempted",
+			zap.String("extension", suffix),
+			zap.String("user", user.ID))
+		jsonError(c, common.CodeDataError,
+			fmt.Sprintf("Unsupported audio format: %s. Allowed: %v", suffix, strings.Join(allowed, ", ")))
+		return
+	}
+
+	// Save to temp file first for content inspection
+	tmpFile, err := os.CreateTemp("", "*"+suffix)
+	if err != nil {
+		logger.Error("Failed to create temp file for audio upload", err)
+		jsonError(c, common.CodeServerError, "Failed to process upload")
+		return
+	}
+	tempAudioPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tempAudioPath)
+
+	if err := c.SaveUploadedFile(fileHeader, tempAudioPath); err != nil {
+		logger.Error("Failed to save uploaded audio file", err)
+		jsonError(c, common.CodeServerError, "Failed to save upload")
+		return
+	}
+
+	// Security validation: MIME type detection from actual content
+	fileInfo, statErr := os.Stat(tempAudioPath)
+	if statErr != nil {
+		logger.Error("Failed to stat temp audio file", statErr)
+		jsonError(c, common.CodeServerError, "Failed to validate upload")
+		return
+	}
+
+	// Check for zero-byte files
+	if fileInfo.Size() == 0 {
+		logger.Warn("Empty audio file uploaded", zap.String("user", user.ID))
+		jsonError(c, common.CodeDataError, "Uploaded file is empty")
+		return
+	}
+
+	// Detect actual content type (basic magic byte detection)
+	detectedMIME, detectErr := detectAudioMIMEType(tempAudioPath)
+	if detectErr != nil || detectedMIME == "" {
+		logger.Warn("Could not determine audio content type",
+			zap.Error(detectErr),
+			zap.String("path", tempAudioPath))
+	} else if !isMIMEAllowed(detectedMIME, allowedMIMEs) {
+		logger.Error("MIME type mismatch - possible file spoofing attack",
+			fmt.Errorf("expected: %v, detected: %s", allowedMIMEs, detectedMIME))
+		jsonError(c, common.CodeBadRequest, "Invalid file content: declared format does not match actual content")
+		return
+	}
+
+	if streamMode {
+		c.Header("Content-Type", "text/event-stream")
+		c.Header("Cache-Control", "no-cache")
+		c.Header("Connection", "keep-alive")
+		c.Header("X-Accel-Buffering", "no")
+
+		flusher, _ := c.Writer.(interface{ Flush() })
+		sendErr := h.audioService.StreamTranscription(c.Request.Context(), tenantID, tempAudioPath, func(evt entity.TranscriptionEvent) error {
+			payload, mErr := json.Marshal(evt)
+			if mErr != nil {
+				return mErr
+			}
+			if _, wErr := fmt.Fprintf(c.Writer, "data: %s\n\n", payload); wErr != nil {
+				return wErr
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+			return nil
+		})
+		if sendErr != nil && flusher != nil {
+			flusher.Flush()
+		}
+		return
+	}
+
+	text, err := h.audioService.Transcription(c.Request.Context(), tenantID, tempAudioPath)
+	if err != nil {
+		logger.Error("Transcription failed", err)
+		jsonError(c, common.CodeServerError, "Failed to transcribe audio")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": gin.H{"text": text},
+	})
+}
+
+// detectAudioMIMEType performs basic magic byte detection for common audio formats.
+// Returns the detected MIME type or empty string on failure.
+func detectAudioMIMEType(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	// Read first 12 bytes for magic number detection
+	header := make([]byte, 12)
+	n, err := file.Read(header)
+	if err != nil && n == 0 {
+		return "", err
+	}
+
+	// RIFF/WAV format
+	if n >= 4 && string(header[0:4]) == "RIFF" {
+		return "audio/wav", nil
+	}
+
+	// MP3 ID3 tag or sync word
+	if n >= 2 && (header[0] == 0xFF && (header[1]&0xE0) == 0xE0) {
+		return "audio/mpeg", nil
+	}
+	if n >= 3 && string(header[0:3]) == "ID3" {
+		return "audio/mpeg", nil
+	}
+
+	// OGG/Opus format
+	if n >= 4 && string(header[0:4]) == "OggS" {
+		return "audio/ogg", nil
+	}
+
+	// FLAC format
+	if n >= 4 && string(header[0:4]) == "fLaC" {
+		return "audio/flac", nil
+	}
+
+	// MP4/M4A/AAC format (ftyp box)
+	if n >= 8 && string(header[4:8]) == "ftyp" {
+		return "audio/mp4", nil
+	}
+
+	// WebM format (EBML header)
+	if n >= 4 && binary.BigEndian.Uint32(header[0:4]) == 0x1A45DFA3 {
+		return "video/webm", nil
+	}
+
+	return "", fmt.Errorf("unknown audio format")
+}
+
+// isMIMEAllowed checks if the detected MIME type is in the allowed list for this extension.
+func isMIMEAllowed(mime string, allowed []string) bool {
+	for _, a := range allowed {
+		if mime == a {
+			return true
+		}
+	}
+	return false
 }
