@@ -269,6 +269,7 @@ with zipfile.ZipFile('$tmp_whl') as z:
         echo -e "${GREEN}✓ pdfium installed to ${PDFIUM_PREFIX}${NC}"
     else
         echo "  pdfium          → install failed (requires .venv, curl/wget + python3, or pre-cached ~/.pdfium)"
+        return 1
     fi
 }
 
@@ -319,6 +320,7 @@ check_pdf_oxide_deps() {
         echo -e "${GREEN}✓ pdf_oxide installed to ${PDF_OXIDE_PREFIX}${NC}"
     else
         echo "  pdf_oxide       → install failed"
+        return 1
     fi
 }
 
@@ -443,14 +445,14 @@ setup_cgo_env() {
     export LD_LIBRARY_PATH="${OFFICE_OXIDE_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
     # ── pdfium ────────────────────────────────────────────────────────
-    check_pdfium_deps
+    check_pdfium_deps || return 1
     if [ -f "${PDFIUM_PREFIX}/libpdfium.so" ]; then
         export CGO_LDFLAGS="$CGO_LDFLAGS -L${PDFIUM_PREFIX} -Wl,-rpath,${PDFIUM_PREFIX}"
         export LD_LIBRARY_PATH="${PDFIUM_PREFIX}:${LD_LIBRARY_PATH}"
     fi
 
     # ── pdf_oxide ─────────────────────────────────────────────────────
-    check_pdf_oxide_deps
+    check_pdf_oxide_deps || return 1
     if [ -f "${PDF_OXIDE_PREFIX}/libpdf_oxide.so" ]; then
         export CGO_LDFLAGS="$CGO_LDFLAGS -L${PDF_OXIDE_PREFIX} -lpdf_oxide -Wl,-rpath,${PDF_OXIDE_PREFIX}"
         export LD_LIBRARY_PATH="${PDF_OXIDE_PREFIX}:${LD_LIBRARY_PATH}"
