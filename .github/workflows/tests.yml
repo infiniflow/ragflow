@@ -226,7 +226,13 @@ jobs:
             -v "${PWD}/internal/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
+          uv sync --python 3.13 --group test --frozen
           ./build.sh --go
+
+      - name: Prepare Python test environment
+        run: |
+          uv sync --python 3.13 --group test --frozen
+          uv pip install -e sdk/python
 
       - name: Run Go unit tests
         # Runs after `./build.sh --go`, which guarantees the C++ static
@@ -250,10 +256,7 @@ jobs:
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/tokenizer$' \
-            | grep -v '/internal/handler$' \
-            | grep -v '/internal/deepdoc/parser/pdf/pdfium' \
-            | grep -v '/internal/deepdoc/parser/pdf/pdfoxide' \
-            | grep -v '/internal/deepdoc/parser/pdf' || true)
+            | grep -v '/internal/handler$' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
           else
@@ -265,11 +268,6 @@ jobs:
           set -euo pipefail
           sudo docker pull ubuntu:24.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
-
-      - name: Prepare Python test environment
-        run: |
-          uv sync --python 3.13 --group test --frozen
-          uv pip install -e sdk/python
 
       - name: Prepare function test environment
         working-directory: docker
@@ -672,7 +670,13 @@ jobs:
             -v "${PWD}/internal/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
+          uv sync --python 3.13 --group test --frozen
           ./build.sh --go
+
+      - name: Prepare Python test environment
+        run: |
+          uv sync --python 3.13 --group test --frozen
+          uv pip install -e sdk/python
 
       - name: Run Go unit tests
         # Runs after `./build.sh --go`, which guarantees the C++ static
@@ -696,10 +700,7 @@ jobs:
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/tokenizer$' \
-            | grep -v '/internal/handler$' \
-            | grep -v '/internal/deepdoc/parser/pdf/pdfium' \
-            | grep -v '/internal/deepdoc/parser/pdf/pdfoxide' \
-            | grep -v '/internal/deepdoc/parser/pdf' || true)
+            | grep -v '/internal/handler$' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
           else
@@ -711,11 +712,6 @@ jobs:
           set -euo pipefail
           sudo docker pull ubuntu:24.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
-
-      - name: Prepare Python test environment
-        run: |
-          uv sync --python 3.13 --group test --frozen
-          uv pip install -e sdk/python
 
       - name: Prepare function test environment
         working-directory: docker
