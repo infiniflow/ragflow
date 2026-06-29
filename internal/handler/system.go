@@ -136,6 +136,40 @@ func (h *SystemHandler) GetStatus(c *gin.Context) {
 	})
 }
 
+// OceanbaseStatus returns OceanBase health + performance metrics.
+// Python parity: api/apps/restful_apis/system_api.py:oceanbase_status.
+func (h *SystemHandler) OceanbaseStatus(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	status, err := h.systemService.GetOceanbaseStatus()
+	if err != nil {
+		// Python parity: get_oceanbase_status() raising propagates to the
+		// route's except branch -> code 500 with the error nested in data,
+		// while the HTTP status stays 200. The top-level message reflects the
+		// failure (Python leaves the default "success", which is misleading on
+		// a 500).
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "Failed to get OceanBase status",
+			"data": gin.H{
+				"status":  "error",
+				"message": "Failed to get OceanBase status: " + err.Error(),
+			},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    status,
+	})
+}
+
 // GetVersion get RAGFlow version
 // @Summary Get RAGFlow Version
 // @Description Get the current version of the application
