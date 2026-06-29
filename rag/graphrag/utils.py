@@ -552,6 +552,32 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
             }
         )
 
+    # ── batch pre-warm entity embeddings ───────────────────────────────────────
+    # Without this, set_graph spawns one asyncio task per entity, each calling
+    # embd_mdl.encode([single_name]).  For 17 k+ nodes that is 17 k round-trips.
+    # Pre-warming the cache here collapses N calls to ceil(N/_INSERT_BULK_SIZE).
+    _uncached_node_names = [
+        n for n in change.added_updated_nodes
+        if get_embed_cache(embd_mdl.llm_name, n) is None
+    ]
+    if _uncached_node_names:
+        _enable_ta = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+        _timeout = 3 if _enable_ta else 30000000
+        for _i in range(0, len(_uncached_node_names), _INSERT_BULK_SIZE):
+            _batch = _uncached_node_names[_i : _i + _INSERT_BULK_SIZE]
+            async with chat_limiter:
+                _ebds, _ = await asyncio.wait_for(
+                    thread_pool_exec(embd_mdl.encode, _batch),
+                    timeout=_timeout,
+                )
+            for _n, _ebd in zip(_batch, _ebds):
+                set_embed_cache(embd_mdl.llm_name, _n, _ebd)
+        if callback:
+            callback(msg=f"Batch-embedded {len(_uncached_node_names)} entity names "
+                         f"({(len(_uncached_node_names) + _INSERT_BULK_SIZE - 1) // _INSERT_BULK_SIZE} "
+                         f"batches of {_INSERT_BULK_SIZE}).")
+    # ── end batch pre-warm ──────────────────────────────────────────────────────
+
     tasks = []
     for ii, node in enumerate(change.added_updated_nodes):
         node_attrs = graph.nodes[node]
@@ -569,6 +595,36 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
+
+    # ── batch pre-warm edge embeddings ─────────────────────────────────────────
+    # Mirror of the node pre-warm above for relation chunks.
+    # Cache key  = "A->B"  (matches graph_edge_to_chunk lookup key)
+    # Encoded text = "A->B: <description>"  (matches graph_edge_to_chunk encode text)
+    _uncached_edge_items = []
+    for _fn, _tn in change.added_updated_edges:
+        _eattrs = graph.get_edge_data(_fn, _tn)
+        if _eattrs and get_embed_cache(embd_mdl.llm_name, f"{_fn}->{_tn}") is None:
+            _uncached_edge_items.append((_fn, _tn, _eattrs))
+    if _uncached_edge_items:
+        _edge_keys  = [f"{f}->{t}" for f, t, _ in _uncached_edge_items]
+        _edge_texts = [f"{f}->{t}: {a['description']}" for f, t, a in _uncached_edge_items]
+        _enable_ta = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+        _timeout = 3 if _enable_ta else 30000000
+        for _i in range(0, len(_edge_texts), _INSERT_BULK_SIZE):
+            _btexts = _edge_texts[_i : _i + _INSERT_BULK_SIZE]
+            _bkeys  = _edge_keys [_i : _i + _INSERT_BULK_SIZE]
+            async with chat_limiter:
+                _ebds, _ = await asyncio.wait_for(
+                    thread_pool_exec(embd_mdl.encode, _btexts),
+                    timeout=_timeout,
+                )
+            for _key, _ebd in zip(_bkeys, _ebds):
+                set_embed_cache(embd_mdl.llm_name, _key, _ebd)
+        if callback:
+            callback(msg=f"Batch-embedded {len(_uncached_edge_items)} edge descriptions "
+                         f"({(len(_uncached_edge_items) + _INSERT_BULK_SIZE - 1) // _INSERT_BULK_SIZE} "
+                         f"batches of {_INSERT_BULK_SIZE}).")
+    # ── end batch pre-warm ──────────────────────────────────────────────────────
 
     tasks = []
     for ii, (from_node, to_node) in enumerate(change.added_updated_edges):
