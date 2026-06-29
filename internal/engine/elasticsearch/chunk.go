@@ -330,6 +330,15 @@ func (e *elasticsearchEngine) AdjustChunkPagerank(ctx context.Context, indexName
 		bodyBytes, _ := io.ReadAll(res.Body)
 		return fmt.Errorf("elasticsearch pagerank adjust error: %s, body: %s", res.Status(), string(bodyBytes))
 	}
+	var updateResp struct {
+		Result string `json:"result"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&updateResp); err != nil {
+		return fmt.Errorf("failed to decode pagerank adjust response: %w", err)
+	}
+	if updateResp.Result == "noop" {
+		return fmt.Errorf("chunk %s does not belong to dataset %s", chunkID, kbID)
+	}
 	return nil
 }
 
