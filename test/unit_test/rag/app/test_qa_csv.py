@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import warnings
 
-warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*", category=UserWarning)
-import pkg_resources  # noqa: F401 - stabilize xgboost import during collection
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*", category=UserWarning)
+    import pkg_resources  # noqa: F401 - stabilize xgboost import during collection
 
 import pytest
 
