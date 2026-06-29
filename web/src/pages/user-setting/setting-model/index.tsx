@@ -11,7 +11,7 @@ import type {
   IAddProviderInstanceRequestBody,
   IModelInfo,
 } from '@/interfaces/request/llm';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isLocalLlmFactory } from '../utils';
 import SystemSetting from './components/system-setting';
 import { AvailableModels } from './components/un-add-model';
@@ -139,6 +139,12 @@ const ModelProviders = () => {
     },
     [addProviderInstance, addInstanceModel],
   );
+
+  useEffect(() => {
+    if (!providerVisible) {
+      setProviderLoading(false);
+    }
+  }, [providerVisible]);
 
   const handleProviderVerify = useCallback(
     async (params: any) => {
@@ -354,7 +360,6 @@ const ModelProviders = () => {
       <section className="flex flex-col w-2/5 overflow-auto scrollbar-auto">
         <AvailableModels handleAddModel={handleAddModel} />
       </section>
-
       {/* Unified ProviderModal (replaces 9 independent modals) */}
       <ProviderModal
         visible={providerVisible}
@@ -368,7 +373,6 @@ const ModelProviders = () => {
         onVerify={handleProviderVerify}
         onViewModeOk={handleViewModeOk}
       />
-
       <BedrockModal
         visible={bedrockAddingVisible}
         hideModal={hideBedrockAddingModal}

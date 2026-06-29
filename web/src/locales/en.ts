@@ -1782,6 +1782,8 @@ Example: Virtual Hosted Style`,
       updateDate: 'Date',
       role: 'State',
       invite: 'Invite member',
+      inviteTip:
+        'Only registered users can be invited. Please register the account before sending an invitation.',
       agree: 'Accept',
       refuse: 'Decline',
       teamMembers: 'Team members',
