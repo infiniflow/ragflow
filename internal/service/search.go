@@ -17,16 +17,21 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"strings"
+
+	"gorm.io/gorm"
 )
 
 // SearchService search service
 type SearchService struct {
 	searchDAO     *dao.SearchDAO
 	userTenantDAO *dao.UserTenantDAO
+	tenantService *TenantService
 }
 
 // NewSearchService create search service
@@ -34,6 +39,13 @@ func NewSearchService() *SearchService {
 	return &SearchService{
 		searchDAO:     dao.NewSearchDAO(),
 		userTenantDAO: dao.NewUserTenantDAO(),
+		tenantService: NewTenantService(),
+	}
+}
+
+func (s *SearchService) SetTenantService(tenantService *TenantService) {
+	if tenantService != nil {
+		s.tenantService = tenantService
 	}
 }
 
@@ -285,6 +297,210 @@ func (s *SearchService) DeleteSearch(userID string, searchID string) error {
 	return nil
 }
 
+// AccessibleForCompletion check if it is accessible
+func (s *SearchService) AccessibleForCompletion(userID string, searchID string) (bool, error) {
+	ok, err := s.searchDAO.Accessible4Deletion(searchID, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return ok, nil
+}
+
+type SearchCompletionPlan struct {
+	UserID   string
+	SearchID string
+	Question string
+	KBIDs    []string
+	ModelID  string
+	Options  AskStreamOptions
+}
+
+func (s *SearchService) PrepareCompletion(userID, searchID string, req *SearchCompletionsRequest) (*SearchCompletionPlan, common.ErrorCode, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, common.CodeBadRequest, fmt.Errorf("user id is required")
+	}
+	searchID = strings.TrimSpace(searchID)
+	if searchID == "" {
+		return nil, common.CodeBadRequest, fmt.Errorf("search_id is required")
+	}
+	if req == nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("question is required")
+	}
+	question := strings.TrimSpace(req.Question)
+	if question == "" {
+		return nil, common.CodeArgumentError, fmt.Errorf("question is required")
+	}
+
+	accessible, err := s.AccessibleForCompletion(userID, searchID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if !accessible {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+	}
+
+	searchDetail, err := s.GetDetail(searchID)
+	if err != nil || searchDetail == nil {
+		return nil, common.CodeDataError, fmt.Errorf("Cannot find search %s", searchID)
+	}
+	searchConfig := searchConfigMapFromValue(searchDetail["search_config"])
+
+	kbIDs := stringSliceFromSearchConfig(searchConfig["kb_ids"])
+	if len(kbIDs) == 0 {
+		kbIDs = stringSliceFromSearchConfig(req.KBIDs)
+	}
+	if len(kbIDs) == 0 {
+		return nil, common.CodeDataError, fmt.Errorf("`kb_ids` is required.")
+	}
+
+	modelID, _ := stringFromSearchConfig(searchConfig["chat_id"])
+	if modelID == "" {
+		tenantSvc := s.tenantService
+		if tenantSvc == nil {
+			tenantSvc = NewTenantService()
+		}
+		defaultModel, err := tenantSvc.GetDefaultModelName(userID, entity.ModelTypeChat)
+		if err == nil {
+			modelID = strings.TrimSpace(defaultModel)
+		}
+	}
+
+	return &SearchCompletionPlan{
+		UserID:   userID,
+		SearchID: searchID,
+		Question: question,
+		KBIDs:    kbIDs,
+		ModelID:  modelID,
+		Options:  askOptionsFromSearchConfig(searchID, searchConfig),
+	}, common.CodeSuccess, nil
+}
+
+func askOptionsFromSearchConfig(searchID string, searchConfig map[string]interface{}) AskStreamOptions {
+	opts := AskStreamOptions{
+		SearchID:       searchID,
+		DocIDs:         stringSliceFromSearchConfig(searchConfig["doc_ids"]),
+		CrossLanguages: stringSliceFromSearchConfig(searchConfig["cross_languages"]),
+	}
+	if value, ok := searchConfig["use_kg"].(bool); ok {
+		opts.UseKG = &value
+	}
+	if value, ok := intFromSearchConfig(searchConfig["top_k"]); ok {
+		opts.TopK = &value
+	}
+	if value, ok := searchConfigMapValue(searchConfig["meta_data_filter"]); ok {
+		opts.Filter = value
+	}
+	if value, ok := stringFromSearchConfig(searchConfig["tenant_rerank_id"]); ok {
+		opts.TenantRerankID = &value
+	}
+	if value, ok := stringFromSearchConfig(searchConfig["rerank_id"]); ok {
+		opts.RerankID = &value
+	}
+	if value, ok := searchConfig["keyword"].(bool); ok {
+		opts.Keyword = &value
+	}
+	if value, ok := floatFromSearchConfig(searchConfig["similarity_threshold"]); ok {
+		opts.SimilarityThreshold = &value
+	}
+	if value, ok := floatFromSearchConfig(searchConfig["vector_similarity_weight"]); ok {
+		opts.VectorSimilarityWeight = &value
+	}
+	return opts
+}
+
+func searchConfigMapFromValue(value interface{}) map[string]interface{} {
+	if result, ok := searchConfigMapValue(value); ok {
+		return result
+	}
+	return map[string]interface{}{}
+}
+
+func searchConfigMapValue(value interface{}) (map[string]interface{}, bool) {
+	switch typed := value.(type) {
+	case nil:
+		return nil, false
+	case map[string]interface{}:
+		return typed, true
+	case entity.JSONMap:
+		return map[string]interface{}(typed), true
+	default:
+		return nil, false
+	}
+}
+
+func stringSliceFromSearchConfig(value interface{}) []string {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case []string:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if item = strings.TrimSpace(item); item != "" {
+				result = append(result, item)
+			}
+		}
+		return result
+	case common.StringSlice:
+		return stringSliceFromSearchConfig([]string(typed))
+	case []interface{}:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if value, ok := stringFromSearchConfig(item); ok {
+				result = append(result, value)
+			}
+		}
+		return result
+	default:
+		if value, ok := stringFromSearchConfig(value); ok {
+			return []string{value}
+		}
+		return nil
+	}
+}
+
+func stringFromSearchConfig(value interface{}) (string, bool) {
+	typed, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	typed = strings.TrimSpace(typed)
+	return typed, typed != ""
+}
+
+func intFromSearchConfig(value interface{}) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	case float32:
+		return int(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func floatFromSearchConfig(value interface{}) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	default:
+		return 0, false
+	}
+}
+
 // UpdateSearchRequest update search request
 // Reference: api/apps/restful_apis/search_api.py::update
 // Required fields: name, search_config
@@ -294,6 +510,7 @@ type UpdateSearchRequest struct {
 	Name         string                 `json:"name" binding:"required"`
 	Description  *string                `json:"description,omitempty"`
 	SearchConfig map[string]interface{} `json:"search_config" binding:"required"`
+	Avatar       *string                `json:"avatar,omitempty"`
 }
 
 func (s *SearchService) UpdateSearch(userID string, searchID string, req *UpdateSearchRequest) (*entity.Search, error) {
@@ -352,6 +569,9 @@ func (s *SearchService) UpdateSearch(userID string, searchID string, req *Update
 	if req.Description != nil {
 		updates["description"] = *req.Description
 	}
+	if req.Avatar != nil {
+		updates["avatar"] = *req.Avatar
+	}
 
 	// Step 6: Execute update
 	// Python: SearchService.update_by_id(search_id, req)
@@ -394,4 +614,9 @@ func (s *SearchService) GetDetail(searchID string) (map[string]interface{}, erro
 	}
 
 	return result, nil
+}
+
+type SearchCompletionsRequest struct {
+	Question string   `json:"question" binding:"required"`
+	KBIDs    []string `json:"kb_ids,omitempty"`
 }

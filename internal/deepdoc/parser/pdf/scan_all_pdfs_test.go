@@ -7,52 +7,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"sort"
 	"strings"
 	"testing"
 )
-
-// mustConnectOssDeepDoc returns a DeepDocClient pointed at the OSS service.
-func mustConnectOssDeepDoc(t *testing.T) *DeepDocClient {
-	t.Helper()
-	url := os.Getenv("OSSDEEPDOC_URL")
-	if url == "" {
-		url = "http://localhost:9390"
-	}
-	client, err := NewDeepDocClient(url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !client.Health() {
-		t.Fatalf("OssDeepDoc not available at %s", url)
-	}
-	if client.ModelType() != ModelOSS {
-		t.Skipf("DeepDoc at %s is %q, not oss — skipping OSS-specific test", url, client.ModelType())
-	}
-	return client
-}
-
-// mustOpenEngine opens a PDF from testdata/pdfs/ and returns a PDFEngine.
-func mustOpenEngine(t *testing.T, name string) PDFEngine {
-	t.Helper()
-	pdfPath := filepath.Join("testdata", "pdfs", name)
-	data, err := os.ReadFile(pdfPath)
-	if err != nil {
-		t.Fatalf("read fixture %s: %v", name, err)
-	}
-	eng, err := NewEngine(data)
-	if err != nil {
-		t.Fatalf("open engine %s: %v", name, err)
-	}
-	return eng
-}
 
 // TestScanAllPDFs iterates over all PDFs in testdata/pdfs/, parses each
 // with OssDeepDoc TSR, and prints a summary. Run with:
 //
 //	CGO_ENABLED=1 CGO_LDFLAGS="..." go test -tags=manual -run TestScanAllPDFs -v -count=1
 func TestScanAllPDFs(t *testing.T) {
-	client := mustConnectOssDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 
 	pdfDir := filepath.Join("testdata", "pdfs")
 	entries, err := os.ReadDir(pdfDir)
@@ -76,8 +42,8 @@ func TestScanAllPDFs(t *testing.T) {
 		fmt.Printf("\n── %s %s\n", name, strings.Repeat("─", maxint(1, 68-len(name))))
 
 		eng := mustOpenEngine(t, name)
-		cfg := DefaultParserConfig()
-		cfg.TableBuilder = NewOssDeepDocService(client)
+		cfg := pdf.DefaultParserConfig()
+		cfg.TableBuilder = NewDeepDocTableBuildService(client)
 		p := NewParser(cfg, client)
 		result, err := p.Parse(context.Background(), eng)
 		eng.Close()
