@@ -21,8 +21,12 @@ from rag.nlp.search import Dealer  # noqa: E402
 
 @pytest.mark.p1
 @pytest.mark.asyncio
-async def test_temporal_sort_scores_fallback_when_metadata_load_fails():
-    dealer = Dealer(None)
+@patch("rag.nlp.search.Dealer.__init__", return_value=None)
+async def test_temporal_sort_scores_fallback_when_metadata_load_fails(mock_init):
+    dealer = Dealer()
+    dealer.qryr = _DummyFulltextQueryer()
+    dealer.dataStore = None
+
     sim_np = np.array([0.8, 0.6], dtype=np.float64)
     sres = MagicMock()
     sres.ids = ["chunk-1", "chunk-2"]
