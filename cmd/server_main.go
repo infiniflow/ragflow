@@ -229,6 +229,7 @@ func startServer(config *server.Config) {
 	systemService := service.NewSystemService()
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
+	searchService.SetTenantService(tenantService)
 	fileService := service.NewFileService()
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
@@ -303,7 +304,9 @@ func startServer(config *server.Config) {
 		chunkService,
 	)
 	searchBotHandler.SetStreamLLM(searchBotLLM)
-	searchBotHandler.SetAskService(service.NewAskService(chunkService, nil, 0, 0))
+	askService := service.NewAskService(chunkService, nil, 0, 0)
+	searchBotHandler.SetAskService(askService)
+	searchHandler.SetCompletionDependencies(searchBotLLM, askService)
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
 	fileCommitHandler := handler.NewFileCommitHandler(service.NewFileCommitService())

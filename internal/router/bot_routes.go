@@ -28,16 +28,14 @@ import (
 //	@manager.route("/chatbots/<dialog_id>/completions")   bot_api.py:55
 //	@manager.route("/chatbots/<dialog_id>/info")          bot_api.py:126
 //
-// Both routes use BetaAuthMiddleware as a group-level middleware.
 // The two bot route groups (chatbots + agentbots) cannot share a
 // registrar because each carries a different <param_name>
 // (dialog_id vs agent_id) and would otherwise register paths under
 // the wrong group.
-func RegisterChatbotRoutes(g *gin.RouterGroup, mw gin.HandlerFunc, h *handler.BotHandler) {
+func RegisterChatbotRoutes(g *gin.RouterGroup, h *handler.BotHandler) {
 	if g == nil || h == nil {
 		return
 	}
-	g.Use(mw)
 	g.POST("/:dialog_id/completions", h.ChatbotCompletion)
 	g.GET("/:dialog_id/info", h.ChatbotInfo)
 }
@@ -47,11 +45,10 @@ func RegisterChatbotRoutes(g *gin.RouterGroup, mw gin.HandlerFunc, h *handler.Bo
 //
 //	@manager.route("/agentbots/<agent_id>/completions")   bot_api.py:157
 //	@manager.route("/agentbots/<agent_id>/inputs")        bot_api.py:239
-func RegisterAgentbotRoutes(g *gin.RouterGroup, mw gin.HandlerFunc, h *handler.BotHandler) {
+func RegisterAgentbotRoutes(g *gin.RouterGroup, h *handler.BotHandler) {
 	if g == nil || h == nil {
 		return
 	}
-	g.Use(mw)
 	g.POST("/:agent_id/completions", h.AgentbotCompletion)
 	g.GET("/:agent_id/inputs", h.AgentbotInputs)
 }
