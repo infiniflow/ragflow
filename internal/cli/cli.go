@@ -736,7 +736,7 @@ func (c *CLI) Run() error {
 			// the command handlers. Don't echo that back to the operator
 			// verbatim — log the full error server-side for debugging, and
 			// show only the error type/message via a sanitized wrapper.
-			fmt.Printf("CLI error: %s\n", sanitizeCLIError(err))
+			fmt.Printf("ragflow-cli error: %s\n", sanitizeCLIError(err))
 		}
 	}
 
