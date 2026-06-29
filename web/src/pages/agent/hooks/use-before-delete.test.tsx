@@ -153,4 +153,53 @@ describe('useBeforeDelete', () => {
       ['e1', 'e2'].sort(),
     );
   });
+
+  it('expands iteration deletion to nested agent tool chains', async () => {
+    const nodes = [
+      createNode('iteration:0', Operator.Iteration, { type: 'group' }),
+      createNode('iterationStart:0', Operator.IterationStart, {
+        parentId: 'iteration:0',
+        type: 'iterationStartNode',
+      }),
+      createNode('agent:0', Operator.Agent, { parentId: 'iteration:0' }),
+      createNode('tool:0', Operator.Tool),
+      createNode('message:0', Operator.Message),
+      createNode('generate:0', Operator.Generate),
+    ];
+
+    const edges = [
+      createEdge('e1', 'iterationStart:0', 'agent:0'),
+      createEdge('e2', 'agent:0', 'tool:0', {
+        sourceHandle: NodeHandleId.AgentBottom,
+      }),
+      createEdge('e3', 'tool:0', 'message:0', {
+        sourceHandle: NodeHandleId.Tool,
+      }),
+      createEdge('e4', 'generate:0', 'message:0'),
+    ];
+
+    useGraphStore.setState({ nodes, edges });
+
+    const { result } = renderHook(() => useBeforeDelete());
+    let deletion;
+    await act(async () => {
+      deletion = await result.current.handleBeforeDelete({
+        nodes: [nodes[0] as any],
+        edges: [],
+      });
+    });
+
+    expect(deletion?.nodes.map((node) => node.id).sort()).toEqual(
+      [
+        'iteration:0',
+        'iterationStart:0',
+        'agent:0',
+        'tool:0',
+        'message:0',
+      ].sort(),
+    );
+    expect(deletion?.edges.map((edge) => edge.id).sort()).toEqual(
+      ['e1', 'e2', 'e3', 'e4'].sort(),
+    );
+  });
 });

@@ -1,5 +1,5 @@
 import { Edge } from '@xyflow/react';
-import { Operator } from './constant';
+import { NodeHandleId, Operator } from './constant';
 import useGraphStore from './store';
 
 function baseNode(id: string, label: Operator) {
@@ -122,5 +122,40 @@ describe('useGraphStore.deleteIterationNodeById', () => {
       'branch-edge-a',
       'branch-edge-b',
     ]);
+  });
+
+  it('removes agent tool chains nested inside an iteration subtree', () => {
+    const nodes = [
+      createNode('iteration:0', Operator.Iteration, { type: 'group' }),
+      createNode('iterationStart:0', Operator.IterationStart, {
+        parentId: 'iteration:0',
+        type: 'iterationStartNode',
+      }),
+      createNode('agent:0', Operator.Agent, { parentId: 'iteration:0' }),
+      createNode('tool:0', Operator.Tool),
+      createNode('message:0', Operator.Message),
+      createNode('begin', Operator.Begin),
+      createNode('generate:0', Operator.Generate),
+    ];
+
+    const edges = [
+      createEdge('iteration-edge', 'iterationStart:0', 'agent:0'),
+      createEdge('tool-edge', 'agent:0', 'tool:0', {
+        sourceHandle: NodeHandleId.AgentBottom,
+      }),
+      createEdge('tool-output-edge', 'tool:0', 'message:0', {
+        sourceHandle: NodeHandleId.Tool,
+      }),
+      createEdge('branch-edge', 'begin', 'generate:0'),
+    ];
+
+    useGraphStore.setState({ nodes, edges });
+
+    useGraphStore.getState().deleteIterationNodeById('iteration:0');
+
+    const state = useGraphStore.getState();
+
+    expect(state.nodes.map((node) => node.id)).toEqual(['begin', 'generate:0']);
+    expect(state.edges.map((edge) => edge.id)).toEqual(['branch-edge']);
   });
 });

@@ -69,11 +69,53 @@ const collectDescendantNodeIds = (
   return descendantNodeIds;
 };
 
+const collectAgentAttachmentNodeIds = (
+  nodes: RAGFlowNodeType[],
+  edges: Edge[],
+  rootNodeIds: string[],
+) => {
+  const attachedNodeIds: string[] = [];
+
+  rootNodeIds.forEach((nodeId) => {
+    const node = nodes.find((item) => item.id === nodeId);
+    if (node?.data?.label !== Operator.Agent) {
+      return;
+    }
+
+    const { downstreamAgentAndToolNodeIds } = deleteAllDownstreamAgentsAndTool(
+      nodeId,
+      edges,
+    );
+
+    downstreamAgentAndToolNodeIds.forEach((attachedNodeId) => {
+      if (!attachedNodeIds.includes(attachedNodeId)) {
+        attachedNodeIds.push(attachedNodeId);
+      }
+    });
+  });
+
+  return attachedNodeIds;
+};
+
 export const collectDeletionNodeIds = (
   nodes: RAGFlowNodeType[],
+  edges: Edge[],
   rootId: string,
 ): string[] => {
-  return [rootId, ...collectDescendantNodeIds(nodes, rootId)];
+  const deletedNodeIds = [rootId, ...collectDescendantNodeIds(nodes, rootId)];
+  const attachedNodeIds = collectAgentAttachmentNodeIds(
+    nodes,
+    edges,
+    deletedNodeIds,
+  );
+
+  attachedNodeIds.forEach((nodeId) => {
+    if (!deletedNodeIds.includes(nodeId)) {
+      deletedNodeIds.push(nodeId);
+    }
+  });
+
+  return deletedNodeIds;
 };
 
 export const removeEdgesForNodeIds = (edges: Edge[], nodeIds: string[]) => {
@@ -456,7 +498,7 @@ const useGraphStore = create<RFState>()(
           selectedEdgeIds,
           clickedNodeId,
         } = get();
-        const deletedNodeIds = collectDeletionNodeIds(nodes, id);
+        const deletedNodeIds = collectDeletionNodeIds(nodes, edges, id);
         const deletedNodeIdSet = new Set(deletedNodeIds);
         const remainingEdges = removeEdgesForNodeIds(edges, deletedNodeIds);
         const remainingEdgeIdSet = new Set(

@@ -4,8 +4,6 @@ import { Operator } from '../constant';
 import useGraphStore, { collectDeletionNodeIds } from '../store';
 import { deleteAllDownstreamAgentsAndTool } from '../utils/delete-node';
 
-const UndeletableNodes = [Operator.Begin, Operator.IterationStart];
-
 export function useBeforeDelete() {
   const {
     getOperatorTypeFromId,
@@ -41,7 +39,7 @@ export function useBeforeDelete() {
     toBeDeletedNodes
       .filter((node) => node.data?.label === Operator.Iteration)
       .forEach((node) => {
-        collectDeletionNodeIds(graphNodes, node.id)
+        collectDeletionNodeIds(graphNodes, graphEdges, node.id)
           .filter((nodeId) => nodeId !== node.id)
           .forEach((nodeId) => {
             const currentNode = getNode(nodeId);
@@ -51,28 +49,10 @@ export function useBeforeDelete() {
           });
       });
 
-    let toBeDeletedEdges = edges.filter((edge) => {
-      const sourceType = getOperatorTypeFromId(edge.source) as Operator;
-      const downStreamNodes = nodes.filter((x) => x.id === edge.target);
-
-      // This edge does not need to be deleted, the range of edges that do not need to be deleted is smaller, so consider the case where it does not need to be deleted
-      if (
-        UndeletableNodes.includes(sourceType) && // Upstream node is Begin or IterationStart
-        downStreamNodes.length === 0 // Downstream node does not exist in the nodes to be deleted
-      ) {
-        if (!nodes.some((x) => x.id === edge.source)) {
-          return true; // Can be deleted
-        }
-        return false; // Cannot be deleted
-      }
-
-      return true;
-    });
-
     // Delete the agent and tool nodes downstream of the agent node
     if (nodes.some(agentPredicate)) {
       nodes.filter(agentPredicate).forEach((node) => {
-        const { downstreamAgentAndToolEdges, downstreamAgentAndToolNodeIds } =
+        const { downstreamAgentAndToolNodeIds } =
           deleteAllDownstreamAgentsAndTool(node.id, edges);
 
         downstreamAgentAndToolNodeIds.forEach((nodeId) => {
@@ -81,19 +61,13 @@ export function useBeforeDelete() {
             toBeDeletedNodes.push(currentNode);
           }
         });
-
-        downstreamAgentAndToolEdges.forEach((edge) => {
-          if (toBeDeletedEdges.every((x) => x.id !== edge.id)) {
-            toBeDeletedEdges.push(edge);
-          }
-        });
       }, []);
     }
 
     const toBeDeletedNodeIdSet = new Set(
       toBeDeletedNodes.map((node) => node.id),
     );
-    toBeDeletedEdges = graphEdges.filter(
+    const toBeDeletedEdges = graphEdges.filter(
       (edge) =>
         toBeDeletedNodeIdSet.has(edge.source) ||
         toBeDeletedNodeIdSet.has(edge.target),
