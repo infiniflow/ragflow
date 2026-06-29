@@ -22,6 +22,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -103,7 +104,7 @@ func (dao *ChatSessionDAO) ListByChatID(chatID string) ([]*entity.ChatSession, e
 func (dao *ChatSessionDAO) CheckDialogExists(tenantID, chatID string) (bool, error) {
 	var count int64
 	err := DB.Model(&entity.Chat{}).
-		Where("tenant_id = ? AND id = ? AND status = ?", tenantID, chatID, "1").
+		Where("tenant_id = ? AND id = ? AND status = ?", tenantID, chatID, common.StatusDialogValid).
 		Count(&count).Error
 	if err != nil {
 		return false, err
@@ -114,7 +115,7 @@ func (dao *ChatSessionDAO) CheckDialogExists(tenantID, chatID string) (bool, err
 // GetDialogByID gets dialog by ID
 func (dao *ChatSessionDAO) GetDialogByID(chatID string) (*entity.Chat, error) {
 	var dialog entity.Chat
-	err := DB.Where("id = ? AND status = ?", chatID, "1").First(&dialog).Error
+	err := DB.Where("id = ? AND status = ?", chatID, common.StatusDialogValid).First(&dialog).Error
 	if err != nil {
 		return nil, err
 	}

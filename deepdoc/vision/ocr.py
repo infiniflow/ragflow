@@ -570,9 +570,10 @@ class OCR:
                     self.text_recognizer = [TextRecognizer(model_dir)]
 
             except Exception:
-                model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
-                                              local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
-                                              local_dir_use_symlinks=False)
+                model_dir = snapshot_download(
+                    repo_id="InfiniFlow/deepdoc",
+                    local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
+                )
                 
                 if settings.PARALLEL_DEVICES > 0:
                     self.text_detector = []

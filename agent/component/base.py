@@ -31,6 +31,8 @@ from common.connection_utils import timeout
 
 from common.misc_utils import thread_pool_exec
 
+_logger = logging.getLogger(__name__)
+
 _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
 _DEPRECATED_PARAMS = "_deprecated_params"
 _USER_FEEDED_PARAMS = "_user_feeded_params"
@@ -481,18 +483,28 @@ class ComponentBase(ABC):
             return self._param.inputs.get(key, {}).get("value")
 
         res = {}
-        for var, o in self.get_input_elements().items():
+        input_elements = self.get_input_elements()
+        _logger.debug(
+            "[Base] Component '%s' (%s) resolving inputs. Input element keys: %s",
+            self._id, self.component_name, list(input_elements.keys()),
+        )
+        for var, o in input_elements.items():
             v = self.get_param(var)
             if v is None:
+                _logger.debug("[Base]   var '%s': param is None, skipping", var)
                 continue
             if isinstance(v, str) and self._canvas.is_reff(v):
-                self.set_input_value(var, self._canvas.get_variable_value(v))
+                resolved = self._canvas.get_variable_value(v)
+                self.set_input_value(var, resolved)
+                _logger.debug("[Base]   var '%s': resolved ref '%s' -> %s", var, v, json.dumps(resolved, ensure_ascii=False, default=str)[:200])
             elif isinstance(v, str) and re.search(self.variable_ref_patt, v):
                 elements = self.get_input_elements_from_text(v)
                 kv = {k: e.get('value', '') for k, e in elements.items()}
                 self.set_input_value(var, self.string_format(v, kv))
+                _logger.debug("[Base]   var '%s': resolved text refs '%s' -> %s", var, v, json.dumps(kv, ensure_ascii=False, default=str)[:200])
             else:
                 self.set_input_value(var, v)
+                _logger.debug("[Base]   var '%s': literal value -> %s", var, json.dumps(v, ensure_ascii=False, default=str)[:200])
             res[var] = self.get_input_value(var)
         return res
 
@@ -561,6 +573,10 @@ class ComponentBase(ABC):
         if key not in self._param.inputs:
             return None
         return self._param.inputs[key].get("value")
+
+    @staticmethod
+    def be_output(v):
+        return pd.DataFrame([{"content": v}])
 
     def get_component_name(self, cpn_id) -> str:
         return self._canvas.get_component(cpn_id)["obj"].component_name.lower()

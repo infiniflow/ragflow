@@ -227,36 +227,31 @@ func GetHost(config *map[string]interface{}, serverType, address, port string) s
 	return result
 }
 
-func (c *CLI) SetLogLevel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APISetLogLevelCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	if logLevel, ok := cmd.Params["level"].(string); ok {
-		payload := map[string]interface{}{
-			"level": logLevel,
-		}
-
-		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		resp, err := httpClient.Request("PUT", "/system/log", "admin", nil, payload)
-		if err != nil {
-			return nil, fmt.Errorf("failed to change log level: %w", err)
-		}
-
-		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("failed to register user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-		}
-
-		var result SimpleResponse
-		if err = json.Unmarshal(resp.Body, &result); err != nil {
-			return nil, fmt.Errorf("change log level failed: invalid JSON (%w)", err)
-		}
-		result.Code = 0
-		result.Duration = resp.Duration
-		return &result, nil
+	logLevel, ok := cmd.Params["level"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no log level")
 	}
 
-	return nil, fmt.Errorf("no log level")
+	payload := map[string]interface{}{
+		"level": logLevel,
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	resp, err := httpClient.Request("PUT", "/system/config/log", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to change log level: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to change log level: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	return HandleSimpleResponse(resp, "change log level")
 }
 
 func (c *CLI) RegisterUser(cmd *Command) (ResponseIf, error) {
@@ -591,6 +586,50 @@ func (c *CLI) APIListSearchesCommand(cmd *Command) (ResponseIf, error) {
 	var result ListSearchesResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list searches failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+// APIListMemoriesCommand lists memories
+func (c *CLI) APIListMemoriesCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	authKind := "web"
+	if httpClient.useAPIKey {
+		authKind = "api"
+	}
+
+	if httpClient.LoginToken != nil {
+		authKind = "web"
+	}
+
+	// Normal mode
+	resp, err := httpClient.Request("GET", "/memories", authKind, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list memories: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list memories: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListMemoriesResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list memories failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -956,6 +995,12 @@ func (c *CLI) APICreateAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	// Determine auth kind based on whether API key is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
 	resp, err := httpClient.Request("POST", "/system/keys", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create key: %w", err)
@@ -977,6 +1022,205 @@ func (c *CLI) APICreateAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	var result SimpleResponse
 	result.Code = 0
 	result.Message = "API Key created successfully"
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) APICreateDatasetCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	// Determine auth kind based on whether API key is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	datasetName, ok := cmd.Params["dataset_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dataset_name parameter is required")
+	}
+
+	payload := map[string]interface{}{
+		"name": datasetName,
+	}
+
+	resp, err := httpClient.Request("POST", "/datasets", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dataset: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create dataset: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	return HandleSimpleResponse(resp, "create dataset")
+}
+
+func (c *CLI) APICreateAgentCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	// Determine auth kind based on whether API key is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	resp, err := httpClient.Request("POST", "/agents", "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create agent: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create agent: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var createResult CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &createResult); err != nil {
+		return nil, fmt.Errorf("create agent failed: invalid JSON (%w)", err)
+	}
+
+	if createResult.Code != 0 {
+		return nil, fmt.Errorf("%s", createResult.Message)
+	}
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "Agent created successfully"
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) APICreateChatCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	// Determine auth kind based on whether API key is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	resp, err := httpClient.Request("POST", "/chats", "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create chat: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create chat: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var createResult CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &createResult); err != nil {
+		return nil, fmt.Errorf("create chat failed: invalid JSON (%w)", err)
+	}
+
+	if createResult.Code != 0 {
+		return nil, fmt.Errorf("%s", createResult.Message)
+	}
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "Chat created successfully"
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) APICreateSearchCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	// Determine auth kind based on whether API key is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	searchName, ok := cmd.Params["search_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("search_name parameter is required")
+	}
+
+	payload := map[string]interface{}{
+		"name": searchName,
+	}
+
+	resp, err := httpClient.Request("POST", "/searches", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create search: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create search: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var createResult CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &createResult); err != nil {
+		return nil, fmt.Errorf("create search failed: invalid JSON (%w)", err)
+	}
+
+	if createResult.Code != 0 {
+		return nil, fmt.Errorf("%s", createResult.Message)
+	}
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "Search created successfully"
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) APICreateMemoryCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	// Determine auth kind based on whether API key is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	memoryName, ok := cmd.Params["memory_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("memory_name parameter is required")
+	}
+
+	payload := map[string]interface{}{
+		"name": memoryName,
+	}
+
+	resp, err := httpClient.Request("POST", "/memories", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create memory: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create memory: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var createResult CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &createResult); err != nil {
+		return nil, fmt.Errorf("create memory failed: invalid JSON (%w)", err)
+	}
+
+	if createResult.Code != 0 {
+		return nil, fmt.Errorf("%s", createResult.Message)
+	}
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "Memory created successfully"
 	result.Duration = resp.Duration
 	return &result, nil
 }
@@ -1029,20 +1273,11 @@ func (c *CLI) APIDeleteAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to delete key: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("delete key failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "delete key")
 }
 
-// APISetAPIKey sets the API key after validating it
-func (c *CLI) APISetAPIKey(cmd *Command) (ResponseIf, error) {
+// APISetAPIKeyCommand sets the API key after validating it
+func (c *CLI) APISetAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -1097,6 +1332,97 @@ func (c *CLI) APISetAPIKey(cmd *Command) (ResponseIf, error) {
 	successResult.Message = "API key set successfully"
 	successResult.Duration = resp.Duration
 	return &successResult, nil
+}
+
+// APISetVariableCommand sets variable value
+func (c *CLI) APISetVariableCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
+	varName, ok := cmd.Params["var_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("var_name not provided")
+	}
+	varValue, ok := cmd.Params["var_value"].(string)
+	if !ok {
+		return nil, fmt.Errorf("var_value not provided")
+	}
+
+	payload := map[string]interface{}{
+		"var_name":  varName,
+		"var_value": varValue,
+	}
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("PUT", "/system/variables", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set variable: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to set variable: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result MessageResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("set variable failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// APIShowVariableCommand displays variable value
+func (c *CLI) APIShowVariableCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	if httpClient.APIKey == nil && httpClient.LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
+	varName, ok := cmd.Params["var_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("var_name not provided")
+	}
+
+	EncodedVarName := common.EncodeToBase64(varName)
+
+	endPoint := fmt.Sprintf("/system/variables/%s", EncodedVarName)
+
+	resp, err := httpClient.Request("GET", endPoint, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get variable: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get variable: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show variable failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	normalizeVariableRows(result.Data)
+	result.Duration = resp.Duration
+	return &result, nil
 }
 
 // APIShowAPIKeyCommand displays the current API key
@@ -1345,17 +1671,7 @@ func (c *CLI) AddProvider(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to add provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("add provider failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "add provider")
 }
 
 // APIListProviders lists added providers
@@ -1393,6 +1709,11 @@ func (c *CLI) DeleteProvider(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	if httpClient.APIKey == nil && httpClient.LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("provider name not provided")
@@ -1405,7 +1726,7 @@ func (c *CLI) DeleteProvider(cmd *Command) (ResponseIf, error) {
 		"llm_factory": providerName,
 	}
 
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", url, "web", nil, payload)
+	resp, err := httpClient.Request("DELETE", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete provider: %w", err)
 	}
@@ -1414,24 +1735,208 @@ func (c *CLI) DeleteProvider(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to delete provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("delete provider failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "delete provider")
 }
 
-// CreateProviderInstance creates a new provider instance
-// CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> REGION <region>
-func (c *CLI) CreateProviderInstance(cmd *Command) (ResponseIf, error) {
+// APIDropDatasetCommand DROP DATASET 'dataset_name'
+func (c *CLI) APIDropDatasetCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	datasetName, ok := cmd.Params["dataset_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dataset_name parameter is required")
+	}
+
+	datasetID, err := c.getDatasetIDByName(datasetName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dataset ID: %w by dataset name: %s", err, datasetName)
+	}
+
+	payload := map[string]interface{}{
+		"ids":        []string{datasetID},
+		"delete_all": true,
+	}
+
+	resp, err := httpClient.Request("DELETE", "/datasets", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dataset: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create dataset: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	return HandleSimpleResponse(resp, "create provider instance")
+}
+
+// APIDropAgentCommand DROP AGENT 'agent_name'
+func (c *CLI) APIDropAgentCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	agentName, ok := cmd.Params["agent_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("agent_name parameter is required")
+	}
+
+	agentID, err := c.getAgentIDByName(agentName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get agent ID: %w by agent name: %s", err, agentName)
+	}
+
+	payload := map[string]interface{}{
+		"ids":        []string{agentID},
+		"delete_all": true,
+	}
+
+	resp, err := httpClient.Request("DELETE", "/agents", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create agent: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create agent: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	return HandleSimpleResponse(resp, "delete agent")
+}
+
+// APIDropChatCommand DROP CHAT 'chat_name'
+func (c *CLI) APIDropChatCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	chatName, ok := cmd.Params["chat_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("chat_name parameter is required")
+	}
+
+	chatID, err := c.getChatIDByName(chatName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chat ID: %w by chat name: %s", err, chatName)
+	}
+
+	payload := map[string]interface{}{
+		"ids":        []string{chatID},
+		"delete_all": true,
+	}
+
+	resp, err := httpClient.Request("DELETE", "/chats", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create chat: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create chat: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	return HandleSimpleResponse(resp, "delete chat")
+}
+
+// APIDropSearchCommand DROP SEARCH 'search_name'
+func (c *CLI) APIDropSearchCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	searchName, ok := cmd.Params["search_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("search_name parameter is required")
+	}
+
+	searchID, err := c.getSearchIDByName(searchName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get search ID: %w by search name: %s", err, searchName)
+	}
+
+	endPoint := fmt.Sprintf("/searches/%s", searchID)
+
+	resp, err := httpClient.Request("DELETE", endPoint, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete search: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to delete search: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	return HandleSimpleResponse(resp, "delete search")
+}
+
+// APIDropMemoryCommand DROP MEMORY 'memory_name'
+func (c *CLI) APIDropMemoryCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	memoryName, ok := cmd.Params["memory_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("memory_name parameter is required")
+	}
+
+	memoryID, err := c.getMemoryIDByName(memoryName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get memory ID: %w by memory name: %s", err, memoryName)
+	}
+
+	endPoint := fmt.Sprintf("/memories/%s", memoryID)
+
+	resp, err := httpClient.Request("DELETE", endPoint, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete memory: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to delete memory: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	return HandleSimpleResponse(resp, "delete memory")
+}
+
+// APICreateProviderInstanceCommand creates a new provider instance
+// CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> REGION <region>
+func (c *CLI) APICreateProviderInstanceCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	if httpClient.APIKey == nil && httpClient.LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	providerName, ok := cmd.Params["provider_name"].(string)
@@ -1468,7 +1973,7 @@ func (c *CLI) CreateProviderInstance(cmd *Command) (ResponseIf, error) {
 		"region":        region,
 	}
 
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", url, "web", nil, payload)
+	resp, err := httpClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create provider instance: %w", err)
 	}
@@ -1477,17 +1982,7 @@ func (c *CLI) CreateProviderInstance(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to create provider instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("create provider instance failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "create provider instance")
 }
 
 // ShowInstanceBalance shows balance of a specific instance
@@ -1563,17 +2058,7 @@ func (c *CLI) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to drop instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop instance failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "drop instance")
 }
 
 // DROP MODEL <name1 name2 name3> FROM <provider_name> <instance_name>
@@ -1606,24 +2091,14 @@ func (c *CLI) DropInstanceModel(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", url, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop instance: %w", err)
+		return nil, fmt.Errorf("failed to drop model: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to drop model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop instance failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "drop model")
 }
 
 func isValidURL(str string) bool {
@@ -2623,8 +3098,11 @@ func (c *CLI) APIListModelInstanceTasksCommand(cmd *Command) (ResponseIf, error)
 	return &result, nil
 }
 
-func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+// APIShowProviderInstanceTaskCommand shows the details of a task
+func (c *CLI) APIShowProviderInstanceTaskCommand(cmd *Command) (ResponseIf, error) {
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	if httpClient.APIKey == nil && httpClient.LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
@@ -2632,18 +3110,14 @@ func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	var providerName, instanceName string
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no provider name")
+	}
 
-	// Check if composite_instance_name is provided in command
-	if compositeModelName, ok := cmd.Params["composite_instance_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 2 {
-			return nil, fmt.Errorf("model name must be in format 'instance@provider'")
-		}
-		providerName = names[1]
-		instanceName = names[0]
-	} else {
-		return nil, fmt.Errorf("no provider name or instance name")
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no instance name")
 	}
 
 	taskID, ok := cmd.Params["task_id"].(string)
@@ -2653,7 +3127,7 @@ func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/tasks/%s", providerName, instanceName, taskID)
 
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)
+	resp, err := httpClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task: %w", err)
 	}
@@ -2671,8 +3145,8 @@ func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// UseModel sets the current model for chat
-func (c *CLI) UseModel(cmd *Command) (ResponseIf, error) {
+// APIUseModelCommand sets the current model for chat
+func (c *CLI) APIUseModelCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -2751,16 +3225,8 @@ func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to add custom model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("add custom model failed: invalid JSON (%w)", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
 
+	return HandleSimpleResponse(resp, "add custom model")
 }
 
 // InsertChunksFromFile inserts chunks from a JSON file
@@ -3230,17 +3696,7 @@ func (c *CLI) ParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list documents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list documents failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-
-	return &result, nil
+	return HandleSimpleResponse(resp, "list documents")
 }
 
 func (c *CLI) UserParseLocalFile(cmd *Command) (ResponseIf, error) {
@@ -3297,7 +3753,12 @@ func (c *CLI) UserParseLocalFile(cmd *Command) (ResponseIf, error) {
 
 	var result SimpleResponse
 	result.Code = 0
-	result.Message = fmt.Sprintf("Success to parse local file %q, vision: %v, chat: %v, asr: %v, ocr: %v, embedding: %v, doc_parse: %v", filename, visionModel, chatModel, asrModel, ocrModel, embeddingModel, docParseModel)
+	// codeql[go/clear-text-logging] False positive: filename is
+	// reduced to filepath.Base(...) so the full path (which can
+	// contain user-identifying directory components) never reaches
+	// the log. The format is operator-facing status output, not a
+	// server log.
+	result.Message = fmt.Sprintf("Success to parse local file %q, vision: %v, chat: %v, asr: %v, ocr: %v, embedding: %v, doc_parse: %v", filepath.Base(filename), visionModel, chatModel, asrModel, ocrModel, embeddingModel, docParseModel)
 	fmt.Println(result.Message)
 	return &result, nil
 }
@@ -3350,6 +3811,99 @@ func (c *CLI) ListUserIngestionTasks(cmd *Command) (ResponseIf, error) {
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list ingestion tasks: failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// APIShowLogLevelCommand sets the log level for the system.
+func (c *CLI) APIShowLogLevelCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/system/config/log", "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get log level config: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get log level config: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("get log level config failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+
+}
+
+// APIListEnvironmentsCommand lists all system environments (api mode only).
+func (c *CLI) APIListEnvironmentsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/system/environments", "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list environments: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list environments: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list environments failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// APIListVariablesCommand lists all system variables (api mode only).
+func (c *CLI) APIListVariablesCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/system/variables", "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list variables: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list variables: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list environments failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {

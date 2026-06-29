@@ -580,6 +580,34 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 	})
 }
 
+type messageMemoryIDs []string
+
+func (ids *messageMemoryIDs) UnmarshalJSON(data []byte) error {
+	var single string
+	if err := json.Unmarshal(data, &single); err == nil {
+		if strings.TrimSpace(single) != "" {
+			*ids = []string{single}
+		}
+		return nil
+	}
+
+	var many []string
+	if err := json.Unmarshal(data, &many); err != nil {
+		return err
+	}
+	*ids = many
+	return nil
+}
+
+type AddMessageRequest struct {
+	MemoryIDs     messageMemoryIDs `json:"memory_id" binding:"required"`
+	AgentID       string           `json:"agent_id" binding:"required"`
+	SessionID     string           `json:"session_id" binding:"required"`
+	UserInput     string           `json:"user_input" binding:"required"`
+	AgentResponse string           `json:"agent_response" binding:"required"`
+	UserID        string           `json:"user_id"`
+}
+
 // AddMessage handles POST request for adding messages
 // API Path: POST /api/v1/messages
 //
@@ -595,12 +623,61 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 //   - user_input (required): User input
 //   - agent_response (required): Agent response
 //   - user_id (optional): User ID
-//
-// TODO: Haruko386 is implementing this for now, if you implement this, delete this line plz
 func (h *MemoryHandler) AddMessage(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	currentUserID := strings.TrimSpace(user.ID)
+	if currentUserID == "" {
+		jsonError(c, common.CodeArgumentError, "user_id is required")
+		return
+	}
+
+	var reqBody AddMessageRequest
+	if err := c.ShouldBindJSON(&reqBody); err != nil {
+		jsonError(c, common.CodeArgumentError, "body arguments is required")
+		return
+	}
+	if len(reqBody.MemoryIDs) == 0 {
+		jsonError(c, common.CodeArgumentError, "memory_id is required")
+		return
+	}
+
+	effectiveUserID := currentUserID
+	if v, ok := c.Get("auth_via_api_token"); ok {
+		if authViaAPIToken, ok := v.(bool); authViaAPIToken && ok {
+			effectiveUserID = strings.TrimSpace(reqBody.UserID)
+			if effectiveUserID == "" {
+				jsonError(c, common.CodeArgumentError, "user_id is required")
+				return
+			}
+		}
+	}
+
+	msg := service.MemoryMessage{
+		UserID:        effectiveUserID,
+		AgentID:       reqBody.AgentID,
+		SessionID:     reqBody.SessionID,
+		UserInput:     reqBody.UserInput,
+		AgentResponse: reqBody.AgentResponse,
+	}
+
+	ok, message, err := h.memoryService.AddMessage(c.Request.Context(), currentUserID, []string(reqBody.MemoryIDs), msg)
+	if err != nil || !ok {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "Some messages failed to add. Detail:" + message,
+			"data":    nil,
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeServerError,
-		"message": "AddMessage not implemented - pending embedding engine dependency",
+		"code":    common.CodeSuccess,
+		"message": message,
 		"data":    nil,
 	})
 }
@@ -741,7 +818,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 		return
 	}
 
-	ok, err = h.memoryService.UpdateMessage(c.Request.Context(), userID, memoryID, messageID, status)
+	ok, err = h.memoryService.UpdateMessageStatus(c.Request.Context(), userID, memoryID, messageID, status)
 	if err != nil || !ok {
 		if isMemoryServiceNotFound(err) {
 			c.JSON(http.StatusOK, gin.H{

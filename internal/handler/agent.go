@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
@@ -41,9 +42,20 @@ import (
 
 // AgentHandler agent handler
 // fileUploader is the subset of FileService used by agent handlers.
+//
+// The full FileService also has UploadFile, but it is consumed by
+// the FileHandler (handler/file.go), not by any agent handler, so
+// the interface deliberately does NOT list it. (Code review CR1.)
 type agentFileService interface {
-	UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
 	DownloadAgentFile(tenantID, location string) ([]byte, error)
+	// UploadInfos stores raw bytes in the per-user downloads bucket and
+	// returns lightweight descriptors. Mirrors python FileService.upload_info
+	// (multi-file path) used by the agent upload endpoint.
+	UploadInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
+	// UploadFromURL downloads a remote file (with SSRF protection) and
+	// stores it as an info blob. Mirrors python FileService.upload_info
+	// (single-file path with ?url=) used by the agent upload endpoint.
+	UploadFromURL(tenantID, rawURL string) (map[string]interface{}, error)
 }
 
 // chatAgentService is the subset of AgentService used by the chat-completion
@@ -53,7 +65,7 @@ type agentFileService interface {
 // NewAgentHandler assigns the concrete *service.AgentService — which
 // satisfies this interface because its RunAgent signature matches.
 type chatAgentService interface {
-	RunAgent(ctx context.Context, userID, canvasID, sessionID, version, userInput string) (<-chan canvas.RunEvent, error)
+	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error)
 }
 
 // AgentHandler agent handler
@@ -61,6 +73,7 @@ type AgentHandler struct {
 	agentService *service.AgentService
 	chatRunner   chatAgentService
 	fileService  agentFileService
+	loader       canvasLoader
 }
 
 // NewAgentHandler create agent handler
@@ -70,6 +83,7 @@ func NewAgentHandler(agentService *service.AgentService, fileService *service.Fi
 		agentService: agentService,
 		chatRunner:   agentService,
 		fileService:  fileService,
+		loader:       agentService,
 	}
 }
 
@@ -377,9 +391,15 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	flusher, _ := c.Writer.(http.Flusher)
 	for ev := range events {
-		writeRunEventSSE(c.Writer, flusher, ev)
+		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
+			common.Debug("agent run: client disconnected",
+				zap.String("canvas_id", canvasID),
+				zap.String("session_id", sessionID),
+				zap.Error(err),
+			)
+			return
+		}
 	}
 }
 
@@ -407,31 +427,6 @@ func readUserInput(c *gin.Context) string {
 		}
 	}
 	return c.Query("user_input")
-}
-
-// writeRunEventSSE writes one canvas.RunEvent as an SSE frame in the
-// Python envelope format (same as writeChatCompletionSSE):
-//
-//	data:{"event":"<ev.Type>","message_id":"...","created_at":...,"task_id":"...","session_id":"...","data":<ev.Data>}
-//
-// The "done" type emits `data: [DONE]\n\n`.
-func writeRunEventSSE(w io.Writer, flusher http.Flusher, ev canvas.RunEvent) {
-	if ev.Type == "done" {
-		fmt.Fprintf(w, "data: [DONE]\n\n")
-		if flusher != nil {
-			flusher.Flush()
-		}
-		return
-	}
-	data := ev.Data
-	if data == "" {
-		data = "{}"
-	}
-	envelope := sseEnvelope(ev.Type, ev.MessageID, ev.CreatedAt, ev.TaskID, ev.SessionID, data)
-	fmt.Fprintf(w, "data: %s\n\n", envelope)
-	if flusher != nil {
-		flusher.Flush()
-	}
 }
 
 // sanitiseRunEventError passes through the error event payload
@@ -869,6 +864,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 type agentChatCompletionsRequest struct {
 	AgentID      string                   `json:"agent_id"`
 	Query        string                   `json:"query"`
+	Inputs       map[string]interface{}   `json:"inputs"`
 	SessionID    string                   `json:"session_id"`
 	Stream       bool                     `json:"stream"`
 	OpenAICompat bool                     `json:"openai-compatible"`
@@ -895,6 +891,76 @@ func extractLastUserContent(messages []map[string]interface{}) string {
 	return ""
 }
 
+// extractUserInputFromFormInputs mirrors the front-end's wait-for-user submit
+// shape: `inputs` is an object keyed by form field name, and each entry carries
+// a nested `value`. The current chat-completion resume path consumes a single
+// string payload, so we lift the first field's value and stringify it.
+func extractUserInputFromFormInputs(inputs map[string]interface{}) interface{} {
+	if len(inputs) == 0 {
+		return nil
+	}
+	if len(inputs) == 1 {
+		for _, raw := range inputs {
+			if field, ok := raw.(map[string]interface{}); ok {
+				if v, ok := field["value"]; ok {
+					return v
+				}
+			}
+			return raw
+		}
+	}
+
+	out := make(map[string]any, len(inputs))
+	for name, raw := range inputs {
+		if field, ok := raw.(map[string]interface{}); ok {
+			if v, ok := field["value"]; ok {
+				out[name] = v
+				continue
+			}
+		}
+		out[name] = raw
+	}
+	return out
+}
+
+func countInputValues(inputs map[string]interface{}) int {
+	count := 0
+	for _, raw := range inputs {
+		if field, ok := raw.(map[string]interface{}); ok {
+			if _, exists := field["value"]; exists {
+				count++
+			}
+			continue
+		}
+		if raw != nil {
+			count++
+		}
+	}
+	return count
+}
+
+func userInputMeta(userInput any) []zap.Field {
+	fields := []zap.Field{zap.String("user_input_type", fmt.Sprintf("%T", userInput))}
+	switch v := userInput.(type) {
+	case nil:
+		fields = append(fields, zap.Bool("user_input_present", false))
+	case string:
+		fields = append(fields,
+			zap.Bool("user_input_present", true),
+			zap.Int("user_input_length", len(v)),
+			zap.Bool("user_input_blank", v == ""),
+		)
+	case map[string]interface{}:
+		fields = append(fields,
+			zap.Bool("user_input_present", true),
+			zap.Int("user_input_keys", len(v)),
+		)
+	default:
+		fields = append(fields, zap.Bool("user_input_present", true))
+	}
+	return fields
+}
+
 func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -914,6 +980,18 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		jsonError(c, common.CodeDataError, "at least one message is required in openai-compatible mode.")
 		return
 	}
+	common.Debug("agent chat completions: request received",
+		zap.String("user_id", user.ID),
+		zap.String("agent_id", req.AgentID),
+		zap.String("session_id", req.SessionID),
+		zap.Bool("stream", req.Stream),
+		zap.Bool("openai_compatible", req.OpenAICompat),
+		zap.Bool("query_present", req.Query != ""),
+		zap.Int("query_length", len(req.Query)),
+		zap.Int("inputs_count", len(req.Inputs)),
+		zap.Int("inputs_with_values_count", countInputValues(req.Inputs)),
+		zap.Int("messages_count", len(req.Messages)),
+	)
 
 	// TODO(phase5-openai-framing): the openai-compat branches below are
 	// stubs. They keep the existing "choices"-shape contract for the
@@ -936,13 +1014,31 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// Real canvas run — derive userInput from `query` first, then fall
 	// back to the last user message (covers the front-end that posts
 	// running_hint_text without a top-level `query`).
-	userInput := req.Query
-	if userInput == "" {
-		userInput = extractLastUserContent(req.Messages)
+	var userInput any = req.Query
+	if req.Query == "" {
+		if extracted := extractUserInputFromFormInputs(req.Inputs); extracted != nil {
+			userInput = extracted
+		} else if extracted := extractLastUserContent(req.Messages); extracted != "" {
+			userInput = extracted
+		}
 	}
+	common.Debug("agent chat completions: derived user input",
+		append([]zap.Field{
+			zap.String("agent_id", req.AgentID),
+			zap.String("session_id", req.SessionID),
+		}, userInputMeta(userInput)...)...,
+	)
 
 	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput)
 	if err != nil {
+		common.Warn("agent chat completions: RunAgent failed",
+			append([]zap.Field{
+				zap.String("user_id", user.ID),
+				zap.String("agent_id", req.AgentID),
+				zap.String("session_id", req.SessionID),
+				zap.Error(err),
+			}, userInputMeta(userInput)...)...,
+		)
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)
 		return
@@ -951,54 +1047,38 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	flusher, _ := c.Writer.(http.Flusher)
-	// SSE wire format mirrors Python's `completion()` at
-	// api/db/services/canvas_service.py:368: each canvas event is one
-	// `data: <json>\n\n` frame, and the channel close is signalled by
-	// `data: [DONE]\n\n`. We do NOT emit an `event:` line — the
-	// front-end's `use-send-message.ts` parser feeds each `data:` line
-	// directly into JSON.parse and breaks on the `e` of `event:`
-	// (browser console: "SyntaxError: Unexpected token 'e', \"event:
-	// mes\"…"). The richer `writeRunEventSSE` helper still owns the
-	// /api/v1/agents/{id}/run endpoint's wire format — see
-	// writeRunEventSSE at agent.go for that path.
+	// SSE wire format is the unified python envelope used by both
+	// /api/v1/agents/chat/completions and /api/v1/agentbots/<id>/completions.
+	// One frame per canvas event, all routed through
+	// service.WriteChatbotRunEvent so the two paths share one writer
+	// and one shape — see internal/service/bot_completion.go for the
+	// frame definition. The same unified envelope is used by the
+	// /api/v1/agents/{canvas_id}/run and /api/v1/agentbots/<id>/completions
+	// endpoints, all going through service.WriteChatbotRunEvent. The
+	// channel close is signalled by `data: [DONE]\n\n`. We do NOT emit
+	// an SSE `event:` line — the front-end's `use-send-message.ts`
+	// parser feeds each `data:` line directly into JSON.parse and
+	// breaks on the `e` of `event:` (browser console: "SyntaxError:
+	// Unexpected token 'e', \"event: mes\"…").
 	for ev := range events {
-		writeChatCompletionSSE(c.Writer, flusher, ev)
-	}
-}
-
-// writeChatCompletionSSE emits one canvas.RunEvent in the
-// Python-shaped chat-completion SSE envelope:
-//
-//	data:{"event":"<ev.Type>","message_id":"<ev.MessageID>","created_at":<ev.CreatedAt>,"task_id":"<ev.TaskID>","session_id":"<ev.SessionID>","data":<ev.Data>}
-//
-// The special "done" type sends `data: [DONE]\n\n` (no JSON envelope).
-func writeChatCompletionSSE(w io.Writer, flusher http.Flusher, ev canvas.RunEvent) {
-	if ev.Type == "done" {
-		fmt.Fprint(w, "data: [DONE]\n\n")
-		if flusher != nil {
-			flusher.Flush()
+		common.Debug("agent chat completions: streaming event",
+			zap.String("agent_id", req.AgentID),
+			zap.String("session_id", req.SessionID),
+			zap.String("event_type", ev.Type),
+			zap.String("message_id", ev.MessageID),
+			zap.String("task_id", ev.TaskID),
+		)
+		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
+			common.Debug("agent chat completions: client disconnected",
+				zap.String("agent_id", req.AgentID),
+				zap.Error(err),
+			)
+			return
 		}
-		return
 	}
-	data := ev.Data
-	if data == "" {
-		data = "{}"
-	}
-	envelope := sseEnvelope(ev.Type, ev.MessageID, ev.CreatedAt, ev.TaskID, ev.SessionID, data)
-	fmt.Fprintf(w, "data: %s\n\n", envelope)
-	if flusher != nil {
-		flusher.Flush()
-	}
-}
-
-// sseEnvelope builds the Python-shaped SSE JSON payload:
-//
-//	{"event":"<typ>","message_id":"<mid>","created_at":<ts>,"task_id":"<tid>","session_id":"<sid>","data":<raw>}
-func sseEnvelope(typ, mid string, ts int64, tid, sid, rawData string) string {
-	return fmt.Sprintf(
-		`{"event":%q,"message_id":%q,"created_at":%d,"task_id":%q,"session_id":%q,"data":%s}`,
-		typ, mid, ts, tid, sid, rawData,
+	common.Debug("agent chat completions: stream closed",
+		zap.String("agent_id", req.AgentID),
+		zap.String("session_id", req.SessionID),
 	)
 }
 

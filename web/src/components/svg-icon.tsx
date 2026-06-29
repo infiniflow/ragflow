@@ -89,6 +89,7 @@ const svgIcons = [
   LLMFactory.Avian,
   LLMFactory.RAGcon,
   LLMFactory.SoMark,
+  LLMFactory.NewAPI,
 ];
 
 export const LlmIcon = ({

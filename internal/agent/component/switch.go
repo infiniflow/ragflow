@@ -353,6 +353,22 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 	right := clause["right"]
 	lv := leftValue(left, state)
 
+	// Port of python PR #16320: for the four string operators,
+	// coerce nil on either side to "". In Python this avoids
+	// AttributeError on `.lower()`; in Go there's no crash (fmt
+	// renders nil as "<nil>"), but the Python post-fix semantic —
+	// where "foo" contains None is True — diverges from Go's
+	// "<nil>" rendering. Coercing to "" aligns the Go port with
+	// the Python workflow.
+	if op == "contains" || op == "not contains" || op == "start with" || op == "end with" {
+		if lv == nil {
+			lv = ""
+		}
+		if right == nil {
+			right = ""
+		}
+	}
+
 	switch op {
 	case "==":
 		return equalFoldValues(lv, right), nil

@@ -352,6 +352,29 @@ func TestInitialUserFillUpData_UsesSysQueryWhenSchemaPresent(t *testing.T) {
 	}
 }
 
+func TestInitialUserFillUpData_UsesStructuredSysQueryWhenSchemaPresent(t *testing.T) {
+	state := NewCanvasState("run-1", "task-1")
+	state.Sys["query"] = map[string]any{"kb": "da1", "query": "合同"}
+	ctx := WithState(context.Background(), state)
+
+	got, ok := initialUserFillUpData(ctx, map[string]any{
+		"inputs": map[string]any{
+			"kb":    map[string]any{"type": "line"},
+			"query": map[string]any{"type": "line"},
+		},
+	})
+	if !ok {
+		t.Fatal("expected initialUserFillUpData to consume structured sys.query")
+	}
+	values, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("got type %T, want map[string]any", got)
+	}
+	if values["kb"] != "da1" || values["query"] != "合同" {
+		t.Fatalf("got %#v, want kb=da1 query=合同", values)
+	}
+}
+
 func TestInitialUserFillUpData_SkipsWhenNoSchema(t *testing.T) {
 	state := NewCanvasState("run-1", "task-1")
 	state.Sys["query"] = "loop"

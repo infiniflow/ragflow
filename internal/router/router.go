@@ -35,6 +35,7 @@ type Router struct {
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
 	chatChannelHandler   *handler.ChatChannelHandler
+	langfuseHandler      *handler.LangfuseHandler
 	openaiChatHandler    *handler.OpenAIChatHandler
 	chatSessionHandler   *handler.ChatSessionHandler
 	connectorHandler     *handler.ConnectorHandler
@@ -51,6 +52,7 @@ type Router struct {
 	modelHandler         *handler.ModelHandler
 	fileCommitHandler    *handler.FileCommitHandler
 	adminRuntimeHandler  *handler.AdminRuntimeHandler
+	botHandler           *handler.BotHandler
 }
 
 // NewRouter create router
@@ -66,6 +68,7 @@ func NewRouter(
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
 	chatChannelHandler *handler.ChatChannelHandler,
+	langfuseHandler *handler.LangfuseHandler,
 	chatSessionHandler *handler.ChatSessionHandler,
 	connectorHandler *handler.ConnectorHandler,
 	searchHandler *handler.SearchHandler,
@@ -82,6 +85,7 @@ func NewRouter(
 	fileCommitHandler *handler.FileCommitHandler,
 	adminRuntimeHandler *handler.AdminRuntimeHandler,
 	openaiChatHandler *handler.OpenAIChatHandler,
+	botHandler *handler.BotHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -95,6 +99,7 @@ func NewRouter(
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
 		chatChannelHandler:   chatChannelHandler,
+		langfuseHandler:      langfuseHandler,
 		openaiChatHandler:    openaiChatHandler,
 		chatSessionHandler:   chatSessionHandler,
 		connectorHandler:     connectorHandler,
@@ -111,6 +116,7 @@ func NewRouter(
 		modelHandler:         modelHandler,
 		fileCommitHandler:    fileCommitHandler,
 		adminRuntimeHandler:  adminRuntimeHandler,
+		botHandler:           botHandler,
 	}
 }
 
@@ -180,6 +186,20 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/forgot/otp", r.userHandler.ForgotSendOTP)
 		apiNoAuth.POST("/auth/password/forgot/otp/verify", r.userHandler.ForgotVerifyOTP)
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
+
+		// Public bot endpoints — beta API token only, NOT regular
+		// user session. Mirrors python's
+		// @login_required(auth_types=AUTH_BETA) on bot_api.py:55,126,157,239.
+		// Mounted on apiNoAuth (not on the auth-protected v1 tree) so
+		// external widgets / iframes / downloads can hit them with
+		// only a beta token. Risk R0 of the plan.
+		if r.botHandler != nil {
+			betaMW := r.authHandler.BetaAuthMiddleware()
+			chatbotGroup := apiNoAuth.Group("/chatbots")
+			RegisterChatbotRoutes(chatbotGroup, betaMW, r.botHandler)
+			agentbotGroup := apiNoAuth.Group("/agentbots")
+			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
+		}
 	}
 
 	// Protected routes
@@ -250,10 +270,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chats := v1.Group("/chats")
 			{
 				chats.GET("", r.chatHandler.ListChats)
+				chats.POST("", r.chatHandler.Create)
 				chats.DELETE("", r.chatHandler.BulkDeleteChats)
 				chats.DELETE("/:chat_id", r.chatHandler.DeleteChat)
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
+				chats.PUT("/:chat_id", r.chatHandler.UpdateChat)
+				chats.PATCH("/:chat_id", r.chatHandler.PatchChat)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
+				chats.POST("/:chat_id/sessions", r.chatSessionHandler.CreateSession)
+				chats.DELETE("/:chat_id/sessions", r.chatSessionHandler.DeleteSessions)
 				chats.GET("/:chat_id/sessions/:session_id", r.chatSessionHandler.GetSession)
 				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
 			}
@@ -415,6 +440,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			message := v1.Group("/messages")
 			{
 				message.GET("", r.memoryHandler.GetMessages)
+				message.POST("", r.memoryHandler.AddMessage)
 				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
 				message.PUT("/:memory_message", r.memoryHandler.UpdateMessage)
 				message.GET("/:memory_message/content", r.memoryHandler.GetMessageContent)
@@ -498,6 +524,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			allModels := v1.Group("/all-models")
 			{
 				allModels.GET("", r.modelHandler.ListAllModels)
+				allModels.GET("/:model_name", r.modelHandler.ShowModel)
 			}
 
 			// Agent routes
@@ -557,6 +584,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 					config.GET("/log", r.systemHandler.GetLogLevel)
 					config.PUT("/log", r.systemHandler.SetLogLevel)
 				}
+
+				// Variables/Settings
+				system.GET("/variables", r.systemHandler.ListVariables)
+				system.PUT("/variables", r.systemHandler.SetVariable)
+				system.GET("/variables/:var_name", r.systemHandler.ShowVariable)
+
+				// Environments
+				system.GET("/environments", r.systemHandler.ListEnvironments)
 
 				//log := system.Group("/log")
 				//{
@@ -653,6 +688,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chanChannel.GET("/:channel_id", r.chatChannelHandler.GetChatChannel)
 			chanChannel.PATCH("/:channel_id", r.chatChannelHandler.UpdateChatChannel)
 			chanChannel.DELETE("/:channel_id", r.chatChannelHandler.DeleteChatChannel)
+		}
+
+		// Langfuse tracing keys
+		langfuse := v1.Group("/langfuse")
+		{
+			langfuse.POST("/api-key", r.langfuseHandler.SetAPIKey)
+			langfuse.PUT("/api-key", r.langfuseHandler.SetAPIKey)
+			langfuse.GET("/api-key", r.langfuseHandler.GetAPIKey)
+			langfuse.DELETE("/api-key", r.langfuseHandler.DeleteAPIKey)
 		}
 
 		// Chat session (conversation) routes
