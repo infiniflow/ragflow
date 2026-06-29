@@ -196,11 +196,14 @@ class Agent(LLM, ToolBase):
         if self.check_if_canceled("Agent processing"):
             return
 
+        user_prompt = kwargs.get("user_prompt")
+        user_prompt_text = "" if user_prompt is None else str(user_prompt)
         _logger.debug(
-            "[Agent] _invoke_async called. Component: %s, Keys in kwargs: %s, user_prompt: %s, tools count: %d",
+            "[Agent] _invoke_async called. Component: %s, Keys in kwargs: %s, user_prompt_present: %s, user_prompt_length: %d, tools count: %d",
             self._id,
             list(kwargs.keys()),
-            json.dumps(kwargs.get("user_prompt", ""), ensure_ascii=False, default=str)[:300],
+            bool(user_prompt_text.strip()),
+            len(user_prompt_text),
             len(self.tools) if self.tools else 0,
         )
 
