@@ -1,6 +1,6 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"context"
@@ -47,7 +47,7 @@ func TestIntegration_NoCrash(t *testing.T) {
 			defer eng.Close()
 
 			cfg := pdf.DefaultParserConfig()
-			p := NewParser(cfg, client)
+			p := NewParser(cfg)
 			result, err := p.Parse(context.Background(), eng)
 			if err != nil {
 				t.Fatalf("Parse: %v", err)

@@ -1,4 +1,4 @@
-package parser
+package pdf
 
 import (
 	"image"
@@ -13,7 +13,7 @@ import (
 var renderFn = fallbackRender
 
 // renderPageToImage renders a page at 216 DPI for downstream DLA/TSR/OCR.
-func renderPageToImage(engine pdf.PDFEngine, pageNum int) (image.Image, error) {
+func RenderPageToImage(engine pdf.PDFEngine, pageNum int) (image.Image, error) {
 	return renderFn(engine, pageNum)
 }
 

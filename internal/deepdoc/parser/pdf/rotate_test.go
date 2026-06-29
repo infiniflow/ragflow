@@ -1,6 +1,6 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"image"
@@ -12,8 +12,8 @@ import (
 
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/pdfium"
-	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────
@@ -24,8 +24,8 @@ func pdfiumPtSize(eng pdf.PDFEngine, file string, t *testing.T) (w, h float64) {
 	raw := eng.RawData()
 	if raw == nil {
 		// Fallback: use pdf_oxide pre-rotation size.
-		if pe, ok := eng.(*pdfoxideEngine); ok {
-			w, h, _ = pe.inner.PageSize(0)
+		if pe, ok := eng.(*PDFOxideEngine); ok {
+			w, h, _ = pe.Inner.PageSize(0)
 		}
 		return
 	}
@@ -302,7 +302,7 @@ func TestRotation_CropBoxWithRotate(t *testing.T) {
 	// CropBox excludes content from the page edges; chars near the
 	// CropBox boundary may end up outside the effective page after rotation.
 	if oobRate > 40 {
-		t.Errorf("too many OOB chars: %.1f%%", oobRate)
+		t.Errorf("too many OOB Chars: %.1f%%", oobRate)
 	}
 
 	// Verify render alignment.

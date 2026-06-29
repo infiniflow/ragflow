@@ -1,4 +1,4 @@
-package parser
+package pdf
 
 import (
 	"context"
@@ -16,11 +16,11 @@ import (
 // entries. Go backfills pdf.Section.Text from pdf.TableItem.Rows after
 // linkTableSections.
 func TestTableSection_TextFromTSR(t *testing.T) {
-	eng := &mockEngine{
-		pageCount: 1,
-		renderW:   900, // 300pt at 3x = 900px (216 DPI)
-		renderH:   600,
-		chars: map[int][]pdf.TextChar{0: {
+	eng := &MockEngine{
+		NumPages: 1,
+		RenderW:   900, // 300pt at 3x = 900px (216 DPI)
+		RenderH:   600,
+		Chars: map[int][]pdf.TextChar{0: {
 			// PDF space (72 DPI): well inside DLA region
 			{X0: 50, X1: 70, Top: 40, Bottom: 55, Text: "姓"},
 			{X0: 80, X1: 100, Top: 40, Bottom: 55, Text: "名"},
@@ -42,9 +42,9 @@ func TestTableSection_TextFromTSR(t *testing.T) {
 			{X0: 200, Y0: 100, X1: 460, Y1: 220, Text: "25", Label: "table row"},
 		},
 	}
-	p := NewParser(pdf.DefaultParserConfig(), mock)
+	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.Parse(context.Background(), eng)
+	result, err := p.ParseRaw(context.Background(), eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -93,14 +93,14 @@ func TestEnrichWithDeepDoc_ImageOnlyPage(t *testing.T) {
 			{X0: 0, Y0: 0, X1: 200, Y1: 100, Text: "A", Label: "table row"},
 		},
 	}
-	p := NewParser(pdf.DefaultParserConfig(), mock)
+	p := NewParser(pdf.DefaultParserConfig())
 
 	// 0 text boxes, but page 0 has a rendered image.
 	boxes := []pdf.TextBox{}
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 900, 600))
 	pageImages := map[int]image.Image{0: dummyImg}
 
-	tables := p.enrichWithDeepDoc(context.Background(), nil, nil, boxes, pageImages)
+	tables := p.enrichWithDeepDoc(context.Background(), nil, nil, boxes, pageImages, mock, NewTableBuilderFor(mock))
 	if len(tables) == 0 {
 		t.Fatal("enrichWithDeepDoc: expected at least 1 table from DLA on page with image but no boxes, got 0")
 	}
@@ -113,10 +113,10 @@ func TestEnrichWithDeepDoc_ImageOnlyPage(t *testing.T) {
 // is merged into the nearest "figure" pdf.Section and the caption pdf.Section is
 // removed. Matches Python _extract_table_figure caption matching.
 func TestFigureCaption_MergedIntoFigure(t *testing.T) {
-	eng := &mockEngine{
-		pageCount: 1,
-		renderW:   1800, renderH: 2400,
-		chars: map[int][]pdf.TextChar{0: {
+	eng := &MockEngine{
+		NumPages: 1,
+		RenderW:   1800, RenderH: 2400,
+		Chars: map[int][]pdf.TextChar{0: {
 			// Figure text — overlaps DLA figure region (pixel Y=80-300 → PDF 27-100).
 			{X0: 40, X1: 60, Top: 30, Bottom: 45, Text: "F"},
 			// Caption text — overlaps DLA figure caption region (pixel Y=310-340 → PDF 103-113).
@@ -131,9 +131,9 @@ func TestFigureCaption_MergedIntoFigure(t *testing.T) {
 			{X0: 100, Y0: 310, X1: 500, Y1: 340, Label: "figure caption", Confidence: 0.9},
 		},
 	}
-	p := NewParser(pdf.DefaultParserConfig(), mock)
+	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.Parse(context.Background(), eng)
+	result, err := p.ParseRaw(context.Background(), eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -169,10 +169,10 @@ func TestFigureCaption_MergedIntoFigure(t *testing.T) {
 // TestTableCaption_MergedIntoTable verifies that "table caption" text
 // is merged into the nearest table pdf.Section and the caption is removed.
 func TestTableCaption_MergedIntoTable(t *testing.T) {
-	eng := &mockEngine{
-		pageCount: 1,
-		renderW:   1800, renderH: 2400,
-		chars: map[int][]pdf.TextChar{0: {
+	eng := &MockEngine{
+		NumPages: 1,
+		RenderW:   1800, RenderH: 2400,
+		Chars: map[int][]pdf.TextChar{0: {
 			// Table text — overlaps DLA table region (pixel Y=80-300 → PDF 27-100).
 			{X0: 40, X1: 60, Top: 30, Bottom: 45, Text: "T"},
 			// Caption text — overlaps DLA table caption region (pixel Y=310-340 → PDF 103-113).
@@ -190,9 +190,9 @@ func TestTableCaption_MergedIntoTable(t *testing.T) {
 			{X0: 200, Y0: 0, X1: 460, Y1: 100, Text: "B", Label: "table row"},
 		},
 	}
-	p := NewParser(pdf.DefaultParserConfig(), mock)
+	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.Parse(context.Background(), eng)
+	result, err := p.ParseRaw(context.Background(), eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -224,10 +224,10 @@ func TestTableCaption_MergedIntoTable(t *testing.T) {
 // boxes overlapping a table region, regardless of their DLA label.
 // This is the #1 cause of Go vs Python discrepancy on table-heavy PDFs.
 func TestTextSectionsInsideTableRegion_Suppressed(t *testing.T) {
-	eng := &mockEngine{
-		pageCount: 1,
-		renderW:   1800, renderH: 2400,
-		chars: map[int][]pdf.TextChar{0: {
+	eng := &MockEngine{
+		NumPages: 1,
+		RenderW:   1800, RenderH: 2400,
+		Chars: map[int][]pdf.TextChar{0: {
 			// Box A: inside DLA table region, labeled as "text" by DLA.
 			{X0: 50, X1: 100, Top: 40, Bottom: 55, Text: "碎片文字"},
 			// Box B: inside DLA table region, same situation.
@@ -247,9 +247,9 @@ func TestTextSectionsInsideTableRegion_Suppressed(t *testing.T) {
 			{X0: 200, Y0: 0, X1: 460, Y1: 100, Text: "年龄", Label: "table row"},
 		},
 	}
-	p := NewParser(pdf.DefaultParserConfig(), mock)
+	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.Parse(context.Background(), eng)
+	result, err := p.ParseRaw(context.Background(), eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -286,9 +286,10 @@ func TestTextSectionsInsideTableRegion_Suppressed(t *testing.T) {
 
 // TestEmptyDoc_NoCrash verifies Parse handles edge cases gracefully.
 func TestEmptyDoc_NoCrash(t *testing.T) {
-	eng := &mockEngine{pageCount: 0}
-	p := NewParser(pdf.DefaultParserConfig(), &MockDocAnalyzer{Healthy: true})
-	result, err := p.Parse(context.Background(), eng)
+	eng := &MockEngine{NumPages: 0}
+	mock := &MockDocAnalyzer{Healthy: true}
+	p := NewParser(pdf.DefaultParserConfig())
+	result, err := p.ParseRaw(context.Background(), eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -299,13 +300,69 @@ func TestEmptyDoc_NoCrash(t *testing.T) {
 
 // TestNilChars_handled verifies zero-chars pages don't crash.
 func TestNilChars_Handled(t *testing.T) {
-	eng := &mockEngine{pageCount: 1, renderW: 200, renderH: 200}
-	p := NewParser(pdf.DefaultParserConfig(), &MockDocAnalyzer{Healthy: true})
-	result, err := p.Parse(context.Background(), eng)
+	eng := &MockEngine{NumPages: 1, RenderW: 200, RenderH: 200}
+	mock := &MockDocAnalyzer{Healthy: true}
+	p := NewParser(pdf.DefaultParserConfig())
+	result, err := p.ParseRaw(context.Background(), eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if len(result.Sections) != 0 && p.DeepDoc != nil {
+	if len(result.Sections) != 0 {
 		t.Logf("nil chars + DeepDoc: sections=%d (may trigger OCR path)", len(result.Sections))
+	}
+}
+
+func TestMatchTableImage_ByPositions(t *testing.T) {
+	tableByRegion := map[string]string{
+		"0_50.0_500.0_100.0_300.0": "img_base64_positions",
+	}
+	sec := &pdf.Section{
+		LayoutType: pdf.LayoutTypeTable,
+		Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 50.0, Right: 500.0, Top: 100.0, Bottom: 300.0}},
+	}
+	img, ok := matchTableImage(sec, tableByRegion)
+	if !ok {
+		t.Fatal("expected match by Positions")
+	}
+	if img != "img_base64_positions" {
+		t.Errorf("got %q, want img_base64_positions", img)
+	}
+}
+
+func TestMatchTableImage_FallbackToRegion(t *testing.T) {
+	tableByRegion := map[string]string{
+		"0_80.0_520.0_200.0_400.0": "img_base64_region",
+	}
+	sec := &pdf.Section{
+		LayoutType: pdf.LayoutTypeTable,
+		Positions:  nil,
+		TableItem:  &pdf.TableItem{RegionLeft: 80.0, RegionRight: 520.0, RegionTop: 200.0, RegionBottom: 400.0},
+	}
+	img, ok := matchTableImage(sec, tableByRegion)
+	if !ok {
+		t.Fatal("expected match by Region fallback")
+	}
+	if img != "img_base64_region" {
+		t.Errorf("got %q, want img_base64_region", img)
+	}
+}
+
+func TestMatchTableImage_NoMatch(t *testing.T) {
+	tableByRegion := map[string]string{"0_10.0_20.0_30.0_40.0": "no_chance"}
+	sec := &pdf.Section{
+		LayoutType: pdf.LayoutTypeTable,
+		Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 200, Top: 300, Bottom: 400}},
+	}
+	_, ok := matchTableImage(sec, tableByRegion)
+	if ok {
+		t.Error("expected no match")
+	}
+}
+
+func TestMatchTableImage_EmptySection(t *testing.T) {
+	sec := &pdf.Section{LayoutType: pdf.LayoutTypeTable}
+	_, ok := matchTableImage(sec, map[string]string{"x": "y"})
+	if ok {
+		t.Error("expected no match for empty section")
 	}
 }

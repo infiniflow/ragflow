@@ -1,4 +1,4 @@
-package parser
+package pdf
 
 import (
 	"context"
@@ -12,10 +12,10 @@ import (
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
-// enrichWithDeepDoc runs DLA+TSR via p.DeepDoc and returns detected tables.
+// enrichWithDeepDoc runs DLA+TSR via docAnalyzer and returns detected tables.
 // pageImages optionally provides pre-rendered page images to avoid re-rendering.
-func (p *Parser) enrichWithDeepDoc(ctx context.Context, result *pdf.ParseResult, engine pdf.PDFEngine, boxes []pdf.TextBox, pageImages map[int]image.Image) []pdf.TableItem {
-	if !p.DeepDoc.Health() {
+func (p *Parser) enrichWithDeepDoc(ctx context.Context, result *pdf.ParseResult, engine pdf.PDFEngine, boxes []pdf.TextBox, pageImages map[int]image.Image, docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder) []pdf.TableItem {
+	if !docAnalyzer.Health() {
 		return nil
 	}
 	// Group boxes by page for annotation write-back.
@@ -50,7 +50,7 @@ func (p *Parser) enrichWithDeepDoc(ctx context.Context, result *pdf.ParseResult,
 		for i, idx := range indices {
 			pageBoxes[i] = boxes[idx]
 		}
-		tables := p.extractTableBoxes(ctx, result, pageBoxes, engine, pg, pageImages, len(tableItems))
+		tables := p.extractTableBoxes(ctx, result, pageBoxes, engine, pg, pageImages, len(tableItems), docAnalyzer, tb)
 		tableItems = append(tableItems, tables...)
 		// Write back DLA and TSR annotations (R/C/H/SP) to the original boxes.
 		for i, idx := range indices {
@@ -65,21 +65,21 @@ func (p *Parser) enrichWithDeepDoc(ctx context.Context, result *pdf.ParseResult,
 	return tableItems
 }
 
-func (p *Parser) extractTableBoxes(ctx context.Context, result *pdf.ParseResult, boxes []pdf.TextBox, engine pdf.PDFEngine, pageNum int, pageImages map[int]image.Image, tableBaseIdx int) []pdf.TableItem {
+func (p *Parser) extractTableBoxes(ctx context.Context, result *pdf.ParseResult, boxes []pdf.TextBox, engine pdf.PDFEngine, pageNum int, pageImages map[int]image.Image, tableBaseIdx int, docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder) []pdf.TableItem {
 	pageImg, ok := pageImages[pageNum]
 	if !ok {
 		var err error
-		pageImg, err = renderPageToImage(engine, pageNum)
+		pageImg, err = RenderPageToImage(engine, pageNum)
 		if err != nil {
 			slog.Warn("render page for DeepDoc failed", "page", pageNum, "err", err)
 			return nil
 		}
 	}
-	return p.extractTableBoxesFromImage(ctx, result, boxes, pageImg, pageNum, tableBaseIdx)
+	return p.extractTableBoxesFromImage(ctx, result, boxes, pageImg, pageNum, tableBaseIdx, docAnalyzer, tb)
 }
 
-func (p *Parser) extractTableBoxesFromImage(ctx context.Context, result *pdf.ParseResult, boxes []pdf.TextBox, pageImg image.Image, pageNum int, tableBaseIdx int) []pdf.TableItem {
-	regions, err := p.DeepDoc.DLA(ctx, pageImg)
+func (p *Parser) extractTableBoxesFromImage(ctx context.Context, result *pdf.ParseResult, boxes []pdf.TextBox, pageImg image.Image, pageNum int, tableBaseIdx int, docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder) []pdf.TableItem {
+	regions, err := docAnalyzer.DLA(ctx, pageImg)
 	if err != nil {
 		slog.Warn("DLA failed", "page", pageNum, "err", err)
 		return nil
@@ -111,7 +111,7 @@ func (p *Parser) extractTableBoxesFromImage(ctx context.Context, result *pdf.Par
 		origW, origH := cropped.Bounds().Dx(), cropped.Bounds().Dy()
 		tsrImg := cropped
 		if autoRotate {
-			angle, rotated, _ := tbl.EvaluateTableOrientation(ctx, cropped, p.DeepDoc)
+			angle, rotated, _ := tbl.EvaluateTableOrientation(ctx, cropped, docAnalyzer)
 			bestAngle = angle
 			tsrImg = rotated
 		}
@@ -123,7 +123,7 @@ func (p *Parser) extractTableBoxesFromImage(ctx context.Context, result *pdf.Par
 
 		var cells []pdf.TSRCell
 		var tsrErr error
-		cells, tsrErr = p.tableBuilder.DetectCells(ctx, tsrImg)
+		cells, tsrErr = tb.DetectCells(ctx, tsrImg)
 		if tsrErr != nil {
 			slog.Warn("TSR failed", "page", pageNum, "err", tsrErr)
 		}
@@ -155,7 +155,7 @@ func (p *Parser) extractTableBoxesFromImage(ctx context.Context, result *pdf.Par
 				// on upright text.  After mapping, cells move to
 				// original crop space where boxInCrop lives.
 				if !p.Config.SkipOCR {
-					ocrTableCells(ctx, cells, tsrImg, p.DeepDoc)
+					ocrTableCells(ctx, cells, tsrImg, docAnalyzer)
 				}
 				for i := range cells {
 					cells[i].X0, cells[i].Y0 = util.MapRotatedPointToOriginal(cells[i].X0, cells[i].Y0, bestAngle, origW, origH)
@@ -196,7 +196,7 @@ func (p *Parser) extractTableBoxesFromImage(ctx context.Context, result *pdf.Par
 		// recomputes with offset cells for spatial matching precision.
 		var grid [][]pdf.TSRCell
 		if len(cells) > 0 {
-			grid = p.tableBuilder.GroupCells(cells)
+			grid = tb.GroupCells(cells)
 			// Fill cell text from boxes in crop space. Works for both
 			// Label-aware grouping (cells rearranged) vs. cross-product (creates new cells).
 			if len(grid) > 0 {
@@ -210,7 +210,7 @@ func (p *Parser) extractTableBoxesFromImage(ctx context.Context, result *pdf.Par
 					}
 				}
 				if bestAngle == 0 && !p.Config.SkipOCR {
-					ocrTableCells(ctx, flat, tsrImg, p.DeepDoc)
+					ocrTableCells(ctx, flat, tsrImg, docAnalyzer)
 					idx = 0
 					for ri := range grid {
 						for ci := range grid[ri] {
@@ -236,7 +236,7 @@ func (p *Parser) extractTableBoxesFromImage(ctx context.Context, result *pdf.Par
 			RegionBottom: tm.Region.Y1 / scale,
 		})
 
-		tbl.WriteTableAnnotations(boxes, tm.BoxIdx, cells, scale, cropOffX, cropOffY, p.tableBuilder)
+		tbl.WriteTableAnnotations(boxes, tm.BoxIdx, cells, scale, cropOffX, cropOffY, tb)
 	}
 	return items
 }

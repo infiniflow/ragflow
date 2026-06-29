@@ -1,12 +1,13 @@
 //go:build cgo && integration
 
-package parser
+package pdf
 
 import (
 	"context"
 	"os"
 	"path/filepath"
 	"testing"
+
 )
 
 // TestDLARealWorldCompare runs DLA on fixture PDFs and verifies
@@ -46,7 +47,7 @@ func TestDLARealWorldCompare(t *testing.T) {
 		for _, pg := range pdf.pages {
 			testName := pdf.name + "/page" + string(rune('0'+pg))
 			t.Run(testName, func(t *testing.T) {
-				pageImg, err := renderPageToImage(eng, pg)
+				pageImg, err := RenderPageToImage(eng, pg)
 				if err != nil {
 					t.Fatalf("render page %d: %v", pg, err)
 				}

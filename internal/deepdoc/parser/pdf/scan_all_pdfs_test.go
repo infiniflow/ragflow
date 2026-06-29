@@ -1,6 +1,6 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"context"
@@ -43,8 +43,7 @@ func TestScanAllPDFs(t *testing.T) {
 
 		eng := mustOpenEngine(t, name)
 		cfg := pdf.DefaultParserConfig()
-		cfg.TableBuilder = NewDeepDocTableBuildService(client)
-		p := NewParser(cfg, client)
+		p := NewParser(cfg)
 		result, err := p.Parse(context.Background(), eng)
 		eng.Close()
 		if err != nil {

@@ -1,6 +1,6 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"context"
@@ -34,8 +34,8 @@ func TestParse_PdfiumRender(t *testing.T) {
 		t.Fatalf("RawData() length %d != original %d", len(raw), len(data))
 	}
 
-	// Render a page through pdfium (via the parser's renderPageToImage).
-	img, err := renderPageToImage(eng, 0)
+	// Render a page through pdfium (via the parser's RenderPageToImage).
+	img, err := RenderPageToImage(eng, 0)
 	if err != nil {
 		t.Skipf("pdfium render not available: %v", err)
 	}
@@ -64,10 +64,10 @@ func TestParse_PdfiumRender(t *testing.T) {
 }
 
 func TestParse_PdfiumRender_NoData(t *testing.T) {
-	// When engine has no raw PDF bytes, renderPageToImage falls back to
+	// When engine has no raw PDF bytes, RenderPageToImage falls back to
 	// engine.RenderPageImage().  Stub returns (nil, nil) → guard converts
 	// to ErrNoPDFData so callers never receive a nil image with nil error.
-	img, err := renderPageToImage(&pythonCharEngineStub{}, 0)
+	img, err := RenderPageToImage(&pythonCharEngineStub{}, 0)
 	if err != ErrNoPDFData {
 		t.Errorf("expected ErrNoPDFData, got %v", err)
 	}

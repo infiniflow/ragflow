@@ -1,4 +1,4 @@
-package parser
+package pdf
 
 import (
 	"context"
@@ -10,10 +10,10 @@ import (
 
 // ── outline-tracking mock engines ──────────────────────────────────────────
 
-// outlineTrackingEngine wraps mockEngine and records whether Outlines()
+// outlineTrackingEngine wraps MockEngine and records whether Outlines()
 // was called.
 type outlineTrackingEngine struct {
-	*mockEngine
+	*MockEngine
 	outlines       []pdf.Outline
 	outlinesCalled bool
 }
@@ -25,7 +25,7 @@ func (e *outlineTrackingEngine) Outlines() ([]pdf.Outline, error) {
 
 // outlineErrorEngine returns an error from Outlines().
 type outlineErrorEngine struct {
-	*mockEngine
+	*MockEngine
 }
 
 func (e *outlineErrorEngine) Outlines() ([]pdf.Outline, error) {
@@ -46,13 +46,13 @@ func TestParse_ExtractsOutlinesFromEngine(t *testing.T) {
 		{Title: "Section 1.1", Level: 1, PageNumber: 2},
 	}
 	eng := &outlineTrackingEngine{
-		mockEngine: &mockEngine{pageCount: 3},
+		MockEngine: &MockEngine{NumPages: 3},
 		outlines:   expectedOutlines,
 	}
 	mockDLA := &MockDocAnalyzer{Healthy: true}
-	p := NewParser(pdf.DefaultParserConfig(), mockDLA)
+	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.Parse(context.Background(), eng)
+	result, err := p.ParseRaw(context.Background(), eng, mockDLA)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -79,18 +79,18 @@ func TestParse_ExtractsOutlinesFromEngine(t *testing.T) {
 // and produces sections (outlines are best-effort).
 func TestParse_OutlinesErrorDoesNotBlockParsing(t *testing.T) {
 	eng := &outlineErrorEngine{
-		mockEngine: &mockEngine{
-			pageCount: 2,
-			chars: map[int][]pdf.TextChar{
+		MockEngine: &MockEngine{
+			NumPages: 2,
+			Chars: map[int][]pdf.TextChar{
 				0: {{Text: "Hello world", X0: 100, X1: 200, Top: 100, Bottom: 120}},
 				1: {{Text: "Page two", X0: 100, X1: 200, Top: 100, Bottom: 120}},
 			},
 		},
 	}
 	mockDLA := &MockDocAnalyzer{Healthy: true}
-	p := NewParser(pdf.DefaultParserConfig(), mockDLA)
+	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.Parse(context.Background(), eng)
+	result, err := p.ParseRaw(context.Background(), eng, mockDLA)
 	if err != nil {
 		t.Fatalf("Parse should not fail when Outlines() errors: %v", err)
 	}
