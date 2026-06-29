@@ -265,11 +265,9 @@ function InstanceModelList({
               </span>
             ))}
           </div>
-          {false && (
-            <Button size="icon" variant="ghost" onClick={handleSettingsClick}>
-              <Settings size={12} />
-            </Button>
-          )}
+          <Button size="icon" variant="ghost" onClick={handleSettingsClick}>
+            <Settings size={12} />
+          </Button>
         </div>
       )}
 

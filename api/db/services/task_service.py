@@ -28,7 +28,7 @@ from api.db.db_models import Task, Document, Knowledgebase, Tenant
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from common.misc_utils import get_uuid
-from common.time_utils import current_timestamp
+from common.time_utils import current_timestamp, get_format_time
 from common.constants import StatusEnum, TaskStatus, MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.utils.redis_conn import REDIS_CONN
@@ -138,6 +138,7 @@ class TaskService(CommonService):
         ).where(cls.model.id == docs[0]["id"]).execute()
 
         if docs[0]["retry_count"] >= 3:
+            DocumentService.update_by_id(docs[0]["doc_id"], {"progress": -1, "run": TaskStatus.FAIL.value, "update_time": current_timestamp(), "update_date": get_format_time()})
             return None
 
         return docs[0]
@@ -347,6 +348,11 @@ class TaskService(CommonService):
         if begin_at is not None:
             process_duration = (datetime.now() - begin_at).total_seconds()
             cls.model.update(process_duration=process_duration).where(cls.model.id == id).execute()
+        if info.get("progress") == -1:
+            doc_info = {"progress": -1, "run": TaskStatus.FAIL.value, "update_time": current_timestamp(), "update_date": get_format_time()}
+            if info.get("progress_msg"):
+                doc_info["progress_msg"] = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
+            DocumentService.update_by_id(task.doc_id, doc_info)
 
     @classmethod
     @DB.connection_context()

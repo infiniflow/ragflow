@@ -584,8 +584,8 @@ func (h *Handler) CheckProviderConnection(c *gin.Context) {
 }
 
 type AlterProviderInstanceRequest struct {
-	ModelName string `json:"model_name"`
-	APIKey    string `json:"api_key"`
+	InstanceName string `json:"instance_name"`
+	APIKey       string `json:"api_key"`
 }
 
 func (h *Handler) AlterProviderInstance(c *gin.Context) {
@@ -625,7 +625,7 @@ func (h *Handler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.AlterProviderInstance(userID, providerName, instanceName, req.ModelName, req.APIKey)
+	result, err := h.service.AlterProviderInstance(userID, providerName, instanceName, req.InstanceName, req.APIKey)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
@@ -874,48 +874,6 @@ func (h *Handler) DeleteModels(c *gin.Context) {
 	}
 
 	success(c, result, "Model deleted successfully")
-}
-
-func (h *Handler) ListAllModels(c *gin.Context) {
-	// List models
-	models, err := h.service.ListAllModels()
-	if err != nil {
-		errorResponse(c, err.Error(), 500)
-		return
-	}
-
-	success(c, models, "")
-}
-
-func (h *Handler) ShowModel(c *gin.Context) {
-	encodedModelName := c.Param("model_name")
-	if encodedModelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Encoded model name is empty",
-		})
-		return
-	}
-
-	decodedModelName, err := common.DecodeFromBase64(encodedModelName)
-	if err != nil {
-		errorResponse(c, err.Error(), 400)
-		return
-	}
-	if decodedModelName == "" {
-		errorResponse(c, "Decoded model name is empty", 400)
-		return
-	}
-
-	// Get model
-	model, err := h.service.GetModelByModelName(decodedModelName)
-	if err != nil {
-		errorResponse(c, err.Error(), 500)
-		return
-	}
-
-	success(c, model, "")
-
 }
 
 // GetSystemFingerprint handle get system fingerprint

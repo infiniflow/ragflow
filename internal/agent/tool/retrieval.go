@@ -25,8 +25,10 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 )
 
 // ErrGraphRAGNotSupported is returned by the Retrieval tool when
@@ -134,6 +136,12 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 			return "", fmt.Errorf("retrieval: parse arguments: %w", err)
 		}
 	}
+	common.Debug("agent retrieval tool: parsed arguments",
+		zap.String("query", args.Query),
+		zap.Strings("dataset_ids", args.DatasetIDs),
+		zap.Int("top_n", args.TopN),
+		zap.Bool("use_kg", args.UseKG),
+	)
 
 	if args.UseKG {
 		// Plan  + §9 Q3: GraphRAG is out of scope for the Go
@@ -166,6 +174,9 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 			Error: err.Error(),
 		}), err
 	}
+	common.Debug("agent retrieval tool: search result",
+		zap.Int("chunks_count", len(chunks)),
+	)
 	// Map the chunks into the result envelope. The retrievalResult
 	// type carries the eino-tool envelope shape (chunkPayload, not
 	// RetrievalChunk), so we translate.

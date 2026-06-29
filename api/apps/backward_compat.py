@@ -21,7 +21,7 @@ RESTful API migration. Each deprecated route forwards to the corresponding
 new API implementation.
 
 Deprecated APIs and their replacements:
-- POST /api/v1/agents/{agent_id}/completions -> POST /api/v1/agents/chat/completion
+- POST /api/v1/agents/{agent_id}/completions -> POST /api/v1/agents/chat/completions
 - POST /api/v1/agents_openai/{agent_id}/chat/completions -> POST /api/v1/agents/chat/completions
 - POST /api/v1/chats/{chat_id}/completions -> POST /api/v1/chat/completions
 - POST /api/v1/chats_openai/{chat_id}/chat/completions -> POST /api/v1/openai/{chat_id}/chat/completions

@@ -247,7 +247,7 @@ wheels = [
 
 [[package]]
 name = "ragflow-sdk"
-version = "0.26.1"
+version = "0.26.2"
 source = { virtual = "." }
 dependencies = [
     { name = "beartype" },

@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.26.1"
+version = "0.26.2"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -113,7 +113,7 @@ dependencies = [
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
     "slack-sdk==3.37.0",
     "socksio==1.0.0",
-    "agentrun-sdk>=0.0.16,<1.0.0",
+    "agentrun-sdk>=0.0.51,<1.0.0",
     "nest-asyncio>=1.6.0,<2.0.0",  # Needed for agent/component/message.py
     "sqlglotrs==0.9.0",
     "tavily-python==0.5.1",
@@ -241,12 +241,18 @@ packages = [
     'agent',
     'api',
     'deepdoc',
-    'graphrag',
-    'intergrations.chatgpt-on-wechat.plugins',
+    'rag.graphrag',
+    'tools.chatgpt_on_wechat.plugins',
     'mcp.server',
     'rag',
     'sdk.python.ragflow_sdk',
 ]
+
+# tools/ holds standalone Python projects whose names contain hyphens
+# (chatgpt-on-wechat). Python package names cannot contain hyphens, so
+# we map the underscored Python name to the hyphenated filesystem path.
+[tool.setuptools.package-dir]
+"tools.chatgpt_on_wechat.plugins" = "tools/chatgpt-on-wechat/plugins"
 
 [tool.ruff]
 line-length = 200

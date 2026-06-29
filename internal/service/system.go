@@ -389,6 +389,24 @@ func (s *SystemService) ListAllVariables() ([]map[string]interface{}, error) {
 	return common.FormatSystemSettings(settings), nil
 }
 
+func (s *SystemService) ShowVariable(varName string) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetByName(varName)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(settings) == 0 {
+		settings, err = s.systemSettingsDAO.GetByNamePrefix(varName)
+		if err != nil {
+			return nil, err
+		}
+		if len(settings) == 0 {
+			return nil, fmt.Errorf("can't get setting: %s", varName)
+		}
+	}
+	return common.FormatSystemSettings(settings), nil
+}
+
 // SetVariable set variable
 // Creates or updates a system setting
 // If the setting exists, updates it; otherwise creates a new one

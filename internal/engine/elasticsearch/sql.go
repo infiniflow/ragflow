@@ -72,7 +72,10 @@ func Preprocess(sql string) string {
 		}
 		replaces = append(replaces, replacement{
 			old: match,
-			new: fmt.Sprintf(" MATCH(%s, '%s', 'operator=OR;minimum_should_match=30%%') ", fld, fine),
+			// fine comes from tokenizer.FineGrainedTokenize, which strips
+			// non-alphanumerics; defense-in-depth escape just in case a
+			// future tokenizer change reintroduces a quote.
+			new: fmt.Sprintf(" MATCH(%s, '%s', 'operator=OR;minimum_should_match=30%%') ", fld, strings.ReplaceAll(fine, "'", "''")),
 		})
 	}
 	for _, r := range replaces {

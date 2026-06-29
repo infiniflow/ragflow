@@ -43,7 +43,6 @@ func NewHTMLParser(libType string) (*HTMLParser, error) {
 }
 
 func (p *HTMLParser) Parse(filename string, data []byte) error {
-	fmt.Printf("Parsing HTML file: %s\n", filename)
 	switch p.libType {
 	case Official:
 		return p.OfficialHTMLParse(data)

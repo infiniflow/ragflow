@@ -22,6 +22,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -75,12 +76,26 @@ func (dao *ChatSessionDAO) Create(conv *entity.ChatSession) error {
 
 // UpdateByID updates a chat session by ID
 func (dao *ChatSessionDAO) UpdateByID(id string, updates map[string]interface{}) error {
-	result := DB.Model(&entity.ChatSession{}).Where("id = ?", id).Updates(updates)
+	if updates == nil {
+		updates = make(map[string]interface{})
+	}
+
+	now := time.Now().Local()
+	updates["update_time"] = now.UnixMilli()
+	updates["update_date"] = now.Truncate(time.Second)
+
+	result := DB.Session(&gorm.Session{SkipHooks: true}).Model(&entity.ChatSession{}).Where("id = ?", id).Updates(updates)
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		var count int64
+		if err := DB.Model(&entity.ChatSession{}).Where("id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return gorm.ErrRecordNotFound
+		}
 	}
 	return nil
 }
@@ -103,7 +118,7 @@ func (dao *ChatSessionDAO) ListByChatID(chatID string) ([]*entity.ChatSession, e
 func (dao *ChatSessionDAO) CheckDialogExists(tenantID, chatID string) (bool, error) {
 	var count int64
 	err := DB.Model(&entity.Chat{}).
-		Where("tenant_id = ? AND id = ? AND status = ?", tenantID, chatID, "1").
+		Where("tenant_id = ? AND id = ? AND status = ?", tenantID, chatID, common.StatusDialogValid).
 		Count(&count).Error
 	if err != nil {
 		return false, err
@@ -114,7 +129,7 @@ func (dao *ChatSessionDAO) CheckDialogExists(tenantID, chatID string) (bool, err
 // GetDialogByID gets dialog by ID
 func (dao *ChatSessionDAO) GetDialogByID(chatID string) (*entity.Chat, error) {
 	var dialog entity.Chat
-	err := DB.Where("id = ? AND status = ?", chatID, "1").First(&dialog).Error
+	err := DB.Where("id = ? AND status = ?", chatID, common.StatusDialogValid).First(&dialog).Error
 	if err != nil {
 		return nil, err
 	}

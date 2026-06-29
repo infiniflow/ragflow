@@ -289,6 +289,41 @@ func (h *SystemHandler) SetVariable(c *gin.Context) {
 	})
 }
 
+func (h *SystemHandler) ShowVariable(c *gin.Context) {
+	encodedVarName := c.Param("var_name")
+
+	varName, err := common.DecodeFromBase64(encodedVarName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+	if varName == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    400,
+			"message": "Var name is required",
+		})
+		return
+	}
+
+	variable, err := h.systemService.ShowVariable(varName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "SUCCESS",
+		"data":    variable,
+	})
+}
+
 // ListEnvironments handle list environments
 func (h *SystemHandler) ListEnvironments(c *gin.Context) {
 	environments, err := h.systemService.ListEnvironments()

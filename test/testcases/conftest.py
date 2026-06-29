@@ -216,7 +216,7 @@ def add_model_instance(auth):
                 # to the instance step. The final assertion below will be
                 # downgraded to a warning in that case so the test can run.
                 if "duplicated" in msg.lower() or "already exist" in msg.lower():
-                    print(f"Note: provider {provider_name} already exists, skipping")
+                    print("Note: provider already exists, skipping")
                     provider_already_existed.add(provider_name)
                 else:
                     pytest.exit(f"Critical error in add model provider: {msg}")
@@ -237,13 +237,16 @@ def add_model_instance(auth):
             # Instance may already exist with a different API key from a
             # prior test run; that's fine — skip instead of failing.
             if "Already exist instance" in msg or "already exist" in msg.lower():
-                print(f"Note: {provider_name}/{instance_name} already exists, skipping")
+                # Avoid emitting the provider/instance name in clear text;
+                # CodeQL flags this print because the surrounding function
+                # handles API keys (tracked as sensitive data sources).
+                print("Note: model instance already exists, skipping")
                 continue
             # Python API blocks creating instances named "default".
             # The test_retrieval_parity test handles this by inserting
             # "default" directly into the DB for SILICONFLOW.
             if "cannot be 'default'" in msg:
-                print(f"Note: {provider_name}/{instance_name} blocked by API (name reserved), skipping")
+                print("Note: model instance name is reserved, skipping")
                 continue
             pytest.exit(
                 f"Critical error in add model instance {provider_name}/{instance_name}: "
@@ -260,9 +263,8 @@ def add_model_instance(auth):
                 # on the model can still run; tests that do will fail with
                 # a real error rather than this opaque setup crash.
                 print(
-                    f"WARNING: {provider_name} already exists in catalog but "
-                    f"missing from this tenant's /api/v1/models. Tests that "
-                    f"depend on {provider_name} may fail."
+                    "WARNING: provider already exists in catalog but missing from "
+                    "this tenant's /api/v1/models. Tests that depend on it may fail."
                 )
                 continue
             pytest.exit(f"Critical error in check added model: {provider_name} add model failed")
