@@ -872,16 +872,24 @@ func parseMessages(raw json.RawMessage) []map[string]interface{} {
 		return messages
 	}
 
-	var wrapped struct {
-		Messages []map[string]interface{} `json:"messages"`
-	}
+	var wrapped map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &wrapped); err != nil {
+		return nil
+	}
+	wrappedMessages, ok := wrapped["messages"]
+	if !ok {
+		return nil
+	}
+	if len(wrappedMessages) == 0 || string(wrappedMessages) == "null" {
 		return make([]map[string]interface{}, 0)
 	}
-	if wrapped.Messages == nil {
+	if err := json.Unmarshal(wrappedMessages, &messages); err != nil {
+		return nil
+	}
+	if messages == nil {
 		return make([]map[string]interface{}, 0)
 	}
-	return wrapped.Messages
+	return messages
 }
 
 func parseReferenceList(raw json.RawMessage) []interface{} {
@@ -891,7 +899,7 @@ func parseReferenceList(raw json.RawMessage) []interface{} {
 	}
 	err := json.Unmarshal(raw, &references)
 	if err != nil {
-		return make([]interface{}, 0)
+		return nil
 	}
 	if references == nil {
 		return make([]interface{}, 0)
