@@ -37,7 +37,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ─── Module loader ────────────────────────────────────────────────────
 
 
@@ -55,16 +54,12 @@ def _load_iterationitem_module(monkeypatch):
     common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
 
-    conn_spec = importlib.util.spec_from_file_location(
-        "common.connection_utils", repo_root / "common" / "connection_utils.py"
-    )
+    conn_spec = importlib.util.spec_from_file_location("common.connection_utils", repo_root / "common" / "connection_utils.py")
     conn_mod = importlib.util.module_from_spec(conn_spec)
     monkeypatch.setitem(sys.modules, "common.connection_utils", conn_mod)
     conn_spec.loader.exec_module(conn_mod)
 
-    misc_spec = importlib.util.spec_from_file_location(
-        "common.misc_utils", repo_root / "common" / "misc_utils.py"
-    )
+    misc_spec = importlib.util.spec_from_file_location("common.misc_utils", repo_root / "common" / "misc_utils.py")
     misc_mod = importlib.util.module_from_spec(misc_spec)
     monkeypatch.setitem(sys.modules, "common.misc_utils", misc_mod)
     misc_spec.loader.exec_module(misc_mod)
@@ -123,9 +118,7 @@ def _load_iterationitem_module(monkeypatch):
         repo_root / "agent" / "component" / "iterationitem.py",
     )
     iterationitem_mod = importlib.util.module_from_spec(iterationitem_spec)
-    monkeypatch.setitem(
-        sys.modules, "agent.component.iterationitem", iterationitem_mod
-    )
+    monkeypatch.setitem(sys.modules, "agent.component.iterationitem", iterationitem_mod)
     iterationitem_spec.loader.exec_module(iterationitem_mod)
     return iterationitem_mod
 
@@ -173,9 +166,7 @@ class _ChildStub:
         self._id = _id
         self._parent = parent
         self.component_name = "Generate"
-        self._param = SimpleNamespace(
-            outputs={k: {"value": v, "type": str(type(v))} for k, v in output_values.items()}
-        )
+        self._param = SimpleNamespace(outputs={k: {"value": v, "type": str(type(v))} for k, v in output_values.items()})
 
     def get_parent(self):
         return self._parent

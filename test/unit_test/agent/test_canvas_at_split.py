@@ -40,7 +40,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ─── Module loader ────────────────────────────────────────────────────
 
 
@@ -68,9 +67,7 @@ def _load_canvas_module(monkeypatch):
         pkg.__path__ = [str(pkg_path)]
         monkeypatch.setitem(sys.modules, pkg_name, pkg)
 
-    _stub_module("agent.settings",
-                 FLOAT_ZERO=1e-8,
-                 PARAM_MAXDEPTH=5)
+    _stub_module("agent.settings", FLOAT_ZERO=1e-8, PARAM_MAXDEPTH=5)
 
     # `agent.canvas` and `agent.component.base` import each other
     # indirectly. Provide a minimal `ComponentBase` so the canvas module
@@ -81,18 +78,14 @@ def _load_canvas_module(monkeypatch):
 
     base_stub_mod = _stub_module("agent.component.base")
     base_stub_mod.ComponentBase = _ComponentBaseStub
-    base_stub_mod.ComponentParamBase = type(
-        "ComponentParamBase", (), {"outputs": {}, "inputs": {}}
-    )
+    base_stub_mod.ComponentParamBase = type("ComponentParamBase", (), {"outputs": {}, "inputs": {}})
 
     # `agent.component.component_class` is a registry factory used at
     # canvas load time. The tests below never call `Canvas.load()`, so
     # any callable suffices.
-    _stub_module("agent.component",
-                 component_class=lambda *_a, **_kw: MagicMock())
+    _stub_module("agent.component", component_class=lambda *_a, **_kw: MagicMock())
 
-    _stub_module("agent.dsl_migration",
-                 normalize_chunker_dsl=lambda dsl: dsl)
+    _stub_module("agent.dsl_migration", normalize_chunker_dsl=lambda dsl: dsl)
 
     # `api.*` services imported at the top of canvas.py
     _stub_module("api.db.services.file_service", FileService=MagicMock())
@@ -103,19 +96,14 @@ def _load_canvas_module(monkeypatch):
         get_tenant_default_model_by_type=MagicMock(return_value=None),
     )
     _stub_module("common.constants", LLMType=MagicMock())
-    _stub_module("common.misc_utils",
-                 get_uuid=lambda: "test-uuid",
-                 hash_str2int=lambda _s: 0,
-                 thread_pool_exec=lambda fn, *a, **kw: fn(*a, **kw))
-    _stub_module("common.connection_utils", timeout=lambda *_a, **_kw: (lambda fn: fn))
+    _stub_module("common.misc_utils", get_uuid=lambda: "test-uuid", hash_str2int=lambda _s: 0, thread_pool_exec=lambda fn, *a, **kw: fn(*a, **kw))
+    _stub_module("common.connection_utils", timeout=lambda *_a, **_kw: lambda fn: fn)
     _stub_module("common.exceptions", TaskCanceledException=type("TaskCanceledException", (Exception,), {}))
     _stub_module("rag.prompts.generator", chunks_format=MagicMock())
     _stub_module("rag.utils.redis_conn", REDIS_CONN=MagicMock())
     _stub_module("rag.utils.tts_cache", synthesize_with_cache=MagicMock())
 
-    spec = importlib.util.spec_from_file_location(
-        "agent.canvas", repo_root / "agent" / "canvas.py"
-    )
+    spec = importlib.util.spec_from_file_location("agent.canvas", repo_root / "agent" / "canvas.py")
     canvas_mod = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "agent.canvas", canvas_mod)
     spec.loader.exec_module(canvas_mod)
