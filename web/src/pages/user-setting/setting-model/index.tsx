@@ -1,4 +1,12 @@
+import { useIsMobile } from '@/components/hooks/use-mobile';
 import Spotlight from '@/components/spotlight';
+import { Button } from '@/components/ui/button';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { LLMFactory } from '@/constants/llm';
 import {
   useAddInstanceModel,
@@ -11,7 +19,9 @@ import type {
   IAddProviderInstanceRequestBody,
   IModelInfo,
 } from '@/interfaces/request/llm';
+import { Plus } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { isLocalLlmFactory } from '../utils';
 import SystemSetting from './components/system-setting';
 import { AvailableModels } from './components/un-add-model';
@@ -22,6 +32,10 @@ import ProviderModal, { IViewModeOkPayload } from './modal/provider-modal';
 import { splitProviderPayload } from './payload-utils';
 
 const ModelProviders = () => {
+  const { t } = useTranslation();
+  const isMobile = useIsMobile();
+  const [availableModelsOpen, setAvailableModelsOpen] = useState(false);
+
   // 4 retained special modals
   const {
     bedrockAddingLoading,
@@ -226,6 +240,16 @@ const ModelProviders = () => {
     [ModalMap],
   );
 
+  const handleAddModelWithClose = useCallback(
+    (llmFactory: string) => {
+      handleAddModel(llmFactory);
+      if (isMobile) {
+        setAvailableModelsOpen(false);
+      }
+    },
+    [handleAddModel, isMobile],
+  );
+
   // Open the ProviderModal in viewMode (read-only) for an existing
   // instance so the user can edit its model list. The instance's
   // `api_key`, `baseUrl` and `model_info` are passed as initial values;
@@ -342,18 +366,44 @@ const ModelProviders = () => {
   }, []);
 
   return (
-    <div className="flex w-full border-[0.5px] border-border-button rounded-lg relative ">
+    <div className="flex flex-col md:flex-row w-full min-w-0 border-[0.5px] border-border-button rounded-lg relative">
       <Spotlight />
-      <section className="flex flex-col gap-4 w-3/5 px-5 border-r-[0.5px] border-border-button overflow-auto scrollbar-auto">
+      <section className="flex flex-col gap-4 w-full md:w-3/5 px-3 md:px-5 border-b md:border-b-0 md:border-r-[0.5px] border-border-button overflow-auto scrollbar-auto min-w-0">
+        {isMobile && (
+          <Button
+            variant="transparent"
+            size="lg"
+            className="w-full justify-center mt-2 border-text-primary text-text-primary hover:bg-border-button hover:border-text-primary focus-visible:bg-border-button focus-visible:border-text-primary"
+            onClick={() => setAvailableModelsOpen(true)}
+            data-testid="open-available-models-sheet"
+          >
+            <Plus size={16} />
+            {t('setting.addModels')}
+          </Button>
+        )}
         <SystemSetting />
         <UsedModel
-          handleAddModel={handleAddModel}
+          handleAddModel={handleAddModelWithClose}
           onEditInstance={handleEditInstance}
         />
       </section>
-      <section className="flex flex-col w-2/5 overflow-auto scrollbar-auto">
-        <AvailableModels handleAddModel={handleAddModel} />
-      </section>
+      {isMobile ? (
+        <Sheet open={availableModelsOpen} onOpenChange={setAvailableModelsOpen}>
+          <SheetContent
+            side="bottom"
+            className="h-[85vh] p-0 flex flex-col rounded-t-xl"
+          >
+            <SheetHeader className="sr-only">
+              <SheetTitle>{t('setting.availableModels')}</SheetTitle>
+            </SheetHeader>
+            <AvailableModels handleAddModel={handleAddModelWithClose} />
+          </SheetContent>
+        </Sheet>
+      ) : (
+        <section className="flex flex-col w-2/5 overflow-auto scrollbar-auto min-w-0">
+          <AvailableModels handleAddModel={handleAddModelWithClose} />
+        </section>
+      )}
 
       {/* Unified ProviderModal (replaces 9 independent modals) */}
       <ProviderModal

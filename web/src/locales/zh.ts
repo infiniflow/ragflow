@@ -1316,6 +1316,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       addedModels: '已添加的模型',
       modelsToBeAdded: '待添加的模型',
       addTheModel: '添加',
+      addModels: '添加模型',
       apiKey: 'API-Key',
       apiKeyMessage: '请输入api key',
       apiKeyTip: 'API key可以通过注册相应的LLM供应商来获取。',

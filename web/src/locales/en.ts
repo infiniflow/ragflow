@@ -1592,6 +1592,7 @@ Example: Virtual Hosted Style`,
       addedModels: 'Added models',
       modelsToBeAdded: 'Models to be added',
       addTheModel: 'Add',
+      addModels: 'Add models',
       apiKey: 'API-Key',
       apiKeyMessage: 'Please enter the API key',
       apiKeyTip:
