@@ -225,7 +225,7 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 // reader naturally parses as "replace". The merge semantics exist so
 // that user-driven metadata edits compose with auto-extracted fields
 // produced by the LLM extraction pipeline. See the CLI parser in
-// internal/cli/user_parser.go (parseSetMeta) for the user-facing
+// internal/cli/user_parser.go (parseDevSetMeta) for the user-facing
 // surface that drives this engine method.
 func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
 	tableName := buildMetadataTableName(tenantID)
