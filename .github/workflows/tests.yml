@@ -226,6 +226,7 @@ jobs:
             -v "${PWD}/internal/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
+          uv sync --python 3.13 --group test --frozen
           ./build.sh --go
 
       - name: Prepare Python test environment
@@ -669,6 +670,7 @@ jobs:
             -v "${PWD}/internal/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
+          uv sync --python 3.13 --group test --frozen
           ./build.sh --go
 
       - name: Prepare Python test environment
