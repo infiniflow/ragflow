@@ -6,6 +6,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	inf "ragflow/internal/deepdoc/parser/pdf/inference"
+	tbl "ragflow/internal/deepdoc/parser/pdf/table"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"testing"
 )
 
@@ -29,7 +32,7 @@ func TestTableRotation_Integration(t *testing.T) {
 	if baseURL == "" {
 		baseURL = "http://localhost:9390"
 	}
-	dd, err := NewDeepDocClient(baseURL)
+	dd, err := inf.NewInferenceClient(baseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +55,7 @@ func TestTableRotation_Integration(t *testing.T) {
 	pageCount, _ := eng.PageCount()
 	t.Logf("PDF: %d pages", pageCount)
 
-	cfg := DefaultParserConfig()
+	cfg := pdf.DefaultParserConfig()
 	cfg.ToPage = pageCount - 1
 	autoRotate := true
 	cfg.AutoRotateTables = &autoRotate
@@ -84,7 +87,7 @@ func TestTableRotation_Integration(t *testing.T) {
 			}
 
 			// Evaluate rotation
-			angle, _, scores := evaluateTableOrientation(context.Background(), cropped, dd)
+			angle, _, scores := tbl.EvaluateTableOrientation(context.Background(), cropped, dd)
 			t.Logf("  Page %d Table %d: %dx%d, bestAngle=%d°, scores: 0=%.3f 90=%.3f 180=%.3f 270=%.3f",
 				pg, tableCount, cropped.Bounds().Dx(), cropped.Bounds().Dy(),
 				angle,
@@ -127,7 +130,7 @@ func TestTableRotation_Stability(t *testing.T) {
 	if baseURL == "" {
 		baseURL = "http://localhost:9390"
 	}
-	dd, err := NewDeepDocClient(baseURL)
+	dd, err := inf.NewInferenceClient(baseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +181,7 @@ func TestTableRotation_Stability(t *testing.T) {
 			if cropped == nil {
 				continue
 			}
-			angle, _, _ := evaluateTableOrientation(context.Background(), cropped, dd)
+			angle, _, _ := tbl.EvaluateTableOrientation(context.Background(), cropped, dd)
 			if angle != 0 {
 				rotated++
 				t.Logf("  %s: rotated table detected (angle=%d°)", e.Name(), angle)

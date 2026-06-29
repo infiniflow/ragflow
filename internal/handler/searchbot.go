@@ -132,6 +132,24 @@ type SearchBotRetrievalTestRequest struct {
 	// Highlight           *bool                   `json:"highlight,omitempty"`
 }
 
+// UnmarshalJSON accepts both kb_id (Python API) and kb_ids (Go compatibility).
+func (r *SearchBotRetrievalTestRequest) UnmarshalJSON(data []byte) error {
+	type Alias SearchBotRetrievalTestRequest
+	aux := struct {
+		*Alias
+		KbID common.StringSlice `json:"kb_id"`
+	}{
+		Alias: (*Alias)(r),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(r.KbIDs) == 0 && len(aux.KbID) > 0 {
+		r.KbIDs = aux.KbID
+	}
+	return nil
+}
+
 // SearchBotRequest is the request body for POST /api/v1/searchbots/related_questions.
 type SearchBotRequest struct {
 	Question string `json:"question" binding:"required"`
