@@ -240,7 +240,7 @@ def is_english(texts):
     pattern = re.compile(r"[`a-zA-Z0-9\s.,':;/\"?<>!\(\)\-]+")
 
     if isinstance(texts, str):
-        texts = list(texts)
+        texts = [texts]
     elif isinstance(texts, list):
         texts = [t for t in texts if isinstance(t, str) and t.strip()]
     else:
@@ -1090,6 +1090,8 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
             if cks:
                 overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
                 t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.):] + t
+                # Recount with the overlap prefix included, else chunks overshoot chunk_token_num.
+                tnum = num_tokens_from_string(t)
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)
@@ -1103,6 +1105,7 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
     has_custom = bool(custom_delimiters)
     if has_custom:
+        # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
         custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
         cks, tk_nums = [], []
         for sec, pos in sections:
@@ -1120,9 +1123,18 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
                 tk_nums.append(num_tokens_from_string(text))
         return cks
 
+    # Split oversized sections at sentence delimiters; add_chunk re-merges to size.
+    dels = get_delimiters(delimiter)
     for sec, pos in sections:
-        add_chunk("\n" + sec, pos)
+        if not dels or num_tokens_from_string(sec) < chunk_token_num:
+            add_chunk("\n" + sec, pos)
+            continue
+        for sub_sec in re.split(r"(%s)" % dels, sec, flags=re.DOTALL):
+            if not sub_sec or re.fullmatch(dels, sub_sec):
+                continue
+            add_chunk("\n" + sub_sec, pos)
 
+    logging.debug("naive_merge: %d sections -> %d chunks (delimiter=%r)", len(sections), len(cks), delimiter)
     return cks
 
 
@@ -1146,6 +1158,8 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
             if cks:
                 overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
                 t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.):] + t
+                # Recount with the overlap prefix included, else chunks overshoot chunk_token_num.
+                tnum = num_tokens_from_string(t)
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)
@@ -1164,6 +1178,7 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
     custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
     has_custom = bool(custom_delimiters)
     if has_custom:
+        # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
         custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
         cks, result_images, tk_nums = [], [], []
         for text, image in zip(texts, images):
@@ -1186,22 +1201,38 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
                 tk_nums.append(num_tokens_from_string(text_seg))
         return cks, result_images
 
+    # Split oversized sections at sentence delimiters; the section's image rides
+    # along on every piece (concat_img dedupes when pieces re-merge into a chunk).
+    dels = get_delimiters(delimiter)
     for text, image in zip(texts, images):
         # if text is tuple, unpack it
         if isinstance(text, tuple):
             text_str = text[0] if text[0] is not None else ""
             text_pos = text[1] if len(text) > 1 else ""
-            add_chunk("\n" + text_str, image, text_pos)
         else:
-            add_chunk("\n" + (text or ""), image)
+            text_str = text or ""
+            text_pos = ""
+        if not dels or num_tokens_from_string(text_str) < chunk_token_num:
+            add_chunk("\n" + text_str, image, text_pos)
+            continue
+        for sub_sec in re.split(r"(%s)" % dels, text_str, flags=re.DOTALL):
+            if not sub_sec or re.fullmatch(dels, sub_sec):
+                continue
+            add_chunk("\n" + sub_sec, image, text_pos)
 
+    logging.debug("naive_merge_with_images: %d texts -> %d chunks (delimiter=%r)", len(texts), len(cks), delimiter)
     return cks, result_images
 
 
 def docx_question_level(p, bull=-1):
     txt = re.sub(r"\u3000", " ", p.text).strip()
     if hasattr(p.style, 'name') and p.style.name and p.style.name.startswith('Heading'):
-        return int(p.style.name.split(' ')[-1]), txt
+        # Heading styles are usually "Heading N", but the base "Heading" style,
+        # custom "Heading"-prefixed styles, or "HeadingN" (no space) have no
+        # space-separated trailing integer. Extract the level digits safely and
+        # fall back to the top heading level instead of raising ValueError (#16163).
+        m = re.search(r"\d+", p.style.name)
+        return (int(m.group()) if m else 1), txt
     else:
         if bull < 0:
             return 0, txt
@@ -1213,6 +1244,11 @@ def docx_question_level(p, bull=-1):
 
 def concat_img(img1, img2):
     from rag.utils.lazy_image import ensure_pil_image, LazyImage
+
+    # Same image must not stack with itself (the LazyImage branch would otherwise
+    # concatenate its blob list); mirrors the PIL branch's same-reference guard.
+    if img1 is img2:
+        return img1
 
     if (img1 is None or isinstance(img1, LazyImage)) and \
        (img2 is None or isinstance(img2, LazyImage)):

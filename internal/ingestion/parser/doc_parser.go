@@ -38,7 +38,6 @@ func NewDOCParser(libType string) (*DOCParser, error) {
 }
 
 func (p *DOCParser) Parse(filename string, data []byte) error {
-	fmt.Printf("Parsing DOC file: %s\n", filename)
 	switch p.libType {
 	case OfficeOxide:
 		return p.OfficeOxideParse(data)

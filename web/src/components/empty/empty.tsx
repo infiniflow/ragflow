@@ -10,14 +10,7 @@ import { EmptyCardData, EmptyCardType, EmptyType } from './constant';
 import { EmptyCardProps, EmptyProps } from './interface';
 
 const EmptyIcon = ({ name, width }: { name: string; width?: number }) => {
-  return (
-    // <img
-    //   className="h-20"
-    //   src={isDarkTheme ? noDataIconDark : noDataIcon}
-    //   alt={t('common.noData')}
-    // />
-    <SvgIcon name={name || 'empty/no-data-dark'} width={width || 42} />
-  );
+  return <SvgIcon name={name || 'empty/no-data-dark'} width={width || 42} />;
 };
 
 const Empty = (props: EmptyProps) => {
@@ -58,16 +51,18 @@ export const EmptyCard = (props: EmptyCardProps) => {
   return (
     <article
       className={cn(
-        'flex flex-col gap-3 items-start justify-start border border-dashed border-border-button rounded-md p-5 w-fit',
+        'flex flex-col gap-3 rounded-md border border-dashed border-border-button p-5',
+        'w-full items-center justify-center text-center',
+        'md:w-fit md:items-start md:justify-start md:text-left',
         className,
       )}
       style={style}
       {...restProps}
     >
       {icon}
-      {title && <div className="text-text-primary text-sm">{title}</div>}
+      {title && <div className="text-sm text-text-primary">{title}</div>}
       {description && (
-        <p className="text-text-secondary text-sm">{description}</p>
+        <p className="text-sm text-text-secondary">{description}</p>
       )}
       {children}
     </article>
@@ -89,7 +84,7 @@ export const EmptyAppCard = (props: {
     props;
   const { t } = useTranslation();
   let defaultClass = '';
-  let style = {};
+  let style: React.CSSProperties | undefined;
   const cardData = EmptyCardData[type];
   const title = t(cardData.titleKey);
   const notFound = t(cardData.notFoundKey);
@@ -100,30 +95,36 @@ export const EmptyAppCard = (props: {
       defaultClass = 'mt-1';
       break;
     case 'large':
-      style = { width: '480px' };
       defaultClass = 'mt-5';
       break;
     default:
       defaultClass = '';
       break;
   }
+
   return (
-    <div>
+    <div className="flex w-full justify-center px-5 md:px-0">
       <EmptyCard
         onClick={isSearch ? undefined : props.onClick}
         data-testid={testId}
         tabIndex={tabIndex ?? (isSearch ? undefined : 0)}
         icon={showIcon ? cardData.icon : undefined}
         title={isSearch ? notFound : title}
-        className={cn(!isSearch && 'cursor-pointer', className)}
+        className={cn(
+          !isSearch && 'cursor-pointer',
+          props.size === 'large' && 'p-14',
+          className,
+          'w-full max-w-[480px] md:max-w-none',
+          props.size === 'large' && 'md:w-[480px]',
+          props.size === 'small' && 'max-w-64',
+        )}
         style={style}
-        // description={EmptyCardData[type].description}
       >
         {!isSearch && !children && (
           <div
             className={cn(
               defaultClass,
-              'flex items-center justify-start w-full',
+              'flex w-full items-center justify-center md:justify-start',
             )}
           >
             <Plus size={24} />

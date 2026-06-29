@@ -33,6 +33,18 @@ type Embedder interface {
 	Encode(texts []string) ([][]float64, error)
 }
 
+// CitationMarkerPattern matches "[ID:N]" or bare "[N]" with Arabic digit support,
+// allowing optional whitespace after "ID:" (e.g. "[ID: 12]").
+var CitationMarkerPattern = regexp.MustCompile(`\[(?:ID:\s*)?([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\]`)
+
+// badCitationPatterns match malformed citation shapes that LLMs sometimes emit
+var badCitationPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`\(\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\)`), // (ID: 12)
+	regexp.MustCompile(`\[\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\]`), // [ID: 12]
+	regexp.MustCompile(`【\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*】`),   // 【ID: 12】
+	regexp.MustCompile(`(?i)\bref\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`),           // ref12
+}
+
 // InsertCitations decorates answer with [ID:n] citation markers.
 //
 // Algorithm mirrors Python Dealer.insert_citations:
@@ -259,4 +271,93 @@ func maxRow(row []float64) float64 {
 		}
 	}
 	return mx
+}
+
+// normalizeArabicDigits converts Arabic-Indic (U+0660-0669) and
+// Eastern Arabic-Indic (U+06F0-06F9) digits to ASCII.
+func normalizeArabicDigits(s string) string {
+	if s == "" {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r >= 0x0660 && r <= 0x0669:
+			b.WriteRune(r - 0x0660 + '0')
+		case r >= 0x06F0 && r <= 0x06F9:
+			b.WriteRune(r - 0x06F0 + '0')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// HasCitationMarkers reports whether answer already contains canonical citation markers.
+func HasCitationMarkers(answer string) bool {
+	if answer == "" {
+		return false
+	}
+	return CitationMarkerPattern.MatchString(normalizeArabicDigits(answer))
+}
+
+// ExtractCitationMarkers returns chunk indices from citation markers within [0, maxIndex).
+// Preserves first-seen order, no duplicates.
+func ExtractCitationMarkers(answer string, maxIndex int) []int {
+	if answer == "" || maxIndex <= 0 {
+		return nil
+	}
+	seen := make(map[int]struct{})
+	var out []int
+	for _, m := range CitationMarkerPattern.FindAllStringSubmatch(normalizeArabicDigits(answer), -1) {
+		if len(m) < 2 {
+			continue
+		}
+		var n int
+		for _, r := range m[1] {
+			if r < '0' || r > '9' {
+				n = 0
+				break
+			}
+			n = n*10 + int(r-'0')
+		}
+		if n < 0 || n >= maxIndex {
+			continue
+		}
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	return out
+}
+
+// RepairBadCitationFormats rewrites bad citation shapes into canonical "[ID:N]" form
+func RepairBadCitationFormats(answer string) string {
+	if answer == "" {
+		return answer
+	}
+	working := answer
+	for _, pat := range badCitationPatterns {
+		matches := pat.FindAllStringSubmatchIndex(working, -1)
+		if len(matches) == 0 {
+			continue
+		}
+		var b strings.Builder
+		b.Grow(len(working))
+		last := 0
+		for _, m := range matches {
+			b.WriteString(working[last:m[0]])
+			digits := normalizeArabicDigits(working[m[2]:m[3]])
+			b.WriteString("[ID:")
+			b.WriteString(digits)
+			b.WriteString("]")
+			last = m[1]
+		}
+		b.WriteString(working[last:])
+		working = b.String()
+	}
+	return working
 }

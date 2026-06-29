@@ -236,7 +236,9 @@ func TestAllTools(t *testing.T) {
 		t.Errorf("AllTools returned %d, want 5", len(tools))
 	}
 	names := map[string]bool{}
-	for _, t := range tools { names[t.Name()] = true }
+	for _, t := range tools {
+		names[t.Name()] = true
+	}
 	for _, name := range []string{"create_task", "list_tasks", "get_task", "update_task", "delete_task"} {
 		if !names[name] {
 			t.Errorf("missing tool: %s", name)

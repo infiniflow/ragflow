@@ -10,13 +10,13 @@ import (
 
 func TestToolNode(t *testing.T) {
 	ctx := context.Background()
-	
+
 	tool := Tool{
 		Name:        "test_tool",
 		Description: "A test tool",
 		Function: func(ctx context.Context, input map[string]interface{}) (interface{}, error) {
 			return map[string]interface{}{
-				"result": input["value"],
+				"result":    input["value"],
 				"processed": true,
 			}, nil
 		},
@@ -24,14 +24,14 @@ func TestToolNode(t *testing.T) {
 			"type": "object",
 		},
 	}
-	
+
 	node := ToolNode(tool)
-	
+
 	input := map[string]interface{}{
 		"value": "test",
 		"extra": "data",
 	}
-	
+
 	output, err := node.Invoke(ctx, input)
 	if err != nil {
 		t.Fatalf("ToolNode failed: %v", err)
@@ -48,7 +48,7 @@ func TestToolNode(t *testing.T) {
 
 func TestValidationNode(t *testing.T) {
 	ctx := context.Background()
-	
+
 	validationNode := ValidationNode(
 		func(input map[string]interface{}) error {
 			if input["required"] == nil {
@@ -58,7 +58,7 @@ func TestValidationNode(t *testing.T) {
 		},
 		"validation failed",
 	)
-	
+
 	// Test valid input
 	validInput := map[string]interface{}{
 		"required": "present",
@@ -83,7 +83,7 @@ func TestValidationNode(t *testing.T) {
 
 func TestTransformNode(t *testing.T) {
 	ctx := context.Background()
-	
+
 	transformNode := TransformNode(
 		func(input map[string]interface{}) (map[string]interface{}, error) {
 			transformed := make(map[string]interface{})
@@ -93,12 +93,12 @@ func TestTransformNode(t *testing.T) {
 			return transformed, nil
 		},
 	)
-	
+
 	input := map[string]interface{}{
 		"key1": "value1",
 		"key2": 123,
 	}
-	
+
 	output, err := transformNode.Invoke(ctx, input)
 	if err != nil {
 		t.Fatalf("TransformNode failed: %v", err)
@@ -111,7 +111,7 @@ func TestTransformNode(t *testing.T) {
 
 func TestConditionalNode(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Create branch runnables
 	branchA := runnable.NewRunnableFunc(
 		func(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
@@ -122,7 +122,7 @@ func TestConditionalNode(t *testing.T) {
 		},
 		runnable.WithName[map[string]interface{}, map[string]interface{}]("branch_a"),
 	)
-	
+
 	branchB := runnable.NewRunnableFunc(
 		func(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 			return map[string]interface{}{
@@ -132,7 +132,7 @@ func TestConditionalNode(t *testing.T) {
 		},
 		runnable.WithName[map[string]interface{}, map[string]interface{}]("branch_b"),
 	)
-	
+
 	conditionalNode := ConditionalNode(
 		func(input map[string]interface{}) string {
 			if input["route"] == "a" {
@@ -146,13 +146,13 @@ func TestConditionalNode(t *testing.T) {
 		},
 		"B", // default branch
 	)
-	
+
 	// Test branch A
 	inputA := map[string]interface{}{
 		"route": "a",
 		"data":  "test",
 	}
-	
+
 	outputA, err := conditionalNode.Invoke(ctx, inputA)
 	if err != nil {
 		t.Fatalf("ConditionalNode failed for branch A: %v", err)
@@ -161,13 +161,13 @@ func TestConditionalNode(t *testing.T) {
 	if outputA["branch"] != "A" {
 		t.Errorf("Expected branch A, got %v", outputA["branch"])
 	}
-	
+
 	// Test branch B
 	inputB := map[string]interface{}{
 		"route": "b",
 		"data":  "test",
 	}
-	
+
 	outputB, err := conditionalNode.Invoke(ctx, inputB)
 	if err != nil {
 		t.Fatalf("ConditionalNode failed for branch B: %v", err)
@@ -185,7 +185,7 @@ func TestNewReactAgent(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	
+
 	// Create mock tools
 	tools := []Tool{
 		{
@@ -199,7 +199,7 @@ func TestNewReactAgent(t *testing.T) {
 			},
 		},
 	}
-	
+
 	// Create mock LLM
 	mockLLM := &mockLLM{
 		responses: []string{
@@ -207,20 +207,20 @@ func TestNewReactAgent(t *testing.T) {
 			"ANSWER: The answer is 42",
 		},
 	}
-	
+
 	config := ReactAgentConfig{
-		Tools:          tools,
-		Model:          mockLLM,
-		SystemPrompt:   "You are a helpful assistant",
-		MaxIterations:  3,
-		StopCondition:  nil,
+		Tools:         tools,
+		Model:         mockLLM,
+		SystemPrompt:  "You are a helpful assistant",
+		MaxIterations: 3,
+		StopCondition: nil,
 	}
-	
+
 	agent, err := NewReactAgent(config)
 	if err != nil {
 		t.Fatalf("Failed to create ReactAgent: %v", err)
 	}
-	
+
 	input := map[string]interface{}{
 		"input": "What is the meaning of life?",
 	}

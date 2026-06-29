@@ -46,6 +46,7 @@ export const SVGIconMap = {
   [Operator.GoogleScholar]: 'google-scholar',
   [Operator.PubMed]: 'pubmed',
   [Operator.SearXNG]: 'searxng',
+  [Operator.KeenableSearch]: 'keenable',
   [Operator.TavilyExtract]: 'tavily',
   [Operator.TavilySearch]: 'tavily',
   [Operator.Wikipedia]: 'wikipedia',

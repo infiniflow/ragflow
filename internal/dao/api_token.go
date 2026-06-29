@@ -58,6 +58,16 @@ func (dao *APITokenDAO) GetUserByAPIToken(token string) (*entity.APIToken, error
 	return &apiToken, nil
 }
 
+// GetByBeta gets API token by beta access key.
+func (dao *APITokenDAO) GetByBeta(beta string) (*entity.APIToken, error) {
+	var apiToken entity.APIToken
+	err := DB.Where("beta = ?", beta).First(&apiToken).Error
+	if err != nil {
+		return nil, err
+	}
+	return &apiToken, nil
+}
+
 // DeleteByDialogIDs deletes API tokens by dialog IDs (hard delete)
 func (dao *APITokenDAO) DeleteByDialogIDs(dialogIDs []string) (int64, error) {
 	if len(dialogIDs) == 0 {
@@ -102,6 +112,21 @@ func (dao *API4ConversationDAO) Create(conv *entity.API4Conversation) error {
 		return errors.New("api4 conversation: nil row")
 	}
 	return DB.Create(conv).Error
+}
+
+// Update writes back an existing api_4_conversation row. The bot
+// completion path calls this with the updated Message JSON after each
+// turn so multi-turn chatbot sessions carry prior history into the next
+// LLM call. Matches the Python conversation_service.update pattern at
+// api/db/services/conversation_service.py:236 (async_iframe_completion).
+func (dao *API4ConversationDAO) Update(conv *entity.API4Conversation) error {
+	if conv == nil {
+		return errors.New("api4 conversation: nil row")
+	}
+	if conv.ID == "" {
+		return errors.New("api4 conversation: empty id")
+	}
+	return DB.Save(conv).Error
 }
 
 // Stats returns daily conversation aggregates for a tenant.

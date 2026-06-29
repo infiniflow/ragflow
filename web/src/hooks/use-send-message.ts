@@ -1,5 +1,6 @@
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
+import { ResponseType } from '@/interfaces/database/base';
 import { IReferenceObject } from '@/interfaces/database/chat';
 import { BeginQuery } from '@/pages/agent/interface';
 import { getAuthorization } from '@/utils/authorization-util';
@@ -14,6 +15,7 @@ export enum MessageEventType {
   MessageEnd = 'message_end',
   WorkflowFinished = 'workflow_finished',
   UserInputs = 'user_inputs',
+  WaitingForUser = 'waiting_for_user',
   NodeLogs = 'node_logs',
 }
 
@@ -85,6 +87,28 @@ export type IChatEvent = INodeEvent | IMessageEvent | IMessageEndEvent;
 
 export type IEventList = Array<IChatEvent>;
 
+const parseAgentEventData = (data: any) => {
+  if (typeof data !== 'string') return data;
+
+  try {
+    return JSON.parse(data);
+  } catch {
+    return data;
+  }
+};
+
+const normalizeAgentEvent = (value: any) => {
+  if (value?.event === MessageEventType.WaitingForUser) {
+    return {
+      ...value,
+      event: MessageEventType.UserInputs,
+      data: parseAgentEventData(value.data),
+    };
+  }
+
+  return value;
+};
+
 export const useSendMessageBySSE = (url: string) => {
   const [answerList, setAnswerList] = useState<IEventList>([]);
   const [done, setDone] = useState(true);
@@ -122,75 +146,123 @@ export const useSendMessageBySSE = (url: string) => {
           body: JSON.stringify(body),
           signal: controller?.signal || sseRef.current?.signal,
         });
-
-        const res = response.clone().json();
+        // SSE streams (text/event-stream) emit `data: {...}\n\n` frames, not
+        // a single JSON document. The .clone().json() call below is kept
+        // for non-streaming callers (lastEventData will be set from the
+        // per-frame parser below when the response IS SSE); for SSE
+        // bodies the JSON parse rejects — swallow it silently instead
+        // of console.warn'ing `SyntaxError: Unexpected token 'd', "data:
+        // {"ev"... is not valid JSON` on every chat completion.
+        const responseDataPromise: Promise<ResponseType | undefined> = response
+          .clone()
+          .json()
+          .then((data: ResponseType) => data)
+          .catch(() => undefined);
+        if (!response.ok) {
+          let errorMessage = response.statusText || 'Request failed';
+          try {
+            const errorBody = (await response
+              .clone()
+              .json()) as Partial<ResponseType>;
+            if (typeof errorBody?.message === 'string' && errorBody.message) {
+              errorMessage = errorBody.message;
+            }
+          } catch {
+            // Non-JSON error body; fall back to the HTTP status text.
+          }
+          return {
+            response,
+            data: {
+              code: response.status,
+              data: null,
+              message: errorMessage,
+              status: response.status,
+            },
+          };
+        }
 
         const reader = response?.body
           ?.pipeThrough(new TextDecoderStream())
           .pipeThrough(new EventSourceParserStream())
           .getReader();
+        let lastEventData: ResponseType | undefined;
 
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-          try {
+        try {
+          // eslint-disable-next-line no-constant-condition
+          while (true) {
             const x = await reader?.read();
-            if (x) {
-              const { done, value } = x;
-              if (done) {
-                console.info('done');
-                resetAnswerList();
-                break;
-              }
-              try {
-                const raw = (value?.data ?? '').trim();
-                // SSE end-of-stream sentinel — no payload, skip without
-                // surfacing a JSON.parse error to the console.
-                if (!raw) {
-                  continue;
-                }
-                // Some upstreams double-wrap the body in a `data:` prefix;
-                // strip one layer so JSON.parse sees a real object.
-                const payload = raw.startsWith('data:')
-                  ? raw.slice(5).trimStart()
-                  : raw;
-                // Check the sentinel after prefix stripping so a
-                // `data: [DONE]` payload is caught and the stream
-                // loop is terminated.
-                if (payload === '[DONE]') {
-                  break;
-                }
-                const val = JSON.parse(payload);
-
-                console.info('data:', val);
-                if (typeof val?.code === 'number' && val.code !== 0) {
-                  message.error(val.message);
-                }
-
-                setAnswerList((list) => {
-                  const nextList = [...list];
-                  nextList.push(val);
-                  return nextList;
-                });
-              } catch (e) {
-                console.warn(e);
-              }
-            }
-          } catch (e) {
-            if (e instanceof DOMException && e.name === 'AbortError') {
-              console.log('Request was aborted by user or logic.');
+            if (!x) {
               break;
             }
+            const { done, value } = x;
+            if (done) {
+              console.log('agent chat sse reader done');
+              break;
+            }
+
+            try {
+              const raw = (value?.data ?? '').trim();
+              // SSE end-of-stream sentinel — no payload, skip without
+              // surfacing a JSON.parse error to the console.
+              if (!raw) {
+                continue;
+              }
+              // Some upstreams double-wrap the body in a `data:` prefix;
+              // strip one layer so JSON.parse sees a real object.
+              const payload = raw.startsWith('data:')
+                ? raw.slice(5).trimStart()
+                : raw;
+              // Check the sentinel after prefix stripping so a
+              // `data: [DONE]` payload is caught and the stream
+              // loop is terminated.
+              if (payload === '[DONE]') {
+                console.log('agent chat sse done sentinel');
+                break;
+              }
+              const val = normalizeAgentEvent(JSON.parse(payload));
+              console.log('agent chat sse event', val);
+
+              if (typeof val?.code === 'number' && val.code !== 0) {
+                message.error(val.message);
+              }
+              lastEventData = val as ResponseType;
+
+              setAnswerList((list) => {
+                const nextList = [...list];
+                nextList.push(val);
+                return nextList;
+              });
+            } catch (e) {
+              console.warn(e);
+            }
+          }
+        } catch (e) {
+          if (e instanceof DOMException && e.name === 'AbortError') {
+            console.log('Request was aborted by user or logic.');
+          } else {
+            throw e;
           }
         }
-        console.info('done?');
-        setDone(true);
-        resetAnswerList();
-        return { data: await res, response };
-      } catch (e) {
-        setDone(true);
-        resetAnswerList();
 
+        const responseData = await responseDataPromise;
+        return {
+          response,
+          data:
+            responseData ??
+            lastEventData ??
+            ({
+              code: 0,
+              data: true,
+              message: 'success',
+              status: response.status,
+            } as ResponseType),
+        };
+      } catch (e) {
         console.warn(e);
+        return undefined;
+      } finally {
+        setDone(true);
+        resetAnswerList();
       }
     },
     [initializeSseRef, url, resetAnswerList],
