@@ -12,8 +12,8 @@ func TestParseChatMessageUsesCurrentModel(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	if cmd.Type != "chat_to_model" {
-		t.Fatalf("Command Type = %v, expected chat_to_model", cmd.Type)
+	if cmd.Type != "api_chat_to_model" {
+		t.Fatalf("Command Type = %v, expected api_chat_to_model", cmd.Type)
 	}
 	if _, ok := cmd.Params["composite_model_name"]; ok {
 		t.Fatal("composite_model_name should not be set")
