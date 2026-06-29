@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // ── Y-coordinate tests ──────────────────────────────────────────────────
@@ -16,7 +17,7 @@ import (
 // openTestingPDF opens a real PDF by name from testdata/real_pdfs/.
 // Missing fixtures are skipped (soft) rather than failing — these tests
 // require the "manual" build tag and rely on optional fixture files.
-func openTestingPDF(t *testing.T, name string) (PDFEngine, *pdfoxide.Document) {
+func openTestingPDF(t *testing.T, name string) (pdf.PDFEngine, *pdfoxide.Document) {
 	t.Helper()
 	dir := filepath.Join("testdata", "real_pdfs")
 	if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {
