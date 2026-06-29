@@ -314,7 +314,7 @@ class _FakeRDBMSConnector:
         self.load_from_state_called = True
         return iter((["full-sync"],))
 
-    def load_from_cursor_range(self, start_value=None, end_value=None):
+    def load_from_cursor_range(self, start_value=None, start_id=None, end_value=None):
         self.load_from_cursor_range_called = True
         return iter(([ _make_fake_doc("incremental-doc") ],))
 
@@ -561,7 +561,7 @@ class _FakeBigQueryConnector:
         self.load_from_state_called = True
         return iter((["full-sync"],))
 
-    def load_from_cursor_range(self, start_value=None, end_value=None):
+    def load_from_cursor_range(self, start_value=None, start_id=None, end_value=None):
         self.load_from_cursor_range_called = True
         return iter(([_make_fake_doc("bq-incremental-doc")],))
 
