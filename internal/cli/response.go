@@ -288,6 +288,42 @@ func (r *ListSearchesResponse) PrintOut() {
 	}
 }
 
+type ListMemoriesResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ListMemoriesResponse) Type() string {
+	return "list_memories"
+}
+
+func (r *ListMemoriesResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ListMemoriesResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ListMemoriesResponse) PrintOut() {
+	if r.Code == 0 {
+		total := r.Data["total_count"].(float64)
+		fmt.Printf("Total: %0.0f\n", total)
+		docs := r.Data["memory_list"].([]interface{})
+		table := make([]map[string]interface{}, 0)
+		for _, doc := range docs {
+			table = append(table, doc.(map[string]interface{}))
+		}
+		PrintTableSimpleByFormat(table, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
 type ChunkResponse struct {
 	Code         int                    `json:"code"`
 	Data         map[string]interface{} `json:"data"`
@@ -412,6 +448,20 @@ func (r *SimpleResponse) PrintOut() {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
+}
+
+func HandleSimpleResponse(response *Response, command string) (ResponseIf, error) {
+	var result SimpleResponse
+	if err := json.Unmarshal(response.Body, &result); err != nil {
+		return nil, fmt.Errorf("%s failed: invalid JSON (%w)", command, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = response.Duration
+	return &result, nil
 }
 
 type MessageResponse struct {

@@ -108,6 +108,9 @@ export default {
       welcome: '欢迎来到',
       dataset: '知识库',
       memories: '记忆',
+      discord: 'Discord',
+      github: 'GitHub',
+      help: '帮助',
     },
     skills: {
       title: '技能',
@@ -2334,6 +2337,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       createFromBlank: '从空白创建',
       createFromTemplate: '从模板创建',
       importJsonFile: '导入 JSON 文件',
+      duplicate: '复制',
+      copyOfAgentName: '{{name}} (副本)',
       chooseAgentType: '选择智能体类型',
       parser: '解析器',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
