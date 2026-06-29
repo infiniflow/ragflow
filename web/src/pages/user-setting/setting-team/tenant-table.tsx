@@ -1,4 +1,5 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import { SearchHighlight } from '@/components/search-highlight';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -112,12 +113,14 @@ const TenantTable = ({ searchTerm }: { searchTerm: string }) => {
                     avatar={tenant.avatar}
                     name={tenant.nickname}
                   />
-                  {tenant.nickname}
+                  <SearchHighlight text={tenant.nickname} query={searchTerm} />
                 </TableCell>
                 <TableCell className="p-4">
                   {formatDate(tenant.update_date)}
                 </TableCell>
-                <TableCell className="p-4">{tenant.email}</TableCell>
+                <TableCell className="p-4">
+                  <SearchHighlight text={tenant.email} query={searchTerm} />
+                </TableCell>
                 <TableCell className="p-4">
                   {tenant.role === TenantRole.Invite ? (
                     <div className="flex gap-2">
