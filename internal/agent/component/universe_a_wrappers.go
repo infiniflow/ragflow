@@ -42,9 +42,9 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 
-	"ragflow/internal/agent/runtime"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"ragflow/internal/agent/runtime"
 )
 
 // tavilySearchComponent delegates to internal/agent/tool/TavilyTool.
