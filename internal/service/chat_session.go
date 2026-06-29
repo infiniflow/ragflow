@@ -61,6 +61,10 @@ type chunkFeedbackApplier interface {
 	applyChunkFeedback(tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error)
 }
 
+type atomicChunkPagerankAdjuster interface {
+	AdjustChunkPagerank(ctx context.Context, indexName, chunkID, kbID string, delta, minWeight, maxWeight float64) error
+}
+
 // ChatSessionService chat session (conversation) service.
 // The RAG pipeline is delegated to ChatPipelineService.
 type ChatSessionService struct {
@@ -628,7 +632,13 @@ func (s *ChatSessionService) DeleteSessionMessage(userID, chatID, sessionID, msg
 	}
 
 	messages := parseMessages(session.Message)
+	if len(session.Message) > 0 && messages == nil {
+		return nil, common.CodeDataError, errors.New("Invalid session messages")
+	}
 	references := parseReferenceList(session.Reference)
+	if len(session.Reference) > 0 && references == nil {
+		return nil, common.CodeDataError, errors.New("Invalid session reference")
+	}
 	for i, msg := range messages {
 		if msgID != stringValue(msg["id"]) {
 			continue
@@ -668,10 +678,31 @@ func (s *ChatSessionService) DeleteSessionMessage(userID, chatID, sessionID, msg
 }
 
 func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, msgID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
-	ok, err := s.ensureOwnedChat(userID, chatID)
+	ownerTenantID := ""
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
+	for _, tenantID := range tenantIDs {
+		exists, err := s.chatSessionDAO.CheckDialogExists(tenantID, chatID)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if exists {
+			ownerTenantID = tenantID
+			break
+		}
+	}
+	if ownerTenantID == "" {
+		exists, err := s.chatSessionDAO.CheckDialogExists(userID, chatID)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if exists {
+			ownerTenantID = userID
+		}
+	}
+	ok := ownerTenantID != ""
 	if !ok {
 		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
 	}
@@ -694,9 +725,13 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 	}
 
 	messages := parseMessages(session.Message)
+	if len(session.Message) > 0 && messages == nil {
+		return nil, common.CodeDataError, errors.New("Invalid session messages")
+	}
 	messageIndex := -1
 	var priorThumb interface{}
 	applyChunkFeedback := false
+	var feedbackReference map[string]interface{}
 	for i, msg := range messages {
 		if msgID != stringValue(msg["id"]) || stringValue(msg["role"]) != "assistant" {
 			continue
@@ -721,17 +756,13 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 
 	if messageIndex != -1 && applyChunkFeedback {
 		references := parseReferenceList(session.Reference)
+		if len(session.Reference) > 0 && references == nil {
+			return nil, common.CodeDataError, errors.New("Invalid session reference")
+		}
 		refIndex := (messageIndex - 1) / 2
 		if refIndex >= 0 && refIndex < len(references) {
 			if reference, ok := references[refIndex].(map[string]interface{}); ok && len(reference) > 0 {
-				applier := s.chunkFeedbackApplier
-				if applier == nil {
-					applier = s
-				}
-				if priorThumbBool, ok := priorThumb.(bool); ok && priorThumbBool != thumbup {
-					_, _ = applier.applyChunkFeedback(userID, reference, !priorThumbBool)
-				}
-				_, _ = applier.applyChunkFeedback(userID, reference, thumbup)
+				feedbackReference = reference
 			}
 		}
 	}
@@ -744,6 +775,29 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 		return nil, common.CodeServerError, err
 	}
 	session.Message = messageRaw
+
+	if feedbackReference != nil {
+		applier := s.chunkFeedbackApplier
+		if applier == nil {
+			applier = s
+		}
+		if priorThumbBool, ok := priorThumb.(bool); ok && priorThumbBool != thumbup {
+			result, _ := applier.applyChunkFeedback(ownerTenantID, feedbackReference, !priorThumbBool)
+			if result != nil {
+				common.Debug("Chunk feedback undo applied",
+					zap.Any("success_count", result["success_count"]),
+					zap.Any("fail_count", result["fail_count"]),
+				)
+			}
+		}
+		result, _ := applier.applyChunkFeedback(ownerTenantID, feedbackReference, thumbup)
+		if result != nil {
+			common.Debug("Chunk feedback applied",
+				zap.Any("success_count", result["success_count"]),
+				zap.Any("fail_count", result["fail_count"]),
+			)
+		}
+	}
 
 	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }
@@ -1030,24 +1084,12 @@ func (s *ChatSessionService) updateChunkWeight(ctx context.Context, tenantID, ch
 	if docEngine == nil {
 		return false
 	}
-	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	rawChunk, err := docEngine.GetChunk(ctx, indexName, chunkID, []string{kbID})
-	if err != nil || rawChunk == nil {
-		return false
-	}
-	chunk, ok := rawChunk.(map[string]interface{})
+	adjuster, ok := docEngine.(atomicChunkPagerankAdjuster)
 	if !ok {
 		return false
 	}
-	currentWeight := floatFromValue(chunk[common.PAGERANK_FLD])
-	newWeight := currentWeight + float64(delta)
-	if newWeight < 0 {
-		newWeight = 0
-	}
-	if newWeight > 100 {
-		newWeight = 100
-	}
-	return docEngine.UpdateChunks(ctx, map[string]interface{}{"id": chunkID}, map[string]interface{}{common.PAGERANK_FLD: newWeight}, indexName, kbID) == nil
+	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	return adjuster.AdjustChunkPagerank(ctx, indexName, chunkID, kbID, float64(delta), 0, 100) == nil
 }
 
 func formatReferenceChunks(reference map[string]interface{}) []FormattedChunk {
