@@ -40,7 +40,7 @@ func TestParseAddModelWithDimensions(t *testing.T) {
 	}{
 		{
 			name:  "Add model with detailed embedding dimensions",
-			input: "add model 'x1 x2 x3 x4 x5' to provider 'vllm' instance 'test' with tokens 1024 chat think vision, token 2048 chat, token 1024 think vision, token 0 embedding 2048 64 1024 2048, token 0 embedding 2048;",
+			input: "add model 'x1 x2 x3 x4 x5' to provider 'vllm' instance 'test' tokens 1024 chat think vision, token 2048 chat, token 1024 think vision, token 0 embedding 2048 64 1024 2048, token 0 embedding 2048;",
 			expected: &Command{
 				Type: "api_add_custom_model",
 				Params: map[string]interface{}{
