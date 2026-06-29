@@ -1,6 +1,5 @@
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import classNames from 'classnames';
-import DOMPurify from 'dompurify';
 import Markdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import {
@@ -31,7 +30,6 @@ const HighLightMarkdown = ({
   // would let entity-encoded payloads bypass DOMPurify and inject HTML.
   // Sanitize the *post*-processed string instead. (Coderabbit CRITICAL #3486038798)
   const processed = children ? preprocessLaTeX(children) : children;
-  const safeChildren = processed ? DOMPurify.sanitize(processed) : processed;
   const dir = children
     ? getDirAttribute(children.replace(citationMarkerReg, ''))
     : undefined;
@@ -67,7 +65,7 @@ const HighLightMarkdown = ({
           } as any
         }
       >
-        {safeChildren}
+        {processed}
       </Markdown>
     </div>
   );
