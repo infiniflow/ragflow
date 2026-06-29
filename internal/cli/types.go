@@ -102,6 +102,7 @@ const (
 	TokenPipeline
 	TokenSearch
 	TokenAgent
+	TokenMemories
 	TokenMemory
 	TokenRetrieve
 	TokenCurrent
