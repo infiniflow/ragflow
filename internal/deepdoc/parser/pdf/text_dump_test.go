@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"strings"
 	"testing"
 )
@@ -64,8 +65,8 @@ func TestDumpTextOutput(t *testing.T) {
 			continue
 		}
 
-		cfg := DefaultParserConfig()
-		p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
+		cfg := pdf.DefaultParserConfig()
+		p := NewParser(cfg, &MockDocAnalyzer{Healthy: true})
 		result, err := p.Parse(context.Background(), eng)
 		eng.Close()
 		if err != nil {

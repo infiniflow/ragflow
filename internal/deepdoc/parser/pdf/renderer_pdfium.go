@@ -6,12 +6,13 @@ import (
 	"image"
 
 	"ragflow/internal/deepdoc/parser/pdf/pdfium"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // pdfiumRender uses the pdfium C library for higher-quality rasterisation
 // (AA, hinting) which is essential for downstream OCR/DLA accuracy on
 // scanned or low-quality PDFs.
-func pdfiumRender(engine PDFEngine, pageNum int) (image.Image, error) {
+func pdfiumRender(engine pdf.PDFEngine, pageNum int) (image.Image, error) {
 	raw := engine.RawData()
 	if raw == nil {
 		// PythonCharEngine and mocks don't carry PDF bytes —
