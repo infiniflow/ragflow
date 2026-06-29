@@ -85,6 +85,9 @@ var spacyToAppType = map[string]string{
 	"QUANTITY": "category",
 	"PERCENT":  "category",
 	"LAW":      "category",
+	"NORP":     "category",
+	"LANGUAGE": "category",
+	"WORK_OF_ART": "category",
 }
 
 var skipLabels = map[string]bool{
@@ -92,10 +95,33 @@ var skipLabels = map[string]bool{
 	"CARDINAL": true,
 }
 
+// langModel maps language codes to spaCy model names.
+var langModel = map[string]string{
+	"en": "en_core_web_sm",
+	"zh": "zh_core_web_sm",
+	"de": "de_core_news_sm",
+	"fr": "fr_core_news_sm",
+	"es": "es_core_news_sm",
+	"pt": "pt_core_news_sm",
+	"ja": "ja_core_news_sm",
+}
+
+// langFallback maps languages without dedicated relation patterns to a fallback.
+var langFallback = map[string]string{
+	"de": "en",
+	"fr": "en",
+	"es": "en",
+	"pt": "en",
+	"ja": "zh",
+}
+
 // NewExtractor creates a new extractor.
-// lang can be "en" or "zh".
+// Supported langs: en, zh, de, fr, es, pt, ja.
 func NewExtractor(lang string) *Extractor {
 	if lang == "" {
+		lang = "en"
+	}
+	if _, ok := langModel[lang]; !ok {
 		lang = "en"
 	}
 	return &Extractor{Lang: lang}
@@ -109,7 +135,12 @@ func (e *Extractor) Extract(text string, extractRelations bool) (*ExtractionResu
 	}
 	result := &ExtractionResult{Entities: entities}
 	if extractRelations && len(entities) >= 2 {
-		relations := ExtractRelations(text, entities, e.Lang)
+		// Use fallback language for relation patterns if no dedicated patterns
+		relLang := e.Lang
+		if fb, ok := langFallback[e.Lang]; ok {
+			relLang = fb
+		}
+		relations := ExtractRelations(text, entities, relLang)
 		result.Relations = relations
 	}
 	return result, nil
@@ -192,10 +223,6 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 // findModelDir locates the spaCy model directory.
 // Searches standard locations.
 func (e *Extractor) findModelDir() string {
-	langModel := map[string]string{
-		"en": "en_core_web_sm",
-		"zh": "zh_core_web_sm",
-	}
 	modelName := langModel[e.Lang]
 	if modelName == "" {
 		modelName = "en_core_web_sm"
@@ -259,16 +286,17 @@ func DetectLanguage(text string) string {
 	if total == 0 {
 		return "en"
 	}
-	// CJK majority — extractor only supports "en" and "zh"
+	// CJK majority
 	if float64(han+hira+kata)/float64(total) > 0.3 {
 		if hira+kata > han {
-			return "en" // Japanese-heavy → fallback to en (no ja extractor)
+			return "ja" // Japanese-heavy
 		}
 		if han > 0 {
-			return "zh" // Han-heavy → treat as Chinese
+			return "zh" // Han-heavy → Chinese
 		}
 		return "en"
 	}
+	// Latin majority — default to en (user specifies de/fr/es/pt explicitly)
 	return "en"
 }
 

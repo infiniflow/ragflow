@@ -51,8 +51,12 @@ class RelationExtractor:
 
     @staticmethod
     def _compile_patterns(language: str) -> List:
-        """Compile regex patterns for a language."""
-        patterns = MULTILANG_RELATION_PATTERNS.get(language, MULTILANG_RELATION_PATTERNS["en"])
+        """Compile regex patterns for a language.
+        Falls back to en patterns for European languages (de/fr/es/pt),
+        and zh patterns for Japanese (ja)."""
+        _fallback = {"de": "en", "fr": "en", "es": "en", "pt": "en", "ja": "zh"}
+        lookup = _fallback.get(language, language)
+        patterns = MULTILANG_RELATION_PATTERNS.get(lookup, MULTILANG_RELATION_PATTERNS["en"])
         compiled = []
         for pattern_str, pred in patterns:
             try:

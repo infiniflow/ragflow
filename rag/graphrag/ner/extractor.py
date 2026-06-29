@@ -45,9 +45,13 @@ class Extractor:
         relation_confidence_threshold: float = 0.5,
     ):
         if spacy_model is None:
-            spacy_model = {"en": "en_core_web_sm", "zh": "zh_core_web_sm"}.get(
-                language, "en_core_web_sm"
-            )
+            _models = {
+                "en": "en_core_web_sm", "zh": "zh_core_web_sm",
+                "de": "de_core_news_sm", "fr": "fr_core_news_sm",
+                "es": "es_core_news_sm", "pt": "pt_core_news_sm",
+                "ja": "ja_core_news_sm",
+            }
+            spacy_model = _models.get(language, "en_core_web_sm")
         self._ner = NerExtractor(
             model_name=spacy_model,
             confidence_threshold=ner_confidence_threshold,

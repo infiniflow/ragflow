@@ -433,7 +433,10 @@ void ThincNER_FreeString(char* p) { free(p); }
 
 char* ThincNER_Tokenize(const char* t, const char* l) {
     if(!t)return strdup("[]");
-    auto tok=(l&&std::string(l)=="zh")?tokenize_zh(t):tokenize_en(t);
+    std::string lang = l ? std::string(l) : "";
+    // de, fr, es, pt: European Latin -> en tokenizer; zh, ja: CJK -> zh tokenizer
+    bool is_cjk = (lang == "zh" || lang == "ja");
+    auto tok = is_cjk ? tokenize_zh(t) : tokenize_en(t);
     std::string r="["; for(size_t i=0;i<tok.size();i++){if(i)r+=",";r+="\""+tok[i]+"\"";} r+="]";
     return strdup(r.c_str());
 }

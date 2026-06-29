@@ -475,8 +475,9 @@ func TestDetectLanguage(t *testing.T) {
 	}{
 		{"Hello world", "en"},
 		{"你好世界", "zh"},
-		{"こんにちは世界", "en"}, // Japanese mapped to en (no dedicated extractor)
+		{"こんにちは世界", "ja"}, // Japanese detected as ja
 		{"阿里巴巴由马云创立", "zh"},
+		{"アップルは", "ja"}, // Katakana-heavy → ja
 	}
 	for _, tt := range tests {
 		got := DetectLanguage(tt.text)
