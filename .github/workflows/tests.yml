@@ -228,6 +228,11 @@ jobs:
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
 
+      - name: Prepare Python test environment
+        run: |
+          uv sync --python 3.13 --group test --frozen
+          uv pip install -e sdk/python
+
       - name: Run Go unit tests
         # Runs after `./build.sh --go`, which guarantees the C++ static
         # library (librag_tokenizer_c_api.a) is present on disk. The Go
@@ -265,11 +270,6 @@ jobs:
           set -euo pipefail
           sudo docker pull ubuntu:24.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
-
-      - name: Prepare Python test environment
-        run: |
-          uv sync --python 3.13 --group test --frozen
-          uv pip install -e sdk/python
 
       - name: Prepare function test environment
         working-directory: docker
@@ -674,6 +674,11 @@ jobs:
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
 
+      - name: Prepare Python test environment
+        run: |
+          uv sync --python 3.13 --group test --frozen
+          uv pip install -e sdk/python
+
       - name: Run Go unit tests
         # Runs after `./build.sh --go`, which guarantees the C++ static
         # library (librag_tokenizer_c_api.a) is present on disk. The Go
@@ -711,11 +716,6 @@ jobs:
           set -euo pipefail
           sudo docker pull ubuntu:24.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
-
-      - name: Prepare Python test environment
-        run: |
-          uv sync --python 3.13 --group test --frozen
-          uv pip install -e sdk/python
 
       - name: Prepare function test environment
         working-directory: docker
