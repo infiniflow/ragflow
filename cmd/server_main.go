@@ -235,6 +235,9 @@ func startServer(config *server.Config) {
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
 
+	// Initialize Audio Service (TTS / ASR) for chat endpoints
+	audioService := service.NewAudioService(modelProviderService)
+
 	// Initialize doc engine for skill search
 	docEngine := engine.Get()
 	documentDAO := dao.NewDocumentDAO()
@@ -251,7 +254,7 @@ func startServer(config *server.Config) {
 	knowledgebaseHandler := handler.NewKnowledgebaseHandler(knowledgebaseService, userService, documentService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
-	chatHandler := handler.NewChatHandler(chatService, userService)
+	chatHandler := handler.NewChatHandler(chatService, userService, audioService)
 	chatChannelHandler := handler.NewChatChannelHandler(chatChannelService)
 	langfuseHandler := handler.NewLangfuseHandler(langfuseService)
 	chatSessionHandler := handler.NewChatSessionHandler(chatSessionService, userService)
