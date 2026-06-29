@@ -14,8 +14,9 @@
 #  limitations under the License.
 #
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlparse
 
 import pytest
 import requests
@@ -124,7 +125,10 @@ class TestRestAPIConfig:
     def test_valid_minimal_config(self):
         """Minimal valid config: url + content_fields."""
         cfg = RestAPIConnectorConfig(url=VALID_URL, content_fields=["title"])
-        assert str(cfg.url).startswith("https://api.example.com")
+        # Use urlparse for the host check rather than str.startswith on
+        # the full URL — a URL like https://api.example.com.attacker.tld
+        # would also start with the configured prefix.
+        assert urlparse(str(cfg.url)).hostname == "api.example.com"
         assert cfg.content_fields == ["title"]
 
     def test_auth_type_defaults_to_none(self):
@@ -206,6 +210,95 @@ class TestSSRFValidation:
         """file:// should be rejected."""
         with pytest.raises(ConnectorValidationError, match="scheme"):
             _make_connector(url="file:///etc/passwd")
+
+    def test_redirect_to_loopback_rejected(self):
+        """Redirect targets must be revalidated before they are fetched.
+
+        Exercise ``_safe_request`` directly rather than ``_fetch_page``: the
+        latter is wrapped by ``@retry_builder`` and in some CI environments
+        the retry path on the first ``ConnectorValidationError`` exhausts the
+        ``side_effect`` and lets the loop run all 6 iterations, surfacing
+        ``Exceeded 5 redirects`` instead of the expected ``loopback blocked``.
+        ``_safe_request`` is the actual unit under test for redirect SSRF
+        handling, so testing it directly is the more faithful check.
+
+        Note on the DNS mock: ``_mocked_rest_api_requests_and_dns`` uses a
+        fixed ``return_value`` for ``socket.getaddrinfo``. With a constant
+        return value, a redirect to ``127.0.0.1`` would be reported as
+        resolving to ``93.184.216.34`` (a public address) and would slip
+        through ``is_global`` checks. To exercise the actual rejection path,
+        we override the patched ``getaddrinfo`` here to return the literal
+        loopback address for the loopback hostname.
+        """
+        connector = _make_connector()
+        first = _mock_response([], status_code=302)
+        first.headers = {"Location": "http://127.0.0.1/secret"}
+
+        def _dns_for_host(host, *args, **kwargs):
+            # Mirror _MOCK_DNS_ADDRINFO shape: (family, type, proto, canon, sockaddr).
+            if host == "127.0.0.1":
+                return [(2, 1, 6, "", ("127.0.0.1", 0))]
+            return list(_MOCK_DNS_ADDRINFO)
+
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.get.return_value = first
+            # The ``_mocked_rest_api_requests_and_dns`` context manager already
+            # patches ``socket.getaddrinfo`` with a constant ``return_value``;
+            # replace it here with a side_effect that distinguishes loopback
+            # from public hostnames so the SSRF guard actually rejects the
+            # redirect target.
+            import common.data_source.rest_api_connector as rc_module
+            from unittest.mock import patch as _patch
+            with _patch.object(rc_module.socket, "getaddrinfo", side_effect=_dns_for_host):
+                # Coderabbit MAJOR #3486038795: SSRF validation failures inside
+                # _safe_request are now wrapped to raise ConnectorValidationError
+                # (the connector's documented error contract) instead of leaking
+                # raw ValueError from ssrf_guard.
+                with pytest.raises(ConnectorValidationError, match=r"non-public address|loopback"):
+                    connector._safe_request(
+                        "GET",
+                        connector.url,
+                        headers={},
+                        params={},
+                    )
+
+    @patch("common.data_source.rest_api_connector.assert_url_is_safe")
+    @patch("common.data_source.rest_api_connector.pin_dns")
+    def test_post_307_preserves_body(self, mock_pin_dns, mock_safe):
+        """307 redirects should keep method and JSON body."""
+        connector = _make_connector(method="POST", request_body={"hello": "world"})
+        first = _mock_response([], status_code=307)
+        first.headers = {"Location": "https://api.example.com/redirected"}
+        second = _mock_response({"items": []}, status_code=200)
+        mock_safe.side_effect = [
+            ("api.example.com", "93.184.216.34"),
+            ("api.example.com", "93.184.216.34"),
+        ]
+        mock_pin_dns.return_value = nullcontext()
+
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.post.side_effect = [first, second]
+            connector._fetch_page({})
+
+        assert mock_rl.post.call_count == 2
+        assert mock_rl.post.call_args_list[0].kwargs["json"] == {"hello": "world"}
+        assert mock_rl.post.call_args_list[1].kwargs["json"] == {"hello": "world"}
+        assert mock_rl.post.call_args_list[1].kwargs["allow_redirects"] is False
+
+    @patch("common.data_source.rest_api_connector.assert_url_is_safe")
+    @patch("common.data_source.rest_api_connector.pin_dns")
+    def test_exceeds_max_redirects_raises(self, mock_pin_dns, mock_safe):
+        """Too many redirects should raise a connector validation error."""
+        connector = _make_connector()
+        redirect = _mock_response([], status_code=302)
+        redirect.headers = {"Location": "https://api.example.com/next"}
+        mock_safe.side_effect = [("api.example.com", "93.184.216.34")] * 6
+        mock_pin_dns.return_value = nullcontext()
+
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.get.side_effect = [redirect] * 6
+            with pytest.raises(ConnectorValidationError, match="Exceeded 5 redirects"):
+                connector._fetch_page({})
 
 
 # ===================================================================== #

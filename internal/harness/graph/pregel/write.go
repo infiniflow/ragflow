@@ -12,20 +12,20 @@ import (
 // ChannelWrite represents a write operation to channels.
 // It encapsulates the logic for writing state updates to multiple channels.
 type ChannelWrite struct {
-	registry  *channels.Registry
-	entries   []*ChannelWriteEntry
+	registry    *channels.Registry
+	entries     []*ChannelWriteEntry
 	transformer WriteTransformer
-	validator WriteValidator
-	mu        sync.RWMutex
+	validator   WriteValidator
+	mu          sync.RWMutex
 }
 
 // ChannelWriteEntry represents a single write operation.
 type ChannelWriteEntry struct {
 	Channel   string
-	Value     interface{}
+	Value     any
 	Overwrite bool
 	Node      string
-	Metadata  map[string]interface{}
+	Metadata  map[string]any
 }
 
 // WriteTransformer transforms write values before applying them.
@@ -41,10 +41,10 @@ type WriteValidator interface {
 // NewChannelWrite creates a new channel write operation.
 func NewChannelWrite(registry *channels.Registry, opts ...ChannelWriteOption) *ChannelWrite {
 	cw := &ChannelWrite{
-		registry:  registry,
-		entries:   make([]*ChannelWriteEntry, 0),
+		registry:    registry,
+		entries:     make([]*ChannelWriteEntry, 0),
 		transformer: &IdentityWriteTransformer{},
-		validator: &NoOpValidator{},
+		validator:   &NoOpValidator{},
 	}
 
 	for _, opt := range opts {
@@ -86,7 +86,7 @@ func (cw *ChannelWrite) AddEntries(entries ...*ChannelWriteEntry) {
 }
 
 // WriteTo adds a simple write to a channel.
-func (cw *ChannelWrite) WriteTo(channel string, value interface{}) {
+func (cw *ChannelWrite) WriteTo(channel string, value any) {
 	cw.AddEntry(&ChannelWriteEntry{
 		Channel:   channel,
 		Value:     value,
@@ -95,7 +95,7 @@ func (cw *ChannelWrite) WriteTo(channel string, value interface{}) {
 }
 
 // Overwrite overwrites a channel with a value.
-func (cw *ChannelWrite) Overwrite(channel string, value interface{}) {
+func (cw *ChannelWrite) Overwrite(channel string, value any) {
 	cw.AddEntry(&ChannelWriteEntry{
 		Channel:   channel,
 		Value:     value,
@@ -104,7 +104,7 @@ func (cw *ChannelWrite) Overwrite(channel string, value interface{}) {
 }
 
 // WriteNode writes from a specific node.
-func (cw *ChannelWrite) WriteNode(node string, channel string, value interface{}) {
+func (cw *ChannelWrite) WriteNode(node string, channel string, value any) {
 	cw.AddEntry(&ChannelWriteEntry{
 		Channel:   channel,
 		Value:     value,
@@ -146,7 +146,7 @@ func (cw *ChannelWrite) Write(ctx context.Context) (map[string]bool, error) {
 				value = &types.Overwrite{Value: value}
 			}
 
-			wasUpdated, err := ch.Update([]interface{}{value})
+			wasUpdated, err := ch.Update([]any{value})
 			if err != nil {
 				return nil, fmt.Errorf("failed to update channel %s: %w", transformed.Channel, err)
 			}
@@ -234,18 +234,18 @@ func (t *PrefixWriteTransformer) Transform(entry *ChannelWriteEntry) (*ChannelWr
 
 // MetadataWriteTransformer adds metadata to entries.
 type MetadataWriteTransformer struct {
-	metadata map[string]interface{}
+	metadata map[string]any
 }
 
 // NewMetadataWriteTransformer creates a transformer that adds metadata.
-func NewMetadataWriteTransformer(metadata map[string]interface{}) *MetadataWriteTransformer {
+func NewMetadataWriteTransformer(metadata map[string]any) *MetadataWriteTransformer {
 	return &MetadataWriteTransformer{metadata: metadata}
 }
 
 func (t *MetadataWriteTransformer) Transform(entry *ChannelWriteEntry) (*ChannelWriteEntry, error) {
 	transformed := *entry
 	if transformed.Metadata == nil {
-		transformed.Metadata = make(map[string]interface{})
+		transformed.Metadata = make(map[string]any)
 	}
 	for k, v := range t.metadata {
 		transformed.Metadata[k] = v
@@ -300,11 +300,11 @@ func (v *NoOpValidator) Validate(entry *ChannelWriteEntry) error {
 
 // TypeWriteValidator validates value types.
 type TypeWriteValidator struct {
-	types map[string]interface{}
+	types map[string]any
 }
 
 // NewTypeWriteValidator creates a validator for value types.
-func NewTypeWriteValidator(types map[string]interface{}) *TypeWriteValidator {
+func NewTypeWriteValidator(types map[string]any) *TypeWriteValidator {
 	return &TypeWriteValidator{types: types}
 }
 
@@ -364,11 +364,11 @@ func (v *LengthWriteValidator) Validate(entry *ChannelWriteEntry) error {
 	var length int
 
 	switch val := entry.Value.(type) {
-	case []interface{}:
+	case []any:
 		length = len(val)
 	case string:
 		length = len(val)
-	case map[string]interface{}:
+	case map[string]any:
 		length = len(val)
 	default:
 		return nil
@@ -411,7 +411,7 @@ func (b *WriteBatch) Add(entry *ChannelWriteEntry) {
 }
 
 // WriteTo adds a simple write to the batch.
-func (b *WriteBatch) WriteTo(channel string, value interface{}) {
+func (b *WriteBatch) WriteTo(channel string, value any) {
 	b.Add(&ChannelWriteEntry{
 		Channel:   channel,
 		Value:     value,
@@ -420,7 +420,7 @@ func (b *WriteBatch) WriteTo(channel string, value interface{}) {
 }
 
 // Overwrite adds an overwrite to the batch.
-func (b *WriteBatch) Overwrite(channel string, value interface{}) {
+func (b *WriteBatch) Overwrite(channel string, value any) {
 	b.Add(&ChannelWriteEntry{
 		Channel:   channel,
 		Value:     value,

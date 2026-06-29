@@ -565,9 +565,10 @@ bool Prog::IsOnePass() {
     }
   }
 
-  dfa_mem_ -= nalloc*statesize;
-  onepass_nodes_ = PODArray<uint8_t>(nalloc*statesize);
-  memmove(onepass_nodes_.data(), nodes.data(), nalloc*statesize);
+  dfa_mem_ -= static_cast<size_t>(nalloc) * static_cast<size_t>(statesize);
+  onepass_nodes_ = PODArray<uint8_t>(static_cast<size_t>(nalloc) * static_cast<size_t>(statesize));
+  memmove(onepass_nodes_.data(), nodes.data(),
+          static_cast<size_t>(nalloc) * static_cast<size_t>(statesize));
   return true;
 
 fail:

@@ -475,7 +475,7 @@ func exesqlDriverAndDSN(c exesqlConnParams) (driver, dsn string, err error) {
 			c.Host, c.Port, c.Username, c.Password, c.Database,
 		), nil
 	case "trino":
-		return "", "", fmt.Errorf("%w: trino", ErrExeSQLUnsupportedDB)
+		return "trino", trinoDSN(c), nil
 	case "ibm db2":
 		return "", "", fmt.Errorf("%w: ibm db2", ErrExeSQLUnsupportedDB)
 	default:

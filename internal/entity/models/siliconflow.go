@@ -118,6 +118,14 @@ func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+
+		if chatModelConfig.Thinking != nil {
+			// SiliconFlow's chat completions API expects a boolean
+			// `enable_thinking` field, not a `thinking: {type: ...}` map
+			// (the latter is the DeepSeek format and is silently ignored
+			// by SiliconFlow, breaking the thinking feature).
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
+		}
 	}
 
 	// Qwen3 family: disable thinking by default (matches Python's
@@ -729,6 +737,8 @@ func (s *SiliconflowModel) TranscribeAudio(modelName *string, file *string, apiC
 	writer := multipart.NewWriter(&body)
 
 	// open audio file
+
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
 	audioFile, err := os.Open(*file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)

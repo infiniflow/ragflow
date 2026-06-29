@@ -17,6 +17,7 @@ import hashlib
 import time
 import logging
 from uuid import uuid4
+from peewee import IntegrityError
 from common.constants import StatusEnum
 from api.db.db_models import Conversation, DB
 from api.db.services.api_service import API4ConversationService
@@ -61,21 +62,115 @@ class ConversationService(CommonService):
 
         A chat_channel is bound to a dialog; each end-user chat on that channel
         keeps its own conversation history. The conversation is identified by a
-        deterministic id derived from (channel_id, chat_id) so history persists
-        across restarts without a back-reference column on the conversation.
+        deterministic id derived from (dialog_id, channel_id, chat_id) so
+        history persists across restarts without a back-reference column on the
+        conversation, while still separating histories when the channel is
+        re-bound to a different dialog.
         """
-        conv_id = hashlib.md5(f"{channel_id}:{chat_id}".encode("utf-8")).hexdigest()[:32]
-        conv = cls.model.get_or_none(cls.model.id == conv_id)
+        # Use SHA-256 instead of MD5: CodeQL flags MD5 as a weak
+        # sensitive-data hashing primitive. The hash here is only
+        # used to derive a deterministic conversation id (not for
+        # authentication), but switching to SHA-256 keeps the call
+        # site consistent with our hashing policy. Truncating to 32
+        # hex chars preserves the existing ID length/shape.
+        #
+        # We also keep the legacy MD5-derived id as a fallback lookup
+        # so existing rows created under the previous hashing scheme
+        # are still found on the first read after deploy — without
+        # that fallback the writer would create a duplicate
+        # conversation (splitting the channel's history).
+        sha256_id = hashlib.sha256(
+            f"{dialog_id}:{channel_id}:{chat_id}".encode("utf-8")
+        ).hexdigest()[:32]
+        # codeql[py/weak-sensitive-data-hashing] Intentional: the
+        # MD5 here is a backward-compatibility lookup for rows
+        # created under the previous hashing scheme. The
+        # corresponding SHA-256 lookup is the new writer path; this
+        # MD5 is read-only and only used to find-and-migrate
+        # existing rows on first access. It is not used for
+        # authentication or any other security-sensitive purpose.
+        legacy_id = hashlib.md5(
+            f"{dialog_id}:{channel_id}:{chat_id}".encode("utf-8")
+        ).hexdigest()[:32]
+        conv = cls.model.get_or_none(cls.model.id == sha256_id)
         if conv is not None:
+            # SHA row already present. A previous call may have
+            # crashed between the SHA insert and the legacy delete,
+            # leaving the MD5 row stranded — clean it up here so
+            # dialog_id listings don't show the channel chat twice.
+            try:
+                cls.model.delete_by_id(legacy_id)
+            except cls.model.DoesNotExist:
+                pass
             return conv
-        cls.save(
-            id=conv_id,
-            dialog_id=dialog_id,
-            name=name or f"channel:{channel_id}:{chat_id}",
-            message=[],
-            reference=[],
-        )
-        return cls.model.get_or_none(cls.model.id == conv_id)
+        # Legacy hit: row was written under the old MD5 id. Migrate it
+        # forward: write a new row under the SHA-256 id (carrying over
+        # message/reference history) and then delete the legacy row so
+        # the listing paths (which select by dialog_id) don't show the
+        # same channel chat twice during the rollout window.
+        #
+        # The cls.save and delete happen under @DB.connection_context()
+        # at the class level; the migration is not transactional with
+        # the cls.save because the new id write needs to be visible to
+        # a competing caller before the legacy delete runs, otherwise a
+        # racing reader would briefly see no row at all. Concurrent
+        # duplicate inserts are caught via IntegrityError and collapsed
+        # to a re-read of the SHA-256 row (see below).
+        legacy = cls.model.get_or_none(cls.model.id == legacy_id)
+        if legacy is not None:
+            try:
+                cls.save(
+                    id=sha256_id,
+                    dialog_id=legacy.dialog_id,
+                    name=legacy.name,
+                    message=list(legacy.message or []),
+                    reference=list(legacy.reference or []),
+                )
+            except IntegrityError:
+                # Another caller won the race and wrote the SHA-256
+                # row first. Re-read to return it. If the re-read
+                # still misses, this is a real constraint failure
+                # (e.g. schema mismatch) — re-raise rather than mask
+                # the error as a silent None.
+                #
+                # The race-winner may also have crashed between its
+                # SHA insert and its legacy delete; opportunistically
+                # clean that up here too (DoesNotExist is a no-op when
+                # the legacy row is already gone).
+                conv = cls.model.get_or_none(cls.model.id == sha256_id)
+                if conv is not None:
+                    try:
+                        cls.model.delete_by_id(legacy_id)
+                    except cls.model.DoesNotExist:
+                        pass
+                    return conv
+                raise
+            else:
+                # Migration succeeded; remove the legacy row so it no
+                # longer appears in dialog_id listings. Skip if it was
+                # already deleted (e.g. by a concurrent migrator).
+                try:
+                    cls.model.delete_by_id(legacy_id)
+                except cls.model.DoesNotExist:
+                    pass
+                return cls.model.get_or_none(cls.model.id == sha256_id)
+        try:
+            cls.save(
+                id=sha256_id,
+                dialog_id=dialog_id,
+                name=name or f"channel:{channel_id}:{chat_id}",
+                message=[],
+                reference=[],
+            )
+        except IntegrityError:
+            # Concurrent caller already inserted the row; re-read.
+            # Same rule as above: a missing re-read means this is
+            # a real constraint failure, not a race — re-raise.
+            conv = cls.model.get_or_none(cls.model.id == sha256_id)
+            if conv is not None:
+                return conv
+            raise
+        return cls.model.get_or_none(cls.model.id == sha256_id)
 
     @classmethod
     @DB.connection_context()

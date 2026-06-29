@@ -106,7 +106,7 @@ func TestDLA_SuccessfulResponse(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"bboxes": [][]float64{
-					{10, 20, 100, 200, 0.95, 0}, // title
+					{10, 20, 100, 200, 0.95, 0},  // title
 					{10, 220, 500, 400, 0.88, 1}, // text
 					{50, 420, 600, 700, 0.77, 3}, // figure
 				},

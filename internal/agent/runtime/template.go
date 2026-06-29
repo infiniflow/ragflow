@@ -27,7 +27,7 @@ import (
 	"regexp"
 )
 
-// VarRefPattern matches the RAGFlow v1 variable reference syntax.
+// VarRefPattern matches the RAGFlow variable reference syntax.
 // Mirrors agent/component/base.py:368 in spirit with one deviation: the
 // cpn_id part includes '_' (real RAGFlow cpn_ids are like "begin_0",
 // "llm_0", "cpn_0"). The Python regex as documented in the plan
@@ -39,14 +39,14 @@ import (
 //
 // Pattern:
 //
-//	\{* *\{(<ref>)\} *\}*
-//	where <ref> = cpn_id@param | sys.x | env.x
+//	\{+\s*(<ref>)\s*\}+
+//	where <ref> = cpn_id@param | sys.x | env.x | item | index
 //	cpn_id = [a-zA-Z:0-9_]+   (note: underscore added; see deviation note)
 //	param  = [A-Za-z0-9_.-]+
 //
 // Capture group 1 holds the bare ref without braces (e.g. "cpn_0@content",
-// "sys.query", "env.max_tokens").
-var VarRefPattern = regexp.MustCompile(`\{* *\{([a-zA-Z:0-9_]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*`)
+// "sys.query", "env.max_tokens", "item", "index").
+var VarRefPattern = regexp.MustCompile(`\{+\s*([a-zA-Z:0-9_]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+|item|index)\s*\}+`)
 
 // ExtractRefs returns the unique ref strings (without the surrounding
 // braces) appearing in s, in first-occurrence order. Pure regex — does not
@@ -110,4 +110,31 @@ func ResolveTemplate(s string, state *CanvasState) (string, error) {
 		return fmt.Sprintf("%v", v)
 	})
 	return out, firstErr
+}
+
+// ResolveTemplateForDisplay is the display-only variant of
+// ResolveTemplate. Unresolvable refs (GetVar returns nil or an
+// error) render as empty string instead of failing the call.
+// Intended for Message-style template rendering where the partial
+// output is what the user ultimately sees; parameter binding
+// call sites should keep using ResolveTemplate so a misconfigured
+// ref surfaces as an error early.
+//
+// Mirrors the Python canvas.py:177-178 soft-fail ("unresolved ref
+// → empty string") for display rendering.
+func ResolveTemplateForDisplay(s string, state *CanvasState) string {
+	if state == nil || !VarRefPattern.MatchString(s) {
+		return s
+	}
+	return VarRefPattern.ReplaceAllStringFunc(s, func(match string) string {
+		sub := VarRefPattern.FindStringSubmatch(match)
+		if len(sub) < 2 {
+			return match
+		}
+		v, _ := state.GetVar(sub[1])
+		if v == nil {
+			return ""
+		}
+		return fmt.Sprintf("%v", v)
+	})
 }

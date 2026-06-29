@@ -103,7 +103,7 @@ class TestDatasetsDelete:
         payload = {"ids": ["not_uuid"]}
         with pytest.raises(Exception) as exception_info:
             client.delete_datasets(**payload)
-        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
+        assert "Invalid UUID format" in str(exception_info.value), str(exception_info.value)
 
         datasets = client.list_datasets()
         assert len(datasets) == 1, str(datasets)
@@ -114,7 +114,7 @@ class TestDatasetsDelete:
         payload = {"ids": [uuid.uuid4().hex]}
         with pytest.raises(Exception) as exception_info:
             client.delete_datasets(**payload)
-        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
+        assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")

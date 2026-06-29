@@ -18,7 +18,7 @@ import os
 import threading
 from abc import ABC
 from contextlib import contextmanager
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from json.decoder import JSONDecodeError
 
 import dashscope
@@ -93,8 +93,14 @@ def _dashscope_native_http_api_url(base_url: str | None) -> str | None:
     if u.endswith("/api/v1"):
         logger.debug("DashScope Tongyi-Qianwen embedding: using native API base as configured (%s)", safe)
         return u
+    # Compare against the URL's hostname (not a substring of the full URL),
+    # so a base_url like https://attacker.example/?u=dashscope-intl.aliyuncs.com
+    # doesn't accidentally match. urlparse() requires a scheme; if the
+    # configured base_url is bare, treat the whole string as a hostname.
+    parsed = urlparse(u if "://" in u else "http://" + u)
+    host = (parsed.hostname or "").lower()
     # International (Singapore) DashScope — required for overseas Tongyi-Qianwen accounts.
-    if "dashscope-intl.aliyuncs.com" in u:
+    if host == "dashscope-intl.aliyuncs.com" or host.endswith(".dashscope-intl.aliyuncs.com"):
         resolved = "https://dashscope-intl.aliyuncs.com/api/v1"
         logger.info(
             "DashScope Tongyi-Qianwen embedding: mapped configured base_url to intl native API (%s -> %s)",
@@ -103,7 +109,7 @@ def _dashscope_native_http_api_url(base_url: str | None) -> str | None:
         )
         return resolved
     # China mainland DashScope default host.
-    if "dashscope.aliyuncs.com" in u:
+    if host == "dashscope.aliyuncs.com" or host.endswith(".dashscope.aliyuncs.com"):
         resolved = "https://dashscope.aliyuncs.com/api/v1"
         logger.info(
             "DashScope Tongyi-Qianwen embedding: mapped configured base_url to CN native API (%s -> %s)",
@@ -1300,3 +1306,13 @@ class PerplexityEmbed(Base):
     def encode_queries(self, text):
         embds, cnt = self.encode([text])
         return np.array(embds[0]), cnt
+
+
+class NewAPIEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, base_url):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name.split("___")[0]

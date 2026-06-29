@@ -16,6 +16,8 @@
 #
 
 from rag.nlp import find_codec, rag_tokenizer
+import logging
+import re
 import uuid
 import chardet
 from bs4 import BeautifulSoup, NavigableString, Tag, Comment
@@ -176,6 +178,74 @@ class RAGFlowHtmlParser:
             block_content.append(current_content)
         return block_content, table_info_list
 
+    # Characters from scripts written without spaces between words (CJK, kana,
+    # Hangul). These must be split per-character, since whitespace is not a
+    # usable word boundary for them.
+    _SPACELESS = (
+        "぀-ヿ"  # Hiragana, Katakana
+        "㐀-䶿"  # CJK Extension A
+        "一-鿿"  # CJK Unified Ideographs
+        "豈-﫿"  # CJK Compatibility Ideographs
+        "가-힯"  # Hangul syllables
+    )
+    _ATOM_RE = re.compile(r"[{s}]|[^\s{s}]+|\s+".format(s=_SPACELESS))
+
+    @classmethod
+    def _token_count(cls, text):
+        if not text:
+            return 0
+        tks_str = rag_tokenizer.tokenize(text)
+        return len(tks_str.split(" ")) if tks_str else 0
+
+    @classmethod
+    def _split_oversized_block(cls, block, chunk_token_num):
+        # Split the ORIGINAL text into pieces of at most chunk_token_num tokens,
+        # preserving the source characters. Break on whitespace for
+        # space-delimited scripts and per-character for scripts that have no
+        # spaces (e.g. Chinese), so both are split without mangling the text.
+        pieces = []
+        current = ""
+        current_tokens = 0
+        # Spaceless scripts yield many repeated single-character atoms, so cache
+        # the token count per distinct atom to avoid re-tokenizing each one.
+        token_cache = {}
+
+        def atom_token_count(atom):
+            if atom.isspace():
+                return 0
+            if atom not in token_cache:
+                token_cache[atom] = cls._token_count(atom)
+            return token_cache[atom]
+
+        for atom in cls._ATOM_RE.findall(block):
+            atom_tokens = atom_token_count(atom)
+            if current and current_tokens + atom_tokens > chunk_token_num:
+                pieces.append(current)
+                current = ""
+                current_tokens = 0
+            if atom_tokens > chunk_token_num and not atom.isspace():
+                # A single atom longer than the budget (e.g. a very long
+                # unbroken token): fall back to fixed character windows.
+                logging.debug(
+                    "html_parser: atom of %d chars exceeds chunk_token_num=%d; "
+                    "falling back to character windows",
+                    len(atom),
+                    chunk_token_num,
+                )
+                for i in range(0, len(atom), chunk_token_num):
+                    pieces.append(atom[i:i + chunk_token_num])
+                continue
+            current += atom
+            current_tokens += atom_tokens
+        if current:
+            pieces.append(current)
+        logging.debug(
+            "html_parser: split oversized block of %d chars into %d pieces",
+            len(block),
+            len(pieces),
+        )
+        return pieces
+
     @classmethod
     def chunk_block(cls, block_txt_list, chunk_token_num=512):
         chunks = []
@@ -183,20 +253,13 @@ class RAGFlowHtmlParser:
         current_token_count = 0
 
         for block in block_txt_list:
-            tks_str = rag_tokenizer.tokenize(block)
-            block_token_count = len(tks_str.split(" ")) if tks_str else 0
+            block_token_count = cls._token_count(block)
             if block_token_count > chunk_token_num:
                 if current_block:
                     chunks.append(current_block)
-                start = 0
-                tokens = tks_str.split(" ")
-                while start < len(tokens):
-                    end = start + chunk_token_num
-                    split_tokens = tokens[start:end]
-                    chunks.append(" ".join(split_tokens))
-                    start = end
-                current_block = ""
-                current_token_count = 0
+                    current_block = ""
+                    current_token_count = 0
+                chunks.extend(cls._split_oversized_block(block, chunk_token_num))
             else:
                 if current_token_count + block_token_count <= chunk_token_num:
                     current_block += ("\n" if current_block else "") + block

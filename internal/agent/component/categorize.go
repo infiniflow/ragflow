@@ -27,6 +27,7 @@ type CategorizeParam struct {
 	ModelID         string
 	Items           []string
 	Categories      []string
+	CategoryRoutes  map[string]string
 	SysPrompt       string
 	DefaultCategory string
 	Driver          string
@@ -59,6 +60,14 @@ func (c *CategorizeComponent) Name() string { return "Categorize" }
 // something outside the configured set).
 func (c *CategorizeComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	p := mergeCategorizeParam(c.param, inputs)
+	originalModelID := p.ModelID
+	if p.Driver == "" && p.ModelID != "" {
+		if modelID, driver, ok := splitCompositeLLMID(p.ModelID); ok {
+			p.Driver = driver
+			p.ModelID = modelID
+		}
+	}
+	p.APIKey, p.BaseURL = resolveTenantLLMConfig(ctx, p.Driver, p.ModelID, p.APIKey, p.BaseURL, originalModelID)
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
@@ -93,10 +102,15 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, inputs map[string]any)
 	}
 
 	chosen, score := pickCategory(resp.Content, p.Categories, p.DefaultCategory)
+	next := []string{}
+	if route := p.CategoryRoutes[chosen]; route != "" {
+		next = []string{route}
+	}
 	return map[string]any{
-		"category": chosen,
-		"scores":   score,
-		"_next":    []string{},
+		"category":      chosen,
+		"category_name": chosen,
+		"scores":        score,
+		"_next":         next,
 	}, nil
 }
 
@@ -131,9 +145,10 @@ func (c *CategorizeComponent) Inputs() map[string]string {
 // Outputs returns output metadata.
 func (c *CategorizeComponent) Outputs() map[string]string {
 	return map[string]string{
-		"category": "Chosen category name (one of the configured list, or the default)",
-		"scores":   "Score map (1.0 for the chosen category, 0.0 for the rest)",
-		"_next":    "Reserved for canvas/multibranch.go routing; currently empty",
+		"category":      "Chosen category name (one of the configured list, or the default)",
+		"category_name": "Alias of category for v1 canvas templates",
+		"scores":        "Score map (1.0 for the chosen category, 0.0 for the rest)",
+		"_next":         "Downstream route handle(s) selected from categorize item uuids",
 	}
 }
 
@@ -229,6 +244,9 @@ func mergeCategorizeParam(base CategorizeParam, inputs map[string]any) Categoriz
 		sort.Strings(keys)
 		p.Categories = keys
 	}
+	if routes, ok := categoryRoutesFrom(inputs, "category_description"); ok {
+		p.CategoryRoutes = routes
+	}
 	if v, ok := stringFrom(inputs, "sys_prompt"); ok {
 		p.SysPrompt = v
 	} else if v, ok := stringFrom(inputs, "system_prompt"); ok {
@@ -280,6 +298,32 @@ func stringMapFrom(inputs map[string]any, name string) (map[string]string, bool)
 	return out, true
 }
 
+func categoryRoutesFrom(inputs map[string]any, name string) (map[string]string, bool) {
+	raw, ok := inputs[name]
+	if !ok {
+		return nil, false
+	}
+	src, ok := raw.(map[string]any)
+	if !ok || len(src) == 0 {
+		return nil, false
+	}
+	out := make(map[string]string, len(src))
+	for category, child := range src {
+		nested, ok := child.(map[string]any)
+		if !ok {
+			continue
+		}
+		if s, ok := firstRouteTarget(nested["to"]); ok {
+			out[category] = s
+			continue
+		}
+		if s, ok := nested["uuid"].(string); ok && s != "" {
+			out[category] = s
+		}
+	}
+	return out, len(out) > 0
+}
+
 // init registers CategorizeComponent with the orchestrator-owned registry.
 func init() {
 	Register("Categorize", func(params map[string]any) (Component, error) {
@@ -289,7 +333,46 @@ func init() {
 		} else if v, ok := stringFrom(params, "llm_id"); ok {
 			p.ModelID = v
 		}
-		if v, ok := sliceFrom(params, "items"); ok {
+		// Check the object-style []any of maps first. sliceFrom would
+		// otherwise match the same []any input and return (empty, true)
+		// for non-string elements, making the object branch unreachable.
+		if items, ok := params["items"].([]any); ok && len(items) > 0 {
+			names := make([]string, 0, len(items))
+			routes := make(map[string]string, len(items))
+			for _, item := range items {
+				m, ok := item.(map[string]any)
+				if !ok {
+					continue
+				}
+				name, _ := m["name"].(string)
+				if name == "" {
+					continue
+				}
+				names = append(names, name)
+				if route, ok := firstRouteTarget(m["to"]); ok {
+					routes[name] = route
+				} else if uuid, _ := m["uuid"].(string); uuid != "" {
+					routes[name] = uuid
+				}
+				if examples, ok := m["examples"].([]any); ok {
+					for _, example := range examples {
+						em, ok := example.(map[string]any)
+						if !ok {
+							continue
+						}
+						if v, _ := em["value"].(string); v != "" {
+							p.Items = append(p.Items, v)
+						}
+					}
+				}
+			}
+			if len(names) > 0 {
+				p.Categories = names
+			}
+			if len(routes) > 0 {
+				p.CategoryRoutes = routes
+			}
+		} else if v, ok := sliceFrom(params, "items"); ok {
 			p.Items = v
 		}
 		if v, ok := sliceFrom(params, "categories"); ok {
@@ -301,6 +384,21 @@ func init() {
 			}
 			sort.Strings(keys)
 			p.Categories = keys
+			routes := make(map[string]string, len(m))
+			for k, child := range m {
+				nested, ok := child.(map[string]any)
+				if !ok {
+					continue
+				}
+				if route, ok := firstRouteTarget(nested["to"]); ok {
+					routes[k] = route
+				} else if uuid, _ := nested["uuid"].(string); uuid != "" {
+					routes[k] = uuid
+				}
+			}
+			if len(routes) > 0 {
+				p.CategoryRoutes = routes
+			}
 		}
 		if v, ok := stringFrom(params, "sys_prompt"); ok {
 			p.SysPrompt = v
@@ -321,4 +419,19 @@ func init() {
 		}
 		return NewCategorizeComponent(p), nil
 	})
+}
+
+func firstRouteTarget(v any) (string, bool) {
+	if s, ok := v.(string); ok && s != "" {
+		return s, true
+	}
+	items, ok := v.([]any)
+	if !ok || len(items) == 0 {
+		return "", false
+	}
+	s, ok := items[0].(string)
+	if !ok || s == "" {
+		return "", false
+	}
+	return s, true
 }

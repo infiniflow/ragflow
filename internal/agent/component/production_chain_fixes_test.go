@@ -30,11 +30,29 @@ package component
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
+	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 )
+
+type codeExecSandboxRecorder struct {
+	req  agenttool.SandboxRequest
+	resp *agenttool.SandboxResponse
+	err  error
+}
+
+func (s *codeExecSandboxRecorder) ExecuteCode(_ context.Context, req agenttool.SandboxRequest) (*agenttool.SandboxResponse, error) {
+	s.req = req
+	return s.resp, s.err
+}
 
 // TestExeSQL_V1DSLParamsAccepted exercises the v1-DSL-compat
 // translator that turns v1 DSL ExeSQL params (database/username/
@@ -178,6 +196,203 @@ func TestRetrieval_KbIDsTranslatedToDatasetIDs(t *testing.T) {
 	}
 }
 
+func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to unwrap sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatalf("failed to migrate knowledgebase: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+		t.Fatalf("failed to migrate user_tenant: %v", err)
+	}
+	origDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = origDB })
+	activeStatus := "1"
+	if err := db.Create(&entity.UserTenant{
+		ID:        "ut-1",
+		UserID:    "user-1",
+		TenantID:  "tenant-1",
+		Role:      "owner",
+		InvitedBy: "user-1",
+		Status:    &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed user_tenant: %v", err)
+	}
+
+	if err := db.Create(&entity.Knowledgebase{
+		ID:         "kb-da1",
+		Name:       "da1",
+		TenantID:   "tenant-1",
+		EmbdID:     "BAAI/bge-m3@yy2@SILICONFLOW",
+		Permission: "me",
+		CreatedBy:  "user-1",
+		Status:     func() *string { s := string(entity.StatusValid); return &s }(),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed kb: %v", err)
+	}
+
+	c, err := newRetrievalComponent(nil)
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+	rc := c.(*retrievalComponent)
+	merged := rc.applyDefaults(map[string]any{
+		"query": "UserFillUp:   da1\nInput diamond necklace\n",
+	})
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["user_id"] = "user-1"
+	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), merged)
+
+	if got, _ := merged["query"].(string); got != "diamond necklace" {
+		t.Fatalf("query = %q, want diamond necklace", got)
+	}
+	ds, ok := merged["dataset_ids"].([]string)
+	if !ok || len(ds) != 1 || ds[0] != "kb-da1" {
+		t.Fatalf("dataset_ids = %#v, want []string{\"kb-da1\"}", merged["dataset_ids"])
+	}
+}
+
+func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to unwrap sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("failed to migrate tables: %v", err)
+	}
+	origDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = origDB })
+
+	activeStatus := "1"
+	if err := db.Create(&entity.UserTenant{
+		ID:        "ut-1",
+		UserID:    "user-1",
+		TenantID:  "tenant-1",
+		Role:      "owner",
+		InvitedBy: "user-1",
+		Status:    &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed user_tenant: %v", err)
+	}
+	if err := db.Create(&entity.Knowledgebase{
+		ID:         "kb-da1",
+		Name:       "da1",
+		TenantID:   "tenant-1",
+		EmbdID:     "BAAI/bge-m3@yy2@SILICONFLOW",
+		Permission: "me",
+		CreatedBy:  "user-1",
+		Status:     func() *string { s := string(entity.StatusValid); return &s }(),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed kb: %v", err)
+	}
+
+	c, err := newRetrievalComponent(nil)
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+	rc := c.(*retrievalComponent)
+	merged := rc.applyDefaults(map[string]any{
+		"state": map[string]any{
+			"UserFillUp:KBInput": map[string]any{
+				"kb":    "da1",
+				"query": "合同",
+			},
+		},
+	})
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["user_id"] = "user-1"
+	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), merged)
+
+	if got, _ := merged["query"].(string); got != "合同" {
+		t.Fatalf("query = %q, want 合同", got)
+	}
+	ds, ok := merged["dataset_ids"].([]string)
+	if !ok || len(ds) != 1 || ds[0] != "kb-da1" {
+		t.Fatalf("dataset_ids = %#v, want []string{\"kb-da1\"}", merged["dataset_ids"])
+	}
+}
+
+func TestRetrieval_ResolveDatasetIDByTenantName(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to unwrap sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatalf("failed to migrate knowledgebase: %v", err)
+	}
+	origDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = origDB })
+
+	if err := db.Create(&entity.Knowledgebase{
+		ID:         "kb-da1",
+		Name:       "da1",
+		TenantID:   "tenant-1",
+		EmbdID:     "BAAI/bge-m3@yy2@SILICONFLOW",
+		Permission: "me",
+		CreatedBy:  "user-1",
+		Status:     func() *string { s := string(entity.StatusValid); return &s }(),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed kb: %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(context.Background(), state)
+
+	if got := resolveRetrievalDatasetID(ctx, "da1"); got != "kb-da1" {
+		t.Fatalf("resolveRetrievalDatasetID = %q, want kb-da1", got)
+	}
+}
+
+func TestRetrieval_StructuredInputPreservesQueryWhenDatasetIDsAlreadyPresent(t *testing.T) {
+	c, err := newRetrievalComponent(nil)
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+	rc := c.(*retrievalComponent)
+	merged := rc.applyDefaults(map[string]any{
+		"dataset_ids": []string{"kb-fixed"},
+		"state": map[string]any{
+			"UserFillUp:KBInput": map[string]any{
+				"kb":    "da1",
+				"query": "合同",
+			},
+		},
+	})
+
+	consumed := normalizeStructuredRetrievalInputs(context.Background(), merged)
+	if !consumed {
+		t.Fatal("normalizeStructuredRetrievalInputs should consume structured query")
+	}
+	if got, _ := merged["query"].(string); got != "合同" {
+		t.Fatalf("query = %q, want 合同", got)
+	}
+	ds, ok := merged["dataset_ids"].([]string)
+	if !ok || len(ds) != 1 || ds[0] != "kb-fixed" {
+		t.Fatalf("dataset_ids = %#v, want []string{\"kb-fixed\"}", merged["dataset_ids"])
+	}
+}
+
 // TestRetrieval_KbIDsEndToEndThroughTool is the wire-level
 // companion to TestRetrieval_KbIDsTranslatedToDatasetIDs: it
 // installs the simple retrieval service, builds a wrapper with
@@ -263,6 +478,230 @@ func TestSearchMyDataset_AllAliasesRegistered(t *testing.T) {
 		if !have[expected] {
 			t.Errorf("RegisteredNames() missing %q (search-mydataset alias surface regression)", expected)
 		}
+	}
+}
+
+// TestCodeExec_LegacyDSLWrapperRegistered pins the Universe A
+// registration for the legacy v1 DSL node label `CodeExec`.
+// Without this wrapper, DSLs like internal/agent/dsl/testdata/all.json
+// fail at buildNodeBody time with "unknown component".
+func TestCodeExec_LegacyDSLWrapperRegistered(t *testing.T) {
+	t.Parallel()
+
+	c, err := New(componentNameCodeExec, map[string]any{
+		"lang":   "python",
+		"script": "def main(): return 1",
+	})
+	if err != nil {
+		t.Fatalf("New(CodeExec) errored: %v", err)
+	}
+	if c == nil {
+		t.Fatal("New(CodeExec) returned nil")
+	}
+	if got := c.Name(); got != componentNameCodeExec {
+		t.Errorf("New(CodeExec).Name() = %q, want %q", got, componentNameCodeExec)
+	}
+}
+
+// TestCodeExec_LegacyDSLWrapperBridgesParamsAndOutputs verifies the
+// component wrapper preserves the frontend DSL surface (`lang`,
+// `script`, `arguments`) while translating the tool envelope back to
+// the legacy `result` field consumed by downstream templates.
+//
+// Not t.Parallel(): this test swaps the package-global sandbox client.
+func TestCodeExec_LegacyDSLWrapperBridgesParamsAndOutputs(t *testing.T) {
+	prev := agenttool.GetSandboxClient()
+	recorder := &codeExecSandboxRecorder{
+		resp: &agenttool.SandboxResponse{
+			ExitCode: 0,
+			Stdout:   "ok",
+			StructuredResult: map[string]any{
+				"present": true,
+				"value":   float64(14),
+			},
+		},
+	}
+	agenttool.SetSandboxClient(recorder)
+	t.Cleanup(func() { agenttool.SetSandboxClient(prev) })
+
+	c, err := New(componentNameCodeExec, map[string]any{
+		"lang": "python",
+		"script": "def main(x):\n" +
+			"    return int(x) * 2\n",
+		"arguments": map[string]any{
+			"x": "from-params",
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(CodeExec): %v", err)
+	}
+
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"arguments": map[string]any{
+			"x": 7,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CodeExec.Invoke: %v", err)
+	}
+
+	if recorder.req.Lang != "python" {
+		t.Errorf("sandbox lang = %q, want python", recorder.req.Lang)
+	}
+	if recorder.req.Script == "" {
+		t.Error("sandbox script should not be empty")
+	}
+	switch got := recorder.req.Arguments["x"].(type) {
+	case int:
+		if got != 7 {
+			t.Errorf("sandbox arguments[x] = %v, want 7", got)
+		}
+	case float64:
+		if got != 7 {
+			t.Errorf("sandbox arguments[x] = %v, want 7", got)
+		}
+	default:
+		t.Errorf("sandbox arguments[x] type = %T, want int/float64 carrying 7", got)
+	}
+	if got := out["result"]; got != float64(14) {
+		t.Errorf("CodeExec result = %v, want numeric 14", got)
+	}
+	if got := out["content"]; got != "14" {
+		t.Errorf("CodeExec content = %v, want 14", got)
+	}
+	if got := out["actual_type"]; got != "Number" {
+		t.Errorf("CodeExec actual_type = %v, want Number", got)
+	}
+	if got := out["_ERROR"]; got != "" {
+		t.Errorf("CodeExec _ERROR = %v, want empty string", got)
+	}
+}
+
+func TestCodeExec_LegacyDSLWrapperResolvesArgumentRefsFromState(t *testing.T) {
+	prev := agenttool.GetSandboxClient()
+	recorder := &codeExecSandboxRecorder{
+		resp: &agenttool.SandboxResponse{
+			ExitCode: 0,
+			StructuredResult: map[string]any{
+				"present": true,
+				"value":   float64(16),
+			},
+		},
+	}
+	agenttool.SetSandboxClient(recorder)
+	t.Cleanup(func() { agenttool.SetSandboxClient(prev) })
+
+	c, err := New(componentNameCodeExec, map[string]any{
+		"lang": "python",
+		"script": "def main(x):\n" +
+			"    return int(x) * 2\n",
+		"arguments": map[string]any{
+			"x": "UserFillUp:CodeInput@x",
+		},
+		"outputs": map[string]any{
+			"result": map[string]any{
+				"type": "Number",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(CodeExec): %v", err)
+	}
+
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"state": map[string]map[string]any{
+			"UserFillUp:CodeInput": {
+				"x": "8",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CodeExec.Invoke: %v", err)
+	}
+	if got := recorder.req.Arguments["x"]; got != "8" {
+		t.Fatalf("sandbox arguments[x] = %#v, want \"8\"", got)
+	}
+	if got := out["result"]; got != float64(16) {
+		t.Fatalf("CodeExec result = %v, want 16", got)
+	}
+}
+
+func TestCodeExec_LegacyDSLWrapperContractMismatchSetsError(t *testing.T) {
+	prev := agenttool.GetSandboxClient()
+	recorder := &codeExecSandboxRecorder{
+		resp: &agenttool.SandboxResponse{
+			ExitCode: 0,
+			StructuredResult: map[string]any{
+				"present": true,
+				"value":   "not-a-number",
+			},
+		},
+	}
+	agenttool.SetSandboxClient(recorder)
+	t.Cleanup(func() { agenttool.SetSandboxClient(prev) })
+
+	c, err := New(componentNameCodeExec, map[string]any{
+		"lang":   "python",
+		"script": "def main():\n    return \"not-a-number\"\n",
+		"outputs": map[string]any{
+			"result": map[string]any{
+				"type": "Number",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(CodeExec): %v", err)
+	}
+
+	out, err := c.Invoke(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatalf("CodeExec.Invoke: %v", err)
+	}
+	if got := out["result"]; got != nil {
+		t.Errorf("CodeExec result = %v, want nil on contract mismatch", got)
+	}
+	if got := out["actual_type"]; got != "String" {
+		t.Errorf("CodeExec actual_type = %v, want String", got)
+	}
+	if got, _ := out["_ERROR"].(string); !strings.Contains(got, "expected type Number") {
+		t.Errorf("CodeExec _ERROR = %v, want contract mismatch message", out["_ERROR"])
+	}
+	if got := out["content"]; got != "not-a-number" {
+		t.Errorf("CodeExec content = %v, want raw canonical content", got)
+	}
+}
+
+func TestCodeExec_LegacyDSLWrapperPreservesExecutionError(t *testing.T) {
+	prev := agenttool.GetSandboxClient()
+	recorder := &codeExecSandboxRecorder{
+		resp: nil,
+		err:  fmt.Errorf("Container pool is busy"),
+	}
+	agenttool.SetSandboxClient(recorder)
+	t.Cleanup(func() { agenttool.SetSandboxClient(prev) })
+
+	c, err := New(componentNameCodeExec, map[string]any{
+		"lang":   "python",
+		"script": "def main(): return 16\n",
+		"outputs": map[string]any{
+			"result": map[string]any{
+				"type": "Number",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(CodeExec): %v", err)
+	}
+
+	out, err := c.Invoke(context.Background(), map[string]any{})
+	if err == nil {
+		t.Fatal("CodeExec.Invoke: want wrapped execution error, got nil")
+	}
+	if got, _ := out["_ERROR"].(string); got != "Container pool is busy" {
+		t.Errorf("CodeExec _ERROR = %v, want sandbox execution error", out["_ERROR"])
+	}
+	if got := out["result"]; got != nil {
+		t.Errorf("CodeExec result = %v, want nil on execution error", got)
 	}
 }
 

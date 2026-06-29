@@ -18,18 +18,22 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
+	agentsandbox "ragflow/internal/agent/sandbox"
+	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -43,6 +47,51 @@ import (
 // joinable across Python and Go writers.
 func genID32() string {
 	return strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
+}
+
+// webhookPayloadKey is the unexported context key RunAgent reads to
+// inject root["webhook_payload"]. Only the AgentService.RunAgentWithWebhook
+// public wrapper sets it; the chat / agent-run paths leave it absent so
+// existing callers see no behaviour change.
+//
+// We deliberately do NOT surface the payload as a new RunAgent parameter
+// — keeping the public signature stable means existing tests
+// (agent_run_e2e_test.go, agent_wait_for_user_test.go) keep compiling.
+type webhookPayloadKey struct{}
+
+// LoadCanvasByID is the read-side counterpart of loadCanvasForUser that
+// the webhook handler uses. It deliberately returns the raw DAO/service
+// error (no error-code mapping) because the webhook envelope is 102
+// "Canvas not found." while the chat/run envelope is 103 "Make sure you
+// have permission..." — the choice must stay at the HTTP layer where
+// each handler knows its own spec.
+//
+// Mirrors python: api/apps/restful_apis/agent_api.py:1570
+// (`UserCanvasService.get_by_id(agent_id)`), with the same IDOR guard
+// the chat handler uses.
+func (s *AgentService) LoadCanvasByID(
+	ctx context.Context, userID, canvasID string,
+) (*entity.UserCanvas, error) {
+	return s.loadCanvasForUser(ctx, userID, canvasID)
+}
+
+// RunAgentWithWebhook is a thin wrapper over RunAgent that attaches the
+// webhook payload to the runner root so the Begin component can surface
+// it as state.Sys["webhook_payload"] for downstream components.
+//
+// The payload is intentionally passed via context value (rather than a new
+// RunAgent parameter) to keep the public RunAgent signature stable for
+// the existing chat tests.
+//
+// Mirrors python: api/apps/restful_apis/agent_api.py:2125
+// (`canvas.run(..., webhook_payload=clean_request)`).
+func (s *AgentService) RunAgentWithWebhook(
+	ctx context.Context, userID, canvasID string, payload map[string]any,
+) (<-chan canvas.RunEvent, error) {
+	if payload != nil {
+		ctx = context.WithValue(ctx, webhookPayloadKey{}, payload)
+	}
+	return s.RunAgent(ctx, userID, canvasID, "", "", "")
 }
 
 // ErrAgentNotOwner is returned by DeleteAgent when the canvas exists and
@@ -125,6 +174,9 @@ func NewAgentServiceWithOptions(
 	ser canvas.StateSerializer,
 	rt *canvas.RunTracker,
 ) *AgentService {
+	if stub, ok := agenttool.GetSandboxClient().(interface{ IsStubSandboxClient() bool }); ok && stub.IsStubSandboxClient() {
+		agenttool.SetSandboxClient(agentsandbox.NewManagerClient())
+	}
 	return &AgentService{
 		canvasDAO:           dao.NewUserCanvasDAO(),
 		canvasTemplateDAO:   dao.NewCanvasTemplateDAO(),
@@ -356,6 +408,42 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 	return nil
 }
 
+// ResetAgent clears the per-run state of a canvas (history, retrieval,
+// memory, path) and zeroes every "sys.*" / "env.*" global, mirroring
+// the Python handler at api/apps/restful_apis/agent_api.py:992. The
+// reset transform is a pure DSL mutation; the persisted row in
+// user_canvas.dsl is rewritten in place and the freshly reset DSL is
+// returned so the caller can render it back to the client without an
+// extra GET.
+//
+// Reset does NOT create a new user_canvas_version row — that mirrors
+// the Python behaviour and UpdateAgent: versions are owned by
+// PublishAgent. It also does NOT touch the in-flight run state of any
+// currently executing canvas session; that is owned by the Python task
+// executor and is out of scope for the Go port.
+//
+// Errors propagate the same way as GetAgent: a missing canvas, or a
+// canvas that the user has no access to, surfaces as
+// dao.ErrUserCanvasNotFound so mapAgentError emits the same 404 the
+// Python handler does for "canvas not found.".
+func (s *AgentService) ResetAgent(ctx context.Context, userID, canvasID string) (entity.JSONMap, error) {
+	row, err := s.loadCanvasForUser(ctx, userID, canvasID)
+	if err != nil {
+		return nil, err
+	}
+	reset := dslpkg.ResetForCanvas(map[string]any(row.DSL))
+	// Re-normalize through the same entry point UpdateAgent uses so
+	// any front-end that reads `graph.nodes` / `components[*].obj`
+	// right after the response sees a renderable shape, not a partial
+	// reset that left the legacy short-form DSL intact.
+	row.DSL = dslpkg.NormalizeForCanvas(reset)
+	row.Release = false
+	if err := s.canvasDAO.Update(row); err != nil {
+		return nil, fmt.Errorf("reset agent %s: %w", canvasID, err)
+	}
+	return row.DSL, nil
+}
+
 // DeleteAgent removes the canvas and cascades to its user_canvas_version
 // rows in a single transaction so a mid-flight failure cannot leave
 // orphan version rows (Phase 5 §2.9; review follow-up M2).
@@ -517,8 +605,9 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 // The per-run RunFunc is built by buildRunFunc — see its doc comment
 // for the full production chain (real Compile/Invoke, resume path,
 // error-layering contract).
-func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version, userInput string) (<-chan canvas.RunEvent, error) {
-	if _, err := s.loadCanvasForUser(ctx, userID, canvasID); err != nil {
+func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error) {
+	canvasRow, err := s.loadCanvasForUser(ctx, userID, canvasID)
+	if err != nil {
 		return nil, err
 	}
 	if sessionID == "" {
@@ -545,9 +634,23 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	//   - explicit version, row not found       → 404
 	//   - explicit version, row from other canvas → 404 (IDOR)
 	//   - explicit version, DB error            → 500 (surface it)
-	//   - latest path, no rows + no error       → "no version published" placeholder
+	//   - latest path, no rows + no error       → fall back to canvasRow.DSL (matches Python `completion()`)
 	//   - latest path, DB error                 → 500 (surface it)
-	var versionRow *entity.UserCanvasVersion
+	//
+	// v3.6 follow-up: when no published version exists, fall back to
+	// the canvas's current editable DSL (canvasRow.DSL) instead of
+	// the "no published version" placeholder. The Python reference at
+	// api/db/services/canvas_service.py:332 does the same via
+	// UserCanvasService.get_agent_dsl_with_release(agent_id,
+	// release_mode=False, tenant_id=...) when release_mode is unset
+	// on the request — the front-end's auto-save-on-run path means
+	// the editable DSL is what the user just clicked "Run" against.
+	// The buildRunFunc placeholder branch is reserved for the rare
+	// "canvas exists but has no DSL at all" edge case.
+	var (
+		versionRow *entity.UserCanvasVersion
+		dsl        map[string]any
+	)
 	if version != "" {
 		row, err := s.versionDAO.GetByID(version)
 		if err != nil {
@@ -574,23 +677,29 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		versionRow = row
 	}
 	if versionRow == nil {
-		row, err := s.versionDAO.GetLatest(canvasID)
-		if err != nil {
-			if errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
-				// Legitimate "no version published" — let the
-				// run proceed with the placeholder answer so
-				// the SSE surface still flows.
-			} else {
-				// Wrap DB-side errors with ErrAgentStorageError
-				// for the same reason as above (no DAO-string
-				// leak to the client).
-				return nil, fmt.Errorf("RunAgent: load latest version for canvas %q: %w: %w", canvasID, err, ErrAgentStorageError)
-			}
-		} else {
+		row, lerr := s.versionDAO.GetLatest(canvasID)
+		switch {
+		case lerr == nil:
 			versionRow = row
+		case errors.Is(lerr, dao.ErrUserCanvasVersionNotFound):
+			// No published version — fall back to the canvas's
+			// current editable DSL (see v3.6 follow-up comment
+			// above). Mirrors Python's
+			// `get_agent_dsl_with_release(...release_mode=False)`
+			// fallback in completion().
+			if len(canvasRow.DSL) > 0 {
+				dsl = dslpkg.NormalizeForRun(map[string]any(canvasRow.DSL))
+			}
+		default:
+			// Wrap DB-side errors with ErrAgentStorageError
+			// for the same reason as above (no DAO-string
+			// leak to the client).
+			return nil, fmt.Errorf("RunAgent: load latest version for canvas %q: %w: %w", canvasID, lerr, ErrAgentStorageError)
 		}
 	}
-	dsl := normalisedDSLForRun(versionRow)
+	if dsl == nil {
+		dsl = normalisedDSLForRun(versionRow)
+	}
 
 	run := s.buildRunFunc(canvasID, versionRow, dsl)
 
@@ -600,11 +709,19 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		"session_id": sessionID,
 		"user_id":    userID,
 	}
-	if userInput != "" {
+	if userInput != nil {
 		root["user_input"] = userInput
 	}
 	if dsl != nil {
 		root["__dsl_present__"] = true
+	}
+	// Webhook payload injection. Only RunAgentWithWebhook sets this
+	// context value; the chat / agent-run paths leave it nil so the
+	// existing surface is unchanged. The Begin component reads
+	// inputs["webhook_payload"] and writes it to state.Sys so
+	// downstream components can read sys.webhook_payload.
+	if payload, ok := ctx.Value(webhookPayloadKey{}).(map[string]any); ok && payload != nil {
+		root["webhook_payload"] = payload
 	}
 	// Phase 4.4 V2.1 (v3.6.1): populate root["tenant_id"] so the
 	// RunTracker.Start call (in buildRunFunc) records the run
@@ -616,8 +733,20 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if tenantIDs, terr := s.userTenantDAO.GetTenantIDsByUserID(userID); terr == nil && len(tenantIDs) > 0 {
 		root["tenant_id"] = tenantIDs[0]
 	} else if terr != nil {
-		log.Printf("service: RunAgent userTenantDAO.GetTenantIDsByUserID(%q): %v (best-effort, run not blocked)", userID, terr)
+		common.Warn("service: RunAgent userTenantDAO.GetTenantIDsByUserID (best-effort, run not blocked)",
+			zap.String("user_id", userID),
+			zap.Error(terr))
 	}
+	// v3.6.1 diagnostic: log what RunAgent put into root so we can
+	// confirm tenant_id / user_id / session_id / user_input all
+	// reached the buildRunFunc closure (which runs in the runner's
+	// goroutine, possibly after a context switch).
+	common.Debug("RunAgent root",
+		zap.String("canvasID", canvasID),
+		zap.String("userID", userID),
+		zap.String("sessionID", sessionID),
+		zap.Any("tenantID", root["tenant_id"]),
+		zap.Any("userInput", root["user_input"]))
 
 	return s.runner.Run(ctx, run, canvasID, sessionID, userInput, root), nil
 }
@@ -640,7 +769,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 // a graceful "no published version" placeholder so the SSE surface
 // still flows (TestRunAgent_NoVersionPublishedPlaceholder pins this
 // behaviour). The placeholder is written into state.Outputs under
-// (cpn="answer", bucket="answer") so extractAnswerFromState's
+// (cpn="answer", bucket="answer") so the answer extraction in
 // first-pass lookup picks it up; the same trick the V1 placeholder
 // used (the v3.5.2 fix landed this and we keep it).
 //
@@ -657,74 +786,134 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			return nil, err
 		}
 
-		taskID := ""
-		if versionRow != nil {
-			taskID = versionRow.ID
+		// Extract the event channel + metadata injected by Runner.Run.
+		events, _ := root["__events__"].(chan canvas.RunEvent)
+		messageID, _ := root["__message_id__"].(string)
+		taskID, _ := root["__task_id__"].(string)
+		sessionID, _ := root["__session_id__"].(string)
+
+		// Helper to build an SSE event with metadata.
+		emit := func(typ, data string) {
+			if events == nil {
+				return
+			}
+			canvas.PushEvent(events, canvas.RunEvent{
+				Type: typ, Data: data,
+				MessageID: messageID,
+				CreatedAt: time.Now().Unix(),
+				TaskID:    taskID,
+				SessionID: sessionID,
+			})
 		}
 
-		userInput := ""
-		if v, ok := root["user_input"].(string); ok {
-			userInput = v
+		startedAt := float64(time.Now().UnixNano()) / 1e9
+
+		userInput := root["user_input"]
+		userInputText := ""
+		if v, ok := userInput.(string); ok {
+			userInputText = v
+		}
+
+		resumeID, isResume := root["__resume_interrupt_id__"].(string)
+		if !isResume || resumeID == "" {
+			wsData, _ := json.Marshal(map[string]any{"inputs": userInput})
+			emit("workflow_started", string(wsData))
 		}
 
 		runID := runIDFor(canvasID, root)
 		state := canvas.NewCanvasState(runID, taskID)
 
 		// Graceful placeholder: no version published AND no DSL.
-		// This is the legal "user clicked Run before publishing"
-		// path. The orchestrator surfaces the placeholder answer
-		// to the SSE consumer without an error event.
 		if versionRow == nil && len(dsl) == 0 {
 			answer := fmt.Sprintf("No published version found for canvas %q — publish a version before running.", canvasID)
 			state.RecordOutput("answer", "answer", answer)
+			// Emit a message event so the SSE surface matches the
+			// normal-completion shape (test asserts message +
+			// workflow_finished + done for the placeholder path).
+			msgData, _ := json.Marshal(canvas.MessageEvent{Content: answer})
+			meData, _ := json.Marshal(canvas.MessageEndEvent{})
+			emit("message", string(msgData))
+			emit("message_end", string(meData))
+			wfData, _ := json.Marshal(map[string]any{"outputs": answer})
+			emit("workflow_finished", string(wfData))
 			return state, nil
 		}
 
-		// DSL → *Canvas. All non-sentinel errors are already
-		// wrapped with ErrAgentStorageError so the handler's
-		// mapAgentError classifies them as CodeServerError (500)
-		// with a sanitized message.
+		// DSL → *Canvas.
 		c, err := decodeCanvasFromDSL(dsl)
 		if err != nil {
 			s.markRunFailed(ctx, runID, "decode: "+err.Error())
 			return nil, err
 		}
 
-		// Sys["query"] is the canonical Begin-node input key
-		// (BeginComponent.Invoke reads inputs["query"] and writes
-		// it into state.Sys["query"]). Pre-seeding it here lets
-		// the first Begin run see the user's input even before
-		// Begin writes back.
-		state.Sys["query"] = userInput
-		ctx2 := runtime.WithState(ctx, state)
+		// Store events channel + run metadata on the context so the
+		// per-node statePre/statePost wrappers (in scheduler.go) can
+		// emit node_started / node_finished events at the correct
+		// per-node lifecycle points. Context is used (rather than
+		// state.Sys) because eino's WithGenLocalState creates a fresh
+		// CanvasState per run — only the context thread survives from
+		// the service layer into the state handlers.
+		ctx2 := canvas.WithRunMeta(ctx, &canvas.RunMeta{
+			Events:    events,
+			MessageID: messageID,
+			TaskID:    taskID,
+			SessionID: sessionID,
+		})
 
-		// Resume path: if Runner.Run injected a saved interrupt id
-		// + the user's follow-up, decorate ctx so the targeted
-		// interrupt-emitting node resumes.
-		if resumeID, ok := root["__resume_interrupt_id__"].(string); ok && resumeID != "" {
+		// Seed initial env/sys values from the Canvas DSL globals.
+		// Python's self.globals dict stores "sys.*" and "env.*" under
+		// their full dotted keys; the Go port splits these into Sys /
+		// Env / Globals maps so GetVar("env.counter") can look up
+		// Env["counter"] directly. Without seeding, Env starts empty
+		// and every env.* reference resolves to nil (unresolved ref).
+		if c.Globals != nil {
+			for k, v := range c.Globals {
+				if strings.HasPrefix(k, "sys.") {
+					state.Sys[strings.TrimPrefix(k, "sys.")] = v
+				} else if strings.HasPrefix(k, "env.") {
+					state.Env[strings.TrimPrefix(k, "env.")] = v
+				} else {
+					state.Globals[k] = v
+				}
+			}
+		}
+		state.Sys["query"] = userInput
+		if uid, ok := root["user_id"].(string); ok && uid != "" {
+			state.Sys["user_id"] = uid
+		}
+		if tid, ok := root["tenant_id"].(string); ok && tid != "" {
+			state.Sys["tenant_id"] = tid
+		}
+		ctx2 = runtime.WithState(ctx2, state)
+
+		// Resume path. The user input is the resume payload for the
+		// previously-paused UserFillUp node — it should NOT also be
+		// presented to UserFillUp:Menu (the first interactive node)
+		// as a fresh "menu selection". Without this distinction, on
+		// the follow-up RunAgent call sys.query=resume_payload would
+		// be consumed by initialUserFillUpData in the menu body, the
+		// menu would pick up the resume text as a brand-new branch
+		// choice, Switch:Route would route to that branch, and the
+		// previously-paused branch would be silently dropped (the
+		// "second input doesn't resume" symptom). Clear sys.query so
+		// the menu's initial-input fast path returns false and the
+		// body falls through to compose.Interrupt — the menu pauses
+		// for fresh input next time the user actually wants a
+		// different branch.
+		if isResume && resumeID != "" {
 			resumeData := root["__resume_data__"]
 			delete(root, "__resume_interrupt_id__")
 			delete(root, "__resume_data__")
+			state.Sys["query"] = ""
 			ctx2 = compose.ResumeWithData(ctx2, resumeID, resumeData)
 		}
 
-		// Run lifecycle: best-effort. Tracker may be nil (test
-		// path) or Redis may be unreachable (degraded boot);
-		// either way, the run itself must not be blocked.
 		if s.runTracker != nil {
 			_ = s.runTracker.Start(ctx2, runID, canvasID,
-				tenantIDFromRoot(root), userInput)
+				tenantIDFromRoot(root), userInputText)
 		}
 
-		// Compile. The CheckPointStore is wired independently of
-		// the state serializer. The state serializer is
-		// OPTIONAL: when the user does not set one, eino's
-		// default InternalSerializer is used (which knows about
-		// runtime.CanvasState via compose.RegisterSerializableType
-		// in runtime/state.go:init). RAGFlow's plain-JSON
-		// CanvasStateSerializer is incompatible with eino's
-		// internal checkpoint format — see cmd/server_main.go
-		// buildAgentRunOptions for the rationale.
+		// Compile.
 		var cc *canvas.CompiledCanvas
 		switch {
 		case s.checkpointStore != nil && s.stateSerializer != nil:
@@ -740,61 +929,143 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			cc, err = canvas.Compile(ctx2, c)
 		}
 		if err != nil {
+			common.Debug("RunAgent compile err",
+				zap.String("canvas", canvasID),
+				zap.String("session", sessionID),
+				zap.String("task", taskID),
+				zap.String("run", runID),
+				zap.String("type", fmt.Sprintf("%T", err)),
+				zap.Error(err))
 			s.markRunFailed(ctx2, runID, "compile: "+err.Error())
-			// Two-`%w` chain: ErrAgentStorageError first so
-			// errors.Is(returnedErr, ErrAgentStorageError) is
-			// true; the inner err is only rendered in
-			// returnedErr.Error() for log diagnostics. Go 1.20+
-			// supports multi-wrap via %w but the sentinel-match
-			// contract requires sentinel-first ordering.
 			return nil, fmt.Errorf("canvas compile: %w: %w", ErrAgentStorageError, err)
 		}
 
-		// Phase 4.4 V2 (Goal 7): generate a checkpoint id when
-		// a store is configured and pair the run record with the
-		// checkpoint payload. eino's WithCheckPointID is a run-time
-		// Option (not a GraphCompileOption), so the id has to be
-		// generated per-Invoke. We use the existing runID as the
-		// checkpoint id — it's already unique per (canvas, session)
-		// and gives us a stable key for the Redis "agent:cp:{id}"
-		// namespace.
 		cpID := ""
 		if s.checkpointStore != nil {
 			cpID = runID
 		}
 
-		// Invoke. cc.Workflow.Invoke runs the full eino graph.
-		// A wait-for-user interrupt surfaces as an eino error
-		// that we pass through to Runner.Run unchanged — Runner.Run
-		// detects it via canvas.ExtractInterruptContexts (see
-		// runner.go:219-227) and emits the waiting_for_user SSE
-		// event with the saved interrupt id.
+		// Invoke.
 		var invokeOpts []compose.Option
 		if cpID != "" {
 			invokeOpts = []compose.Option{compose.WithCheckPointID(cpID)}
 		}
-		_, err = cc.Workflow.Invoke(ctx2, map[string]any{"query": userInput}, invokeOpts...)
+		// On a resume, the user input is the resume payload for the
+		// previously-paused UserFillUp node — it does NOT represent
+		// a fresh sys.query. The begin node writes inputs["query"]
+		// straight into state.Sys["query"] (begin.go:76), and
+		// UserFillUp:Menu's initialUserFillUpData reads sys.query
+		// back to drive the menu's initial-input fast path. If we
+		// pass userInput through here on a resume, the menu would
+		// re-consume the resume text as a brand-new branch choice
+		// and Switch:Route would route to a fresh branch — the
+		// previously-paused branch would be silently dropped (the
+		// "second input doesn't resume" symptom reported for
+		// categorize / iteration / code / wait_input etc.).
+		wfInput := userInput
+		if isResume && resumeID != "" {
+			wfInput = ""
+		}
+		_, err = cc.Workflow.Invoke(ctx2, map[string]any{"query": wfInput}, invokeOpts...)
 
-		// Attach the checkpoint payload to the run record. Best-
-		// effort — tracker may be down; we don't fail the run.
 		if cpID != "" && s.runTracker != nil {
 			_ = s.runTracker.AttachCheckpoint(ctx2, runID, cpID)
 		}
 
+		// Collect answer and references from the state snapshot.
+		// node_finished events are already emitted per-node by the
+		// statePost wrappers in scheduler.go.
+		var answer string
+		var reference []interface{}
+		now := float64(time.Now().UnixNano()) / 1e9
+		for _, bucket := range state.Snapshot() {
+			if v, ok := bucket["answer"].(string); ok && v != "" {
+				if answer == "" {
+					answer = v
+				}
+			}
+			if v, ok := bucket["content"].(string); ok && v != "" && answer == "" {
+				answer = v
+			}
+			if v, ok := bucket["result"].(string); ok && v != "" && answer == "" {
+				answer = v
+			}
+			if v, ok := bucket["reference"].([]interface{}); ok {
+				reference = append(reference, v...)
+			}
+		}
+
 		if err != nil {
+			common.Debug("RunAgent invoke err",
+				zap.String("canvas", canvasID),
+				zap.String("session", sessionID),
+				zap.String("task", taskID),
+				zap.String("run", runID),
+				zap.String("type", fmt.Sprintf("%T", err)),
+				zap.Error(err))
 			if canvas.IsInterruptError(err) {
-				// Interrupt: not a failure. Return state +
-				// interrupt error so Runner.Run can extract the
-				// InterruptCtx list and emit waiting_for_user.
 				s.markRunFailed(ctx2, runID, "interrupt: "+err.Error())
+				if answer != "" {
+					msgData, _ := json.Marshal(canvas.MessageEvent{
+						Content:   answer,
+						Reference: reference,
+					})
+					emit("message", string(msgData))
+
+					meData, _ := json.Marshal(canvas.MessageEndEvent{
+						Reference: reference,
+					})
+					emit("message_end", string(meData))
+				}
 				return state, err
 			}
+			if shouldTreatAsCompletedLoopRun(err, answer) {
+				msgData, _ := json.Marshal(canvas.MessageEvent{
+					Content:   answer,
+					Reference: reference,
+				})
+				emit("message", string(msgData))
+
+				meData, _ := json.Marshal(canvas.MessageEndEvent{
+					Reference: reference,
+				})
+				emit("message_end", string(meData))
+
+				wfData, _ := json.Marshal(map[string]interface{}{
+					"inputs":       map[string]any{"query": userInput},
+					"outputs":      answer,
+					"elapsed_time": now - startedAt,
+					"created_at":   now,
+				})
+				emit("workflow_finished", string(wfData))
+
+				s.markRunSucceeded(ctx2, runID)
+				return state, nil
+			}
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
-			// Same sentinel-first two-%w wrap as the compile branch
-			// above; preserves errors.Is(returnedErr, ErrAgentStorageError)
-			// while keeping the inner error text in Error().
 			return nil, fmt.Errorf("canvas invoke: %w: %w", ErrAgentStorageError, err)
 		}
+
+		// Emit message + message_end (mirrors Python's ans dict).
+		msgData, _ := json.Marshal(canvas.MessageEvent{
+			Content:   answer,
+			Reference: reference,
+		})
+		emit("message", string(msgData))
+
+		meData, _ := json.Marshal(canvas.MessageEndEvent{
+			Reference: reference,
+		})
+		emit("message_end", string(meData))
+
+		// Emit workflow_finished with the final outputs.
+		wfData, _ := json.Marshal(map[string]interface{}{
+			"inputs":       map[string]any{"query": userInput},
+			"outputs":      answer,
+			"elapsed_time": now - startedAt,
+			"created_at":   now,
+		})
+		emit("workflow_finished", string(wfData))
 
 		s.markRunSucceeded(ctx2, runID)
 		return state, nil
@@ -823,6 +1094,14 @@ func tenantIDFromRoot(root map[string]any) string {
 	return ""
 }
 
+func shouldTreatAsCompletedLoopRun(err error, answer string) bool {
+	if err == nil || answer == "" {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "[GraphRunError] no tasks to execute")
+}
+
 // markRunSucceeded records the run as completed successfully via
 // the Redis-backed RunTracker. No-op when tracker is nil (test path)
 // or when the underlying Redis call fails (degraded boot).
@@ -831,7 +1110,9 @@ func (s *AgentService) markRunSucceeded(ctx context.Context, runID string) {
 		return
 	}
 	if err := s.runTracker.MarkSucceeded(ctx, runID); err != nil {
-		log.Printf("service: RunAgent runTracker.MarkSucceeded(%q): %v (best-effort, run not blocked)", runID, err)
+		common.Warn("service: RunAgent runTracker.MarkSucceeded (best-effort, run not blocked)",
+			zap.String("run_id", runID),
+			zap.Error(err))
 	}
 }
 
@@ -843,7 +1124,10 @@ func (s *AgentService) markRunFailed(ctx context.Context, runID, reason string) 
 		return
 	}
 	if err := s.runTracker.MarkFailed(ctx, runID, reason); err != nil {
-		log.Printf("service: RunAgent runTracker.MarkFailed(%q, %q): %v (best-effort, run not blocked)", runID, reason, err)
+		common.Warn("service: RunAgent runTracker.MarkFailed (best-effort, run not blocked)",
+			zap.String("run_id", runID),
+			zap.String("reason", reason),
+			zap.Error(err))
 	}
 }
 
@@ -855,7 +1139,7 @@ func normalisedDSLForRun(v *entity.UserCanvasVersion) map[string]any {
 	if v == nil || len(v.DSL) == 0 {
 		return nil
 	}
-	return dslpkg.NormalizeForCanvas(map[string]any(v.DSL))
+	return dslpkg.NormalizeForRun(map[string]any(v.DSL))
 }
 
 // CancelAgent signals the in-flight run (if any) for the given canvas to

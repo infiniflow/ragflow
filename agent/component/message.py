@@ -284,12 +284,18 @@ class Message(ComponentBase):
             return
 
         for n, v in kwargs.items():
-            content = re.sub(n, v, content)
+            if v is not None:
+                content = re.sub(n, str(v), content)
 
         self.set_output("downloads", downloads)
         self.set_output("content", content)
         self._convert_content(content)
-        self._save_to_memory(content)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(self._save_to_memory(content))
+        else:
+            asyncio.run_coroutine_threadsafe(self._save_to_memory(content), loop)
 
     def thoughts(self) -> str:
         return ""

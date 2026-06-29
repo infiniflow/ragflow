@@ -859,7 +859,12 @@ def get_ingestion_log(dataset_id: str, tenant_id: str, log_id: str):
     if not log:
         return False, "Log not found"
 
-    return True, log.to_dict()
+    result = log.to_dict()
+    # Be explicit here: the dataflow-result page needs the full DSL payload to
+    # rebuild the timeline and right-side parser view. Some serialization paths
+    # can omit JSON fields from Peewee model dicts, so keep it attached here.
+    result["dsl"] = log.dsl or {}
+    return True, result
 
 
 def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = True):

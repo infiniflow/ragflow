@@ -22,14 +22,12 @@ import (
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -297,7 +295,7 @@ func (h *Handler) CreateUser(c *gin.Context) {
 // GetUser handle get user
 func (h *Handler) GetUser(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -323,7 +321,7 @@ func (h *Handler) GetUser(c *gin.Context) {
 // DeleteUser handle delete user
 func (h *Handler) DeleteUser(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -355,7 +353,7 @@ type ChangePasswordHTTPRequest struct {
 // ChangePassword handle change password
 func (h *Handler) ChangePassword(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -387,7 +385,7 @@ type UpdateActivateStatusHTTPRequest struct {
 // UpdateUserActivateStatus handle update user activate status
 func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -420,7 +418,7 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 // GrantAdmin handle grant admin role
 func (h *Handler) GrantAdmin(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -448,7 +446,7 @@ func (h *Handler) GrantAdmin(c *gin.Context) {
 // RevokeAdmin handle revoke admin role
 func (h *Handler) RevokeAdmin(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -476,7 +474,7 @@ func (h *Handler) RevokeAdmin(c *gin.Context) {
 // ListUserAPITokens handle get user API keys
 func (h *Handler) ListUserAPITokens(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -498,7 +496,7 @@ func (h *Handler) ListUserAPITokens(c *gin.Context) {
 // GenerateUserAPIToken handle generate user API key
 func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -520,7 +518,7 @@ func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 // DeleteUserAPIToken handle delete user API key
 func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -622,6 +620,23 @@ func (h *Handler) ShutdownService(c *gin.Context) {
 	success(c, result, "")
 }
 
+// StartService handle start service
+func (h *Handler) StartService(c *gin.Context) {
+	serviceID := c.Param("service_id")
+	if serviceID == "" {
+		errorResponse(c, "Service ID is required", 400)
+		return
+	}
+
+	result, err := h.service.StartService(serviceID)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "")
+}
+
 // RestartService handle restart service
 func (h *Handler) RestartService(c *gin.Context) {
 	serviceID := c.Param("service_id")
@@ -639,122 +654,12 @@ func (h *Handler) RestartService(c *gin.Context) {
 	success(c, result, "")
 }
 
-func (h *Handler) ListProviders(c *gin.Context) {
-
-	keywords := ""
-	if queryKeywords := c.Query("available"); queryKeywords != "" {
-		keywords = queryKeywords
-	}
-
-	// convert keywords to small case
-	keywords = strings.ToLower(keywords)
-	if keywords == "true" {
-		// list pool providers
-		providers, err := dao.GetModelProviderManager().ListProviders()
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeNotFound,
-				"message": err.Error(),
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"code":    0,
-			"message": "success",
-			"data":    providers,
-		})
-	}
-}
-
-func (h *Handler) ShowProvider(c *gin.Context) {
-	providerName := c.Param("provider_name")
-	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
-		return
-	}
-
-	provider, err := dao.GetModelProviderManager().GetProviderByName(providerName)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
-			"message": err.Error(),
-		})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    provider,
-	})
-}
-
-func (h *Handler) ListModels(c *gin.Context) {
-	providerName := c.Param("provider_name")
-	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
-		return
-	}
-	models, err := dao.GetModelProviderManager().ListModels(providerName)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
-			"message": err.Error(),
-		})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    models,
-	})
-}
-
-func (h *Handler) ShowModel(c *gin.Context) {
-	providerName := c.Param("provider_name")
-	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
-		return
-	}
-	modelName := c.Param("model_name")
-	if modelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Model name is required",
-		})
-		return
-	}
-	model, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
-			"message": err.Error(),
-		})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    model,
-	})
-}
-
-// GetVariables handle get variables
-// Python logic: if request body is empty, list all variables; otherwise get single variable by var_name from body
-func (h *Handler) GetVariables(c *gin.Context) {
+// ListVariables handle list variables
+func (h *Handler) ListVariables(c *gin.Context) {
 	// Check if request has body content
 	if c.Request.ContentLength == 0 || c.Request.ContentLength == -1 {
 		// List all variables
-		variables, err := h.service.GetAllVariables()
+		variables, err := h.service.ListAllVariables()
 		if err != nil {
 			errorResponse(c, err.Error(), 500)
 			return
@@ -784,6 +689,28 @@ func (h *Handler) GetVariables(c *gin.Context) {
 			errorResponse(c, adminErr.Message, 400)
 			return
 		}
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, variable, "")
+}
+
+// ShowVariable handle show variable
+func (h *Handler) ShowVariable(c *gin.Context) {
+	encodedVarName := c.Param("var_name")
+	varName, err := common.DecodeFromBase64(encodedVarName)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+	if varName == "" {
+		errorResponse(c, "Var name is required", 400)
+		return
+	}
+
+	variable, err := h.service.GetVariable(varName)
+	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
 	}
@@ -829,16 +756,10 @@ func (h *Handler) SetVariable(c *gin.Context) {
 	successNoData(c, "Set variable successfully")
 }
 
-// GetConfigs handle get configs
-// Python logic: return all service configurations
-func (h *Handler) GetConfigs(c *gin.Context) {
-	configs, err := h.service.GetAllConfigs()
+// ListConfigs handle list configs
+func (h *Handler) ListConfigs(c *gin.Context) {
+	configs, err := h.service.ListAllConfigs()
 	if err != nil {
-		// Check if it's an AdminException
-		if adminErr, ok := err.(*AdminException); ok {
-			errorResponse(c, adminErr.Message, 400)
-			return
-		}
 		errorResponse(c, err.Error(), 500)
 		return
 	}
@@ -846,16 +767,10 @@ func (h *Handler) GetConfigs(c *gin.Context) {
 	success(c, configs, "")
 }
 
-// GetEnvironments handle get environments
-// Python logic: return important environment variables
-func (h *Handler) GetEnvironments(c *gin.Context) {
-	environments, err := h.service.GetAllEnvironments()
+// ListEnvironments handle list environments
+func (h *Handler) ListEnvironments(c *gin.Context) {
+	environments, err := h.service.ListEnvironments()
 	if err != nil {
-		// Check if it's an AdminException
-		if adminErr, ok := err.(*AdminException); ok {
-			errorResponse(c, adminErr.Message, 400)
-			return
-		}
 		errorResponse(c, err.Error(), 500)
 		return
 	}
@@ -1064,7 +979,7 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 // GetLogLevel returns the current log level
 func (h *Handler) GetLogLevel(c *gin.Context) {
 	level := common.GetLevel()
-	success(c, gin.H{"level": level}, "")
+	success(c, gin.H{"level": level}, "SUCCESS")
 }
 
 // SetLogLevelRequest set log level request
@@ -1085,7 +1000,7 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 		return
 	}
 
-	success(c, gin.H{"level": req.Level}, "Log level updated successfully")
+	success(c, gin.H{"level": req.Level}, "SUCCESS")
 }
 
 func (h *Handler) ListMessagesFromQueue(c *gin.Context) {
@@ -1378,4 +1293,61 @@ func (h *Handler) Reports(c *gin.Context) {
 	}
 
 	responseWithCode(c, message, http.StatusOK, errCode)
+}
+
+func (h *Handler) ListAllModels(c *gin.Context) {
+
+	page := 0
+	if v := c.Query("page"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	pageSize := 0
+	if v := c.Query("page_size"); v != "" {
+		if ps, err := strconv.Atoi(v); err == nil && ps > 0 {
+			pageSize = ps
+		}
+	}
+
+	// List models
+	models, err := h.service.ListAllModels(page, pageSize)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, models, "")
+}
+
+func (h *Handler) ShowModel(c *gin.Context) {
+	encodedModelName := c.Param("model_name")
+	if encodedModelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Encoded model name is empty",
+		})
+		return
+	}
+
+	decodedModelName, err := common.DecodeFromBase64(encodedModelName)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+	if decodedModelName == "" {
+		errorResponse(c, "Decoded model name is empty", 400)
+		return
+	}
+
+	// Get model
+	model, err := h.service.GetModelByModelName(decodedModelName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, model, "")
+
 }
