@@ -606,7 +606,11 @@ async def _upload_local_documents(kb, tenant_id):
         parent_path=form.get("parent_path"),
         parser_config_override=parser_config_override,
     )
-    if err:
+
+    # Handle partial success: some files uploaded successfully, some had errors
+    is_partial_success = err and files
+
+    if err and not is_partial_success:
         msg = "\n".join(err)
         logging.error(msg)
         return get_error_data_result(message=msg, code=RetCode.SERVER_ERROR)
@@ -620,10 +624,17 @@ async def _upload_local_documents(kb, tenant_id):
     return_raw_files = request.args.get("return_raw_files", "false").lower() == "true"
 
     if return_raw_files:
-        return get_result(data=files)
+        doc_data = files
+    else:
+        doc_data = [map_doc_keys_with_run_status(doc, run_status="0") for doc in files]
 
-    renamed_doc_list = [map_doc_keys_with_run_status(doc, run_status="0") for doc in files]
-    return get_result(data=renamed_doc_list)
+    # For partial success, include error message along with successful uploads
+    if is_partial_success:
+        msg = "\n".join(err)
+        logging.warning(f"Partial upload success: {len(files)} succeeded, {len(err)} failed - {msg}")
+        return construct_json_result(code=RetCode.SERVER_ERROR, message=msg, data=doc_data)
+
+    return get_result(data=doc_data)
 
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["GET"])  # noqa: F821
