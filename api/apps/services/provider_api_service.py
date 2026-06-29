@@ -18,6 +18,8 @@ import json
 import logging
 import asyncio
 
+from biorun.convert import false
+
 from common.constants import LLMType, ActiveStatusEnum, ModelVerifyStatusEnum
 from common.settings import FACTORY_LLM_INFOS
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, delete_models_by_instance_ids, delete_instances_by_provider_ids, _decode_api_key_config
@@ -758,7 +760,8 @@ def list_instance_models(tenant_id: str, provider_id_or_name: str, instance_id_o
         "name": model.model_name,
         "model_type": get_model_type_human(model.model_type),
         "max_tokens": json.loads(model.extra).get("max_tokens", 8192) if model.extra else 8192,
-        "status": model.status
+        "status": model.status,
+        "verify": json.loads(model.extra).get("verify", ModelVerifyStatusEnum.UNKNOWN.value) == ModelVerifyStatusEnum.SUCCESS.value if model.extra else False
     } for model in model_objs]
 
 
