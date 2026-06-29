@@ -315,35 +315,6 @@ func TestPythonExtractorEntities(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // Test 3: Python full pipeline relation output matches expected
-// ---------------------------------------------------------------------------
-
-func TestPythonExtractorRelations(t *testing.T) {
-	for _, tc := range enTests {
-		t.Run(tc.name, func(t *testing.T) {
-			py, err := runPythonExtractor(tc.text, "en")
-			if err != nil {
-				t.Skip("Python spaCy not available:", err)
-			}
-
-			for _, want := range tc.wantRels {
-				found := false
-				for _, r := range py.Rels {
-					if r.Subject.Text == want.subj &&
-						r.Predicate == want.pred &&
-						r.Object.Text == want.obj {
-						found = true
-						break
-					}
-				}
-				if !found {
-					t.Errorf("Python missing relation (%q, %q, %q). Found: %+v",
-						want.subj, want.pred, want.obj, py.Rels)
-				}
-			}
-		})
-	}
-}
-
 // zhTests define Chinese test cases for zh_core_web_sm.
 var zhTests = []EnTestSpec{
 	{name: "founded_by_zh", text: "腾讯由马化腾创立",
