@@ -32,6 +32,9 @@ type InferenceClient struct {
 	TSRLabels []string
 }
 
+// BaseURL returns the configured DeepDoc service URL.
+func (c *InferenceClient) BaseURL() string { return c.baseURL }
+
 // NewInferenceClient creates a client.  baseURL must be provided by the caller
 // (e.g. from the DEEPDOC_URL environment variable).  Returns an error if empty.
 func NewInferenceClient(baseURL string) (*InferenceClient, error) {
