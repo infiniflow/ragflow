@@ -211,9 +211,9 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 
 	// Check if all kbs have the same embedding model
 	if len(kbRecords) > 1 {
-		firstEmbeddingKey := knowledgebaseEmbeddingKey(kbRecords[0])
+		firstEmbeddingKey := knowledgebaseEmbeddingKey(kbRecords[0], tenantIDs[0])
 		for i := 1; i < len(kbRecords); i++ {
-			if knowledgebaseEmbeddingKey(kbRecords[i]) != firstEmbeddingKey {
+			if knowledgebaseEmbeddingKey(kbRecords[i], tenantIDs[i]) != firstEmbeddingKey {
 				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
 			}
 		}
@@ -482,9 +482,12 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 	}, nil
 }
 
-func knowledgebaseEmbeddingKey(kb *entity.Knowledgebase) string {
+func knowledgebaseEmbeddingKey(kb *entity.Knowledgebase, tenantID string) string {
 	if kb.TenantEmbdID != nil && *kb.TenantEmbdID > 0 {
 		return fmt.Sprintf("tenant:%d", *kb.TenantEmbdID)
+	}
+	if kb.EmbdID == "" {
+		return fmt.Sprintf("default:%s", tenantID)
 	}
 	return fmt.Sprintf("embd:%s", kb.EmbdID)
 }

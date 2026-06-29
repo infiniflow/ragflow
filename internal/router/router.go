@@ -366,7 +366,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
 				searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
 				searches.POST("/:search_id/completion", r.searchHandler.Completion)
-				searches.POST("/:search_id/completions", r.searchHandler.Completion)
+				searches.POST("/:search_id/completions", r.searchHandler.Compl etion)
 			}
 
 			file := v1.Group("/files")
