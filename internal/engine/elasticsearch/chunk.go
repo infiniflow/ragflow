@@ -271,6 +271,68 @@ func (e *elasticsearchEngine) UpdateChunks(ctx context.Context, condition map[st
 	return e.updateChunksByQuery(ctx, fullIndexName, condition, newValue)
 }
 
+// AdjustChunkPagerank atomically adjusts pagerank_fea and clamps it to [minWeight, maxWeight].
+func (e *elasticsearchEngine) AdjustChunkPagerank(ctx context.Context, indexName, chunkID, kbID string, delta, minWeight, maxWeight float64) error {
+	if indexName == "" {
+		return fmt.Errorf("index name cannot be empty")
+	}
+	if chunkID == "" {
+		return fmt.Errorf("chunk id cannot be empty")
+	}
+	script := `
+		if (ctx._source.kb_id == null || !ctx._source.kb_id.equals(params.kb_id)) {
+			ctx.op = 'noop';
+		} else {
+			double current = 0.0;
+			if (ctx._source.containsKey(params.field) && ctx._source[params.field] != null) {
+				current = ((Number)ctx._source[params.field]).doubleValue();
+			}
+			double next = current + params.delta;
+			if (next < params.min_weight) {
+				next = params.min_weight;
+			}
+			if (next > params.max_weight) {
+				next = params.max_weight;
+			}
+			ctx._source[params.field] = next;
+		}
+	`
+	body, err := json.Marshal(map[string]interface{}{
+		"script": map[string]interface{}{
+			"source": script,
+			"lang":   "painless",
+			"params": map[string]interface{}{
+				"field":      common.PAGERANK_FLD,
+				"kb_id":      kbID,
+				"delta":      delta,
+				"min_weight": minWeight,
+				"max_weight": maxWeight,
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal pagerank adjust request: %w", err)
+	}
+	req := esapi.UpdateRequest{
+		Index:      indexName,
+		DocumentID: chunkID,
+		Body:       bytes.NewReader(body),
+	}
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		return fmt.Errorf("failed to adjust chunk pagerank: %w", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		if res.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
+		}
+		bodyBytes, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("elasticsearch pagerank adjust error: %s, body: %s", res.Status(), string(bodyBytes))
+	}
+	return nil
+}
+
 func (e *elasticsearchEngine) updateSingleMemoryMessage(ctx context.Context, indexName, messageDocID string, newValue map[string]interface{}) error {
 	doc := mapMemoryMessageESUpdateFields(newValue)
 	delete(doc, "id")
