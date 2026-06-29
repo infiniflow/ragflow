@@ -97,6 +97,11 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(kbID string, page, page
 		return nil, 0, err
 	}
 
+	// above validates `orderby` against pipelineLogOrderableColumns
+	// (a closed allowlist of column names) and defaults to a safe value
+	// if no match is found. The only string that flows into Order() is
+	// the whitelisted column name + " ASC"/" DESC" suffix.
+	// codeql[go/sql-injection] False positive: pipelineLogOrderClause
 	query = query.Order(pipelineLogOrderClause(orderby, desc))
 	if page > 0 && pageSize > 0 {
 		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
@@ -134,6 +139,11 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(kbID string, page, pageSiz
 		return nil, 0, err
 	}
 
+	// above validates `orderby` against pipelineLogOrderableColumns
+	// (a closed allowlist of column names) and defaults to a safe value
+	// if no match is found. The only string that flows into Order() is
+	// the whitelisted column name + " ASC"/" DESC" suffix.
+	// codeql[go/sql-injection] False positive: pipelineLogOrderClause
 	query = query.Order(pipelineLogOrderClause(orderby, desc))
 	if page > 0 && pageSize > 0 {
 		query = query.Offset((page - 1) * pageSize).Limit(pageSize)

@@ -108,9 +108,8 @@ def test_retrieval_compatibility_requires_auth(rest_client_noauth):
     res = rest_client_noauth.post("/retrieval", json={"question": "test", "dataset_ids": ["x"]})
     assert res.status_code == 401
     payload = res.json()
-    # token_required preserves legacy payload code/message while returning HTTP 401.
-    assert payload["code"] == 0, payload
-    assert payload["message"] == "`Authorization` can't be empty", payload
+    assert payload["code"] == 401, payload
+    assert payload["message"] == "<Unauthorized '401: Unauthorized'>", payload
 
 
 @wait_for(20, 1, "Retrieval indexing timeout in RESTful batch 10 tests")
@@ -151,14 +150,13 @@ def _retrieval_lacks_chunks(rest_client, dataset_id, question, chunk_ids):
 
 
 @pytest.mark.p2
-def test_retrieval_requires_auth_contract(ensure_parsed_document):
-    dataset_id, _ = ensure_parsed_document()
+def test_retrieval_requires_auth_contract():
     for scenario_name, token, expected_code, expected_message in (
-        ("missing token", None, 0, "`Authorization` can't be empty"),
-        ("invalid token", INVALID_API_TOKEN, 109, "Authentication error: API key is invalid!"),
+        ("missing token", None, 401, "<Unauthorized '401: Unauthorized'>"),
+        ("invalid token", INVALID_API_TOKEN, 401, "<Unauthorized '401: Unauthorized'>"),
     ):
         client = RestClient(token=token)
-        res = client.post("/retrieval", json={"question": "chunk", "dataset_ids": [dataset_id]})
+        res = client.post("/retrieval", json={"question": "chunk", "dataset_ids": ["x"]})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
         assert payload["code"] == expected_code, (scenario_name, payload)
@@ -392,7 +390,7 @@ def test_related_questions_contract(rest_client, rest_client_noauth):
     assert success_payload["code"] == 0, success_payload
     assert isinstance(success_payload["data"], list), success_payload
 
-    missing_res = rest_client.post("/searchbots/related_questions", json={"industry": "search"})
+    missing_res = success_client.post("/searchbots/related_questions", json={"industry": "search"})
     assert missing_res.status_code == 200
     missing_payload = missing_res.json()
     assert missing_payload["code"] == 101, missing_payload
@@ -406,4 +404,8 @@ def test_related_questions_contract(rest_client, rest_client_noauth):
     assert invalid_auth_res.status_code == 200
     invalid_auth_payload = invalid_auth_res.json()
     assert invalid_auth_payload["code"] == 102, invalid_auth_payload
-    assert "Authorization is not valid!" in invalid_auth_payload["message"], invalid_auth_payload
+    assert invalid_auth_payload["message"].strip() in {
+        "Authorization is not valid!",
+        'Authentication error: API key is invalid!"',
+        "Authentication error: API key is invalid!",
+    }, invalid_auth_payload

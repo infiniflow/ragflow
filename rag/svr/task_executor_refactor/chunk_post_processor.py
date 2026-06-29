@@ -41,7 +41,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 from rag.prompts.generator import gen_metadata, keyword_extraction, question_proposal, content_tagging
-from rag.graphrag.utils import get_llm_cache, set_llm_cache
+from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 
 
 async def extract_keywords(docs: List[Dict], ctx: TaskContext) -> None:
@@ -243,10 +243,14 @@ async def apply_tags(docs: List[Dict], ctx: TaskContext) -> None:
     S = 1000
     st = timer()
     examples = []
-    all_tags = settings.retriever.all_tags_in_portion(tenant_id, kb_ids, S)
+    all_tags = get_tags_from_cache(kb_ids)
+    if not all_tags:
+        all_tags = settings.retriever.all_tags_in_portion(tenant_id, kb_ids, S)
+        set_tags_to_cache(kb_ids, all_tags)
+    else:
+        all_tags = json.loads(all_tags)
     chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, ctx.llm_id)
     with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_model:
-
         docs_to_tag = []
         for doc in docs:
             if ctx.has_canceled_func(ctx.id):

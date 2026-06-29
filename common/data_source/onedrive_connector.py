@@ -32,6 +32,21 @@ _SUPPORTED_EXTENSIONS = {
 }
 
 
+def _normalize_folder_path(folder_path: str | None) -> str | None:
+    """Normalize Graph path-based addressing segment (root:{path}:/delta)."""
+    if folder_path is None:
+        return None
+    path = folder_path.strip()
+    if not path:
+        return None
+    segments = [segment for segment in path.split("/") if segment]
+    if ".." in segments:
+        raise ConnectorValidationError("folder_path must not contain '..' segments.")
+    if not segments:
+        return None
+    return "/" + "/".join(segments)
+
+
 class OneDriveCheckpoint(ConnectorCheckpoint):
     """OneDrive-specific checkpoint tracking delta links per drive."""
     delta_links: dict[str, str] | None = None
@@ -52,7 +67,7 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
         folder_path: str | None = None,
     ) -> None:
         self.batch_size = batch_size
-        self.folder_path = folder_path  # optional sub-folder filter, e.g. "/Documents"
+        self.folder_path = _normalize_folder_path(folder_path)
         self._access_token: str | None = None
         self._tenant_id: str | None = None
 

@@ -16,21 +16,30 @@
 
 import os
 
-PROJECT_BASE = os.getenv("RAG_PROJECT_BASE") or os.getenv("RAG_DEPLOY_BASE")
+PROJECT_BASE = None
+
+
+def _default_project_base_directory():
+    return os.path.abspath(
+        os.path.join(
+            os.path.dirname(os.path.realpath(__file__)),
+            os.pardir,
+        )
+    )
+
 
 def get_project_base_directory(*args):
     global PROJECT_BASE
-    if PROJECT_BASE is None:
-        PROJECT_BASE = os.path.abspath(
-            os.path.join(
-                os.path.dirname(os.path.realpath(__file__)),
-                os.pardir,
-            )
-        )
+
+    project_base = os.getenv("RAG_PROJECT_BASE") or os.getenv("RAG_DEPLOY_BASE")
+    if not project_base:
+        if PROJECT_BASE is None:
+            PROJECT_BASE = _default_project_base_directory()
+        project_base = PROJECT_BASE
 
     if args:
-        return os.path.join(PROJECT_BASE, *args)
-    return PROJECT_BASE
+        return os.path.join(project_base, *args)
+    return project_base
 
 def traversal_files(base):
     for root, ds, fs in os.walk(base):

@@ -72,10 +72,14 @@ export const useGetPaginationWithRouter = () => {
   } = useSetPaginationParams();
 
   const onPageChange: Pagination['onChange'] = useCallback(
-    (pageNumber: number, pageSize?: number) => {
-      setPaginationParams(pageNumber, pageSize);
+    (pageNumber: number, size?: number) => {
+      if (size !== pageSize) {
+        setPaginationParams(1, size);
+      } else {
+        setPaginationParams(pageNumber, size);
+      }
     },
-    [setPaginationParams],
+    [setPaginationParams, pageSize],
   );
 
   const setCurrentPagination = useCallback(
@@ -275,7 +279,8 @@ export const useSendMessageWithSse = () => {
                 if (typeof d !== 'boolean') {
                   setAnswer((prev) => {
                     const prevAnswer = prev.answer || '';
-                    const currentAnswer = d.final ? '' : d.answer || '';
+                    const currentAnswer =
+                      d.final && prevAnswer ? '' : d.answer || '';
 
                     let newAnswer: string;
                     if (prevAnswer && currentAnswer.startsWith(prevAnswer)) {

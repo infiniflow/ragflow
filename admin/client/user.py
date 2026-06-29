@@ -49,7 +49,7 @@ def encrypt_password(password_plain: str) -> str:
 def register_user(client: HttpClient, email: str, nickname: str, password: str) -> None:
     password_enc = encrypt_password(password)
     payload = {"email": email, "nickname": nickname, "password": password_enc}
-    res = client.request_json("POST", "/user/register", use_api_base=False, auth_kind=None, json_body=payload)
+    res = client.request_json("POST", "/users", use_api_base=True, auth_kind=None, json_body=payload)
     if res.get("code") == 0:
         return
     msg = res.get("message", "")
@@ -64,7 +64,7 @@ def login_user(client: HttpClient, server_type: str, email: str, password: str) 
     if server_type == "admin":
         response = client.request("POST", "/admin/login", use_api_base=True, auth_kind=None, json_body=payload)
     else:
-        response = client.request("POST", "/user/login", use_api_base=False, auth_kind=None, json_body=payload)
+        response = client.request("POST", "/auth/login", use_api_base=True, auth_kind=None, json_body=payload)
     try:
         res = response.json()
     except Exception as exc:

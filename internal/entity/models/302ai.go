@@ -1,7 +1,22 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -15,58 +30,28 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type AI302Model struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewAI302Model(baseURL map[string]string, urlSuffix URLSuffix) *AI302Model {
 	return &AI302Model{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Timeout: time.Second * 120,
-			Transport: &http.Transport{
-				Proxy:               http.ProxyFromEnvironment,
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 90,
-				DisableCompression:  false,
-			},
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (a *AI302Model) NewInstance(baseURL map[string]string) ModelDriver {
-	return &AI302Model{
-		BaseURL:   baseURL,
-		URLSuffix: a.URLSuffix,
-		httpClient: &http.Client{
-			Timeout: time.Second * 120,
-			Transport: &http.Transport{
-				Proxy:               http.ProxyFromEnvironment,
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 90,
-				DisableCompression:  false,
-			},
-		},
-	}
+	return NewAI302Model(baseURL, a.baseModel.URLSuffix)
 }
 
 func (a *AI302Model) Name() string {
 	return "302ai"
-}
-
-func validateAI302APIKey(apiConfig *APIConfig) (string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return "", fmt.Errorf("api key is required")
-	}
-	return strings.TrimSpace(*apiConfig.ApiKey), nil
 }
 
 func validateAI302ModelName(modelName *string) (string, error) {
@@ -86,10 +71,10 @@ func validateAI302DocumentURL(rawURL string) (string, error) {
 }
 
 func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := validateAI302APIKey(apiConfig)
-	if err != nil {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
@@ -97,12 +82,11 @@ func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -162,16 +146,18 @@ func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-	req.Header.Set("Accept", "application/json")
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -233,10 +219,10 @@ func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiC
 }
 
 func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	apiKey, err := validateAI302APIKey(apiConfig)
-	if err != nil {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
 	}
@@ -247,12 +233,11 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(a.BaseURL[region], "/"), a.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), a.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -316,7 +301,10 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -325,7 +313,7 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -336,44 +324,20 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: read line by line
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// SSE data line starts with "data:"
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		// Extract JSON after "data:"
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of stream
-		if data == "[DONE]" {
-			break
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
+	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -390,22 +354,20 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 			}
 		}
 
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			break
-		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return scanner.Err()
+	return sender(&endOfStream, nil)
 }
 
 func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -413,17 +375,13 @@ func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConf
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := validateAI302APIKey(apiConfig)
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": model,
@@ -435,7 +393,10 @@ func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConf
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -443,7 +404,7 @@ func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConf
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -485,6 +446,10 @@ func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConf
 }
 
 func (a *AI302Model) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -495,17 +460,13 @@ func (a *AI302Model) Rerank(modelName *string, query string, documents []string,
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := validateAI302APIKey(apiConfig)
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Rerank)
 
 	var topN int
 	if rerankConfig != nil && rerankConfig.TopN != 0 {
@@ -524,7 +485,10 @@ func (a *AI302Model) Rerank(modelName *string, query string, documents []string,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -532,7 +496,7 @@ func (a *AI302Model) Rerank(modelName *string, query string, documents []string,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -571,6 +535,10 @@ func (a *AI302Model) Rerank(modelName *string, query string, documents []string,
 }
 
 func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if file == nil || strings.TrimSpace(*file) == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
@@ -578,23 +546,23 @@ func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig 
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := validateAI302APIKey(apiConfig)
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.ASR)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
 	// open audio file
+	// file path the caller passes in to upload. The user (or
+	// operator-supplied pipeline) explicitly chose this path, and the
+	// OS access check enforces permissions anyway.
+	// codeql[go/path-injection] False positive: *file is the audio
 	audioFile, err := os.Open(strings.TrimSpace(*file))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
@@ -654,7 +622,10 @@ func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig 
 	}
 
 	// build request
-	req, err := http.NewRequest("POST", url, &body)
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -664,7 +635,7 @@ func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig 
 	req.Header.Set("Accept", "application/json")
 
 	// send request
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -705,6 +676,10 @@ func (a *AI302Model) AudioSpeechWithSender(modelName *string, audioContent *stri
 }
 
 func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if (urls == nil || strings.TrimSpace(*urls) == "") && (content == nil || len(content) == 0) {
 		return nil, fmt.Errorf("file url or content is required")
 	}
@@ -712,17 +687,13 @@ func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, ap
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := validateAI302APIKey(apiConfig)
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.OCR)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.OCR)
 
 	var docURL string
 	if urls != nil && strings.TrimSpace(*urls) != "" {
@@ -749,7 +720,7 @@ func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, ap
 		return nil, fmt.Errorf("failed to marshal json payload: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -760,7 +731,7 @@ func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, ap
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -800,6 +771,10 @@ func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, ap
 }
 
 func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if documentURL == nil || strings.TrimSpace(*documentURL) == "" {
 		return nil, fmt.Errorf("302.ai API requires a valid public document URL; direct file upload is not supported")
 	}
@@ -808,16 +783,11 @@ func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *s
 		return nil, err
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return nil, fmt.Errorf("api key is required")
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	apiURL := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.DocumentParse)
+	apiURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.DocumentParse)
 
 	reqBody := map[string]interface{}{
 		"url": docURL,
@@ -832,7 +802,10 @@ func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *s
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -840,7 +813,7 @@ func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *s
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -869,19 +842,22 @@ func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *s
 	}, nil
 }
 
-func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]string, error) {
-	apiKey, err := validateAI302APIKey(apiConfig)
+func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Models)
 
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Models)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -889,7 +865,7 @@ func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -904,26 +880,17 @@ func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err = json.Unmarshal(body, &result); err != nil {
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	if result.Data == nil {
-		return nil, fmt.Errorf("models response missing data")
+	if modelList.Models == nil {
+		return nil, fmt.Errorf("invalid models list format")
 	}
-
-	models := make([]string, 0, len(result.Data))
-	for _, model := range result.Data {
-		if strings.TrimSpace(model.ID) == "" {
-			return nil, fmt.Errorf("models response contains empty id")
-		}
-		models = append(models, strings.TrimSpace(model.ID))
+	models := ParseListModel(modelList)
+	if len(models) == 0 {
+		return nil, fmt.Errorf("invalid models list format")
 	}
-
 	return models, nil
 }
 
@@ -941,29 +908,32 @@ func (a *AI302Model) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 }
 
 func (a *AI302Model) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if strings.TrimSpace(taskID) == "" {
 		return nil, fmt.Errorf("task id is required")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return nil, fmt.Errorf("api key is required")
-	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
 
 	// URL: https://mineru.net/api/v4/extract/task/{task_id}
-	apiURL := fmt.Sprintf("%s/%s/%s", a.BaseURL[region], a.URLSuffix.DocumentParse, url.PathEscape(strings.TrimSpace(taskID)))
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	apiURL := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.DocumentParse, url.PathEscape(strings.TrimSpace(taskID)))
 
-	req, err := http.NewRequest("GET", apiURL, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

@@ -708,6 +708,11 @@ def test_logout_setting_profile_matrix_unit(monkeypatch):
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
     assert "Password error" in res["message"]
 
+    _set_request_json(monkeypatch, module, {"nickname": "carh!@#$%^&*()_+WFAGD"})
+    res = _run(module.setting_user())
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR
+    assert "invalid characters" in res["message"]
+
     _set_request_json(
         monkeypatch,
         module,

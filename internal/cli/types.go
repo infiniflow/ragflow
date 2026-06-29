@@ -34,15 +34,18 @@ const (
 	TokenCreate
 	TokenService
 	TokenShutdown
-	TokenStartup
 	TokenRestart
 	TokenUsers
 	TokenDrop
 	TokenUser
 	TokenAlter
 	TokenActive
+	TokenInactive
 	TokenAdmin
+	TokenServer
+	TokenAPI
 	TokenAdd
+	TokenHost
 	TokenDelete
 	TokenPassword
 	TokenDataset
@@ -50,6 +53,7 @@ const (
 	TokenChunkStore
 	TokenOf
 	TokenAgents
+	TokenSearches
 	TokenRole
 	TokenRoles
 	TokenDescription
@@ -68,6 +72,7 @@ const (
 	TokenVar
 	TokenVars
 	TokenConfigs
+	TokenConfig
 	TokenEnvs
 	TokenKey
 	TokenKeys
@@ -96,7 +101,13 @@ const (
 	TokenParser
 	TokenPipeline
 	TokenSearch
+	TokenAgent
+	TokenMemories
+	TokenMemory
+	TokenRetrieve
 	TokenCurrent
+	TokenFingerprint
+	TokenLicense
 	TokenVision
 	TokenEmbedding
 	TokenRerank
@@ -150,6 +161,7 @@ const (
 	TokenGet
 	TokenUpdate
 	TokenRemove
+	TokenExplain
 	TokenChunk
 	TokenChunks
 	TokenDocument
@@ -164,6 +176,25 @@ const (
 	TokenStart
 	TokenStop
 	TokenIngestion
+	TokenMQ
+	TokenPublish
+	TokenPull
+	TokenPending
+	TokenNoACK
+	TokenAnalyze
+	TokenSummary
+	TokenStorage
+	TokenQuota
+	TokenTree
+	TokenOrphan
+	TokenDays
+	TokenWindow
+	TokenActivity
+	TokenData
+	TokenPurge
+	TokenPlan
+	TokenPreview
+	TokenOpenaiChat
 	TokenLog
 	TokenLevel
 	TokenDebug
@@ -187,6 +218,8 @@ const (
 	TokenEOF
 	TokenDash
 	TokenIllegal
+	TokenLBracket // '['
+	TokenRBracket // ']'
 )
 
 // Token represents a lexical token

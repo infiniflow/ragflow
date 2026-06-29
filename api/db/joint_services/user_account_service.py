@@ -27,12 +27,10 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
-from api.db.services.llm_service import get_init_tenant_llm
 from api.db.services.file_service import FileService
 from api.db.services.mcp_server_service import MCPServerService
 from api.db.services.search_service import SearchService
 from api.db.services.task_service import TaskService
-from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from api.db.services.memory_service import MemoryService
@@ -90,14 +88,14 @@ def create_new_user(user_info: dict) -> dict:
         "location": "",
     }
     try:
-        tenant_llm = get_init_tenant_llm(user_id)
+        # tenant_llm = get_init_tenant_llm(user_id)
 
         if not UserService.save(**user_info):
             return {"success": False}
 
         TenantService.insert(**tenant)
         UserTenantService.insert(**usr_tenant)
-        TenantLLMService.insert_many(tenant_llm)
+        # TenantLLMService.insert_many(tenant_llm)
         FileService.insert(file)
 
         return {
@@ -121,10 +119,6 @@ def create_new_user(user_info: dict) -> dict:
             u = UserTenantService.query(tenant_id=user_id)
             if u:
                 UserTenantService.delete_by_id(u[0].id)
-        except Exception as e:
-            logging.exception(e)
-        try:
-            TenantLLMService.delete_by_tenant_id(user_id)
         except Exception as e:
             logging.exception(e)
         try:
@@ -209,9 +203,9 @@ def delete_user_data(user_id: str) -> dict:
                 # step1.1.7 delete search
                 search_delete_res = SearchService.delete_by_tenant_id(usr.id)
                 done_msg += f"- Deleted {search_delete_res} search records.\n"
-            # step1.2 delete tenant_llm and tenant_langfuse
-            llm_delete_res = TenantLLMService.delete_by_tenant_id(tenant_id)
-            done_msg += f"- Deleted {llm_delete_res} tenant-LLM records.\n"
+            # step1.2 delete tenant_langfuse
+            # llm_delete_res = TenantLLMService.delete_by_tenant_id(tenant_id)
+            # done_msg += f"- Deleted {llm_delete_res} tenant-LLM records.\n"
             langfuse_delete_res = TenantLangfuseService.delete_ty_tenant_id(tenant_id)
             done_msg += f"- Deleted {langfuse_delete_res} langfuse records.\n"
             try:

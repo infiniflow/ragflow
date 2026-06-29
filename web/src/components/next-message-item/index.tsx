@@ -15,6 +15,7 @@ import {
   useMemo,
   useState,
 } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { INodeEvent, MessageEventType } from '@/hooks/use-send-message';
@@ -79,7 +80,9 @@ function MessageItem({
   children,
   showLog,
   isShare,
+  nickname,
 }: IProps) {
+  const { t } = useTranslation();
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
@@ -129,6 +132,8 @@ function MessageItem({
       return null;
     }
 
+    const hasCustomChildren = item.data && !!children;
+
     return (
       <div
         className={cn({
@@ -139,10 +144,10 @@ function MessageItem({
         })}
         dir={getDirAttribute(messageContent.replace(citationMarkerReg, ''))}
       >
-        {item.data ? (
+        {hasCustomChildren ? (
           children
         ) : sendLoading && isEmpty(messageContent) ? (
-          <>{!isShare && 'running...'}</>
+          <>{!isShare && t('common.running')}</>
         ) : (
           <MarkdownContent
             loading={loading}
@@ -163,6 +168,7 @@ function MessageItem({
     messageContent,
     reference,
     sendLoading,
+    t,
     theme,
   ]);
 
@@ -186,7 +192,11 @@ function MessageItem({
         >
           {visibleAvatar &&
             (item.role === MessageType.User ? (
-              <RAGFlowAvatar avatar={avatar ?? '/logo.svg'} />
+              <RAGFlowAvatar
+                avatar={avatar ?? '/logo.svg'}
+                name={nickname}
+                isPerson
+              />
             ) : avatarDialog || agentName ? (
               <RAGFlowAvatar
                 avatar={avatarDialog as string}

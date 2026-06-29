@@ -274,9 +274,12 @@ ensure_db_init
 
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
     echo "Running model provider table migrations..."
-    "$PY" tools/scripts/mysql_migration.py --stages tenant_model_provider --config conf/service_conf.yaml --execute
-    "$PY" tools/scripts/mysql_migration.py --stages tenant_model_instance --config conf/service_conf.yaml --execute
-    "$PY" tools/scripts/mysql_migration.py --stages tenant_model --config conf/service_conf.yaml --execute
+    "$PY" tools/scripts/mysql_migration.py \
+        --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
+        --config conf/service_conf.yaml \
+        --execute \
+        --database-version "v0.26.1" \
+        --mark-database-version-on-success
     echo "Model provider table migrations completed."
 fi
 
@@ -291,12 +294,12 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
         sleep 1;
     done &
 
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         while true; do
             echo "Attempt to start RAGFlow go server..."
             wait_for_server "http://127.0.0.1:9380/api/v1/system/healthz" "ragflow_server"
             echo "Starting RAGFlow go server..."
-            bin/server_main
+            bin/ragflow_server
             sleep 1;
         done &
     fi
@@ -311,7 +314,7 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
         sleep 1;
     done &
 
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         while true; do
             echo "Attempt to starting Admin go server..."
             wait_for_server "http://127.0.0.1:9381/api/v1/admin/ping" "admin_server"

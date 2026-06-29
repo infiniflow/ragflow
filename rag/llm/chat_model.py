@@ -25,6 +25,7 @@ from copy import deepcopy
 from urllib.parse import urljoin
 
 import json_repair
+from json.decoder import JSONDecodeError
 import litellm
 import openai
 from openai import AsyncOpenAI, OpenAI
@@ -33,6 +34,7 @@ from enum import StrEnum
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
+from rag.llm.key_utils import _normalize_replicate_key
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 
@@ -61,6 +63,49 @@ ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
+# Generation parameters that are safe to forward to the underlying completion
+# call. `gen_conf` originates from a chat assistant's `llm_setting`, which can
+# also carry RAGFlow-internal metadata (e.g. `model_type`). Anything outside
+# this set is dropped so providers don't reject the request with errors like
+# "Extra inputs are not permitted" / "Unknown parameter: 'model_type'" (#15427).
+ALLOWED_GEN_CONF_KEYS = frozenset(
+    {
+        "temperature",
+        "max_completion_tokens",
+        "top_p",
+        "stream",
+        "stream_options",
+        "stop",
+        "n",
+        "presence_penalty",
+        "frequency_penalty",
+        "functions",
+        "function_call",
+        "logit_bias",
+        "user",
+        "response_format",
+        "seed",
+        "tools",
+        "tool_choice",
+        "logprobs",
+        "top_logprobs",
+        "extra_headers",
+    }
+)
+
+# LiteLLM additionally understands reasoning-control parameters that the
+# model-family policies may inject into `gen_conf` (e.g. `thinking` for
+# Anthropic / Kimi reasoning models, `enable_thinking` for Qwen models,
+# `reasoning_effort` for OpenAI o-series).
+LITELLM_ALLOWED_GEN_CONF_KEYS = ALLOWED_GEN_CONF_KEYS | frozenset(
+    {
+        "thinking",
+        "enable_thinking",
+        "reasoning_effort",
+        "extra_body",
+    }
+)
+
 
 def _apply_model_family_policies(
     model_name: str,
@@ -74,9 +119,43 @@ def _apply_model_family_policies(
     sanitized_gen_conf = deepcopy(gen_conf) if gen_conf else {}
     sanitized_kwargs = dict(request_kwargs) if request_kwargs else {}
 
-    # Qwen3 family disables thinking by extra_body on non-stream chat requests.
+    def _thinking_type():
+        val = sanitized_gen_conf.get("thinking")
+        if isinstance(val, dict):
+            val = val.get("type")
+
+        enable_thinking = sanitized_gen_conf.get("enable_thinking")
+
+        if isinstance(val, str) and val in {"enabled", "disabled"}:
+            return val
+        if isinstance(enable_thinking, bool):
+            return "enabled" if enable_thinking else "disabled"
+        return None
+
+    def _pop_thinking_controls():
+        sanitized_gen_conf.pop("thinking", None)
+        sanitized_gen_conf.pop("enable_thinking", None)
+
+    def _merge_extra_body(target: dict, extra: dict) -> None:
+        body = target.get("extra_body")
+        if not isinstance(body, dict):
+            body = {}
+        body.update(extra)
+        target["extra_body"] = body
+
+    thinking_type = _thinking_type()
+
+    # Qwen3 keeps RAGFlow's system default of disabling thinking unless explicitly overridden.
     if "qwen3" in model_name_lower:
-        sanitized_kwargs["extra_body"] = {"enable_thinking": False}
+        _pop_thinking_controls()
+        enable_thinking = thinking_type == "enabled" if thinking_type else False
+        if backend == "litellm" and provider in {
+            SupportedLiteLLMProvider.Tongyi_Qianwen,
+            SupportedLiteLLMProvider.Dashscope,
+        }:
+            sanitized_gen_conf["enable_thinking"] = enable_thinking
+        else:
+            _merge_extra_body(sanitized_kwargs, {"enable_thinking": enable_thinking})
 
     if backend == "base":
         return sanitized_gen_conf, sanitized_kwargs
@@ -86,30 +165,57 @@ def _apply_model_family_policies(
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
+        elif provider == SupportedLiteLLMProvider.Anthropic and model_name_lower in {"claude-opus-4-7", "claude-opus-4-8"}:
+            for key in ("temperature", "top_p", "top_k"):
+                sanitized_gen_conf.pop(key, None)
+                sanitized_kwargs.pop(key, None)
 
         if provider == SupportedLiteLLMProvider.HunYuan:
             for key in ("presence_penalty", "frequency_penalty"):
                 sanitized_gen_conf.pop(key, None)
-        elif "kimi-k2.5" in model_name_lower or "kimi-k2.6" in model_name_lower:
-            reasoning = sanitized_gen_conf.pop("reasoning", None)
-            thinking = {"type": "enabled"}
-            if reasoning is not None:
-                thinking = {"type": "enabled"} if reasoning else {"type": "disabled"}
-            elif not isinstance(thinking, dict) or thinking.get("type") not in {"enabled", "disabled"}:
-                thinking = {"type": "disabled"}
-            sanitized_gen_conf["thinking"] = thinking
+        elif provider == SupportedLiteLLMProvider.Moonshot:
+            if thinking_type:
+                _pop_thinking_controls()
+                sanitized_gen_conf["thinking"] = {"type": thinking_type}
 
-            thinking_enabled = thinking.get("type") == "enabled"
-            sanitized_gen_conf["temperature"] = 1.0 if thinking_enabled else 0.6
-            sanitized_gen_conf["top_p"] = 0.95
-            sanitized_gen_conf["n"] = 1
-            sanitized_gen_conf["presence_penalty"] = 0.0
-            sanitized_gen_conf["frequency_penalty"] = 0.0
+            if thinking_type or "kimi-k2.5" in model_name_lower or "kimi-k2.6" in model_name_lower:
+                sanitized_gen_conf.pop("temperature", None)
+                sanitized_gen_conf["top_p"] = 0.95
+                sanitized_gen_conf["n"] = 1
+                sanitized_gen_conf["presence_penalty"] = 0.0
+                sanitized_gen_conf["frequency_penalty"] = 0.0
+        elif (
+            provider == SupportedLiteLLMProvider.ZHIPU_AI
+            and "glm" in model_name_lower
+            and thinking_type
+        ):
+            _pop_thinking_controls()
+            sanitized_gen_conf["thinking"] = {"type": thinking_type}
 
         return sanitized_gen_conf, sanitized_kwargs
 
     return sanitized_gen_conf, sanitized_kwargs
 
+
+def _move_litellm_provider_body_fields(provider: SupportedLiteLLMProvider | str | None, completion_args: dict) -> dict:
+    provider_body_fields = {
+        SupportedLiteLLMProvider.Tongyi_Qianwen: {"enable_thinking"},
+        SupportedLiteLLMProvider.Dashscope: {"enable_thinking"},
+        SupportedLiteLLMProvider.Moonshot: {"thinking"},
+        SupportedLiteLLMProvider.ZHIPU_AI: {"thinking"},
+    }.get(provider, set())
+
+    body = completion_args.get("extra_body")
+    if not isinstance(body, dict):
+        body = {}
+    moved = False
+    for key in provider_body_fields:
+        if key in completion_args:
+            body[key] = completion_args.pop(key)
+            moved = True
+    if moved or body:
+        completion_args["extra_body"] = body
+    return completion_args
 
 class Base(ABC):
     def __init__(self, key, model_name, base_url, **kwargs):
@@ -150,49 +256,27 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        gen_conf, _ = _apply_model_family_policies(
-            self.model_name,
-            backend="base",
-            gen_conf=gen_conf,
-        )
-
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
 
-        allowed_conf = {
-            "temperature",
-            "max_completion_tokens",
-            "top_p",
-            "stream",
-            "stream_options",
-            "stop",
-            "n",
-            "presence_penalty",
-            "frequency_penalty",
-            "functions",
-            "function_call",
-            "logit_bias",
-            "user",
-            "response_format",
-            "seed",
-            "tools",
-            "tool_choice",
-            "logprobs",
-            "top_logprobs",
-            "extra_headers",
-        }
-
-        gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}
+        gen_conf = {k: v for k, v in gen_conf.items() if k in ALLOWED_GEN_CONF_KEYS}
         return gen_conf
 
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
 
+        gen_conf, extra_request_kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="base",
+            gen_conf=gen_conf,
+            request_kwargs={},
+        )
         request_kwargs = {"model": self.model_name, "messages": history, "stream": True, **gen_conf}
         stop = kwargs.get("stop")
         if stop:
             request_kwargs["stop"] = stop
+        request_kwargs.update(extra_request_kwargs)
 
         response = await self.async_client.chat.completions.create(**request_kwargs)
         async for resp in response:
@@ -383,6 +467,12 @@ class Base(ABC):
     async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
+        gen_conf, extra_request_kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="base",
+            gen_conf=gen_conf,
+            request_kwargs={},
+        )
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
@@ -394,7 +484,7 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
+                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf, **extra_request_kwargs)
                     tk_count += total_token_count_from_response(response)
                     if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
@@ -449,6 +539,12 @@ class Base(ABC):
     async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
+        gen_conf, extra_request_kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="base",
+            gen_conf=gen_conf,
+            request_kwargs={},
+        )
         tools = self.tools
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -463,7 +559,7 @@ class Base(ABC):
                     reasoning_start = False
                     logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
 
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
+                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf, **extra_request_kwargs)
 
                     final_tool_calls = {}
                     answer = ""
@@ -549,7 +645,15 @@ class Base(ABC):
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
 
-                response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
+                response = await self.async_client.chat.completions.create(
+                    model=self.model_name,
+                    messages=history,
+                    stream=True,
+                    tools=tools,
+                    tool_choice="auto",
+                    **gen_conf,
+                    **extra_request_kwargs,
+                )
 
                 async for resp in response:
                     if not hasattr(resp, "choices") or not resp.choices:
@@ -595,9 +699,10 @@ class Base(ABC):
 
             return final_ans.strip(), tol_token
 
-        _, kwargs = _apply_model_family_policies(
+        gen_conf, kwargs = _apply_model_family_policies(
             self.model_name,
             backend="base",
+            gen_conf=gen_conf,
             request_kwargs=kwargs,
         )
 
@@ -809,9 +914,12 @@ class VolcEngineChat(Base):
         model_name is for display only
         """
         base_url = base_url if base_url else "https://ark.cn-beijing.volces.com/api/v3"
-        ark_api_key = json.loads(key).get("ark_api_key", "")
-        model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
-        super().__init__(ark_api_key, model_name, base_url, **kwargs)
+        try:
+            ark_api_key = json.loads(key).get("ark_api_key", "")
+            model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+            super().__init__(ark_api_key, model_name, base_url, **kwargs)
+        except JSONDecodeError:
+            super().__init__(key, model_name, base_url, **kwargs)
 
 
 class MistralChat(Base):
@@ -894,6 +1002,15 @@ class OpenAI_APIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class Xiaomi(Base):
+    _FACTORY_NAME = "Xiaomi"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            base_url = "https://api.xiaomimimo.com/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
 class LeptonAIChat(Base):
     _FACTORY_NAME = "LeptonAI"
 
@@ -912,7 +1029,7 @@ class ReplicateChat(Base):
         from replicate.client import Client
 
         self.model_name = model_name
-        self.client = Client(api_token=key)
+        self.client = Client(api_token=_normalize_replicate_key(key))
 
     def _chat(self, history, gen_conf=None, **kwargs):
         gen_conf = dict(gen_conf or {})
@@ -944,6 +1061,43 @@ class ReplicateChat(Base):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield num_tokens_from_string(ans)
+
+    async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
+        gen_conf = dict(gen_conf or {})
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+
+        def _do_chat():
+            msgs = list(history or [])
+            if system and msgs and msgs[0].get("role") != "system":
+                msgs.insert(0, {"role": "system", "content": system})
+            elif system and not msgs:
+                msgs = [{"role": "system", "content": system}]
+
+            system_msg = msgs[0]["content"] if msgs and msgs[0].get("role") == "system" else ""
+            prompt = "\n".join(
+                [item["role"] + ":" + item["content"] for item in msgs[-5:] if item.get("role") != "system"]
+            )
+            try:
+                response = self.client.run(
+                    self.model_name,
+                    input={"system_prompt": system_msg, "prompt": prompt, **gen_conf},
+                )
+                chunks = []
+                for resp in response:
+                    chunks.append(resp if isinstance(resp, str) else str(resp))
+                answer = "".join(chunks)
+                return chunks or ([answer] if answer else []), num_tokens_from_string(answer), None
+            except Exception as e:
+                return [], 0, e
+
+        chunks, total_tokens, error = await asyncio.to_thread(_do_chat)
+        if error:
+            yield f"**ERROR**: {error}"
+        else:
+            for chunk in chunks:
+                yield chunk
+        yield total_tokens
 
 
 class SparkChat(Base):
@@ -1017,9 +1171,53 @@ class BaiduYiyanChat(Base):
 
         yield total_tokens
 
+    async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
+        gen_conf = dict(gen_conf or {})
+        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+
+        def _do_chat():
+            system_msg = history[0]["content"] if history and history[0].get("role") == "system" else ""
+            msgs = [h for h in history if h.get("role") != "system"]
+            try:
+                response = self.client.do(model=self.model_name, messages=msgs, system=system_msg, stream=True, **gen_conf)
+                result_text = ""
+                total_tokens = 0
+                for resp in response:
+                    resp = resp.body
+                    result_text = resp["result"]
+                    total_tokens = total_token_count_from_response(resp)
+                return result_text, total_tokens, None
+            except Exception as e:
+                return "", 0, e
+
+        result_text, total_tokens, error = await asyncio.to_thread(_do_chat)
+        if error:
+            yield f"**ERROR**: {error}"
+        else:
+            yield result_text
+        yield total_tokens
+
 
 class GoogleChat(Base):
     _FACTORY_NAME = "Google Cloud"
+
+    @staticmethod
+    def _vertex_http_options(region: str):
+        region_norm = (region or "").strip().lower()
+        multipoint_hosts = {
+            "eu": "https://aiplatform.eu.rep.googleapis.com/",
+            "us": "https://aiplatform.us.rep.googleapis.com/",
+        }
+        base_url = multipoint_hosts.get(region_norm)
+        if base_url:
+            from google.genai.types import HttpOptions
+
+            # Gemini 3.x multi-region endpoints require *.rep hostnames
+            # instead of region-aiplatform host synthesis.
+            return HttpOptions(base_url=base_url, api_version="v1")
+        return None
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
@@ -1051,11 +1249,21 @@ class GoogleChat(Base):
         else:
             from google import genai
 
+            client_kwargs = {
+                "vertexai": True,
+                "project": project_id,
+                "location": region,
+            }
+            http_options = self._vertex_http_options(region)
+            if http_options is not None:
+                client_kwargs["http_options"] = http_options
+
             if access_token:
                 credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
-                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
+                client_kwargs["credentials"] = credits
+                self.client = genai.Client(**client_kwargs)
             else:
-                self.client = genai.Client(vertexai=True, project=project_id, location=region)
+                self.client = genai.Client(**client_kwargs)
 
     def _clean_conf(self, gen_conf):
         if "claude" in self.model_name:
@@ -1345,8 +1553,12 @@ class LiteLLMBase(ABC):
 
         # Factory specific fields
         if self.provider == SupportedLiteLLMProvider.OpenRouter:
-            self.api_key = json.loads(key).get("api_key", "")
-            self.provider_order = json.loads(key).get("provider_order", "")
+            try:
+                self.api_key = json.loads(key).get("api_key", "")
+                self.provider_order = json.loads(key).get("provider_order", "")
+            except JSONDecodeError:
+                self.api_key = key
+                self.provider_order = ""
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
             self.api_key = json.loads(key).get("api_key", "")
             self.api_version = json.loads(key).get("api_version", "2024-02-01")
@@ -1395,6 +1607,7 @@ class LiteLLMBase(ABC):
         )
 
         gen_conf.pop("max_tokens", None)
+        gen_conf = {k: v for k, v in gen_conf.items() if k in LITELLM_ALLOWED_GEN_CONF_KEYS}
         return gen_conf
 
     def _need_reasoning_content_back(self) -> bool:
@@ -1948,6 +2161,7 @@ class LiteLLMBase(ABC):
             api_base = completion_args.get("api_base", self.base_url)
             separator = "&" if "?" in api_base else "?"
             completion_args["api_base"] = f"{api_base}{separator}GroupId={self.group_id}"
+        _move_litellm_provider_body_fields(self.provider, completion_args)
         if extra_headers:
             completion_args["extra_headers"] = extra_headers
         return completion_args
@@ -1967,4 +2181,14 @@ class RAGconChat(Base):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
 
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class NewAPIChat(Base):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        model_name = model_name.split("___")[0]
         super().__init__(key, model_name, base_url, **kwargs)
