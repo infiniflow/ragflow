@@ -118,7 +118,7 @@ func TestOptions_Loop_CheckpointIDPrefix(t *testing.T) {
 // errors are non-nil.
 func TestOptions_Loop_SentinelErrorsExist(t *testing.T) {
 	sentinels := map[string]error{
-		"ErrLoopMaxIterationsExceeded": graph.ErrLoopMaxIterationsExceeded,
+	"ErrLoopMaxIterationsExceeded": graph.ErrLoopMaxIterationsExceeded,
 		"ErrLoopResumeStateInvalid":    graph.ErrLoopResumeStateInvalid,
 	}
 	for name, e := range sentinels {

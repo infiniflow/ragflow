@@ -40,6 +40,8 @@ from rag.prompts.generator import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.tts_cache import synthesize_with_cache
 
+_logger = logging.getLogger(__name__)
+
 class Graph:
     """
         dsl = {
@@ -415,6 +417,7 @@ class Canvas(Graph):
         if not self.globals["sys.conversation_turns"] :
             self.globals["sys.conversation_turns"] = 0
         self.globals["sys.conversation_turns"] += 1
+        is_resume = bool(self.path) and self.path[0].lower().find("userfillup") >= 0
 
         def decorate(event, dt):
             nonlocal created_at
@@ -427,16 +430,21 @@ class Canvas(Graph):
                 "data": dt
             }
 
-        if not self.path or self.path[-1].lower().find("userfillup") < 0:
+        if not is_resume:
             self.path.append("begin")
             self.retrieval.append({"chunks": [], "doc_aggs": []})
-
         if self.is_canceled():
             msg = f"Task {self.task_id} has been canceled before starting."
             logging.info(msg)
             raise TaskCanceledException(msg)
 
-        yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
+        if not is_resume:
+            yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
+            _logger.debug(
+                "[Canvas] Workflow started. Path: %s, Inputs: %s",
+                [self.get_component_name(c) for c in self.path],
+                json.dumps(kwargs.get("inputs", {}), ensure_ascii=False, default=str)[:500],
+            )
         self.retrieval.append({"chunks": {}, "doc_aggs": {}})
 
         async def _run_batch(f, t):
@@ -481,6 +489,13 @@ class Canvas(Graph):
                 if task_fn is None:
                     continue
 
+                _logger.debug(
+                    "[Canvas] Invoking component '%s' (%s) with inputs: %s",
+                    self.get_component_name(self.path[i - 1]),
+                    cpn.component_name,
+                    json.dumps(call_kwargs, ensure_ascii=False, default=str)[:500],
+                )
+
                 fn_invoke_async = getattr(cpn, "_invoke_async", None)
                 use_async = (fn_invoke_async and asyncio.iscoroutinefunction(fn_invoke_async)) or asyncio.iscoroutinefunction(getattr(cpn, "_invoke", None))
                 tasks.append(asyncio.create_task(_invoke_one(cpn, task_fn, call_kwargs, use_async)))
@@ -489,9 +504,17 @@ class Canvas(Graph):
                 await asyncio.gather(*tasks)
 
         def _node_finished(cpn_obj):
+            outputs = cpn_obj.output()
+            _logger.debug(
+                "[Canvas] Component '%s' (%s) finished. Outputs: %s, Error: %s",
+                self.get_component_name(cpn_obj._id),
+                self.get_component_type(cpn_obj._id),
+                json.dumps(outputs, ensure_ascii=False, default=str)[:500],
+                cpn_obj.error(),
+            )
             return decorate("node_finished",{
                            "inputs": cpn_obj.get_input_values(),
-                           "outputs": cpn_obj.output(),
+                           "outputs": outputs,
                            "component_id": cpn_obj._id,
                            "component_name": self.get_component_name(cpn_obj._id),
                            "component_type": self.get_component_type(cpn_obj._id),
@@ -501,7 +524,7 @@ class Canvas(Graph):
                        })
 
         self.error = ""
-        idx = len(self.path) - 1
+        idx = 0 if is_resume else len(self.path) - 1
         partials = []
         tts_mdl = None
         while idx < len(self.path):
@@ -647,9 +670,14 @@ class Canvas(Graph):
                     o = self.get_component_obj(c)
                     if o.component_name.lower() == "userfillup":
                         o.invoke()
-                        another_inputs.update(o.get_input_elements())
+                        another_inputs.update({
+                            k: v for k, v in o.get_input_elements().items()
+                            if not self._is_input_field_satisfied(v)
+                        })
                         if o.get_param("enable_tips"):
                             tips = o.output("tips")
+                if not another_inputs:
+                    continue
                 self.path = path
                 yield decorate("user_inputs", {"inputs": another_inputs, "tips": tips})
                 return
@@ -734,7 +762,25 @@ class Canvas(Graph):
 
     def add_user_input(self, question):
         self.history.append(("user", question))
-        self.globals["sys.history"].append(f"{self.history[-1][0]}: {self.history[-1][1]}")
+        rendered = json.dumps(question, ensure_ascii=False) if isinstance(question, dict) else question
+        self.globals["sys.history"].append(f"{self.history[-1][0]}: {rendered}")
+
+    @staticmethod
+    def _is_input_field_satisfied(field: Any) -> bool:
+        if not isinstance(field, dict):
+            return field is not None
+
+        value = field.get("value")
+        field_type = str(field.get("type", "")).lower()
+        if field_type.find("file") >= 0:
+            if field.get("optional") and value is None:
+                return True
+            return value not in (None, [], "")
+
+        if value is None:
+            return False
+
+        return True
 
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue

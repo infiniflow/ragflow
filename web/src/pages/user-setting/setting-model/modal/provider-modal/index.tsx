@@ -13,6 +13,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../verify-button';
+import { AddCustomModelDialog } from './components/add-custom-model-dialog';
 import { AddableToggleList } from './components/addable-toggle-list';
 import { useCustomModelFields } from './components/use-custom-model-fields';
 import {
@@ -103,6 +104,11 @@ const ProviderModal = ({
     handleSelectModel,
     handleToggleAll,
     setModels,
+    editingModel,
+    editDialogOpen,
+    setEditDialogOpen,
+    handleEditModel,
+    handleSaveEditedModel,
   } = useListModelsPicker({
     visible,
     hasModelNameField,
@@ -164,6 +170,7 @@ const ProviderModal = ({
     allSelected,
     handleSelectModel,
     handleToggleAll,
+    onEditModel: handleEditModel,
   });
 
   // Submit and verify handlers — branch on viewMode and on whether the
@@ -270,6 +277,30 @@ const ProviderModal = ({
           </div>
         </div>
       </DynamicForm.Root>
+      {editingModel && (
+        <AddCustomModelDialog
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+          title={editingModel.name}
+          fields={customModelDialogFields.map((f) => ({
+            ...f,
+            defaultValue:
+              f.name === 'name'
+                ? editingModel.name
+                : f.name === 'model_types'
+                  ? (editingModel.model_types ?? [])
+                  : f.name === 'max_tokens'
+                    ? (editingModel.max_tokens ?? 0)
+                    : f.name === 'features'
+                      ? (editingModel.features ?? [])
+                      : f.defaultValue,
+          }))}
+          onSubmit={handleSaveEditedModel}
+          submitText={tc('ok')}
+          cancelText={tc('cancel')}
+          existingNames={existingNames.filter((n) => n !== editingModel.name)}
+        />
+      )}
     </Modal>
   );
 };

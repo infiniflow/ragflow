@@ -66,9 +66,16 @@ import (
 // The handler converts each RunEvent into one SSE frame
 // (`data: {...}\n\n`). Type is the event tag; Data is the JSON
 // payload (already serialised — handler does not re-marshal).
+//
+// SessionID / MessageID / TaskID are populated by the runner for
+// the chatbot/agentbot completion paths (SSE envelope metadata).
+// They are empty on the /agents/{canvas_id}/run path.
 type RunEvent struct {
-	Type string
-	Data string
+	Type      string
+	Data      string
+	SessionID string
+	MessageID string
+	TaskID    string
 }
 
 // MessageEvent is the JSON payload for Type=="message" frames.
@@ -176,7 +183,8 @@ func (r *Runner) getInterruptID(canvasID, sessionID string) string {
 func (r *Runner) Run(
 	ctx context.Context,
 	run RunFunc,
-	canvasID, sessionID, userInput string,
+	canvasID, sessionID string,
+	userInput any,
 	root map[string]any,
 ) <-chan RunEvent {
 	out := make(chan RunEvent, 4)
@@ -228,7 +236,7 @@ func (r *Runner) Run(
 		// invoking the workflow. The sentinel keys are deleted from
 		// root inside the RunFunc — see service/agent.go's
 		// buildRunFunc.
-		if userInput != "" {
+		if userInput != nil {
 			if id := r.getInterruptID(canvasID, sessionID); id != "" {
 				root["__resume_interrupt_id__"] = id
 				root["__resume_data__"] = userInput

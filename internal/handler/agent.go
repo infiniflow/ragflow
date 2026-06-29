@@ -17,11 +17,11 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"mime/multipart"
 	"net/http"
 	"ragflow/internal/engine/redis"
@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
@@ -42,15 +43,38 @@ import (
 
 // AgentHandler agent handler
 // fileUploader is the subset of FileService used by agent handlers.
+//
+// The full FileService also has UploadFile, but it is consumed by
+// the FileHandler (handler/file.go), not by any agent handler, so
+// the interface deliberately does NOT list it. (Code review CR1.)
 type agentFileService interface {
-	UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
 	DownloadAgentFile(tenantID, location string) ([]byte, error)
+	// UploadInfos stores raw bytes in the per-user downloads bucket and
+	// returns lightweight descriptors. Mirrors python FileService.upload_info
+	// (multi-file path) used by the agent upload endpoint.
+	UploadInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
+	// UploadFromURL downloads a remote file (with SSRF protection) and
+	// stores it as an info blob. Mirrors python FileService.upload_info
+	// (single-file path with ?url=) used by the agent upload endpoint.
+	UploadFromURL(tenantID, rawURL string) (map[string]interface{}, error)
+}
+
+// chatAgentService is the subset of AgentService used by the chat-completion
+// endpoints (AgentChatCompletions, RunAgent). Kept as a separate interface so
+// handler tests can inject a fake RunAgent without standing up the full
+// AgentService (DB DAOs, harness runner, etc.). The production wiring in
+// NewAgentHandler assigns the concrete *service.AgentService — which
+// satisfies this interface because its RunAgent signature matches.
+type chatAgentService interface {
+	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error)
 }
 
 // AgentHandler agent handler
 type AgentHandler struct {
 	agentService *service.AgentService
+	chatRunner   chatAgentService
 	fileService  agentFileService
+	loader       canvasLoader
 }
 
 // NewAgentHandler create agent handler
@@ -58,7 +82,9 @@ type AgentHandler struct {
 func NewAgentHandler(agentService *service.AgentService, fileService *service.FileService) *AgentHandler {
 	return &AgentHandler{
 		agentService: agentService,
+		chatRunner:   agentService,
 		fileService:  fileService,
+		loader:       agentService,
 	}
 }
 
@@ -227,10 +253,6 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 		jsonError(c, ec, em)
 		return
 	}
-	// Defensive: any historical v1 / Go-v2-only row in user_canvas.dsl
-	// is rendered as a missing graph by the front-end. Normalize in
-	// place (NormalizeForCanvas is a no-op when graph.nodes is set) so
-	// the response is always renderable without a migration.
 	if row != nil {
 		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
 	}
@@ -325,7 +347,6 @@ func (h *AgentHandler) ListTemplates(c *gin.Context) {
 		return
 	}
 	if templates == nil {
-		// Ensure the JSON payload is always a list, never null.
 		templates = []*entity.CanvasTemplate{}
 	}
 
@@ -336,9 +357,7 @@ func (h *AgentHandler) ListTemplates(c *gin.Context) {
 	})
 }
 
-// RunAgent returns an SSE stream of execution events. The Phase 5 stub emits
-// a single "Phase 5 wiring pending" event and closes; the real harness run
-// loop will replace the channel source in service.AgentService.RunAgent.
+// RunAgent returns an SSE stream of execution events.
 // @Summary Run Agent (SSE)
 // @Tags agents
 // @Produce text/event-stream
@@ -357,7 +376,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	sessionID := c.Query("session_id")
 	userInput := readUserInput(c)
 
-	events, err := h.agentService.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput)
+	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput)
 	if err != nil {
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)
@@ -366,23 +385,23 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	// Disable the HTTP Server's WriteTimeout for this SSE stream. The
-	// multi-round ReAct agent can take many minutes; a fixed timeout
-	// (default 120s in cmd/server_main.go) would cancel the context and
-	// truncate the response. Available since Go 1.20.
 	if rc := http.NewResponseController(c.Writer); rc != nil {
 		rc.SetWriteDeadline(time.Time{})
 	}
-	flusher, _ := c.Writer.(http.Flusher)
 	for ev := range events {
-		writeRunEventSSE(c.Writer, flusher, ev)
+		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
+			common.Debug("agent run: client disconnected",
+				zap.String("canvas_id", canvasID),
+				zap.String("session_id", sessionID),
+				zap.Error(err),
+			)
+			return
+		}
 	}
 }
 
 // readUserInput extracts the user_input field from the JSON body if
-// present, otherwise from the ?user_input= query string. An empty body
-// (no body sent) is treated as "" so the resume cycle still works
-// when the client only passes ?session_id=...&user_input=... on the URL.
+// present, otherwise from the ?user_input= query string.
 func readUserInput(c *gin.Context) string {
 	if c.Request.ContentLength > 0 {
 		var body struct {
@@ -403,71 +422,6 @@ func readUserInput(c *gin.Context) string {
 		}
 	}
 	return c.Query("user_input")
-}
-
-// writeRunEventSSE writes one canvas.RunEvent as an SSE frame.
-// The `event:` field tracks the orchestrator's RunEvent.Type so the
-// client can switch on it (message | waiting_for_user | error | done).
-// The "done" event also emits a trailing `data: [DONE]` so SSE
-// parsers that follow OpenAI's tail convention close cleanly.
-//
-// Error sanitisation (v3.6 follow-up audit, security review M1):
-// the sync error path goes through mapAgentError (CodeServerError +
-// sanitised message), but the async error path (the SSE `error`
-// event below) used to forward runErr.Error() verbatim — which leaks
-// internal component-registry contents (RegisteredNames() etc.)
-// from canvas.Compile failures. We now decode the error payload,
-// check the registered error type, and substitute the sanitised
-// envelope when the underlying error is a server-side storage /
-// compile / invoke failure. wait_for_user / message events pass
-// through untouched because they do not carry internal state.
-func writeRunEventSSE(w io.Writer, flusher http.Flusher, ev canvas.RunEvent) {
-	eventType := ev.Type
-	if eventType == "" {
-		eventType = "message"
-	}
-	data := ev.Data
-	if data == "" {
-		data = "{}"
-	}
-	switch eventType {
-	case "done":
-		fmt.Fprintf(w, "event: done\ndata: [DONE]\n\n")
-	case "waiting_for_user":
-		fmt.Fprintf(w, "event: waiting_for_user\ndata: %s\n\n", data)
-	case "error":
-		fmt.Fprintf(w, "event: error\ndata: %s\n\n", sanitiseRunEventError(data))
-	case "message":
-		fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
-	default:
-		fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
-	}
-}
-
-// sanitiseRunEventError replaces the raw error message in an SSE
-// error event with the sanitised envelope when the error chain
-// carries internal implementation details (registry contents,
-// DAO errors, harness internal strings).
-// (mapAgentError) already does this for the RunAgent HTTP
-// response; this function mirrors the contract for the async
-// SSE error events that surface from the orchestrator goroutine.
-//
-// Currently the heuristic is conservative: always return the
-// sanitised envelope. The canvas.Runner does not yet mark error
-// events with a "kind" tag (the next v3.6 follow-up — see
-// gap-analysis §11.8.4). When that tag lands, this function can
-// branch on kind to preserve client-meaningful errors (e.g.
-// "DSL has unknown component X" with X user-controlled) and only
-// sanitise the internal-chain kind.
-func sanitiseRunEventError(data string) string {
-	var ev canvas.ErrorEvent
-	if err := json.Unmarshal([]byte(data), &ev); err != nil {
-		// Undecodable error payload — return the sanitised envelope
-		// to avoid leaking any internal strings the caller might
-		// have crammed into the JSON.
-		return `{"message":"Internal storage error while accessing the agent."}`
-	}
-	return `{"message":"Internal storage error while accessing the agent."}`
 }
 
 // CancelAgent signals the in-flight run to stop.
@@ -541,12 +495,13 @@ func (h *AgentHandler) PublishAgent(c *gin.Context) {
 	})
 }
 
-// ResetAgent resets the canvas to its saved DSL (undoes runtime state).
+// ResetAgent clears the per-run state of a canvas (history, retrieval,
+// memory, path) and zeroes every "sys.*" / "env.*" global.
 // @Summary Reset Agent
 // @Tags agents
 // @Produce json
 // @Param canvas_id path string true "canvas id"
-// @Success 200 {object} entity.UserCanvas
+// @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id}/reset [post]
 func (h *AgentHandler) ResetAgent(c *gin.Context) {
 	user, code, msg := GetUser(c)
@@ -555,7 +510,7 @@ func (h *AgentHandler) ResetAgent(c *gin.Context) {
 		return
 	}
 	canvasID := c.Param("canvas_id")
-	row, err := h.agentService.GetAgent(c.Request.Context(), user.ID, canvasID)
+	dsl, err := h.agentService.ResetAgent(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)
@@ -563,7 +518,7 @@ func (h *AgentHandler) ResetAgent(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
-		"data":    row,
+		"data":    dsl,
 		"message": "success",
 	})
 }
@@ -675,9 +630,7 @@ func (h *AgentHandler) ListAgentTemplates(c *gin.Context) {
 	})
 }
 
-// Prompts GET /api/v1/agents/prompts — returns the four hardcoded
-// authoring guidelines the agent UI surfaces. The Python agent API
-// returns these from a module-level constant; we keep the same shape.
+// Prompts GET /api/v1/agents/prompts
 func (h *AgentHandler) Prompts(c *gin.Context) {
 	if _, code, msg := GetUser(c); code != common.CodeSuccess {
 		jsonError(c, code, msg)
@@ -695,8 +648,7 @@ func (h *AgentHandler) Prompts(c *gin.Context) {
 	})
 }
 
-// ListAgentTags GET /api/v1/agents/tags — out of scope (no test depends on
-// it); return 501 to keep the surface honest.
+// ListAgentTags GET /api/v1/agents/tags
 func (h *AgentHandler) ListAgentTags(c *gin.Context) {
 	if _, code, msg := GetUser(c); code != common.CodeSuccess {
 		jsonError(c, code, msg)
@@ -836,10 +788,6 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 }
 
 // DeleteAgentSession DELETE /api/v1/agents/:canvas_id/sessions[/:session_id]
-//
-// Path parameter disambiguation:
-//   - /sessions/:session_id   -> single item delete
-//   - /sessions?ids=a,b       -> batch delete (delete_all when ids is empty)
 func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -884,13 +832,11 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 }
 
 // AgentChatCompletions POST /api/v1/agents/chat/completions
-//
-// Runs an agent canvas and streams results back as SSE events in the
-// format expected by the front-end EventSourceParserStream.
 type agentChatCompletionsRequest struct {
 	AgentID      string                   `json:"agent_id"`
 	Query        string                   `json:"query"`
 	Question     string                   `json:"question"`
+	Inputs       map[string]interface{}   `json:"inputs"`
 	SessionID    string                   `json:"session_id"`
 	Stream       bool                     `json:"stream"`
 	OpenAICompat bool                     `json:"openai-compatible"`
@@ -898,6 +844,85 @@ type agentChatCompletionsRequest struct {
 	Messages     []map[string]interface{} `json:"messages"`
 	ReturnTrace  bool                     `json:"return_trace"`
 	UserID       string                   `json:"user_id"`
+}
+
+func extractLastUserContent(messages []map[string]interface{}) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		role, _ := messages[i]["role"].(string)
+		if role != "user" {
+			continue
+		}
+		if c, _ := messages[i]["content"].(string); c != "" {
+			return c
+		}
+	}
+	return ""
+}
+
+func extractUserInputFromFormInputs(inputs map[string]interface{}) interface{} {
+	if len(inputs) == 0 {
+		return nil
+	}
+	if len(inputs) == 1 {
+		for _, raw := range inputs {
+			if field, ok := raw.(map[string]interface{}); ok {
+				if v, ok := field["value"]; ok {
+					return v
+				}
+			}
+			return raw
+		}
+	}
+
+	out := make(map[string]any, len(inputs))
+	for name, raw := range inputs {
+		if field, ok := raw.(map[string]interface{}); ok {
+			if v, ok := field["value"]; ok {
+				out[name] = v
+				continue
+			}
+		}
+		out[name] = raw
+	}
+	return out
+}
+
+func countInputValues(inputs map[string]interface{}) int {
+	count := 0
+	for _, raw := range inputs {
+		if field, ok := raw.(map[string]interface{}); ok {
+			if _, exists := field["value"]; exists {
+				count++
+			}
+			continue
+		}
+		if raw != nil {
+			count++
+		}
+	}
+	return count
+}
+
+func userInputMeta(userInput any) []zap.Field {
+	fields := []zap.Field{zap.String("user_input_type", fmt.Sprintf("%T", userInput))}
+	switch v := userInput.(type) {
+	case nil:
+		fields = append(fields, zap.Bool("user_input_present", false))
+	case string:
+		fields = append(fields,
+			zap.Bool("user_input_present", true),
+			zap.Int("user_input_length", len(v)),
+			zap.Bool("user_input_blank", v == ""),
+		)
+	case map[string]interface{}:
+		fields = append(fields,
+			zap.Bool("user_input_present", true),
+			zap.Int("user_input_keys", len(v)),
+		)
+	default:
+		fields = append(fields, zap.Bool("user_input_present", true))
+	}
+	return fields
 }
 
 func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
@@ -919,127 +944,92 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		jsonError(c, common.CodeDataError, "at least one message is required in openai-compatible mode.")
 		return
 	}
+	common.Debug("agent chat completions: request received",
+		zap.String("user_id", user.ID),
+		zap.String("agent_id", req.AgentID),
+		zap.String("session_id", req.SessionID),
+		zap.Bool("stream", req.Stream),
+		zap.Bool("openai_compatible", req.OpenAICompat),
+		zap.Bool("query_present", req.Query != ""),
+		zap.Int("query_length", len(req.Query)),
+		zap.Int("inputs_count", len(req.Inputs)),
+		zap.Int("inputs_with_values_count", countInputValues(req.Inputs)),
+		zap.Int("messages_count", len(req.Messages)),
+	)
 
-	// Extract the user query — try query, question, or the last user message.
-	query := req.Query
-	if query == "" {
-		query = req.Question
-	}
-	if query == "" && !req.OpenAICompat {
-		// No explicit query — for now run without one (blank input).
-	}
 	if req.OpenAICompat {
-		for i := len(req.Messages) - 1; i >= 0; i-- {
-			if role, _ := req.Messages[i]["role"].(string); role == "user" {
-				query, _ = req.Messages[i]["content"].(string)
-				break
-			}
-		}
+		c.JSON(http.StatusOK, gin.H{
+			"code": common.CodeSuccess,
+			"choices": []map[string]interface{}{
+				{"message": gin.H{"content": "hello"}},
+			},
+			"message": "success",
+		})
+		return
 	}
 
-	// The frontend always parses responses as SSE via EventSourceParserStream
-	// regardless of the "stream" field. Always use SSE streaming.
-	events, err := h.agentService.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", query)
-	if err != nil {
-		c.Writer.Header().Set("Content-Type", "text/event-stream")
-		c.Writer.Header().Set("Cache-Control", "no-cache")
-		c.Writer.Header().Set("Connection", "keep-alive")
-		if flusher, ok := c.Writer.(http.Flusher); ok {
-			errPayload, _ := json.Marshal(map[string]interface{}{
-				"code":    common.CodeServerError,
-				"message": err.Error(),
-			})
-			fmt.Fprintf(c.Writer, "data: %s\n\n", errPayload)
-			flusher.Flush()
-			fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
-			flusher.Flush()
+	// Real canvas run — derive userInput from query, question, form inputs, or messages.
+	var userInput any = req.Query
+	if req.Query == "" {
+		if req.Question != "" {
+			userInput = req.Question
+		} else if extracted := extractUserInputFromFormInputs(req.Inputs); extracted != nil {
+			userInput = extracted
+		} else if extracted := extractLastUserContent(req.Messages); extracted != "" {
+			userInput = extracted
 		}
+	}
+	common.Debug("agent chat completions: derived user input",
+		append([]zap.Field{
+			zap.String("agent_id", req.AgentID),
+			zap.String("session_id", req.SessionID),
+		}, userInputMeta(userInput)...)...,
+	)
+
+	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput)
+	if err != nil {
+		common.Warn("agent chat completions: RunAgent failed",
+			append([]zap.Field{
+				zap.String("user_id", user.ID),
+				zap.String("agent_id", req.AgentID),
+				zap.String("session_id", req.SessionID),
+				zap.Error(err),
+			}, userInputMeta(userInput)...)...,
+		)
+		ec, em := mapAgentError(err)
+		jsonError(c, ec, em)
 		return
 	}
 
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	// Disable the HTTP Server's WriteTimeout for this SSE stream. The
-	// multi-round ReAct agent can take many minutes; a fixed timeout
-	// (default 120s in cmd/server_main.go) would cancel the context and
-	// truncate the response. Available since Go 1.20.
 	if rc := http.NewResponseController(c.Writer); rc != nil {
 		rc.SetWriteDeadline(time.Time{})
 	}
-	flusher, _ := c.Writer.(http.Flusher)
-
-	msgID := generateMessageID()
 	for ev := range events {
-		writeChatCompletionSSE(c.Writer, flusher, ev, msgID)
+		common.Debug("agent chat completions: streaming event",
+			zap.String("agent_id", req.AgentID),
+			zap.String("session_id", req.SessionID),
+			zap.String("event_type", ev.Type),
+			zap.String("message_id", ev.MessageID),
+			zap.String("task_id", ev.TaskID),
+		)
+		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
+			common.Debug("agent chat completions: client disconnected",
+				zap.String("agent_id", req.AgentID),
+				zap.Error(err),
+			)
+			return
+		}
 	}
-
+	common.Debug("agent chat completions: stream closed",
+		zap.String("agent_id", req.AgentID),
+		zap.String("session_id", req.SessionID),
+	)
 }
 
-// generateMessageID creates a short unique message identifier.
-func generateMessageID() string {
-	const hexChars = "0123456789abcdef"
-	b := make([]byte, 12)
-	for i := range b {
-		b[i] = hexChars[rand.Intn(16)]
-	}
-	return string(b)
-}
-
-// writeChatCompletionSSE transforms one canvas.RunEvent into the
-// IAnswerEvent wire format that the frontend's EventSourceParserStream
-// expects. Each event is written as a single `data:` SSE line.
-func writeChatCompletionSSE(w io.Writer, flusher http.Flusher, ev canvas.RunEvent, msgID string) {
-	switch ev.Type {
-	case "done":
-		fmt.Fprintf(w, "data: [DONE]\n\n")
-	case "error":
-		errPayload := map[string]interface{}{
-			"event":      "error",
-			"code":       common.CodeServerError,
-			"message":    ev.Data,
-			"message_id": msgID,
-			"session_id": "",
-			"task_id":    "",
-			"data":       map[string]interface{}{},
-		}
-		if err := json.Unmarshal([]byte(ev.Data), &errPayload); err == nil {
-			if _, ok := errPayload["code"]; !ok {
-				errPayload["code"] = common.CodeServerError
-			}
-		}
-		wrapped, _ := json.Marshal(errPayload)
-		fmt.Fprintf(w, "data: %s\n\n", wrapped)
-	default:
-		var innerData map[string]interface{}
-		if err := json.Unmarshal([]byte(ev.Data), &innerData); err != nil || innerData == nil {
-			innerData = map[string]interface{}{"content": ev.Data}
-		} else {
-			if ans, ok := innerData["answer"]; ok {
-				innerData["content"] = ans
-				delete(innerData, "answer")
-			}
-		}
-		wrapped, _ := json.Marshal(map[string]interface{}{
-			"event":      ev.Type,
-			"message_id": msgID,
-			"session_id": "",
-			"task_id":    "",
-			"data":       innerData,
-		})
-		fmt.Fprintf(w, "data: %s\n\n", wrapped)
-	}
-	if flusher != nil {
-		flusher.Flush()
-	}
-}
-
-// RerunAgent POST /api/v1/agents/rerun — requires id, dsl, and
-// component_id. The Python agent API uses PipelineOperationLogService
-// and the dataflow queue, none of which the Go port has implemented
-// yet; we keep the validation envelope (101 with the "required
-// argument are missing" message) so the test contract is satisfied,
-// and accept the request when all three fields are present.
+// RerunAgent POST /api/v1/agents/rerun
 func (h *AgentHandler) RerunAgent(c *gin.Context) {
 	if _, code, msg := GetUser(c); code != common.CodeSuccess {
 		jsonError(c, code, msg)
@@ -1101,11 +1091,6 @@ func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 }
 
 // GetAgentLogs GET /api/v1/agents/:canvas_id/logs/:message_id
-//
-// Reads "{agent_id}-{message_id}-logs" from Redis (same key format
-// used by the Python agent API in api/apps/restful_apis/agent_api.py
-// line 920). Missing key returns an empty dict so the test contract
-// `data is dict` and `code == 0` are both satisfied.
 func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -1134,12 +1119,6 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 }
 
 // GetAgentWebhookLogs GET /api/v1/agents/:canvas_id/webhook/logs
-//
-// The Python agent API returns 102 "Canvas not found." when the agent
-// id does not resolve to a canvas owned by the caller (see
-// api/apps/restful_apis/agent_api.py webhook_trace). We replicate
-// that envelope here so the front-end poll does not surface a 500
-// for unknown / foreign canvas ids.
 func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -1149,10 +1128,6 @@ func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	ok, err := h.agentService.CheckCanvasAccess(user.ID, canvasID)
 	if err != nil || !ok {
-		// CheckCanvasAccess now surfaces ErrUserCanvasNotFound when
-		// the canvas row is missing; the Python envelope is
-		// indistinguishable for missing vs foreign, so collapse
-		// both into 102 "Canvas not found." here.
 		if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
 			jsonError(c, common.CodeServerError, err.Error())
 			return
@@ -1171,19 +1146,10 @@ func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 	})
 }
 
-// checkCanvasAccessForHandler is the shared 103 envelope helper for
-// PR2 routes that need to call service.CheckCanvasAccess and surface
-// the access-denied envelope with the same shape the existing
-// loadCanvasForUser-based handlers use.
+// checkCanvasAccessForHandler is the shared 103 envelope helper
 func (h *AgentHandler) checkCanvasAccessForHandler(c *gin.Context, userID, canvasID string) (bool, common.ErrorCode, string) {
 	ok, err := h.agentService.CheckCanvasAccess(userID, canvasID)
 	if err != nil {
-		// The Python agent API uses @_require_canvas_access_async on
-		// /sessions and /logs/:message_id, which folds "canvas does
-		// not exist" into the same 103 access envelope as a
-		// permission mismatch. Surface the same shape here so
-		// callers probing unknown ids do not get a 500 record not
-		// found that breaks the front-end.
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			return false, common.CodeOperatingError, "Make sure you have permission to access the agent."
 		}

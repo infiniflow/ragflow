@@ -50,6 +50,51 @@ func genID32() string {
 	return strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
 }
 
+// webhookPayloadKey is the unexported context key RunAgent reads to
+// inject root["webhook_payload"]. Only the AgentService.RunAgentWithWebhook
+// public wrapper sets it; the chat / agent-run paths leave it absent so
+// existing callers see no behaviour change.
+//
+// We deliberately do NOT surface the payload as a new RunAgent parameter
+// — keeping the public signature stable means existing tests
+// (agent_run_e2e_test.go, agent_wait_for_user_test.go) keep compiling.
+type webhookPayloadKey struct{}
+
+// LoadCanvasByID is the read-side counterpart of loadCanvasForUser that
+// the webhook handler uses. It deliberately returns the raw DAO/service
+// error (no error-code mapping) because the webhook envelope is 102
+// "Canvas not found." while the chat/run envelope is 103 "Make sure you
+// have permission..." — the choice must stay at the HTTP layer where
+// each handler knows its own spec.
+//
+// Mirrors python: api/apps/restful_apis/agent_api.py:1570
+// (`UserCanvasService.get_by_id(agent_id)`), with the same IDOR guard
+// the chat handler uses.
+func (s *AgentService) LoadCanvasByID(
+	ctx context.Context, userID, canvasID string,
+) (*entity.UserCanvas, error) {
+	return s.loadCanvasForUser(ctx, userID, canvasID)
+}
+
+// RunAgentWithWebhook is a thin wrapper over RunAgent that attaches the
+// webhook payload to the runner root so the Begin component can surface
+// it as state.Sys["webhook_payload"] for downstream components.
+//
+// The payload is intentionally passed via context value (rather than a new
+// RunAgent parameter) to keep the public RunAgent signature stable for
+// the existing chat tests.
+//
+// Mirrors python: api/apps/restful_apis/agent_api.py:2125
+// (`canvas.run(..., webhook_payload=clean_request)`).
+func (s *AgentService) RunAgentWithWebhook(
+	ctx context.Context, userID, canvasID string, payload map[string]any,
+) (<-chan canvas.RunEvent, error) {
+	if payload != nil {
+		ctx = context.WithValue(ctx, webhookPayloadKey{}, payload)
+	}
+	return s.RunAgent(ctx, userID, canvasID, "", "", "")
+}
+
 // ErrAgentNotOwner is returned by DeleteAgent when the canvas exists and
 // is accessible to the caller but is owned by a different user. It maps
 // to the Python "Only the owner of the agent is authorized for this
@@ -524,7 +569,7 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 // The per-run RunFunc is built by buildRunFunc — see its doc comment
 // for the full production chain (real Compile/Invoke, resume path,
 // error-layering contract).
-func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version, userInput string) (<-chan canvas.RunEvent, error) {
+func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error) {
 	canvasRow, err := s.loadCanvasForUser(ctx, userID, canvasID)
 	if err != nil {
 		return nil, err
@@ -619,7 +664,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		"session_id": sessionID,
 		"user_id":    userID,
 	}
-	if userInput != "" {
+	if userInput != nil {
 		root["user_input"] = userInput
 	}
 	if dsl != nil {
@@ -628,6 +673,14 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	root["__comp_types__"] = compTypes
 	root["__comp_names__"] = compNames
 	root["__comp_ids__"] = compIDs
+	// Webhook payload injection. Only RunAgentWithWebhook sets this
+	// context value; the chat / agent-run paths leave it nil so the
+	// existing surface is unchanged. The Begin component reads
+	// inputs["webhook_payload"] and writes it to state.Sys so
+	// downstream components can read sys.webhook_payload.
+	if payload, ok := ctx.Value(webhookPayloadKey{}).(map[string]any); ok && payload != nil {
+		root["webhook_payload"] = payload
+	}
 	// Phase 4.4 V2.1 (v3.6.1): populate root["tenant_id"] so the
 	// RunTracker.Start call (in buildRunFunc) records the run
 	// under the right tenant. The lookup is best-effort — a
@@ -651,7 +704,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		zap.String("userID", userID),
 		zap.String("sessionID", sessionID),
 		zap.Any("tenantID", root["tenant_id"]),
-		zap.Int("userInput_len", func() int { s, _ := root["user_input"].(string); return len(s) }()))
+		zap.Any("userInput", root["user_input"]))
 
 	return s.runner.Run(ctx, run, canvasID, sessionID, userInput, root), nil
 }
@@ -696,9 +749,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			taskID = versionRow.ID
 		}
 
-		userInput := ""
-		if v, ok := root["user_input"].(string); ok {
-			userInput = v
+		userInput := root["user_input"]
+		userInputText := ""
+		if v, ok := userInput.(string); ok {
+			userInputText = v
 		}
 
 		runID := runIDFor(canvasID, root)
@@ -744,23 +798,23 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				}
 			}
 		}
-		// Sys["query"] is the canonical Begin-node input key
-		// (BeginComponent.Invoke reads inputs["query"] and writes
-		// it into state.Sys["query"]). Pre-seeding it here lets
-		// the first Begin run see the user's input even before
-		// Begin writes back.
-		//
-		// On resume, DON'T overwrite Sys["query"] with the new user
-		// input — the checkpoint channel restore already has the
-		// original query, and overwriting would cause the
-		// UserFillUp:Menu dispatch to use the new input for routing
-		// instead of the original menu selection.  The new input is
-		// passed through AppendResumeValue for the interrupted
-		// UserFillUp component.
+		// Sys["query"] is the canonical Begin-node input key.
+		// Pre-seed it here so the first Begin run sees the user's input.
+		// On resume, DON'T overwrite Sys["query"] — the checkpoint restore
+		// already has the original query, and overwriting would cause the
+		// UserFillUp:Menu dispatch to use the new input instead of the
+		// original menu selection.
 		if _, resume := root["__resume_interrupt_id__"]; !resume {
-			state.Sys["query"] = userInput
+			if s, ok := userInput.(string); ok {
+				state.Sys["query"] = s
+			} else {
+				state.Sys["query"] = userInput
+			}
 		}
-		if tid := tenantIDFromRoot(root); tid != "" {
+		if uid, ok := root["user_id"].(string); ok && uid != "" {
+			state.Sys["user_id"] = uid
+		}
+		if tid, ok := root["tenant_id"].(string); ok && tid != "" {
 			state.Sys["tenant_id"] = tid
 		}
 		// Attach the streaming progress channel (if present) to ctx
@@ -786,7 +840,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// either way, the run itself must not be blocked.
 		if s.runTracker != nil {
 			_ = s.runTracker.Start(ctx2, runID, canvasID,
-				tenantIDFromRoot(root), userInput)
+				tenantIDFromRoot(root), userInputText)
 		}
 
 		// Compile. The CheckPointStore is wired independently of

@@ -600,8 +600,6 @@ func (s *FileService) checkFileTeamPermission(file *entity.File, uid string) boo
 	}
 
 	kbDAO := dao.NewKnowledgebaseDAO()
-	userTenantDAO := dao.NewUserTenantDAO()
-
 	for _, datasetID := range datasetIDs {
 		ds, err := kbDAO.GetByID(datasetID)
 		if err != nil || ds == nil {
@@ -609,7 +607,7 @@ func (s *FileService) checkFileTeamPermission(file *entity.File, uid string) boo
 		}
 
 		// Check KB tenant permission
-		if s.checkDatasetTeamPermission(ds, uid, userTenantDAO) {
+		if s.checkDatasetTeamPermission(ds, uid) {
 			return true
 		}
 	}
@@ -619,31 +617,8 @@ func (s *FileService) checkFileTeamPermission(file *entity.File, uid string) boo
 
 // checkDatasetTeamPermission checks if user has permission to access the dataset
 // Matches Python's check_kb_team_permission function
-func (s *FileService) checkDatasetTeamPermission(ds *entity.Knowledgebase, uid string, userTenantDAO *dao.UserTenantDAO) bool {
-	// KB's tenant directly authorized
-	if ds.TenantID == uid {
-		return true
-	}
-
-	// Check permission type
-	permission := ds.Permission
-	if permission != string(entity.TenantPermissionTeam) {
-		return false
-	}
-
-	// Check if user joined the tenant
-	joinedTenantIDs, err := userTenantDAO.GetTenantIDsByUserID(uid)
-	if err != nil || len(joinedTenantIDs) == 0 {
-		return false
-	}
-
-	for _, tenantID := range joinedTenantIDs {
-		if tenantID == ds.TenantID {
-			return true
-		}
-	}
-
-	return false
+func (s *FileService) checkDatasetTeamPermission(ds *entity.Knowledgebase, uid string) bool {
+	return hasKBTeamPermission(ds, uid, dao.NewTenantDAO())
 }
 
 // deleteSingleFile deletes a single file (not folder)
@@ -1206,6 +1181,11 @@ func fetchRemoteFileSafely(rawURL string, maxSize int64) ([]byte, http.Header, s
 			return http.ErrUseLastResponse
 		}
 
+		// runs assertURLSafe(currentURL) on every iteration (including
+		// redirects), which rejects private/loopback IPs and other
+		// SSRF targets. The "nosec G107" comment is for gosec;
+		// CodeQL needs an explicit suppression.
+		// codeql[go/request-forgery] False positive: the loop above
 		resp, err := client.Get(currentURL) // #nosec G107
 		if err != nil {
 			return nil, nil, "", fmt.Errorf("failed to fetch URL: %w", err)
