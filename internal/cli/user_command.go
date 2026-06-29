@@ -1679,8 +1679,8 @@ func (c *CLI) APIAddProviderCommand(cmd *Command) (ResponseIf, error) {
 	return HandleSimpleResponse(resp, "add provider")
 }
 
-// APIListProviders lists added providers
-func (c *CLI) APIListProviders(cmd *Command) (ResponseIf, error) {
+// APIListProvidersCommand lists added providers
+func (c *CLI) APIListProvidersCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -1707,9 +1707,9 @@ func (c *CLI) APIListProviders(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// APIDeleteProvider deletes a provider
+// APIDeleteProviderCommand deletes a provider
 // DELETE PROVIDER <name>
-func (c *CLI) APIDeleteProvider(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIDeleteProviderCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -2107,7 +2107,7 @@ func isValidURL(str string) bool {
 	return u.Scheme != "" && u.Host != ""
 }
 
-func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIChatToModelCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -2375,7 +2375,7 @@ func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
+func (c *CLI) EmbedUserTextCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -2458,7 +2458,7 @@ func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIRerankUserDocumentCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -2547,7 +2547,7 @@ func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APITTSUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -2755,7 +2755,7 @@ func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIASRUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -2859,7 +2859,7 @@ func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIOCRUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -2955,7 +2955,7 @@ func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIModelParseFileCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -3184,7 +3184,7 @@ func (c *CLI) APIUseModelCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIAddCustomModelCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -3659,7 +3659,7 @@ func (c *CLI) DevRemoveChunksCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -3697,7 +3697,7 @@ func (c *CLI) ParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
 	return HandleSimpleResponse(resp, "list documents")
 }
 
-func (c *CLI) UserParseLocalFile(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIParseLocalFileCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -3779,7 +3779,7 @@ func formatRequestError(action string, err error) error {
 	}
 }
 
-func (c *CLI) ListUserIngestionTasks(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIListIngestionTasks(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -3912,7 +3912,7 @@ func (c *CLI) APIListVariablesCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) UserStartIngestionCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIStartIngestionCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -3960,7 +3960,7 @@ func (c *CLI) UserStartIngestionCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) UserStopIngestionCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIStopIngestionCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -3999,7 +3999,7 @@ func (c *CLI) UserStopIngestionCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) UserRemoveTaskCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIRemoveTaskCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -4039,7 +4039,7 @@ func (c *CLI) UserRemoveTaskCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ChunkCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -4103,10 +4103,10 @@ func (c *CLI) ChunkCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// OpenaiChat dispatches the parsed OPENAI_CHAT command to either a
+// APIOpenaiChatCommand dispatches the parsed OPENAI_CHAT command to either a
 // non-streaming oneshot call or a streaming SSE call, depending on the
 // `stream` option.
-func (c *CLI) OpenaiChat(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIOpenaiChatCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("OPENAI_CHAT is only allowed in USER mode")
 	}

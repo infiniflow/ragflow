@@ -172,9 +172,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
 
-		// Document images are embedded directly in pages and match Python's public route.
-		apiNoAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
-
 		// Google redirects here after Gmail / Google Drive web OAuth completes.
 		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
@@ -204,6 +201,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			agentbotGroup := apiBetaAuth.Group("/agentbots")
 			RegisterAgentbotRoutes(agentbotGroup, r.botHandler)
 		}
+		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
+		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
+		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
 	}
 
 	// Protected routes
@@ -263,7 +263,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.POST("/upload", r.documentHandler.UploadInfo)
 				documents.GET("", r.documentHandler.ListDocuments)
 				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
-				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
@@ -663,8 +662,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			doc.POST("/set_meta", r.documentHandler.SetMeta)
 			doc.POST("/delete_meta", r.documentHandler.DeleteMeta) // Internal API only for GO
 		}
-
-		v1.GET("/thumbnails", r.documentHandler.GetThumbnail)
 
 		// Chunk routes
 		chunk := v1.Group("/chunk")
