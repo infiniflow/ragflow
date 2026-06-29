@@ -104,8 +104,8 @@ func (p *Parser) parseInsertMetadataFromFile() (*Command, error) {
 	return cmd, nil
 }
 
-// parseGetCommand parses: GET CHUNK or GET METADATA
-func (p *Parser) parseGetCommand() (*Command, error) {
+// parseDevGetCommand parses: GET CHUNK or GET METADATA
+func (p *Parser) parseDevGetCommand() (*Command, error) {
 	p.nextToken() // consume GET
 
 	if p.curToken.Type == TokenChunk {
@@ -260,8 +260,8 @@ func (p *Parser) parseUpdateChunk() (*Command, error) {
 	return cmd, nil
 }
 
-// parseSetMeta parses: SET METADATA OF DOCUMENT 'doc_id' TO '{"key": "value"}'
-func (p *Parser) parseSetMeta() (*Command, error) {
+// parseDevSetMeta parses: SET METADATA OF DOCUMENT 'doc_id' TO '{"key": "value"}'
+func (p *Parser) parseDevSetMeta() (*Command, error) {
 	p.nextToken() // consume METADATA
 
 	// Expect OF
@@ -613,8 +613,8 @@ func (p *Parser) parseDevCreateChunkStore() (*Command, error) {
 }
 
 // Internal CLI for GO
-// parseCreateMetadataStore parses: CREATE METADATA STORE
-func (p *Parser) parseCreateMetadataStore() (*Command, error) {
+// parseDevCreateMetadataStore parses: CREATE METADATA STORE
+func (p *Parser) parseDevCreateMetadataStore() (*Command, error) {
 	// CREATE METADATA STORE
 	p.nextToken() // consume METADATA
 
@@ -655,5 +655,97 @@ func (p *Parser) parseCreateRole() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	return cmd, nil
+}
+
+func (p *Parser) parseGetMetadata() (*Command, error) {
+	p.nextToken() // consume METADATA
+
+	if p.curToken.Type != TokenOf {
+		return nil, fmt.Errorf("expected OF after METADATA")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenDataset {
+		return nil, fmt.Errorf("expected DATASET after OF")
+	}
+	p.nextToken()
+
+	// Parse dataset names (space-separated)
+	var datasetNames []string
+	for {
+		name, err := p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected dataset name: %w", err)
+		}
+		datasetNames = append(datasetNames, name)
+
+		p.nextToken()
+
+		if p.curToken.Type == TokenComma {
+			return nil, fmt.Errorf("syntax error: dataset names must be space-separated, not comma-separated (got %q after %q)", "'", name)
+		}
+		// Stop at semicolon or non-quoted (dataset name must be quoted)
+		if p.curToken.Type == TokenSemicolon {
+			break
+		}
+		// If next token is not a quoted string, stop parsing dataset names
+		if p.curToken.Type != TokenQuotedString {
+			break
+		}
+	}
+
+	cmd := NewCommand("dev_get_metadata")
+	cmd.Params["dataset_names"] = datasetNames
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseDevExplain() (*Command, error) {
+	p.nextToken() // consume EXPLAIN
+
+	switch p.curToken.Type {
+	case TokenChunk:
+		return p.parseDevChunk(true)
+	default:
+		return nil, fmt.Errorf("expected CHUNK after EXPLAIN")
+	}
+}
+
+func (p *Parser) parseDevChunk(explain bool) (*Command, error) {
+	p.nextToken() // consume CHUNK
+
+	filename, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected filename: %w", err)
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenWith {
+		return nil, fmt.Errorf("expected WITH after filename")
+	}
+	p.nextToken()
+
+	dsl, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected DSL: %w", err)
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	p.nextToken()
+
+	cmd := NewCommand("dev_chunk")
+	cmd.Params["dsl"] = dsl
+	cmd.Params["filename"] = filename
+	cmd.Params["explain"] = explain
+
 	return cmd, nil
 }
