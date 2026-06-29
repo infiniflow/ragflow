@@ -335,7 +335,9 @@ build_cpp() {
     cmake .. -DCMAKE_BUILD_TYPE=Release
 
     echo "Building librag_tokenizer_c_api.a..."
-    make rag_tokenizer_c_api -j$(nproc)
+    local jobs
+    jobs="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
+    make rag_tokenizer_c_api -j"$jobs"
 
     if [ ! -f "$BUILD_DIR/librag_tokenizer_c_api.a" ]; then
         echo -e "${RED}Error: Failed to build C++ static library${NC}"
@@ -359,7 +361,9 @@ build_cpp_test() {
     fi
 
     echo "Building rag_analyzer_c_test..."
-    make rag_analyzer_c_test -j$(nproc)
+    local jobs
+    jobs="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
+    make rag_analyzer_c_test -j"$jobs"
 
     if [ ! -f "$BUILD_DIR/rag_analyzer_c_test" ]; then
         echo -e "${RED}Error: Failed to build rag_analyzer_c_test${NC}"
