@@ -441,4 +441,3 @@ func TestSearchTypeSamples_WithMock(t *testing.T) {
 		t.Errorf("expected empty, got %d", len(samples))
 	}
 }
-

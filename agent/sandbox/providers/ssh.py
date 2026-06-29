@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import mimetypes
 import os
 import posixpath
@@ -73,6 +74,7 @@ class SSHProvider(SandboxProvider):
         self.max_output_bytes = 1024 * 1024
         self.max_artifacts = 20
         self.max_artifact_bytes = 10 * 1024 * 1024
+        self.known_hosts = ""
         self._initialized = False
         self._instances: dict[str, dict[str, Any]] = {}
 
@@ -90,6 +92,7 @@ class SSHProvider(SandboxProvider):
         self.max_output_bytes = int(config.get("max_output_bytes", 1024 * 1024) or 1024 * 1024)
         self.max_artifacts = int(config.get("max_artifacts", 20) or 20)
         self.max_artifact_bytes = int(config.get("max_artifact_bytes", 10 * 1024 * 1024) or 10 * 1024 * 1024)
+        self.known_hosts = str(config.get("known_hosts", "") or "").strip()
 
         is_valid, error_message = self.validate_config(
             {
@@ -333,6 +336,18 @@ class SSHProvider(SandboxProvider):
                 "placeholder": "Optional",
                 "description": "Passphrase for the private key if it is encrypted.",
             },
+            "known_hosts": {
+                "type": "string",
+                "required": False,
+                "label": "SSH known_hosts File",
+                "placeholder": "/etc/ragflow/ssh_known_hosts",
+                "description": (
+                    "Path to an OpenSSH-format known_hosts file used to verify "
+                    "the remote host's key. When set, the file is loaded on top "
+                    "of the system host keys (~/.ssh/known_hosts). When unset, "
+                    "only system keys are used and unknown hosts are rejected."
+                ),
+            },
             "python_bin": {
                 "type": "string",
                 "required": False,
@@ -435,7 +450,34 @@ class SSHProvider(SandboxProvider):
     def _create_ssh_client(self) -> paramiko.SSHClient:
         paramiko = _get_paramiko_module()
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        # Load trusted host keys BEFORE setting the policy. Without
+        # load_system_host_keys() the in-memory store is empty and
+        # RejectPolicy would reject every host on first connect,
+        # breaking the provider for normal setups. The order matters:
+        # load_system_host_keys() populates the store from
+        # ~/.ssh/known_hosts (and the legacy /etc/ssh/ssh_known_hosts);
+        # an optional explicit known_hosts file from `known_hosts`
+        # config is then merged on top.
+        client.load_system_host_keys()
+        if self.known_hosts:
+            try:
+                client.load_host_keys(self.known_hosts)
+            except OSError as exc:
+                # Fail closed when the operator-configured trust store
+                # is unreadable: continuing with system keys could let
+                # the connection succeed against an unintended anchor
+                # (e.g. an attacker who can write ~/.ssh/known_hosts).
+                # Match the Go provider's fail-closed posture (see
+                # internal/agent/sandbox/ssh.go::hostKeyCallback).
+                logging.warning("SSH: failed to load configured known_hosts file; refusing connection")
+                raise SandboxProviderConfigError(
+                    "Failed to load configured SSH known_hosts file."
+                ) from exc
+        # Reject unknown hosts: this is the default fail-closed posture
+        # to prevent silent MITM. Operators must either ship a populated
+        # known_hosts file or accept the warning (paramiko will fail the
+        # connect) on first encounter.
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
         connect_kwargs: dict[str, Any] = {
             "hostname": self.host,

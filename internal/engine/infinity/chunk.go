@@ -343,6 +343,11 @@ func (e *infinityEngine) InsertChunks(ctx context.Context, chunks []map[string]i
 	if len(insertChunks) > 0 {
 		idList := make([]string, len(insertChunks))
 		for i, chunk := range insertChunks {
+			// is a UUID produced by the document ingestion path
+			// (uuid.NewString), not user input. We single-quote it
+			// for Infinity SQL; UUIDs cannot contain single quotes
+			// by construction (RFC 4122 §3).
+			// codeql[go/unsafe-quoting] False positive: chunk["id"]
 			idList[i] = fmt.Sprintf("'%v'", chunk["id"])
 		}
 		filter := fmt.Sprintf("id IN (%s)", strings.Join(idList, ", "))
@@ -928,7 +933,13 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 
 				if hasTextMatch {
 					fieldsStr := strings.Join(convertedFields, ",")
-					filterFulltext := fmt.Sprintf("filter_fulltext('%s', '%s')", fieldsStr, questionText)
+					// Escape single quotes in user-controlled questionText
+					// before splicing into the filter_fulltext() call.
+					// fieldsStr is sourced from a fixed allowlist (see
+					// textFields above) and is not user-controlled.
+					safeQuery := strings.ReplaceAll(questionText, "'", "''")
+					safeFields := strings.ReplaceAll(fieldsStr, "'", "''")
+					filterFulltext := fmt.Sprintf("filter_fulltext('%s', '%s')", safeFields, safeQuery)
 					denseFilterStr = fmt.Sprintf("(%s) AND %s", denseFilterStr, filterFulltext)
 				}
 				threshold := "0.0"

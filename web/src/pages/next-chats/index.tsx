@@ -92,8 +92,11 @@ export default function ChatList() {
   return (
     <>
       {data.chats?.length || searchString ? (
-        <article className="size-full flex flex-col" data-testid="chats-list">
-          <header className="px-5 pt-8 mb-4">
+        <article
+          className="size-full min-w-0 flex flex-col"
+          data-testid="chats-list"
+        >
+          <header className="mb-4 min-w-0 px-5 pt-8">
             <ListFilterBar
               title={t('chat.chatApps')}
               icon="chats"

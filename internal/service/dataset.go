@@ -969,6 +969,16 @@ func (s *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 	}
 
 	total := int(totalResult.Total)
+	// Cap n to a sane upper bound so a hostile caller can't force a
+	// huge preallocation. The downstream `samples` slice is sized
+	// directly from n.
+	const maxEmbeddingSamples = 1024
+	if n < 0 {
+		return nil, fmt.Errorf("invalid sample size: %d", n)
+	}
+	if n > maxEmbeddingSamples {
+		n = maxEmbeddingSamples
+	}
 	if n > total {
 		n = total
 	}
@@ -984,6 +994,10 @@ func (s *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 	sort.Ints(offsets)
 
 	baseFields := []string{"docnm_kwd", "doc_id", "content_with_weight", "page_num_int", "position_int", "top_int"}
+	// codeql[go/uncontrolled-allocation-size] False positive: n is
+	// bounded to maxEmbeddingSamples (1024) at the top of this
+	// function, so the samples slice cannot exceed ~1 MiB
+	// (embeddingCheckSample is a small struct).
 	samples := make([]embeddingCheckSample, 0, n)
 	for _, offset := range offsets {
 		searchResult, err := s.docEngine.Search(ctx, &enginetypes.SearchRequest{
@@ -2474,7 +2488,7 @@ func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		kb.Language = language
 	}
 
-	if err := s.kbDAO.Create(kb); err != nil {
+	if err = s.kbDAO.Create(kb); err != nil {
 		return nil, common.CodeServerError, errors.New("Failed to save dataset")
 	}
 

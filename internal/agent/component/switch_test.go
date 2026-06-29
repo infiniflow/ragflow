@@ -241,6 +241,149 @@ func TestSwitch_LegacyConditionsAndArrayTo(t *testing.T) {
 	}
 }
 
+// TestSwitch_NilUpstreamContainsEmptyNeedleMatches ports the
+// regression covered by python PR #16320: when an upstream
+// component yields nil and the configured value is the empty
+// string, the "contains" operator must match (Python semantics
+// after the fix: "" in "anything"). Pre-fix Python crashed with
+// AttributeError; pre-port Go returned false because fmt rendered
+// nil as "<nil>" instead of "". The fix coerces nil → "" before
+// formatting, restoring parity with the Python workflow.
+func TestSwitch_NilUpstreamContainsEmptyNeedleMatches(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-nil-contains", "task-nil-contains")
+	state.Sys["answer"] = nil
+	ctx := withStateForTest(context.Background(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"op": "and",
+				"to": []any{"case_target"},
+				"clauses": []any{
+					map[string]any{"left": "{{sys.answer}}", "op": "contains", "right": ""},
+				},
+			},
+		},
+		"default": "else_target",
+	}
+	out, err := s.Invoke(ctx, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	if len(targets) != 1 || targets[0] != "case_target" {
+		t.Errorf("_next: got %v, want [\"case_target\"] (nil coerced to \"\" should match empty needle)", targets)
+	}
+}
+
+// TestSwitch_NilUpstreamContainsNonEmptyDoesNotMatch verifies
+// the inverse: nil coerced to "" still must NOT match a
+// non-empty needle (we only coerce, we don't synthesize a match).
+func TestSwitch_NilUpstreamContainsNonEmptyDoesNotMatch(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-nil-needle", "task-nil-needle")
+	state.Sys["answer"] = nil
+	ctx := withStateForTest(context.Background(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"op": "and",
+				"to": []any{"case_target"},
+				"clauses": []any{
+					map[string]any{"left": "{{sys.answer}}", "op": "contains", "right": "foo"},
+				},
+			},
+		},
+		"default": "else_target",
+	}
+	out, err := s.Invoke(ctx, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	if len(targets) != 1 || targets[0] != "else_target" {
+		t.Errorf("_next: got %v, want [\"else_target\"] (\"\" does not contain \"foo\")", targets)
+	}
+}
+
+// TestSwitch_NilValueContainsDoesNotRaise mirrors python test
+// "test_switch_none_value_contains_does_not_raise": the configured
+// value can also be nil and the operator must not crash. With
+// nil coerced to "" on both sides, "foobar" contains "" matches.
+func TestSwitch_NilValueContainsDoesNotRaise(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-nil-value", "task-nil-value")
+	state.Sys["answer"] = "foobar"
+	ctx := withStateForTest(context.Background(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"op": "and",
+				"to": []any{"case_target"},
+				"clauses": []any{
+					map[string]any{"left": "{{sys.answer}}", "op": "contains", "right": nil},
+				},
+			},
+		},
+		"default": "else_target",
+	}
+	out, err := s.Invoke(ctx, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	if len(targets) != 1 || targets[0] != "case_target" {
+		t.Errorf("_next: got %v, want [\"case_target\"] (nil value coerced to \"\" matches any string)", targets)
+	}
+}
+
+// TestSwitch_NilUpstreamStartWithEndWithDoNotCrash guards the
+// remaining two string operators covered by PR #16320. They were
+// crash-prone in Python for the same reason; in Go they don't
+// crash but the nil → "" coercion still applies, so a nil
+// upstream with an empty prefix/suffix must match (rather than
+// being rendered as "<nil>" and silently missing).
+func TestSwitch_NilUpstreamStartWithEndWithDoNotCrash(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-nil-start-end", "task-nil-start-end")
+	state.Sys["answer"] = nil
+	ctx := withStateForTest(context.Background(), state)
+
+	for _, tc := range []struct {
+		name string
+		op   string
+	}{
+		{name: "start with", op: "start with"},
+		{name: "end with", op: "end with"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inputs := map[string]any{
+				"conditions": []any{
+					map[string]any{
+						"op": "and",
+						"to": []any{"case_target"},
+						"clauses": []any{
+							map[string]any{"left": "{{sys.answer}}", "op": tc.op, "right": ""},
+						},
+					},
+				},
+				"default": "else_target",
+			}
+			out, err := s.Invoke(ctx, inputs)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			targets := nextTargets(out)
+			if len(targets) != 1 || targets[0] != "case_target" {
+				t.Errorf("_next: got %v, want [\"case_target\"] (nil coerced to \"\" %s \"\")", targets, tc.op)
+			}
+		})
+	}
+}
+
 // TestSwitch_MultiTargetTo verifies that Switch returns all cpn_ids
 // from a multi-element "to" field. This mirrors Python's behavior
 // where a condition can route to multiple downstream nodes

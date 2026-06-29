@@ -44,7 +44,6 @@ func NewMarkdownParser(libType string) (*MarkdownParser, error) {
 }
 
 func (p *MarkdownParser) Parse(filename string, data []byte) error {
-	fmt.Printf("Parsing Markdown file: %s\n", filename)
 	switch p.libType {
 	case GoMarkdown:
 		return p.GoMarkdownParse(data)

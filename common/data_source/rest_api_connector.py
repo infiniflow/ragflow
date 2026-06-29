@@ -13,7 +13,7 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, Iterable, List, Mapping, Optional
-from urllib.parse import parse_qs, urlparse, urlunparse
+from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
 
 import ipaddress
 import socket
@@ -35,6 +35,7 @@ from common.data_source.interfaces import (
 )
 from common.data_source.models import Document
 from common.data_source.utils import rl_requests, retry_builder
+from common.ssrf_guard import assert_url_is_safe, pin_dns
 
 try:
     from jsonpath import jsonpath as _jsonpath  # type: ignore[import]
@@ -43,6 +44,8 @@ except Exception:  # pragma: no cover
 
 _FIELD_SEGMENT_RE = re.compile(r'^(?P<key>[^\[\]]+)(\[(?P<index>\d+|\*)\])?$')
 _DEFAULT_MAX_PAGES = 1000
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_MAX_REDIRECTS = 5
 
 
 class AuthType:
@@ -604,11 +607,19 @@ class RestAPIConnector(LoadConnector, PollConnector):
         )
 
         if self.method == "GET":
-            resp = rl_requests.get(url, headers=headers, params=query_params, auth=self._basic_auth, timeout=60)
+            resp = self._safe_request(
+                "GET",
+                url,
+                headers=headers,
+                params=query_params,
+            )
         elif self.method == "POST":
-            resp = rl_requests.post(
-                url, headers=headers, params=query_params,
-                json=self._static_request_body or {}, auth=self._basic_auth, timeout=60,
+            resp = self._safe_request(
+                "POST",
+                url,
+                headers=headers,
+                params=query_params,
+                json_body=self._static_request_body or {},
             )
         else:
             raise ConnectorValidationError(f"Unsupported HTTP method: {self.method}")
@@ -646,6 +657,113 @@ class RestAPIConnector(LoadConnector, PollConnector):
             return resp.json()
         except ValueError as exc:
             raise ConnectorValidationError("REST API response is not valid JSON") from exc
+
+    # Headers that carry auth state. Stripped on cross-origin redirects to
+    # prevent credential exfiltration to a third-party host. (Coderabbit MAJOR #3486038792)
+    _AUTH_SENSITIVE_HEADER_KEYS = frozenset({
+        "authorization",
+        "proxy-authorization",
+        "apikey",
+        "api-key",
+        "x-api-key",
+        "x-auth-token",
+    })
+
+    def _safe_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: Dict[str, str],
+        params: Dict[str, Any],
+        body: Any = None,
+        json_body: Any = None,
+    ) -> requests.Response:
+        """Issue an HTTP request with per-hop SSRF validation and DNS pinning."""
+        current_url = url
+        current_method = method.upper()
+        current_body = body
+        current_json = json_body
+        current_params = dict(params)
+        # Local auth handle: cleared when crossing origins, even though
+        # ``self._basic_auth`` may still hold the original credentials.
+        current_auth = self._basic_auth
+        previous_netloc = urlparse(current_url).netloc
+
+        for _ in range(_MAX_REDIRECTS + 1):
+            # Normalize SSRF validation failures to the connector's documented
+            # ConnectorValidationError so they don't leak ValueError out of
+            # _page_iter_for_validation(). (Coderabbit MAJOR #3486038789)
+            try:
+                hostname, pin_ip = assert_url_is_safe(current_url)
+            except ValueError as exc:
+                raise ConnectorValidationError(
+                    f"Unsafe REST API URL: {exc}"
+                ) from exc
+            with pin_dns(hostname, pin_ip):
+                if current_method == "GET":
+                    resp = rl_requests.get(
+                        current_url,
+                        headers=headers,
+                        params=current_params,
+                        auth=current_auth,
+                        timeout=60,
+                        allow_redirects=False,
+                    )
+                elif current_method == "POST":
+                    resp = rl_requests.post(
+                        current_url,
+                        headers=headers,
+                        params=current_params,
+                        json=current_json,
+                        auth=current_auth,
+                        timeout=60,
+                        allow_redirects=False,
+                    )
+                else:
+                    resp = rl_requests.request(
+                        current_method,
+                        current_url,
+                        headers=headers,
+                        params=current_params,
+                        auth=current_auth,
+                        timeout=60,
+                        data=current_body,
+                        json=current_json,
+                        allow_redirects=False,
+                    )
+
+            if resp.status_code not in _REDIRECT_STATUSES:
+                return resp
+
+            location = resp.headers.get("Location")
+            if not location:
+                return resp
+
+            current_url = urljoin(current_url, location)
+            next_netloc = urlparse(current_url).netloc
+
+            # Coderabbit MAJOR #3486038792: strip credentials when the redirect
+            # crosses to a different origin so a public→private redirect chain
+            # cannot exfiltrate Bearer/Basic/API-key headers.
+            if next_netloc and next_netloc != previous_netloc:
+                headers = {
+                    k: v
+                    for k, v in headers.items()
+                    if k.lower() not in self._AUTH_SENSITIVE_HEADER_KEYS
+                }
+                current_auth = None
+            previous_netloc = next_netloc
+
+            if resp.status_code in (301, 302, 303):
+                current_method = "GET"
+                current_body = None
+                current_json = None
+                # Clear carried params — only the new Location URL's query
+                # string should apply for the downgraded GET.
+                current_params = {}
+
+        raise ConnectorValidationError(f"Exceeded {_MAX_REDIRECTS} redirects fetching {url!r}")
 
     def _build_url_with_templates(self, params: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
         """Substitute ``{key}`` placeholders in the URL; return remaining query params."""

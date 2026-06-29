@@ -1269,42 +1269,6 @@ func (p *Parser) parseAdminDropRole() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminDropDataset() (*Command, error) {
-	p.nextToken() // consume DATASET
-	datasetName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("drop_user_dataset")
-	cmd.Params["dataset_name"] = datasetName
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminDropChat() (*Command, error) {
-	p.nextToken() // consume CHAT
-	chatName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("drop_user_chat")
-	cmd.Params["chat_name"] = chatName
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
 // endregion DROP commands
 
 // region ALTER commands
