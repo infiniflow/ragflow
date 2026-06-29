@@ -1,3 +1,5 @@
+#pragma STDC FP_CONTRACT OFF
+
 #include "thinc_ner.h"
 
 #include <algorithm>
@@ -141,8 +143,23 @@ static Feat extract(const std::string& t) {
 // =========================================================================
 // Layers
 // =========================================================================
+
+// Kahan compensated dot product: reduces floating-point accumulation error
+// for long dot products (e.g. 576 terms in Maxout).
+static float kahan_dot(const float* a, const float* b, int n) {
+    float sum = 0.0f;
+    float c = 0.0f;
+    for (int i = 0; i < n; i++) {
+        float y = a[i] * b[i] - c;
+        float t = sum + y;
+        c = (t - sum) - y;
+        sum = t;
+    }
+    return sum;
+}
+
 static void linear(float* out, const float* in, const float* W, const float* b, int nO, int nI) {
-    for(int i=0;i<nO;i++){float s=b[i];for(int j=0;j<nI;j++)s+=W[(size_t)i*nI+j]*in[j];out[i]=s;}
+    for(int i=0;i<nO;i++)out[i]=b[i]+kahan_dot(W+(size_t)i*nI,in,nI);
 }
 static void relu_inplace(float* x, int n) { for(int i=0;i<n;i++)x[i]=x[i]>0?x[i]:0; }
 
@@ -151,8 +168,7 @@ static void maxout(float* out, const float* in, const float* W, const float* b, 
     for(int i=0;i<nO;i++){
         float best=-1e30f;
         for(int p=0;p<nP;p++){
-            float s=b[(size_t)i*nP+p];
-            for(int j=0;j<nI;j++)s+=W[((size_t)i*nP+p)*nI+j]*in[j];
+            float s = b[(size_t)i*nP+p] + kahan_dot(W+(((size_t)i*nP+p)*nI), in, nI);
             if(s>best)best=s;
         }
         out[i]=best;

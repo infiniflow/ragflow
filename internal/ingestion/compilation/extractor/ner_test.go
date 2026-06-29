@@ -85,8 +85,9 @@ var enTests = []EnTestSpec{
 		wantEntities: [][2]string{{"Instagram", "PERSON"}}, // en_core_web_sm: Instagram→PERSON
 		wantRels:     nil},
 	{name: "multi_founded_ceo", text: "Google was founded by Larry Page. Sundar Pichai is the CEO of Google.",
+		// Python skips cross-sentence founded_by due to entity_map overwrite + sentence boundary check
 		wantEntities: [][2]string{{"Larry Page", "PERSON"}, {"Sundar Pichai", "PERSON"}},
-		wantRels:     []relSpec{{"Google", "founded_by", "Larry Page"}}}, // ceo_of: entity_match depends on exact spaCy spans
+		wantRels:     nil}, // ceo_of: entity_match depends on exact spaCy spans
 	{name: "multi_works_located", text: "John works for Microsoft. Microsoft is based in Redmond.",
 		wantEntities: [][2]string{{"John", "PERSON"}, {"Microsoft", "ORG"}, {"Redmond", "GPE"}},
 		wantRels:     []relSpec{{"Microsoft", "located_in", "Redmond"}}}, // works_for: regex entity match depends on spans

@@ -63,7 +63,8 @@ type relPatternEntry struct {
 }
 
 // ExtractRelations extracts typed relations between entities.
-// Matches the Python RelationExtractor pattern-based approach.
+// Matches the Python RelationExtractor pattern-based approach,
+// including cross-sentence filtering via sentence boundary checks.
 func ExtractRelations(text string, entities []Entity, lang string) []Relation {
 	patterns, ok := relationPatterns[lang]
 	if !ok {
@@ -81,6 +82,30 @@ func ExtractRelations(text string, entities []Entity, lang string) []Relation {
 		}
 	}
 
+	// Build sentence spans (matching Python's sentence splitting regex)
+	hasOffsets := false
+	for _, e := range entities {
+		if e.StartChar != 0 || e.EndChar != 0 {
+			hasOffsets = true
+			break
+		}
+	}
+	var sentenceSpans [][2]int
+	if hasOffsets {
+		sentenceSpans = splitSentences(text)
+	}
+	sameSentence := func(c1, c2 int) bool {
+		if !hasOffsets || len(sentenceSpans) == 0 {
+			return true
+		}
+		for _, sp := range sentenceSpans {
+			if sp[0] <= c1 && c1 < sp[1] && sp[0] <= c2 && c2 < sp[1] {
+				return true
+			}
+		}
+		return false
+	}
+
 	seen := make(map[string]bool)
 	var relations []Relation
 
@@ -96,6 +121,12 @@ func ExtractRelations(text string, entities []Entity, lang string) []Relation {
 			subj := findEntityByText(subjText, entityMap)
 			obj := findEntityByText(objText, entityMap)
 			if subj.Text == "" || obj.Text == "" {
+				continue
+			}
+
+			// Cross-sentence filter: skip if entities are in different sentences
+			// (matches Python RelationExtractor._extract_with_patterns)
+			if !sameSentence(subj.StartChar, obj.StartChar) {
 				continue
 			}
 
@@ -218,4 +249,33 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// splitSentences splits text into sentence spans [start, end),
+// matching Python's: re.finditer(r'[^.!?]+(?:[.!?](?=\s|$))+', text)
+func splitSentences(text string) [][2]int {
+	var spans [][2]int
+	i := 0
+	for i < len(text) {
+		start := i
+		// consume non-sentence-end characters
+		for i < len(text) && text[i] != '.' && text[i] != '!' && text[i] != '?' {
+			i++
+		}
+		// consume sentence-ending punctuation
+		for i < len(text) && (text[i] == '.' || text[i] == '!' || text[i] == '?') {
+			i++
+		}
+		// require punctuation followed by space or end-of-string
+		if i > start && i <= len(text) {
+			if i == len(text) || (i < len(text) && text[i] == ' ') {
+				spans = append(spans, [2]int{start, i})
+			}
+		}
+	}
+	// If no sentences found, use the whole text as one sentence
+	if len(spans) == 0 && len(text) > 0 {
+		spans = append(spans, [2]int{0, len(text)})
+	}
+	return spans
 }
