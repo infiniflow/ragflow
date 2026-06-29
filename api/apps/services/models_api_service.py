@@ -374,7 +374,15 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str = None):
             model_records = model_record_map.get(model_record_key, [])
             if not model_records:
                 continue
-            provider_id, instance_id, model_name = model_record_key.split("@")
+            # split from the left with maxsplit=2 so the trailing model_name
+            # can legitimately contain '@' characters (e.g. LM Studio embedding
+            # model IDs such as `text-embedding-nomic-embed-text-v1.5@q8_0`).
+            # provider_id and instance_id are UUIDs and never contain '@'.
+            try:
+                provider_id, instance_id, model_name = model_record_key.split("@", 2)
+            except ValueError:
+                logging.warning(f"Skipping malformed manual model record key: {model_record_key!r}")
+                continue
             model_types = [model.model_type for model in model_records if model.status == ActiveStatusEnum.ACTIVE.value]
             if not model_types:
                 continue
