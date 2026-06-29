@@ -136,7 +136,7 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 	case "admin_list_providers":
 		return c.AdminListProvidersCommand(cmd)
 	case "admin_list_all_models":
-		return c.ListAllModels(cmd)
+		return c.CommonListAllModels(cmd)
 	case "list_admin_tasks":
 		return c.ListAdminTasks(cmd)
 	case "admin_list_ingestors":
@@ -293,7 +293,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.Logout()
 	case "api_ping_server":
 		return c.PingByCommand(cmd)
-	// Configuration commands
 	case "api_list_configs":
 		return c.ListConfigs(cmd)
 	case "api_set_log_level":
@@ -314,8 +313,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APIListSearchesCommand(cmd)
 	case "api_list_memories":
 		return c.APIListMemoriesCommand(cmd)
-	case "list_dataset_documents":
-		return c.ListDatasetDocumentUserCommand(cmd)
 	case "search_on_datasets":
 		return c.SearchOnDatasets(cmd)
 	case "search_help":
@@ -371,17 +368,20 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonListInstanceModelsSyncCommand(cmd)
 	case "api_list_provider_instance_tasks":
 		return c.APIListModelInstanceTasksCommand(cmd)
+
+	// Provider commands
 	case "api_show_model":
 		return c.CommonShowModelCommand(cmd)
-	case "list_all_models":
-		return c.ListAllModels(cmd)
-	// Provider commands
-	case "add_provider":
-		return c.AddProvider(cmd)
+	case "api_list_all_models":
+		return c.CommonListAllModels(cmd)
+	case "api_add_provider":
+		return c.APIAddProviderCommand(cmd)
 	case "api_list_providers":
 		return c.APIListProviders(cmd)
-	case "delete_provider":
-		return c.DeleteProvider(cmd)
+	case "api_delete_provider":
+		return c.APIDeleteProvider(cmd)
+	case "api_delete_provider_instance":
+		return c.APIDeleteProviderInstanceCommand(cmd)
 	case "api_drop_dataset":
 		return c.APIDropDatasetCommand(cmd)
 	case "api_drop_chat":
@@ -392,22 +392,19 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APIDropMemoryCommand(cmd)
 	case "api_drop_agent":
 		return c.APIDropAgentCommand(cmd)
-	// Provider instance commands
-	case "api_create_provider_instance":
-		return c.APICreateProviderInstanceCommand(cmd)
+	case "api_add_provider_instance":
+		return c.APIAddProviderInstanceCommand(cmd)
 	case "api_list_provider_instances":
 		return c.CommonListProviderInstances(cmd)
-	case "alter_provider_instance":
+	case "api_alter_provider_instance":
 		return c.CommonAlterProviderInstanceCommand(cmd)
-	case "drop_provider_instance":
-		return c.DropProviderInstance(cmd)
-	case "drop_instance_model":
-		return c.DropInstanceModel(cmd)
+	case "api_delete_provider_instance_model":
+		return c.APIDeleteProviderInstanceModelCommand(cmd)
 	case "enable_model":
 		return c.CommonEnableOrDisableModel(cmd, "enable")
 	case "disable_model":
 		return c.CommonEnableOrDisableModel(cmd, "disable")
-	case "add_custom_model":
+	case "api_add_custom_model":
 		return c.AddCustomModel(cmd)
 	case "chat_to_model":
 		return c.ChatToModel(cmd)
@@ -446,32 +443,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ResetDefaultModel(cmd)
 	case "api_list_default_models":
 		return c.ListDefaultModels(cmd)
-	case "create_chunk_store":
-		return c.CreateChunkStore(cmd)
-	case "drop_chunk_store":
-		return c.DropChunkStore(cmd)
-	case "create_metadata_store":
-		return c.CreateMetadataStore(cmd)
-	case "drop_metadata_store":
-		return c.DropMetadataStore(cmd)
-	case "insert_chunks_from_file":
-		return c.InsertChunksFromFile(cmd)
-	case "insert_metadata_from_file":
-		return c.InsertMetadataFromFile(cmd)
-	case "update_chunk":
-		return c.UpdateChunk(cmd)
-	case "get_chunk":
-		return c.GetChunk(cmd)
-	case "set_meta":
-		return c.SetMeta(cmd)
-	case "delete_meta":
-		return c.DeleteMeta(cmd)
-	case "rm_tags":
-		return c.RmTags(cmd)
-	case "remove_chunks":
-		return c.RemoveChunks(cmd)
-	case "get_metadata":
-		return c.GetMetadata(cmd)
 	case "parse_documents_user_command":
 		return c.ParseDocumentsUserCommand(cmd)
 	case "user_start_ingestion_command":
@@ -482,7 +453,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListUserIngestionTasks(cmd)
 	case "user_remove_task_command":
 		return c.UserRemoveTaskCommand(cmd)
-	// TODO: Implement other commands
 	case "user_parse_local_file_command":
 		return c.UserParseLocalFile(cmd)
 	case "api_show_admin_server":
@@ -509,8 +479,38 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ChunkCommand(cmd)
 	case "api_save_config_command":
 		return c.CommonSaveServerConfigCommand(cmd)
+
+	// File system commands
 	case "file_system_command":
 		return c.ExecuteFilesystemCommand(cmd)
+
+	// For debug
+	case "dev_create_chunk_store":
+		return c.DevCreateChunkStoreCommand(cmd)
+	case "dev_drop_chunk_store":
+		return c.DevDropChunkStoreCommand(cmd)
+	case "dev_create_metadata_store":
+		return c.DevCreateMetadataStoreCommand(cmd)
+	case "dev_drop_metadata_store":
+		return c.DevDropMetadataStoreCommand(cmd)
+	case "dev_insert_chunks_from_file":
+		return c.DevInsertChunksFromFileCommand(cmd)
+	case "dev_insert_metadata_from_file":
+		return c.DevInsertMetadataFromFileCommand(cmd)
+	case "dev_update_chunk":
+		return c.DevUpdateChunkCommand(cmd)
+	case "dev_get_chunk":
+		return c.DevGetChunkCommand(cmd)
+	case "dev_set_meta":
+		return c.DevSetMetaCommand(cmd)
+	case "dev_delete_meta":
+		return c.DevDeleteMetaCommand(cmd)
+	case "dev_rm_tags":
+		return c.DevRmTagsCommand(cmd)
+	case "dev_remove_chunks":
+		return c.DevRemoveChunksCommand(cmd)
+	case "dev_get_metadata":
+		return c.DevGetMetadataCommand(cmd)
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}
