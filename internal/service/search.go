@@ -294,6 +294,7 @@ type UpdateSearchRequest struct {
 	Name         string                 `json:"name" binding:"required"`
 	Description  *string                `json:"description,omitempty"`
 	SearchConfig map[string]interface{} `json:"search_config" binding:"required"`
+	Avatar       *string                `json:"avatar,omitempty"`
 }
 
 func (s *SearchService) UpdateSearch(userID string, searchID string, req *UpdateSearchRequest) (*entity.Search, error) {
@@ -351,6 +352,9 @@ func (s *SearchService) UpdateSearch(userID string, searchID string, req *Update
 
 	if req.Description != nil {
 		updates["description"] = *req.Description
+	}
+	if req.Avatar != nil {
+		updates["avatar"] = *req.Avatar
 	}
 
 	// Step 6: Execute update
