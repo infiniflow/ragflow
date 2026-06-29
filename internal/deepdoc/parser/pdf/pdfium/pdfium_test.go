@@ -1,3 +1,5 @@
+//go:build cgo && manual
+
 package pdfium
 
 import (
