@@ -189,8 +189,20 @@ check_office_oxide_deps() {
 
 # Check / install pdfium native library (libpdfium.so from pypdfium2_raw wheel).
 check_pdfium_deps() {
-    local lib_path="${PDFIUM_PREFIX}/libpdfium.so"
+    # 1. Check .venv (uv sync provides pypdfium2_raw).
+    local venv_py="${PROJECT_ROOT}/.venv/bin/python3"
+    if [ -x "$venv_py" ]; then
+        local venv_so=$("$venv_py" -c "import pypdfium2_raw,os;print(os.path.join(os.path.dirname(pypdfium2_raw.__file__),'libpdfium.so'))" 2>/dev/null)
+        if [ -n "$venv_so" ] && [ -f "$venv_so" ]; then
+            echo "  pdfium          → ${venv_so} (.venv)"
+            export CGO_LDFLAGS="$CGO_LDFLAGS -L$(dirname "$venv_so") -Wl,-rpath,$(dirname "$venv_so")"
+            export LD_LIBRARY_PATH="$(dirname "$venv_so"):${LD_LIBRARY_PATH}"
+            return 0
+        fi
+    fi
 
+    # 2. Check cache.
+    local lib_path="${PDFIUM_PREFIX}/libpdfium.so"
     if [ -f "$lib_path" ]; then
         echo "  pdfium          → ${PDFIUM_PREFIX}"
         return 0
@@ -198,57 +210,54 @@ check_pdfium_deps() {
 
     echo "  pdfium not found, installing..."
 
-    # Map platform to PyPI wheel platform tag.
+    # 3. Map platform to PyPI wheel platform tag.
     local whl_platform
     case "$(uname -s)" in
         Linux)
             case "$(uname -m)" in
                 x86_64)  whl_platform="manylinux_2_17_x86_64.manylinux2014_x86_64" ;;
                 aarch64|arm64) whl_platform="manylinux_2_17_aarch64.manylinux2014_aarch64" ;;
-                *) echo "  pdfium          → unsupported arch: $(uname -m)"; return 1 ;;
+                *) echo "  pdfium          → unsupported arch"; return 1 ;;
             esac
             ;;
         Darwin)
             case "$(uname -m)" in
                 x86_64)  whl_platform="macosx_11_0_x86_64" ;;
                 arm64)   whl_platform="macosx_11_0_arm64" ;;
-                *) echo "  pdfium          → unsupported arch: $(uname -m)"; return 1 ;;
+                *) echo "  pdfium          → unsupported arch"; return 1 ;;
             esac
             ;;
         *) echo "  pdfium          → unsupported OS"; return 1 ;;
     esac
 
-    # Resolve the exact download URL from PyPI JSON API.
+    # 4. Download .whl from PyPI and extract libpdfium.so (zero pip dependency).
     local whl_url
-    whl_url=$(curl -fsSL "https://pypi.org/pypi/pypdfium2_raw/${PDFIUM_VERSION}/json" 2>/dev/null         | grep -o '"url":"[^"]*'${whl_platform}'[^"]*"'         | head -1         | cut -d'"' -f4)
+    whl_url=$(curl -fsSL "https://pypi.org/pypi/pypdfium2_raw/${PDFIUM_VERSION}/json" 2>/dev/null \
+        | grep -o '"url":"[^"]*'${whl_platform}'[^"]*"' | head -1 | cut -d'"' -f4)
 
-    if [ -z "$whl_url" ]; then
-        # Fallback: try pip install then copy from site-packages.
-        local pip=""
-        command -v pip3 >/dev/null 2>&1 && pip="pip3"
-        [ -z "$pip" ] && command -v pip >/dev/null 2>&1 && pip="pip"
-        if [ -n "$pip" ]; then
-            echo "  Installing pypdfium2_raw via $pip..."
-            $pip install --quiet pypdfium2_raw=="${PDFIUM_VERSION}" 2>&1
-            local so_path
-            so_path=$($pip show -f pypdfium2_raw 2>/dev/null | grep 'libpdfium.so' | awk '{print $1}')
-            [ -z "$so_path" ] && so_path=$(python3 -c "import pypdfium2_raw,os;print(os.path.join(os.path.dirname(pypdfium2_raw.__file__),'libpdfium.so'))" 2>/dev/null)
-            if [ -n "$so_path" ] && [ -f "$so_path" ]; then
-                mkdir -p "${PDFIUM_PREFIX}"
-                cp "$so_path" "$lib_path"
-            fi
-        fi
-    else
-        mkdir -p "${PDFIUM_PREFIX}"
+    if [ -n "$whl_url" ] && { command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; }; then
         local tmp_whl="$(mktemp)"
-        echo "  Downloading pypdfium2_raw wheel..."
         if command -v curl >/dev/null 2>&1; then
             curl -fsSL "$whl_url" -o "$tmp_whl"
-        elif command -v wget >/dev/null 2>&1; then
+        else
             wget -q "$whl_url" -O "$tmp_whl"
         fi
-        # Wheel is a zip; extract libpdfium.so.
-        if command -v unzip >/dev/null 2>&1; then
+        mkdir -p "${PDFIUM_PREFIX}"
+        # Wheel is a zip; extract libpdfium.so via python3 or unzip.
+        if command -v python3 >/dev/null 2>&1; then
+            python3 -c "
+import zipfile, os, shutil
+with zipfile.ZipFile('$tmp_whl') as z:
+    for n in z.namelist():
+        if n.endswith('libpdfium.so'):
+            z.extract(n, '${PDFIUM_PREFIX}')
+            os.rename(os.path.join('${PDFIUM_PREFIX}', n), '$lib_path')
+            # Remove empty pypdfium2_raw dir
+            d = os.path.join('${PDFIUM_PREFIX}', 'pypdfium2_raw')
+            if os.path.isdir(d): shutil.rmtree(d, ignore_errors=True)
+            break
+" 2>/dev/null
+        elif command -v unzip >/dev/null 2>&1; then
             unzip -q -o "$tmp_whl" -d "${PDFIUM_PREFIX}" 'pypdfium2_raw/libpdfium.so' 2>/dev/null
             [ -f "${PDFIUM_PREFIX}/pypdfium2_raw/libpdfium.so" ] && mv "${PDFIUM_PREFIX}/pypdfium2_raw/libpdfium.so" "$lib_path"
             rm -rf "${PDFIUM_PREFIX}/pypdfium2_raw"
@@ -259,7 +268,7 @@ check_pdfium_deps() {
     if [ -f "$lib_path" ]; then
         echo -e "${GREEN}✓ pdfium installed to ${PDFIUM_PREFIX}${NC}"
     else
-        echo "  pdfium          → install failed"
+        echo "  pdfium          → install failed (requires .venv, curl/wget + python3, or pre-cached ~/.pdfium)"
     fi
 }
 
