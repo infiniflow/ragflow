@@ -13,6 +13,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from .graph_extractor import GraphExtractor
+from .extractor import Extractor
+from .spacy_ner import NerExtractor
+from .relation_extractor import RelationExtractor
+from .types import Entity, ExtractionResult, Relation
 
-__all__ = ["GraphExtractor"]
+__all__ = [
+    "Extractor",
+    "NerExtractor",
+    "RelationExtractor",
+    "Entity",
+    "Relation",
+    "ExtractionResult",
+]
