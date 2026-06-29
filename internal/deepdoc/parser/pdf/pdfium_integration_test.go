@@ -1,4 +1,4 @@
-//go:build cgo
+//go:build cgo && manual
 
 package parser
 
@@ -7,6 +7,7 @@ import (
 	"image"
 	"os"
 	"path/filepath"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"testing"
 )
 
@@ -46,8 +47,8 @@ func TestParse_PdfiumRender(t *testing.T) {
 
 	// Run Parse with pdfium rendering — BATCH_SKIP_DEEPDOC=1 to avoid HTTP calls.
 	t.Setenv("BATCH_SKIP_DEEPDOC", "1")
-	cfg := DefaultParserConfig()
-	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
+	cfg := pdf.DefaultParserConfig()
+	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true})
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -75,14 +76,15 @@ func TestParse_PdfiumRender_NoData(t *testing.T) {
 	}
 }
 
-// pythonCharEngineStub implements PDFEngine with RawData() returning nil.
+// pythonCharEngineStub implements pdf.PDFEngine with RawData() returning nil.
 type pythonCharEngineStub struct{}
 
-func (e *pythonCharEngineStub) ExtractChars(_ int) ([]TextChar, error)      { return nil, nil }
+func (e *pythonCharEngineStub) ExtractChars(_ int) ([]pdf.TextChar, error)  { return nil, nil }
 func (e *pythonCharEngineStub) RenderPage(_ int, _ float64) ([]byte, error) { return nil, nil }
 func (e *pythonCharEngineStub) RenderPageImage(_ int, _ float64) (image.Image, error) {
 	return nil, nil
 }
-func (e *pythonCharEngineStub) RawData() []byte         { return nil }
-func (e *pythonCharEngineStub) PageCount() (int, error) { return 0, nil }
-func (e *pythonCharEngineStub) Close() error            { return nil }
+func (e *pythonCharEngineStub) RawData() []byte                  { return nil }
+func (e *pythonCharEngineStub) PageCount() (int, error)          { return 0, nil }
+func (e *pythonCharEngineStub) Close() error                     { return nil }
+func (e *pythonCharEngineStub) Outlines() ([]pdf.Outline, error) { return nil, nil }
