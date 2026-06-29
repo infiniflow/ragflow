@@ -170,6 +170,24 @@ func (f *fakePipeline) AsyncChat(ctx context.Context, chat *entity.Chat, message
 	return f.resultChan, f.err
 }
 
+type fakeChunkFeedbackApplier struct {
+	calls []struct {
+		tenantID   string
+		reference  map[string]interface{}
+		isPositive bool
+	}
+	err error
+}
+
+func (f *fakeChunkFeedbackApplier) applyChunkFeedback(tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error) {
+	f.calls = append(f.calls, struct {
+		tenantID   string
+		reference  map[string]interface{}
+		isPositive bool
+	}{tenantID: tenantID, reference: reference, isPositive: isPositive})
+	return map[string]interface{}{"success_count": 0, "fail_count": 0, "chunk_ids": []string{}}, f.err
+}
+
 func makeResultChan(results ...AsyncChatResult) <-chan AsyncChatResult {
 	ch := make(chan AsyncChatResult, len(results))
 	for _, r := range results {
@@ -635,6 +653,418 @@ func TestUpdateSession_NotFound(t *testing.T) {
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("code=%v", code)
+	}
+}
+
+func TestDeleteSessionMessage_RemovesMessagePairAndMatchingReference(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		Message: json.RawMessage(`[
+			{"role":"assistant","content":"prologue"},
+			{"role":"user","content":"q1","id":"m1"},
+			{"role":"assistant","content":"a1","id":"m1"},
+			{"role":"user","content":"q2","id":"m2"},
+			{"role":"assistant","content":"a2","id":"m2"}
+		]`),
+		Reference: json.RawMessage(`[
+			{"chunks":[{"id":"c1","dataset_id":"kb1"}],"doc_aggs":[]},
+			{"chunks":[{"id":"c2","dataset_id":"kb2"}],"doc_aggs":[]}
+		]`),
+	}
+	store.dialogExists["user-1|chat-1"] = true
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	resp, code, err := svc.DeleteSessionMessage("user-1", "chat-1", "session-1", "m2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if len(resp.Messages) != 3 {
+		t.Fatalf("messages=%#v", resp.Messages)
+	}
+	if resp.Messages[1]["id"] != "m1" || resp.Messages[2]["id"] != "m1" {
+		t.Fatalf("unexpected remaining messages=%#v", resp.Messages)
+	}
+
+	var refs []map[string]interface{}
+	if err := json.Unmarshal(store.sessions["session-1"].Reference, &refs); err != nil {
+		t.Fatalf("decode stored references: %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("reference len=%d refs=%#v", len(refs), refs)
+	}
+	chunks, _ := refs[0]["chunks"].([]interface{})
+	chunk, _ := chunks[0].(map[string]interface{})
+	if chunk["id"] != "c1" {
+		t.Fatalf("wrong reference remained: %#v", refs)
+	}
+}
+
+func TestDeleteSessionMessage_NotOwner(t *testing.T) {
+	svc := &ChatSessionService{
+		chatSessionDAO: newFakeSessionStore(),
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	_, code, err := svc.DeleteSessionMessage("user-1", "chat-1", "session-1", "m1")
+	if err == nil || err.Error() != "No authorization." {
+		t.Fatalf("err=%v", err)
+	}
+	if code != common.CodeAuthenticationError {
+		t.Fatalf("code=%v", code)
+	}
+}
+
+func TestDeleteSessionMessage_SessionNotFoundForWrongChat(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{ID: "session-1", DialogID: "chat-2"}
+	store.dialogExists["user-1|chat-1"] = true
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	_, code, err := svc.DeleteSessionMessage("user-1", "chat-1", "session-1", "m1")
+	if err == nil || err.Error() != "Session not found!" {
+		t.Fatalf("err=%v", err)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code=%v", code)
+	}
+}
+
+func TestDeleteSessionMessage_MissingMessageIDLeavesSessionUnchanged(t *testing.T) {
+	store := newFakeSessionStore()
+	originalMessages := json.RawMessage(`[
+		{"role":"assistant","content":"prologue"},
+		{"role":"user","content":"q1","id":"m1"},
+		{"role":"assistant","content":"a1","id":"m1"}
+	]`)
+	originalReferences := json.RawMessage(`[{"chunks":[{"id":"c1","dataset_id":"kb1"}],"doc_aggs":[]}]`)
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:        "session-1",
+		DialogID:  "chat-1",
+		Message:   originalMessages,
+		Reference: originalReferences,
+	}
+	store.dialogExists["user-1|chat-1"] = true
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	resp, code, err := svc.DeleteSessionMessage("user-1", "chat-1", "session-1", "missing")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if len(resp.Messages) != 3 || len(resp.Reference) != 1 {
+		t.Fatalf("response changed unexpectedly: messages=%#v refs=%#v", resp.Messages, resp.Reference)
+	}
+	if !reflect.DeepEqual(parseMessages(store.sessions["session-1"].Message), parseMessages(originalMessages)) {
+		t.Fatalf("stored messages changed: %s", store.sessions["session-1"].Message)
+	}
+}
+
+func TestUpdateMessageFeedback_UpdatesAssistantMessage(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		Message: json.RawMessage(`[
+			{"role":"assistant","content":"prologue"},
+			{"role":"user","content":"q1","id":"m1"},
+			{"role":"assistant","content":"a1","id":"m1","thumbup":true}
+		]`),
+		Reference: json.RawMessage(`[{"chunks":[{"id":"c1","dataset_id":"kb1"}],"doc_aggs":[]}]`),
+	}
+	store.dialogExists["user-1|chat-1"] = true
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	resp, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{
+		"thumbup":  false,
+		"feedback": "bad answer",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	msg := resp.Messages[2]
+	if msg["thumbup"] != false || msg["feedback"] != "bad answer" {
+		t.Fatalf("message=%#v", msg)
+	}
+
+	resp, code, err = svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{
+		"thumbup": true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected second error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("second code=%v", code)
+	}
+	msg = resp.Messages[2]
+	if msg["thumbup"] != true {
+		t.Fatalf("thumbup not set: %#v", msg)
+	}
+	if _, ok := msg["feedback"]; ok {
+		t.Fatalf("feedback should be removed: %#v", msg)
+	}
+}
+
+func TestUpdateMessageFeedback_RejectsNonBooleanThumbup(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{ID: "session-1", DialogID: "chat-1"}
+	store.dialogExists["user-1|chat-1"] = true
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": "true"})
+	if err == nil || err.Error() != "thumbup must be a boolean" {
+		t.Fatalf("err=%v", err)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code=%v", code)
+	}
+}
+
+func TestUpdateMessageFeedback_RejectsMissingThumbup(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{ID: "session-1", DialogID: "chat-1"}
+	store.dialogExists["user-1|chat-1"] = true
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{})
+	if err == nil || err.Error() != "thumbup must be a boolean" {
+		t.Fatalf("err=%v", err)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code=%v", code)
+	}
+}
+
+func TestUpdateMessageFeedback_NotOwner(t *testing.T) {
+	svc := &ChatSessionService{
+		chatSessionDAO: newFakeSessionStore(),
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
+	if err == nil || err.Error() != "No authorization." {
+		t.Fatalf("err=%v", err)
+	}
+	if code != common.CodeAuthenticationError {
+		t.Fatalf("code=%v", code)
+	}
+}
+
+func TestUpdateMessageFeedback_SessionNotFoundForWrongChat(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{ID: "session-1", DialogID: "chat-2"}
+	store.dialogExists["user-1|chat-1"] = true
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
+	if err == nil || err.Error() != "Session not found!" {
+		t.Fatalf("err=%v", err)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code=%v", code)
+	}
+}
+
+func TestUpdateMessageFeedback_MissingMessageIDLeavesMessagesUnchanged(t *testing.T) {
+	store := newFakeSessionStore()
+	originalMessages := json.RawMessage(`[
+		{"role":"assistant","content":"prologue"},
+		{"role":"user","content":"q1","id":"m1"},
+		{"role":"assistant","content":"a1","id":"m1"}
+	]`)
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:        "session-1",
+		DialogID:  "chat-1",
+		Message:   originalMessages,
+		Reference: json.RawMessage(`[{"chunks":[],"doc_aggs":[]}]`),
+	}
+	store.dialogExists["user-1|chat-1"] = true
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	resp, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "missing", map[string]interface{}{"thumbup": false})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if !reflect.DeepEqual(resp.Messages, parseMessages(originalMessages)) {
+		t.Fatalf("messages changed: %#v", resp.Messages)
+	}
+}
+
+func TestUpdateMessageFeedback_SkipsMatchingNonAssistantMessage(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		Message: json.RawMessage(`[
+			{"role":"assistant","content":"prologue"},
+			{"role":"user","content":"q1","id":"m1"},
+			{"role":"assistant","content":"a1","id":"assistant-1"}
+		]`),
+		Reference: json.RawMessage(`[{"chunks":[],"doc_aggs":[]}]`),
+	}
+	store.dialogExists["user-1|chat-1"] = true
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	resp, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": false, "feedback": "ignored"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	for _, msg := range resp.Messages {
+		if _, ok := msg["thumbup"]; ok {
+			t.Fatalf("non-assistant match should be skipped, messages=%#v", resp.Messages)
+		}
+		if _, ok := msg["feedback"]; ok {
+			t.Fatalf("feedback should not be written, messages=%#v", resp.Messages)
+		}
+	}
+}
+
+func TestUpdateMessageFeedback_ChangedFeedbackTriggersChunkFeedback(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		Message: json.RawMessage(`[
+			{"role":"assistant","content":"prologue"},
+			{"role":"user","content":"q1","id":"m1"},
+			{"role":"assistant","content":"a1","id":"m1","thumbup":true},
+			{"role":"user","content":"q2","id":"m2"},
+			{"role":"assistant","content":"a2","id":"m2"}
+		]`),
+		Reference: json.RawMessage(`[
+			{"chunks":[{"id":"c1","dataset_id":"kb1","similarity":0.9}],"doc_aggs":[]},
+			{"chunks":[{"id":"c2","dataset_id":"kb2","similarity":0.8}],"doc_aggs":[]}
+		]`),
+	}
+	store.dialogExists["user-1|chat-1"] = true
+	feedback := &fakeChunkFeedbackApplier{}
+
+	svc := &ChatSessionService{
+		chatSessionDAO:       store,
+		userTenantDAO:        &fakeTenantStore{},
+		pipeline:             &fakePipeline{},
+		chunkFeedbackApplier: feedback,
+	}
+
+	resp, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": false})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if resp.Messages[2]["thumbup"] != false {
+		t.Fatalf("message not updated: %#v", resp.Messages[2])
+	}
+	if len(feedback.calls) != 2 {
+		t.Fatalf("feedback calls=%#v", feedback.calls)
+	}
+	if feedback.calls[0].tenantID != "user-1" || feedback.calls[1].tenantID != "user-1" {
+		t.Fatalf("tenant ids=%#v", feedback.calls)
+	}
+	if feedback.calls[0].isPositive || feedback.calls[1].isPositive {
+		t.Fatalf("expected two negative applications when changing true -> false: %#v", feedback.calls)
+	}
+	chunks, _ := feedback.calls[0].reference["chunks"].([]interface{})
+	chunk, _ := chunks[0].(map[string]interface{})
+	if chunk["id"] != "c1" {
+		t.Fatalf("wrong reference used for first pair: %#v", feedback.calls[0].reference)
+	}
+}
+
+func TestUpdateMessageFeedback_UnchangedFeedbackDoesNotTriggerChunkFeedback(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		Message: json.RawMessage(`[
+			{"role":"assistant","content":"prologue"},
+			{"role":"user","content":"q1","id":"m1"},
+			{"role":"assistant","content":"a1","id":"m1","thumbup":true}
+		]`),
+		Reference: json.RawMessage(`[{"chunks":[{"id":"c1","dataset_id":"kb1"}],"doc_aggs":[]}]`),
+	}
+	store.dialogExists["user-1|chat-1"] = true
+	feedback := &fakeChunkFeedbackApplier{}
+
+	svc := &ChatSessionService{
+		chatSessionDAO:       store,
+		userTenantDAO:        &fakeTenantStore{},
+		pipeline:             &fakePipeline{},
+		chunkFeedbackApplier: feedback,
+	}
+
+	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if len(feedback.calls) != 0 {
+		t.Fatalf("feedback should not be called: %#v", feedback.calls)
 	}
 }
 
