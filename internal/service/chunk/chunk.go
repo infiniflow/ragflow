@@ -211,9 +211,9 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 
 	// Check if all kbs have the same embedding model
 	if len(kbRecords) > 1 {
-		firstEmbdID := kbRecords[0].EmbdID
+		firstEmbeddingKey := knowledgebaseEmbeddingKey(kbRecords[0])
 		for i := 1; i < len(kbRecords); i++ {
-			if kbRecords[i].EmbdID != firstEmbdID {
+			if knowledgebaseEmbeddingKey(kbRecords[i]) != firstEmbeddingKey {
 				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
 			}
 		}
@@ -230,7 +230,7 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 		if err != nil {
 			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", *req.SearchID), zap.Error(err))
 		} else if searchConfig, ok := searchConfigMap(searchDetail["search_config"]); ok && searchConfig != nil {
-			if searchMetaFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
+			if searchMetaFilter, ok := searchConfigMap(searchConfig["meta_data_filter"]); ok {
 				filter = searchMetaFilter
 			}
 			chatID, _ = searchConfig["chat_id"].(string)
@@ -480,6 +480,13 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
+}
+
+func knowledgebaseEmbeddingKey(kb *entity.Knowledgebase) string {
+	if kb.TenantEmbdID != nil && *kb.TenantEmbdID > 0 {
+		return fmt.Sprintf("tenant:%d", *kb.TenantEmbdID)
+	}
+	return fmt.Sprintf("embd:%s", kb.EmbdID)
 }
 
 // hydrateChunkVectors replaces zero (placeholder) vectors in chunks with real

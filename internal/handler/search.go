@@ -484,22 +484,20 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 	}
 	if plan.ModelID == "" {
 		writer.Write(c, sseError("chat model not configured"))
-		writer.Write(c, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
 		return
 	}
 	if h.askService == nil {
 		writer.Write(c, sseError("ask service not configured"))
-		writer.Write(c, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
 		return
 	}
 	if h.streamLLM == nil {
 		writer.Write(c, sseError("streaming LLM not configured"))
-		writer.Write(c, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
 		return
 	}
 
 	adapter := &askStreamAdapter{llm: h.streamLLM, tenantID: plan.UserID, modelID: plan.ModelID}
 
+	hadError := false
 	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.KBIDs, plan.Options) {
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
@@ -507,10 +505,13 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		case service.AskDeltaMarker:
 			writer.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:
+			hadError = true
 			writer.Write(c, sseError(delta.Value))
 		case service.AskDeltaFinal:
 			writer.Write(c, sseAnswer(delta.Value, delta.Refs, true))
 		}
 	}
-	writer.Write(c, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
+	if !hadError {
+		writer.Write(c, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
+	}
 }
