@@ -40,21 +40,21 @@ import (
 
 // Entity represents an extracted named entity.
 type Entity struct {
-	Text        string  `json:"text"`
-	Label       string  `json:"label"`
-	StartChar   int     `json:"start_char"`
-	EndChar     int     `json:"end_char"`
-	Confidence  float64 `json:"confidence"`
-	AppType     string  `json:"app_type,omitempty"`
+	Text       string  `json:"text"`
+	Label      string  `json:"label"`
+	StartChar  int     `json:"start_char"`
+	EndChar    int     `json:"end_char"`
+	Confidence float64 `json:"confidence"`
+	AppType    string  `json:"app_type,omitempty"`
 }
 
 // Relation represents a typed relation between two entities.
 type Relation struct {
-	Subject   Entity `json:"subject"`
-	Predicate string `json:"predicate"`
-	Object    Entity `json:"object"`
+	Subject    Entity  `json:"subject"`
+	Predicate  string  `json:"predicate"`
+	Object     Entity  `json:"object"`
 	Confidence float64 `json:"confidence"`
-	Context   string `json:"context,omitempty"`
+	Context    string  `json:"context,omitempty"`
 }
 
 // ExtractionResult holds the output of a full extraction pass.
@@ -72,21 +72,21 @@ type Extractor struct {
 
 // spaCy NER label → application entity type mapping
 var spacyToAppType = map[string]string{
-	"PERSON":   "person",
-	"ORG":      "organization",
-	"GPE":      "geo",
-	"LOC":      "geo",
-	"FAC":      "geo",
-	"EVENT":    "event",
-	"PRODUCT":  "category",
-	"DATE":     "event",
-	"TIME":     "event",
-	"MONEY":    "category",
-	"QUANTITY": "category",
-	"PERCENT":  "category",
-	"LAW":      "category",
-	"NORP":     "category",
-	"LANGUAGE": "category",
+	"PERSON":      "person",
+	"ORG":         "organization",
+	"GPE":         "geo",
+	"LOC":         "geo",
+	"FAC":         "geo",
+	"EVENT":       "event",
+	"PRODUCT":     "category",
+	"DATE":        "event",
+	"TIME":        "event",
+	"MONEY":       "category",
+	"QUANTITY":    "category",
+	"PERCENT":     "category",
+	"LAW":         "category",
+	"NORP":        "category",
+	"LANGUAGE":    "category",
 	"WORK_OF_ART": "category",
 }
 
@@ -209,12 +209,12 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 			appType = strings.ToLower(re.Label)
 		}
 		entities = append(entities, Entity{
-			Text:        re.Text,
-			Label:       re.Label,
-			StartChar:   re.Start,
-			EndChar:     re.End,
-			Confidence:  re.Confidence,
-			AppType:     appType,
+			Text:       re.Text,
+			Label:      re.Label,
+			StartChar:  re.Start,
+			EndChar:    re.End,
+			Confidence: re.Confidence,
+			AppType:    appType,
 		})
 	}
 	return entities, nil

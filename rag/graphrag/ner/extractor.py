@@ -18,11 +18,11 @@ Combined entity and relation extractor — orchestrates NerExtractor + RelationE
 
 This is the primary entry point for the rag/graphrag/ner package.
 """
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from .spacy_ner import NerExtractor
 from .relation_extractor import RelationExtractor
-from .types import Entity, ExtractionResult, Relation
+from .types import ExtractionResult
 
 
 class Extractor:

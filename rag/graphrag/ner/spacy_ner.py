@@ -25,7 +25,7 @@ Wraps spaCy NER with:
 """
 import logging
 import re
-from typing import Any, Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 from .types import Entity, SPACY_TO_APP_ENTITY_TYPE, SKIP_SPACY_LABELS
 

@@ -22,8 +22,7 @@ Extracts typed relations between entities using:
 """
 import logging
 import re
-from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Dict, List
 
 from .types import Entity, Relation, MULTILANG_RELATION_PATTERNS
 
