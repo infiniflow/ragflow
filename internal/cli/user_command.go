@@ -1671,17 +1671,7 @@ func (c *CLI) AddProvider(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to add provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("add provider failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "add provider")
 }
 
 // APIListProviders lists added providers
@@ -2068,17 +2058,7 @@ func (c *CLI) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to drop instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop instance failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "drop instance")
 }
 
 // DROP MODEL <name1 name2 name3> FROM <provider_name> <instance_name>
@@ -2111,24 +2091,14 @@ func (c *CLI) DropInstanceModel(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", url, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop instance: %w", err)
+		return nil, fmt.Errorf("failed to drop model: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to drop model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop instance failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "drop model")
 }
 
 func isValidURL(str string) bool {
@@ -3255,16 +3225,8 @@ func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to add custom model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("add custom model failed: invalid JSON (%w)", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
 
+	return HandleSimpleResponse(resp, "add custom model")
 }
 
 // InsertChunksFromFile inserts chunks from a JSON file
@@ -3734,17 +3696,7 @@ func (c *CLI) ParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list documents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list documents failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-
-	return &result, nil
+	return HandleSimpleResponse(resp, "list documents")
 }
 
 func (c *CLI) UserParseLocalFile(cmd *Command) (ResponseIf, error) {
