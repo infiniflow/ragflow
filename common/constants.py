@@ -72,6 +72,12 @@ class ActiveStatusEnum(Enum):
     UNSUPPORTED = "unsupported"
 
 
+class ModelVerifyStatusEnum(Enum):
+    SUCCESS = "success"
+    FAIL = "fail"
+    UNKNOWN = "unknown"
+
+
 class ActiveEnum(Enum):
     ACTIVE = "1"
     INACTIVE = "0"

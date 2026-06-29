@@ -17,7 +17,7 @@ import logging
 
 from quart import request
 
-from api.apps import login_required
+from api.apps import login_required, current_user
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     get_error_argument_result,
@@ -411,7 +411,10 @@ async def verify_provider_api_key(provider_id_or_name: str = None):
               description: Region.
             model_info:
               type: object
-              description: Model info.
+              description: Model info. optional
+            instance_id:
+              type: string
+              description: Instance ID. optional
     responses:
       200:
         description: Instance created successfully.
@@ -430,8 +433,16 @@ async def verify_provider_api_key(provider_id_or_name: str = None):
     model_info = data.get("model_info", [])
 
     try:
-        success, msg = await provider_api_service.verify_api_key(provider_id_or_name, api_key, base_url, region, model_info)
+        success, msg, model_verify_result = await provider_api_service.verify_api_key(provider_id_or_name, api_key, base_url, region, model_info)
         if success:
+            if data.get("instance_id"):
+                # if instance_id is provided, update the model verify result
+                instance_id = data["instance_id"]
+                try:
+                    for model, verify_result in model_verify_result.items():
+                        provider_api_service.update_model(current_user.id, provider_id_or_name, instance_id, model, {"verify": verify_result})
+                except Exception as e:
+                    logging.exception(e)
             return get_result(message=msg)
         else:
             return get_error_data_result(message=msg)

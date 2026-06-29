@@ -18,7 +18,7 @@ import json
 import logging
 import asyncio
 
-from common.constants import LLMType, ActiveStatusEnum
+from common.constants import LLMType, ActiveStatusEnum, ModelVerifyStatusEnum
 from common.settings import FACTORY_LLM_INFOS
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, delete_models_by_instance_ids, delete_instances_by_provider_ids, _decode_api_key_config
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
@@ -337,7 +337,7 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
     api_key_str = ""
     if api_key:
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
-    success, msg = await verify_api_key(provider_name, api_key, base_url, region, model_info)
+    success, msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
     if not success:
         return False, msg
 
@@ -350,6 +350,10 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
     if model_info:
         msg = ""
         for model in model_info:
+            if model.get("extra"):
+                model["extra"].update({"verify": model_verify_result.get(model["model_name"], ModelVerifyStatusEnum.UNKNOWN.value)})
+            else:
+                model["extra"] = {"verify": model_verify_result.get(model["model_name"], ModelVerifyStatusEnum.UNKNOWN.value)}
             success, _msg = add_model_to_instance(tenant_id, provider_name, instance_name, **model)
             if not success:
                 msg += _msg
@@ -359,13 +363,15 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
         factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
         factory_llms = factory_info[0]["llm"]
         for llm in factory_llms:
+            llm_name = _factory_llm_name(llm)
             success, _msg = add_model_to_instance(tenant_id, provider_name, instance_name, **{
                 "model_type": _factory_model_types(llm),
-                "model_name": _factory_llm_name(llm),
+                "model_name": llm_name,
                 "max_tokens": llm["max_tokens"],
                 "extra": {
                     "is_tools": llm.get("is_tools", False),
-                    "thinking": "thinking" in llm.get("features", [])
+                    "thinking": "thinking" in llm.get("features", []),
+                    "verify": model_verify_result.get(llm_name, ModelVerifyStatusEnum.UNKNOWN.value)
                 }
             })
             if not success:
@@ -490,6 +496,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
         if not factory_llms:
             return False, f"No models found for provider '{provider_id_or_name}'"
 
+    model_verify_result = {}
     # test if api key works
     chat_passed, embd_passed, rerank_passed, ocr_passed, tts_passed = False, False, False, False, False
     timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
@@ -515,6 +522,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
                 if len(arr[0]) == 0:
                     raise Exception("Fail")
                 embd_passed = True
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
             except Exception as e:
                 logging.exception(
                     "Fail to access embedding model for provider=%s model=%s",
@@ -522,6 +530,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
                     llm["llm_name"],
                 )
                 msg += f"\nFail to access embedding model({llm['llm_name']}) using this api key." + str(e)
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
         elif not chat_passed and LLMType.CHAT.value in model_types:
             assert provider_name in ChatModel, f"Chat model from {provider_name} is not supported yet."
             mdl = ChatModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url, **extra)
@@ -538,8 +547,10 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
 
                 result = await asyncio.wait_for(check_streamly(), timeout=timeout_seconds)
                 if result:
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
                     chat_passed = True
                 else:
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
                     raise Exception("No valid response received")
             except Exception as e:
                 logging.exception(
@@ -547,6 +558,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
                     provider_name,
                     llm["llm_name"],
                 )
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
                 msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
         elif not rerank_passed and LLMType.RERANK.value in model_types:
             if provider_name not in RerankModel:
@@ -563,6 +575,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
                 if len(arr) == 0 or tc == 0:
                     raise Exception("Fail")
                 rerank_passed = True
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
                 logging.debug(f"passed model rerank {llm['llm_name']}")
             except Exception as e:
                 logging.exception(
@@ -570,6 +583,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
                     provider_name,
                     llm["llm_name"],
                 )
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
                 msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
         elif not ocr_passed and LLMType.OCR.value in model_types:
             assert provider_name in OcrModel, f"OCR model from {provider_name} is not supported yet."
@@ -581,6 +595,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
                 )
                 if not ok:
                     raise RuntimeError(reason or "Model not available")
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
                 ocr_passed = True
             except Exception as e:
                 logging.exception(
@@ -588,6 +603,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
                     provider_name,
                     llm["llm_name"],
                 )
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
                 msg += f"\nFail to access model({provider_name}/{llm['llm_name']})." + str(e)
         elif not tts_passed and LLMType.TTS.value in model_types:
             assert provider_name in TTSModel, f"TTS model from {provider_name} is not supported yet."
@@ -601,6 +617,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
                     asyncio.to_thread(drain_tts),
                     timeout=timeout_seconds,
                 )
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
                 tts_passed = True
             except Exception as e:
                 logging.exception(
@@ -608,13 +625,14 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
                     provider_name,
                     llm["llm_name"],
                 )
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
                 msg += f"\nFail to access model({provider_name}/{llm['llm_name']})." + str(e)
         if any([embd_passed, chat_passed, rerank_passed, ocr_passed, tts_passed]):
             msg = ""
             break
 
     success = any([embd_passed, chat_passed, rerank_passed, ocr_passed, tts_passed])
-    return success, "success" if success else msg
+    return success, "success" if success else msg, model_verify_result
 
 
 def show_provider_instance(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str):
@@ -863,9 +881,14 @@ def update_model(tenant_id: str, provider_id_or_name: str, instance_id_or_name: 
     to_update = {}
     if update_dict.get("status") != model_obj.status:
         to_update.update({"status": update_dict["status"]})
+    new_extra = {}
     if "max_tokens" in update_dict:
+        new_extra.update({"max_tokens": update_dict["max_tokens"]})
+    if "verify" in update_dict:
+        new_extra.update({"verify": update_dict["verify"]})
+    if new_extra:
         db_extra = json.loads(model_obj.extra)
-        db_extra.update({"max_tokens": update_dict["max_tokens"]})
+        db_extra.update(**new_extra)
         to_update.update({"extra": json.dumps(db_extra)})
 
     if to_update:
