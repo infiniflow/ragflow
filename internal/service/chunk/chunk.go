@@ -404,12 +404,8 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 	// Get rerank model if RerankID is specified
 	var rerankModel *models.RerankModel
 	var rerankCompositeName string
-	if req.TenantRerankID != nil && *req.TenantRerankID != "" {
-		tenantRerankIDInt, parseErr := strconv.ParseInt(*req.TenantRerankID, 10, 64)
-		if parseErr != nil {
-			return nil, fmt.Errorf("invalid tenant_rerank_id: %w", parseErr)
-		}
-		_, rerankCompositeName, err = dao.LookupTenantLLMByID(dao.NewTenantLLMDAO(), tenantRerankIDInt)
+	if req.TenantRerankID != nil {
+		_, rerankCompositeName, err = dao.LookupTenantLLMByID(dao.NewTenantLLMDAO(), int64(*req.TenantRerankID))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get rerank model by tenant_rerank_id: %w", err)
 		}
