@@ -19,6 +19,9 @@ ADMIN_SERVER_BINARY="$PROJECT_ROOT/bin/admin_server"
 INGESTOR_BINARY="$PROJECT_ROOT/bin/ingestor"
 RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 
+# Strip symbols from Go binaries (set via --strip / -s)
+STRIP_SYMBOLS=""
+
 # office_oxide native library settings
 OFFICE_OXIDE_PREFIX="${HOME}/.office_oxide"
 OFFICE_OXIDE_VERSION="0.1.2"
@@ -255,19 +258,22 @@ build_go() {
 
     setup_cgo_env
 
+    local strip_flags=()
+    [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
+
     echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, $INGESTOR_BINARY, and $RAGFLOW_CLI_BINARY"
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
+        go build "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
+        go build "${strip_flags[@]}" -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -o "$INGESTOR_BINARY" cmd/ingestor.go
+        go build "${strip_flags[@]}" -o "$INGESTOR_BINARY" cmd/ingestor.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
+        go build "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
         echo -e "${RED}Error: Failed to build RAGFlow server binary${NC}"
@@ -389,6 +395,8 @@ OPTIONS:
                     `$0 --test -- -run TestFoo ./internal/admin/...`
     --clean, -C     Clean all build artifacts
     --run, -r       Build and run the server
+    --strip, -s     Strip debug symbols from Go binaries (-ldflags="-s -w")
+                    (disabled by default, useful for smaller production binaries)
     --help, -h      Show this help message
 
 EXAMPLES:
@@ -415,7 +423,16 @@ EOF
 
 # Main function
 main() {
-    case "${1:-}" in
+    # Parse --strip / -s before other arguments
+    local args=()
+    for arg in "$@"; do
+        case "$arg" in
+            --strip|-s) STRIP_SYMBOLS="1" ;;
+            *) args+=("$arg") ;;
+        esac
+    done
+
+    case "${args[0]:-}" in
         --cpp|-c)
             check_cpp_deps
             build_cpp
