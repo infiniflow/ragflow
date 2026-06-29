@@ -23,6 +23,8 @@ GITHUB_EMAIL_UNAVAILABLE_ERROR = "GitHub account email is unavailable."
 
 
 class GithubOAuthClient(OAuthClient):
+    """OAuth client for GitHub's OAuth user and email endpoints."""
+
     def __init__(self, config):
         """
         Initialize the GithubOAuthClient with the provider's configuration.
@@ -107,6 +109,7 @@ class GithubOAuthClient(OAuthClient):
 
 
     def normalize_user_info(self, user_info):
+        """Normalize GitHub API user fields to the shared UserInfo shape."""
         email = user_info.get("email")
         username = user_info.get("login", str(email).split("@")[0])
         nickname = user_info.get("name", username)

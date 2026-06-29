@@ -24,6 +24,8 @@ import pytest
 
 
 class _FakeResponse:
+    """Small response double that mimics the request helpers used by auth clients."""
+
     def __init__(self, payload=None, err=None):
         self._payload = {} if payload is None else payload
         self._err = err
@@ -37,6 +39,8 @@ class _FakeResponse:
 
 
 class _DummyJwkClient:
+    """JWKS client double that returns a stable signing key for JWT tests."""
+
     def __init__(self, _jwks_uri):
         self._key = "dummy-signing-key"
 
@@ -45,6 +49,7 @@ class _DummyJwkClient:
 
 
 def _load_auth_modules(monkeypatch):
+    """Load auth modules in isolation without importing the whole API package."""
     repo_root = Path(__file__).resolve().parents[4]
 
     common_pkg = ModuleType("common")
@@ -81,6 +86,7 @@ def _load_auth_modules(monkeypatch):
 
 
 def _load_github_module(monkeypatch):
+    """Load the GitHub OAuth module with the same isolated auth package setup."""
     _load_auth_modules(monkeypatch)
     repo_root = Path(__file__).resolve().parents[4]
 
@@ -94,6 +100,7 @@ def _load_github_module(monkeypatch):
 
 
 def _load_auth_init_module(monkeypatch):
+    """Load auth package initialization with a stubbed GitHub client."""
     _load_auth_modules(monkeypatch)
     repo_root = Path(__file__).resolve().parents[4]
 
@@ -119,6 +126,7 @@ def _load_auth_init_module(monkeypatch):
 
 
 def _base_config():
+    """Return a minimal OAuth/OIDC client configuration for unit tests."""
     return {
         "issuer": "https://issuer.example",
         "client_id": "client-1",
@@ -128,6 +136,7 @@ def _base_config():
 
 
 def _metadata(issuer, signing_algs=None):
+    """Build OIDC discovery metadata for the supplied issuer."""
     md = {
         "issuer": issuer,
         "jwks_uri": f"{issuer}/jwks",
@@ -141,6 +150,7 @@ def _metadata(issuer, signing_algs=None):
 
 
 def _make_client(monkeypatch, oidc_module, signing_algs=None):
+    """Create an OIDC client while stubbing provider metadata discovery."""
     monkeypatch.setattr(
         oidc_module.OIDCClient,
         "_load_oidc_metadata",
@@ -560,6 +570,7 @@ def test_get_auth_client_type_inference_and_unsupported(monkeypatch):
 
 @pytest.mark.p2
 def test_github_oauth_client_init_and_normalize_unit(monkeypatch):
+    """GitHub client initialization sets endpoints and normalizes user fields."""
     github_module = _load_github_module(monkeypatch)
 
     client = github_module.GithubOAuthClient(_base_config())
@@ -594,6 +605,7 @@ def test_github_oauth_client_init_and_normalize_unit(monkeypatch):
 
 @pytest.mark.p2
 def test_github_fetch_user_info_sync_success_and_error_unit(monkeypatch):
+    """Synchronous GitHub user fetch uses the primary email and wraps status errors."""
     github_module = _load_github_module(monkeypatch)
     client = github_module.GithubOAuthClient(_base_config())
 
@@ -636,6 +648,7 @@ def test_github_fetch_user_info_sync_success_and_error_unit(monkeypatch):
 
 @pytest.mark.p2
 def test_github_fetch_user_info_sync_uses_public_email_when_primary_missing_unit(monkeypatch):
+    """Synchronous GitHub user fetch falls back to the public email."""
     github_module = _load_github_module(monkeypatch)
     client = github_module.GithubOAuthClient(_base_config())
 
@@ -658,6 +671,7 @@ def test_github_fetch_user_info_sync_uses_public_email_when_primary_missing_unit
 
 @pytest.mark.p2
 def test_github_fetch_user_info_sync_raises_when_email_unavailable_unit(monkeypatch):
+    """Synchronous GitHub user fetch raises a clear error when no email exists."""
     github_module = _load_github_module(monkeypatch)
     client = github_module.GithubOAuthClient(_base_config())
 
@@ -672,8 +686,10 @@ def test_github_fetch_user_info_sync_raises_when_email_unavailable_unit(monkeypa
         client.fetch_user_info("sync-token")
     assert str(exc_info.value) == "GitHub account email is unavailable."
 
+
 @pytest.mark.p2
 def test_github_fetch_user_info_async_success_and_error_unit(monkeypatch):
+    """Async GitHub user fetch uses the primary email and wraps status errors."""
     github_module = _load_github_module(monkeypatch)
     client = github_module.GithubOAuthClient(_base_config())
 
@@ -718,6 +734,7 @@ def test_github_fetch_user_info_async_success_and_error_unit(monkeypatch):
 
 @pytest.mark.p2
 def test_github_fetch_user_info_async_uses_public_email_when_primary_missing_unit(monkeypatch):
+    """Async GitHub user fetch falls back to the public email."""
     github_module = _load_github_module(monkeypatch)
     client = github_module.GithubOAuthClient(_base_config())
 
@@ -740,6 +757,7 @@ def test_github_fetch_user_info_async_uses_public_email_when_primary_missing_uni
 
 @pytest.mark.p2
 def test_github_fetch_user_info_async_raises_when_email_unavailable_unit(monkeypatch):
+    """Async GitHub user fetch raises a clear error when no email exists."""
     github_module = _load_github_module(monkeypatch)
     client = github_module.GithubOAuthClient(_base_config())
 
