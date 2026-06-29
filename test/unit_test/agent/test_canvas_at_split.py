@@ -44,12 +44,40 @@ import pytest
 
 
 def _load_canvas_module(monkeypatch):
+    """Load `agent.canvas` in isolation with all heavy deps stubbed out.
+
+    The canvas import graph pulls in `pandas`, `quart`, `jinja2`, the
+    real `ComponentBase`, ORM models, Redis, TTS cache, etc. None of
+    that is needed for the `get_variable_value` / `set_variable_value`
+    paths under test, so we register lightweight `ModuleType` stubs in
+    `sys.modules` first and then `exec_module` the real `canvas.py`
+    against that fake module table.
+
+    Returns:
+        The loaded `agent.canvas` module object.
+    """
     repo_root = Path(__file__).resolve().parents[3]
 
     # `agent.component.base` pulls in pandas, quart, jinja2, etc.
     # Stub the modules it (and the rest of the canvas import graph) needs
     # before loading, so we never touch the real implementations.
     def _stub_module(name, **attrs):
+        """Create a fresh `ModuleType`, attach attrs, register in `sys.modules`.
+
+        Used to short-circuit every transitive import that `canvas.py`
+        performs at module load time. The returned module is also the
+        actual object that `import` statements resolve to during
+        `exec_module`.
+
+        Args:
+            name: Fully-qualified module name (e.g. ``"common.constants"``).
+            **attrs: Attributes to set on the new module before it is
+                registered (typically classes, callables, or sentinel
+                objects expected by importers).
+
+        Returns:
+            The newly created `ModuleType` instance.
+        """
         mod = ModuleType(name)
         for k, v in attrs.items():
             setattr(mod, k, v)
@@ -73,7 +101,15 @@ def _load_canvas_module(monkeypatch):
     # indirectly. Provide a minimal `ComponentBase` so the canvas module
     # can be loaded without dragging the real one in.
     class _ComponentBaseStub:
+        """Minimal stand-in for `agent.component.base.ComponentBase`.
+
+        The real class would drag in the entire component registry and
+        ORM-layer initialization; we only need an object that
+        `canvas.py`'s imports can bind to without side effects.
+        """
+
         def __init__(self, *a, **kw):
+            """Accept and discard all args; the stub is purely nominal."""
             pass
 
     base_stub_mod = _stub_module("agent.component.base")
@@ -122,6 +158,7 @@ class _ComponentObjStub:
     """
 
     def __init__(self):
+        """Initialize an empty per-instance output store."""
         self._store: dict = {}
 
     def output(self, var_nm):

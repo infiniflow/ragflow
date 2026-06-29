@@ -41,6 +41,17 @@ import pytest
 
 
 def _load_iterationitem_module(monkeypatch):
+    """Load `agent.component.iterationitem` in isolation with stubs.
+
+    Unlike `test_canvas_at_split.py`, the iterationitem module's import
+    graph is small enough that we can run the real `common.*` modules
+    (after stubbing their `quart` dependency). That gives us high
+    fidelity on the `_param.outputs` iteration logic without dragging
+    in the canvas-level graph (which the tests don't need).
+
+    Returns:
+        The loaded `agent.component.iterationitem` module object.
+    """
     repo_root = Path(__file__).resolve().parents[4]
 
     # Stub `quart` because `common.connection_utils` imports from it.
@@ -67,6 +78,13 @@ def _load_iterationitem_module(monkeypatch):
     constants_mod = ModuleType("common.constants")
 
     class _RetCode:
+        """Minimal stand-in for `common.constants.RetCode`.
+
+        Only the two integer sentinels actually referenced by
+        `iterationitem.py` are defined; everything else would otherwise
+        require loading the entire constants module.
+        """
+
         SUCCESS = 0
         EXCEPTION_ERROR = 100
 
@@ -91,21 +109,37 @@ def _load_iterationitem_module(monkeypatch):
     # `output(var_nm)`, `set_output(key, value)`, plus the parent lookup
     # `get_parent()` is defined on the test instance directly.
     class _ComponentBaseStub:
+        """No-op stand-in for the real `ComponentBase`.
+
+        `iterationitem.IterationItem` extends this class, so any
+        instantiation path that isn't bypassed via `__new__` would
+        require it to be importable. We deliberately no-op every
+        method so that nothing incidental fires during loading.
+        """
+
         def __init__(self, *a, **kw):
+            """Accept and discard all args; the stub is purely nominal."""
             pass
 
         def output(self, var_nm=None):
+            """Return an empty string for any variable lookup."""
             return ""
 
         def set_output(self, key, value):
+            """Discard writes; iterationitem test paths verify via
+            `parent._param.outputs`, not via the base class."""
             pass
 
     class _ComponentParamBaseStub:
+        """Stand-in for `ComponentParamBase` with mutable `outputs`/`inputs`."""
+
         def __init__(self):
+            """Initialize empty `outputs` and `inputs` dicts."""
             self.outputs = {}
             self.inputs = {}
 
         def check(self):
+            """Always succeed; validation is not exercised in these tests."""
             return True
 
     base_mod = ModuleType("agent.component.base")
@@ -134,6 +168,8 @@ class _ParentStub:
     """
 
     def __init__(self, _id, outputs, component_name="Iteration"):
+        """Store `_id`, default each output's `"value"` to `[]`, expose
+        the canonical `outputs` dict on a `_param` SimpleNamespace."""
         self._id = _id
         self.component_name = component_name
         # Normalize: every output entry must carry a `"value"` key so
@@ -147,9 +183,12 @@ class _ParentStub:
         self._param = SimpleNamespace(outputs=normalized)
 
     def output(self, var_nm):
+        """Return the `"value"` of the named output, or `""` if absent."""
         return self._param.outputs.get(var_nm, {}).get("value", "")
 
     def set_output(self, key, value):
+        """Write `value` into `_param.outputs[key]["value"]`, creating
+        the entry with the appropriate `type` sentinel on first write."""
         if key not in self._param.outputs:
             self._param.outputs[key] = {"value": None, "type": str(type(value))}
         self._param.outputs[key]["value"] = value
@@ -163,18 +202,31 @@ class _ChildStub:
     """
 
     def __init__(self, _id, parent, output_values):
+        """Bind to a parent and seed `_param.outputs` from a flat dict.
+
+        Args:
+            _id: Child component id used as the `<cid>` half of refs.
+            parent: The parent iteration component (for `get_parent`).
+            output_values: `{output_name: value}` flat mapping, wrapped
+                into the `ComponentBase` `{"value": ..., "type": ...}`
+                shape before storage.
+        """
         self._id = _id
         self._parent = parent
         self.component_name = "Generate"
         self._param = SimpleNamespace(outputs={k: {"value": v, "type": str(type(v))} for k, v in output_values.items()})
 
     def get_parent(self):
+        """Return the parent iteration component passed at construction."""
         return self._parent
 
     def output(self, var_nm):
+        """Return the `"value"` of the named output, or `""` if absent."""
         return self._param.outputs.get(var_nm, {}).get("value", "")
 
     def set_output(self, key, value):
+        """Write `value` into `_param.outputs[key]["value"]`, creating
+        the entry with the appropriate `type` sentinel on first write."""
         if key not in self._param.outputs:
             self._param.outputs[key] = {"value": None, "type": str(type(value))}
         self._param.outputs[key]["value"] = value
@@ -185,9 +237,11 @@ class _CanvasStub:
     are touched by `output_collation`."""
 
     def __init__(self, components):
+        """Store the `{cid: component}` lookup used by `get_component_obj`."""
         self.components = components
 
     def get_component_obj(self, cid):
+        """Look up a component by id; the stub never returns `None`."""
         return self.components[cid]
 
 
