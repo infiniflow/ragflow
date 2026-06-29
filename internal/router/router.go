@@ -186,19 +186,23 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/forgot/otp", r.userHandler.ForgotSendOTP)
 		apiNoAuth.POST("/auth/password/forgot/otp/verify", r.userHandler.ForgotVerifyOTP)
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
+	}
 
-		// Public bot endpoints — beta API token only, NOT regular
-		// user session. Mirrors python's
-		// @login_required(auth_types=AUTH_BETA) on bot_api.py:55,126,157,239.
-		// Mounted on apiNoAuth (not on the auth-protected v1 tree) so
-		// external widgets / iframes / downloads can hit them with
-		// only a beta token. Risk R0 of the plan.
+	// Beta-token routes. Mirrors python's
+	// @login_required(auth_types=AUTH_BETA) on bot_api.py bot endpoints.
+	apiBetaAuth := engine.Group("/api/v1")
+	apiBetaAuth.Use(r.authHandler.BetaAuthMiddleware())
+	{
+		searchbotGroup := apiBetaAuth.Group("/searchbots")
+		searchbotGroup.POST("/related_questions", r.searchBotHandler.Handle)
+		searchbotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
+		searchbotGroup.POST("/ask", r.searchBotHandler.Ask)
+
 		if r.botHandler != nil {
-			betaMW := r.authHandler.BetaAuthMiddleware()
-			chatbotGroup := apiNoAuth.Group("/chatbots")
-			RegisterChatbotRoutes(chatbotGroup, betaMW, r.botHandler)
-			agentbotGroup := apiNoAuth.Group("/agentbots")
-			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
+			chatbotGroup := apiBetaAuth.Group("/chatbots")
+			RegisterChatbotRoutes(chatbotGroup, r.botHandler)
+			agentbotGroup := apiBetaAuth.Group("/agentbots")
+			RegisterAgentbotRoutes(agentbotGroup, r.botHandler)
 		}
 	}
 
@@ -288,11 +292,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				openai.POST("/:chat_id/chat/completions", r.openaiChatHandler.OpenAIChatCompletions)
 			}
-
-			// Searchbot routes
-			v1.POST("/searchbots/related_questions", r.searchBotHandler.Handle)
-			v1.POST("/searchbots/retrieval_test", r.searchBotHandler.RetrievalTest)
-			v1.POST("/searchbots/ask", r.searchBotHandler.Ask)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")
