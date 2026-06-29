@@ -929,7 +929,7 @@ async def delete_session_message(chat_id, session_id, msg_id):
             assert conv["message"][i + 1]["id"] == msg_id
             conv["message"].pop(i)
             conv["message"].pop(i)
-            conv["reference"].pop(max(0, i // 2 - 1))
+            conv["reference"].pop(i // 2)
             break
         ConversationService.update_by_id(conv["id"], conv)
         return get_json_result(data=_build_session_response(conv))
