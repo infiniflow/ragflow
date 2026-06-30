@@ -33,6 +33,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from rag.svr.task_executor_refactor.raptor_service import RaptorService
+from test.unit_test.rag.svr.task_executor_refactor.conftest import make_task_context
 
 
 # =============================================================================
@@ -216,7 +217,8 @@ class TestRaptorServiceRunRaptorForKb:
 
     # ---- Basic dispatch (file-level scope) ----
 
-    def test_run_raptor_for_kb_file_scope_delegates_to_file_level(
+    @pytest.mark.asyncio
+    async def test_run_raptor_for_kb_file_scope_delegates_to_file_level(
         self, mock_raptor_context, sample_chunks, raptor_config_file_scope
     ):
         """When scope='file', _run_file_level_raptor is called."""
@@ -233,20 +235,7 @@ class TestRaptorServiceRunRaptorForKb:
            patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock) as mock_dataset:
 
             mock_file.return_value = (sample_chunks, 42)
-
-            AsyncMock(return_value=(sample_chunks, 42, []))
-            with patch.object(RaptorService, "run_raptor_for_kb", new=AsyncMock(wraps=svc.run_raptor_for_kb)):
-                pass  # let's just call directly
-
-            # Direct call since we need to invoke the async method properly
-            import asyncio
-            loop = asyncio.new_event_loop()
-            try:
-                chunks, tk_count, cleanup = loop.run_until_complete(
-                    svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
-                )
-            finally:
-                loop.close()
+            chunks, tk_count, cleanup = await svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
 
         mock_file.assert_called_once()
         mock_dataset.assert_not_called()
@@ -255,7 +244,8 @@ class TestRaptorServiceRunRaptorForKb:
 
     # ---- Basic dispatch (dataset-level scope) ----
 
-    def test_run_raptor_for_kb_dataset_scope_delegates_to_dataset_level(
+    @pytest.mark.asyncio
+    async def test_run_raptor_for_kb_dataset_scope_delegates_to_dataset_level(
         self, mock_raptor_context, sample_chunks, raptor_config_dataset_scope
     ):
         """When scope='dataset', _run_dataset_level_raptor is called."""
@@ -271,15 +261,7 @@ class TestRaptorServiceRunRaptorForKb:
            patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock) as mock_dataset:
 
             mock_dataset.return_value = (sample_chunks, 99)
-
-            import asyncio
-            loop = asyncio.new_event_loop()
-            try:
-                chunks, tk_count, cleanup = loop.run_until_complete(
-                    svc.run_raptor_for_kb(raptor_config_dataset_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
-                )
-            finally:
-                loop.close()
+            chunks, tk_count, cleanup = await svc.run_raptor_for_kb(raptor_config_dataset_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
 
         mock_dataset.assert_called_once()
         mock_file.assert_not_called()
@@ -288,7 +270,8 @@ class TestRaptorServiceRunRaptorForKb:
 
     # ---- Empty / no documents ----
 
-    def test_run_raptor_for_kb_empty_doc_ids(self, mock_raptor_context, raptor_config_file_scope):
+    @pytest.mark.asyncio
+    async def test_run_raptor_for_kb_empty_doc_ids(self, mock_raptor_context, raptor_config_file_scope):
         """Empty doc_ids returns empty results."""
         svc = RaptorService(mock_raptor_context)
         chat_mdl = MagicMock()
@@ -299,15 +282,7 @@ class TestRaptorServiceRunRaptorForKb:
            patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock):
 
             mock_file.return_value = ([], 0)
-
-            import asyncio
-            loop = asyncio.new_event_loop()
-            try:
-                chunks, tk_count, cleanup = loop.run_until_complete(
-                    svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, [])
-                )
-            finally:
-                loop.close()
+            chunks, tk_count, cleanup = await svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, [])
 
         assert chunks == []
         assert tk_count == 0
@@ -315,15 +290,11 @@ class TestRaptorServiceRunRaptorForKb:
 
     # ---- Cleanup scheduling through the public API ----
 
-    def test_run_raptor_for_kb_returns_cleanup_list(
+    @pytest.mark.asyncio
+    async def test_run_raptor_for_kb_returns_cleanup_list(
         self, mock_raptor_context, raptor_config_file_scope
     ):
-        """Cleanup list from internal method is propagated to caller.
-
-        _run_file_level_raptor receives cleanup_raptor_chunks by reference (as
-        a positional arg) and may mutate it. This test verifies the public
-        method propagates whatever ends up in that list.
-        """
+        """Cleanup list from internal method is propagated to caller."""
         svc = RaptorService(mock_raptor_context)
         doc_ids = ["doc_1"]
         chat_mdl = MagicMock()
@@ -336,28 +307,19 @@ class TestRaptorServiceRunRaptorForKb:
         }), patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file:
 
             async def mock_run_file(*args, **kwargs):
-                # _run_file_level_raptor takes 12 positional args;
-                # cleanup_raptor_chunks is args[11] (0-indexed, last positional).
                 cleanup_list = args[11]
                 cleanup_list.append(("doc_1", "tree_builder_a"))
                 return [{"id": "c1"}], 10
 
             mock_file.side_effect = mock_run_file
-
-            import asyncio
-            loop = asyncio.new_event_loop()
-            try:
-                chunks, tk_count, cleanup = loop.run_until_complete(
-                    svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, doc_ids)
-                )
-            finally:
-                loop.close()
+            chunks, tk_count, cleanup = await svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, doc_ids)
 
         assert cleanup == expected_cleanup
 
     # ---- Dispatch with missing raptor config key ----
 
-    def test_run_raptor_for_kb_defaults_to_file_scope_when_no_raptor_key(
+    @pytest.mark.asyncio
+    async def test_run_raptor_for_kb_defaults_to_file_scope_when_no_raptor_key(
         self, mock_raptor_context
     ):
         """When kb_parser_config has no 'raptor' key, defaults to file scope."""
@@ -373,22 +335,15 @@ class TestRaptorServiceRunRaptorForKb:
            patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock) as mock_dataset:
 
             mock_file.return_value = ([], 0)
-
-            import asyncio
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(
-                    svc.run_raptor_for_kb(config, chat_mdl, embd_mdl, 128, doc_ids)
-                )
-            finally:
-                loop.close()
+            await svc.run_raptor_for_kb(config, chat_mdl, embd_mdl, 128, doc_ids)
 
         mock_file.assert_called_once()
         mock_dataset.assert_not_called()
 
     # ---- Vector dimension name construction ----
 
-    def test_run_raptor_for_kb_passes_vector_size_to_file_level(
+    @pytest.mark.asyncio
+    async def test_run_raptor_for_kb_passes_vector_size_to_file_level(
         self, mock_raptor_context, sample_chunks, raptor_config_file_scope
     ):
         """Vector size is used to construct vctr_nm and passed to internal method."""
@@ -403,15 +358,7 @@ class TestRaptorServiceRunRaptorForKb:
         }), patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file:
 
             mock_file.return_value = (sample_chunks, 10)
-
-            import asyncio
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(
-                    svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
-                )
-            finally:
-                loop.close()
+            await svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
 
         # Verify _run_file_level_raptor received vctr_nm with the correct vector size
         # Positional args: 0=raptor_config, 1=tree_builder, 2=clustering_method,
@@ -421,7 +368,8 @@ class TestRaptorServiceRunRaptorForKb:
 
     # ---- Document info collection through public API ----
 
-    def test_run_raptor_for_kb_collects_doc_info(
+    @pytest.mark.asyncio
+    async def test_run_raptor_for_kb_collects_doc_info(
         self, mock_raptor_context, raptor_config_file_scope
     ):
         """Document info is collected before dispatching to internal methods."""
@@ -436,17 +384,66 @@ class TestRaptorServiceRunRaptorForKb:
            patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file:
 
             mock_file.return_value = ([], 0)
-
-            import asyncio
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(
-                    svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, doc_ids)
-                )
-            finally:
-                loop.close()
+            await svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, doc_ids)
 
         mock_collect.assert_called_once_with(doc_ids)
         # Verify doc_info_by_id was passed as positional arg[7] to _run_file_level_raptor
         positional_args = mock_file.call_args[0]
         assert positional_args[7] == expected_info
+
+
+class TestRaptorServiceFileLevelRaptorCheckpoint:
+    """Tests for _run_file_level_raptor checkpoint behavior.
+
+    Verifies the fix that moves progress_cb and continue to the outer if
+    block so progress is reported even when existing_methods == {tree_builder}.
+    """
+
+    @pytest.mark.asyncio
+    async def test_file_level_raptor_existing_methods_exact_match_updates_progress(self):
+        """When existing_methods == {tree_builder}, progress_cb is still called."""
+        ctx = make_task_context()
+        svc = RaptorService(ctx)
+
+        doc_ids = ["doc_1"]
+        doc_info_by_id = {
+            "doc_1": {"name": "a.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}}
+        }
+        raptor_config = {
+            "scope": "file",
+            "max_cluster": 64, "prompt": "test prompt",
+            "max_token": 256, "threshold": 0.1, "random_seed": 0,
+            "clustering_method": "gmm", "tree_builder": "raptor",
+            "ext": {},
+        }
+
+        with patch.object(svc, "_get_raptor_chunk_methods", new_callable=AsyncMock) as mock_methods, \
+             patch.object(svc, "_should_skip_raptor", return_value=False):
+
+            mock_methods.return_value = {"raptor"}
+
+            result = await svc._run_file_level_raptor(
+                raptor_config=raptor_config, tree_builder="raptor",
+                clustering_method="gmm", chat_mdl=MagicMock(),
+                embd_mdl=MagicMock(), vctr_nm="q_128_vec",
+                doc_ids=doc_ids, doc_info_by_id=doc_info_by_id,
+                max_errors=3, res=[], tk_count=0,
+                cleanup_raptor_chunks=[],
+            )
+
+            msg_calls = [
+                call.kwargs.get("msg", "")
+                for call in ctx.progress_cb.call_args_list
+                if call.kwargs.get("msg") is not None
+            ]
+            assert any("already has" in m for m in msg_calls), \
+                f"Expected 'already has' progress message, got: {msg_calls}"
+
+            prog_calls = [
+                call.kwargs.get("prog")
+                for call in ctx.progress_cb.call_args_list
+                if call.kwargs.get("prog") is not None
+            ]
+            assert len(prog_calls) > 0, \
+                "Expected progress_cb to be called with prog update"
+            assert result[0] == []

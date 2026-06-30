@@ -23,6 +23,10 @@ ZHIPU_AI_API_KEY = os.getenv("ZHIPU_AI_API_KEY")
 if ZHIPU_AI_API_KEY is None:
     pytest.exit("Error: Environment variable ZHIPU_AI_API_KEY must be set")
 
+SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
+if SILICONFLOW_API_KEY is None:
+    pytest.exit("Error: Environment variable SILICONFLOW_API_KEY must be set")
+
 EMAIL = "qa@infiniflow.org"
 # password is "123"
 PASSWORD = """ctAseGvejiaSWWZ88T/m4FQVOpQyUvP+x7sXtdv3feqZACiQleuewkUi35E16wSd5C5QcnkkcV9cYc8TKPTRZlxappDuirxghxoOvFcJxFU4ixLsD
@@ -46,7 +50,7 @@ DEFAULT_PARSER_CONFIG = {
     "image_context_size": 0,
     "table_context_size": 0,
     "topn_tags": 3,
-    "llm_id": "glm-4-flash@ZHIPU-AI",
+    "llm_id": "glm-4-flash@CI@ZHIPU-AI",
     "raptor": {
         "use_raptor": True,
         "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",

@@ -125,7 +125,7 @@ func (h *SystemHandler) GetStatus(c *gin.Context) {
 
 	status, err := h.systemService.GetStatus()
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -162,46 +162,182 @@ func (h *SystemHandler) GetVersion(c *gin.Context) {
 	})
 }
 
-// GetLogLevel returns the current log level
+// GetLogLevel returns the current log level. The response uses the
+// {"level": <value>} shape — the same shape the admin handler's
+// /admin/log_level endpoint returns — so the two log endpoints stay
+// in lockstep. Per-package level entries that the old pkgLevels
+// table carried (e.g. "peewee", "pdfminer") were inert for the Go
+// side and are no longer returned.
 func (h *SystemHandler) GetLogLevel(c *gin.Context) {
-	level := common.GetLevel()
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
-		"data":    gin.H{"level": level},
+		"data":    gin.H{"level": common.GetLevel()},
 	})
 }
 
-// SetLogLevelRequest set log level request
+// SetLogLevelRequest set log level request. PkgName is accepted for
+// backward compatibility with clients that previously targeted
+// per-package levels; it is silently ignored. Only the global level
+// can be set on the Go side.
 type SetLogLevelRequest struct {
-	Level string `json:"level" binding:"required"`
+	PkgName string `json:"pkg_name"`
+	Level   string `json:"level" binding:"required"`
 }
 
-// SetLogLevel sets the log level at runtime
+// SetLogLevel sets the log level at runtime.
+//
+// The "pkg_name and level are required" error message is preserved
+// verbatim from the pre-Go-port handler so existing clients that
+// inspect `message` on the missing-field path keep working. On the
+// Go side `pkg_name` is no longer required (per-package filtering
+// is gone), but the message wording is unchanged for backward
+// compatibility — only `level` is enforced by binding; `pkg_name`
+// is accepted but ignored.
 func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "level is required",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": "pkg_name and level are required",
 		})
 		return
 	}
 
 	if err := common.SetLevel(req.Level); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": "Invalid log level: " + req.Level,
+		})
+		return
+	}
+
+	if config := server.GetConfig(); config != nil {
+		config.Log.Level = common.GetLevel()
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    gin.H{"level": req.Level},
+	})
+}
+
+// ListVariables handle list variables
+func (h *SystemHandler) ListVariables(c *gin.Context) {
+	variables, err := h.systemService.ListAllVariables()
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
 			"message": err.Error(),
 		})
 		return
 	}
 
-	config := server.GetConfig()
-	config.Log.Level = req.Level
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    variables,
+	})
+}
+
+// SetVariableHTTPRequest set variable request
+type SetVariableHTTPRequest struct {
+	VarName  string `json:"var_name" binding:"required"`
+	VarValue string `json:"var_value" binding:"required"`
+}
+
+// SetVariable handle set variable
+// Python logic: update or create a system setting with the given name and value
+func (h *SystemHandler) SetVariable(c *gin.Context) {
+	var req SetVariableHTTPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    400,
+			"message": "Var name is required",
+		})
+		return
+	}
+
+	if req.VarName == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    400,
+			"message": "Var name is required",
+		})
+		return
+	}
+
+	if req.VarValue == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    400,
+			"message": "Var value is required",
+		})
+		return
+	}
+
+	if err := h.systemService.SetVariable(req.VarName, req.VarValue); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
-		"message": "Log level updated successfully",
-		"data":    gin.H{"level": req.Level},
+		"message": "SUCCESS",
+	})
+}
+
+func (h *SystemHandler) ShowVariable(c *gin.Context) {
+	encodedVarName := c.Param("var_name")
+
+	varName, err := common.DecodeFromBase64(encodedVarName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+	if varName == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    400,
+			"message": "Var name is required",
+		})
+		return
+	}
+
+	variable, err := h.systemService.ShowVariable(varName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "SUCCESS",
+		"data":    variable,
+	})
+}
+
+// ListEnvironments handle list environments
+func (h *SystemHandler) ListEnvironments(c *gin.Context) {
+	environments, err := h.systemService.ListEnvironments()
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    environments,
 	})
 }

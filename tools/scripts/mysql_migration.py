@@ -24,12 +24,14 @@ This script provides a flexible MySQL data migration tool that supports:
 """
 
 import argparse
+import json
 import logging
 import os
 import sys
 import time
 import uuid
 
+from packaging.version import InvalidVersion, Version
 from peewee import (
     CharField,
     IntegerField,
@@ -52,6 +54,9 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+MIGRATION_DB_VERSION_MARKER = "mysql_migration.database.version"
 
 
 class MigrationConfig:
@@ -167,6 +172,82 @@ class MigrationDatabase:
         )
         return cursor.fetchone()[0] > 0
 
+    def column_exists(self, table_name: str, column_name: str) -> bool:
+        cursor = self.execute_sql(
+            "SELECT COUNT(*) FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = %s AND column_name = %s",
+            (self.config.database, table_name, column_name)
+        )
+        return cursor.fetchone()[0] > 0
+
+    def get_system_setting_value(self, name: str) -> str | None:
+        if not self.table_exists("system_settings"):
+            logger.info("Table 'system_settings' does not exist, migration marker is unavailable")
+            return None
+        cursor = self.execute_sql(
+            "SELECT `value` FROM `system_settings` WHERE `name` = %s",
+            (name,),
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+
+    def upsert_system_setting(self, name: str, value: str, source: str = "migration", data_type: str = "string"):
+        if not self.table_exists("system_settings"):
+            logger.warning("Table 'system_settings' does not exist, migration marker was not saved")
+            return
+
+        current_ts = int(time.time())
+        self.execute_sql(
+            """
+            INSERT INTO `system_settings`
+            (`name`, `source`, `data_type`, `value`, `create_time`, `create_date`, `update_time`, `update_date`)
+            VALUES (%s, %s, %s, %s, %s, FROM_UNIXTIME(%s), %s, FROM_UNIXTIME(%s))
+            ON DUPLICATE KEY UPDATE
+              `source` = VALUES(`source`),
+              `data_type` = VALUES(`data_type`),
+              `value` = VALUES(`value`),
+              `update_time` = VALUES(`update_time`),
+              `update_date` = VALUES(`update_date`)
+            """,
+            (
+                name,
+                source,
+                data_type,
+                value,
+                current_ts * 1000,
+                current_ts,
+                current_ts * 1000,
+                current_ts,
+            ),
+        )
+
+    def get_database_version(self) -> str | None:
+        return self.get_system_setting_value(MIGRATION_DB_VERSION_MARKER)
+
+    def set_database_version(self, version: str):
+        self.upsert_system_setting(MIGRATION_DB_VERSION_MARKER, version)
+
+
+def parse_migration_version(version: str | None) -> Version | None:
+    if not version:
+        return None
+    normalized = version.strip()
+    if normalized.startswith(("v", "V")):
+        normalized = normalized[1:]
+    try:
+        return Version(normalized)
+    except InvalidVersion:
+        logger.warning("Invalid migration version format: %s", version)
+        return None
+
+
+def should_skip_migration(current_db_version: str | None, target_version: str) -> bool:
+    current = parse_migration_version(current_db_version)
+    target = parse_migration_version(target_version)
+    if current is None or target is None:
+        return False
+    return current >= target
+
 
 # Define model classes for migration (not importing from api.db.db_models)
 class BaseModel(Model):
@@ -216,11 +297,11 @@ class MigrationStage:
     description = "Base migration stage"
     source_tables = []
     target_tables = []
-    
     def __init__(self, db: MigrationDatabase, dry_run: bool = True, create_table_only: bool = False):
         self.db = db
         self.dry_run = dry_run
         self.create_table_only = create_table_only
+        self._noop_completes_migration = False
     
     def check(self) -> bool:
         """Check if migration is needed"""
@@ -233,6 +314,12 @@ class MigrationStage:
     def create_target_table(self):
         """Create target table (override in subclass if needed)"""
         pass
+
+    def mark_noop_completes_migration(self):
+        self._noop_completes_migration = True
+
+    def noop_completes_migration(self) -> bool:
+        return self._noop_completes_migration
 
 
 class TenantModelProviderStage(MigrationStage):
@@ -277,6 +364,7 @@ class TenantModelProviderStage(MigrationStage):
         count = cursor.fetchone()[0]
         
         if count == 0:
+            self.mark_noop_completes_migration()
             logger.info("No new data to migrate from tenant_llm to tenant_model_provider")
             return False
         
@@ -323,23 +411,30 @@ class TenantModelProviderStage(MigrationStage):
             logger.info(f"[DRY RUN] Would insert {len(records)} records")
             return len(records), self.target_tables
         
-        # Insert records in batches
+        # Insert records in batches with parameterized SQL to avoid quote breakage/injection
         batch_size = 100
         for i in range(0, len(records), batch_size):
             batch = records[i:i + batch_size]
-            values = []
+            placeholders = []
+            params = []
             for tenant_id, llm_factory in batch:
                 record_id = self.generate_uuid()
-                values.append(f"('{record_id}', '{llm_factory}', '{tenant_id}', "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}), "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}))")
-            
+                placeholders.append("(%s, %s, %s, %s, FROM_UNIXTIME(%s), %s, FROM_UNIXTIME(%s))")
+                params.extend([
+                    record_id,
+                    llm_factory,
+                    tenant_id,
+                    current_ts * 1000,
+                    current_ts,
+                    current_ts * 1000,
+                    current_ts,
+                ])
             insert_sql = f"""
                 INSERT INTO tenant_model_provider 
                 (id, provider_name, tenant_id, create_time, create_date, update_time, update_date)
-                VALUES {', '.join(values)}
+                VALUES {', '.join(placeholders)}
             """
-            self.db.execute_sql(insert_sql)
+            self.db.execute_sql(insert_sql, params)
             rows_inserted += len(batch)
             logger.info(f"Inserted batch {i // batch_size + 1}: {len(batch)} records")
         
@@ -422,6 +517,7 @@ class TenantModelInstanceStage(MigrationStage):
         count = cursor.fetchone()[0]
 
         if count == 0:
+            self.mark_noop_completes_migration()
             logger.info("No new data to migrate from tenant_llm to tenant_model_instance")
             return False
 
@@ -473,12 +569,18 @@ class TenantModelInstanceStage(MigrationStage):
             logger.info("No records to migrate")
             return 0, []
 
+        # Deduplicate records where api_keys differ only by is_tools encoding.
+        # When _encode_api_key_config wraps a plain api_key into {"api_key": "...", "is_tools": true/false},
+        # multiple tenant_llm rows for the same provider can have logically identical api_keys that
+        # only differ in the is_tools field. We merge these by stripping is_tools for comparison.
+        records = self._dedup_api_key_records(records)
+
         logger.info(f"Migrating {len(records)} tenant_model_instance records...")
 
         if self.dry_run:
             logger.info(f"[DRY RUN] Would insert {len(records)} records")
             for tenant_id, llm_factory, api_key, status, provider_id in records[:5]:
-                logger.info(f"  instance_name={llm_factory}, provider_id={provider_id}, api_key=***")
+                logger.info(f"  instance_name=default, provider_id={provider_id}, api_key=***")
             if len(records) > 5:
                 logger.info(f"  ... and {len(records) - 5} more records")
             return len(records), self.target_tables
@@ -490,13 +592,13 @@ class TenantModelInstanceStage(MigrationStage):
             values = []
             for tenant_id, llm_factory, api_key, status, provider_id in batch:
                 record_id = self.generate_uuid()
-                instance_name = llm_factory.replace("'", "''") if llm_factory else ""
+                instance_name = "default"
                 api_key_escaped = api_key.replace("'", "''") if api_key else ""
-                status_val = status if status else "active"
+                status_val = "active" if status in ["1", "active", "enable"] else "inactive"
                 values.append(f"('{record_id}', '{instance_name}', '{provider_id}', "
                             f"'{api_key_escaped}', '{status_val}', "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}), "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}))")
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))")
 
             insert_sql = f"""
                 INSERT INTO tenant_model_instance 
@@ -509,6 +611,95 @@ class TenantModelInstanceStage(MigrationStage):
 
         return rows_inserted, self.target_tables
 
+    @staticmethod
+    def _strip_is_tools_from_api_key(api_key: str) -> str:
+        """Strip is_tools from api_key for dedup comparison.
+
+        Handles three api_key formats:
+        1. Plain string (e.g. "sk-xxx" or "x") — returned as-is.
+        2. JSON with only {"api_key": "...", "is_tools": true/false} — extract the inner api_key value.
+        3. JSON with factory-specific fields + optional "is_tools" — remove only the "is_tools" key.
+
+        For format 3, the factory-specific JSON structures are:
+          VolcEngine:          {"ark_api_key": ..., "endpoint_id": ...}
+          Tencent Cloud:       {"tencent_cloud_sid": ..., "tencent_cloud_sk": ...}
+          Bedrock:             {"auth_mode": ..., "bedrock_ak": ..., "bedrock_sk": ..., "bedrock_region": ..., "aws_role_arn": ...}
+          XunFei Spark (tts):  {"spark_app_id": ..., "spark_api_secret": ..., "spark_api_key": ...}
+          BaiduYiyan:          {"yiyan_ak": ..., "yiyan_sk": ...}
+          Fish Audio:          {"fish_audio_ak": ..., "fish_audio_refid": ...}
+          Google Cloud:        {"google_project_id": ..., "google_region": ..., "google_service_account_key": ...}
+          Azure-OpenAI:        {"api_key": ..., "api_version": ...}
+          OpenRouter:          {"api_key": ..., "provider_order": ...}
+          MinerU:              {"api_key": ..., "provider_order": ...}
+          PaddleOCR:           {"api_key": ..., "provider_order": ...}
+          OpenDataLoader:      {"api_key": ..., "provider_order": ...}
+        """
+        if not api_key:
+            return api_key
+
+        try:
+            parsed = json.loads(api_key)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return api_key
+
+        if not isinstance(parsed, dict):
+            return api_key
+
+        # Case 2: {"api_key": "...", "is_tools": true/false} — extract inner api_key
+        if set(parsed.keys()) <= {"api_key", "is_tools"}:
+            return parsed.get("api_key", "")
+
+        # Case 3: factory-specific JSON with is_tools appended — remove is_tools key
+        if "is_tools" in parsed:
+            payload = {k: v for k, v in parsed.items() if k != "is_tools"}
+            return json.dumps(payload, sort_keys=True)
+
+        # Already a JSON dict without is_tools — return as-is
+        return json.dumps(parsed, sort_keys=True)
+
+    def _dedup_api_key_records(self, records: list) -> list:
+        """Deduplicate records whose api_keys are logically identical after stripping is_tools.
+
+        Groups by (tenant_id, llm_factory, provider_id). Within each group, if multiple
+        records share the same canonical api_key (with is_tools removed), only one is kept.
+        The kept record uses the original api_key value from the first occurrence; is_tools
+        information is not needed in tenant_model_instance (it is stored in tenant_model instead).
+        """
+        from collections import defaultdict
+
+        groups = defaultdict(list)
+        for rec in records:
+            tenant_id, llm_factory, api_key, status, provider_id = rec
+            groups[(tenant_id, llm_factory, provider_id)].append(rec)
+
+        deduped = []
+        dup_count = 0
+        for (tenant_id, llm_factory, provider_id), group in groups.items():
+            if len(group) <= 1:
+                deduped.extend(group)
+                continue
+
+            # Multiple records in group — dedup by canonical api_key
+            seen = {}  # canonical_key -> first record
+            for rec in group:
+                _, _, api_key, _, _ = rec
+                canonical = self._strip_is_tools_from_api_key(api_key)
+                if canonical not in seen:
+                    seen[canonical] = rec
+                else:
+                    dup_count += 1
+                    logger.debug(
+                        f"Dedup api_key for tenant={tenant_id}, factory={llm_factory}, "
+                        f"provider={provider_id}: keeping '{api_key[:20]}...', "
+                        f"dropping '{seen[canonical][2][:20]}...'"
+                    )
+            deduped.extend(seen.values())
+
+        if dup_count > 0:
+            logger.info(f"Deduplicated {dup_count} api_key records (is_tools-only differences)")
+
+        return deduped
+
     def create_target_table(self):
         """Create tenant_model_instance table"""
         create_sql = """
@@ -518,11 +709,11 @@ class TenantModelInstanceStage(MigrationStage):
             provider_id VARCHAR(32) NOT NULL,
             api_key VARCHAR(512) NOT NULL,
             status VARCHAR(32) DEFAULT 'active',
+            extra VARCHAR(512) DEFAULT '{}',
             create_time BIGINT,
             create_date DATETIME,
             update_time BIGINT,
             update_date DATETIME,
-            UNIQUE INDEX idx_api_key_provider_id (api_key, provider_id),
             INDEX idx_provider_id (provider_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
@@ -534,9 +725,33 @@ class TenantModelStage(MigrationStage):
     """Migrate tenant_llm to tenant_model"""
 
     name = "tenant_model"
-    description = "Migrate tenant_llm to tenant_model (only status='0' records)"
+    description = "Migrate tenant_llm to tenant_model (status='0' records, plus status='1' for empty-llm factories)"
     source_tables = ["tenant_llm", "tenant_model_provider", "tenant_model_instance"]
     target_tables = ["tenant_model"]
+
+    @staticmethod
+    def _get_empty_llm_factories() -> list[str]:
+        """Load factory names whose llm field is an empty list from conf/llm_factories.json"""
+        conf_path = os.path.join(PROJECT_BASE, "conf", "llm_factories.json")
+        with open(conf_path, "r") as f:
+            data = json.load(f)
+        factories = []
+        for key, items in data.items():
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        llm = item.get("llm")
+                        if isinstance(llm, list) and len(llm) == 0:
+                            factories.append(item["name"])
+        return factories
+
+    def _build_status_condition(self) -> str:
+        """Build SQL WHERE condition for status filtering"""
+        empty_factories = self._get_empty_llm_factories()
+        if empty_factories:
+            placeholders = ", ".join(f"'{f}'" for f in empty_factories)
+            return f"(tl.status = '0' OR (tl.status = '1' AND tl.llm_factory IN ({placeholders})))"
+        return "tl.status = '0'"
 
     def current_timestamp(self) -> int:
         return int(time.time())
@@ -581,24 +796,25 @@ class TenantModelStage(MigrationStage):
             logger.info("Target table 'tenant_model' does not exist, will create")
             return True
 
-        # Check if there's data to migrate (only status='0' records)
+        status_condition = self._build_status_condition()
+
+        # Check if there's data to migrate
+        # We cannot JOIN tenant_model_instance on api_key directly because the instance
+        # stage deduped api_keys (stripping is_tools), so a plain SQL equality won't
+        # match records whose api_key was merged. Count at the provider level instead.
         cursor = self.db.execute_sql(
-            "SELECT COUNT(*) FROM ("
-            "  SELECT tl.id "
-            "  FROM tenant_llm tl "
-            "  INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
-            "  INNER JOIN tenant_model_instance tmi ON tmi.provider_id = tmp.id AND tmi.api_key = tl.api_key "
-            "  WHERE tl.status = '0' "
-            "  AND NOT EXISTS ("
-            "    SELECT 1 FROM tenant_model tm "
-            "    WHERE tm.provider_id = tmp.id AND tm.model_name = tl.llm_name AND tm.instance_id = tmi.id"
-            "  )"
-            ") AS distinct_records"
+            f"SELECT COUNT(*) FROM ("
+            f"  SELECT tl.id "
+            f"  FROM tenant_llm tl "
+            f"  INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
+            f"  WHERE {status_condition} "
+            f") AS source_records"
         )
         count = cursor.fetchone()[0]
 
         if count == 0:
-            logger.info("No new data to migrate from tenant_llm to tenant_model (status='0' only)")
+            self.mark_noop_completes_migration()
+            logger.info("No new data to migrate from tenant_llm to tenant_model")
             return False
 
         logger.info(f"Found {count} rows to migrate from tenant_llm to tenant_model")
@@ -635,19 +851,26 @@ class TenantModelStage(MigrationStage):
             logger.info("[CREATE TABLE ONLY] Target table created/verified, skipping data migration")
             return 0, self.target_tables
 
-        # Get records from tenant_llm with provider_id and instance_id lookup
-        # Only migrate records where status='0'
+        status_condition = self._build_status_condition()
+
+        # Load all tenant_model_instance records into memory for Python-level matching.
+        # We cannot JOIN on api_key in SQL because the instance stage deduped api_keys
+        # (stripping is_tools), so a plain SQL equality won't match records whose
+        # api_key was merged during dedup.
+        instance_lookup = self._build_instance_lookup()
+
+        # Get records from tenant_llm with provider_id lookup (no instance JOIN)
+        # Migrate status='0' records, plus status='1' for empty-llm factories
         cursor = self.db.execute_sql(
-            "SELECT tl.id, tl.llm_name, tmp.id as provider_id, tmi.id as instance_id, "
-            "       tl.model_type, tl.status "
-            "FROM tenant_llm tl "
-            "INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
-            "INNER JOIN tenant_model_instance tmi ON tmi.provider_id = tmp.id AND tmi.api_key = tl.api_key "
-            "WHERE tl.status = '0' "
-            "AND NOT EXISTS ("
-            "  SELECT 1 FROM tenant_model tm "
-            "  WHERE tm.provider_id = tmp.id AND tm.model_name = tl.llm_name AND tm.instance_id = tmi.id"
-            ")"
+            f"SELECT tl.id, tl.llm_name, tmp.id as provider_id, "
+            f"       tl.model_type, tl.status, tl.api_key "
+            f"FROM tenant_llm tl "
+            f"INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
+            f"WHERE {status_condition} "
+            f"AND NOT EXISTS ("
+            f"  SELECT 1 FROM tenant_model tm "
+            f"  WHERE tm.provider_id = tmp.id AND tm.model_name = tl.llm_name"
+            f")"
         )
 
         records = cursor.fetchall()
@@ -656,35 +879,46 @@ class TenantModelStage(MigrationStage):
             logger.info("No records to migrate")
             return 0, []
 
-        logger.info(f"Migrating {len(records)} tenant_model records...")
+        # Resolve instance_id for each record using Python-level canonical matching
+        resolved_records = self._resolve_instance_ids(records, instance_lookup)
+
+        if not resolved_records:
+            logger.info("No records with matching instance_id to migrate")
+            return 0, []
+
+        logger.info(f"Migrating {len(resolved_records)} tenant_model records...")
 
         if self.dry_run:
-            logger.info(f"[DRY RUN] Would insert {len(records)} records")
-            for source_id, llm_name, provider_id, instance_id, model_type, status in records[:5]:
+            logger.info(f"[DRY RUN] Would insert {len(resolved_records)} records")
+            for source_id, llm_name, provider_id, instance_id, model_type, status, api_key in resolved_records[:5]:
                 logger.info(f"  model_name={llm_name}, provider_id={provider_id}, "
                            f"instance_id={instance_id}, model_type={model_type}")
-            if len(records) > 5:
-                logger.info(f"  ... and {len(records) - 5} more records")
-            return len(records), self.target_tables
+            if len(resolved_records) > 5:
+                logger.info(f"  ... and {len(resolved_records) - 5} more records")
+            return len(resolved_records), self.target_tables
 
         # Insert records in batches
         batch_size = 100
-        for i in range(0, len(records), batch_size):
-            batch = records[i:i + batch_size]
+        for i in range(0, len(resolved_records), batch_size):
+            batch = resolved_records[i:i + batch_size]
             values = []
-            for source_id, llm_name, provider_id, instance_id, model_type, status in batch:
+            for source_id, llm_name, provider_id, instance_id, model_type, status, api_key in batch:
                 record_id = self.generate_uuid()
                 model_name_escaped = llm_name.replace("'", "''") if llm_name else ""
                 model_type_escaped = model_type.replace("'", "''") if model_type else ""
-                status_val = status if status else "active"
+                status_val = "active" if status in ["1", "active", "enable"] else "inactive"
+                # Extract is_tools from api_key JSON and put it in extra
+                extra = self._extract_extra_from_api_key(api_key)
+                extra_escaped = extra.replace("'", "''") if extra else "{}"
                 values.append(f"('{record_id}', '{model_name_escaped}', '{provider_id}', "
                             f"'{instance_id}', '{model_type_escaped}', '{status_val}', "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}), "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}))")
+                            f"'{extra_escaped}', "
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))")
 
             insert_sql = f"""
                 INSERT INTO tenant_model 
-                (id, model_name, provider_id, instance_id, model_type, status, 
+                (id, model_name, provider_id, instance_id, model_type, status, extra,
                  create_time, create_date, update_time, update_date)
                 VALUES {', '.join(values)}
             """
@@ -693,6 +927,83 @@ class TenantModelStage(MigrationStage):
             logger.info(f"Inserted batch {i // batch_size + 1}: {len(batch)} records")
 
         return rows_inserted, self.target_tables
+
+    def _build_instance_lookup(self) -> dict:
+        """Load all tenant_model_instance records, indexed by (provider_id, canonical_api_key).
+
+        The canonical_api_key is computed by stripping is_tools from the stored api_key,
+        matching the dedup logic used during the instance migration stage.
+
+        Returns:
+            dict mapping (provider_id, canonical_api_key) -> instance_id
+        """
+        cursor = self.db.execute_sql(
+            "SELECT id, provider_id, api_key FROM tenant_model_instance"
+        )
+        lookup = {}
+        for instance_id, provider_id, api_key in cursor.fetchall():
+            canonical = TenantModelInstanceStage._strip_is_tools_from_api_key(api_key)
+            lookup[(provider_id, canonical)] = instance_id
+        logger.info(f"Loaded {len(lookup)} instance records for lookup")
+        return lookup
+
+    @staticmethod
+    def _resolve_instance_ids(records: list, instance_lookup: dict) -> list:
+        """Resolve instance_id for each tenant_llm record using canonical api_key matching.
+
+        Args:
+            records: list of tuples (source_id, llm_name, provider_id, model_type, status, api_key)
+            instance_lookup: dict mapping (provider_id, canonical_api_key) -> instance_id
+
+        Returns:
+            list of tuples (source_id, llm_name, provider_id, instance_id, model_type, status, api_key)
+            Only records with a matching instance_id are included.
+        """
+        resolved = []
+        skipped = 0
+        for source_id, llm_name, provider_id, model_type, status, api_key in records:
+            canonical = TenantModelInstanceStage._strip_is_tools_from_api_key(api_key)
+            instance_id = instance_lookup.get((provider_id, canonical))
+            if instance_id:
+                resolved.append((source_id, llm_name, provider_id, instance_id, model_type, status, api_key))
+            else:
+                skipped += 1
+                # Don't include the API key (even truncated) in the log:
+                # CodeQL flags this as clear-text-logging-sensitive-data,
+                # and the first 30 chars of an API key often carry enough
+                # entropy to be useful to an attacker who reads the log.
+                logger.warning(
+                    "No matching instance for tenant_llm id=%s provider_id=%s llm_name=%s",
+                    source_id, provider_id, llm_name,
+                )
+
+        if skipped > 0:
+            logger.warning(f"Skipped {skipped} records with no matching instance_id")
+
+        return resolved
+
+    @staticmethod
+    def _extract_extra_from_api_key(api_key: str) -> str:
+        """Extract is_tools from api_key JSON and return an extra JSON string for tenant_model.
+
+        If api_key is a JSON dict containing "is_tools": true, return '{"is_tools": true}'.
+        Otherwise return '{}' (empty dict).
+        """
+        if not api_key:
+            return "{}"
+
+        try:
+            parsed = json.loads(api_key)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return "{}"
+
+        if not isinstance(parsed, dict):
+            return "{}"
+
+        if parsed.get("is_tools") is True:
+            return json.dumps({"is_tools": True})
+
+        return "{}"
 
     def create_target_table(self):
         """Create tenant_model table"""
@@ -704,16 +1015,258 @@ class TenantModelStage(MigrationStage):
             instance_id VARCHAR(32) NOT NULL,
             model_type VARCHAR(32) NOT NULL,
             status VARCHAR(32) DEFAULT 'active',
+            extra VARCHAR(1024) DEFAULT '{}',
             create_time BIGINT,
             create_date DATETIME,
             update_time BIGINT,
             update_date DATETIME,
-            INDEX idx_instance_id (instance_id),
-            UNIQUE INDEX idx_provider_model_instance (provider_id, model_name, instance_id)
+            INDEX idx_instance_id (instance_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
         self.db.execute_sql(create_sql)
         logger.info("Created tenant_model table")
+
+
+class ModelIdConfigStage(MigrationStage):
+    """Normalize stored model IDs from model@provider to model@default@provider."""
+
+    name = "model_id_config"
+    description = "Normalize stored model IDs in config columns to model@default@provider"
+    source_tables = [
+        "tenant",
+        "knowledgebase",
+        "document",
+        "dialog",
+        "memory",
+        "search",
+        "user_canvas",
+        "canvas_template",
+        "user_canvas_version",
+        "api_4_conversation",
+        "pipeline_operation_log",
+        "connector",
+        "evaluation_runs",
+    ]
+    target_tables = source_tables
+
+    model_id_fields = {
+        "llm_id",
+        "embd_id",
+        "embedding_model",
+        "rerank_id",
+        "asr_id",
+        "img2txt_id",
+        "tts_id",
+        "ocr_id",
+    }
+    search_config_model_id_fields = {"chat_id"}
+    scan_batch_size = 500
+    string_columns = {
+        "tenant": ("llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id", "ocr_id"),
+        "knowledgebase": ("embd_id",),
+        "dialog": ("llm_id", "rerank_id"),
+        "memory": ("embd_id", "llm_id"),
+    }
+    json_columns = {
+        "knowledgebase": ("parser_config",),
+        "document": ("parser_config",),
+        "search": ("search_config",),
+        "user_canvas": ("dsl",),
+        "canvas_template": ("dsl",),
+        "user_canvas_version": ("dsl",),
+        "api_4_conversation": ("dsl",),
+        "pipeline_operation_log": ("dsl",),
+        "connector": ("config",),
+        "evaluation_runs": ("config_snapshot",),
+    }
+
+    def normalize_model_id(self, value):
+        if not isinstance(value, str) or not value:
+            return value, False
+
+        parts = value.split("@")
+        if len(parts) != 2:
+            return value, False
+
+        model_name, provider_name = parts
+        if not model_name or not provider_name:
+            return value, False
+
+        return f"{model_name}@default@{provider_name}", True
+
+    def normalize_config(self, value, path=None):
+        path = path or ()
+
+        if isinstance(value, dict):
+            changed = False
+            normalized = {}
+            for key, item in value.items():
+                key_path = path + (str(key),)
+                should_normalize = key in self.model_id_fields or (
+                    key in self.search_config_model_id_fields and "search_config" in path
+                )
+                if should_normalize:
+                    normalized_item, item_changed = self.normalize_model_id(item)
+                else:
+                    normalized_item, item_changed = self.normalize_config(item, key_path)
+                normalized[key] = normalized_item
+                changed = changed or item_changed
+            return normalized, changed
+
+        if isinstance(value, list):
+            changed = False
+            normalized = []
+            for index, item in enumerate(value):
+                normalized_item, item_changed = self.normalize_config(item, path + (str(index),))
+                normalized.append(normalized_item)
+                changed = changed or item_changed
+            return normalized, changed
+
+        return value, False
+
+    def existing_columns(self, table_columns):
+        for table_name, columns in table_columns.items():
+            if not self.db.table_exists(table_name):
+                logger.info("Table '%s' does not exist, skipping", table_name)
+                continue
+            for column_name in columns:
+                if not self.db.column_exists(table_name, column_name):
+                    logger.info("Column '%s.%s' does not exist, skipping", table_name, column_name)
+                    continue
+                yield table_name, column_name
+
+    def load_json_value(self, raw_value, table_name, column_name, row_id):
+        if raw_value in (None, ""):
+            return None, False
+        if isinstance(raw_value, (dict, list)):
+            return raw_value, True
+        try:
+            return json.loads(raw_value), True
+        except (TypeError, json.JSONDecodeError):
+            logger.warning(
+                "Failed to parse JSON in %s.%s id=%s, skipping",
+                table_name,
+                column_name,
+                row_id,
+            )
+            return None, False
+
+    def iter_string_changes(self):
+        for table_name, column_name in self.existing_columns(self.string_columns):
+            cursor = self.db.execute_sql(
+                f"SELECT id, `{column_name}` FROM `{table_name}` "
+                f"WHERE `{column_name}` IS NOT NULL AND `{column_name}` != '' AND `{column_name}` LIKE %s",
+                ("%@%",),
+            )
+            while True:
+                rows = cursor.fetchmany(self.scan_batch_size)
+                if not rows:
+                    break
+                for row_id, value in rows:
+                    normalized, changed = self.normalize_model_id(value)
+                    if changed:
+                        yield table_name, column_name, row_id, normalized
+
+    def iter_json_changes(self):
+        for table_name, column_name in self.existing_columns(self.json_columns):
+            cursor = self.db.execute_sql(
+                f"SELECT id, `{column_name}` FROM `{table_name}` "
+                f"WHERE `{column_name}` IS NOT NULL AND `{column_name}` != '' AND `{column_name}` LIKE %s",
+                ("%@%",),
+            )
+            while True:
+                rows = cursor.fetchmany(self.scan_batch_size)
+                if not rows:
+                    break
+                for row_id, raw_value in rows:
+                    config, loaded = self.load_json_value(raw_value, table_name, column_name, row_id)
+                    if not loaded:
+                        continue
+                    normalized, changed = self.normalize_config(config, (column_name,))
+                    if changed:
+                        normalized_json = json.dumps(
+                            normalized,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        )
+                        yield table_name, column_name, row_id, normalized_json
+
+    def count_changes(self) -> tuple[int, set]:
+        rows = 0
+        tables = set()
+        for table_name, _, _, _ in self.iter_string_changes():
+            rows += 1
+            tables.add(table_name)
+        for table_name, _, _, _ in self.iter_json_changes():
+            rows += 1
+            tables.add(table_name)
+        return rows, tables
+
+    def check(self) -> bool:
+        rows, tables = self.count_changes()
+        if rows == 0:
+            self.mark_noop_completes_migration()
+            logger.info("No stored model IDs need normalization")
+            return False
+        logger.info(
+            "Found %s rows to normalize across tables: %s",
+            rows,
+            ", ".join(sorted(tables)),
+        )
+        return True
+
+    def execute(self) -> tuple[int, list]:
+        if self.create_table_only:
+            logger.info("[CREATE TABLE ONLY] No tables are created for this data migration")
+            return 0, []
+
+        rows_updated = 0
+        tables_operated = set()
+
+        for table_name, column_name, row_id, normalized in self.iter_string_changes():
+            tables_operated.add(table_name)
+            rows_updated += 1
+            if rows_updated <= 10:
+                logger.info(
+                    "%s %s.%s id=%s -> %s",
+                    "[DRY RUN] Would update" if self.dry_run else "Updating",
+                    table_name,
+                    column_name,
+                    row_id,
+                    normalized,
+                )
+            if not self.dry_run:
+                self.db.execute_sql(
+                    f"UPDATE `{table_name}` SET `{column_name}` = %s WHERE id = %s",
+                    (normalized, row_id),
+                )
+
+        for table_name, column_name, row_id, normalized_json in self.iter_json_changes():
+            tables_operated.add(table_name)
+            rows_updated += 1
+            if rows_updated <= 10:
+                logger.info(
+                    "%s %s.%s id=%s",
+                    "[DRY RUN] Would update" if self.dry_run else "Updating",
+                    table_name,
+                    column_name,
+                    row_id,
+                )
+            if not self.dry_run:
+                self.db.execute_sql(
+                    f"UPDATE `{table_name}` SET `{column_name}` = %s WHERE id = %s",
+                    (normalized_json, row_id),
+                )
+
+        if rows_updated > 10:
+            logger.info("... and %s more row updates", rows_updated - 10)
+
+        if self.dry_run:
+            logger.info("[DRY RUN] Would update %s rows", rows_updated)
+        else:
+            logger.info("Updated %s rows", rows_updated)
+
+        return rows_updated, sorted(tables_operated)
 
 
 # Registry of available migration stages
@@ -721,6 +1274,7 @@ MIGRATION_STAGES = {
     'tenant_model_provider': TenantModelProviderStage,
     'tenant_model_instance': TenantModelInstanceStage,
     'tenant_model': TenantModelStage,
+    'model_id_config': ModelIdConfigStage,
 }
 
 
@@ -733,8 +1287,14 @@ def list_available_stages():
         logger.info(f"    Target tables: {stage_cls.target_tables}")
 
 
-def run_migration(config: MigrationConfig, stages: list, dry_run: bool = True, 
-                  create_table_only: bool = False):
+def run_migration(
+    config: MigrationConfig,
+    stages: list,
+    dry_run: bool = True,
+    create_table_only: bool = False,
+    database_version: str | None = None,
+    mark_database_version_on_success: bool = False,
+):
     """Run migration with specified stages"""
     stats = MigrationStats()
     stats.start()
@@ -743,8 +1303,31 @@ def run_migration(config: MigrationConfig, stages: list, dry_run: bool = True,
     
     try:
         db.connect()
+
+        if database_version:
+            current_db_version = db.get_database_version()
+            if should_skip_migration(current_db_version, database_version):
+                logger.info(
+                    "Database migration version is %s, target version is %s, skipping all stages",
+                    current_db_version,
+                    database_version,
+                )
+                return
+
+            if current_db_version:
+                logger.info(
+                    "Current database migration version is %s, target version is %s",
+                    current_db_version,
+                    database_version,
+                )
+            else:
+                logger.info(
+                    "Database migration version marker is not set, target version is %s",
+                    database_version,
+                )
         
         total_stages = len(stages)
+        all_stages_completed = True
         
         for idx, stage_name in enumerate(stages, 1):
             logger.info(f"{'=' * 60}")
@@ -754,6 +1337,7 @@ def run_migration(config: MigrationConfig, stages: list, dry_run: bool = True,
             if stage_name not in MIGRATION_STAGES:
                 logger.error(f"Unknown stage: {stage_name}")
                 stats.add_stage_stats(stage_name, [], 0, 0)
+                all_stages_completed = False
                 continue
             
             stage_cls = MIGRATION_STAGES[stage_name]
@@ -779,11 +1363,60 @@ def run_migration(config: MigrationConfig, stages: list, dry_run: bool = True,
             
             stats.add_stage_stats(stage_name, tables, rows, stage_duration)
             logger.info(f"Stage '{stage_name}' completed: {rows} rows in {stage_duration:.2f}s")
-        
+
+        if (
+            mark_database_version_on_success
+            and not dry_run
+            and not create_table_only
+            and database_version
+            and all_stages_completed
+        ):
+            db.set_database_version(database_version)
+            logger.info("Marked database migration version as %s", database_version)
+
     finally:
         db.close()
         stats.end()
         stats.print_summary()
+
+
+def check_database_version(config: MigrationConfig, target_version: str) -> int:
+    db = MigrationDatabase(config)
+    try:
+        db.connect()
+        current_db_version = db.get_database_version()
+        if should_skip_migration(current_db_version, target_version):
+            logger.info(
+                "Database migration version is %s, target version is %s, migration is not needed",
+                current_db_version,
+                target_version,
+            )
+            return 0
+
+        if current_db_version:
+            logger.info(
+                "Database migration version is %s, target version is %s, migration is needed",
+                current_db_version,
+                target_version,
+            )
+        else:
+            logger.info(
+                "Database migration version marker is not set, target version is %s, migration is needed",
+                target_version,
+            )
+        return 1
+    finally:
+        db.close()
+
+
+def mark_database_version(config: MigrationConfig, version: str) -> None:
+    db = MigrationDatabase(config)
+    try:
+        db.connect()
+        db.set_database_version(version)
+        logger.info("Marked database migration version as %s", version)
+    finally:
+        db.close()
 
 
 def main():
@@ -794,6 +1427,12 @@ def main():
 Examples:
   # List available stages
   python mysql_migration.py --list-stages
+
+  # Check whether migration is needed for a target version
+  python mysql_migration.py --check-database-version --database-version v0.26.2 --config /path/to/config.yaml
+
+  # Mark database version separately
+  python mysql_migration.py --mark-database-version --database-version v0.26.2 --config /path/to/config.yaml
   
   # Dry run (default - check only, no write) with config file
   python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml
@@ -806,7 +1445,16 @@ Examples:
   
   # Execute full migration (create tables and migrate data)
   python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --execute
+
+  # Execute migration only when database version is lower than v0.26.2
+  python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --execute --database-version v0.26.2
+
+  # Execute migration and mark the database version when all stages succeed
+  python mysql_migration.py --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config --config /path/to/config.yaml --execute --database-version v0.26.2 --mark-database-version-on-success
   
+  # Normalize legacy model IDs in stored configs
+  python mysql_migration.py --stages model_id_config --config /path/to/config.yaml --execute
+
   # Run multiple stages
   python mysql_migration.py --stages stage1,stage2,stage3 --config /path/to/config.yaml --execute
 """
@@ -830,6 +1478,14 @@ Examples:
     # Migration options
     parser.add_argument('--stages', '-s', type=str, help='Comma-separated list of stages to run')
     parser.add_argument('--list-stages', '-l', action='store_true', help='List available stages')
+    parser.add_argument('--check-database-version', action='store_true',
+                       help='Check whether migration is needed for the target database version')
+    parser.add_argument('--mark-database-version', action='store_true',
+                       help='Write the database migration version marker and exit')
+    parser.add_argument('--database-version', type=str, metavar='VERSION',
+                       help='Database migration version used by check/mark commands and as the migration threshold for --stages')
+    parser.add_argument('--mark-database-version-on-success', action='store_true',
+                       help='When used with --stages and --execute, write --database-version after all stages succeed')
     parser.add_argument('--execute', '-e', action='store_true', default=False,
                        help='Execute full migration: create tables and migrate data')
     parser.add_argument('--create-table-only', action='store_true', default=False,
@@ -841,13 +1497,6 @@ Examples:
     if args.list_stages:
         list_available_stages()
         return
-    
-    # Parse stages
-    if not args.stages:
-        logger.error("No stages specified. Use --stages to specify stages or --list-stages to see available stages.")
-        sys.exit(1)
-    
-    stages = [s.strip() for s in args.stages.split(',')]
     
     # Load configuration: command line args take precedence over config file
     if args.config:
@@ -875,12 +1524,38 @@ Examples:
     
     logger.info(f"MySQL Configuration: host={config.host}, port={config.port}, "
                f"user={config.user}, database={config.database}")
+
+    if args.check_database_version and args.mark_database_version:
+        logger.error("--check-database-version and --mark-database-version are mutually exclusive")
+        sys.exit(1)
+
+    if args.check_database_version:
+        if not args.database_version:
+            logger.error("--check-database-version requires --database-version")
+            sys.exit(1)
+        sys.exit(check_database_version(config, args.database_version))
+
+    if args.mark_database_version:
+        if not args.database_version:
+            logger.error("--mark-database-version requires --database-version")
+            sys.exit(1)
+        mark_database_version(config, args.database_version)
+        return
+
+    if args.mark_database_version_on_success and not args.database_version:
+        logger.error("--mark-database-version-on-success requires --database-version")
+        sys.exit(1)
     
     # Three mutually exclusive modes: dry-run (default), create-table-only, execute
     if args.execute and args.create_table_only:
         logger.error("--execute and --create-table-only are mutually exclusive")
         sys.exit(1)
-    
+
+    if not args.stages:
+        logger.error("No stages specified. Use --stages to specify stages or --list-stages to see available stages.")
+        sys.exit(1)
+
+    stages = [s.strip() for s in args.stages.split(',')]
     dry_run = True
     create_table_only = False
     
@@ -899,7 +1574,9 @@ Examples:
         config=config,
         stages=stages,
         dry_run=dry_run,
-        create_table_only=create_table_only
+        create_table_only=create_table_only,
+        database_version=args.database_version,
+        mark_database_version_on_success=args.mark_database_version_on_success,
     )
 
 

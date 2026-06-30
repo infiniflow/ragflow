@@ -24,13 +24,43 @@ import json
 import logging
 import re
 from copy import deepcopy
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from api.db.db_models import DB, Document
 from common import settings
 from common.metadata_utils import dedupe_list
 from api.db.db_models import Knowledgebase
 from common.doc_store.doc_store_base import OrderByExpr
+
+
+def _es_response_total(response: Any) -> Optional[int]:
+    """Extract the exact total hit count from an ES search response.
+
+    Returns ``None`` when the field is missing or in an unexpected shape
+    — callers should treat that as "cannot verify" rather than "no
+    overflow".
+    """
+    if not isinstance(response, dict):
+        try:
+            response = dict(response)
+        except Exception:
+            return None
+    hits = response.get("hits")
+    if not isinstance(hits, dict):
+        return None
+    total = hits.get("total")
+    if isinstance(total, dict):
+        value = total.get("value")
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+    elif isinstance(total, int):
+        # Legacy shape: some clients return the count directly.
+        return total
+    return None
 
 
 class DocMetadataService:
@@ -744,31 +774,40 @@ class DocMetadataService:
 
             condition = {"kb_id": kb_ids}
             order_by = OrderByExpr()
+            if not settings.DOC_ENGINE_INFINITY:
+                order_by.asc("id")
 
-            # Query with large limit
-            results = settings.docStoreConn.search(
-                select_fields=["*"],  # Get all fields
-                highlight_fields=[],
-                condition=condition,
-                match_expressions=[],
-                order_by=order_by,
-                offset=0,
-                limit=10000,
-                index_names=index_name,
-                knowledgebase_ids=kb_ids
-            )
+            # Paginate to support datasets with more than 10,000 documents.
+            page_size = 1000
+            offset = 0
+            all_results = []
+            while True:
+                batch = settings.docStoreConn.search(
+                    select_fields=["*"],
+                    highlight_fields=[],
+                    condition=condition,
+                    match_expressions=[],
+                    order_by=order_by,
+                    offset=offset,
+                    limit=page_size,
+                    index_names=index_name,
+                    knowledgebase_ids=kb_ids
+                )
+                batch_docs = list(cls._iter_search_results(batch))
+                if not batch_docs:
+                    break
+                all_results.extend(batch_docs)
+                logging.debug(
+                    "[get_flatted_meta_by_kbs] offset=%d batch=%d total=%d kb_ids=%s",
+                    offset, len(batch_docs), len(all_results), kb_ids,
+                )
+                if len(batch_docs) < page_size:
+                    break
+                offset += page_size
 
-            logging.debug(f"[get_flatted_meta_by_kbs] index_name: {index_name}, kb_ids: {kb_ids}")
-            logging.debug(f"[get_flatted_meta_by_kbs] results type: {type(results)}")
-
-            # Aggregate metadata
+            # Aggregate metadata over all retrieved results
             meta = {}
-            doc_count = 0
-
-            # Use helper to iterate over results in any format
-            for doc_id, doc in cls._iter_search_results(results):
-                doc_count += 1
-                # Extract metadata fields (exclude system fields)
+            for doc_id, doc in all_results:
                 doc_meta = cls._extract_metadata(doc)
 
                 for k, v in doc_meta.items():
@@ -784,14 +823,19 @@ class DocMetadataService:
                             meta[k][sv] = []
                         meta[k][sv].append(doc_id)
 
-            if doc_count >= 10000:
-                logging.warning(f"[get_flatted_meta_by_kbs] Results hit the 10000 limit for KBs {kb_ids}.")
+            doc_count = len(all_results)
+            if doc_count >= 100000:
+                logging.warning(
+                    "[get_flatted_meta_by_kbs] Large result set: %d documents for KBs %s. "
+                    "Consider performance impact.", doc_count, kb_ids,
+                )
 
-            logging.debug(f"[get_flatted_meta_by_kbs] KBs: {kb_ids}, Returning metadata: {meta}")
+            logging.debug("[get_flatted_meta_by_kbs] KBs: %s, Retrieved %d documents, metadata: %s",
+                          kb_ids, doc_count, meta)
             return meta
 
         except Exception as e:
-            logging.error(f"Error getting flattened metadata for KBs {kb_ids}: {e}")
+            logging.error("Error getting flattened metadata for KBs %s: %s", kb_ids, e)
             return {}
 
     @classmethod
@@ -876,6 +920,10 @@ class DocMetadataService:
             **query_body,
             "size": limit,
             "_source": ["id"],
+            # Make hits.total.value exact. ES otherwise caps the tracked
+            # total at 10,000 with relation="gte", which would let
+            # overflow slip through undetected.
+            "track_total_hits": True,
         }
 
         try:
@@ -897,6 +945,22 @@ class DocMetadataService:
             logging.warning(
                 f"ES metadata filter hit limit {limit} for KBs {kb_ids}"
             )
+
+        # Detect silent truncation: the push-down is a fast path, not
+        # the system of record. When the query matched more than
+        # ``limit`` docs, the slice we built here is necessarily a
+        # strict subset of the truth, and the caller treats any
+        # non-None result as definitive. Bail out and let the caller
+        # fall back to the in-memory ``meta_filter`` (correct, just
+        # slower for very large result sets) instead of silently
+        # dropping docs.
+        total = _es_response_total(response)
+        if total is not None and total > limit:
+            logging.warning(
+                f"ES metadata filter result exceeds push-down cap, falling back to in-memory: "
+                f"total={total}, cap={limit}, kb_ids={kb_ids}"
+            )
+            return None
 
         logging.debug(f"ES metadata filter returned {len(unique)} matches for KBs {kb_ids}")
         return unique

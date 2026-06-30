@@ -1,11 +1,11 @@
 import { LlmModelType } from '@/constants/knowledge';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { forwardRef, memo, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LlmSettingFieldItems } from '../llm-setting-items/next';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Select, SelectTrigger, SelectValue } from '../ui/select';
+import LLMLabel from './llm-label';
 
 export interface NextInnerLLMSelectProps {
   id?: string;
@@ -51,8 +51,6 @@ const NextInnerLLMSelect = forwardRef<
       }
     }, [filter, ttsModel]);
 
-    const modelOptions = useComposeLlmOptionsByModelTypes(modelTypes);
-
     return (
       <Select disabled={disabled} value={value}>
         <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
@@ -66,17 +64,13 @@ const NextInnerLLMSelect = forwardRef<
               data-testid={triggerTestId}
             >
               <SelectValue placeholder={t('common.pleaseSelect')}>
-                {
-                  modelOptions
-                    .flatMap((x) => x.options)
-                    .find((x) => x.value === value)?.label
-                }
+                <LLMLabel value={value} />
               </SelectValue>
             </SelectTrigger>
           </PopoverTrigger>
           <PopoverContent side={'left'}>
             <LlmSettingFieldItems
-              options={modelOptions}
+              modelTypes={modelTypes}
               llmOptionTestIdPrefix={optionTestIdPrefix}
             ></LlmSettingFieldItems>
           </PopoverContent>

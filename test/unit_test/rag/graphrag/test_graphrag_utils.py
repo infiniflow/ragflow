@@ -14,9 +14,14 @@
 #  limitations under the License.
 #
 
+import json
+from types import SimpleNamespace
+
 import networkx as nx
+import numpy as np
 import pytest
 
+import rag.graphrag.utils as graphrag_utils
 from rag.graphrag.utils import (
     GRAPH_FIELD_SEP,
     GraphChange,
@@ -31,6 +36,7 @@ from rag.graphrag.utils import (
     is_continuous_subsequence,
     is_float_regex,
     merge_tuples,
+    n_neighbor,
     pack_user_ass_to_openai_messages,
     perform_variable_replacements,
     split_string_by_multi_markers,
@@ -508,6 +514,108 @@ class TestMergeTuples:
 
     def test_empty_lists(self):
         assert merge_tuples([], []) == []
+
+
+@pytest.mark.p1
+class TestNNeighbor:
+    """Tests for n_neighbor function (n-hop neighbour path enumeration).
+
+    Regression coverage for the GraphRAG entity-ranking pipeline: the result
+    is serialized into each entity chunk as ``n_hop_with_weight`` and consumed
+    by KGSearch for n-hop relation enrichment.
+    """
+
+    def _line_graph(self):
+        # A -1- B -2- C -3- D
+        g = nx.Graph()
+        g.add_edge("A", "B", weight=1)
+        g.add_edge("B", "C", weight=2)
+        g.add_edge("C", "D", weight=3)
+        return g
+
+    def test_isolated_node_returns_empty(self):
+        g = nx.Graph()
+        g.add_node("A")
+        assert n_neighbor(g, "A") == []
+
+    def test_result_shape(self):
+        nbrs = n_neighbor(self._line_graph(), "A")
+        assert isinstance(nbrs, list)
+        for nbr in nbrs:
+            assert set(nbr.keys()) == {"path", "weights"}
+            assert len(nbr["weights"]) == len(nbr["path"]) - 1
+
+    def test_two_hop_paths_and_weights(self):
+        # From A, 2-hop reaches the path A -> B -> C with weights [1, 2].
+        nbrs = n_neighbor(self._line_graph(), "A", n_hop=2)
+        paths = {tuple(n["path"]): n["weights"] for n in nbrs}
+        assert ("A", "B", "C") in paths
+        assert paths[("A", "B", "C")] == [1, 2]
+
+    def test_one_hop_only(self):
+        nbrs = n_neighbor(self._line_graph(), "A", n_hop=1)
+        paths = {tuple(n["path"]) for n in nbrs}
+        assert paths == {("A", "B")}
+
+    def test_missing_weight_defaults_to_zero(self):
+        g = nx.Graph()
+        g.add_edge("A", "B")  # no weight attribute
+        nbrs = n_neighbor(g, "A", n_hop=1)
+        assert nbrs[0]["weights"] == [0]
+
+    def test_weight_lookup_is_direction_agnostic(self):
+        # Undirected graph: edge attributes may be keyed either way; the
+        # weight must still be recovered regardless of traversal direction.
+        nbrs = n_neighbor(self._line_graph(), "D", n_hop=1)
+        assert nbrs[0]["path"][0] == "D"
+        assert nbrs[0]["weights"] == [3]
+
+
+@pytest.mark.p1
+class TestGraphNodeToChunk:
+    """Tests for graph_node_to_chunk field population.
+
+    Regression coverage for the dropped ranking fields: the entity chunk must
+    carry ``rank_flt`` (pagerank) and ``n_hop_with_weight`` so KGSearch's
+    ``pagerank * sim`` ranking and n-hop enrichment are not permanently dead.
+    """
+
+    @pytest.fixture
+    def fake_embd(self, monkeypatch):
+        # Skip the real encode/Redis path by returning a cached embedding.
+        monkeypatch.setattr(graphrag_utils, "get_embed_cache", lambda *_a, **_k: np.array([0.1, 0.2, 0.3]))
+        return graphrag_utils
+
+    @pytest.mark.asyncio
+    async def test_writes_rank_flt_from_pagerank(self, fake_embd):
+        chunks = []
+        meta = {"entity_type": "PERSON", "description": "desc", "source_id": ["s1"], "pagerank": 0.42}
+        await fake_embd.graph_node_to_chunk("kb1", SimpleNamespace(llm_name="m"), "ALICE", meta, chunks)
+        assert len(chunks) == 1
+        assert chunks[0]["rank_flt"] == pytest.approx(0.42)
+
+    @pytest.mark.asyncio
+    async def test_rank_flt_defaults_to_zero_without_pagerank(self, fake_embd):
+        chunks = []
+        meta = {"entity_type": "PERSON", "description": "desc", "source_id": ["s1"]}
+        await fake_embd.graph_node_to_chunk("kb1", SimpleNamespace(llm_name="m"), "ALICE", meta, chunks)
+        assert chunks[0]["rank_flt"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_writes_n_hop_with_weight(self, fake_embd):
+        chunks = []
+        meta = {"entity_type": "PERSON", "description": "desc", "source_id": ["s1"], "pagerank": 0.1}
+        nhop = [{"path": ("ALICE", "BOB"), "weights": [3]}]
+        await fake_embd.graph_node_to_chunk("kb1", SimpleNamespace(llm_name="m"), "ALICE", meta, chunks, nhop)
+        stored = json.loads(chunks[0]["n_hop_with_weight"])
+        assert stored == [{"path": ["ALICE", "BOB"], "weights": [3]}]
+
+    @pytest.mark.asyncio
+    async def test_n_hop_defaults_to_empty_list(self, fake_embd):
+        chunks = []
+        meta = {"entity_type": "PERSON", "description": "desc", "source_id": ["s1"]}
+        await fake_embd.graph_node_to_chunk("kb1", SimpleNamespace(llm_name="m"), "ALICE", meta, chunks)
+        assert json.loads(chunks[0]["n_hop_with_weight"]) == []
 
 
 class TestFlatUniqList:

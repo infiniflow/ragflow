@@ -157,7 +157,7 @@ const ChatCard = forwardRef(function ChatCard(
         },
       },
     });
-  }, [currentDialog, dialogId, form, patchChat]);
+  }, [currentDialog, dialogId, form, patchChat, findLlmByUuid]);
 
   useImperativeHandle(
     ref,

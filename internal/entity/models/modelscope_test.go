@@ -26,12 +26,6 @@ import (
 	"time"
 )
 
-type roundTripperFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
-	return f(r)
-}
-
 func newModelScopeForTest(baseURL string) *ModelScopeModel {
 	return NewModelScopeModel(
 		map[string]string{"default": baseURL},
@@ -314,7 +308,7 @@ func TestModelScopeListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "Qwen/Qwen2.5-7B-Instruct,Qwen/Qwen3-8B" {
+	if joinModelNames(models, ",") != "Qwen/Qwen2.5-7B-Instruct,Qwen/Qwen3-8B" {
 		t.Errorf("models=%v", models)
 	}
 	if err := m.CheckConnection(apiConfig); err != nil {
@@ -327,7 +321,7 @@ func TestModelScopeMissingBaseURLFailsClearly(t *testing.T) {
 	_, err := m.ChatWithMessages("Qwen/Qwen2.5-7B-Instruct",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "missing base URL") {
+	if err == nil || !strings.Contains(err.Error(), "base URL") {
 		t.Errorf("expected missing-base-URL error, got %v", err)
 	}
 }

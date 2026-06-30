@@ -27,13 +27,14 @@ import json_repair
 
 from agent.component.llm import LLM, LLMParam
 from agent.tools.base import LLMToolPluginCallSession, ToolBase, ToolMeta, ToolParamBase
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
 from api.db.services.llm_service import LLMBundle
 from api.db.services.mcp_server_service import MCPServerService
-from api.db.services.tenant_llm_service import TenantLLMService
 from common.connection_utils import timeout
 from common.mcp_tool_call_conn import MCPToolBinding, MCPToolCallSession, mcp_tool_metadata_to_openai_tool
 from rag.prompts.generator import citation_plus, citation_prompt, full_question, kb_prompt, message_fit_in, structured_output_prompt
+
+_logger = logging.getLogger(__name__)
 
 
 class AgentParam(LLMParam, ToolParamBase):
@@ -81,7 +82,9 @@ class Agent(LLM, ToolBase):
             original_name = cpn.get_meta()["function"]["name"]
             indexed_name = f"{original_name}_{idx}"
             self.tools[indexed_name] = cpn
-        chat_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id), self._param.llm_id)
+        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
+        model_type = "chat" if "chat" in model_types else model_types[0]
+        chat_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
         self.chat_mdl = LLMBundle(
             self._canvas.get_tenant_id(),
             chat_model_config,
@@ -193,6 +196,14 @@ class Agent(LLM, ToolBase):
         if self.check_if_canceled("Agent processing"):
             return
 
+        _logger.debug(
+            "[Agent] _invoke_async called. Component: %s, Keys in kwargs: %s, user_prompt: %s, tools count: %d",
+            self._id,
+            list(kwargs.keys()),
+            json.dumps(kwargs.get("user_prompt", ""), ensure_ascii=False, default=str)[:300],
+            len(self.tools) if self.tools else 0,
+        )
+
         if kwargs.get("user_prompt"):
             usr_pmt = ""
             if kwargs.get("reasoning"):
@@ -204,10 +215,13 @@ class Agent(LLM, ToolBase):
             else:
                 usr_pmt = str(kwargs["user_prompt"])
             self._param.prompts = [{"role": "user", "content": usr_pmt}]
+            _logger.debug("[Agent] Built user prompt with length=%d, reasoning=%s, context=%s",
+                          len(usr_pmt), bool(kwargs.get("reasoning")), bool(kwargs.get("context")))
 
         if not self.tools:
             if self.check_if_canceled("Agent processing"):
                 return
+            _logger.debug("[Agent] No tools configured. Delegating to LLM._invoke_async. prompt_count=%d", len(self._param.prompts) if self._param.prompts else 0)
             return await LLM._invoke_async(self, **kwargs)
 
         prompt, msg, user_defined_prompt = self._prepare_prompt_variables()
@@ -222,11 +236,13 @@ class Agent(LLM, ToolBase):
         ex = self.exception_handler()
         has_message_downstream = any(self._canvas.get_component_obj(cid).component_name.lower() == "message" for cid in downstreams)
         if has_message_downstream and not (ex and ex["goto"]) and not output_schema:
+            _logger.debug("[Agent] Entering streaming mode (has message downstream)")
             self.set_output("content", partial(self.stream_output_with_tools_async, prompt, deepcopy(msg), user_defined_prompt))
             return
 
         msg = self._fit_messages(prompt, msg)
         self._append_system_prompt(msg, schema_prompt)
+        _logger.debug("[Agent] Calling LLM with %d messages, has_schema=%s", len(msg), bool(schema_prompt))
         ans = await self._generate_async(msg)
 
         if ans.find("**ERROR**") >= 0:
@@ -256,6 +272,7 @@ class Agent(LLM, ToolBase):
         artifact_md = self._collect_tool_artifact_markdown(existing_text=ans)
         if artifact_md:
             ans += "\n\n" + artifact_md
+        _logger.debug("[Agent] Final output. content_length=%d, has_artifact=%s", len(ans), bool(artifact_md))
         self.set_output("content", ans)
         return ans
 

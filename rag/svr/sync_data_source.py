@@ -61,6 +61,10 @@ from common.data_source import (
     RDBMSConnector,
     DingTalkAITableConnector,
     RestAPIConnector,
+    OneDriveConnector,
+    OutlookConnector,
+    AzureBlobConnector,
+    SalesforceConnector,
     TeamsConnector,
     SlackConnector,
     SharePointConnector,
@@ -81,6 +85,23 @@ from common.versions import get_ragflow_version
 from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
+
+
+def _redact_mailbox(value: str) -> str:
+    """Return a privacy-preserving representation of a UPN / email / object id.
+
+    Sync logs surface connector configuration verbatim, so leaking the
+    full mailbox list of a tenant is enough to inventory their org from
+    a single log file. Preserve the first two characters of the local
+    part as a debugging hint and mask the rest.
+    """
+    if not value:
+        return "<empty>"
+    if "@" in value:
+        local, _, _domain = value.partition("@")
+        local_mask = local if len(local) <= 2 else local[:2] + "***"
+        return f"{local_mask}@***"
+    return f"{value[:4]}***" if len(value) > 4 else "***"
 
 
 class SyncBase:
@@ -211,8 +232,10 @@ class SyncBase:
 
             docs = []
             for doc in document_batch:
+                legacy_doc_id = hash128(f"{task['connector_id']}:{doc.id}")
+                new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{doc.id}")
                 d = {
-                    "id": hash128(f"{task['connector_id']}:{doc.id}"),
+                    "id": legacy_doc_id if legacy_doc_id in existing_doc_ids else new_doc_id,
                     "connector_id": task["connector_id"],
                     "source": self.SOURCE_NAME,
                     "semantic_identifier": doc.semantic_identifier,
@@ -380,8 +403,9 @@ class _BlobLikeBase(SyncBase):
             if key_record.deleted:
                 continue
 
-            doc_id = hash128(key_record.key)
-            stored = existing_fingerprints.get(doc_id, "")
+            legacy_doc_id = hash128(f"{task['connector_id']}:{key_record.key}")
+            new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{key_record.key}")
+            stored = existing_fingerprints.get(legacy_doc_id, "") or existing_fingerprints.get(new_doc_id, "")
             if key_record.fingerprint and stored and key_record.fingerprint == stored:
                 bypass_count += 1
                 continue
@@ -620,14 +644,61 @@ class Notion(SyncBase):
 class Discord(SyncBase):
     SOURCE_NAME: str = FileSource.DISCORD
 
+    @staticmethod
+    def _coerce_str_list(raw):
+        """Normalise a config field that may arrive as a list (Tag input from
+        the new web form), a comma-separated string (legacy/SDK callers), or
+        None into a clean ``list[str]`` with empty entries dropped.
+
+        Fixes #15790 — the previous ``.split(',')`` call assumed a string and
+        raised ``'list' object has no attribute 'split'`` for any config saved
+        through the current UI.
+        """
+        if not raw:
+            return []
+        if isinstance(raw, str):
+            items = raw.split(",")
+        elif isinstance(raw, (list, tuple, set)):
+            items = list(raw)
+        else:
+            items = [raw]
+        # Drop None explicitly so it doesn't survive as the literal string
+        # "None" (str(None) == "None") — only stringify real values.
+        cleaned: list[str] = []
+        for item in items:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if text:
+                cleaned.append(text)
+        return cleaned
+
     async def _generate(self, task: dict):
-        server_ids: str | None = self.conf.get("server_ids", None)
-        # "channel1,channel2"
-        channel_names: str | None = self.conf.get("channel_names", None)
+        server_ids_raw = self.conf.get("server_ids", None)
+        # Web form stores channels under "channels"; older configs / SDK use
+        # "channel_names" — accept either so existing sources keep working.
+        channels_raw = self.conf.get("channels", None)
+        if channels_raw in (None, "", []):
+            channels_raw = self.conf.get("channel_names", None)
+
+        server_id_strs = self._coerce_str_list(server_ids_raw)
+        # DiscordConnector.__init__ takes server_ids as list[str] and converts
+        # to list[int] internally (common/data_source/discord_connector.py:247).
+        # Validate up-front so a malformed entry warns + drops here rather than
+        # crashing the connector's int() cast — but keep the strings.
+        server_ids: list[str] = []
+        for sid in server_id_strs:
+            try:
+                int(sid)
+            except ValueError:
+                logging.warning("Discord connector: ignoring non-integer server_id %r", sid)
+                continue
+            server_ids.append(sid)
+        channel_names = self._coerce_str_list(channels_raw)
 
         self.connector = DiscordConnector(
-            server_ids=server_ids.split(",") if server_ids else [],
-            channel_names=channel_names.split(",") if channel_names else [],
+            server_ids=server_ids,
+            channel_names=channel_names,
             start_date=datetime(1970, 1, 1, tzinfo=timezone.utc).strftime("%Y-%m-%d"),
             batch_size=self.conf.get("batch_size", 1024),
         )
@@ -995,6 +1066,231 @@ class SharePoint(SyncBase):
 
         self.log_connection("SharePoint", self.conf.get("credentials", {}).get("site_url", ""), task)
         return document_batches()
+
+
+class OneDrive(SyncBase):
+    SOURCE_NAME: str = FileSource.ONEDRIVE
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        self.connector = OneDriveConnector(
+            batch_size=batch_size,
+            folder_path=self.conf.get("folder_path") or None,
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+
+        # Always route through load_from_checkpoint so the connector owns the
+        # delta-link bookkeeping; incremental runs pass the previous poll
+        # range start as the lastModifiedDateTime floor while the same delta
+        # walk drives both modes. poll_source disregarded the checkpoint
+        # entirely, which would have re-walked every drive's root each run.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
+
+        self.log_connection(
+            "OneDrive",
+            self.conf.get("folder_path", "/") or "/",
+            task,
+        )
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
+
+
+class Outlook(SyncBase):
+    SOURCE_NAME: str = FileSource.OUTLOOK
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        raw_user_ids = self.conf.get("user_ids")
+        if isinstance(raw_user_ids, str):
+            user_ids = [u.strip() for u in raw_user_ids.split(",") if u.strip()]
+        elif isinstance(raw_user_ids, list):
+            user_ids = [str(u).strip() for u in raw_user_ids if str(u).strip()]
+        else:
+            user_ids = []
+
+        self.connector = OutlookConnector(
+            batch_size=batch_size,
+            folder=self.conf.get("folder") or "inbox",
+            user_ids=user_ids or None,
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+
+        # Always route through load_from_checkpoint so the connector owns the
+        # delta-link bookkeeping; incremental runs pass the previous poll
+        # range start as the receivedDateTime floor while the same delta
+        # walk drives both modes. poll_source disregarded the checkpoint
+        # entirely, which would have re-walked every mailbox each run.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
+
+        # Redact mailbox identifiers — full UPN / email lists in connector
+        # logs leak PII (the entire org's mail directory ends up in
+        # tail-of-logs output). Surface the folder, the count, and a small
+        # masked preview so operators can still spot a misconfigured run.
+        if user_ids:
+            preview = ",".join(_redact_mailbox(u) for u in user_ids[:3])
+            if len(user_ids) > 3:
+                preview = f"{preview},+{len(user_ids) - 3} more"
+            details = "{}@{} users (preview: {})".format(
+                self.conf.get("folder", "inbox"),
+                len(user_ids),
+                preview,
+            )
+        else:
+            details = "{}@<all-users>".format(self.conf.get("folder", "inbox"))
+        self.log_connection("Outlook", details, task)
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
+
+
+class Salesforce(SyncBase):
+    SOURCE_NAME: str = FileSource.SALESFORCE
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        raw_objects = self.conf.get("objects")
+        if isinstance(raw_objects, str):
+            objects = [o.strip() for o in raw_objects.split(",") if o.strip()]
+        elif isinstance(raw_objects, list):
+            objects = [str(o).strip() for o in raw_objects if str(o).strip()]
+        else:
+            objects = None
+
+        self.connector = SalesforceConnector(
+            batch_size=batch_size,
+            objects=objects,
+            api_version=self.conf.get("api_version") or "v59.0",
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+        # Fail fast on invalid/inaccessible objects (typos, missing object
+        # permissions) before iterating, so a bad `objects` config surfaces
+        # as a clear error instead of silently skipping data at sync time.
+        # This guards configs that reach runtime without going through the
+        # UI (direct API callers, scripts, previously-persisted configs).
+        self.connector.validate_connector_settings()
+
+        # Always route through load_from_checkpoint so the per-object
+        # SystemModstamp cursor owns incrementality; poll_source would
+        # re-query every object from the caller's window each run and
+        # ignore the persisted per-object cursors entirely.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
+
+        instance_url = (self.conf.get("credentials") or {}).get("instance_url", "")
+        self.log_connection(
+            "Salesforce",
+            f"{instance_url} objects({','.join(self.connector.objects)})",
+            task,
+        )
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
+
+
+class AzureBlob(SyncBase):
+    SOURCE_NAME: str = FileSource.AZURE_BLOB
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        self.connector = AzureBlobConnector(
+            batch_size=batch_size,
+            prefix=self.conf.get("prefix") or None,
+            allow_images=bool(self.conf.get("allow_images", False)),
+            auth_mode=self.conf.get("auth_mode"),
+        )
+        credentials = self.conf.get("credentials") or {}
+        self.connector.load_credentials(credentials)
+
+        # Route through load_from_checkpoint so incremental runs are scoped
+        # by the poll time window; per-blob ETags ride along as document
+        # fingerprints (content_hash) so unchanged blobs aren't re-embedded.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
+
+        container_hint = (
+            credentials.get("container_name")
+            or credentials.get("container_url", "").rstrip("/").rsplit("/", 1)[-1]
+            or "<container>"
+        )
+        self.log_connection(
+            "Azure Blob",
+            f"{container_hint}/{self.conf.get('prefix', '') or ''}",
+            task,
+        )
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
 
 
 class Slack(SyncBase):
@@ -1857,6 +2153,10 @@ func_factory = {
     FileSource.GOOGLE_DRIVE: GoogleDrive,
     FileSource.JIRA: Jira,
     FileSource.SHAREPOINT: SharePoint,
+    FileSource.ONEDRIVE: OneDrive,
+    FileSource.OUTLOOK: Outlook,
+    FileSource.AZURE_BLOB: AzureBlob,
+    FileSource.SALESFORCE: Salesforce,
     FileSource.SLACK: Slack,
     FileSource.TEAMS: Teams,
     FileSource.MOODLE: Moodle,

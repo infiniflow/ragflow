@@ -120,8 +120,10 @@ def _wait_document_runs(rest_client, dataset_id, document_ids, expected_run="DON
 
 def _download_document_to_file(rest_client, dataset_id, document_id, save_path):
     res = rest_client.get(f"/datasets/{dataset_id}/documents/{document_id}", timeout=60)
-    if res.status_code == 200 and res.headers.get("Content-Type", "").startswith("application/octet-stream"):
-        save_path.write_bytes(res.content)
+    if res.status_code == 200:
+        disposition = res.headers.get("Content-Disposition", "")
+        if disposition and "attachment" in disposition.lower():
+            save_path.write_bytes(res.content)
     return res
 
 
@@ -1501,14 +1503,14 @@ def test_documents_download_requires_auth_and_invalid_id_contract(rest_client, c
     assert invalid_doc_res.status_code == 200
     invalid_doc_payload = invalid_doc_res.json()
     assert invalid_doc_payload["code"] == 102, invalid_doc_payload
-    assert "The dataset not own the document invalid_document_id." in invalid_doc_payload["message"], invalid_doc_payload
+    assert invalid_doc_payload["message"] == "Document not found!", invalid_doc_payload
 
     invalid_dataset_path = tmp_path / "invalid_dataset_download.txt"
     invalid_dataset_res = _download_document_to_file(rest_client, "invalid_dataset_id", document_id, invalid_dataset_path)
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
     assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-    assert f"The dataset not own the document {document_id}." in invalid_dataset_payload["message"], invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "Document not found!", invalid_dataset_payload
 
 
 @pytest.mark.p2

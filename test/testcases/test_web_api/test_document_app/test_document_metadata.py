@@ -450,6 +450,117 @@ class TestDocumentMetadataUnit:
         assert res["code"] == 500
         assert "download boom" in res["message"]
 
+    def test_download_document_rejects_other_tenant_unit(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda _doc_id, _user_id: False)
+
+        res = _run(module.download_document("doc1"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Document not found!" in res["message"]
+
+    def test_dataset_document_download_rejects_other_tenant_unit(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda kb_id, user_id: False)
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda _doc_id, _user_id: True)
+
+        res = _run(module.download("kb1", "doc1"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Document not found!" in res["message"]
+
+    @pytest.mark.p2
+    def test_get_document_image_content_type_from_object_extension_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        class _Headers(dict):
+            def set(self, key, value):
+                self[key] = value
+
+        class _ImageResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = _Headers()
+
+        png_bytes = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+            b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+            b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+            b"\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+
+        async def fake_thread_pool_exec(*_args, **_kwargs):
+            return png_bytes
+
+        async def fake_make_response(data):
+            return _ImageResponse(data)
+
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        monkeypatch.setattr(module, "make_response", fake_make_response)
+        res = _run(module.get_document_image("kb1-object.png"))
+        assert isinstance(res, _ImageResponse)
+        assert res.headers["Content-Type"] == "image/png"
+
+    @pytest.mark.p2
+    def test_get_document_image_content_type_from_magic_bytes_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        class _Headers(dict):
+            def set(self, key, value):
+                self[key] = value
+
+        class _ImageResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = _Headers()
+
+        png_bytes = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+            b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+            b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+            b"\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+
+        async def fake_thread_pool_exec(*_args, **_kwargs):
+            return png_bytes
+
+        async def fake_make_response(data):
+            return _ImageResponse(data)
+
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        monkeypatch.setattr(module, "make_response", fake_make_response)
+        res = _run(module.get_document_image("kb1-a1b2c3d4e5f6"))
+        assert isinstance(res, _ImageResponse)
+        assert res.headers["Content-Type"] == "image/png"
+
+    @pytest.mark.p2
+    def test_get_document_image_missing_blob_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        async def fake_thread_pool_exec(*_args, **_kwargs):
+            return None
+
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        res = _run(module.get_document_image("kb1-object-key"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert res["message"] == "Image not found."
+
+    @pytest.mark.p2
+    def test_get_preview_missing_blob_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        async def fake_thread_pool_exec(*_args, **_kwargs):
+            return None
+
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda _doc_id, _user_id: True)
+        monkeypatch.setattr(
+            module.DocumentService,
+            "get_by_id",
+            lambda _doc_id: (True, SimpleNamespace(name="report.pdf", type=module.FileType.OTHER.value)),
+        )
+        monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("bucket", "name"))
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        res = _run(module.get("doc1"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert res["message"] == "This file is empty."
 
     @pytest.mark.skip(reason="Moved to /api/v1/documents/images/<image_id>")
     def test_get_image_success_and_exception_unit(self, document_app_module, monkeypatch):
@@ -486,6 +597,123 @@ class TestDocumentMetadataUnit:
         res = _run(module.get_image("bucket-name"))
         assert res["code"] == 500
         assert "image boom" in res["message"]
+
+    def test_get_document_image_hyphenated_object_key(self, document_app_module, monkeypatch):
+        """Hyphenated thumbnail keys are parsed with split('-', 1) and return correct MIME type."""
+        module = document_app_module
+
+        class _Headers(dict):
+            def set(self, key, value):
+                self[key] = value
+
+        class _ImageResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = _Headers()
+
+        storage_calls = []
+
+        def _storage_get(bkt, nm):
+            storage_calls.append((bkt, nm))
+            return b"png-bytes"
+
+        async def fake_thread_pool_exec(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        async def fake_make_response(data):
+            return _ImageResponse(data)
+
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        monkeypatch.setattr(module, "make_response", fake_make_response)
+        monkeypatch.setattr(
+            module.settings,
+            "STORAGE_IMPL",
+            SimpleNamespace(get=_storage_get),
+        )
+
+        image_id = "kb12345678901234567890123456789012-page-1.png"
+        res = _run(module.get_document_image(image_id))
+        assert isinstance(res, _ImageResponse)
+        assert storage_calls == [("kb12345678901234567890123456789012", "page-1.png")]
+        assert res.headers["Content-Type"] == "image/png"
+
+        res = _run(module.get_document_image("only-one-part"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Image not found" in res["message"]
+
+    @pytest.mark.p2
+    def test_get_artifact_denied_without_session_reference_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+        filename = "a1b2c3d4e5f6789012345678901234abcd.png"
+
+        monkeypatch.setattr(module, "_sandbox_artifact_dialog_ids_for_user", lambda *_args, **_kwargs: [])
+        res = _run(module.get_artifact(filename))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert res["message"] == "Artifact not found."
+
+    @pytest.mark.p2
+    def test_get_artifact_denied_when_agent_not_accessible_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+        filename = "a1b2c3d4e5f6789012345678901234abcd.png"
+
+        monkeypatch.setattr(module, "_sandbox_artifact_dialog_ids_for_user", lambda *_args, **_kwargs: ["agent-1"])
+        monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
+        res = _run(module.get_artifact(filename))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert res["message"] == "Artifact not found."
+
+    @pytest.mark.p2
+    def test_get_artifact_success_and_missing_blob_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+        filename = "a1b2c3d4e5f6789012345678901234abcd.png"
+
+        class _Headers(dict):
+            def set(self, key, value):
+                self[key] = value
+
+        class _ArtifactResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = _Headers()
+
+        monkeypatch.setattr(module, "_sandbox_artifact_dialog_ids_for_user", lambda *_args, **_kwargs: ["agent-1"])
+        monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
+
+        async def fake_thread_pool_exec(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        async def fake_make_response(data):
+            return _ArtifactResponse(data)
+
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        monkeypatch.setattr(module, "make_response", fake_make_response)
+        monkeypatch.setattr(
+            module,
+            "apply_safe_file_response_headers",
+            lambda response, content_type, extension: response.headers.update(
+                {"content_type": content_type, "extension": extension}
+            ),
+        )
+        monkeypatch.setattr(
+            module.settings,
+            "STORAGE_IMPL",
+            SimpleNamespace(get=lambda *_args, **_kwargs: b"artifact-bytes"),
+        )
+
+        res = _run(module.get_artifact(filename))
+        assert isinstance(res, _ArtifactResponse)
+        assert res.data == b"artifact-bytes"
+        assert res.headers["content_type"] == "image/png"
+
+        monkeypatch.setattr(
+            module.settings,
+            "STORAGE_IMPL",
+            SimpleNamespace(get=lambda *_args, **_kwargs: None),
+        )
+        res = _run(module.get_artifact(filename))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert res["message"] == "Artifact not found."
+
 
 class TestDocumentBatchChangeStatus:
     @pytest.mark.p2

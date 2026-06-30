@@ -81,7 +81,7 @@ func TestVolcEngineListModelsHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "doubao-seed-2-0-pro-260215@volcengine,doubao-embedding-vision-251215" {
+	if joinModelNames(models, ",") != "doubao-seed-2-0-pro-260215@volcengine,doubao-embedding-vision-251215" {
 		t.Errorf("models=%v", models)
 	}
 }
