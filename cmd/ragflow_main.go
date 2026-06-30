@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -90,7 +89,7 @@ func parseArgs() (*serverArgs, error) {
 			args.versionFlag = true
 		case "--debug":
 			args.debugLog = true
-		case "--config":
+		case "-f", "--config":
 			configPath = arg
 			args.configPath = &configPath
 		case "--init-superuser":
@@ -140,28 +139,28 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "Usage: %s --api [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow API Server\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
-		fmt.Fprintf(os.Stderr, "  --port int     \tServer port (overrides config file)\n")
-		fmt.Fprintf(os.Stderr, "  --config string\tPath to configuration file\n")
-		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
-		fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n")
+		fmt.Fprintf(os.Stderr, "  --port int     	\tServer port (overrides config file)\n")
+		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to configuration file\n")
+		fmt.Fprintf(os.Stderr, "  -v, --version 	 \tPrint version information and exit\n")
+		fmt.Fprintf(os.Stderr, "  --debug       	 \tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  -h, --help       	  \tShow this help message and exit\n")
 	case *args.mode == "admin":
 		fmt.Fprintf(os.Stderr, "Usage: %s --admin [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Admin Server\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
-		fmt.Fprintf(os.Stderr, "  --config string\t\tPath to configuration file\n")
-		fmt.Fprintf(os.Stderr, "  --port int    \t\tServer port (overrides config file)\n")
-		fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account\n")
-		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
-		fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n")
+		fmt.Fprintf(os.Stderr, "  -f --config string\t\tPath to configuration file\n")
+		fmt.Fprintf(os.Stderr, "  --port int    \t\t\tServer port (overrides config file)\n")
+		fmt.Fprintf(os.Stderr, "  --init-superuser\t\t\tInitialize superuser account\n")
+		fmt.Fprintf(os.Stderr, "  -v, --version  \t\t\tPrint version information and exit\n")
+		fmt.Fprintf(os.Stderr, "  --debug        \t\t\tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  -h, --help     \t\t\tShow this help message and exit\n")
 	case *args.mode == "ingestor":
 		fmt.Fprintf(os.Stderr, "Usage: %s --ingestor [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Ingestion Worker - Document ingestion processing\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
-		fmt.Fprintf(os.Stderr, "  --config string\t\tPath to config file\n")
+		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
-		fmt.Fprintf(os.Stderr, "  --admin-host string\t\tAdmin server host:port (overrides config file)\n")
+		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
 		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
