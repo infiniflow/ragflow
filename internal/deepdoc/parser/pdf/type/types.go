@@ -35,14 +35,14 @@ const DlaDPI = doctype.DlaDPI
 const DlaScale = doctype.DlaScale
 
 const (
-	LayoutTypeText      = doctype.LayoutTypeText
-	LayoutTypeTable     = doctype.LayoutTypeTable
-	LayoutTypeFigure    = doctype.LayoutTypeFigure
-	LayoutTypeEquation  = doctype.LayoutTypeEquation
-	LayoutTypeTitle     = doctype.LayoutTypeTitle
-	LayoutTypeReference = doctype.LayoutTypeReference
-	LayoutTypeFooter    = doctype.LayoutTypeFooter
-	LayoutTypeHeader    = doctype.LayoutTypeHeader
+	LayoutTypeText        = doctype.LayoutTypeText
+	LayoutTypeTable       = doctype.LayoutTypeTable
+	LayoutTypeFigure      = doctype.LayoutTypeFigure
+	LayoutTypeEquation    = doctype.LayoutTypeEquation
+	LayoutTypeTitle       = doctype.LayoutTypeTitle
+	LayoutTypeReference   = doctype.LayoutTypeReference
+	LayoutTypeFooter      = doctype.LayoutTypeFooter
+	LayoutTypeHeader      = doctype.LayoutTypeHeader
 	DLALabelFigureCaption = doctype.DLALabelFigureCaption
 	DLALabelTableCaption  = doctype.DLALabelTableCaption
 )

@@ -447,7 +447,7 @@ func TestMockDocAnalyzer_OCRDetectError_DoesNotCrash(t *testing.T) {
 	mock := &MockDocAnalyzer{Healthy: true, OCRDetectErr: fmt.Errorf("OCR model OOM")}
 	eng := &MockEngine{
 		NumPages: 1,
-		Chars:     map[int][]pdf.TextChar{}, // empty → triggers OCR path
+		Chars:    map[int][]pdf.TextChar{}, // empty → triggers OCR path
 	}
 	p := NewParser(pdf.DefaultParserConfig())
 	_, err := p.ParseRaw(context.Background(), eng, mock)

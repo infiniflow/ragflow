@@ -18,8 +18,8 @@ import (
 func TestTableSection_TextFromTSR(t *testing.T) {
 	eng := &MockEngine{
 		NumPages: 1,
-		RenderW:   900, // 300pt at 3x = 900px (216 DPI)
-		RenderH:   600,
+		RenderW:  900, // 300pt at 3x = 900px (216 DPI)
+		RenderH:  600,
 		Chars: map[int][]pdf.TextChar{0: {
 			// PDF space (72 DPI): well inside DLA region
 			{X0: 50, X1: 70, Top: 40, Bottom: 55, Text: "姓"},
@@ -115,7 +115,7 @@ func TestEnrichWithDeepDoc_ImageOnlyPage(t *testing.T) {
 func TestFigureCaption_MergedIntoFigure(t *testing.T) {
 	eng := &MockEngine{
 		NumPages: 1,
-		RenderW:   1800, RenderH: 2400,
+		RenderW:  1800, RenderH: 2400,
 		Chars: map[int][]pdf.TextChar{0: {
 			// Figure text — overlaps DLA figure region (pixel Y=80-300 → PDF 27-100).
 			{X0: 40, X1: 60, Top: 30, Bottom: 45, Text: "F"},
@@ -171,7 +171,7 @@ func TestFigureCaption_MergedIntoFigure(t *testing.T) {
 func TestTableCaption_MergedIntoTable(t *testing.T) {
 	eng := &MockEngine{
 		NumPages: 1,
-		RenderW:   1800, RenderH: 2400,
+		RenderW:  1800, RenderH: 2400,
 		Chars: map[int][]pdf.TextChar{0: {
 			// Table text — overlaps DLA table region (pixel Y=80-300 → PDF 27-100).
 			{X0: 40, X1: 60, Top: 30, Bottom: 45, Text: "T"},
@@ -226,7 +226,7 @@ func TestTableCaption_MergedIntoTable(t *testing.T) {
 func TestTextSectionsInsideTableRegion_Suppressed(t *testing.T) {
 	eng := &MockEngine{
 		NumPages: 1,
-		RenderW:   1800, RenderH: 2400,
+		RenderW:  1800, RenderH: 2400,
 		Chars: map[int][]pdf.TextChar{0: {
 			// Box A: inside DLA table region, labeled as "text" by DLA.
 			{X0: 50, X1: 100, Top: 40, Bottom: 55, Text: "碎片文字"},

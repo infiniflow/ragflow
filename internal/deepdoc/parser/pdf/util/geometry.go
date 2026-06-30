@@ -131,7 +131,6 @@ func OverlapX(a, b pdf.Rectangular) float64 {
 	return overlap / minWidth
 }
 
-
 // MedianCharHeight computes the median character height for a page,
 // matching Python's np.median(char height) in __images__ (pdf_parser.py:1552).
 // Used as a reference unit for vertical spacing decisions.

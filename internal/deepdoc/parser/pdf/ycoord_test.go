@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // ── Y-coordinate tests ──────────────────────────────────────────────────

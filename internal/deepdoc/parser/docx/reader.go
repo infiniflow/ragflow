@@ -25,11 +25,11 @@ type RawBlock struct {
 // ── office_oxide IR JSON types ────────────────────────────────────────
 
 type irElement struct {
-	Type    string   `json:"type"`    // "paragraph", "heading", "table", "image"
-	Level   int      `json:"level"`   // heading level (1-6)
-	Content []irRun  `json:"content"` // rich text runs
-	Data    []byte   `json:"data"`    // raw image bytes (for "image" type)
-	Rows    []irRow  `json:"rows"`    // table rows
+	Type    string  `json:"type"`    // "paragraph", "heading", "table", "image"
+	Level   int     `json:"level"`   // heading level (1-6)
+	Content []irRun `json:"content"` // rich text runs
+	Data    []byte  `json:"data"`    // raw image bytes (for "image" type)
+	Rows    []irRow `json:"rows"`    // table rows
 }
 
 type irRun struct {

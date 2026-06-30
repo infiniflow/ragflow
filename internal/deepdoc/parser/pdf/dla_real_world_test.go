@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
 )
 
 // TestDLARealWorldCompare runs DLA on fixture PDFs and verifies

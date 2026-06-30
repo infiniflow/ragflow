@@ -2,7 +2,6 @@ package docx
 
 import (
 	"testing"
-
 )
 
 func TestBlocksToSections_Paragraph(t *testing.T) {

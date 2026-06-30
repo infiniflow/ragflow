@@ -12,8 +12,8 @@ import (
 
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/pdfium"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────

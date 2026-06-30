@@ -172,7 +172,7 @@ func (p *Parser) processOneTable(ctx context.Context, result *pdf.ParseResult, b
 		b := boxes[idx]
 		positions = append(positions, pdf.Position{
 			PageNumbers: []int{pageNum},
-			Left: b.X0, Right: b.X1, Top: b.Top, Bottom: b.Bottom,
+			Left:        b.X0, Right: b.X1, Top: b.Top, Bottom: b.Bottom,
 		})
 	}
 	var grid [][]pdf.TSRCell
