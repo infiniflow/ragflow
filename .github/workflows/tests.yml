@@ -92,13 +92,6 @@ jobs:
           echo "ARTIFACTS_DIR=${ARTIFACTS_DIR}" >> ${GITHUB_ENV}
           rm -rf ${ARTIFACTS_DIR} && mkdir -p ${ARTIFACTS_DIR}
 
-      # https://github.com/astral-sh/ruff-action
-      - name: Static check with Ruff
-        uses: astral-sh/ruff-action@v3
-        with:
-          version: ">=0.11.x"
-          args: "check"
-
 #      - name: Check comments of changed Python files
 #        if: ${{ false }}
 #        run: |
@@ -131,32 +124,23 @@ jobs:
 #            fi
 #          fi
 
-      - name: Check format of changed Go files
-        if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
+      - name: Run Lefthook on changed files
         run: |
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
-            | grep -E '\.go$' || true)
-
-          if [ -n "$CHANGED_FILES" ]; then
-            echo "Check gofmt of changed Go files"
-            readarray -t files <<< "$CHANGED_FILES"
-            HAS_ERROR=0
-            for file in "${files[@]}"; do
-              if [ -f "$file" ]; then
-                if [ -z "$(gofmt -l "$file")" ]; then
-                  echo "✅ $file"
-                else
-                  echo "❌ $file (run: gofmt -w \"$file\")"
-                  HAS_ERROR=1
-                fi
-              fi
-            done
-
-            if [ $HAS_ERROR -ne 0 ]; then
-              exit 1
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${GITHUB_EVENT_NAME}" == "pull_request_target" ]]; then
+            changed_files=$(mktemp)
+            trap 'rm -f "$changed_files"' EXIT
+            git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
+              | while read -r file; do
+                  [[ -f "$file" ]] && printf '%s\0' "$file"
+                done > "$changed_files"
+            echo "Changed files to run lefthook on:"
+            if [[ -s "$changed_files" ]]; then
+              tr '\0' '\n' < "$changed_files" | sed 's/^/  /'
+            else
+              echo "  (none — lefthook will be a no-op)"
             fi
-          else
-            echo "No Go files changed"
+            lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
           fi
 
       - name: Set test level
