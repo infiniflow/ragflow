@@ -1,4 +1,5 @@
 import { useSetModalState } from '@/hooks/common-hooks';
+import { normalizeInboundParserConfig } from '@/hooks/parser-config-utils';
 
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { useSelectParserList } from '@/hooks/use-user-setting-request';
@@ -34,7 +35,7 @@ export const useFetchKnowledgeConfigurationOnMount = (
     useFetchKnowledgeBaseConfiguration();
 
   useEffect(() => {
-    const parser_config = {
+    const parser_config = normalizeInboundParserConfig({
       ...form.formState?.defaultValues?.parser_config,
       ...knowledgeDetails.parser_config,
       raptor: {
@@ -49,7 +50,7 @@ export const useFetchKnowledgeConfigurationOnMount = (
         ...knowledgeDetails.parser_config?.graphrag,
         use_graphrag: true,
       },
-    };
+    });
     const formValues = {
       ...pick({ ...knowledgeDetails, parser_config: parser_config }, [
         'description',
