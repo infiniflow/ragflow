@@ -22,7 +22,6 @@ from common.settings import FACTORY_LLM_INFOS
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
-from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService
 
 # Mapping from model_type string to Tenant model field name
@@ -114,19 +113,9 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
         model_name, provider_name = parts
         instance_name = "default"
     else:
-        # Bare model name (no provider suffix at all). Resolve the factory
-        # from the tenant's enrolled ``tenant_llm`` rows before the standard
-        # provider lookup below; legacy tenants persisted bare defaults
-        # before composite keys became the convention.
         model_name = parts[0]
-        provider_name = _resolve_bare_model_provider(tenant_id, model_name, model_type)
+        provider_name = ""
         instance_name = "default"
-        if not provider_name:
-            logging.warning(
-                "could not resolve provider for bare model %r (tenant %r, type %s); "
-                "no unique enrolled match",
-                default_model, tenant_id, model_type,
-            )
 
     model_type = MODEL_TAG_TO_TYPE.get(model_type, model_type)
     # Special case: OCR with infiniflow@default@deepdoc is always enabled
@@ -381,7 +370,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
     target_type_records = [record for record in model_records if record.model_type == model_type_filter] if model_type_filter else model_records
     model_record_map = {}
     for model in target_type_records:
-        instance_model_key = f"{model.provider_id}@{model.instance_id}@{model.model_name}"
+        instance_model_key = f"{model.provider_id}|{model.instance_id}|{model.model_name}"
         if model_record_map.get(instance_model_key):
             model_record_map[instance_model_key].append(model)
         else:
@@ -403,7 +392,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
                 continue
 
             for factory_instance in factory_instances:
-                model_record_key = f"{factory_instance.provider_id}@{factory_instance.id}@{llm['llm_name']}"
+                model_record_key = f"{factory_instance.provider_id}|{factory_instance.id}|{llm['llm_name']}"
                 model_key_in_factory.append(model_record_key)
                 manual_modified_models = model_record_map.get(model_record_key, [])
                 active_model_types = [manual_model.model_type for manual_model in manual_modified_models if manual_model.status == ActiveStatusEnum.ACTIVE.value]
@@ -429,12 +418,10 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
             model_records = model_record_map.get(model_record_key, [])
             if not model_records:
                 continue
-            # split from the left with maxsplit=2 so the trailing model_name
-            # can legitimately contain '@' characters (e.g. LM Studio embedding
-            # model IDs such as `text-embedding-nomic-embed-text-v1.5@q8_0`).
-            # provider_id and instance_id are UUIDs and never contain '@'.
+            # The internal key uses '|' as separator (UUID|UUID|model_name)
+            # since model_name may contain '@' characters.
             try:
-                provider_id, instance_id, model_name = model_record_key.split("@", 2)
+                provider_id, instance_id, model_name = model_record_key.split("|", 2)
             except ValueError:
                 logging.warning(f"Skipping malformed manual model record key: {model_record_key!r}")
                 continue

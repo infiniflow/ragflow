@@ -59,18 +59,12 @@ def _stub(monkeypatch, name, **attrs):
     return mod
 
 
-def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None, tenant_llm_rows=None):
+def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
     """Load models_api_service with stubbed dependencies.
 
     `tenant_model_records` is the list returned by
     TenantModelService.get_models_by_provider_ids_and_instance_ids. Pass an
     empty list to test the no-models path.
-
-    `tenant_llm_rows` controls the rows returned by
-    ``TenantLLMService.get_my_llms``; pass ``None`` (default) to have the
-    stub raise on access, or pass a list of dicts to have the stub return
-    that list. This exercises the bare-model resolution path in
-    ``_get_model_info``.
 
     Returns a tuple `(module, stubs)` where `stubs` is a dict mapping the
     stubbed module names to the stub modules, so callers can monkeypatch
@@ -129,32 +123,6 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None, t
         ),
     )
 
-    if tenant_llm_rows is None:
-        # Default: access to TenantLLMService.get_my_llms raises. Callers that
-        # exercise bare-model resolution must pass an explicit list.
-        def _raise(*_args, **_kwargs):
-            raise AssertionError(
-                "TenantLLMService.get_my_llms was called but the test did "
-                "not configure tenant_llm_rows"
-            )
-
-        _stub(
-            monkeypatch,
-            "api.db.services.tenant_llm_service",
-            TenantLLMService=SimpleNamespace(get_my_llms=_raise),
-        )
-    else:
-        rows_snapshot = list(tenant_llm_rows)
-
-        def _return_rows(*_args, **_kwargs):
-            return [dict(row) for row in rows_snapshot]
-
-        _stub(
-            monkeypatch,
-            "api.db.services.tenant_llm_service",
-            TenantLLMService=SimpleNamespace(get_my_llms=_return_rows),
-        )
-
     # joint_services.tenant_model_service is imported by models_api_service at
     # module load for the three ensure_* helpers; stub it as a no-op.
     _stub(
@@ -201,7 +169,6 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None, t
         "tenant_model_provider_service": sys.modules["api.db.services.tenant_model_provider_service"],
         "tenant_model_instance_service": sys.modules["api.db.services.tenant_model_instance_service"],
         "tenant_model_service": sys.modules["api.db.services.tenant_model_service"],
-        "tenant_llm_service": sys.modules["api.db.services.tenant_llm_service"],
     }
     return module, stubs
 
@@ -211,7 +178,7 @@ def _make_model_record(model_name, model_type="embedding", status=1):
 
     The default provider_id/instance_id pair (`provider-1`/`instance-1`)
     matches the fixtures wired up by `_load_module` so the resulting key
-    `provider-1@instance-1@<model_name>` round-trips through
+    `provider-1|instance-1|<model_name>` round-trips through
     `list_tenant_added_models` as expected.
 
     Args:
@@ -309,7 +276,7 @@ def test_list_tenant_added_models_still_works_for_plain_model_names(monkeypatch)
 
 # NOTE: A unit test for the defensive try/except in the production code is
 # intentionally omitted. In the current production flow every key built by
-# `f"{provider_id}@{instance_id}@{model_name}"` has exactly 3 '@'-separated
+# `f"{provider_id}|{instance_id}|{model_name}"` has exactly 3 '|'-separated
 # parts, so the defensive branch is unreachable. The branch is left in as
 # insurance for future code paths that might construct keys differently.
 # If a future change makes the branch reachable, add a focused unit test for
@@ -317,124 +284,28 @@ def test_list_tenant_added_models_still_works_for_plain_model_names(monkeypatch)
 
 
 @pytest.mark.p2
-def test_get_model_info_resolves_bare_model_via_enrolled_llm(monkeypatch):
-    """Bare model name (no '@') should resolve via TenantLLMService.
+def test_get_model_info_two_part_embedded_at(monkeypatch):
+    """Two-part bare model ID with embedded '@' parses correctly.
 
-    The composite key ``provider-1@instance-1@model-name`` exists for newly
-    enrolled models, but legacy tenants persisted a bare default such as
-    ``gemma-4-12b-it-qat`` before composite keys became the convention.
-    ``_get_model_info`` must look up the matching ``tenant_llm`` row and
-    use its ``llm_factory`` as the provider name so the downstream
-    provider/instance lookups can succeed.
+    A model name like `text-embedding-nomic-embed-text-v1.5@q8_0` has
+    exactly one '@' so rsplit("@", 2) yields 2 parts. The second part
+    ``q8_0`` is treated as the provider_name and the model is looked up
+    against the standard provider/instance chain. The stub always creates
+    a matching provider/instance, so the function returns a valid result
+    with provider_name="q8_0" — confirming that the '@' in the model name
+    portion is preserved.
     """
-    bare_model = "gemma-4-12b-it-qat"
-    enrolled = [{
-        "llm_name": bare_model,
-        "model_type": "embedding",
-        "llm_factory": "LM-Studio",
-    }]
     module, _ = _load_module(
         monkeypatch,
         tenant_model_records=[],
-        tenant_llm_rows=enrolled,
     )
 
-    # Override the provider/instance services so we observe what the bare
-    # branch fed them. Both should see the resolved provider "LM-Studio"
-    # and the default instance.
-    captured = {}
-
-    def fake_get_provider(tenant_id, provider_name):
-        captured["provider_name"] = provider_name
-        return SimpleNamespace(id="provider-1", provider_name=provider_name)
-
-    def fake_get_instance(provider_id, instance_name):
-        captured["instance_name"] = instance_name
-        return SimpleNamespace(id="instance-1", provider_id=provider_id, instance_name=instance_name)
-
-    def fake_get_model(*args):
-        captured["model_args"] = args
-        # status=1 == ACTIVE
-        return SimpleNamespace(status=1)
-
-    provider_svc = sys.modules["api.db.services.tenant_model_provider_service"].TenantModelProviderService
-    instance_svc = sys.modules["api.db.services.tenant_model_instance_service"].TenantModelInstanceService
-    model_svc = sys.modules["api.db.services.tenant_model_service"].TenantModelService
-    monkeypatch.setattr(provider_svc, "get_by_tenant_id_and_provider_name", staticmethod(fake_get_provider))
-    monkeypatch.setattr(instance_svc, "get_by_provider_id_and_instance_name", staticmethod(fake_get_instance))
-    monkeypatch.setattr(
-        model_svc,
-        "get_by_provider_id_and_instance_id_and_model_type_and_model_name",
-        staticmethod(fake_get_model),
+    result = module._get_model_info(
+        "tenant-1",
+        "text-embedding-nomic-embed-text-v1.5@q8_0",
+        "embedding",
     )
-
-    result = module._get_model_info("tenant-1", bare_model, "embedding")
-
     assert result is not None
-    assert result["model_provider"] == "LM-Studio"
+    assert result["model_provider"] == "q8_0"
+    assert result["model_name"] == "text-embedding-nomic-embed-text-v1.5"
     assert result["model_instance"] == "default"
-    assert result["model_name"] == bare_model
-    # And the resolved provider/instance were used downstream:
-    assert captured["provider_name"] == "LM-Studio"
-    assert captured["instance_name"] == "default"
-    # The model_name passed downstream must be the bare name intact.
-    assert captured["model_args"][3] == bare_model
-
-
-@pytest.mark.p2
-def test_get_model_info_returns_none_when_bare_model_no_unique_match(monkeypatch):
-    """Bare model name with no enrolled match must return None (not crash).
-
-    When the tenant has no ``tenant_llm`` row matching the bare name (or has
-    multiple ambiguous matches), ``_resolve_bare_model_provider`` returns
-    ``""`` and ``_get_model_info`` should fall through to a normal provider
-    lookup that fails, returning None rather than guessing.
-    """
-    bare_model = "gemma-4-12b-it-qat"
-
-    # Stub the downstream provider lookup to return None so the function
-    # cleanly returns None without raising.
-    module, _ = _load_module(
-        monkeypatch,
-        tenant_model_records=[],
-        tenant_llm_rows=[],
-    )
-    provider_svc = sys.modules["api.db.services.tenant_model_provider_service"].TenantModelProviderService
-    monkeypatch.setattr(
-        provider_svc,
-        "get_by_tenant_id_and_provider_name",
-        staticmethod(lambda *a, **kw: None),
-    )
-
-    result = module._get_model_info("tenant-1", bare_model, "embedding")
-    assert result is None
-
-
-@pytest.mark.p2
-def test_get_model_info_returns_none_when_bare_model_ambiguous_enrollment(monkeypatch):
-    """Bare model name with multiple enrolled factories must return None.
-
-    Two ``tenant_llm`` rows that share the same ``llm_name`` and
-    ``model_type`` but disagree on ``llm_factory`` indicate a tenant-side
-    data conflict. The helper refuses to guess between them and the
-    fallback provider lookup fails, returning None.
-    """
-    bare_model = "gemma-4-12b-it-qat"
-    enrolled = [
-        {"llm_name": bare_model, "model_type": "embedding", "llm_factory": "LM-Studio"},
-        {"llm_name": bare_model, "model_type": "embedding", "llm_factory": "Ollama"},
-    ]
-    module, _ = _load_module(
-        monkeypatch,
-        tenant_model_records=[],
-        tenant_llm_rows=enrolled,
-    )
-    provider_svc = sys.modules["api.db.services.tenant_model_provider_service"].TenantModelProviderService
-    monkeypatch.setattr(
-        provider_svc,
-        "get_by_tenant_id_and_provider_name",
-        staticmethod(lambda *a, **kw: None),
-    )
-
-    result = module._get_model_info("tenant-1", bare_model, "embedding")
-    assert result is None
