@@ -956,6 +956,24 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             opendataloader_llm_name=opendataloader_llm_name,
             **kwargs,
         )
+
+        # The by_* fallback parsers return sections=None, tables=None to signal
+        # that the underlying service (MinerU/Docling/OpenDataLoader/PaddleOCR)
+        # was unavailable or itself failed — they have already called
+        # callback(-1, "<name> not found.") with the error detail. Without
+        # this guard, build_chunks just sees an empty list and the executor
+        # then overwrites that -1 with progress=1.0 ("No chunk built from ..."),
+        # leaving the task marked DONE with 0 chunks. Raise instead so the
+        # executor's chunking-exception handler marks the task FAILED.
+        if sections is None and tables is None:
+            logging.error(
+                "[%s] parser returned (None, None); marking chunking as failed.",
+                name,
+            )
+            raise RuntimeError(
+                f"[{name}] parser is unavailable or failed; see progress log for details."
+            )
+
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
 
         if not sections and not tables:
