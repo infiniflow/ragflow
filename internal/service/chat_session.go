@@ -935,6 +935,9 @@ func (s *ChatSessionService) ChatCompletions(
 	}
 
 	// --- 5. LLM override ---
+	if genConfig == nil {
+		genConfig = map[string]interface{}{}
+	}
 	if llmID != "" {
 		hasKey, err := s.checkTenantLLMAPIKey(dialog.TenantID, llmID)
 		if err != nil || !hasKey {
@@ -948,6 +951,9 @@ func (s *ChatSessionService) ChatCompletions(
 			return fail(errors.New("No default chat model for tenant."))
 		}
 		dialog.LLMID = tenant.LLMID
+		if dialog.LLMSetting == nil {
+			dialog.LLMSetting = entity.JSONMap{}
+		}
 		for k, v := range genConfig {
 			dialog.LLMSetting[k] = v
 		}
@@ -1034,9 +1040,6 @@ func (s *ChatSessionService) ChatCompletions(
 				streamChan <- fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))
 			}
 		}
-		wrapper := sseWrapper{Code: 0, Message: "", Data: true}
-		streamChan <- fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(wrapper))
-
 		if legacy && finalLegacyAnswer != nil {
 			finalLegacyAnswer["answer"] = fullAnswer.String()
 			delete(finalLegacyAnswer, "start_to_think")
@@ -1044,6 +1047,9 @@ func (s *ChatSessionService) ChatCompletions(
 			finalChunk := sseWrapper{Code: 0, Message: "", Data: sanitizeJSONFloats(finalLegacyAnswer)}
 			streamChan <- fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(finalChunk))
 		}
+
+		wrapper := sseWrapper{Code: 0, Message: "", Data: true}
+		streamChan <- fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(wrapper))
 
 		// Persist session state (matches Python's update_by_id after loop)
 		if session != nil {
@@ -1130,21 +1136,29 @@ func (s *ChatSessionService) normalizeCompletionMessages(
 	}
 
 	// Generate message ID if missing — matches Python's get_uuid() in _normalize_completion_messages.
-	if id, ok := requestMsg[len(requestMsg)-1]["id"].(string); ok && id != "" {
+	lastUserMsg := requestMsg[len(requestMsg)-1]
+	if id, ok := lastUserMsg["id"].(string); ok && id != "" {
 		messageID = id
 	} else {
 		messageID = strings.ReplaceAll(uuid.New().String(), "-", "")
+		lastUserMsg["id"] = messageID
+		for i := len(requestMessages) - 1; i >= 0; i-- {
+			if role, _ := requestMessages[i]["role"].(string); role == "user" {
+				requestMessages[i]["id"] = messageID
+				break
+			}
+		}
 	}
 	return requestMessages, requestMsg, messageID, nil
 }
 
 // checkDialogOwnership checks if the user owns the dialog.
 func (s *ChatSessionService) checkDialogOwnership(userID, chatID string) error {
-	exists, err := s.chatSessionDAO.CheckDialogExists(userID, chatID)
+	ok, err := s.ensureOwnedChat(userID, chatID)
 	if err != nil {
 		return err
 	}
-	if !exists {
+	if !ok {
 		return errors.New("No authorization.")
 	}
 	return nil
@@ -1453,10 +1467,16 @@ func (s *ChatSessionService) structureAnswer(session *entity.ChatSession, answer
 	// {"answer", "reference": {"chunks": [...]}, "audio_binary": null, "prompt": "",
 	//  "created_at": ..., "final": false, "id": "...", "session_id": "..."}
 	refMap := map[string]interface{}{
-		"chunks": []interface{}{},
+		"chunks":   []interface{}{},
+		"doc_aggs": []interface{}{},
 	}
-	if reference != nil {
-		refMap["chunks"] = reference
+	if len(reference) > 0 {
+		if latest, ok := reference[len(reference)-1].(map[string]interface{}); ok && latest != nil {
+			refMap = latest
+			if _, ok := refMap["chunks"]; !ok {
+				refMap["chunks"] = []interface{}{}
+			}
+		}
 	}
 	return map[string]interface{}{
 		"answer":       answer,
