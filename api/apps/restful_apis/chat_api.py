@@ -1073,7 +1073,12 @@ async def transcription():
         cleanup_temp_audio_file()
         return get_data_error_result(message=str(e))
 
-    asr_mdl = LLMBundle(current_user.id, default_asr_model_config)
+    try:
+        asr_mdl = LLMBundle(current_user.id, default_asr_model_config)
+    except Exception:
+        cleanup_temp_audio_file()
+        raise
+
     if not stream_mode:
         try:
             text = asr_mdl.transcription(temp_audio_path)

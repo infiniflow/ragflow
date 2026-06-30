@@ -766,7 +766,16 @@ def _load_chat_routes_unit_module(monkeypatch):
     tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_api_key = lambda *_args, **_kwargs: SimpleNamespace(id=1)
-    tenant_model_service_mod.split_model_name = lambda model: (model.split("@")[0],"default", "factory")
+
+    def _split_model_name(model):
+        parts = model.split("@")
+        if len(parts) == 1:
+            return parts[0], "", ""
+        if len(parts) == 2:
+            return parts[0], "default", parts[1]
+        return parts[0], parts[1], parts[2]
+
+    tenant_model_service_mod.split_model_name = _split_model_name
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
     user_service_mod = ModuleType("api.db.services.user_service")
@@ -1025,6 +1034,15 @@ def test_chat_audio_transcription_routes_unit(monkeypatch):
     )
     res = _run(module.transcription.__wrapped__())
     assert res["message"] == "No default ASR model is set"
+    assert removed_paths == ["/tmp/audio.wav"]
+
+    _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
+    removed_paths = []
+    monkeypatch.setattr(module, "get_tenant_default_model_by_type", lambda *_args, **_kwargs: {"llm_name": "asr-x"})
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("bundle boom")))
+    monkeypatch.setattr(module.os, "remove", lambda path: removed_paths.append(path))
+    with pytest.raises(RuntimeError, match="bundle boom"):
+        _run(module.transcription.__wrapped__())
     assert removed_paths == ["/tmp/audio.wav"]
 
     class _SyncASR:
