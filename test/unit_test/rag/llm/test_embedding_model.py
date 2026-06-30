@@ -381,3 +381,19 @@ class TestBedrockResponseParsing:
         embed.client.invoke_model.return_value = self._body({"embeddings": [[5.0, 6.0]]})
         vector, _ = embed.encode_queries("q")
         np.testing.assert_array_equal(vector, np.array([5.0, 6.0]))
+
+    # The message must name the offending model and the expected prefixes so the
+    # error stays actionable; assert on it to catch future wording regressions.
+    _UNSUPPORTED_MSG = r"unsupported embedding model 'meta\.embed-model'.*amazon\..*cohere\."
+
+    def test_unknown_provider_raises_embedding_error(self):
+        # A model that is neither amazon.* nor cohere.* must surface a clear
+        # EmbeddingError instead of an UnboundLocalError on the unset `body`.
+        embed = self._make("meta")
+        with pytest.raises(EmbeddingError, match=self._UNSUPPORTED_MSG):
+            embed.encode(["hello"])
+
+    def test_unknown_provider_query_raises_embedding_error(self):
+        embed = self._make("meta")
+        with pytest.raises(EmbeddingError, match=self._UNSUPPORTED_MSG):
+            embed.encode_queries("q")

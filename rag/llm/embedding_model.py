@@ -699,6 +699,8 @@ class BedrockEmbed(Base):
                 body = {"inputText": text}
             elif self.is_cohere:
                 body = {"texts": [text], "input_type": "search_document"}
+            else:
+                raise EmbeddingError(f"BedrockEmbed: unsupported embedding model '{self.model_name}' (expected an 'amazon.' or 'cohere.' model)")
             response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
             model_response = json.loads(response["body"].read())
             # Bedrock does not report token usage; count locally.
@@ -713,6 +715,8 @@ class BedrockEmbed(Base):
             body = {"inputText": text}
         elif self.is_cohere:
             body = {"texts": [text], "input_type": "search_query"}
+        else:
+            raise EmbeddingError(f"BedrockEmbed: unsupported embedding model '{self.model_name}' (expected an 'amazon.' or 'cohere.' model)")
         try:
             response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
             model_response = json.loads(response["body"].read())
