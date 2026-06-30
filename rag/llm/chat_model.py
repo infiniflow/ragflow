@@ -18,7 +18,6 @@ import json
 import logging
 import os
 import random
-import re
 import time
 from abc import ABC
 from copy import deepcopy
@@ -34,25 +33,10 @@ from enum import StrEnum
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
+from rag.llm.errors import ModelErrorCode, classify_model_error
 from rag.llm.key_utils import _normalize_replicate_key
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
-
-
-class LLMErrorCode(StrEnum):
-    ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
-    ERROR_AUTHENTICATION = "AUTH_ERROR"
-    ERROR_INVALID_REQUEST = "INVALID_REQUEST"
-    ERROR_SERVER = "SERVER_ERROR"
-    ERROR_TIMEOUT = "TIMEOUT"
-    ERROR_CONNECTION = "CONNECTION_ERROR"
-    ERROR_MODEL = "MODEL_ERROR"
-    ERROR_MAX_ROUNDS = "ERROR_MAX_ROUNDS"
-    ERROR_CONTENT_FILTER = "CONTENT_FILTERED"
-    ERROR_QUOTA = "QUOTA_EXCEEDED"
-    ERROR_MAX_RETRIES = "MAX_RETRIES_EXCEEDED"
-    ERROR_GENERIC = "GENERIC_ERROR"
-
 
 class ReActMode(StrEnum):
     FUNCTION_CALL = "function_call"
@@ -234,27 +218,6 @@ class Base(ABC):
     def _get_delay(self):
         return self.base_delay * random.uniform(10, 150)
 
-    def _classify_error(self, error):
-        error_str = str(error).lower()
-
-        keywords_mapping = [
-            (["quota", "capacity", "credit", "billing", "balance", "欠费"], LLMErrorCode.ERROR_QUOTA),
-            (["rate limit", "429", "tpm limit", "too many requests", "requests per minute"], LLMErrorCode.ERROR_RATE_LIMIT),
-            (["auth", "key", "apikey", "401", "forbidden", "permission"], LLMErrorCode.ERROR_AUTHENTICATION),
-            (["invalid", "bad request", "400", "format", "malformed", "parameter"], LLMErrorCode.ERROR_INVALID_REQUEST),
-            (["server", "503", "502", "504", "500", "unavailable"], LLMErrorCode.ERROR_SERVER),
-            (["timeout", "timed out"], LLMErrorCode.ERROR_TIMEOUT),
-            (["connect", "network", "unreachable", "dns"], LLMErrorCode.ERROR_CONNECTION),
-            (["filter", "content", "policy", "blocked", "safety", "inappropriate"], LLMErrorCode.ERROR_CONTENT_FILTER),
-            (["model", "not found", "does not exist", "not available"], LLMErrorCode.ERROR_MODEL),
-            (["max rounds"], LLMErrorCode.ERROR_MODEL),
-        ]
-        for words, code in keywords_mapping:
-            if re.search("({})".format("|".join(words)), error_str):
-                return code
-
-        return LLMErrorCode.ERROR_GENERIC
-
     def _clean_conf(self, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -338,8 +301,8 @@ class Base(ABC):
     @property
     def _retryable_errors(self) -> set[str]:
         return {
-            LLMErrorCode.ERROR_RATE_LIMIT,
-            LLMErrorCode.ERROR_SERVER,
+            ModelErrorCode.ERROR_RATE_LIMIT,
+            ModelErrorCode.ERROR_SERVER,
         }
 
     def _should_retry(self, error_code: str) -> bool:
@@ -348,9 +311,9 @@ class Base(ABC):
     def _exceptions(self, e, attempt) -> str | None:
         logging.exception("OpenAI chat_with_tools")
         # Classify the error
-        error_code = self._classify_error(e)
+        error_code = classify_model_error(e)
         if attempt == self.max_retries:
-            error_code = LLMErrorCode.ERROR_MAX_RETRIES
+            error_code = ModelErrorCode.ERROR_MAX_RETRIES
 
         if self._should_retry(error_code):
             delay = self._get_delay()
@@ -364,9 +327,9 @@ class Base(ABC):
 
     async def _exceptions_async(self, e, attempt):
         logging.exception("OpenAI async completion")
-        error_code = self._classify_error(e)
+        error_code = classify_model_error(e)
         if attempt == self.max_retries:
-            error_code = LLMErrorCode.ERROR_MAX_RETRIES
+            error_code = ModelErrorCode.ERROR_MAX_RETRIES
 
         if self._should_retry(error_code):
             delay = self._get_delay()
@@ -1577,27 +1540,6 @@ class LiteLLMBase(ABC):
     def _get_delay(self):
         return self.base_delay * random.uniform(10, 150)
 
-    def _classify_error(self, error):
-        error_str = str(error).lower()
-
-        keywords_mapping = [
-            (["quota", "capacity", "credit", "billing", "balance", "欠费"], LLMErrorCode.ERROR_QUOTA),
-            (["rate limit", "429", "tpm limit", "too many requests", "requests per minute"], LLMErrorCode.ERROR_RATE_LIMIT),
-            (["auth", "key", "apikey", "401", "forbidden", "permission"], LLMErrorCode.ERROR_AUTHENTICATION),
-            (["invalid", "bad request", "400", "format", "malformed", "parameter"], LLMErrorCode.ERROR_INVALID_REQUEST),
-            (["server", "503", "502", "504", "500", "unavailable"], LLMErrorCode.ERROR_SERVER),
-            (["timeout", "timed out"], LLMErrorCode.ERROR_TIMEOUT),
-            (["connect", "network", "unreachable", "dns"], LLMErrorCode.ERROR_CONNECTION),
-            (["filter", "content", "policy", "blocked", "safety", "inappropriate"], LLMErrorCode.ERROR_CONTENT_FILTER),
-            (["model", "not found", "does not exist", "not available"], LLMErrorCode.ERROR_MODEL),
-            (["max rounds"], LLMErrorCode.ERROR_MODEL),
-        ]
-        for words, code in keywords_mapping:
-            if re.search("({})".format("|".join(words)), error_str):
-                return code
-
-        return LLMErrorCode.ERROR_GENERIC
-
     def _clean_conf(self, gen_conf):
         gen_conf, _ = _apply_model_family_policies(
             self.model_name,
@@ -1722,8 +1664,8 @@ class LiteLLMBase(ABC):
     @property
     def _retryable_errors(self) -> set[str]:
         return {
-            LLMErrorCode.ERROR_RATE_LIMIT,
-            LLMErrorCode.ERROR_SERVER,
+            ModelErrorCode.ERROR_RATE_LIMIT,
+            ModelErrorCode.ERROR_SERVER,
         }
 
     def _should_retry(self, error_code: str) -> bool:
@@ -1731,9 +1673,9 @@ class LiteLLMBase(ABC):
 
     async def _exceptions_async(self, e, attempt):
         logging.exception("LiteLLMBase async completion")
-        error_code = self._classify_error(e)
+        error_code = classify_model_error(e)
         if attempt == self.max_retries:
-            error_code = LLMErrorCode.ERROR_MAX_RETRIES
+            error_code = ModelErrorCode.ERROR_MAX_RETRIES
 
         if self._should_retry(error_code):
             delay = self._get_delay()
