@@ -957,6 +957,19 @@ func TestMindMapHandlerSuccess(t *testing.T) {
 	}
 }
 
+func TestParseMindMapMarkdown_ListUnderHeading(t *testing.T) {
+	got := parseMindMapMarkdown("# Product\n- Features\n  - Search")
+	if got.ID != "Product" {
+		t.Fatalf("root = %q, want Product", got.ID)
+	}
+	if len(got.Children) != 1 || got.Children[0].ID != "Features" {
+		t.Fatalf("children = %+v, want Features under Product", got.Children)
+	}
+	if len(got.Children[0].Children) != 1 || got.Children[0].Children[0].ID != "Search" {
+		t.Fatalf("nested children = %+v, want Search under Features", got.Children[0].Children)
+	}
+}
+
 // ---- SSE helper direct tests ----
 
 func TestSseAnswer_Final(t *testing.T) {

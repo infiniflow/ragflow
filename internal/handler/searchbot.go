@@ -472,10 +472,17 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 	}
 
 	searchConfig := map[string]interface{}{}
-	if req.SearchID != "" && h.searchSvc != nil {
-		if detail, err := h.searchSvc.GetDetail(req.SearchID); err == nil {
-			searchConfig = searchConfigFromDetail(detail)
+	if req.SearchID != "" {
+		if h.searchSvc == nil {
+			jsonInternalError(c, fmt.Errorf("search service not configured"))
+			return
 		}
+		detail, err := h.searchSvc.GetDetail(req.SearchID)
+		if err != nil {
+			jsonInternalError(c, err)
+			return
+		}
+		searchConfig = searchConfigFromDetail(detail)
 	}
 
 	retrievalReq := mindMapRetrievalRequest(req.Question, filtered, req.SearchID, searchConfig)
@@ -850,13 +857,17 @@ func parseMindMapMarkdown(text string) mindMapNode {
 	root := mindMapNode{ID: "root", Children: []mindMapNode{}}
 	stack := []*mindMapNode{&root}
 	inFence := false
+	listBaseLevel := 1
+	lastWasList := false
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "```") {
 			inFence = !inFence
+			lastWasList = false
 			continue
 		}
 		if inFence || trimmed == "" {
+			lastWasList = false
 			continue
 		}
 		level := 0
@@ -864,11 +875,18 @@ func parseMindMapMarkdown(text string) mindMapNode {
 		if m := mindMapHeadingRe.FindStringSubmatch(trimmed); len(m) == 3 {
 			level = len(m[1])
 			title = cleanMindMapText(m[2])
+			lastWasList = false
 		} else if m := mindMapListRe.FindStringSubmatch(line); len(m) == 3 {
-			level = len(m[1])/2 + 1
+			rawLevel := len(m[1])/2 + 1
+			if !lastWasList {
+				listBaseLevel = len(stack)
+			}
+			level = listBaseLevel + rawLevel - 1
 			title = cleanMindMapText(m[2])
+			lastWasList = true
 		}
 		if title == "" {
+			lastWasList = false
 			continue
 		}
 		for len(stack) > level {
