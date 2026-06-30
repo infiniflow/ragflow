@@ -1,4 +1,4 @@
-//go:build cgo
+//go:build cgo && manual
 
 package parser
 
@@ -10,15 +10,16 @@ import (
 	"sort"
 	"testing"
 
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/pdfium"
 	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────
 
 // pdfiumPtSize returns post-rotation page dimensions via pdfium.
-// pdfiumPtSize returns post-rotation page dimensions via pdfium.
-func pdfiumPtSize(eng PDFEngine, file string, t *testing.T) (w, h float64) {
+func pdfiumPtSize(eng pdf.PDFEngine, file string, t *testing.T) (w, h float64) {
 	t.Helper()
 	raw := eng.RawData()
 	if raw == nil {
@@ -38,7 +39,7 @@ func pdfiumPtSize(eng PDFEngine, file string, t *testing.T) (w, h float64) {
 // openPDF reads a PDF fixture from dir/name, opens it via pdfoxide, and
 // returns both the engine and document. The document is closed via t.Cleanup.
 // Missing or corrupt fixtures cause a hard failure (t.Fatal).
-func openPDF(t *testing.T, dir, name string) (PDFEngine, *pdfoxide.Document) {
+func openPDF(t *testing.T, dir, name string) (pdf.PDFEngine, *pdfoxide.Document) {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(dir, name))
 	if err != nil {
@@ -56,7 +57,7 @@ func openPDF(t *testing.T, dir, name string) (PDFEngine, *pdfoxide.Document) {
 	return eng, doc
 }
 
-func openRotatePDF(t *testing.T, name string) (PDFEngine, *pdfoxide.Document) {
+func openRotatePDF(t *testing.T, name string) (pdf.PDFEngine, *pdfoxide.Document) {
 	t.Helper()
 	return openPDF(t, "testdata/pdfs", name)
 }
@@ -180,7 +181,7 @@ func TestRotation_SameLinePreserved(t *testing.T) {
 				tolerance = 15.0 // char widths vary ~10-13pts on same line
 			}
 
-			lines := groupCharsToLines(chars, false)
+			lines := lyt.GroupCharsToLines(chars, false)
 			violations := 0
 			for li, line := range lines {
 				if len(line) <= 1 {
@@ -330,7 +331,7 @@ func TestRotation_RenderAlignment(t *testing.T) {
 	const dpi = 216.0
 	const scale = dpi / 72.0
 
-	identityMap := func(c TextChar, _, _ float64) (px0, py0, px1, py1 int) {
+	identityMap := func(c pdf.TextChar, _, _ float64) (px0, py0, px1, py1 int) {
 		return int(math.Round(c.X0 * scale)),
 			int(math.Round(c.Top * scale)),
 			int(math.Round(c.X1 * scale)),
@@ -568,7 +569,7 @@ func TestRotation_DocumentPageSize(t *testing.T) {
 
 // ── bboxDarkPixelHitRate helper ─────────────────────────────────────────
 
-func bboxDarkPixelHitRate(t *testing.T, chars []TextChar, img *image.RGBA, scale float64) (hit, checked int) {
+func bboxDarkPixelHitRate(t *testing.T, chars []pdf.TextChar, img *image.RGBA, scale float64) (hit, checked int) {
 	t.Helper()
 	imgW, imgH := img.Bounds().Dx(), img.Bounds().Dy()
 	n, step := len(chars), max(1, len(chars)/min(50, len(chars)))

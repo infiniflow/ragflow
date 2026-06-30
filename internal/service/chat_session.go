@@ -661,31 +661,48 @@ func (s *ChatSessionService) buildSessionPayload(session *entity.ChatSession, di
 }
 
 func parseMessages(raw json.RawMessage) []map[string]interface{} {
-	var messages []map[string]interface{}
+	messages := make([]map[string]interface{}, 0)
 	if len(raw) == 0 {
 		return messages
 	}
 	if err := json.Unmarshal(raw, &messages); err == nil {
+		if messages == nil {
+			return make([]map[string]interface{}, 0)
+		}
 		return messages
 	}
 
-	var wrapped struct {
-		Messages []map[string]interface{} `json:"messages"`
-	}
+	var wrapped map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &wrapped); err != nil {
 		return nil
 	}
-	return wrapped.Messages
+	wrappedMessages, ok := wrapped["messages"]
+	if !ok {
+		return nil
+	}
+	if len(wrappedMessages) == 0 || string(wrappedMessages) == "null" {
+		return make([]map[string]interface{}, 0)
+	}
+	if err := json.Unmarshal(wrappedMessages, &messages); err != nil {
+		return nil
+	}
+	if messages == nil {
+		return make([]map[string]interface{}, 0)
+	}
+	return messages
 }
 
 func parseReferenceList(raw json.RawMessage) []interface{} {
-	var references []interface{}
+	references := make([]interface{}, 0)
 	if len(raw) == 0 {
 		return references
 	}
 	err := json.Unmarshal(raw, &references)
 	if err != nil {
 		return nil
+	}
+	if references == nil {
+		return make([]interface{}, 0)
 	}
 	return references
 }
