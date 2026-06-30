@@ -58,7 +58,7 @@ type chatPipelineRunner interface {
 }
 
 type chunkFeedbackApplier interface {
-	applyChunkFeedback(tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error)
+	applyChunkFeedback(ctx context.Context, tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error)
 }
 
 type atomicChunkPagerankAdjuster interface {
@@ -677,8 +677,8 @@ func (s *ChatSessionService) DeleteSessionMessage(userID, chatID, sessionID, msg
 	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }
 
-func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, msgID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
-	ok, err := s.ensureOwnedChat(userID, chatID)
+func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, chatID, sessionID, msgID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
+	ownerTenantID, ok, err := s.resolveOwnedChatTenant(userID, chatID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -761,7 +761,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 			applier = s
 		}
 		if priorThumbBool, ok := priorThumb.(bool); ok && priorThumbBool != thumbup {
-			result, _ := applier.applyChunkFeedback(userID, feedbackReference, !priorThumbBool)
+			result, _ := applier.applyChunkFeedback(ctx, ownerTenantID, feedbackReference, !priorThumbBool)
 			if result != nil {
 				common.Debug("Chunk feedback undo applied",
 					zap.Any("success_count", result["success_count"]),
@@ -769,7 +769,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 				)
 			}
 		}
-		result, _ := applier.applyChunkFeedback(userID, feedbackReference, thumbup)
+		result, _ := applier.applyChunkFeedback(ctx, ownerTenantID, feedbackReference, thumbup)
 		if result != nil {
 			common.Debug("Chunk feedback applied",
 				zap.Any("success_count", result["success_count"]),
@@ -782,26 +782,34 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 }
 
 func (s *ChatSessionService) ensureOwnedChat(userID, chatID string) (bool, error) {
+	_, ok, err := s.resolveOwnedChatTenant(userID, chatID)
+	return ok, err
+}
+
+func (s *ChatSessionService) resolveOwnedChatTenant(userID, chatID string) (string, bool, error) {
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 	if err != nil {
-		return false, err
+		return "", false, err
 	}
 
 	for _, tenantID := range tenantIDs {
 		exists, err := s.chatSessionDAO.CheckDialogExists(tenantID, chatID)
 		if err != nil {
-			return false, err
+			return "", false, err
 		}
 		if exists {
-			return true, nil
+			return tenantID, true, nil
 		}
 	}
 
 	exists, err := s.chatSessionDAO.CheckDialogExists(userID, chatID)
 	if err != nil {
-		return false, err
+		return "", false, err
 	}
-	return exists, nil
+	if exists {
+		return userID, true, nil
+	}
+	return "", false, nil
 }
 
 func (s *ChatSessionService) buildSessionPayload(session *entity.ChatSession, dialog *entity.Chat, includeAvatar bool) *ChatSessionPayload {
@@ -892,7 +900,7 @@ type chunkFeedbackRow struct {
 	chunk   map[string]interface{}
 }
 
-func (s *ChatSessionService) applyChunkFeedback(tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error) {
+func (s *ChatSessionService) applyChunkFeedback(ctx context.Context, tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error) {
 	if strings.ToLower(os.Getenv("CHUNK_FEEDBACK_ENABLED")) != "true" {
 		return map[string]interface{}{"success_count": 0, "fail_count": 0, "chunk_ids": []string{}, "disabled": true}, nil
 	}
@@ -922,7 +930,7 @@ func (s *ChatSessionService) applyChunkFeedback(tenantID string, reference map[s
 		if delta == 0 {
 			continue
 		}
-		if s.updateChunkWeight(context.Background(), tenantID, rows[i].chunkID, rows[i].kbID, delta) {
+		if s.updateChunkWeight(ctx, tenantID, rows[i].chunkID, rows[i].kbID, delta) {
 			successCount++
 		} else {
 			failCount++

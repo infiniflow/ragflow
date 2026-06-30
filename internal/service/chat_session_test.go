@@ -172,6 +172,7 @@ func (f *fakePipeline) AsyncChat(ctx context.Context, chat *entity.Chat, message
 
 type fakeChunkFeedbackApplier struct {
 	calls []struct {
+		ctx        context.Context
 		tenantID   string
 		reference  map[string]interface{}
 		isPositive bool
@@ -179,12 +180,13 @@ type fakeChunkFeedbackApplier struct {
 	err error
 }
 
-func (f *fakeChunkFeedbackApplier) applyChunkFeedback(tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error) {
+func (f *fakeChunkFeedbackApplier) applyChunkFeedback(ctx context.Context, tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error) {
 	f.calls = append(f.calls, struct {
+		ctx        context.Context
 		tenantID   string
 		reference  map[string]interface{}
 		isPositive bool
-	}{tenantID: tenantID, reference: reference, isPositive: isPositive})
+	}{ctx: ctx, tenantID: tenantID, reference: reference, isPositive: isPositive})
 	return map[string]interface{}{"success_count": 0, "fail_count": 0, "chunk_ids": []string{}}, f.err
 }
 
@@ -805,7 +807,7 @@ func TestUpdateMessageFeedback_UpdatesAssistantMessage(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	resp, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{
+	resp, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "m1", map[string]interface{}{
 		"thumbup":  false,
 		"feedback": "bad answer",
 	})
@@ -820,7 +822,7 @@ func TestUpdateMessageFeedback_UpdatesAssistantMessage(t *testing.T) {
 		t.Fatalf("message=%#v", msg)
 	}
 
-	resp, code, err = svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{
+	resp, code, err = svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "m1", map[string]interface{}{
 		"thumbup": true,
 	})
 	if err != nil {
@@ -849,7 +851,7 @@ func TestUpdateMessageFeedback_RejectsNonBooleanThumbup(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": "true"})
+	_, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": "true"})
 	if err == nil || err.Error() != "thumbup must be a boolean" {
 		t.Fatalf("err=%v", err)
 	}
@@ -929,7 +931,7 @@ func TestUpdateMessageFeedback_RejectsMissingThumbup(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{})
+	_, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "m1", map[string]interface{}{})
 	if err == nil || err.Error() != "thumbup must be a boolean" {
 		t.Fatalf("err=%v", err)
 	}
@@ -954,7 +956,7 @@ func TestUpdateMessageFeedback_RejectsMalformedMessagesWithoutUpdate(t *testing.
 		pipeline:       &fakePipeline{},
 	}
 
-	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
+	_, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
 	if err == nil || err.Error() != "Invalid session messages" {
 		t.Fatalf("err=%v", err)
 	}
@@ -986,7 +988,7 @@ func TestUpdateMessageFeedback_RejectsMalformedReferenceWithoutUpdate(t *testing
 		pipeline:       &fakePipeline{},
 	}
 
-	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
+	_, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
 	if err == nil || err.Error() != "Invalid session reference" {
 		t.Fatalf("err=%v", err)
 	}
@@ -1005,7 +1007,7 @@ func TestUpdateMessageFeedback_NotOwner(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
+	_, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
 	if err == nil || err.Error() != "No authorization." {
 		t.Fatalf("err=%v", err)
 	}
@@ -1025,7 +1027,7 @@ func TestUpdateMessageFeedback_SessionNotFoundForWrongChat(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
+	_, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
 	if err == nil || err.Error() != "Session not found!" {
 		t.Fatalf("err=%v", err)
 	}
@@ -1055,7 +1057,7 @@ func TestUpdateMessageFeedback_MissingMessageIDLeavesMessagesUnchanged(t *testin
 		pipeline:       &fakePipeline{},
 	}
 
-	resp, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "missing", map[string]interface{}{"thumbup": false})
+	resp, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "missing", map[string]interface{}{"thumbup": false})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1087,7 +1089,7 @@ func TestUpdateMessageFeedback_SkipsMatchingNonAssistantMessage(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	resp, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": false, "feedback": "ignored"})
+	resp, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": false, "feedback": "ignored"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1131,7 +1133,7 @@ func TestUpdateMessageFeedback_ChangedFeedbackTriggersChunkFeedback(t *testing.T
 		chunkFeedbackApplier: feedback,
 	}
 
-	resp, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": false})
+	resp, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": false})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1157,7 +1159,7 @@ func TestUpdateMessageFeedback_ChangedFeedbackTriggersChunkFeedback(t *testing.T
 	}
 }
 
-func TestUpdateMessageFeedback_UsesCurrentUserForChunkFeedback(t *testing.T) {
+func TestUpdateMessageFeedback_UsesOwningTenantForChunkFeedback(t *testing.T) {
 	store := newFakeSessionStore()
 	store.sessions["session-1"] = &entity.ChatSession{
 		ID:       "session-1",
@@ -1179,7 +1181,8 @@ func TestUpdateMessageFeedback_UsesCurrentUserForChunkFeedback(t *testing.T) {
 		chunkFeedbackApplier: feedback,
 	}
 
-	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
+	ctx := context.WithValue(context.Background(), "test-request-id", "feedback-context")
+	_, code, err := svc.UpdateMessageFeedback(ctx, "user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1189,8 +1192,11 @@ func TestUpdateMessageFeedback_UsesCurrentUserForChunkFeedback(t *testing.T) {
 	if len(feedback.calls) != 1 {
 		t.Fatalf("feedback calls=%#v", feedback.calls)
 	}
-	if feedback.calls[0].tenantID != "user-1" {
+	if feedback.calls[0].tenantID != "tenant-1" {
 		t.Fatalf("tenantID=%q", feedback.calls[0].tenantID)
+	}
+	if feedback.calls[0].ctx != ctx {
+		t.Fatalf("context was not propagated")
 	}
 }
 
@@ -1217,7 +1223,7 @@ func TestUpdateMessageFeedback_DoesNotTriggerChunkFeedbackWhenUpdateFails(t *tes
 		chunkFeedbackApplier: feedback,
 	}
 
-	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
+	_, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
 	if err == nil || err.Error() != "update failed" {
 		t.Fatalf("err=%v", err)
 	}
@@ -1251,7 +1257,7 @@ func TestUpdateMessageFeedback_UnchangedFeedbackDoesNotTriggerChunkFeedback(t *t
 		chunkFeedbackApplier: feedback,
 	}
 
-	_, code, err := svc.UpdateMessageFeedback("user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
+	_, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "m1", map[string]interface{}{"thumbup": true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

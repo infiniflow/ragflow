@@ -513,7 +513,7 @@ func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.chatSessionService.UpdateMessageFeedback(userID, chatID, sessionID, msgID, req)
+	result, code, err := h.chatSessionService.UpdateMessageFeedback(c.Request.Context(), userID, chatID, sessionID, msgID, req)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
 			jsonResponse(c, code, false, err.Error())
