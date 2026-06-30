@@ -13,6 +13,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
 )
 
@@ -109,7 +110,7 @@ func TestChatMindMapHandlerSuccess(t *testing.T) {
 
 func TestChatRecommendationHandlerSuccess(t *testing.T) {
 	setupChatHandlerTestDB(t)
-	llm := &fakeChatLLM{
+	llm := &fakeRecommendationLLM{
 		response: "Here are related questions:\n1. How does hybrid search work?\n2. What improves retrieval quality?",
 	}
 	h := NewChatHandler(service.NewChatService(), service.NewUserService())
@@ -143,8 +144,28 @@ func TestChatRecommendationHandlerSuccess(t *testing.T) {
 	}
 }
 
+type fakeRecommendationLLM struct {
+	response     string
+	err          error
+	lastTenantID string
+	lastModelID  string
+	lastMessages []modelModule.Message
+	lastConfig   *modelModule.ChatConfig
+}
+
+func (f *fakeRecommendationLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
+	f.lastTenantID = tenantID
+	f.lastModelID = modelID
+	f.lastMessages = messages
+	f.lastConfig = config
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &modelModule.ChatResponse{Answer: &f.response}, nil
+}
+
 func TestChatRecommendationConfigSkipsZeroTopP(t *testing.T) {
-	cfg := chatRecommendationConfig(map[string]interface{}{
+	cfg := relatedQuestionsConfig(map[string]interface{}{
 		"llm_setting": map[string]interface{}{
 			"temperature": float64(0.2),
 			"top_p":       float64(0),

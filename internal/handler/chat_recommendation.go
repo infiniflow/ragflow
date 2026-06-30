@@ -61,50 +61,62 @@ func (h *ChatHandler) Recommendation(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "question is required"})
 		return
 	}
-	if h.llm == nil {
-		jsonInternalError(c, fmt.Errorf("LLM not configured"))
-		return
-	}
-
-	searchConfig := map[string]interface{}{}
-	if req.SearchID != "" && h.searchSvc != nil {
-		if detail, err := h.searchSvc.GetDetail(req.SearchID); err == nil && detail != nil {
-			searchConfig = searchConfigFromDetail(detail)
-		}
-	}
-
-	modelID, _ := searchConfig["chat_id"].(string)
-	if modelID == "" && h.tenantSvc != nil {
-		defaultModel, err := h.tenantSvc.GetDefaultModelName(user.ID, entity.ModelTypeChat)
-		if err == nil {
-			modelID = defaultModel
-		}
-	}
-
-	prompt, err := service.LoadPrompt("related_question")
+	questions, err := generateRelatedQuestions(user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
 	}
 
-	messages := []modelModule.Message{
-		{Role: "system", Content: prompt},
-		{Role: "user", Content: "\nKeywords: " + req.Question + "\nRelated search terms:\n    "},
-	}
-	response, err := h.llm.Chat(user.ID, modelID, messages, chatRecommendationConfig(searchConfig))
-	if err != nil {
-		jsonInternalError(c, err)
-		return
-	}
-
-	questions := []string{}
-	if response != nil && response.Answer != nil {
-		questions = parseRelatedQuestions(*response.Answer)
-	}
 	jsonResponse(c, common.CodeSuccess, questions, "success")
 }
 
-func chatRecommendationConfig(searchConfig map[string]interface{}) *modelModule.ChatConfig {
+func generateRelatedQuestions(tenantID, question, searchID string, searchSvc *service.SearchService, tenantSvc *service.TenantService, llm chatLLM) ([]string, error) {
+	if llm == nil {
+		return nil, fmt.Errorf("LLM not configured")
+	}
+	searchConfig := relatedQuestionsSearchConfig(searchID, searchSvc)
+	modelID := relatedQuestionsModelID(tenantID, searchConfig, tenantSvc)
+	prompt, err := service.LoadPrompt("related_question")
+	if err != nil {
+		return nil, err
+	}
+	messages := []modelModule.Message{
+		{Role: "system", Content: prompt},
+		{Role: "user", Content: "\nKeywords: " + question + "\nRelated search terms:\n    "},
+	}
+	response, err := llm.Chat(tenantID, modelID, messages, relatedQuestionsConfig(searchConfig))
+	if err != nil {
+		return nil, err
+	}
+	if response != nil && response.Answer != nil {
+		return parseRelatedQuestions(*response.Answer), nil
+	}
+	return []string{}, nil
+}
+
+func relatedQuestionsSearchConfig(searchID string, searchSvc *service.SearchService) map[string]interface{} {
+	if searchID == "" || searchSvc == nil {
+		return map[string]interface{}{}
+	}
+	if detail, err := searchSvc.GetDetail(searchID); err == nil && detail != nil {
+		return searchConfigFromDetail(detail)
+	}
+	return map[string]interface{}{}
+}
+
+func relatedQuestionsModelID(tenantID string, searchConfig map[string]interface{}, tenantSvc *service.TenantService) string {
+	modelID, _ := searchConfig["chat_id"].(string)
+	if modelID != "" || tenantSvc == nil {
+		return modelID
+	}
+	defaultModel, err := tenantSvc.GetDefaultModelName(tenantID, entity.ModelTypeChat)
+	if err == nil {
+		modelID = defaultModel
+	}
+	return modelID
+}
+
+func relatedQuestionsConfig(searchConfig map[string]interface{}) *modelModule.ChatConfig {
 	var genConf map[string]interface{}
 	switch v := searchConfig["llm_setting"].(type) {
 	case map[string]interface{}:

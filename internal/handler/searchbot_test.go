@@ -418,14 +418,12 @@ type fakeChatLLM struct {
 	lastTenantID string
 	lastModelID  string
 	lastMessages []modelModule.Message
-	lastConfig   *modelModule.ChatConfig
 }
 
 func (f *fakeChatLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
 	f.lastTenantID = tenantID
 	f.lastModelID = modelID
 	f.lastMessages = messages
-	f.lastConfig = config
 	if f.err != nil {
 		return nil, f.err
 	}
