@@ -1455,6 +1455,14 @@ Example: Virtual Hosted Style`,
         'Mail folder to sync (e.g. inbox, sentitems, archive). Defaults to inbox.',
       outlookUserIdsTip:
         'Comma-separated UPNs or object IDs of mailboxes to sync. Leave blank to sync every mailbox in the tenant (requires User.Read.All).',
+      hubspotDescription:
+        'Connect HubSpot and index CRM records (contacts, companies, deals, tickets) and Knowledge Base articles via the CRM v3 API with incremental sync.',
+      hubspotAccessTokenTip:
+        'HubSpot private app access token or OAuth 2.0 access token with crm.objects.*.read and (for KB articles) content scopes.',
+      hubspotObjectsTip:
+        'Comma-separated CRM objects to index. Defaults to contacts, companies, deals, tickets.',
+      hubspotKnowledgeBaseTip:
+        'Also index published HubSpot Knowledge Base articles. Disable if your portal does not have the Knowledge Base add-on.',
       salesforceDescription:
         'Connect a Salesforce org and index CRM records (Accounts, Contacts, Opportunities, Cases, Knowledge articles) via SOQL with incremental sync.',
       salesforceInstanceUrlTip:

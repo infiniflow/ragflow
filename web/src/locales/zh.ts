@@ -1140,6 +1140,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '要同步的邮件文件夹（例如 inbox、sentitems、archive），默认为 inbox。',
       outlookUserIdsTip:
         '要同步的邮箱 UPN 或对象 ID 列表（逗号分隔）。留空则同步租户内的所有邮箱（需要 User.Read.All 权限）。',
+      hubspotDescription:
+        '连接 HubSpot，通过 CRM v3 API 增量同步并索引 CRM 记录（联系人、公司、交易、工单）以及知识库文章。',
+      hubspotAccessTokenTip:
+        'HubSpot 私有应用访问令牌或 OAuth 2.0 访问令牌，需具备 crm.objects.*.read 以及（用于知识库）content 权限范围。',
+      hubspotObjectsTip:
+        '要索引的 CRM 对象列表（逗号分隔）。默认值：contacts, companies, deals, tickets。',
+      hubspotKnowledgeBaseTip:
+        '同时索引已发布的 HubSpot 知识库文章。若您的门户未启用知识库附加功能，请关闭此选项。',
       salesforceDescription:
         '连接 Salesforce 组织，通过 SOQL 增量同步并索引 CRM 记录（客户、联系人、商机、个案、知识文章）。',
       salesforceInstanceUrlTip:
