@@ -17,18 +17,20 @@
 import asyncio
 import hashlib
 import inspect
+import ipaddress
 import json
 import logging
 import os
 import re
 import shutil
+import socket
 import tempfile
 from abc import ABC
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from agent.component.base import ComponentBase
 from agent.component.llm import LLMParam
@@ -41,6 +43,54 @@ from common import settings
 from common.connection_utils import timeout
 from common.misc_utils import get_uuid
 from rag.llm import FACTORY_DEFAULT_BASE_URL
+
+
+def _is_safe_url_destination(url: str) -> bool:
+    """Return True only when ``url`` is an http(s) URL whose hostname resolves to a
+    public unicast address. Rejects loopback, private (RFC 1918 / fc00::/7),
+    link-local (including the 169.254.169.254 cloud metadata endpoint), multicast,
+    reserved, and unspecified ranges in both IPv4 and IPv6.
+
+    Used as the SSRF gate for any URL fetched on behalf of an agent workflow author.
+    """
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    host = parsed.hostname
+    if not host:
+        return False
+    try:
+        addr_infos = socket.getaddrinfo(host, parsed.port, type=socket.SOCK_STREAM)
+    except (socket.gaierror, UnicodeError, OSError):
+        return False
+    for _family, _type, _proto, _canon, sockaddr in addr_infos:
+        try:
+            ip = ipaddress.ip_address(sockaddr[0])
+        except (ValueError, IndexError):
+            return False
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            return False
+    return True
+
+
+class _SafeUrlRedirectHandler(HTTPRedirectHandler):
+    """Re-run the SSRF gate on every 3xx redirect target so a public URL cannot
+    silently redirect into an internal address."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _is_safe_url_destination(newurl):
+            raise URLError(f"Refused redirect to non-public destination: {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 class BrowserParam(LLMParam):
@@ -223,9 +273,13 @@ class Browser(ComponentBase, ABC):
         local_path = ""
         local_name = ""
         total_size = 0
+        if not _is_safe_url_destination(url):
+            logging.warning("Browser upload url rejected (non-public destination): %s", url)
+            return None
         try:
             req = Request(url, headers={"User-Agent": "RAGFlow-Browser-Node/1.0"})
-            with urlopen(req, timeout=30) as response:
+            opener = build_opener(_SafeUrlRedirectHandler())
+            with opener.open(req, timeout=30) as response:
                 local_name = self._extract_url_filename(url, response.headers)
 
                 local_path = os.path.join(upload_dir, local_name)

@@ -148,32 +148,44 @@ def test_extract_ids_does_not_split_http_url_by_comma():
     assert refs == ["https://example.com/download?name=a,b.txt"]
 
 
+class _FakeResponse:
+    def __init__(self, data=b"hello from url", filename="remote_demo.txt"):
+        self.headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+        self._data = data
+        self._pos = 0
+
+    def read(self, size=-1):
+        if size <= 0:
+            chunk = self._data[self._pos :]
+            self._pos = len(self._data)
+            return chunk
+        chunk = self._data[self._pos : self._pos + size]
+        self._pos += len(chunk)
+        return chunk
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return False
+
+
+class _FakeOpener:
+    def __init__(self, response):
+        self._response = response
+
+    def open(self, *_args, **_kwargs):
+        return self._response
+
+
 def test_prepare_upload_files_supports_http_url(monkeypatch, tmp_path):
     component = _build_component()
     component._param.upload_sources = "https://example.com/files/demo.txt"
 
-    class _FakeResponse:
-        def __init__(self):
-            self.headers = {"Content-Disposition": 'attachment; filename="remote_demo.txt"'}
-            self._data = b"hello from url"
-            self._pos = 0
-
-        def read(self, size=-1):
-            if size <= 0:
-                chunk = self._data[self._pos :]
-                self._pos = len(self._data)
-                return chunk
-            chunk = self._data[self._pos : self._pos + size]
-            self._pos += len(chunk)
-            return chunk
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            return False
-
-    monkeypatch.setattr(browser_use_module, "urlopen", lambda *_args, **_kwargs: _FakeResponse())
+    monkeypatch.setattr(browser_use_module, "_is_safe_url_destination", lambda _url: True)
+    monkeypatch.setattr(
+        browser_use_module, "build_opener", lambda *_handlers: _FakeOpener(_FakeResponse())
+    )
 
     prepared = component._prepare_upload_files(str(tmp_path))
 
@@ -183,6 +195,81 @@ def test_prepare_upload_files_supports_http_url(monkeypatch, tmp_path):
     assert prepared[0]["source_url"] == "https://example.com/files/demo.txt"
     assert Path(prepared[0]["local_path"]).exists()
     assert Path(prepared[0]["local_path"]).read_bytes() == b"hello from url"
+
+
+def test_prepare_upload_url_file_rejects_unsafe_destination(monkeypatch, tmp_path):
+    component = _build_component()
+
+    monkeypatch.setattr(browser_use_module, "_is_safe_url_destination", lambda _url: False)
+    sentinel_called = {"value": False}
+
+    def _fail_build_opener(*_args, **_kwargs):
+        sentinel_called["value"] = True
+        raise AssertionError("build_opener must not be called when destination is unsafe")
+
+    monkeypatch.setattr(browser_use_module, "build_opener", _fail_build_opener)
+
+    result = component._prepare_upload_url_file("http://169.254.169.254/latest/meta-data/", str(tmp_path))
+
+    assert result is None
+    assert sentinel_called["value"] is False
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_is_safe_url_destination_rejects_internal_and_metadata_addresses(monkeypatch):
+    # Force getaddrinfo to return the requested IP literally so the test is
+    # network-independent and deterministic across CI environments.
+    def _fake_getaddrinfo(host, port, *_args, **_kwargs):
+        return [(0, 0, 0, "", (host, port or 0))]
+
+    monkeypatch.setattr(browser_use_module.socket, "getaddrinfo", _fake_getaddrinfo)
+
+    rejected = [
+        "http://127.0.0.1/",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://10.0.0.5/",
+        "http://192.168.1.1/",
+        "http://172.16.0.1/",
+        "http://224.0.0.1/",
+        "http://0.0.0.0/",
+        "http://[::1]/",
+    ]
+    for url in rejected:
+        assert browser_use_module._is_safe_url_destination(url) is False, url
+
+
+def test_is_safe_url_destination_rejects_non_http_schemes():
+    assert browser_use_module._is_safe_url_destination("ftp://example.com/") is False
+    assert browser_use_module._is_safe_url_destination("file:///etc/passwd") is False
+    assert browser_use_module._is_safe_url_destination("gopher://example.com/") is False
+    assert browser_use_module._is_safe_url_destination("") is False
+    assert browser_use_module._is_safe_url_destination("not a url") is False
+
+
+def test_is_safe_url_destination_accepts_public_address(monkeypatch):
+    def _fake_getaddrinfo(_host, port, *_args, **_kwargs):
+        return [(0, 0, 0, "", ("93.184.216.34", port or 0))]  # example.com (public)
+
+    monkeypatch.setattr(browser_use_module.socket, "getaddrinfo", _fake_getaddrinfo)
+    assert browser_use_module._is_safe_url_destination("http://example.com/") is True
+
+
+def test_is_safe_url_destination_returns_false_on_dns_failure(monkeypatch):
+    def _fail(*_args, **_kwargs):
+        raise browser_use_module.socket.gaierror("no DNS")
+
+    monkeypatch.setattr(browser_use_module.socket, "getaddrinfo", _fail)
+    assert browser_use_module._is_safe_url_destination("http://does-not-resolve.invalid/") is False
+
+
+def test_safe_redirect_handler_refuses_unsafe_target(monkeypatch):
+    handler = browser_use_module._SafeUrlRedirectHandler()
+    monkeypatch.setattr(browser_use_module, "_is_safe_url_destination", lambda _url: False)
+    import pytest
+    from urllib.error import URLError
+
+    with pytest.raises(URLError, match="Refused redirect to non-public destination"):
+        handler.redirect_request(None, None, 302, "Found", {}, "http://127.0.0.1/")
 
 
 def test_save_downloads_persists_file_records(monkeypatch, tmp_path):
