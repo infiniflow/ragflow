@@ -1098,6 +1098,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       rssDescription:
         '连接公开的 RSS 或 Atom feed，并将 feed 条目同步到知识库。',
       confluenceDescription: '连接你的 Confluence 工作区以搜索文档内容。',
+      xwikiDescription: '连接 XWiki，将 Wiki 页面和文档同步到知识库。',
+      xwikiBaseUrlTip:
+        'XWiki 实例的基础 URL，例如 https://xwiki.example.com。',
+      xwikiSpaceTip:
+        '可选：要同步的 XWiki 空间。嵌套空间使用点号表示，例如 Main.Docs。',
+      xwikiPageIdsTip:
+        '可选：页面 ID 或完整名称，多个用逗号分隔。留空则同步配置的空间。',
       s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
       google_cloud_storageDescription:
         '连接你的 Google Cloud Storage 存储桶以导入和同步文件。',
