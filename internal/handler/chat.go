@@ -18,9 +18,11 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -31,6 +33,10 @@ import (
 type ChatHandler struct {
 	chatService *service.ChatService
 	userService *service.UserService
+	searchSvc   *service.SearchService
+	tenantSvc   *service.TenantService
+	llm         searchbotLLM
+	chunkSvc    ChunkRetriever
 }
 
 // NewChatHandler create chat handler
@@ -39,6 +45,21 @@ func NewChatHandler(chatService *service.ChatService, userService *service.UserS
 		chatService: chatService,
 		userService: userService,
 	}
+}
+
+// SetMindMapDependencies sets dependencies used by POST /api/v1/chat/mindmap.
+func (h *ChatHandler) SetMindMapDependencies(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm searchbotLLM, chunkSvc ChunkRetriever) {
+	h.searchSvc = searchSvc
+	h.tenantSvc = tenantSvc
+	h.llm = llm
+	h.chunkSvc = chunkSvc
+}
+
+// ChatMindMapRequest is the request body for POST /api/v1/chat/mindmap.
+type ChatMindMapRequest struct {
+	Question string             `json:"question" binding:"required"`
+	KbIDs    common.StringSlice `json:"kb_ids" binding:"required"`
+	SearchID string             `json:"search_id,omitempty"`
 }
 
 // ListChats list chats
@@ -136,6 +157,74 @@ func (h *ChatHandler) Create(c *gin.Context) {
 		"data":    result,
 		"message": "success",
 	})
+}
+
+// MindMap generates a query mind map for chat search results.
+// @Summary Generate Chat Mind Map
+// @Description Retrieves related chunks and asks the configured chat model to summarize them into a mind map.
+// @Tags chat
+// @Accept json
+// @Produce json
+// @Param request body ChatMindMapRequest true "Mind map parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/chat/mindmap [post]
+func (h *ChatHandler) MindMap(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req ChatMindMapRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": err.Error()})
+		return
+	}
+	if strings.TrimSpace(req.Question) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "kb_ids and question are required"})
+		return
+	}
+
+	searchConfig := map[string]interface{}{}
+	modelTenantID := user.ID
+	if req.SearchID != "" {
+		if h.searchSvc == nil {
+			jsonInternalError(c, fmt.Errorf("search service not configured"))
+			return
+		}
+		detail, err := h.searchSvc.GetDetail(req.SearchID)
+		if err != nil {
+			jsonInternalError(c, err)
+			return
+		}
+		searchConfig = searchConfigFromDetail(detail)
+		if tenantID, ok := detail["tenant_id"].(string); ok && tenantID != "" {
+			modelTenantID = tenantID
+		}
+	}
+
+	kbIDs := mergeMindMapKbIDs(stringSliceFromConfig(searchConfig, "kb_ids"), req.KbIDs)
+	if len(kbIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "kb_ids and question are required"})
+		return
+	}
+
+	mindMap, err := runMindMap(mindMapRunConfig{
+		Question:      req.Question,
+		KbIDs:         kbIDs,
+		SearchID:      req.SearchID,
+		SearchConfig:  searchConfig,
+		AuthUserID:    user.ID,
+		ModelTenantID: modelTenantID,
+		ChunkSvc:      h.chunkSvc,
+		LLM:           h.llm,
+		TenantSvc:     h.tenantSvc,
+	})
+	if err != nil {
+		jsonInternalError(c, err)
+		return
+	}
+	jsonResponse(c, common.CodeSuccess, mindMap, "success")
 }
 
 // ListChatsNext list chats with advanced filtering and pagination

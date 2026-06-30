@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/handler"
+	"ragflow/internal/service"
 )
 
 func TestConnectorRoutesDoNotConflictWithOAuthCallbacks(t *testing.T) {
@@ -113,5 +114,30 @@ func TestRouterSetupRegistersSearchbotMindMapRoute(t *testing.T) {
 	}
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("status=%d body=%s; want beta auth middleware to handle registered MindMap route", resp.Code, resp.Body.String())
+	}
+}
+
+func TestRouterSetupRegistersChatMindMapRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	r := &Router{
+		authHandler: handler.NewAuthHandler(),
+		chatHandler: handler.NewChatHandler(
+			service.NewChatService(),
+			service.NewUserService(),
+		),
+	}
+	r.Setup(engine)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/chat/mindmap", nil)
+	engine.ServeHTTP(resp, req)
+
+	if resp.Code == http.StatusNotFound {
+		t.Fatalf("POST /api/v1/chat/mindmap returned 404; Chat MindMap route is not registered")
+	}
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s; want auth middleware to handle registered Chat MindMap route", resp.Code, resp.Body.String())
 	}
 }

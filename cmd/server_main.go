@@ -306,6 +306,7 @@ func startServer(config *server.Config) {
 	searchBotHandler.SetStreamLLM(searchBotLLM)
 	askService := service.NewAskService(chunkService, nil, 0, 0)
 	searchBotHandler.SetAskService(askService)
+	chatHandler.SetMindMapDependencies(searchService, tenantService, searchBotLLM, chunkService)
 	searchHandler.SetCompletionDependencies(searchBotLLM, askService)
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
