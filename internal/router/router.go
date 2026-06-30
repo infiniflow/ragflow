@@ -197,12 +197,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		searchbotGroup.POST("/related_questions", r.searchBotHandler.Handle)
 		searchbotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
 		searchbotGroup.POST("/ask", r.searchBotHandler.Ask)
+		searchbotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
 
 		if r.botHandler != nil {
 			chatbotGroup := apiBetaAuth.Group("/chatbots")
-			RegisterChatbotRoutes(chatbotGroup, r.botHandler)
+			betaMW := r.authHandler.BetaAuthMiddleware()
+			RegisterChatbotRoutes(chatbotGroup, betaMW, r.botHandler)
 			agentbotGroup := apiBetaAuth.Group("/agentbots")
-			RegisterAgentbotRoutes(agentbotGroup, r.botHandler)
+			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
 		}
 		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
@@ -273,6 +275,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 
 			// Chat routes
+			v1.POST("/chat/mindmap", r.chatHandler.MindMap)
 			chats := v1.Group("/chats")
 			{
 				chats.GET("", r.chatHandler.ListChats)

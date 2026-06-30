@@ -1,13 +1,16 @@
 package router
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
 	"ragflow/internal/handler"
+	"ragflow/internal/service"
 )
 
 func TestConnectorRoutesDoNotConflictWithOAuthCallbacks(t *testing.T) {
@@ -91,5 +94,64 @@ func TestRouterSetupRegistersUpdateDatasetRoute(t *testing.T) {
 	}
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("status=%d body=%s; want auth middleware to handle registered UpdateDataset route", resp.Code, resp.Body.String())
+	}
+}
+
+func TestRouterSetupRegistersSearchbotMindMapRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	r := &Router{
+		authHandler:      handler.NewAuthHandler(),
+		searchBotHandler: handler.NewSearchBotHandler(nil, nil, nil, nil),
+	}
+	r.Setup(engine)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/searchbots/mindmap", nil)
+	engine.ServeHTTP(resp, req)
+
+	if resp.Code == http.StatusNotFound {
+		t.Fatalf("POST /api/v1/searchbots/mindmap returned 404; MindMap route is not registered")
+	}
+	var body struct {
+		Code common.ErrorCode `json:"code"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	if body.Code != common.CodeUnauthorized {
+		t.Fatalf("status=%d body=%s; want beta auth middleware to handle registered MindMap route", resp.Code, resp.Body.String())
+	}
+}
+
+func TestRouterSetupRegistersChatMindMapRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	r := &Router{
+		authHandler: handler.NewAuthHandler(),
+		chatHandler: handler.NewChatHandler(
+			service.NewChatService(),
+			service.NewUserService(),
+		),
+	}
+	r.Setup(engine)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/chat/mindmap", nil)
+	engine.ServeHTTP(resp, req)
+
+	if resp.Code == http.StatusNotFound {
+		t.Fatalf("POST /api/v1/chat/mindmap returned 404; Chat MindMap route is not registered")
+	}
+	var body struct {
+		Code common.ErrorCode `json:"code"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	if body.Code != common.CodeUnauthorized {
+		t.Fatalf("status=%d body=%s; want auth middleware to handle registered Chat MindMap route", resp.Code, resp.Body.String())
 	}
 }
