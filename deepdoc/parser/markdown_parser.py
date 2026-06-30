@@ -526,6 +526,7 @@ class MarkdownElementExtractor:
         # runs into a tilde-fenced code block ends cleanly. Closes part
         # of #15482.
         def _is_block_start(s: str) -> bool:
+            """Return True when a line starts a Markdown block element."""
             return bool(
                 re.match(r"^#{1,6}\s+.*$", s)
                 or re.match(r"^[ \t]{0,3}(?:`{3,}|~{3,})", s)
