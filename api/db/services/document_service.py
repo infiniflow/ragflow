@@ -937,6 +937,7 @@ class DocumentService(CommonService):
                 doc_progress = doc.progress if doc and doc.progress else 0.0
                 special_task_running = False
                 priority = 0
+                own_queued = 0
                 for t in tsks:
                     task_type = (t.task_type or "").lower()
                     if task_type in PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES:
@@ -945,6 +946,8 @@ class DocumentService(CommonService):
                         finished = False
                     if t.progress == -1:
                         bad += 1
+                    if (t.progress or 0) == 0:
+                        own_queued += 1
                     prg += t.progress if t.progress >= 0 else 0
                     if (t.progress_msg or "").strip():
                         msg.append(t.progress_msg)
@@ -974,9 +977,13 @@ class DocumentService(CommonService):
                 if msg:
                     info["progress_msg"] = msg
                     if msg.endswith("created task graphrag") or msg.endswith("created task raptor") or msg.endswith("created task mindmap"):
-                        info["progress_msg"] += "\n%d tasks are ahead in the queue..." % get_queue_length(priority)
+                        # Exclude this document's own queued tasks: they are not
+                        # "ahead" of itself, they ARE the work being waited on.
+                        queue_ahead = max(0, get_queue_length(priority) - own_queued)
+                        info["progress_msg"] += "\n%d tasks are ahead in the queue..." % queue_ahead
                 else:
-                    info["progress_msg"] = "%d tasks are ahead in the queue..." % get_queue_length(priority)
+                    queue_ahead = max(0, get_queue_length(priority) - own_queued)
+                    info["progress_msg"] = "%d tasks are ahead in the queue..." % queue_ahead
                 info["update_time"] = current_timestamp()
                 info["update_date"] = get_format_time()
                 (cls.model.update(info).where((cls.model.id == d["id"]) & ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value))).execute())
