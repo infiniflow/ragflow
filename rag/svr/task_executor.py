@@ -92,6 +92,7 @@ from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.graphrag.utils import chat_limiter
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
+from api.exceptions import RetryableError
 from rag.svr.task_executor_limiter import (
     task_limiter,
     chunk_limiter,
@@ -1722,6 +1723,26 @@ async def handle_task():
     except TaskCanceledException as e:
         DONE_TASKS += 1
         CURRENT_TASKS.pop(task_id, None)
+        logging.info(
+            f"handle_task canceled for task {task_id}: {getattr(e, 'msg', str(e))}"
+        )
+    except RetryableError as e:
+        CURRENT_TASKS.pop(task_id, None)
+        retry_count = task.get("retry_count", 0) + 1
+        max_retries = 3
+        if retry_count <= max_retries:
+            logging.warning(
+                f"handle_task RetryableError for task {task_id} (attempt {retry_count}/{max_retries}): {e}"
+            )
+            task["retry_count"] = retry_count
+            queue_name = settings.get_svr_queue_name(task.get("priority", 0), TASK_TYPE)
+            REDIS_CONN.queue_product(queue_name, task)
+        else:
+            FAILED_TASKS += 1
+            set_progress(task_id, prog=-1, msg=f"[RetryableError exhausted after {max_retries} attempts]: {e}")
+            logging.error(
+                f"handle_task RetryableError exhausted retries for task {task_id}: {e}"
+            )
         logging.info(f"handle_task canceled for task {task_id}: {getattr(e, 'msg', str(e))}")
     except Exception as e:
         FAILED_TASKS += 1

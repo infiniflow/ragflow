@@ -28,6 +28,7 @@ from api.db.db_models import LLM
 from api.db.services.common_service import CommonService
 from api.db.services.tenant_llm_service import LLM4Tenant
 from common.token_utils import num_tokens_from_string
+from api.exceptions import RAGFlowError
 
 
 class LLMService(CommonService):
@@ -373,7 +374,7 @@ class LLMBundle(LLM4Tenant):
         elif hasattr(self.mdl, "async_chat"):
             base_fn = self.mdl.async_chat
         else:
-            raise RuntimeError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
+            raise RAGFlowError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
 
         generation = None
         if self.langfuse:
@@ -414,7 +415,7 @@ class LLMBundle(LLM4Tenant):
         elif hasattr(self.mdl, "async_chat_streamly"):
             stream_fn = getattr(self.mdl, "async_chat_streamly", None)
         else:
-            raise RuntimeError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
+            raise RAGFlowError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
 
         generation = None
         if self.langfuse:
@@ -457,7 +458,7 @@ class LLMBundle(LLM4Tenant):
         elif hasattr(self.mdl, "async_chat_streamly"):
             stream_fn = getattr(self.mdl, "async_chat_streamly", None)
         else:
-            raise RuntimeError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
+            raise RAGFlowError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
 
         generation = None
         if self.langfuse:

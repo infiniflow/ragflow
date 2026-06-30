@@ -21,6 +21,7 @@ from api.db.db_models import File, File2Document
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from common.time_utils import current_timestamp, datetime_format
+from api.exceptions import ServiceUnavailableError
 
 
 class File2DocumentService(CommonService):
@@ -48,7 +49,7 @@ class File2DocumentService(CommonService):
     @DB.connection_context()
     def insert(cls, obj):
         if not cls.save(**obj):
-            raise RuntimeError("Database error (File)!")
+            raise ServiceUnavailableError("Database error (File)!")
         return File2Document(**obj)
 
     @classmethod

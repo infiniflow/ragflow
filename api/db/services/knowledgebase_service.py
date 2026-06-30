@@ -27,6 +27,7 @@ from common.misc_utils import get_uuid
 from common.constants import StatusEnum
 from api.constants import DATASET_NAME_LIMIT
 from api.utils.api_utils import get_parser_config, get_data_error_result
+from api.exceptions import NotFoundError
 
 
 class KnowledgebaseService(CommonService):
@@ -573,9 +574,10 @@ class KnowledgebaseService(CommonService):
     @classmethod
     @DB.connection_context()
     def decrease_document_num_in_delete(cls, kb_id, doc_num_info: dict):
-        kb_row = cls.model.get_by_id(kb_id)
-        if not kb_row:
-            raise RuntimeError(f"kb_id {kb_id} does not exist")
+        try:
+            kb_row = cls.model.get_by_id(kb_id)
+        except Exception:
+            raise NotFoundError(f"kb_id {kb_id} does not exist")
         update_dict = {
             'doc_num': kb_row.doc_num - doc_num_info['doc_num'],
             'chunk_num': kb_row.chunk_num - doc_num_info['chunk_num'],
