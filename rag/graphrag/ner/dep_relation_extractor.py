@@ -22,7 +22,6 @@ Extracts typed relations using spaCy dependency parse with:
 - Dynamic confidence scoring
 - Multi-occurrence entity matching
 """
-import logging
 from typing import Dict, List, Optional
 
 from .types import Entity, Relation
@@ -53,9 +52,6 @@ _LANG_DEP_RULES: Dict[str, Dict[str, object]] = {
            "prep_obj": ("case", "nmod")},
     "ja": {"subj": "nsubj",
            "agent": ("obl", None, "によって"),  # "によって" marks agent
-           "prep_obj": ("case", "obl")},
-    "ja": {"subj": "nsubj",
-           "agent": ("obl", None),
            "prep_obj": ("case", "obl")},
 }
 
@@ -101,23 +97,17 @@ _VERB_RELATIONS: Dict[str, str] = {
     "implanter+à": "located_in",
     "naître+à": "born_in",
     "acquérir+par": "acquired", "racheter+par": "acquired",
-    # Spanish (es): spaCy lemmas
+    # Spanish + Portuguese (shared lemmas, no duplicate keys)
     "fundar+por": "founded_by", "crear+por": "founded_by",
-    "establecer+por": "founded_by",
-    "trabajar+para": "works_for", "emplear+por": "works_for",
+    "criar+por": "founded_by",
+    "establecer+por": "founded_by", "estabelecer+por": "founded_by",
+    "trabajar+para": "works_for", "trabalhar+para": "works_for",
+    "emplear+por": "works_for", "empregar+por": "works_for",
     "contratar+por": "works_for",
     "ubicar+en": "located_in", "situar+en": "located_in",
-    "tener+sede": "located_in",
-    "nacer+en": "born_in",
-    "adquirir+por": "acquired", "comprar+por": "acquired",
-    # Portuguese (pt): spaCy lemmas
-    "fundar+por": "founded_by", "criar+por": "founded_by",
-    "estabelecer+por": "founded_by",
-    "trabalhar+para": "works_for", "empregar+por": "works_for",
-    "contratar+por": "works_for",
     "localizar+em": "located_in", "situar+em": "located_in",
-    "sediar+em": "located_in",
-    "nascer+em": "born_in",
+    "sediar+em": "located_in", "tener+sede": "located_in",
+    "nacer+en": "born_in", "nascer+em": "born_in",
     "adquirir+por": "acquired", "comprar+por": "acquired",
     # Chinese: verb + "由" (agent marker) or "被" (passive)
     "创立+由": "founded_by", "创建+由": "founded_by",
@@ -254,7 +244,6 @@ class DepRelationExtractor:
     def _extract_with_dep(self, text, doc, entities) -> List[Relation]:
         relations = []
         entity_map = self._build_entity_map_multi(entities)
-        rules = self._roles()
         is_de = self.language == "de"
 
         for sent in doc.sents:
@@ -383,7 +372,6 @@ class DepRelationExtractor:
 
     def _extract_copula(self, text, root, entity_map) -> List[Relation]:
         relations = []
-        rules = self._roles()
         # Get subject using language-specific rules
         subjs = self._get_by_role(root, "subj", entity_map)
         subj = subjs[0][0] if subjs else None

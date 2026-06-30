@@ -36,7 +36,7 @@ import spacy
 from spacy import Language
 
 from .dep_relation_extractor import DepRelationExtractor
-from .types import Entity, ExtractionResult, Relation
+from .types import Entity, ExtractionResult
 
 # Language → spaCy model
 _MODEL_MAP = {
