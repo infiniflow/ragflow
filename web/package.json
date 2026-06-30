@@ -9,7 +9,7 @@
     "build-storybook": "storybook build",
     "dev": "vite --host",
     "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives",
-    "prepare": "cd .. && lefthook install",
+    "prepare": "cd .. && git rev-parse --git-dir >/dev/null 2>&1 && lefthook install || true",
     "preview": "vite preview",
     "storybook": "storybook dev -p 6006",
     "test": "jest --no-cache --coverage",
