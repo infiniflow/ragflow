@@ -4,6 +4,7 @@ import { registerNextServer } from '@/utils/register-server';
 const {
   createChat,
   listChats,
+  listChatOwners,
   getChat,
   updateChat,
   patchChat,
@@ -30,6 +31,10 @@ const methods = {
   },
   listChats: {
     url: listChats,
+    method: 'get',
+  },
+  listChatOwners: {
+    url: listChatOwners,
     method: 'get',
   },
   getChat: {
