@@ -104,6 +104,7 @@ class InfinityConnection(InfinityConnectionBase):
             knowledgebase_ids: list[str],
             agg_fields: list[str] | None = None,
             rank_feature: dict | None = None,
+            extra_filters: dict | None = None,
     ) -> tuple[pd.DataFrame, int]:
         """
         BUG: Infinity returns empty for a highlight field if the query string doesn't use that field.
@@ -149,6 +150,8 @@ class InfinityConnection(InfinityConnectionBase):
             # Prepare expressions common to all tables
             filter_cond = None
             filter_fulltext = ""
+            if extra_filters:
+                condition = {**condition, **extra_filters}
             if condition:
                 # For metadata table (ragflow_doc_meta_), keep kb_id filter
                 # For chunk tables, remove kb_id filter as they use table separation per KB

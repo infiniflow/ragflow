@@ -133,12 +133,15 @@ class Dealer:
                kb_ids: list[str],
                emb_mdl=None,
                highlight: bool | list | None = None,
-               rank_feature: dict | None = None
+               rank_feature: dict | None = None,
+               extra_filters: dict | None = None,
                ):
         if highlight is None:
             highlight = False
 
         filters = self.get_filters(req)
+        if extra_filters:
+            filters.update(extra_filters)
         orderBy = OrderByExpr()
 
         pg = int(req.get("page", 1)) - 1
@@ -233,6 +236,83 @@ class Dealer:
             highlight=highlight,
             field=self.dataStore.get_fields(res, src + ["_score"]),
             keywords=keywords
+        )
+
+    @staticmethod
+    def federated_merge(
+        result_sets: list["Dealer.SearchResult"],
+        weights: list[float] | None = None,
+    ) -> "Dealer.SearchResult":
+        """Merge per-KB ``SearchResult`` objects using weighted Reciprocal Rank
+        Fusion.
+
+        Formula: ``score(d) = Σ_k  weight_k / (60 + rank_k(d))``
+
+        Chunks that appear in multiple KB result sets are deduplicated by
+        chunk_id (the key in the ``field`` dict), keeping the entry with the
+        highest merged RRF score.  The merged ``SearchResult`` carries the
+        combined ``ids``, ``field``, ``keywords``, and ``aggregation``; the
+        ``query_vector`` and ``highlight`` from the first non-empty result set
+        are preserved.
+
+        ``SearchResult.field`` is a ``dict`` keyed by chunk_id throughout the
+        codebase, so this method never uses DataFrame APIs.
+        """
+        if not result_sets:
+            return Dealer.SearchResult(
+                total=0, ids=[], query_vector=[], aggregation={},
+                highlight={}, field={}, keywords=[],
+            )
+
+        n = len(result_sets)
+        if weights is None:
+            weights = [1.0] * n
+        if len(weights) != n:
+            weights = (list(weights) + [1.0] * n)[:n]
+
+        # Build per-result-set rank maps: chunk_id → accumulated RRF score
+        rrf_scores: dict[str, float] = {}
+        chunk_rows: dict[str, dict] = {}
+
+        for rs, w in zip(result_sets, weights):
+            if not rs.field:
+                continue
+            for rank, cid in enumerate(rs.ids):
+                rrf_scores[cid] = rrf_scores.get(cid, 0.0) + w / (60 + rank)
+                if cid not in chunk_rows and cid in rs.field:
+                    chunk_rows[cid] = rs.field[cid]
+
+        # Sort by RRF score descending
+        sorted_ids = sorted(rrf_scores, key=lambda c: rrf_scores[c], reverse=True)
+        merged_field = {cid: chunk_rows[cid] for cid in sorted_ids if cid in chunk_rows}
+
+        # Merge aggregations
+        merged_agg: dict = {}
+        for rs in result_sets:
+            for k, v in (rs.aggregation or {}).items():
+                merged_agg[k] = merged_agg.get(k, 0) + v
+
+        # Merge keywords (dedup, preserve order)
+        seen_kw: set = set()
+        merged_kw: list[str] = []
+        for rs in result_sets:
+            for kw in (rs.keywords or []):
+                if kw not in seen_kw:
+                    seen_kw.add(kw)
+                    merged_kw.append(kw)
+
+        first_nonempty = next(
+            (rs for rs in result_sets if rs.query_vector), result_sets[0]
+        )
+
+        return Dealer.SearchResult(
+            total=len(sorted_ids),
+            ids=sorted_ids,
+            query_vector=first_nonempty.query_vector,
+            aggregation=merged_agg,
+            highlight=first_nonempty.highlight or {},
+            field=merged_field,
+            keywords=merged_kw,
         )
 
     @staticmethod
@@ -587,6 +667,8 @@ class Dealer:
             highlight=False,
             rank_feature: dict | None = {PAGERANK_FLD: 10},
             trace_id=None,
+            include_federated: bool = False,
+            requesting_tenant_id: str | None = None,
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
@@ -619,6 +701,38 @@ class Dealer:
         idx_names = [index_name(tid) for tid in tenant_ids]
         sres = await self.search(req, idx_names, kb_ids, embd_mdl, highlight,
                            rank_feature=rank_feature)
+
+        # Federation fan-out: query granted KBs from other tenants and merge
+        if include_federated and requesting_tenant_id:
+            try:
+                from api.db.services.federation_service import FederationService
+                fed_grants = FederationService.resolve_federated_kbs(requesting_tenant_id, kb_ids)
+                if fed_grants:
+                    fed_result_sets = [sres]
+                    fed_weights = [1.0]
+                    for fed_kb_id, grant in fed_grants.items():
+                        policy_filter = FederationService.build_policy_filter(grant)
+                        fed_idx = index_name(grant.owner_tenant_id)
+                        fed_req = {**req, "kb_ids": [fed_kb_id]}
+                        fed_sres = await self.search(
+                            fed_req, [fed_idx], [fed_kb_id], embd_mdl, highlight,
+                            rank_feature=rank_feature,
+                            extra_filters=policy_filter,
+                        )
+                        # Tag each federated chunk with its grant id
+                        if fed_sres.field:
+                            for chunk in fed_sres.field.values():
+                                if isinstance(chunk, dict):
+                                    chunk.setdefault("federation_grant_id", grant.id)
+                        fed_result_sets.append(fed_sres)
+                        fed_weights.append(
+                            float((grant.policy_json or [{}])[0].get("weight", 1.0))
+                            if grant.policy_json else 1.0
+                        )
+                    sres = Dealer.federated_merge(fed_result_sets, fed_weights)
+            except Exception as _fed_e:
+                logging.warning("Federation fan-out failed: %s", _fed_e)
+
         # Temporary retrieval-side guard: prune chunks whose parent document no
         # longer exists before reranking and returning results.
         sres = await self._prune_deleted_chunks(sres)
@@ -767,6 +881,31 @@ class Dealer:
             ]
         else:
             ranks["doc_aggs"] = []
+
+        # Fire-and-forget audit log for any federated chunks in the response
+        if include_federated and requesting_tenant_id and ranks.get("chunks"):
+            try:
+                from api.db.services.federation_service import FederationService
+                import asyncio as _asyncio
+                # Group returned chunks by grant id
+                grant_chunks: dict[str, list[str]] = {}
+                for chunk in ranks["chunks"]:
+                    gid = chunk.get("federation_grant_id")
+                    if gid:
+                        grant_chunks.setdefault(gid, []).append(chunk.get("id", ""))
+                for gid, cids in grant_chunks.items():
+                    _asyncio.get_event_loop().run_in_executor(
+                        None,
+                        FederationService.write_audit_log,
+                        gid,
+                        requesting_tenant_id,
+                        None,
+                        question,
+                        cids,
+                        0,
+                    )
+            except Exception as _aud_e:
+                logging.warning("Federation audit log write failed: %s", _aud_e)
 
         return ranks
 

@@ -288,7 +288,9 @@ class KnowledgebaseService(CommonService):
             cls.model.mindmap_task_id,
             cls.model.mindmap_task_finish_at,
             cls.model.create_time,
-            cls.model.update_time
+            cls.model.update_time,
+            cls.model.federation_enabled,
+            cls.model.published_doc_tags,
             ]
         kbs = cls.model.select(*fields)\
                 .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
@@ -298,7 +300,24 @@ class KnowledgebaseService(CommonService):
         ).dicts()
         if not kbs:
             return None
-        return kbs[0]
+        row = kbs[0]
+
+        # Annotate with active grant count so API callers can show it without an extra round-trip
+        try:
+            from api.db.db_models import FederationGrant
+            row["active_grant_count"] = (
+                FederationGrant
+                .select()
+                .where(
+                    (FederationGrant.kb_id == kb_id) &
+                    (FederationGrant.status == "active")
+                )
+                .count()
+            )
+        except Exception:
+            row["active_grant_count"] = 0
+
+        return row
 
     @classmethod
     @DB.connection_context()
@@ -533,6 +552,60 @@ class KnowledgebaseService(CommonService):
             if cls.accessible(kb.id, user_id):
                 return [kb.to_dict()]
         return []
+
+    @classmethod
+    @DB.connection_context()
+    def update_federation_settings(
+        cls,
+        kb_id: str,
+        tenant_id: str,
+        federation_enabled: bool | None = None,
+        published_doc_tags: list | None = None,
+    ) -> bool:
+        """Toggle federation and/or update ``published_doc_tags``.
+
+        Validates that ``published_doc_tags`` only contains tags that already
+        exist on at least one document in this KB before enabling federation.
+
+        Raises ``ValueError`` on validation failure.
+        """
+        ok, kb = cls.get_by_id(kb_id)
+        if not ok or kb.tenant_id != tenant_id:
+            raise LookupError(f"KB {kb_id} not found.")
+
+        update: dict = {"update_time": current_timestamp()}
+
+        if published_doc_tags is not None:
+            # Validate requested tags exist in the KB's doc store (chunks layer),
+            # not in Document.meta_fields which doesn't exist on the model.
+            from api import settings
+            existing_tags: set[str] = set(
+                settings.retriever.all_tags(kb.tenant_id, [kb_id])
+            )
+            unknown = set(published_doc_tags) - existing_tags
+            if unknown:
+                raise ValueError(
+                    f"The following doc_tags do not exist in KB {kb_id}: {sorted(unknown)}. "
+                    "Tag documents before adding them to published_doc_tags."
+                )
+            update["published_doc_tags"] = published_doc_tags
+
+        if federation_enabled is not None:
+            # Compute the effective published_doc_tags after this request so that
+            # setting published_doc_tags=[] and federation_enabled=True in the
+            # same call is correctly rejected.
+            effective_tags = (
+                published_doc_tags if published_doc_tags is not None else kb.published_doc_tags
+            )
+            if federation_enabled and not effective_tags:
+                raise ValueError(
+                    "Cannot enable federation without at least one published_doc_tag. "
+                    "Set published_doc_tags first."
+                )
+            update["federation_enabled"] = federation_enabled
+
+        cls.model.update(update).where(cls.model.id == kb_id).execute()
+        return True
 
     @classmethod
     @DB.connection_context()

@@ -22,7 +22,7 @@ from peewee import fn, Case, JOIN
 
 from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
 from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES, FileType, UserTenantRole, CanvasCategory
-from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File, UserCanvas, User
+from api.db.db_models import DB, Document, FederationGrant, Knowledgebase, Task, Tenant, UserTenant, File2Document, File, UserCanvas, User
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService, retry_deadlock_operation
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -36,6 +36,44 @@ from common.time_utils import current_timestamp, get_format_time
 
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
+
+
+class FederationViolation(Exception):
+    """Raised when a document metadata change would break an active federation grant."""
+
+
+def check_federation_tag_removal(kb_id: str, doc_id: str, new_doc_tags: list[str]) -> None:
+    """Raise ``FederationViolation`` (HTTP 409) if removing a tag from ``doc_id``
+    would leave a grant's ``published_doc_tags`` filter unsatisfied for that document.
+
+    Call this before persisting any doc_tags update on a document in a
+    federation-enabled KB.
+    """
+    kb = Knowledgebase.get_or_none(Knowledgebase.id == kb_id)
+    if kb is None or not kb.federation_enabled:
+        return
+
+    active_grants = list(
+        FederationGrant.select().where(
+            (FederationGrant.kb_id == kb_id) &
+            (FederationGrant.status == "active")
+        )
+    )
+    if not active_grants:
+        return
+
+    new_tag_set = set(new_doc_tags or [])
+    for grant in active_grants:
+        required_tags = set(kb.published_doc_tags or [])
+        if not required_tags:
+            continue
+        # If the document currently satisfies the filter and the new tags don't:
+        if not required_tags.issubset(new_tag_set):
+            raise FederationViolation(
+                f"Cannot remove required federation tag(s) "
+                f"{sorted(required_tags - new_tag_set)} from document {doc_id} "
+                f"while active grant {grant.id} exists. Revoke the grant first."
+            )
 
 
 class DocumentService(CommonService):

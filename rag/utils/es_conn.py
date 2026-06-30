@@ -149,7 +149,8 @@ class ESConnection(ESConnectionBase):
             index_names: str | list[str],
             knowledgebase_ids: list[str],
             agg_fields: list[str] | None = None,
-            rank_feature: dict | None = None
+            rank_feature: dict | None = None,
+            extra_filters: dict | None = None,
     ):
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
@@ -158,6 +159,8 @@ class ESConnection(ESConnectionBase):
             index_names = index_names.split(",")
         assert isinstance(index_names, list) and len(index_names) > 0
         assert "_id" not in condition
+        if extra_filters:
+            condition = {**condition, **extra_filters}
 
         bool_query = Q("bool", must=[])
         condition["kb_id"] = knowledgebase_ids

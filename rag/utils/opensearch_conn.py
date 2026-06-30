@@ -326,7 +326,8 @@ class OSConnection(DocStoreConnection):
             index_names: str | list[str],
             knowledgebase_ids: list[str],
             agg_fields: list[str] = [],
-            rank_feature: dict | None = None
+            rank_feature: dict | None = None,
+            extra_filters: dict | None = None,
     ):
         """
         Refers to https://github.com/opensearch-project/opensearch-py/blob/main/guides/dsl.md
@@ -337,6 +338,8 @@ class OSConnection(DocStoreConnection):
             index_names = index_names.split(",")
         assert isinstance(index_names, list) and len(index_names) > 0
         assert "_id" not in condition
+        if extra_filters:
+            condition = {**condition, **extra_filters}
 
         bqry = Q("bool", must=[])
         condition["kb_id"] = knowledgebase_ids

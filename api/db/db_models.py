@@ -894,6 +894,8 @@ class Knowledgebase(DataBaseModel):
     mindmap_task_finish_at = DateTimeField(null=True)
 
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+    federation_enabled = BooleanField(default=False, help_text="whether this KB is open for cross-tenant federation")
+    published_doc_tags = ListField(null=True, help_text="document tags eligible for cross-tenant retrieval; empty = none")
 
     def __str__(self):
         return self.name
@@ -1455,6 +1457,53 @@ class TenantModelGroupMapping(DataBaseModel):
     class Meta:
         db_table = "tenant_model_group_mapping"
         primary_key = CompositeKey("group_id", "provider_id", "instance_id", "model_id")
+
+
+class FederationGrant(DataBaseModel):
+    """Records a grant by a KB owner allowing a grantee tenant to query a specific KB.
+
+    ``policy_json`` is a list of ``{field, op, value}`` filter triples that are
+    applied on top of the normal search filters.  Only fields in the server-side
+    allowlist are honoured — see ``FederationService.POLICY_FIELD_ALLOWLIST``.
+    """
+    id = CharField(max_length=32, primary_key=True)
+    owner_tenant_id = CharField(max_length=32, null=False, index=True,
+                                help_text="tenant that owns the KB")
+    grantee_tenant_id = CharField(max_length=32, null=False, index=True,
+                                  help_text="tenant that is granted read access")
+    kb_id = CharField(max_length=32, null=False, index=True,
+                      help_text="KB being shared")
+    policy_json = ListField(null=False, help_text="list of {field,op,value} filter triples")
+    status = CharField(max_length=16, null=False, default="active", index=True,
+                       help_text="active|suspended|revoked")
+    valid_from = BigIntegerField(null=True, help_text="unix-ms; null = immediately")
+    valid_until = BigIntegerField(null=True, help_text="unix-ms; null = no expiry")
+    created_by = CharField(max_length=32, null=False, index=True)
+
+    class Meta:
+        db_table = "federation_grant"
+
+
+class FederationAuditLog(DataBaseModel):
+    """Tamper-evident log of every cross-tenant retrieval event.
+
+    Query text is stored only as a SHA-256 hex digest to preserve grantee
+    privacy while enabling the KB owner to detect repeated-query patterns.
+    """
+    id = CharField(max_length=32, primary_key=True)
+    grant_id = CharField(max_length=32, null=False, index=True,
+                         help_text="FK → federation_grant.id")
+    querying_tenant_id = CharField(max_length=32, null=False, index=True)
+    querying_user_id = CharField(max_length=32, null=True, index=True)
+    query_text_hash = CharField(max_length=64, null=False,
+                                help_text="SHA-256 hex digest of the query text")
+    chunk_ids_returned = ListField(null=False, help_text="chunk ids that were surfaced")
+    retrieved_at = BigIntegerField(null=False, index=True,
+                                   help_text="unix-ms timestamp of retrieval")
+    search_latency_ms = IntegerField(null=True)
+
+    class Meta:
+        db_table = "federation_audit_log"
 
 
 def alter_db_add_column(migrator, table_name, column_name, column_type):

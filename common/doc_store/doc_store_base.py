@@ -200,7 +200,8 @@ class DocStoreConnection(ABC):
             index_names: str|list[str],
             dataset_ids: list[str],
             agg_fields: list[str] | None = None,
-            rank_feature: dict | None = None
+            rank_feature: dict | None = None,
+            extra_filters: dict | None = None,
     ):
         """
         Search with given conjunctive equivalent filtering condition and return all fields of matched documents
