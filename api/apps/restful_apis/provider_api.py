@@ -489,7 +489,7 @@ def show_provider_instance(tenant_id: str = None, provider_id_or_name: str = Non
         name: instance_id_or_name
         type: string
         required: true
-        description: Instance IDs or name.
+        description: Instance ID or name.
       - in: header
         name: Authorization
         type: string
@@ -547,7 +547,7 @@ async def drop_provider_instances(tenant_id: str = None, provider_id_or_name: st
               type: array
               items:
                 type: string
-              description: List of instance ID or names to drop.
+              description: List of instance IDs or names to drop.
     responses:
       200:
         description: Instances dropped successfully.
@@ -755,7 +755,9 @@ async def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instan
     extra = data.get("extra", {})
 
     try:
-        success, result = provider_api_service.add_model_to_instance(tenant_id, provider_id_or_name, instance_id_or_name, model_name, model_type, max_tokens, extra)
+        success, result = provider_api_service.add_model_to_instance(
+            tenant_id, provider_id_or_name, instance_id_or_name, model_name, model_type, max_tokens, extra
+        )
         if success:
             return get_result(message=result)
         else:
