@@ -326,6 +326,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Metadata Config
 				datasets.GET("/:dataset_id/metadata/config", r.datasetsHandler.GetMetadataConfig)
 				datasets.PUT("/:dataset_id/metadata/config", r.datasetsHandler.UpdateMetadataConfig)
+				datasets.GET("/:dataset_id/metadata/summary", r.documentHandler.MetadataSummaryByDataset)
 
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
