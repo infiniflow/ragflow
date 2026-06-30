@@ -200,9 +200,11 @@ static std::vector<uint64_t> extract_features(const std::string& t, int n_embed)
     ids.push_back(feat_prefix(t));   // #1: PREFIX
     ids.push_back(feat_suffix(t));   // #2: SUFFIX
     ids.push_back(feat_shape(t));    // #3: SHAPE
-    if(n_embed>=5) {
-        ids.push_back(1);            // #4: SPACY (1 for non-space)
-        ids.push_back(0);            // #5: IS_SPACE (0 for non-space)
+    if(n_embed==5) {
+        ids.push_back(0);            // #4: IS_SPACE (zh/ja: 5-embed models, no SPACY)
+    } else if(n_embed>=6) {
+        ids.push_back(1);            // #4: SPACY (en/de/fr/es/pt: 6-embed models)
+        ids.push_back(0);            // #5: IS_SPACE
     }
     return ids;
 }
@@ -370,6 +372,8 @@ static bool load(const std::string& dir, State* s) {
     // NER hidden
     if(ld("hW",&s->hW,&r0,&r1)){s->hO=r0;ld("hB",&s->hB);s->has_hid=true;}
     // PrecomputableAffine: load full 4D W and 2D b
+    // has_pre is only set when ALL of weight buffer, bias buffer,
+    // and hidden-dimension match (p_nD == hO) are satisfied.
     {
         auto* e=ck.get("pW_full"); if(e){
             auto sv=e->get("shape"),ov=e->get("offset"),cv=e->get("count");
@@ -381,13 +385,20 @@ static bool load(const std::string& dir, State* s) {
                 s->p_nP=nP; s->p_nO=nO; s->p_nI=nI; s->p_nD=nD;
                 size_t total = (size_t)nP * nO * nI * nD;
                 s->pW_full = sl(ov->as_i64(), cv->as_i64());
-                s->has_pre = s->pW_full.size() >= total;
-            }
-        }
-        if(auto* pb_e=ck.get("pB_full")){
-            auto pb_ov=pb_e->get("offset"),pb_cv=pb_e->get("count");
-            if(pb_ov&&pb_cv){
-                s->pB_full = sl(pb_ov->as_i64(), pb_cv->as_i64());
+                bool pw_ok = s->pW_full.size() >= total;
+
+                // Load bias inside pW_full block to access dimension info
+                bool pb_ok = false;
+                if(auto* pb_e=ck.get("pB_full")){
+                    auto pb_ov=pb_e->get("offset"),pb_cv=pb_e->get("count");
+                    if(pb_ov&&pb_cv){
+                        s->pB_full = sl(pb_ov->as_i64(), pb_cv->as_i64());
+                        pb_ok = s->pB_full.size() >= (size_t)nO * nI;
+                    }
+                }
+
+                bool dim_ok = (nD == s->hO);
+                s->has_pre = pw_ok && pb_ok && dim_ok;
             }
         }
     }
@@ -426,14 +437,18 @@ char* ThincNER_Predict(ThincNERHandle h, const char* tj) {
     std::vector<std::string> tok; std::string j(tj); size_t p=0;
     while((p=j.find('"',p))!=std::string::npos){auto e=j.find('"',p+1);if(e==std::string::npos)break;std::string t=j.substr(p+1,e-p-1);if(!t.empty())tok.push_back(t);p=e+1;}
     int n=(int)tok.size(); if(!n)return strdup("[]");
-    int NE=(int)s->embeds.size(), D=96, EC=NE*D;
+    int NE=(int)s->embeds.size();
+    // Derive per-embed dimension from loaded tensors (all embed tables share the same nO)
+    int D = NE > 0 ? s->embeds[0].nO : 96;
+    int EC = NE * D;
 
     // ---- Step 1: HashEmbed → concat (NER model: 4×96=384, pipe: 6×96=576) ----
     std::vector<float> emb((size_t)n*EC,0);
     for(int i=0;i<n;i++){
         auto ids=extract_features(tok[i],NE);
         size_t b=(size_t)i*EC;
-        for(int e=0;e<NE&&e<(int)s->embeds.size();e++)s->embeds[e].embed(ids[e],emb.data()+b+(size_t)e*D);
+        for(int e=0;e<NE&&e<(int)s->embeds.size();e++)
+            s->embeds[e].embed(ids[e], emb.data()+b + (size_t)e*s->embeds[e].nO);
     }
 
 
