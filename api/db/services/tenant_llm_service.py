@@ -556,12 +556,20 @@ class LLM4Tenant:
         Langfuse already exports spans from its own background processor and
         flushes at process exit, so releasing the reference is sufficient here.
         """
-        # Drop the Langfuse reference WITHOUT flushing/shutting down the shared
-        # client (see the docstring above for why this would deadlock).
-        self.langfuse = None
+        # Flush and shutdown Langfuse client if it was initialized
+        if self.langfuse:
+            try:
+                self.langfuse.flush()
+                if hasattr(self.langfuse, "shutdown"):
+                    self.langfuse.shutdown()
+            except Exception:
+                # Ignore errors during cleanup
+                pass
+            finally:
+                self.langfuse = None
 
         # Release underlying model instance if it has a close method
-        if self.mdl and callable(getattr(self.mdl, "close", None)):
+        if self.mdl and hasattr(self.mdl, "close") and callable(getattr(self.mdl, "close")):
             try:
                 self.mdl.close()
             except Exception:

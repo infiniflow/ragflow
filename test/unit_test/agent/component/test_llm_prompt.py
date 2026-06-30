@@ -46,9 +46,7 @@ def test_validate_fitted_messages_requires_trailing_user():
 
 @pytest.mark.p1
 def test_validate_fitted_messages_rejects_empty_user():
-    err = LLM.validate_fitted_messages(
-        [{"role": "system", "content": "system"}, {"role": "user", "content": ""}]
-    )
+    err = LLM.validate_fitted_messages([{"role": "system", "content": "system"}, {"role": "user", "content": ""}])
     assert err and "empty" in err.lower()
 
 

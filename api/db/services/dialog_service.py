@@ -57,6 +57,7 @@ from common import settings
 from rag.utils import gaussdb_text_to_sql
 
 
+
 def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
     if len(kb_ids or []) == 1:
         return kb_ids[0]

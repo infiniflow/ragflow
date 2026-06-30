@@ -49,19 +49,7 @@ def _factory_model_types(llm: dict) -> list[str]:
     return [model_type] if model_type else []
 
 
-def _lookup_factory_llm_info(provider_name: str, pure_model_name: str, extra_fields: dict) -> dict | None:
-    region = extra_fields.get("region", "default")
-    if region == "intl" and provider_name.lower() == "siliconflow":
-        target_factory_name = "siliconflow_intl"
-    else:
-        target_factory_name = provider_name
-    fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == target_factory_name]
-    if not fac_list:
-        return None
-    llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
-    return llm_list[0] if llm_list else None
-
-
+>>>>>>> 498564f35 (chore: sync modal with main and ruff-format PR files)
 def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | None]:
     if not raw_api_key:
         return raw_api_key, None, None
@@ -173,11 +161,9 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str | enum.Enum
         case LLMType.EMBEDDING.value:
             model_id = tenant.tenant_embd_id
             model_name = tenant.embd_id
-        case LLMType.ASR.value:
-            model_id = tenant.tenant_asr_id
+        case LLMType.SPEECH2TEXT.value:
             model_name = tenant.asr_id
-        case LLMType.VISION.value:
-            model_id = tenant.tenant_img2txt_id
+        case LLMType.IMAGE2TEXT.value:
             model_name = tenant.img2txt_id
         case LLMType.CHAT.value:
             model_id = tenant.tenant_llm_id
@@ -250,13 +236,6 @@ def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: st
         return active_instances[0]
 
     raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
-
-
-def resolve_model_config(tenant_id, model_type: str | enum.Enum, model_ref: str):
-    try:
-        return get_model_config_by_id(tenant_id, model_type, model_ref)
-    except LookupError:
-        return get_model_config_from_provider_instance(tenant_id, model_type, model_ref)
 
 
 def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.Enum, model_name: str):
@@ -415,6 +394,27 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
     if not model_obj:
         raise LookupError(f"Model {model_name} not found.")
     return get_model_type_human(model_obj.model_type)
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
+    model_objs = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
+    types_in_json = []
+    if not model_objs:
+        extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
+        region = extra_fields.get("region", "default")
+        if region == "intl" and provider_name.lower() == "siliconflow":
+            target_factory_name = "siliconflow_intl"
+        else:
+            target_factory_name = provider_name
+        fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == target_factory_name]
+        if not fac_list:
+            raise LookupError(f"Model provider config not found: {provider_name}")
+        llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
+        if not llm_list:
+            raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
+        types_in_json = _factory_model_types(llm_list[0])
+    return list(
+        set(types_in_json + [model_obj.model_type for model_obj in model_objs if model_obj.status != ActiveStatusEnum.UNSUPPORTED.value])
+        - {model_obj.model_type for model_obj in model_objs if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value}
+    )
 
 
 def delete_models_by_instance_ids(instance_ids: list[str]):
