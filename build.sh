@@ -402,11 +402,13 @@ setup_cgo_env() {
     # ── pdfium ────────────────────────────────────────────────────────
     check_pdfium_deps || return 1
     export CGO_LDFLAGS="$CGO_LDFLAGS ${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
-    # Linux: Chromium ships its own libc++ (std::__Cr::* inline namespace — no conflict)
+    # Linux: Chromium-built objects use Clang's .eh_frame format which GNU ld
+    # cannot merge. Use lld (LLVM linker) which handles them correctly.
     if [ "$(uname -s)" = "Linux" ]; then
         export CGO_LDFLAGS="$CGO_LDFLAGS \
             ${PDFIUM_STATIC_PREFIX}/lib/libc++.a \
-            ${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a"
+            ${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a \
+            -fuse-ld=lld"
     fi
 
     # ── pdf_oxide ─────────────────────────────────────────────────────

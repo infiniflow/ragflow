@@ -40,6 +40,7 @@ docker compose -f docker/docker-compose-base.yml up -d
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
 >     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
+>     -fuse-ld=lld \
 >     -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 > ```
 >
