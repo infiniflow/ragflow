@@ -20,8 +20,6 @@ import re
 
 from markdown import markdown
 
-logger = logging.getLogger(__name__)
-
 
 class RAGFlowMarkdownParser:
     def __init__(self, chunk_token_num=128):
@@ -298,45 +296,6 @@ class MarkdownElementExtractor:
         self._append_delimited_section(sections, text, last_end, len(text), include_meta)
         return sections
 
-    def _atomic_region_ranges(self, text: str):
-        """Return [(start, end), ...] half-open char offsets of regions that
-        must not be split by a sentence-level delimiter — currently fenced
-        code blocks (``` or ~~~, any fence length >= 3) — so the
-        delimiter-driven path in extract_elements can skip over them.
-
-        Honours CommonMark §4.5: the closing fence must use the same
-        fence character and have length >= the opening fence length, so
-        an outer ```` fence is not closed by an inner ``` line.
-        Closes part of #15482.
-        """
-        ranges: list[tuple[int, int]] = []
-        fence_re = re.compile(r"(?m)^[ \t]{0,3}(?P<fence>`{3,}|~{3,})")
-        pos = 0
-        while pos < len(text):
-            m = fence_re.search(text, pos)
-            if not m:
-                break
-            open_fence = m.group("fence")
-            open_char = open_fence[0]
-            open_len = len(open_fence)
-            close_re = re.compile(
-                rf"(?m)^[ \t]{{0,3}}{re.escape(open_char)}{{{open_len},}}[ \t]*$"
-            )
-            close = close_re.search(text, m.end())
-            if close:
-                end = close.end()
-            else:
-                # Unterminated fence: treat the rest of the document as
-                # atomic so a stray ``` doesn't poison the delimiter pass.
-                logger.debug(
-                    "Unterminated fenced code block at offset %d; marking remainder as atomic.",
-                    m.start(),
-                )
-                end = len(text)
-            ranges.append((m.start(), end))
-            pos = end
-        return ranges
-
     def extract_elements(self, delimiter=None, include_meta=False):
         """Extract individual elements (headers, code blocks, lists, etc.)"""
         sections = []
@@ -467,7 +426,6 @@ class MarkdownElementExtractor:
     def _extract_code_block(self, start_pos):
         end_pos = start_pos
         content_lines = [self.lines[start_pos]]
-        fence_char, fence_len = self._get_fence_marker(self.lines[start_pos])
 
         # CommonMark §4.5: the closing fence must use the same fence
         # character (` or ~) AND be at least as long as the opening
