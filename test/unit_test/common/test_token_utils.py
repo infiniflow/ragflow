@@ -14,6 +14,10 @@
 #  limitations under the License.
 #
 
+import hashlib
+import os
+
+from common.file_utils import get_project_base_directory
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, truncate, encoder
 import pytest
 
@@ -110,6 +114,12 @@ def test_consistency():
 
     assert first_result == second_result
     assert first_result > 0
+
+
+def test_bundled_cl100k_cache_file_exists():
+    encoding_url = "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
+    cache_path = get_project_base_directory(hashlib.sha1(encoding_url.encode()).hexdigest())
+    assert os.path.exists(cache_path)
 
 
 class TestTotalTokenCountFromResponse:

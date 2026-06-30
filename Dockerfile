@@ -35,8 +35,11 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt update && \
     apt --no-install-recommends install -y ca-certificates; \
     if [ "$NEED_MIRROR" == "1" ]; then \
-        sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
-        sed -i 's|http://security.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
+        # CI runners may inject a proxy whose TLS certificate is not trusted inside
+        # the fresh Ubuntu base image yet. Keep the Ubuntu mirror on HTTP here so
+        # the mirror switch remains usable before the full CA store is available.
+        sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
+        sed -i 's|http://security.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
     fi; \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
@@ -96,6 +99,49 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 
+# stagehand-server-v3 (Node.js SEA binary used by Browser component
+# in local mode).
+#
+# The `v3.21.0` value below is the `stagehand-go/v3` Go module
+# version pinned in `go.mod`. It is used here only to compute the
+# `go_<ver>/` subdirectory that `local.go:cacheDir()` will look in
+# for the binary at runtime — that subdirectory name is keyed by
+# the Go module's own `internal.PackageVersion`, NOT by the server
+# binary's release tag.
+#
+# The server binary itself is fetched separately by `download_deps.py`
+# from the browserbase/stagehand GitHub releases. The two are
+# LOOSELY MATCHED — both stay on the v3.x line and remain protocol-
+# compatible, but the version numbers do NOT track each other (Go
+# SDK is at v3.21.0, server binary is at v3.7.2 today). On every
+# go.mod bump, refresh the server binary pin in `download_deps.py`
+# to the current latest server release; no version correspondence
+# is required to maintain.
+#
+# Drift on the Go SDK pin (this ARG vs go.mod) forces a fresh
+# GitHub download at process boot — a hard failure in air-gapped
+# deployments. CI cross-checks the two values.
+#
+# The binary is pre-fetched by `download_deps.py` and shipped via
+# the ragflow_deps image, then written directly to the stagehand-go
+# cache path that `local.go:cacheDir()` constructs at runtime —
+# `/root/.cache/stagehand/lib/go_<ver>/stagehand-server-v3-<arch>`.
+ARG STAGEHAND_GO_VERSION=v3.21.0
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
+    set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64) stagehand_arch=x64 ;; \
+        aarch64|arm64) stagehand_arch=arm64 ;; \
+        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac; \
+    stagehand_version="${STAGEHAND_GO_VERSION#v}"; \
+    stagehand_cache_dir="/root/.cache/stagehand/lib/go_${stagehand_version}"; \
+    mkdir -p "${stagehand_cache_dir}"; \
+    cp "/deps/stagehand-server-v3-linux-${stagehand_arch}" \
+       "${stagehand_cache_dir}/stagehand-server-v3-linux-${stagehand_arch}"; \
+    chmod +x "${stagehand_cache_dir}/stagehand-server-v3-linux-${stagehand_arch}"
+
 # Add msssql ODBC driver
 # macOS ARM64 environment, install msodbcsql18.
 # general x86_64 environment, install msodbcsql17.
@@ -152,14 +198,28 @@ COPY pyproject.toml uv.lock ./
 
 # https://github.com/astral-sh/uv/issues/10462
 # uv records index url into uv.lock but doesn't failover among multiple indexes
+# Also rewrite pypi.tuna.tsinghua.edu.cn to mirrors.aliyun.com/pypi so locks
+# that were resolved against the Tsinghua mirror (e.g. when UV_INDEX pointed
+# there) get normalized to the Aliyun mirror in NEED_MIRROR=1 builds. Without
+# this, stale Tsinghua URLs slip through and `uv sync --frozen` 404s on
+# packages that the Tsinghua mirror no longer carries.
 RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
         sed -i 's|pypi.org|mirrors.aliyun.com/pypi|g' uv.lock; \
+        sed -i 's|pypi.tuna.tsinghua.edu.cn|mirrors.aliyun.com/pypi|g' uv.lock; \
     else \
         sed -i 's|mirrors.aliyun.com/pypi|pypi.org|g' uv.lock; \
+        sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
         sed -i 's|gitee.com|github.com|g' uv.lock; \
     fi; \
-    uv sync --python 3.13 --frozen && \
+    # --refresh-package litellm forces a re-download of litellm from the
+    # (post-sed) URLs in uv.lock even if BuildKit's persistent uv cache mount
+    # holds a stale wheel from a previous build. litellm 1.88.x has had
+    # multiple internal ImportError issues (1.88.1 missing
+    # DEFAULT_HEALTH_CHECK_STALENESS_MULTIPLIER, 1.88.0 wheel pulled via
+    # some proxies missing RedisPipelineLpopOperation) — always re-fetching
+    # the locked version avoids serving a half-broken cached copy.
+    uv sync --python 3.13 --frozen --refresh-package litellm && \
     # Ensure pip is available in the venv for runtime package installation (fixes #12651)
     .venv/bin/python3 -m ensurepip --upgrade
 

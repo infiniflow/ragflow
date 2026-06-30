@@ -13,6 +13,7 @@ import {
   IAddProviderInstanceRequestBody,
   IAddProviderRequestBody,
   IDeleteProviderInstanceRequestBody,
+  IEditInstanceModelRequestBody,
   IListAllModelsRequestParams,
   IListProviderModelsRequestBody,
   IListProvidersRequestParams,
@@ -37,6 +38,7 @@ export const enum LLMApiAction {
   VerifyProviderConnection = 'verifyProviderConnection',
   ListProviderModels = 'listProviderModels',
   AddInstanceModel = 'addInstanceModel',
+  EditInstanceModel = 'editInstanceModel',
   DeleteProviderInstance = 'deleteProviderInstance',
   ListDefaultModels = 'listDefaultModels',
   SetDefaultModel = 'setDefaultModel',
@@ -352,6 +354,44 @@ export const useAddInstanceModel = () => {
   });
 
   return { data, loading, addInstanceModel: mutateAsync };
+};
+
+export const useEditInstanceModel = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [LLMApiAction.EditInstanceModel],
+    mutationFn: async (
+      params: {
+        provider_name: string;
+        instance_name: string;
+      } & IEditInstanceModelRequestBody,
+    ) => {
+      const { data } = await llmService.editInstanceModel(params);
+      if (data.code === 0) {
+        message.success(t('message.modified'));
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.instanceModels(
+            params.provider_name,
+            params.instance_name,
+          ),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.defaultModels(),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, editInstanceModel: mutateAsync };
 };
 
 export const useDeleteProviderInstance = () => {

@@ -87,55 +87,53 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 	case TokenPing:
 		return p.parseAdminPingServer()
 	case TokenList:
-		return p.parseAdminListCommand()
+		return p.parseAdminListCommands()
 	case TokenShow:
-		return p.parseAdminShowCommand()
+		return p.parseAdminShowCommands()
+	case TokenCheck:
+		return p.parseAdminCheck()
 	case TokenCreate:
 		return p.parseAdminCreateCommand()
 	case TokenDrop:
-		return p.parseAdminDropCommand()
+		return p.parseAdminDropCommands()
 	case TokenAlter:
-		return p.parseAdminAlterCommand()
+		return p.parseAdminAlterCommands()
 	case TokenGrant:
-		return p.parseAdminGrantCommand()
+		return p.parseAdminGrantCommands()
 	case TokenRevoke:
-		return p.parseAdminRevokeCommand()
+		return p.parseAdminRevokeCommands()
 	case TokenSet:
 		return p.parseAdminSetCommand()
-	case TokenUnset:
-		return p.parseAdminUnsetCommand()
 	case TokenReset:
 		return p.parseAdminResetCommand()
-	case TokenGenerate:
-		return p.parseAdminGenerateCommand()
-	case TokenImport:
-		return p.parseAdminImportCommand()
-	case TokenRetrieve:
-		return p.parseAdminRetrieveCommand()
-	case TokenParse:
-		return p.parseAdminParseCommand()
 	case TokenBenchmark:
 		return p.parseAdminBenchmarkCommand()
-	case TokenRegister:
-		return p.parseAdminRegisterCommand()
-	case TokenStartup:
-		return p.parseAdminStartupCommand()
-	case TokenShutdown:
-		return p.parseAdminShutdownCommand()
-	case TokenRestart:
-		return p.parseAdminRestartCommand()
 	case TokenStart:
-		return p.parseStartIngestion()
+		return p.parseAdminStartService()
+	case TokenShutdown:
+		return p.parseAdminShutdownCommands()
+	case TokenRestart:
+		return p.parseAdminRestart()
+	case TokenMQ:
+		return p.parseMessageQueueCommand()
+	case TokenRemove:
+		return p.parseAdminRemoveCommands()
 	case TokenStop:
-		return p.parseStopIngestion()
+		return p.parseAdminStopIngestionTasks()
 	case TokenAdd:
 		return p.parseAdminAddCommand()
 	case TokenDelete:
-		return p.parseAdminDeleteCommand()
+		return p.parseAdminDeleteCommands()
+	case TokenEnable:
+		return p.parseAdminEnableCommand()
+	case TokenDisable:
+		return p.parseAdminDisableCommand()
 	case TokenSave:
 		return p.parseAdminSaveCommand()
 	case TokenUse:
 		return p.parseAdminUseCommand()
+	case TokenPurge:
+		return p.parseAdminPurgeCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -145,95 +143,87 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenLogin:
-		return p.parseLoginUser()
+		return p.parseAPILoginUser()
 	case TokenLogout:
-		return p.parseLogout()
+		return p.parseAPILogout()
 	case TokenPing:
-		return p.parsePingServer()
+		return p.parseAPIPingServer()
+	case TokenRegister:
+		return p.parseAPIRegister()
 	case TokenList:
-		return p.parseListCommand()
+		return p.parseAPIListCommands()
 	case TokenShow:
-		return p.parseShowCommand()
+		return p.parseAPIShowCommands()
 	case TokenCreate:
-		return p.parseCreateCommand()
+		return p.parseAPICreateCommands()
 	case TokenDrop:
-		return p.parseDropCommand()
+		return p.parseAPIDropCommands()
 	case TokenAdd:
-		return p.parseAddCommand()
+		return p.parseAPIAddCommands()
 	case TokenDelete:
-		return p.parseDeleteCommand()
+		return p.parseAPIDeleteCommands()
 	case TokenAlter:
-		return p.parseAlterCommand()
-	case TokenGrant:
-		return p.parseGrantCommand()
-	case TokenRevoke:
-		return p.parseRevokeCommand()
+		return p.parseAPIAlterCommands()
 	case TokenSet:
-		return p.parseSetCommand()
-	case TokenUnset:
-		return p.parseUnsetCommand()
+		return p.parseAPISetCommands()
 	case TokenReset:
-		return p.parseResetCommand()
-	case TokenGenerate:
-		return p.parseGenerateCommand()
+		return p.parseAPIResetCommands()
 	case TokenImport:
-		return p.parseImportCommand()
+		return p.parseAPIImport()
 	case TokenInsert:
-		return p.parseInsertCommand()
+		// Use for development only
+		return p.parseDevInsertCommand()
 	case TokenRetrieve:
-		return p.parseRetrieveCommand()
+		return p.parseAPIRetrieve()
 	case TokenParse:
-		return p.parseParseCommand()
+		return p.parseParseCommands()
 	case TokenBenchmark:
 		return p.parseBenchmarkCommand()
-	case TokenRegister:
-		return p.parseRegisterCommand()
-	case TokenStartup:
-		return p.parseStartupCommand()
-	case TokenShutdown:
-		return p.parseShutdownCommand()
-	case TokenRestart:
-		return p.parseRestartCommand()
 	case TokenEnable:
-		return p.parseEnableCommand()
+		return p.parseAPIEnable()
 	case TokenDisable:
-		return p.parseDisableCommand()
-	case TokenStream:
-		return p.parseStreamCommand()
+		return p.parseAPIDisable()
 	case TokenChat:
-		return p.parseChatCommand()
+		return p.parseAPIChat()
+	case TokenStream:
+		return p.parseAPIStream()
 	case TokenThink:
-		return p.parseThinkCommand()
+		return p.parseAPIThink()
 	case TokenEmbed:
-		return p.parseEmbedCommand()
+		return p.parseAPIEmbed()
 	case TokenRerank:
-		return p.parseRerankCommand()
+		return p.parseAPIRerank()
 	case TokenASR:
-		return p.parseASRCommand()
+		return p.parseAPIASR()
 	case TokenTTS:
-		return p.parseTTSCommand()
+		return p.parseAPITTS()
 	case TokenOCR:
-		return p.parseOCRCommand()
+		return p.parseAPIOCR()
 	case TokenCheck:
-		return p.parseCheckCommand()
+		return p.parseAPICheck()
+	case TokenStart:
+		return p.parseUserStartIngestion()
+	case TokenStop:
+		return p.parseUserStopIngestion()
 	case TokenSave:
-		return p.parseUserSaveCommand()
+		return p.parseAPISave()
 	case TokenUse:
-		return p.parseUseCommand()
+		return p.parseAPIUseCommands()
 	case TokenUpdate:
-		return p.parseUpdateCommand()
+		return p.parseDevUpdateCommand()
 	case TokenRemove:
-		return p.parseRemoveCommand()
+		return p.parseAPIRemove()
 	case TokenGet:
-		return p.parseGetCommand()
+		return p.parseDevGetCommand()
 	case TokenExplain:
-		return p.parseExplainCommand()
+		return p.parseDevExplain()
 	case TokenChunk:
-		return p.parseChunkCommand(false)
-
+		return p.parseDevChunk(false)
+	case TokenOpenaiChat:
+		return p.parseOpenaiChat()
 	case TokenLS, TokenCat, TokenSearch:
 		// For context engine
-		return p.parseFileSystemCommand()
+		return p.parseFileSystemCommands()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -398,7 +388,7 @@ func tokenTypeToString(t int) string {
 	return fmt.Sprintf("token(%d)", t)
 }
 
-func (p *Parser) parseFileSystemCommand() (*Command, error) {
+func (p *Parser) parseFileSystemCommands() (*Command, error) {
 	p.nextToken() // consume COMMAND
 
 	cmd := NewCommand("file_system_command")

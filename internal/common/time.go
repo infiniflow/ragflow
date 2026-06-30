@@ -27,14 +27,17 @@ import (
 //   - ISO 8601 / RFC3339 (e.g., "2026-04-09T18:55:46+08:00")
 //
 // Args:
-//   dateString: Date string in supported format
+//
+//	dateString: Date string in supported format
 //
 // Returns:
-//   float64: Number of seconds between the given date and current time
+//
+//	float64: Number of seconds between the given date and current time
 //
 // Example:
-//   DeltaSeconds("2024-01-01 12:00:00")
-//   DeltaSeconds("2026-04-09T18:55:46+08:00")
+//
+//	DeltaSeconds("2024-01-01 12:00:00")
+//	DeltaSeconds("2026-04-09T18:55:46+08:00")
 func DeltaSeconds(dateString string) (float64, error) {
 	// Try RFC3339 format first (ISO 8601 with timezone, e.g., "2026-04-09T18:55:46+08:00")
 	dt, err := time.Parse(time.RFC3339, dateString)

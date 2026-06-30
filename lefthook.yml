@@ -1,0 +1,74 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: check-yaml
+      run: python3 tools/hooks/check_files.py yaml
+      stage_fixed: true
+    - name: check-json
+      run: python3 tools/hooks/check_files.py json
+      stage_fixed: true
+    - name: end-of-file-fixer
+      run: python3 tools/hooks/check_files.py eof --fix
+      stage_fixed: true
+    - name: trailing-whitespace
+      run: python3 tools/hooks/check_files.py trailing-whitespace --fix
+      stage_fixed: true
+    - name: check-case-conflict
+      run: python3 tools/hooks/check_files.py case-conflict
+      stage_fixed: true
+    - name: check-merge-conflict
+      run: python3 tools/hooks/check_files.py merge-conflict
+      stage_fixed: true
+    - name: mixed-line-ending
+      run: python3 tools/hooks/check_files.py mixed-line-ending --fix
+      stage_fixed: true
+    - name: check-symlinks
+      run: python3 tools/hooks/check_files.py symlinks
+      stage_fixed: true
+    - name: ruff
+      glob: "*.py"
+      run: ruff check --fix {staged_files}
+      stage_fixed: true
+    - name: ruff-format
+      glob: "*.py"
+      run: ruff format {staged_files}
+      stage_fixed: true
+    - name: gofmt
+      glob: "*.go"
+      run: gofmt -w {staged_files}
+      stage_fixed: true
+    - name: web-prettier
+      glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
+      run: |
+        # Ensure web/node_modules is populated. CI runners don't run `npm install`
+        # before lefthook, and `npx` without local node_modules fetches the
+        # latest packages from the registry — which breaks because the pinned
+        # prettier plugins (prettier-plugin-organize-imports,
+        # prettier-plugin-packagejson) aren't auto-resolved and ESLint 10
+        # requires eslint.config.js.
+        # Use a mkdir-based mutex to prevent parallel npm ci from multiple hooks
+        # racing (ETXTBSY error on esbuild). mkdir is atomic on both Linux and macOS.
+        LOCKDIR=/tmp/ragflow-web-npm-lock
+        while ! mkdir "$LOCKDIR" 2>/dev/null; do sleep 0.5; done
+        if [ ! -f web/node_modules/.package-lock.json ]; then
+          echo "==> web/node_modules missing or incomplete; running npm ci --prefix web"
+          rm -rf web/node_modules
+          npm ci --prefix web --no-audit --no-fund || { rm -rf "$LOCKDIR"; exit 1; }
+        fi
+        rm -rf "$LOCKDIR"
+        cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --write --ignore-unknown
+      stage_fixed: true
+    - name: web-eslint
+      glob: "web/**/*.{js,jsx,ts,tsx}"
+      run: |
+        # Same npm ci guard as web-prettier; mkdir mutex serialises concurrent installs.
+        LOCKDIR=/tmp/ragflow-web-npm-lock
+        while ! mkdir "$LOCKDIR" 2>/dev/null; do sleep 0.5; done
+        if [ ! -f web/node_modules/.package-lock.json ]; then
+          echo "==> web/node_modules missing or incomplete; running npm ci --prefix web"
+          rm -rf web/node_modules
+          npm ci --prefix web --no-audit --no-fund || { rm -rf "$LOCKDIR"; exit 1; }
+        fi
+        rm -rf "$LOCKDIR"
+        cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint --fix
+      stage_fixed: true

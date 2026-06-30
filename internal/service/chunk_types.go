@@ -21,9 +21,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/server"
 	"strings"
-
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -32,21 +32,30 @@ import (
 	"ragflow/internal/utility"
 )
 
+var (
+	UNSTART  = "0"
+	RUNNING  = "1"
+	CANCEL   = "2"
+	DONE     = "3"
+	FAIL     = "4"
+	SCHEDULE = "5"
+)
+
 // ChunkService chunk service
 type ChunkService struct {
 	docEngine      engine.DocEngine
 	engineType     server.EngineType
 	embeddingCache *utility.EmbeddingLRU
 	kbDAO          *dao.KnowledgebaseDAO
+	taskDAO        *dao.TaskDAO
 	userTenantDAO  *dao.UserTenantDAO
 	documentDAO    *dao.DocumentDAO
 	searchService  *SearchService
 }
 
-
 // RetrievalTestRequest retrieval test request
 type RetrievalTestRequest struct {
-	Datasets               common.StringSlice      `json:"dataset_ids" binding:"required"` // string or []string
+	Datasets               common.StringSlice     `json:"dataset_ids" binding:"required"` // string or []string
 	Question               string                 `json:"question"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
@@ -79,6 +88,34 @@ type GetChunkRequest struct {
 // GetChunkResponse response for getting a chunk
 type GetChunkResponse struct {
 	Chunk map[string]interface{} `json:"chunk"`
+}
+
+// ParseFileRequest is the request body for reparsing documents in a dataset.
+type ParseFileRequest struct {
+	DocumentIDs []string `json:"document_ids"`
+}
+
+// AddChunkRequest request for adding a chunk
+type AddChunkRequest struct {
+	DatasetID         string      `json:"dataset_id"`
+	DocumentID        string      `json:"document_id"`
+	Content           string      `json:"content"`
+	ImportantKeywords []string    `json:"important_keywords,omitempty"`
+	Questions         []string    `json:"questions,omitempty"`
+	TagKwd            []string    `json:"tag_kwd,omitempty"`
+	TagFeas           interface{} `json:"tag_feas,omitempty"`
+	ImageBase64       *string     `json:"image_base64,omitempty"`
+}
+
+// AddChunkResponse response for adding a chunk
+type AddChunkResponse struct {
+	Chunk map[string]interface{} `json:"chunk"`
+}
+
+// ErrorCoder exposes an application error code alongside an error string.
+type ErrorCoder interface {
+	error
+	Code() common.ErrorCode
 }
 
 // Get retrieves a chunk by ID
@@ -159,8 +196,134 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 	return &GetChunkResponse{Chunk: chunk}, nil
 }
 
+type StopParsingRequest struct {
+	DocumentIDs []string `json:"document_ids"`
+}
+
+type StopParsingResponse struct {
+	Data    map[string]interface{}
+	Message string
+}
+
+func (s *ChunkService) cancelAllTasksOfDoc(docID string) error {
+	tasks, err := s.taskDAO.GetByDocID(docID)
+	if err != nil {
+		return fmt.Errorf("failed to get tasks for document %s: %w", docID, err)
+	}
+
+	redisClient := redis.Get()
+	if redisClient == nil {
+		common.Logger.Warn(fmt.Sprintf("Redis unavailable; cannot cancel tasks for document %s", docID))
+		return nil
+	}
+
+	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
+		redisClient.Set(fmt.Sprintf("%s-cancel", task.ID), "x", 0)
+	}
+
+	return nil
+}
+
+func CheckDuplicateIDs(docList []string, idType string) ([]string, []string) {
+	uniqueDocIDs := make([]string, 0)
+	duplicateMessages := make([]string, 0)
+	idCount := make(map[string]int)
+
+	for _, docID := range docList {
+		idCount[docID] += 1
+	}
+
+	for id, count := range idCount {
+		if count > 1 {
+			duplicateMessages = append(duplicateMessages, fmt.Sprintf("Duplicate %s ids: %s", idType, id))
+		}
+		uniqueDocIDs = append(uniqueDocIDs, id)
+	}
+	return uniqueDocIDs, duplicateMessages
+}
+
+func IndexName(uid string) string {
+	return fmt.Sprintf("ragflow_%s", uid)
+}
+
+func (s *ChunkService) StopParsing(userID, datasetID string, req StopParsingRequest) (map[string]interface{}, common.ErrorCode, error) {
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("You don't own the dataset %s", datasetID)
+	}
+
+	if req.DocumentIDs == nil || len(req.DocumentIDs) == 0 {
+		return nil, common.CodeDataError, fmt.Errorf("document_ids is required")
+	}
+
+	docList, duplicateMessages := CheckDuplicateIDs(req.DocumentIDs, "document")
+
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
+	}
+
+	successCount := 0
+	for _, id := range docList {
+		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(id, datasetID)
+		if err != nil {
+			return nil, common.CodeDataError, fmt.Errorf("You don't own the document %s", id)
+		}
+		if doc == nil {
+			return nil, common.CodeDataError, fmt.Errorf("You don't own the document %s", id)
+		}
+
+		if doc.Run == nil || *doc.Run != RUNNING {
+			return nil, common.CodeDataError, fmt.Errorf("Can't stop parsing document that has not started or already completed")
+		}
+
+		err = s.cancelAllTasksOfDoc(id)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		info := map[string]interface{}{
+			"run":       "2",
+			"progress":  0,
+			"chunk_num": 0,
+		}
+		if err := s.documentDAO.UpdateByID(doc.ID, info); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to update document %s: %w", doc.ID, err)
+		}
+
+		indexName := IndexName(kb.TenantID)
+
+		exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, datasetID)
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to check chunk store %s/%s: %w", indexName, datasetID, err)
+		}
+		if exists {
+			if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
+				return nil, common.CodeServerError, fmt.Errorf("failed to delete chunks for document %s: %w", doc.ID, err)
+			}
+		} else {
+			common.Logger.Info(fmt.Sprintf("Skipping chunk delete during stop_parsing for doc %s: index %s/%s does not exist", doc.ID, indexName, datasetID))
+		}
+		successCount++
+	}
+	if len(duplicateMessages) > 0 {
+		if successCount > 0 {
+			return map[string]interface{}{
+				"success_count": successCount,
+				"errors":        duplicateMessages,
+				"message":       fmt.Sprintf("Partially stopped %d documents with %d errors", successCount, len(duplicateMessages)),
+			}, common.CodeSuccess, nil
+		}
+		return nil, common.CodeDataError, fmt.Errorf("%s", strings.Join(duplicateMessages, ";"))
+	}
+	return nil, common.CodeSuccess, nil
+}
+
 // ListChunksRequest request for listing chunks
 type ListChunksRequest struct {
+	DatasetID    string `json:"dataset_id,omitempty"`
 	DocID        string `json:"doc_id" binding:"required"`
 	Page         *int   `json:"page,omitempty"`
 	Size         *int   `json:"size,omitempty"`
@@ -200,6 +363,9 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(req.DocID)
 	if err != nil || doc == nil {
+		return nil, fmt.Errorf("document not found")
+	}
+	if req.DatasetID != "" && doc.KbID != req.DatasetID {
 		return nil, fmt.Errorf("document not found")
 	}
 

@@ -237,7 +237,7 @@ func (c *CLI) executeBenchmarkSilent(cmd *Command, iterations int) []*Response {
 			resp, err = httpClient.Request("GET", "/system/ping", "web", nil, nil)
 		case "list_user_datasets":
 			resp, err = httpClient.Request("POST", "/kb/list", "web", nil, nil)
-		case "list_datasets":
+		case "api_list_datasets":
 			userName, _ := cmd.Params["user_name"].(string)
 			resp, err = httpClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil)
 		case "search_on_datasets":
@@ -275,7 +275,7 @@ func isSuccess(resp *Response, commandType string) bool {
 	switch commandType {
 	case "ping":
 		return resp.StatusCode == 200 && string(resp.Body) == "pong"
-	case "list_user_datasets", "list_datasets", "search_on_datasets":
+	case "list_user_datasets", "api_list_datasets", "search_on_datasets":
 		// Check status code and JSON response code for dataset commands
 		if resp.StatusCode != 200 {
 			return false

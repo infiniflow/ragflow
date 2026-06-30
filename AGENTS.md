@@ -35,7 +35,7 @@ The project uses **uv** for dependency management.
 1. **Setup Environment**:
    ```bash
    uv sync --python 3.13 --all-extras
-   uv run python3 download_deps.py
+   uv run python3 ragflow_deps/download_deps.py
    ```
 
 2. **Run Server**:
@@ -102,9 +102,8 @@ docker compose -f docker-compose.yml up -d
   cd web
   npm run lint
   ```
-- **Pre-commit**: Ensure pre-commit hooks are installed.
+- **Git Hooks**: Run this once after the first clone to enable local Git hooks.
   ```bash
-  pre-commit install
-  pre-commit run --all-files
+  lefthook install
+  lefthook run pre-commit --all-files
   ```
-

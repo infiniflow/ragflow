@@ -87,6 +87,9 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 
 // ParseSSEStream reads the body of an OpenAI-compatible Server-Sent Events
 // response and calls onEvent for each successfully-parsed JSON payload.
+// A malformed JSON payload after "data:" returns an error wrapped as
+// "invalid SSE event" so the caller cannot silently swallow truncated or
+// corrupted streams.
 func ParseSSEStream[T any](r io.Reader, onEvent func(event T) error) (done bool, err error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -96,6 +99,39 @@ func ParseSSEStream[T any](r io.Reader, onEvent func(event T) error) (done bool,
 			continue
 		}
 		data := strings.TrimSpace(line[5:])
+		if data == "" {
+			continue
+		}
+		if data == "[DONE]" {
+			return true, nil
+		}
+		var event T
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			return false, fmt.Errorf("invalid SSE event: %w", err)
+		}
+		if err := onEvent(event); err != nil {
+			return false, err
+		}
+	}
+	return false, scanner.Err()
+}
+
+// ParseSSEStreamTolerant is like ParseSSEStream but silently skips
+// malformed JSON payloads. Use this only for drivers whose upstream is
+// known to interleave invalid frames the test suite documents as safe
+// to ignore.
+func ParseSSEStreamTolerant[T any](r io.Reader, onEvent func(event T) error) (done bool, err error) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(line[5:])
+		if data == "" {
+			continue
+		}
 		if data == "[DONE]" {
 			return true, nil
 		}
@@ -110,19 +146,23 @@ func ParseSSEStream[T any](r io.Reader, onEvent func(event T) error) (done bool,
 	return false, scanner.Err()
 }
 
-// ParseListModel Parse model list
+// ParseListModel Parse model list. Empty/whitespace IDs are skipped so
+// upstream typos do not surface as blank entries in the UI.
 func ParseListModel(modelList ModelList) []ListModelResponse {
 	var models []ListModelResponse
 	pm := GetProviderManager()
 	for _, model := range modelList.Models {
-		modelName := model.ID
+		modelName := strings.TrimSpace(model.ID)
+		if modelName == "" {
+			continue
+		}
 		var modelResponse ListModelResponse
 		var modelEntity *Model
 		if pm != nil {
 			modelEntity = pm.GetModelByNameOrAlias(modelName)
 		}
 		if model.OwnedBy != "" {
-			modelName = model.ID + "@" + model.OwnedBy
+			modelName = modelName + "@" + model.OwnedBy
 		}
 		modelResponse.Name = modelName
 		if modelEntity != nil {

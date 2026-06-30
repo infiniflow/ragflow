@@ -178,6 +178,32 @@ def split_model_name(model_name: str):
     return pure_model_name, instance_name, provider_name
 
 
+def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: str):
+    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
+    if instance_obj:
+        return instance_obj
+    if instance_name != "default":
+        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+
+    active_instances = [
+        inst for inst in TenantModelInstanceService.get_all_by_provider_id(provider_obj.id)
+        if inst.status == ActiveStatusEnum.ACTIVE.value
+    ]
+    if len(active_instances) == 1:
+        logger.warning(
+            "Model instance fallback applied for legacy default instance name",
+            extra={
+                "provider_name": provider_obj.provider_name,
+                "requested_instance_name": instance_name,
+                "resolved_instance_name": active_instances[0].instance_name,
+                "model_name": model_name,
+            },
+        )
+        return active_instances[0]
+
+    raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+
+
 def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum, model_name: str):
     pure_model_name, instance_name, provider_name = split_model_name(model_name)
     model_type_val = model_type if isinstance(model_type, str) else model_type.value
@@ -203,9 +229,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
-    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
-    if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, pure_model_name)
 
     api_key, is_tool, api_key_payload = _decode_api_key_config(instance_obj.api_key)
@@ -214,6 +238,8 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
     if model_obj:
         if model_obj.status == ActiveStatusEnum.INACTIVE.value:
             raise LookupError(f"Model {model_name} is disabled.")
+        if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value:
+            raise LookupError(f"Model {model_name} cannot be used as {model_type_val} model.")
 
         model_extra = json.loads(model_obj.extra) if model_obj.extra else {}
         model_config = {
@@ -240,7 +266,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
             raise LookupError(f"Model provider config not found: {provider_name}")
         llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
         if not llm_list:
-            raise LookupError(f"Model config not found: {model_name}")
+            raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
         llm_info = llm_list[0]
         if model_type_val not in _factory_model_types(llm_info):
             raise LookupError(f"Model {model_name} is not a {model_type_val} model.")
@@ -266,9 +292,7 @@ def get_api_key(tenant_id: str, model_name: str):
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found.")
-    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
-    if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found.")
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
     return instance_obj.api_key
 
 
@@ -277,10 +301,9 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
-    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
-    if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
     model_objs = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
+    types_in_json = []
     if not model_objs:
         extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
         region = extra_fields.get("region", "default")
@@ -294,8 +317,8 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
         llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
         if not llm_list:
             raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
-        return _factory_model_types(llm_list[0])
-    return [model_obj.model_type for model_obj in model_objs]
+        types_in_json = _factory_model_types(llm_list[0])
+    return list(set(types_in_json + [model_obj.model_type for model_obj in model_objs if model_obj.status != ActiveStatusEnum.UNSUPPORTED.value]) - {model_obj.model_type for model_obj in model_objs if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value})
 
 
 def delete_models_by_instance_ids(instance_ids: list[str]):
@@ -329,6 +352,7 @@ def get_models_by_tenant_and_provider_and_model_type(tenant_id: str, provider_na
     results = []
     for inst in instances:
         models = TenantModelService.get_by_provider_id_and_instance_id_and_model_type(provider_obj.id, inst.id, model_type)
-        if models:
-            results.extend(models)
+        supported = [model for model in models if model.status != ActiveStatusEnum.UNSUPPORTED.value]
+        if supported:
+            results.extend(supported)
     return results

@@ -559,6 +559,10 @@ func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig 
 	writer := multipart.NewWriter(&body)
 
 	// open audio file
+	// file path the caller passes in to upload. The user (or
+	// operator-supplied pipeline) explicitly chose this path, and the
+	// OS access check enforces permissions anyway.
+	// codeql[go/path-injection] False positive: *file is the audio
 	audioFile, err := os.Open(strings.TrimSpace(*file))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
@@ -880,8 +884,14 @@ func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	return ParseListModel(modelList), nil
+	if modelList.Models == nil {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+	models := ParseListModel(modelList)
+	if len(models) == 0 {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+	return models, nil
 }
 
 func (a *AI302Model) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

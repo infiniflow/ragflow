@@ -35,8 +35,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// searchbotLLM is the interface for LLM calls used by SearchBotHandler.
-type searchbotLLM interface {
+// chatLLM is the interface for LLM calls used by chat-style handlers.
+type chatLLM interface {
 	Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error)
 }
 
@@ -44,7 +44,6 @@ type searchbotLLM interface {
 type ChunkRetriever interface {
 	RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
 }
-
 
 // streamingLLM abstracts streaming chat for the Ask endpoint.
 // The returned channel delivers raw text deltas from the LLM.
@@ -55,17 +54,24 @@ type streamingLLM interface {
 
 // SearchBotAskRequest is the request body for POST /api/v1/searchbots/ask.
 type SearchBotAskRequest struct {
-	Question string              `json:"question" binding:"required"`
-	KbIDs    common.StringSlice  `json:"kb_ids" binding:"required"`
-	SearchID string              `json:"search_id,omitempty"`
+	Question string             `json:"question" binding:"required"`
+	KbIDs    common.StringSlice `json:"kb_ids" binding:"required"`
+	SearchID string             `json:"search_id,omitempty"`
 }
 
-// SearchBotRealLLM wraps ModelProviderService to implement searchbotLLM.
-type SearchBotRealLLM struct {
+// SearchBotMindMapRequest is the request body for POST /api/v1/searchbots/mindmap.
+type SearchBotMindMapRequest struct {
+	Question string             `json:"question" binding:"required"`
+	KbIDs    common.StringSlice `json:"kb_ids" binding:"required"`
+	SearchID string             `json:"search_id,omitempty"`
+}
+
+// ModelProviderLLM wraps ModelProviderService to implement chatLLM.
+type ModelProviderLLM struct {
 	Svc *service.ModelProviderService
 }
 
-func (r *SearchBotRealLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
+func (r *ModelProviderLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
 	chatModel, err := r.Svc.GetChatModel(tenantID, modelID)
 	if err != nil {
 		return nil, err
@@ -74,7 +80,7 @@ func (r *SearchBotRealLLM) Chat(tenantID, modelID string, messages []modelModule
 }
 
 // ChatStream implements streamingLLM.
-func (r *SearchBotRealLLM) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
+func (r *ModelProviderLLM) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
 	chatModel, err := r.Svc.GetChatModel(tenantID, modelID)
 	if err != nil {
 		return nil, err
@@ -111,26 +117,44 @@ func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel
 
 // SearchBotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval_test.
 type SearchBotRetrievalTestRequest struct {
-	KbIDs                  common.StringSlice      `json:"kb_ids" binding:"required"`
-	Question               string                  `json:"question" binding:"required"`
-	Page                   *int                    `json:"page,omitempty"`
-	Size                   *int                    `json:"size,omitempty"`
-	DocIDs                 []string                `json:"doc_ids,omitempty"`
-	UseKG                  *bool                   `json:"use_kg,omitempty"`
-	TopK                   *int                    `json:"top_k,omitempty"`
-	CrossLanguages         []string                `json:"cross_languages,omitempty"`
-	SearchID               *string                 `json:"search_id,omitempty"`
+	KbIDs                  common.StringSlice     `json:"kb_ids" binding:"required"`
+	Question               string                 `json:"question" binding:"required"`
+	Page                   *int                   `json:"page,omitempty"`
+	Size                   *int                   `json:"size,omitempty"`
+	DocIDs                 []string               `json:"doc_ids,omitempty"`
+	UseKG                  *bool                  `json:"use_kg,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"`
+	CrossLanguages         []string               `json:"cross_languages,omitempty"`
+	SearchID               *string                `json:"search_id,omitempty"`
 	MetaDataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
-	TenantRerankID         *string                 `json:"tenant_rerank_id,omitempty"`
-	RerankID               *string                 `json:"rerank_id,omitempty"`
-	Keyword                *bool                   `json:"keyword,omitempty"`
-	SimilarityThreshold    *float64                `json:"similarity_threshold,omitempty"`
-	VectorSimilarityWeight *float64                `json:"vector_similarity_weight,omitempty"`
+	TenantRerankID         *string                `json:"tenant_rerank_id,omitempty"`
+	RerankID               *string                `json:"rerank_id,omitempty"`
+	Keyword                *bool                  `json:"keyword,omitempty"`
+	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
+	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
 	// TODO: wire highlight to nlp Retrieval when engine supports highlightFields
 	// Python: bot_api.py → retrieval(highlight=req.get("highlight"))
 	//        → search.py highlightFields → ES get_highlight()
 	// Issue: https://github.com/infiniflow/ragflow/issues/15712
 	// Highlight           *bool                   `json:"highlight,omitempty"`
+}
+
+// UnmarshalJSON accepts both kb_id (Python API) and kb_ids (Go compatibility).
+func (r *SearchBotRetrievalTestRequest) UnmarshalJSON(data []byte) error {
+	type Alias SearchBotRetrievalTestRequest
+	aux := struct {
+		*Alias
+		KbID common.StringSlice `json:"kb_id"`
+	}{
+		Alias: (*Alias)(r),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(r.KbIDs) == 0 && len(aux.KbID) > 0 {
+		r.KbIDs = aux.KbID
+	}
+	return nil
 }
 
 // SearchBotRequest is the request body for POST /api/v1/searchbots/related_questions.
@@ -140,13 +164,15 @@ type SearchBotRequest struct {
 }
 
 // SearchBotHandler handles searchbot endpoints:
-//   POST /api/v1/searchbots/related_questions
-//   POST /api/v1/searchbots/retrieval_test
-//   POST /api/v1/searchbots/ask
+//
+//	POST /api/v1/searchbots/related_questions
+//	POST /api/v1/searchbots/retrieval_test
+//	POST /api/v1/searchbots/ask
+//	POST /api/v1/searchbots/mindmap
 type SearchBotHandler struct {
 	searchSvc *service.SearchService
 	tenantSvc *service.TenantService
-	llm       searchbotLLM
+	llm       chatLLM
 	streamLLM streamingLLM
 	chunkSvc  ChunkRetriever
 	askSvc    *service.AskService
@@ -154,7 +180,7 @@ type SearchBotHandler struct {
 }
 
 // NewSearchBotHandler creates a new SearchBotHandler.
-func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm searchbotLLM, chunkSvc ChunkRetriever) *SearchBotHandler {
+func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm chatLLM, chunkSvc ChunkRetriever) *SearchBotHandler {
 	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc, sseWriter: &ginSSEWriter{}}
 }
 
@@ -374,6 +400,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		return
 	}
 
+	disableWriteDeadlineForSSE(c)
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -403,6 +430,113 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 
 }
 
+// MindMap generates a query mind map for a shared search bot.
+// @Summary Generate Mind Map
+// @Description Retrieves related chunks and asks the configured chat model to summarize them into a mind map.
+// @Tags searchbots
+// @Accept json
+// @Produce json
+// @Param request body SearchBotMindMapRequest true "Mind map parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/searchbots/mindmap [post]
+func (h *SearchBotHandler) MindMap(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req SearchBotMindMapRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": err.Error()})
+		return
+	}
+
+	filtered := make(common.StringSlice, 0, len(req.KbIDs))
+	for _, id := range req.KbIDs {
+		if strings.TrimSpace(id) != "" {
+			filtered = append(filtered, id)
+		}
+	}
+	if len(filtered) == 0 || strings.TrimSpace(req.Question) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "kb_ids and question are required"})
+		return
+	}
+	if h.chunkSvc == nil {
+		jsonInternalError(c, fmt.Errorf("chunk service not configured"))
+		return
+	}
+	if h.llm == nil {
+		jsonInternalError(c, fmt.Errorf("LLM not configured"))
+		return
+	}
+
+	searchConfig := map[string]interface{}{}
+	if req.SearchID != "" {
+		if h.searchSvc == nil {
+			jsonInternalError(c, fmt.Errorf("search service not configured"))
+			return
+		}
+		detail, err := h.searchSvc.GetDetail(req.SearchID)
+		if err != nil {
+			jsonInternalError(c, err)
+			return
+		}
+		searchConfig = searchConfigFromDetail(detail)
+	}
+
+	mindMap, err := runMindMap(mindMapRunConfig{
+		Question:      req.Question,
+		KbIDs:         filtered,
+		SearchID:      req.SearchID,
+		SearchConfig:  searchConfig,
+		AuthUserID:    user.ID,
+		ModelTenantID: user.ID,
+		ChunkSvc:      h.chunkSvc,
+		LLM:           h.llm,
+		TenantSvc:     h.tenantSvc,
+	})
+	if err != nil {
+		common.Warn("searchbot mindmap failed", zap.String("error", err.Error()))
+		jsonInternalError(c, err)
+		return
+	}
+	jsonResponse(c, common.CodeSuccess, mindMap, "success")
+}
+
+// SearchbotDetail returns the public share-page bootstrap payload for a
+// search app. The route is mounted under apiNoAuth but still requires a beta
+// token, matching Python's AUTH_BETA flow.
+func (h *SearchBotHandler) SearchbotDetail(c *gin.Context) {
+	searchID := strings.TrimSpace(c.Query("search_id"))
+	if searchID == "" {
+		jsonError(c, common.CodeArgumentError, "search_id is required")
+		return
+	}
+
+	userSvc := service.NewUserService()
+	user, code, err := userSvc.GetUserByBetaAPIToken(c.GetHeader("Authorization"))
+	if err != nil {
+		jsonError(c, code, "Authentication error: API key is invalid!")
+		return
+	}
+
+	detail, err := h.searchSvc.GetSearchShareDetail(user.ID, searchID)
+	if err != nil {
+		switch err.Error() {
+		case "has no permission for this operation":
+			jsonError(c, common.CodeOperatingError, "Has no permission for this operation.")
+		case "can't find this Search App!":
+			jsonError(c, common.CodeDataError, "Can't find this Search App!")
+		default:
+			jsonInternalError(c, err)
+		}
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, detail, "success")
+}
+
 // ---- SSE helpers ----
 
 type ssePayload struct {
@@ -415,11 +549,11 @@ type ssePayload struct {
 // The Reference field is always present (non-nil) so the frontend can safely
 // access .chunks or .reduce without a null guard.
 type askSSEData struct {
-	Answer        string      `json:"answer"`
-	Reference     interface{} `json:"reference"`
-	Final         bool        `json:"final"`
-	StartToThink  bool        `json:"start_to_think,omitempty"`
-	EndToThink    bool        `json:"end_to_think,omitempty"`
+	Answer       string      `json:"answer"`
+	Reference    interface{} `json:"reference"`
+	Final        bool        `json:"final"`
+	StartToThink bool        `json:"start_to_think,omitempty"`
+	EndToThink   bool        `json:"end_to_think,omitempty"`
 }
 
 func sseAnswer(answer string, refs interface{}, final bool) string {
@@ -514,7 +648,7 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 // ptrFloat64 returns a pointer to a float64 value.
 func ptrFloat64(v float64) *float64 { return &v }
 
-func intPtr(v int) *int       { return &v }
+func intPtr(v int) *int           { return &v }
 func floatPtr(v float64) *float64 { return &v }
 
 // applyRetrievalDefaults fills in default values for optional fields,

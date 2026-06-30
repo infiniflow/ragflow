@@ -13,6 +13,7 @@ import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
 import {
   LucideBox,
+  LucideMessagesSquare,
   LucideLogOut,
   LucideServer,
   LucideUnplug,
@@ -28,6 +29,11 @@ const menuItems = (t: TFunction) => [
     icon: <LucideServer className="size-[1em]" />,
     label: t('setting.dataSources'),
     key: Routes.DataSource,
+  },
+  {
+    icon: <LucideMessagesSquare className="size-[1em]" />,
+    label: t('setting.chatChannels'),
+    key: Routes.ChatChannel,
   },
   {
     icon: <LucideBox className="size-[1em]" />,

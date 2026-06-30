@@ -133,6 +133,10 @@ set_target_properties(rag_tokenizer PROPERTIES
 add_library(rag_tokenizer_c_api STATIC
         rag_analyzer_c_api.cpp
         rag_analyzer_c_api.h
+        thinc_ner.cpp
+        thinc_ner.h
+        thinc_parser.cpp
+        thinc_parser.h
         rag_analyzer.cpp
         rag_analyzer.h
         dart_trie.h
@@ -164,7 +168,7 @@ add_executable(rag_analyzer_c_test
         rag_analyzer_c_test.cpp
 )
 
-target_link_libraries(rag_analyzer_c_test rag_tokenizer_c_api stdc++ libm.a ${PCRE2_LIB})
+target_link_libraries(rag_analyzer_c_test rag_tokenizer_c_api stdc++ m ${PCRE2_LIB})
 target_include_directories(rag_analyzer_c_test PUBLIC "${CMAKE_SOURCE_DIR}")
 set_target_properties(rag_analyzer_c_test PROPERTIES
         CXX_STANDARD 20

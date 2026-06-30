@@ -99,6 +99,31 @@ char* RAGAnalyzer_GetTermTag(RAGAnalyzerHandle handle, const char* term);
 // Returns: handle to the new analyzer instance, or NULL on failure
 RAGAnalyzerHandle RAGAnalyzer_Copy(RAGAnalyzerHandle handle);
 
+// ---------------------------------------------------------------------------
+// Named Entity Recognition (spaCy model inference)
+// ---------------------------------------------------------------------------
+
+// Create a ThincNER inference handle.
+// model_ner_dir:  path to the spaCy model's ner/ component directory
+// model_vocab_dir: path to the spaCy model's vocab/ directory (optional, can be NULL)
+// Returns: handle, or NULL on failure
+RAGAnalyzerHandle ThincNER_Create(const char* model_ner_dir, const char* model_vocab_dir);
+
+// Destroy a ThincNER handle.
+void ThincNER_Destroy(RAGAnalyzerHandle handle);
+
+// Run NER on pre-tokenized text.
+// tokens_json: JSON array e.g. ["Apple","Inc.","was","founded","by","Steve","Jobs","."]
+// Returns JSON array of entities, caller must free with ThincNER_FreeString.
+char* ThincNER_Predict(RAGAnalyzerHandle handle, const char* tokens_json);
+
+// Tokenize text using spaCy-compatible rules.
+// Returns JSON array of token strings, caller must free with ThincNER_FreeString.
+char* ThincNER_Tokenize(const char* text, const char* lang);
+
+// Free a string returned by ThincNER_Predict or ThincNER_Tokenize.
+void ThincNER_FreeString(char* ptr);
+
 #ifdef __cplusplus
 }
 #endif
