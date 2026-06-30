@@ -46,8 +46,78 @@ from rag.llm.chat_model import Base as CompletionLLM
 _nlp = None
 _nlp_model_name = ""
 
+_DEFAULT_SPACY_MODEL = "en_core_web_sm"
+_FALLBACK_SPACY_MODEL = "xx_ent_wiki_sm"
+_SPACY_MODEL_BY_LANGUAGE: dict[str, str] = {
+    "ca": "ca_core_news_sm",
+    "catalan": "ca_core_news_sm",
+    "zh": "zh_core_web_sm",
+    "zh-cn": "zh_core_web_sm",
+    "zh_cn": "zh_core_web_sm",
+    "chinese": "zh_core_web_sm",
+    "中文": "zh_core_web_sm",
+    "da": "da_core_news_sm",
+    "danish": "da_core_news_sm",
+    "nl": "nl_core_news_sm",
+    "dutch": "nl_core_news_sm",
+    "en": _DEFAULT_SPACY_MODEL,
+    "english": _DEFAULT_SPACY_MODEL,
+    "fi": "fi_core_news_sm",
+    "finnish": "fi_core_news_sm",
+    "fr": "fr_core_news_sm",
+    "french": "fr_core_news_sm",
+    "de": "de_core_news_sm",
+    "german": "de_core_news_sm",
+    "el": "el_core_news_sm",
+    "greek": "el_core_news_sm",
+    "hr": "hr_core_news_sm",
+    "croatian": "hr_core_news_sm",
+    "it": "it_core_news_sm",
+    "italian": "it_core_news_sm",
+    "ja": "ja_core_news_sm",
+    "japanese": "ja_core_news_sm",
+    "ko": "ko_core_news_sm",
+    "korean": "ko_core_news_sm",
+    "lt": "lt_core_news_sm",
+    "lithuanian": "lt_core_news_sm",
+    "mk": "mk_core_news_sm",
+    "macedonian": "mk_core_news_sm",
+    "nb": "nb_core_news_sm",
+    "norwegian": "nb_core_news_sm",
+    "pl": "pl_core_news_sm",
+    "polish": "pl_core_news_sm",
+    "pt": "pt_core_news_sm",
+    "pt-br": "pt_core_news_sm",
+    "pt_br": "pt_core_news_sm",
+    "portuguese": "pt_core_news_sm",
+    "ro": "ro_core_news_sm",
+    "romanian": "ro_core_news_sm",
+    "ru": "ru_core_news_sm",
+    "russian": "ru_core_news_sm",
+    "sl": "sl_core_news_sm",
+    "slovenian": "sl_core_news_sm",
+    "es": "es_core_news_sm",
+    "spanish": "es_core_news_sm",
+    "sv": "sv_core_news_sm",
+    "swedish": "sv_core_news_sm",
+    "uk": "uk_core_news_sm",
+    "ukrainian": "uk_core_news_sm",
+}
 
-def _load_spacy_model(model_name: str = "en_core_web_sm"):
+
+def _resolve_spacy_model(language: str | None, model_name: str | None = None) -> str:
+    if model_name:
+        return model_name
+    if not language:
+        return _DEFAULT_SPACY_MODEL
+    normalized = language.strip().lower().replace(" ", "-")
+    if normalized in _SPACY_MODEL_BY_LANGUAGE:
+        return _SPACY_MODEL_BY_LANGUAGE[normalized]
+    lang_code = normalized.split("-", 1)[0]
+    return _SPACY_MODEL_BY_LANGUAGE.get(lang_code, _FALLBACK_SPACY_MODEL)
+
+
+def _load_spacy_model(model_name: str = _DEFAULT_SPACY_MODEL):
     """Load (or return cached) spaCy language model.
 
     Automatically downloads the model if it is not yet installed.
@@ -60,19 +130,21 @@ def _load_spacy_model(model_name: str = "en_core_web_sm"):
     except ImportError:
         raise ImportError(
             "spaCy is required for the spacy GraphRAG method. "
-            "Install it with:  pip install spacy  &&  python -m spacy download en_core_web_sm"
+            f"Install it with:  pip install spacy  &&  python -m spacy download {model_name}"
         )
     try:
         _nlp = spacy.load(model_name)
         logging.info("Loaded spaCy model '%s'", model_name)
     except OSError:
         logging.warning(
-            "spaCy model '%s' not found; downloading automatically …", model_name
+            "spaCy model '%s' not found; downloading automatically.", model_name
         )
         from spacy.cli import download as spacy_download
         spacy_download(model_name)
         _nlp = spacy.load(model_name)
         logging.info("Downloaded and loaded spaCy model '%s'", model_name)
+    if "parser" not in _nlp.pipe_names and "senter" not in _nlp.pipe_names and "sentencizer" not in _nlp.pipe_names:
+        _nlp.add_pipe("sentencizer")
     _nlp_model_name = model_name
     return _nlp
 
@@ -362,7 +434,8 @@ class GraphExtractor(Extractor):
         Application-level entity types to keep.  Entities whose mapped
         type is not in this list are discarded.
     spacy_model : str
-        Name of the spaCy model to load (default ``en_core_web_sm``).
+        Name of the spaCy model to load. Defaults to a language-specific
+        model, falling back to English or multilingual NER.
     max_sentence_distance : int
         When inferring relationships, pair entities that co-occur within
         the same sentence.  If > 1, also pair entities in sentences whose
@@ -380,18 +453,18 @@ class GraphExtractor(Extractor):
         llm_invoker: CompletionLLM,
         language: str | None = "English",
         entity_types: list[str] | None = None,
-        spacy_model: str = "en_core_web_sm",
+        spacy_model: str | None = None,
         max_sentence_distance: int = 1,
         relationship_strength: int = 1,
         use_tf_weight: bool = False,
     ):
         super().__init__(llm_invoker, language, entity_types)
-        self._spacy_model_name = spacy_model
+        self._spacy_model_name = _resolve_spacy_model(language, spacy_model)
         self._max_sentence_distance = max_sentence_distance
         self._relationship_strength = relationship_strength
         self._use_tf_weight = use_tf_weight
         # Eagerly load the model so import errors surface early.
-        self._nlp = _load_spacy_model(spacy_model)
+        self._nlp = _load_spacy_model(self._spacy_model_name)
 
     # ------------------------------------------------------------------
     # Public interface – called by ``Extractor.__call__``
