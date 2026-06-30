@@ -171,16 +171,23 @@ func (s *ChatPipelineService) AsyncChat(
 	}
 
 	// No KBs & no web search → fast-path to LLM-only chat.
+	hasKBs := false
+	for _, raw := range chat.KBIDs {
+		if id, ok := raw.(string); ok && id != "" {
+			hasKBs = true
+			break
+		}
+	}
 	useWebSearch := s.shouldUseWebSearch(chat, kwargs["internet"])
 	if useWebSearch {
 		common.Debug("web_search",
-			zap.Bool("kb", len(chat.KBIDs) > 0),
+			zap.Bool("kb", hasKBs),
 			zap.Bool("tavily", chat.PromptConfig != nil && chat.PromptConfig["tavily_api_key"] != "" && chat.PromptConfig["tavily_api_key"] != nil),
 			zap.Any("internet", kwargs["internet"]),
 			zap.Bool("enabled", useWebSearch))
 	}
 
-	if len(chat.KBIDs) == 0 && !useWebSearch {
+	if !hasKBs && !useWebSearch {
 		return s.AsyncChatSolo(ctx, chat, messages, stream)
 	}
 
@@ -1022,8 +1029,7 @@ func (s *ChatPipelineService) AsyncChat(
 		if stream {
 			// Streaming path: accumulate answer, emit deltas.
 			var fullAnswer string
-			var fullReasoning string
-			thinkState := &thinkStreamState{}
+			thinkState := &ThinkStreamState{}
 
 			chatCfg := BuildChatConfig(chat, nil)
 
@@ -1094,50 +1100,48 @@ func (s *ChatPipelineService) AsyncChat(
 					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg,
 					func(answer *string, reason *string) error {
 						if reason != nil && *reason != "" {
-							fullReasoning += *reason
-							kind, output := processThinkDelta(thinkState, *reason, 16)
-							if kind == "marker" && output == "<think>" {
-								// <think> marker — emit StartToThink
-								out <- AsyncChatResult{
-									Answer:       "",
-									Reference:    map[string]interface{}{},
-									AudioBinary:  nil,
-									CreatedAt:    float64(time.Now().Unix()),
-									Final:        false,
-									StartToThink: true,
-								}
-							} else if kind == "marker" && output == "</think>" {
-								// </think> marker — emit EndToThink
-								out <- AsyncChatResult{
-									Answer:      "",
-									Reference:   map[string]interface{}{},
-									AudioBinary: nil,
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
-									EndToThink:  true,
-								}
-							} else if kind == "text" && output != "" {
-								// Route reasoning text to Reasoning field.
-								// TTS is nil — chain-of-thought is not narrated.
-								out <- AsyncChatResult{
-									Reasoning: output,
-									Reference: map[string]interface{}{},
-									// TTS only narrates user-visible answer text.
-									AudioBinary: nil,
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
+							deltas := NextThinkDelta(thinkState, *reason, 16)
+							for _, d := range deltas {
+								if d.Kind == ThinkDeltaMarker && d.Value == "<think>" {
+									out <- AsyncChatResult{
+										Answer:       "",
+										Reference:    map[string]interface{}{},
+										AudioBinary:  nil,
+										CreatedAt:    float64(time.Now().Unix()),
+										Final:        false,
+										StartToThink: true,
+									}
+								} else if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+									out <- AsyncChatResult{
+										Answer:      "",
+										Reference:   map[string]interface{}{},
+										AudioBinary: nil,
+										CreatedAt:   float64(time.Now().Unix()),
+										Final:       false,
+										EndToThink:  true,
+									}
+								} else if d.Kind == ThinkDeltaText && d.Value != "" {
+									fullAnswer += d.Value
+									out <- AsyncChatResult{
+										Answer:      d.Value,
+										Reference:   map[string]interface{}{},
+										AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+										CreatedAt:   float64(time.Now().Unix()),
+										Final:       false,
+									}
 								}
 							}
 						}
 						if isContentDelta(answer) {
 							fullAnswer += *answer
-							out <- AsyncChatResult{
-								Answer:    *answer,
-								Reference: map[string]interface{}{},
-								// Per-delta TTS for incremental audio playback.
-								AudioBinary: s.synthesizeTTS(ttsModel, *answer),
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
+							if buffered := BufferAnswerDelta(thinkState, *answer, 16); buffered != "" {
+								out <- AsyncChatResult{
+									Answer:      buffered,
+									Reference:   map[string]interface{}{},
+									AudioBinary: s.synthesizeTTS(ttsModel, buffered),
+									CreatedAt:   float64(time.Now().Unix()),
+									Final:       false,
+								}
 							}
 						}
 						return nil
@@ -1152,33 +1156,34 @@ func (s *ChatPipelineService) AsyncChat(
 				return
 			}
 
-			// Flush remaining think stream buffer.
-			// If the LLM ended mid-think, emit remaining reasoning +
-			// implicit close marker.
-			remainingText, remainingMarker := flushThinkStream(thinkState)
-			if remainingText != "" {
-				// Flushed text belongs in Reasoning, not Answer.
-				out <- AsyncChatResult{
-					Reasoning:   remainingText,
-					Reference:   map[string]interface{}{},
-					AudioBinary: nil,
-					CreatedAt:   float64(time.Now().Unix()),
-					Final:       false,
-				}
-			}
-			if remainingMarker == "</think>" {
-				out <- AsyncChatResult{
-					Answer:      "",
-					Reference:   map[string]interface{}{},
-					AudioBinary: nil,
-					CreatedAt:   float64(time.Now().Unix()),
-					Final:       false,
-					EndToThink:  true,
+			// Flush remaining state matching Python's final flush order
+			// (dialog_service.py:1601-1612): think_buffer → marker → answer_buffer → pending_after_close
+			// Python has no Reasoning field — all text is Answer.
+			for _, d := range FlushRemaining(thinkState) {
+				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+					out <- AsyncChatResult{
+						Answer:       "",
+						Reference:    map[string]interface{}{},
+						AudioBinary:  nil,
+						CreatedAt:    float64(time.Now().Unix()),
+						Final:        false,
+						EndToThink:   true,
+					}
+				} else if d.Kind == ThinkDeltaText && d.Value != "" {
+					out <- AsyncChatResult{
+						Answer:      d.Value,
+						Reference:   map[string]interface{}{},
+						AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+					}
 				}
 			}
 
 			// Decorate and yield the final answer.
-			visibleAnswer := s.extractVisibleAnswer(fullReasoning + fullAnswer)
+			// Python uses state.full_text (raw text with <think> tags) as input
+			// to _extract_visible_answer → decorate_answer (dialog_service.py:914-920).
+			visibleAnswer := s.extractVisibleAnswer(thinkState.fullText)
 
 			// Pass nil for ttsModel — audio was already produced per-delta.
 			final := s.decorateAnswer(ctx, visibleAnswer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, nil, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
@@ -1372,57 +1377,58 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		// 7. Drive the LLM: stream (per-delta with think markers) or non-stream (one-shot).
 		if stream {
 			var fullAnswer string
-			var fullReasoning string
-			thinkState := &thinkStreamState{}
+			thinkState := &ThinkStreamState{}
 			chatCfg := BuildChatConfig(chat, nil)
 			timer.Enter(common.PhaseGenerateAnswer)
+
 			driverErr := chatModel.ModelDriver.ChatStreamlyWithSender(
 				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg,
 				func(answer *string, reason *string) error {
 					if reason != nil && *reason != "" {
-						fullReasoning += *reason
-						kind, output := processThinkDelta(thinkState, *reason, 16)
-						if kind == "marker" && output == "<think>" {
-							// Start thinking.
-							out <- AsyncChatResult{
-								Answer:       "",
-								Reference:    map[string]interface{}{},
-								AudioBinary:  nil,
-								CreatedAt:    float64(time.Now().Unix()),
-								Final:        false,
-								StartToThink: true,
-							}
-						} else if kind == "marker" && output == "</think>" {
-							// End thinking.
-							out <- AsyncChatResult{
-								Answer:      "",
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
-								EndToThink:  true,
-							}
-						} else if kind == "text" && output != "" {
-							// Reasoning text with per-delta TTS.
-							out <- AsyncChatResult{
-								Reasoning:   output,
-								Reference:   map[string]interface{}{},
-								AudioBinary: s.synthesizeTTS(ttsModel, output),
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
+						deltas := NextThinkDelta(thinkState, *reason, 16)
+						for _, d := range deltas {
+							if d.Kind == ThinkDeltaMarker && d.Value == "<think>" {
+								out <- AsyncChatResult{
+									Answer:       "",
+									Reference:    map[string]interface{}{},
+									AudioBinary:  nil,
+									CreatedAt:    float64(time.Now().Unix()),
+									Final:        false,
+									StartToThink: true,
+								}
+							} else if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+								out <- AsyncChatResult{
+									Answer:      "",
+									Reference:   map[string]interface{}{},
+									AudioBinary: nil,
+									CreatedAt:   float64(time.Now().Unix()),
+									Final:       false,
+									EndToThink:  true,
+								}
+							} else if d.Kind == ThinkDeltaText && d.Value != "" {
+								fullAnswer += d.Value
+								out <- AsyncChatResult{
+									Answer:      d.Value,
+									Reference:   map[string]interface{}{},
+									AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+									CreatedAt:   float64(time.Now().Unix()),
+									Final:       false,
+								}
 							}
 						}
 					}
-					if isContentDelta(answer) {
-						fullAnswer += *answer
+				if isContentDelta(answer) {
+					fullAnswer += *answer
+					if buffered := BufferAnswerDelta(thinkState, *answer, 16); buffered != "" {
 						out <- AsyncChatResult{
-							Answer:      *answer,
+							Answer:      buffered,
 							Reference:   map[string]interface{}{},
-							AudioBinary: s.synthesizeTTS(ttsModel, *answer),
+							AudioBinary: s.synthesizeTTS(ttsModel, buffered),
 							CreatedAt:   float64(time.Now().Unix()),
 							Final:       false,
 						}
 					}
+				}
 					return nil
 				},
 			)
@@ -1434,35 +1440,28 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				return
 			}
 			timer.Exit(common.PhaseGenerateAnswer)
-			// Flush any remaining think buffer.
-			remainingText, remainingMarker := flushThinkStream(thinkState)
-			if remainingText != "" {
-				out <- AsyncChatResult{
-					Reasoning:   remainingText,
-					Reference:   map[string]interface{}{},
-					AudioBinary: s.synthesizeTTS(ttsModel, remainingText),
-					CreatedAt:   float64(time.Now().Unix()),
-					Final:       false,
+			for _, d := range FlushRemaining(thinkState) {
+				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+					out <- AsyncChatResult{
+						Answer:       "",
+						Reference:    map[string]interface{}{},
+						AudioBinary:  nil,
+						CreatedAt:    float64(time.Now().Unix()),
+						Final:        false,
+						EndToThink:   true,
+					}
+				} else if d.Kind == ThinkDeltaText && d.Value != "" {
+					out <- AsyncChatResult{
+						Answer:      d.Value,
+						Reference:   map[string]interface{}{},
+						AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+					}
 				}
 			}
-			if remainingMarker == "</think>" {
-				out <- AsyncChatResult{
-					Answer:      "",
-					Reference:   map[string]interface{}{},
-					AudioBinary: nil,
-					CreatedAt:   float64(time.Now().Unix()),
-					Final:       false,
-					EndToThink:  true,
-				}
-			}
-			// Final aggregate: re-attach reasoning wrapper for non-streaming consumers.
-			finalAnswer := fullAnswer
-			if fullReasoning != "" {
-				finalAnswer = "<think>" + fullReasoning + "</think>" + fullAnswer
-			}
-			// Raw answer, no decorate_answer. AudioBinary=nil (per-delta TTS already emitted).
 			out <- AsyncChatResult{
-				Answer:      finalAnswer,
+				Answer:      fullAnswer,
 				Reference:   map[string]interface{}{},
 				AudioBinary: nil,
 				CreatedAt:   float64(time.Now().Unix()),
@@ -2781,25 +2780,8 @@ func langfuseExtractTimeElapsed(prompt string) string {
 }
 
 // extractVisibleAnswer mirrors Python's _extract_visible_answer.
-// It preserves <think> wrappers and strips stray think tags.
 func (s *ChatPipelineService) extractVisibleAnswer(text string) string {
-	if !strings.Contains(text, "</think>") {
-		text = strings.ReplaceAll(text, "<think>", "")
-		text = strings.ReplaceAll(text, "</think>", "")
-		return text
-	}
-	idx := strings.LastIndex(text, "</think>")
-	thought := text[:idx]
-	answer := text[idx+len("</think>"):]
-	thought = strings.ReplaceAll(thought, "<think>", "")
-	thought = strings.ReplaceAll(thought, "</think>", "")
-	thought = strings.TrimSpace(thought)
-	answer = strings.ReplaceAll(answer, "<think>", "")
-	answer = strings.ReplaceAll(answer, "</think>", "")
-	if thought == "" {
-		return answer
-	}
-	return "<think>" + thought + "</think>" + answer
+	return ExtractVisibleAnswer(text)
 }
 
 // citationPrompt returns the citation instruction prompt.
@@ -2807,124 +2789,6 @@ func (s *ChatPipelineService) extractVisibleAnswer(text string) string {
 func citationPrompt() string {
 	return "\n\n### Citation\nWhen answering, please cite sources using the format [ID:N] " +
 		"(where N is the chunk number) after each sentence where the information from that chunk is used."
-}
-
-// ---------------------------------------------------------------------------
-// Think-marker streaming — mirrors Python's _stream_with_think_delta.
-// ---------------------------------------------------------------------------
-
-// thinkStreamState tracks accumulated reasoning text and emits deltas.
-type thinkStreamState struct {
-	fullText      string
-	lastIdx       int
-	endsWithThink bool
-	inThink       bool
-	buffer        string
-	postThinkText string
-}
-
-// nextThinkDelta computes the next delta to emit from the accumulated text.
-// Mirrors _next_think_delta in dialog_service.py:1460-1487.
-func nextThinkDelta(state *thinkStreamState) string {
-	full := state.fullText
-	if full == "" || len(full) <= state.lastIdx {
-		return ""
-	}
-	delta := full[state.lastIdx:]
-
-	if strings.HasPrefix(delta, "<think>") {
-		state.lastIdx += len("<think>")
-		return "<think>"
-	}
-	if idx := strings.Index(delta, "<think>"); idx > 0 {
-		state.lastIdx += idx
-		return delta[:idx]
-	}
-	if strings.HasSuffix(delta, "</think>") {
-		state.endsWithThink = true
-	} else if state.endsWithThink {
-		state.endsWithThink = false
-		remainder := delta
-		if idx := strings.Index(delta, "</think>"); idx >= 0 {
-			remainder = delta[idx+len("</think>"):]
-		}
-		if remainder != "" {
-			state.postThinkText = remainder
-		}
-		state.lastIdx = len(full)
-		return "</think>"
-	}
-
-	state.lastIdx = len(full)
-	if strings.HasSuffix(full, "</think>") {
-		state.lastIdx -= len("</think>")
-	}
-	return strings.ReplaceAll(strings.ReplaceAll(delta, "<think>", ""), "</think>", "")
-}
-
-// processThinkDelta updates the state with a new delta and returns what to emit.
-// Returns the kind of emission: "marker" for think tags, "text" for content, "" for nothing.
-func processThinkDelta(state *thinkStreamState, delta string, minTokens int) (kind string, output string) {
-	if delta == "" {
-		return "", ""
-	}
-	state.fullText += delta
-	d := nextThinkDelta(state)
-	if d == "" {
-		return "", ""
-	}
-	if d == "<think>" {
-		if state.inThink {
-			return "", ""
-		}
-		if state.buffer != "" {
-			kind, out := "text", state.buffer
-			state.buffer = ""
-			state.inThink = true
-			return kind, out
-		}
-		state.inThink = true
-		return "marker", "<think>"
-	}
-	if d == "</think>" {
-		if !state.inThink {
-			return "", ""
-		}
-		state.inThink = false
-		if state.postThinkText != "" {
-			state.buffer += state.postThinkText
-			state.postThinkText = ""
-		}
-		return "marker", "</think>"
-	}
-	state.buffer += d
-	if kg.NumTokensFromString(state.buffer) < minTokens {
-		return "", ""
-	}
-	out := state.buffer
-	state.buffer = ""
-	return "text", out
-}
-
-// flushThinkStream flushes any remaining buffered text from the think stream.
-func flushThinkStream(state *thinkStreamState) (text string, marker string) {
-	if state.buffer != "" {
-		text = state.buffer
-		state.buffer = ""
-	}
-	if state.postThinkText != "" {
-		if text != "" {
-			text += state.postThinkText
-		} else {
-			text = state.postThinkText
-		}
-		state.postThinkText = ""
-	}
-	if state.endsWithThink {
-		marker = "</think>"
-		state.endsWithThink = false
-	}
-	return text, marker
 }
 
 // -----------------------------------------------------------------------

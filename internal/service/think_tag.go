@@ -18,40 +18,39 @@ package service
 
 import (
 	"context"
+	"ragflow/internal/tokenizer"
 	"strings"
 )
 
 const thinkOpen = "<think>"
 const thinkClose = "</think>"
 
+var stripThinkReplacer = strings.NewReplacer("<think>", "", "</think>", "")
+
 // ThinkStreamState holds accumulated state across streaming LLM chunks
-// so that <think>...</think> tags can be surfaced as structured markers.
-//
-// Corresponds to _ThinkStreamState in api/db/services/dialog_service.py.
+// so that <think>...</think> tags can be surfaced as structured markers
 type ThinkStreamState struct {
 	// fullText accumulates all text received so far.
 	fullText string
-	// lastIdx is the last consumed position in fullText.
-	lastIdx int
-	// lastFull is the previous fullText snapshot.
-	lastFull string
-	// lastModelFull is the previous model chunk for diffing.
+	// lastModelFull is the previous model-full snapshot for diffing
 	lastModelFull string
 	// inThink is true when we are currently inside a <think> block.
 	inThink bool
-	// buffer accumulates visible text before flushing (for batching).
-	buffer string
-	// postThinkText holds text between </think> and the next <think> or end
-	// of delta.  Kept for API alignment with Python; may be used by future
-	// callers that need per-delta visibility into think boundaries.
-	postThinkText string
+	// closePending defers emission of </think> when no visible text follows the tag
+	closePending bool
+	// pendingAfterClose collects text received after a deferred </think>
+	pendingAfterClose string
+	// thinkBuffer is the think-buffer
+	thinkBuffer string
+	// answerBuffer accumulates answer-side text before token-batch flushing
+	answerBuffer string
 }
 
 // ThinkDeltaKind describes the type of a think-tag delta event.
 type ThinkDeltaKind int
 
 const (
-	ThinkDeltaText   ThinkDeltaKind = iota // visible answer text
+	ThinkDeltaText   ThinkDeltaKind = iota // think-side or answer-side text
 	ThinkDeltaMarker                       // <think> or </think> tag boundary
 )
 
@@ -61,93 +60,213 @@ type ThinkDelta struct {
 	Value string
 }
 
+// emitText returns the batched text and its kind.
+func emitText(state *ThinkStreamState, section string, text string, minTokens int) (string, ThinkDeltaKind) {
+	if text == "" {
+		return "", 0
+	}
+	if section == "think" {
+		return text, ThinkDeltaText
+	}
+	state.answerBuffer += text
+	if tokenizer.NumTokensFromString(state.answerBuffer) >= minTokens {
+		out := state.answerBuffer
+		state.answerBuffer = ""
+		return out, ThinkDeltaText
+	}
+	return "", 0
+}
+
+func flushThinkBufferInternal(state *ThinkStreamState) ThinkDelta {
+	if state.thinkBuffer == "" {
+		return ThinkDelta{}
+	}
+	out := state.thinkBuffer
+	state.thinkBuffer = ""
+	return ThinkDelta{Kind: ThinkDeltaText, Value: out}
+}
+
+func flushAnswerBufferInternal(state *ThinkStreamState) ThinkDelta {
+	if state.answerBuffer == "" {
+		return ThinkDelta{}
+	}
+	out := state.answerBuffer
+	state.answerBuffer = ""
+	return ThinkDelta{Kind: ThinkDeltaText, Value: out}
+}
+
+func stripThinkTags(s string) string {
+	if s == "" {
+		return ""
+	}
+	return stripThinkReplacer.Replace(s)
+}
+
 // NextThinkDelta processes the next chunk of LLM output and returns any
 // visible text or tag boundary markers that should be emitted.
-//
-// Pure function — no side effects beyond updating state.
-func NextThinkDelta(state *ThinkStreamState, chunk string) []ThinkDelta {
+func NextThinkDelta(state *ThinkStreamState, chunk string, minTokens int) []ThinkDelta {
 	if state == nil {
 		return nil
 	}
 
-	if state.lastFull != "" {
-		// Compute the delta: what's new since lastFull.
-		delta := strings.TrimPrefix(chunk, state.lastFull)
-		state.lastModelFull = delta
-	} else {
+	var newPart string
+	if strings.HasPrefix(chunk, state.lastModelFull) {
+		newPart = chunk[len(state.lastModelFull):]
 		state.lastModelFull = chunk
+	} else {
+		newPart = chunk
+		state.lastModelFull += chunk
 	}
-	state.lastFull = chunk
-
-	// Accumulate fullText from the delta.
-	state.fullText += state.lastModelFull
-
-	// Extract new content since lastIdx.
-	newPart := state.fullText[state.lastIdx:]
-	if len(newPart) == 0 {
+	if newPart == "" {
 		return nil
 	}
+	state.fullText += newPart
+	pending := newPart
 
 	var deltas []ThinkDelta
-	// Process character by character to detect tag boundaries.
-	for len(newPart) > 0 {
-		if !state.inThink {
-			idx := strings.Index(newPart, thinkOpen)
-			if idx < 0 {
-				// No more think open — buffer everything as visible text.
-				state.buffer += newPart
-				state.lastIdx += len(newPart)
-				break
-			}
-			// Text before <think> is visible answer.
-			if idx > 0 {
-				state.buffer += newPart[:idx]
-			}
-			deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaMarker, Value: thinkOpen})
-			newPart = newPart[idx+len(thinkOpen):]
-			state.lastIdx += idx + len(thinkOpen)
-			state.inThink = true
-		} else {
-			idx := strings.Index(newPart, thinkClose)
-			if idx < 0 {
-				// Still inside think, consume all silently.
-				state.lastIdx += len(newPart)
-				break
-			}
-			deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaMarker, Value: thinkClose})
-			state.postThinkText = newPart[:idx]
-			newPart = newPart[idx+len(thinkClose):]
-			state.lastIdx += idx + len(thinkClose)
-			state.inThink = false
+
+	// Phase 1: handle deferred </think> from a previous chunk.
+	if state.closePending && !strings.Contains(pending, thinkClose) {
+		state.closePending = false
+		if piece := flushThinkBufferInternal(state); piece.Value != "" {
+			deltas = append(deltas, piece)
 		}
+		state.inThink = false
+		deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaMarker, Value: thinkClose})
+		if state.pendingAfterClose != "" {
+			answerPiece := state.pendingAfterClose
+			state.pendingAfterClose = ""
+			if out, kind := emitText(state, "answer", answerPiece, minTokens); out != "" {
+				deltas = append(deltas, ThinkDelta{Kind: kind, Value: out})
+			}
+		}
+		if answerPiece := stripThinkTags(pending); answerPiece != "" {
+			if out, kind := emitText(state, "answer", answerPiece, minTokens); out != "" {
+				deltas = append(deltas, ThinkDelta{Kind: kind, Value: out})
+			}
+		}
+		return deltas
+	}
+
+	// Phase 2: process pending text for think tags.
+	for pending != "" {
+		openIdx := strings.Index(pending, thinkOpen)
+		closeIdx := strings.Index(pending, thinkClose)
+
+		// No tags remaining — emit to the appropriate section.
+		if openIdx == -1 && closeIdx == -1 {
+			if piece := stripThinkTags(pending); piece != "" {
+				section := "answer"
+				if state.inThink {
+					section = "think"
+				}
+				if out, kind := emitText(state, section, piece, minTokens); out != "" {
+					deltas = append(deltas, ThinkDelta{Kind: kind, Value: out})
+				}
+			}
+			break
+		}
+
+		// <think> appears first (or no </think> found).
+		if openIdx != -1 && (closeIdx == -1 || openIdx < closeIdx) {
+			before := pending[:openIdx]
+			if before != "" {
+				piece := stripThinkTags(before)
+				section := "answer"
+				if state.inThink {
+					section = "think"
+				}
+				if out, kind := emitText(state, section, piece, minTokens); out != "" {
+					deltas = append(deltas, ThinkDelta{Kind: kind, Value: out})
+				}
+			}
+			pending = pending[openIdx+len(thinkOpen):]
+			if !state.inThink {
+				if answerPiece := flushAnswerBufferInternal(state); answerPiece.Value != "" {
+					deltas = append(deltas, answerPiece)
+				}
+				if thinkPiece := flushThinkBufferInternal(state); thinkPiece.Value != "" {
+					deltas = append(deltas, thinkPiece)
+				}
+				state.inThink = true
+				deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaMarker, Value: thinkOpen})
+			}
+			continue
+		}
+
+		// </think> appears first.
+		before := pending[:closeIdx]
+		after := pending[closeIdx+len(thinkClose):]
+		if before != "" {
+			piece := stripThinkTags(before)
+			section := "answer"
+			if state.inThink {
+				section = "think"
+			}
+			if out, kind := emitText(state, section, piece, minTokens); out != "" {
+				deltas = append(deltas, ThinkDelta{Kind: kind, Value: out})
+			}
+		}
+		afterVisible := stripThinkTags(after)
+		if strings.TrimSpace(afterVisible) != "" {
+			if thinkPiece := flushThinkBufferInternal(state); thinkPiece.Value != "" {
+				deltas = append(deltas, thinkPiece)
+			}
+			state.inThink = false
+			deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaMarker, Value: thinkClose})
+			pending = afterVisible
+			continue
+		}
+		// No visible text after close — defer the marker.
+		state.closePending = true
+		if afterVisible != "" {
+			state.pendingAfterClose += afterVisible
+		}
+		pending = ""
+		break
 	}
 
 	return deltas
 }
 
-// FlushThinkBuffer drains the buffered visible text, if any, as a single delta.
-// Call this after all LLM chunks have been processed.
-func FlushThinkBuffer(state *ThinkStreamState) []ThinkDelta {
-	if state == nil || state.buffer == "" {
+// FlushRemaining drains all remaining buffered text and handles deferred
+// markers. Call this after all LLM chunks have been processed.
+func FlushRemaining(state *ThinkStreamState) []ThinkDelta {
+	if state == nil {
 		return nil
 	}
-	text := state.buffer
-	state.buffer = ""
-	return []ThinkDelta{{Kind: ThinkDeltaText, Value: text}}
+	var deltas []ThinkDelta
+	if state.thinkBuffer != "" {
+		deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaText, Value: state.thinkBuffer})
+		state.thinkBuffer = ""
+	}
+	if state.closePending {
+		state.inThink = false
+		state.closePending = false
+		deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaMarker, Value: thinkClose})
+	}
+	if state.answerBuffer != "" {
+		deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaText, Value: state.answerBuffer})
+		state.answerBuffer = ""
+	}
+	if state.pendingAfterClose != "" {
+		deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaText, Value: state.pendingAfterClose})
+		state.pendingAfterClose = ""
+	}
+	return deltas
 }
 
+// StreamThinkTagDelta — channel-based pipeline.
+// ---------------------------------------------------------------------------
+
 // StreamThinkTagDelta takes a channel of raw LLM text chunks and produces a
-// channel of (kind, value) pairs.  When ctx is cancelled (e.g. client
-// disconnect), the goroutine drains the input channel silently and exits,
-// preventing the producer goroutine from blocking forever on send.
-//
-// Markers (<think>, </think>) are emitted immediately without buffering.
+// channel of structured deltas.  When ctx is cancelled (e.g. client
+// disconnect), the goroutine drains the input channel silently and exits.
 func StreamThinkTagDelta(ctx context.Context, chunks <-chan string, minTokens int) <-chan ThinkDelta {
 	out := make(chan ThinkDelta, 32)
 	go func() {
 		defer close(out)
 		state := &ThinkStreamState{}
-		flushSize := minTokens * 4 // approximate: ~4 bytes per token
 		for {
 			select {
 			case <-ctx.Done():
@@ -158,7 +277,7 @@ func StreamThinkTagDelta(ctx context.Context, chunks <-chan string, minTokens in
 				return
 			case chunk, ok := <-chunks:
 				if !ok {
-					for _, d := range FlushThinkBuffer(state) {
+					for _, d := range FlushRemaining(state) {
 						select {
 						case out <- d:
 						case <-ctx.Done():
@@ -167,34 +286,16 @@ func StreamThinkTagDelta(ctx context.Context, chunks <-chan string, minTokens in
 					}
 					return
 				}
-				deltas := NextThinkDelta(state, chunk)
+				deltas := NextThinkDelta(state, chunk, minTokens)
 				for _, d := range deltas {
-					if d.Kind == ThinkDeltaMarker {
-						select {
-						case out <- d:
-						case <-ctx.Done():
-							go func() {
-								for range chunks {
-								}
-							}()
-							return
-						}
-					}
-				}
-				// Flush buffered visible text when it reaches the token threshold,
-				// matching Python _stream_with_think_delta which yields ("text", ...)
-				// per chunk.  Markers are emitted immediately above.
-				if len(state.buffer) >= flushSize {
-					for _, d := range FlushThinkBuffer(state) {
-						select {
-						case out <- d:
-						case <-ctx.Done():
-							go func() {
-								for range chunks {
-								}
-							}()
-							return
-						}
+					select {
+					case out <- d:
+					case <-ctx.Done():
+						go func() {
+							for range chunks {
+							}
+						}()
+						return
 					}
 				}
 			}
@@ -203,47 +304,37 @@ func StreamThinkTagDelta(ctx context.Context, chunks <-chan string, minTokens in
 	return out
 }
 
-// ExtractVisibleAnswer strips <think> blocks from the raw LLM response,
-// returning only the visible answer text.  If the response consists
-// entirely of think content, returns an empty string.
-//
-// Corresponds to _extract_visible_answer in dialog_service.py.
+// ExtractVisibleAnswer normalizes think tags in raw model output
 func ExtractVisibleAnswer(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	// Collect all non-think text.
-	var visible []string
-	remaining := raw
-	hasThink := false
-
-	for {
-		openIdx := strings.Index(remaining, thinkOpen)
-		if openIdx < 0 {
-			// No more think open tags — strip any stray </think> and keep the rest.
-			remaining = strings.ReplaceAll(remaining, thinkClose, "")
-			visible = append(visible, remaining)
-			break
-		}
-		hasThink = true
-		if openIdx > 0 {
-			visible = append(visible, remaining[:openIdx])
-		}
-		remaining = remaining[openIdx+len(thinkOpen):]
-
-		closeIdx := strings.Index(remaining, thinkClose)
-		if closeIdx < 0 {
-			// Unclosed think — treat rest as visible.
-			visible = append(visible, remaining)
-			break
-		}
-		remaining = remaining[closeIdx+len(thinkClose):]
+	if !strings.Contains(raw, thinkClose) {
+		return stripThinkTags(raw)
 	}
 
-	result := strings.TrimSpace(strings.Join(visible, ""))
-	if hasThink && result == "" {
-		// Only think content — return empty.
+	lastClose := strings.LastIndex(raw, thinkClose)
+	thought := raw[:lastClose]
+	answer := raw[lastClose+len(thinkClose):]
+
+	thought = strings.TrimSpace(stripThinkTags(thought))
+	answer = stripThinkTags(answer)
+	if thought == "" {
+		return answer
+	}
+	return thinkOpen + thought + thinkClose + answer
+}
+
+// BufferAnswerDelta accumulates answer text in state.answerBuffer.
+func BufferAnswerDelta(state *ThinkStreamState, text string, minTokens int) string {
+	if text == "" {
 		return ""
 	}
-	return result
+	state.answerBuffer += text
+	if tokenizer.NumTokensFromString(state.answerBuffer) < minTokens {
+		return ""
+	}
+	out := state.answerBuffer
+	state.answerBuffer = ""
+	return out
 }

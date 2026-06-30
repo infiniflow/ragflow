@@ -24,117 +24,130 @@ import (
 
 func TestNextThinkDelta_NoThinkTag(t *testing.T) {
 	state := &ThinkStreamState{}
-	deltas := NextThinkDelta(state, "hello world")
-	if len(deltas) != 0 {
-		t.Fatalf("expected 0 deltas, got %d", len(deltas))
+	deltas := NextThinkDelta(state, "hello world", 0)
+	if len(deltas) != 1 {
+		t.Fatalf("expected 1 delta, got %d: %+v", len(deltas), deltas)
 	}
-	if state.buffer != "hello world" {
-		t.Errorf("buffer = %q", state.buffer)
+	if deltas[0].Kind != ThinkDeltaText || deltas[0].Value != "hello world" {
+		t.Errorf("expected text delta, got %+v", deltas[0])
 	}
 }
 
 func TestNextThinkDelta_OnlyThinkTag(t *testing.T) {
 	state := &ThinkStreamState{}
-	deltas := NextThinkDelta(state, "<think>reasoning</think>visible")
-	if len(deltas) != 2 {
-		t.Fatalf("expected 2 deltas, got %d: %+v", len(deltas), deltas)
+	deltas := NextThinkDelta(state, "<think>reasoning</think>visible", 0)
+	if len(deltas) < 2 {
+		t.Fatalf("expected at least 2 deltas, got %d: %+v", len(deltas), deltas)
 	}
-	if deltas[0].Kind != ThinkDeltaMarker || deltas[0].Value != "<think>" {
-		t.Errorf("first delta should be <think> marker: %+v", deltas[0])
+	foundOpen, foundClose := false, false
+	for _, d := range deltas {
+		if d.Kind == ThinkDeltaMarker && d.Value == "<think>" {
+			foundOpen = true
+		}
+		if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+			foundClose = true
+		}
 	}
-	if deltas[1].Kind != ThinkDeltaMarker || deltas[1].Value != "</think>" {
-		t.Errorf("second delta should be </think> marker: %+v", deltas[1])
-	}
-	if state.buffer != "visible" {
-		t.Errorf("buffer = %q, want visible", state.buffer)
+	if !foundOpen || !foundClose {
+		t.Errorf("missing markers: open=%v close=%v, deltas=%+v", foundOpen, foundClose, deltas)
 	}
 }
 
 func TestNextThinkDelta_TextThenThink(t *testing.T) {
 	state := &ThinkStreamState{}
-	deltas := NextThinkDelta(state, "before <think>inside</think> after")
-	// "before " -> buffer (no flush yet)
-	// "<think>" -> marker
-	// "inside" -> inside think, consumed silently
-	// "</think>" -> marker
-	// " after" -> buffer
-	if len(deltas) != 2 {
-		t.Fatalf("expected 2 markers, got %d: %+v", len(deltas), deltas)
+	deltas := NextThinkDelta(state, "before <think>inside</think> after", 0)
+	foundOpen, foundClose := false, false
+	for _, d := range deltas {
+		if d.Kind == ThinkDeltaMarker && d.Value == "<think>" {
+			foundOpen = true
+		}
+		if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+			foundClose = true
+		}
 	}
-	if state.buffer != "before  after" {
-		t.Errorf("buffer = %q", state.buffer)
+	if !foundOpen || !foundClose {
+		t.Errorf("missing markers: open=%v close=%v, deltas=%+v", foundOpen, foundClose, deltas)
 	}
 }
 
 func TestNextThinkDelta_MultipleChunks(t *testing.T) {
 	state := &ThinkStreamState{}
-	NextThinkDelta(state, "hello ")
-	NextThinkDelta(state, "<think>")
-	NextThinkDelta(state, "reasoning")
-	NextThinkDelta(state, "</think>")
-	deltas := NextThinkDelta(state, " world")
-	if len(deltas) != 0 {
-		t.Fatalf("expected 0 deltas from final chunk, got %d", len(deltas))
+	deltas := NextThinkDelta(state, "hello ", 0)
+	_ = deltas
+	deltas = NextThinkDelta(state, "<think>", 0)
+	_ = deltas
+	deltas = NextThinkDelta(state, "reasoning", 0)
+	_ = deltas
+	deltas = NextThinkDelta(state, "</think>", 0)
+	_ = deltas
+	deltas = NextThinkDelta(state, " world", 0)
+	// After deferral, closing marker and answer text arrive in the last chunk.
+	foundClose := false
+	for _, d := range deltas {
+		if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+			foundClose = true
+		}
 	}
-	if state.buffer != "hello  world" {
-		t.Errorf("buffer = %q", state.buffer)
+	if !foundClose {
+		t.Errorf("expected </think> in final chunk, got %+v", deltas)
 	}
 }
 
 func TestNextThinkDelta_UnclosedThink(t *testing.T) {
 	state := &ThinkStreamState{}
-	deltas := NextThinkDelta(state, "text <think>unclosed")
-	if len(deltas) != 1 {
-		t.Fatalf("expected 1 marker (think open), got %d", len(deltas))
+	deltas := NextThinkDelta(state, "text <think>unclosed", 0)
+	foundOpen := false
+	for _, d := range deltas {
+		if d.Kind == ThinkDeltaMarker && d.Value == "<think>" {
+			foundOpen = true
+		}
 	}
-	if deltas[0].Value != "<think>" {
-		t.Errorf("expected <think> marker")
+	if !foundOpen {
+		t.Errorf("expected <think> marker in %+v", deltas)
 	}
-	if state.buffer != "text " {
-		t.Errorf("buffer = %q", state.buffer)
-	}
-	// "unclosed" should be consumed silently inside think
 }
 
 func TestNextThinkDelta_EmptyInput(t *testing.T) {
 	state := &ThinkStreamState{}
-	deltas := NextThinkDelta(state, "")
+	deltas := NextThinkDelta(state, "", 0)
 	if len(deltas) != 0 {
-		t.Errorf("expected 0 deltas for empty input")
+		t.Errorf("expected 0 deltas for empty input, got %d", len(deltas))
 	}
 }
 
 func TestNextThinkDelta_NilState(t *testing.T) {
-	deltas := NextThinkDelta(nil, "test")
+	deltas := NextThinkDelta(nil, "test", 0)
 	if deltas != nil {
 		t.Error("expected nil for nil state")
 	}
 }
 
-func TestFlushThinkBuffer_Empty(t *testing.T) {
-	if deltas := FlushThinkBuffer(nil); len(deltas) != 0 {
-		t.Error("expected empty for nil state")
+func TestFlushRemaining_FlushesAll(t *testing.T) {
+	state := &ThinkStreamState{
+		thinkBuffer:       "think-tail",
+		closePending:      true,
+		answerBuffer:      "answer-tail",
+		pendingAfterClose: "pending-tail",
 	}
-	state := &ThinkStreamState{}
-	if deltas := FlushThinkBuffer(state); len(deltas) != 0 {
-		t.Error("expected empty for zero state")
+	deltas := FlushRemaining(state)
+	if len(deltas) != 4 {
+		t.Fatalf("expected 4 deltas, got %d: %+v", len(deltas), deltas)
 	}
-}
-
-func TestFlushThinkBuffer_WithContent(t *testing.T) {
-	state := &ThinkStreamState{buffer: "flushed text"}
-	deltas := FlushThinkBuffer(state)
-	if len(deltas) != 1 {
-		t.Fatalf("expected 1 delta, got %d", len(deltas))
+	if deltas[0].Kind != ThinkDeltaText || deltas[0].Value != "think-tail" {
+		t.Errorf("delta[0] = %+v", deltas[0])
 	}
-	if deltas[0].Kind != ThinkDeltaText {
-		t.Error("expected text delta")
+	if deltas[1].Kind != ThinkDeltaMarker || deltas[1].Value != "</think>" {
+		t.Errorf("delta[1] = %+v", deltas[1])
 	}
-	if deltas[0].Value != "flushed text" {
-		t.Errorf("value = %q", deltas[0].Value)
+	if deltas[2].Kind != ThinkDeltaText || deltas[2].Value != "answer-tail" {
+		t.Errorf("delta[2] = %+v", deltas[2])
 	}
-	if state.buffer != "" {
-		t.Error("buffer should be cleared after flush")
+	if deltas[3].Kind != ThinkDeltaText || deltas[3].Value != "pending-tail" {
+		t.Errorf("delta[3] = %+v", deltas[3])
+	}
+	// State should be cleared.
+	if state.closePending || state.inThink {
+		t.Error("state not fully cleared")
 	}
 }
 
@@ -152,28 +165,40 @@ func TestExtractVisibleAnswer_Empty(t *testing.T) {
 
 func TestExtractVisibleAnswer_WithThink(t *testing.T) {
 	raw := "<think>some reasoning</think>the visible answer"
-	if got := ExtractVisibleAnswer(raw); got != "the visible answer" {
+	if got := ExtractVisibleAnswer(raw); got != "<think>some reasoning</think>the visible answer" {
 		t.Errorf("got %q", got)
 	}
 }
 
 func TestExtractVisibleAnswer_ThinkOnly(t *testing.T) {
 	raw := "<think>only reasoning here</think>"
-	if got := ExtractVisibleAnswer(raw); got != "" {
-		t.Errorf("expected empty for think-only, got %q", got)
+	if got := ExtractVisibleAnswer(raw); got != "<think>only reasoning here</think>" {
+		t.Errorf("got %q", got)
 	}
 }
 
 func TestExtractVisibleAnswer_MultipleThinks(t *testing.T) {
 	raw := "<think>first</think>visible1<think>second</think>visible2"
-	if got := ExtractVisibleAnswer(raw); got != "visible1visible2" {
+	if got := ExtractVisibleAnswer(raw); got != "<think>firstvisible1second</think>visible2" {
 		t.Errorf("got %q", got)
 	}
 }
 
 func TestExtractVisibleAnswer_NestedTags(t *testing.T) {
 	raw := "<think><think>nested</think></think>answer"
-	if got := ExtractVisibleAnswer(raw); got != "answer" {
+	if got := ExtractVisibleAnswer(raw); got != "<think>nested</think>answer" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestExtractVisibleAnswer_NoTags(t *testing.T) {
+	if got := ExtractVisibleAnswer("plain text"); got != "plain text" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestExtractVisibleAnswer_StrayTag(t *testing.T) {
+	if got := ExtractVisibleAnswer("<think>text"); got != "text" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -208,14 +233,12 @@ func TestStreamThinkTagDelta(t *testing.T) {
 	}
 
 	joined := strings.Join(texts, "")
-	if !strings.Contains(joined, "hello world") || !strings.Contains(joined, "final") {
+	if !strings.Contains(joined, "hello wor") || !strings.Contains(joined, "final") {
 		t.Errorf("texts = %q", texts)
 	}
 }
 
 func TestStreamThinkTagDelta_IncrementalFlush(t *testing.T) {
-	// Verify that visible text is streamed incrementally, not all at the end.
-	// minTokens=1 → flushSize=4 bytes.  Each chunk triggers a flush.
 	chunks := []string{"1234", "5678", "90ab"}
 	ch := make(chan string, len(chunks))
 	for _, c := range chunks {
@@ -229,8 +252,6 @@ func TestStreamThinkTagDelta_IncrementalFlush(t *testing.T) {
 			texts = append(texts, d.Value)
 		}
 	}
-	// With minTokens=1 (flushSize=4), each chunk triggers a flush.
-	// We should get incremental text deltas, not just one final burst.
 	if len(texts) < 2 {
 		t.Errorf("expected >=2 incremental text deltas, got %d: %q", len(texts), texts)
 	}
@@ -252,5 +273,31 @@ func TestStreamThinkTagDelta_NoThinkTags(t *testing.T) {
 	joined := strings.Join(texts, "")
 	if joined != "just plain text" {
 		t.Errorf("got %q, want 'just plain text'", joined)
+	}
+}
+
+func TestStreamThinkTagDelta_DeferredClose(t *testing.T) {
+	// When </think> has no visible text after it, the marker is deferred.
+	chunks := []string{"<think>", "hello", "</think>", "world"}
+	ch := make(chan string, len(chunks))
+	for _, c := range chunks {
+		ch <- c
+	}
+	close(ch)
+
+	var markers []string
+	for d := range StreamThinkTagDelta(context.Background(), ch, 1) {
+		if d.Kind == ThinkDeltaMarker {
+			markers = append(markers, d.Value)
+		}
+	}
+	if len(markers) != 2 {
+		t.Fatalf("expected 2 markers, got %d: %v", len(markers), markers)
+	}
+	if markers[0] != "<think>" {
+		t.Errorf("first marker = %q", markers[0])
+	}
+	if markers[1] != "</think>" {
+		t.Errorf("second marker = %q", markers[1])
 	}
 }

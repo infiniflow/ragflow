@@ -980,9 +980,11 @@ func getChunkID(c map[string]interface{}) string {
 }
 
 func chunkContent(c map[string]interface{}) string {
-	if v, ok := c["content"]; ok {
-		s := fmt.Sprint(v)
-		return strings.TrimSpace(s)
+	for _, key := range []string{"content", "content_with_weight"} {
+		if v, ok := c[key]; ok {
+			s := fmt.Sprint(v)
+			return strings.TrimSpace(s)
+		}
 	}
 	return ""
 }
@@ -1282,4 +1284,60 @@ func (r *QuotaSummaryResponse) PrintOut() {
 
 		PrintTableSimpleByFormatWithOrder(table, section.columns, r.OutputFormat)
 	}
+}
+
+// ChatCompletionsResponse represents the RAGFlow-internal response from
+// POST /api/v1/chat/completions (non-OpenAI format).
+//
+// JSON shape:
+//
+//	{"code":0,"data":{"answer":"...","reference":...},"message":""}
+type ChatCompletionsResponse struct {
+	Code         int             `json:"code"`
+	Data         *chatCompletionData `json:"data"`
+	Message      string          `json:"message"`
+	Duration     float64         `json:"-"`
+	OutputFormat OutputFormat    `json:"-"`
+	// raw HTTP body for "raw" output.
+	raw []byte
+	// streamed skips the "Answer:" line in PrintOut to avoid duplication
+	// (used by the streaming path which prints chunk-by-chunk).
+	streamed bool
+}
+
+type chatCompletionData struct {
+	Answer    string          `json:"answer"`
+	Reference json.RawMessage `json:"reference,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	SessionID string          `json:"session_id,omitempty"`
+	ChatID    string          `json:"chat_id,omitempty"`
+}
+
+func (r *ChatCompletionsResponse) Type() string                { return "chat_completions" }
+func (r *ChatCompletionsResponse) TimeCost() float64           { return r.Duration }
+func (r *ChatCompletionsResponse) SetOutputFormat(f OutputFormat) { r.OutputFormat = f }
+
+func (r *ChatCompletionsResponse) PrintOut() {
+	if r.OutputFormat == "raw" && r.raw != nil {
+		fmt.Println(string(r.raw))
+		return
+	}
+	if r.Code != 0 {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+		return
+	}
+	if r.Data == nil {
+		fmt.Println("(no data)")
+		return
+	}
+	if !r.streamed {
+		if r.Data.Answer != "" {
+			fmt.Printf("Answer: %s\n", r.Data.Answer)
+		}
+	}
+	if r.Data != nil && len(r.Data.Reference) > 0 {
+		printReferenceChunks(r.Data.Reference)
+	}
+	fmt.Printf("Time: %f\n", r.Duration)
 }
