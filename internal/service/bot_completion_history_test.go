@@ -23,8 +23,18 @@
 package service
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
 	"testing"
+
+	"ragflow/internal/agent/canvas"
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 
 	modelModule "ragflow/internal/entity/models"
 )
@@ -162,3 +172,147 @@ func TestHistoryRoundTrip_PreservesPriorTurns(t *testing.T) {
 		}
 	}
 }
+
+// TestBotService_AgentbotInputs_CrossTenantDenied mirrors PR
+// #15457: when a beta API token authenticates a caller with
+// tenantID, that caller must not be able to read an agent
+// belonging to a different tenant. The Go guard runs inside
+// loadCanvas (called at the entry of AgentbotInputs and
+// AgentbotCompletion) and returns ErrUserCanvasNotFound — same
+// 404-equivalent shape as the python fix returns "Can't find
+// agent by ID: <id>". This test seeds a canvas under tenant-A
+// and asks for it via tenant-B; the call must fail with the
+// not-found error and never expose the canvas.
+func TestBotService_AgentbotInputs_CrossTenantDenied(t *testing.T) {
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserTenant{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	// Seed tenant-A and a canvas owned by user-A.
+	if err := db.Create(&entity.UserTenant{
+		ID:       "ut-A",
+		UserID:   "user-A",
+		TenantID: "tenant-A",
+		Role:     "owner",
+	}).Error; err != nil {
+		t.Fatalf("seed tenant-A: %v", err)
+	}
+	if err := db.Create(&entity.UserCanvas{
+		ID:             "agent-victim",
+		UserID:         "user-A",
+		Title:          sptr("Victim Agent"),
+		CanvasCategory: "agent_canvas",
+	}).Error; err != nil {
+		t.Fatalf("seed victim canvas: %v", err)
+	}
+
+	// Seed tenant-B (the attacker's tenant).
+	if err := db.Create(&entity.UserTenant{
+		ID:       "ut-B",
+		UserID:   "user-B",
+		TenantID: "tenant-B",
+		Role:     "owner",
+	}).Error; err != nil {
+		t.Fatalf("seed tenant-B: %v", err)
+	}
+
+	svc := NewBotService(nil, nil)
+
+	// Attacker (tenant-B) asks for victim (tenant-A's canvas).
+	title, _, _, _, _, code, err := svc.AgentbotInputs(context.Background(),
+		"tenant-B", "agent-victim")
+	if !errors.Is(err, dao.ErrUserCanvasNotFound) {
+		t.Errorf("cross-tenant: want ErrUserCanvasNotFound, got %v", err)
+	}
+	if code != common.CodeDataError {
+		t.Errorf("cross-tenant: want code %d, got %d", common.CodeDataError, code)
+	}
+	if title != "" {
+		t.Errorf("cross-tenant: title should be empty, got %q (data leak)", title)
+	}
+}
+
+// TestWriteChatbotRunEvent_UserInputsEvent guards PR #14589: the
+// SSE envelope must carry the canvas event type so the front-end
+// can distinguish interactive "user_inputs" / "workflow_finished"
+// events (which need a UserFillUp form) from plain "message"
+// events (assistant text). Without the `event` field the form
+// UI never appears and the canvas appears to hang.
+func TestWriteChatbotRunEvent_UserInputsEvent(t *testing.T) {
+	rec := &recordingResponseWriter{header: http.Header{}}
+	if err := WriteChatbotRunEvent(rec, canvas.RunEvent{
+		Type:      "user_inputs",
+		Data:      `{"components":[{"id":"email","type":"text","required":true}]}`,
+		SessionID: "sess-1",
+	}); err != nil {
+		t.Fatalf("WriteChatbotRunEvent: %v", err)
+	}
+	body := rec.body.String()
+	if !strings.Contains(body, `"event":"user_inputs"`) {
+		t.Errorf("body missing event=user_inputs: %s", body)
+	}
+	if !strings.Contains(body, `"session_id":"sess-1"`) {
+		t.Errorf("body missing session_id: %s", body)
+	}
+}
+
+// TestWriteChatbotRunEvent_WorkflowFinishedEvent covers the second
+// new event type from PR #14589. The envelope must also carry
+// "workflow_finished" verbatim.
+func TestWriteChatbotRunEvent_WorkflowFinishedEvent(t *testing.T) {
+	rec := &recordingResponseWriter{header: http.Header{}}
+	if err := WriteChatbotRunEvent(rec, canvas.RunEvent{
+		Type:      "workflow_finished",
+		Data:      `{"answer":"done"}`,
+		SessionID: "sess-2",
+	}); err != nil {
+		t.Fatalf("WriteChatbotRunEvent: %v", err)
+	}
+	body := rec.body.String()
+	if !strings.Contains(body, `"event":"workflow_finished"`) {
+		t.Errorf("body missing event=workflow_finished: %s", body)
+	}
+}
+
+// TestWriteChatbotRunEvent_MessageEventCarriesEvent ensures the
+// existing "message" path also carries the event field. The
+// front-end can rely on `data.event` to distinguish message
+// frames from user_inputs / workflow_finished frames without
+// a separate header.
+func TestWriteChatbotRunEvent_MessageEventCarriesEvent(t *testing.T) {
+	rec := &recordingResponseWriter{header: http.Header{}}
+	if err := WriteChatbotRunEvent(rec, canvas.RunEvent{
+		Type:      "message",
+		Data:      `{"answer":"hi"}`,
+		SessionID: "sess-3",
+	}); err != nil {
+		t.Fatalf("WriteChatbotRunEvent: %v", err)
+	}
+	body := rec.body.String()
+	if !strings.Contains(body, `"event":"message"`) {
+		t.Errorf("message frame should carry event=message: %s", body)
+	}
+}
+
+// recordingResponseWriter is a minimal http.ResponseWriter stub
+// for SSE frame tests. Tracks writes so the test can assert the
+// emitted frame contents.
+type recordingResponseWriter struct {
+	header http.Header
+	body   bytes.Buffer
+}
+
+func (r *recordingResponseWriter) Header() http.Header {
+	return r.header
+}
+func (r *recordingResponseWriter) Write(b []byte) (int, error) {
+	return r.body.Write(b)
+}
+func (r *recordingResponseWriter) WriteHeader(_ int) {}
