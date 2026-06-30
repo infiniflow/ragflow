@@ -716,7 +716,7 @@ export function ModelsSection({
                         verifyStatus === 'loading' &&
                           'text-text-secondary cursor-wait',
                         verifyStatus === 'success' && 'text-state-success',
-                        verifyStatus === 'error' && 'text-state-error',
+                        verifyStatus === 'error' && 'text-state-warning',
                       )}
                       onClick={() => handleVerify(model)}
                       disabled={verifyStatus === 'loading'}
@@ -740,10 +740,7 @@ export function ModelsSection({
                       <button
                         type="button"
                         className={cn(
-                          'size-6 flex items-center justify-center rounded-md transition-colors',
-                          isAdded
-                            ? 'text-state-error hover:bg-state-error/10'
-                            : 'text-state-success hover:bg-state-success/10',
+                          'size-6 flex items-center justify-center rounded-md transition-colors text-text-secondary',
                         )}
                         onClick={() =>
                           isAdded

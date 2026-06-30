@@ -573,10 +573,7 @@ function GenericProviderInstanceCard({
               </ConfirmDeleteDialog>
             </div>
           </CollapsibleTrigger>
-          <CollapsibleContent
-            forceMount
-            className="data-[state=closed]:hidden overflow-hidden"
-          >
+          <CollapsibleContent forceMount className="data-[state=closed]:hidden">
             <div
               className="pb-4 flex flex-col gap-4"
               onBlurCapture={handleFieldsBlur}
