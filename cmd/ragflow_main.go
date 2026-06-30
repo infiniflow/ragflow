@@ -183,6 +183,90 @@ func main() {
 		printHelp(arguments)
 		return
 	}
+
+	if err = runCommon(arguments); err != nil {
+		fmt.Printf("Failed to start %s server: %v\n", *arguments.mode, err)
+		os.Exit(1)
+	}
+}
+
+func runCommon(args *serverArgs) error {
+
+	err := server.InitLocalVariables()
+	if err != nil {
+		return err
+	}
+
+	var logFile string
+	var serverName string
+	switch *args.mode {
+	case "api":
+		serverName = fmt.Sprintf("api_server_%d", args.port)
+		server.SetServerName(serverName)
+		logFile = fmt.Sprintf("%s.log", serverName)
+	case "admin":
+		serverName = fmt.Sprintf("admin_server_%d", args.port)
+		server.SetServerName(serverName)
+		logFile = fmt.Sprintf("%s.log", serverName)
+	case "ingestor":
+		uuid := common.GenerateUUID()
+		serverName = fmt.Sprintf("ingestor_server_%s", uuid)
+		server.SetServerName(serverName)
+		logFile = fmt.Sprintf("%s.log", serverName)
+	default:
+		return fmt.Errorf("invalid server mode: %s", *args.mode)
+	}
+
+	logLevel := "info"
+	if args.debugLog {
+		logLevel = "debug"
+	}
+
+	if err = common.Init(logLevel, common.FileOutput{Path: logFile}); err != nil {
+		panic("failed to initialize logger: " + err.Error())
+	}
+
+	var configPath string
+	if args.configPath != nil {
+		configPath = *args.configPath
+	}
+
+	if err = server.Init(configPath); err != nil {
+		common.Error("Failed to initialize configuration", err)
+		return err
+	}
+
+	config := server.GetConfig()
+
+	// Reinitialize logger with configured level if different
+	logLevel = config.Log.Level
+	if logLevel == "" {
+		logLevel = "info"
+	}
+
+	if args.debugLog {
+		logLevel = "debug"
+	}
+
+	fileOut := common.FileOutput{
+		Path:       logFile,
+		MaxSize:    config.Log.MaxSize,
+		MaxBackups: config.Log.MaxBackups,
+		MaxAge:     config.Log.MaxAge,
+		Compress:   common.ResolveCompress(config.Log.Compress),
+	}
+	if config.Log.Path != "" {
+		fileOut.Path = config.Log.Path
+	}
+	if err = common.Init(logLevel, fileOut); err != nil {
+		common.Error("Failed to reinitialize logger with configured level", err)
+	}
+
+	server.SetLogger(common.Logger)
+
+	common.Info(fmt.Sprintf("Starting %s server name %s, mode: %s", *args.mode, serverName, config.Server.Mode))
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------
