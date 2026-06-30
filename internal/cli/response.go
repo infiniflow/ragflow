@@ -162,6 +162,24 @@ func (r *CommonDataResponse) PrintOut() {
 	}
 }
 
+func HandleCommonDataResponse(response *Response, command string) (ResponseIf, error) {
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to %s: HTTP %d, body: %s", command, response.StatusCode, string(response.Body))
+	}
+
+	var result CommonDataResponse
+	if err := json.Unmarshal(response.Body, &result); err != nil {
+		return nil, fmt.Errorf("%s failed: invalid JSON (%w)", command, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = response.Duration
+	return &result, nil
+}
+
 type ListDocumentsResponse struct {
 	Code         int                    `json:"code"`
 	Data         map[string]interface{} `json:"data"`

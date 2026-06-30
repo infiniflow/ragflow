@@ -318,20 +318,7 @@ func (c *CLI) CommonShowProviderCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to show provider: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("failed to show provider: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "show provider")
 }
 
 // CommonShowProviderInstanceCommand shows details of a specific instance
@@ -364,21 +351,7 @@ func (c *CLI) CommonShowProviderInstanceCommand(cmd *Command) (ResponseIf, error
 		return nil, fmt.Errorf("failed to show instance: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("failed to show instance: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "show instance")
 }
 
 // CommonShowProviderInstanceBalanceCommand shows balance of a specific instance
@@ -412,21 +385,7 @@ func (c *CLI) CommonShowProviderInstanceBalanceCommand(cmd *Command) (ResponseIf
 		return nil, fmt.Errorf("failed to show instance balance: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show instance balance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("failed to show instance balance: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "show instance balance")
 }
 
 // CommonListProviderInstancesCommand lists all instances of a provider
@@ -631,20 +590,7 @@ func (c *CLI) CommonShowProviderModelCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to show model: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("failed to show model: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "show model")
 }
 
 func (c *CLI) CommonCheckProviderWithKeyCommand(cmd *Command) (ResponseIf, error) {
@@ -698,18 +644,7 @@ func (c *CLI) CommonCheckProviderWithKeyCommand(cmd *Command) (ResponseIf, error
 
 	switch c.Config.CLIMode {
 	case AdminMode:
-		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-		}
-		var result CommonDataResponse
-		if err = json.Unmarshal(resp.Body, &result); err != nil {
-			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
-		}
-		if result.Code != 0 {
-			return nil, fmt.Errorf("%s", result.Message)
-		}
-		result.Duration = resp.Duration
-		return &result, nil
+		return HandleCommonDataResponse(resp, "check provider connection with key")
 	case APIMode:
 		return HandleSimpleResponse(resp, "check provider connection with key")
 	default:
@@ -749,18 +684,7 @@ func (c *CLI) CommonCheckProviderConnectionCommand(cmd *Command) (ResponseIf, er
 
 	switch c.Config.CLIMode {
 	case AdminMode:
-		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-		}
-		var result CommonDataResponse
-		if err = json.Unmarshal(resp.Body, &result); err != nil {
-			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
-		}
-		if result.Code != 0 {
-			return nil, fmt.Errorf("%s", result.Message)
-		}
-		result.Duration = resp.Duration
-		return &result, nil
+		return HandleCommonDataResponse(resp, "check provider connection")
 	case APIMode:
 		return HandleSimpleResponse(resp, "check provider connection")
 	default:
@@ -813,18 +737,7 @@ func (c *CLI) CommonAlterProviderInstanceCommand(cmd *Command) (ResponseIf, erro
 
 	switch c.Config.CLIMode {
 	case AdminMode:
-		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("failed to alter instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-		}
-		var result CommonDataResponse
-		if err = json.Unmarshal(resp.Body, &result); err != nil {
-			return nil, fmt.Errorf("alter instance failed: invalid JSON (%w)", err)
-		}
-		if result.Code != 0 {
-			return nil, fmt.Errorf("%s", result.Message)
-		}
-		result.Duration = resp.Duration
-		return &result, nil
+		return HandleCommonDataResponse(resp, "alter instance")
 	case APIMode:
 		return HandleSimpleResponse(resp, "alter instance")
 	default:
@@ -873,18 +786,7 @@ func (c *CLI) CommonEnableOrDisableModelCommand(cmd *Command, status string) (Re
 
 	switch c.Config.CLIMode {
 	case AdminMode:
-		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("failed to enable/disable model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-		}
-		var result CommonDataResponse
-		if err = json.Unmarshal(resp.Body, &result); err != nil {
-			return nil, fmt.Errorf("enable/disable model failed: invalid JSON (%w)", err)
-		}
-		if result.Code != 0 {
-			return nil, fmt.Errorf("%s", result.Message)
-		}
-		result.Duration = resp.Duration
-		return &result, nil
+		return HandleCommonDataResponse(resp, "enable/disable model")
 	case APIMode:
 		return HandleSimpleResponse(resp, "enable/disable model")
 	default:
@@ -1410,20 +1312,7 @@ func (c *CLI) CommonShowModelCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to show model: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("failed to show model: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "show model")
 }
 
 // readPassword reads password from terminal without echoing

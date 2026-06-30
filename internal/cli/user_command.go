@@ -1900,47 +1900,6 @@ func (c *CLI) APIAddProviderInstanceCommand(cmd *Command) (ResponseIf, error) {
 	return HandleSimpleResponse(resp, "add provider instance")
 }
 
-// ShowInstanceBalance shows balance of a specific instance
-// SHOW BALANCE FROM PROVIDER <provider_name> <instance_name>
-func (c *CLI) ShowInstanceBalance(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	instanceName, ok := cmd.Params["instance_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("instance name not provided")
-	}
-
-	providerName, ok := cmd.Params["provider_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("provider name not provided")
-	}
-
-	url := fmt.Sprintf("/providers/%s/instances/%s/balance", providerName, instanceName)
-
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to show instance: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show instance failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
 // DELETE PROVIDER <name> INSTANCE <name>
 func (c *CLI) APIDeleteProviderInstanceCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
@@ -2837,19 +2796,7 @@ func (c *CLI) APIOCRUserCommand(cmd *Command) (ResponseIf, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to OCR document: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to OCR document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("OCR document failed: invalid JSON (%w)", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-
-	return &result, nil
+	return HandleCommonDataResponse(resp, "OCR document")
 }
 
 func (c *CLI) APIModelParseFileCommand(cmd *Command) (ResponseIf, error) {
@@ -2939,19 +2886,8 @@ func (c *CLI) APIModelParseFileCommand(cmd *Command) (ResponseIf, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to PARSE document: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to PARSE document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("PARSE document failed: invalid JSON (%w)", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
 
-	return &result, nil
+	return HandleCommonDataResponse(resp, "PARSE document")
 }
 
 func (c *CLI) APIListModelInstanceTasksCommand(cmd *Command) (ResponseIf, error) {
@@ -3697,21 +3633,7 @@ func (c *CLI) APIShowLogLevelCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get log level config: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get log level config: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get log level config failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "get log level config")
 
 }
 
