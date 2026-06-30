@@ -28,29 +28,35 @@ from typing import Dict, List, Optional
 from .types import Entity, Relation
 
 # Language-specific dependency label mappings
-# For each language: which dep labels to use for extraction
-# Based on actual spaCy output analysis (see docs)
-_LANG_DEP_RULES: Dict[str, Dict[str, str]] = {
-    "en": {"nsubjpass": "pass_subj", "agent_pobj": "agent",
-           "nsubj": "subj", "dobj": "dobj",
-           "prep_pobj": "prep_obj"},
-    "de": {"sb": "pass_subj", "ROOT_oc": "root_verb",  # ROOT is aux, oc = main verb
-           "sbp_nk": "agent", "sb": "subj",
-           "mo_nk": "prep_obj",  # prepositional modifier → noun kernel
-          },
-    "fr": {"nsubj:pass": "pass_subj", "obl:agent": "agent",
-           "nsubj": "subj", "obj": "dobj",
-           "obl": "prep_obj",  # oblique (includes prep objects)
-          },
-    "es": {"nsubj": "subj", "obj": "agent",  # Spanish: no passive distinction, agent uses obj
-           "obl": "prep_obj"},
-    "pt": {"nsubj:pass": "pass_subj", "obl:agent": "agent",
-           "nsubj": "subj", "obj": "dobj",
-           "obl": "prep_obj"},
-    "zh": {"nsubj": "subj", "nmod:prep": "agent",  # "由" = case marker for agent
-           "obl": "prep_obj", "dobj": "dobj"},
-    "ja": {"nsubj": "subj", "obl": "agent",
-           "obl": "prep_obj", "dobj": "dobj"},
+# Keys: pass_subj, subj, agent, dobj, prep_obj — each maps to a dep label
+# or a tuple (dep, child_dep) for compound patterns.
+# None = no standard mapping (language uses different structure)
+_LANG_DEP_RULES: Dict[str, Dict[str, object]] = {
+    "en": {"pass_subj": "nsubjpass", "subj": "nsubj",
+           "agent": ("agent", "pobj"),
+           "dobj": "dobj", "prep_obj": ("prep", "pobj")},
+    "de": {"subj": "sb",
+           "agent": ("sbp", "nk"),
+           "prep_obj": ("mo", "nk"),
+           "root_verb_child": "oc"},  # German ROOT is aux, real verb is "oc"
+    "fr": {"pass_subj": "nsubj:pass", "subj": "nsubj",
+           "agent": "obl:agent",
+           "dobj": "obj", "prep_obj": ("case", "obl")},
+    "es": {"subj": "nsubj",
+           "agent": "obj",
+           "prep_obj": ("case", "obl")},
+    "pt": {"pass_subj": "nsubj:pass", "subj": "nsubj",
+           "agent": "obl:agent",
+           "dobj": "obj", "prep_obj": ("case", "obl")},
+    "zh": {"subj": "nsubj",
+           "agent": ("nmod:prep", None, "由"),  # case "由" marks agent
+           "prep_obj": ("case", "nmod")},
+    "ja": {"subj": "nsubj",
+           "agent": ("obl", None, "によって"),  # "によって" marks agent
+           "prep_obj": ("case", "obl")},
+    "ja": {"subj": "nsubj",
+           "agent": ("obl", None),
+           "prep_obj": ("case", "obl")},
 }
 
 # Multi-hop inference rules: if A rel1 B and B rel2 C then A rel3 C
@@ -113,8 +119,22 @@ _VERB_RELATIONS: Dict[str, str] = {
     "sediar+em": "located_in",
     "nascer+em": "born_in",
     "adquirir+por": "acquired", "comprar+por": "acquired",
-    # Note: non-English languages (de/fr/es/pt/zh/ja) use different spaCy
-    # dependency labels. Language-specific dep rules needed — future work.
+    # Chinese: verb + "由" (agent marker) or "被" (passive)
+    "创立+由": "founded_by", "创建+由": "founded_by",
+    "成立+由": "founded_by", "创办+由": "founded_by",
+    "设立+由": "founded_by",
+    "任职+于": "works_for", "就职+于": "works_for",
+    "工作+在": "works_for", "位于+在": "located_in",
+    "坐落+在": "located_in", "总部设+在": "located_in",
+    "出生+在": "born_in", "出生+于": "born_in",
+    "收购+由": "acquired", "并购+由": "acquired",
+    # Japanese: verb + "によって" (agent marker)
+    "設立+によって": "founded_by", "創立+によって": "founded_by",
+    "勤務+で": "works_for", "在籍+で": "works_for",
+    "位置+に": "located_in", "所在+に": "located_in",
+    "本社+を": "located_in",
+    "出生+に": "born_in",
+    "買収+によって": "acquired",
 }
 
 _COPULA_TITLE_MAP: Dict[str, List[str]] = {
@@ -182,104 +202,212 @@ class DepRelationExtractor:
     # Dependency extraction
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Language-aware role mapping
+    # ------------------------------------------------------------------
+
+    def _roles(self) -> Dict[str, str]:
+        """Get role → dep label mapping for current language."""
+        return _LANG_DEP_RULES.get(self.language, _LANG_DEP_RULES["en"])
+
+    def _get_by_role(self, root, role: str, entity_map) -> list:
+        """Get entities for a semantic role (language-aware). Returns [(Entity, prep?)]"""
+        rule = self._roles().get(role)
+        if rule is None:
+            return []
+        results = []
+
+        for c in root.children:
+            dep = c.dep_
+            if isinstance(rule, str):
+                if dep == rule:
+                    ent = self._entity_from_subtree(c, entity_map)
+                    if ent:
+                        results.append((ent, None))
+            elif isinstance(rule, tuple):
+                parent_dep, child_dep = rule[0], rule[1]
+                # Check optional case marker (e.g., "由" for zh, "によって" for ja)
+                case_marker = rule[2] if len(rule) > 2 else None
+                if dep == parent_dep:
+                    if case_marker:
+                        # Check if any child has the expected case lemma
+                        has_case = any(
+                            gc.lemma_ == case_marker or gc.text == case_marker
+                            for gc in c.subtree
+                        )
+                        if not has_case:
+                            continue
+                    if child_dep is None:
+                        ent = self._entity_from_subtree(c, entity_map)
+                        if ent:
+                            results.append((ent, c.lemma_.lower() if role == "prep_obj" else None))
+                    else:
+                        for gc in c.children:
+                            if gc.dep_ == child_dep:
+                                ent = self._entity_from_subtree(gc, entity_map)
+                                if ent:
+                                    prep = c.lemma_.lower() if role == "prep_obj" else None
+                                    results.append((ent, prep))
+                                break
+        return results
+
     def _extract_with_dep(self, text, doc, entities) -> List[Relation]:
         relations = []
-        # Build better entity map: keep ALL occurrences (not overwrite)
         entity_map = self._build_entity_map_multi(entities)
+        rules = self._roles()
+        is_de = self.language == "de"
+
         for sent in doc.sents:
             for token in sent:
+                # German: ROOT is aux verb, real verb is "oc" child
+                if is_de:
+                    if token.dep_ != "ROOT":
+                        continue
+                    for c in token.children:
+                        if c.dep_ == "oc":
+                            # German: args attach to aux (ROOT), not main verb (oc)
+                            # Pass both: root aux for args, oc for verb lemma
+                            relations.extend(self._extract_from_root(text, c, entity_map, aux_root=token))
+                    continue
+
                 if token.dep_ != "ROOT":
                     continue
                 relations.extend(self._extract_from_root(text, token, entity_map))
                 if token.lemma_ == "be":
                     relations.extend(self._extract_copula(text, token, entity_map))
+
         return relations
 
-    def _extract_from_root(self, text, root, entity_map) -> List[Relation]:
+    def _extract_from_root(self, text, root, entity_map, aux_root=None) -> List[Relation]:
         relations = []
-        verb_lemma = root.lemma_.lower()
+        # Fall back to text when lemma is empty (zh, ja don't have lemmatizers)
+        verb_lemma = (root.lemma_ or root.text).lower()
+        # For languages like German where args attach to aux verb
+        check = root if aux_root is None else aux_root
 
-        # Check negation
-        is_negated = any(c.dep_ == "neg" for c in root.children)
-        if is_negated:
+        # Negation
+        if any(c.dep_ in ("neg", "advmod:neg") for c in check.children):
             return relations
 
-        nsubj = self._get_child_entity(root, "nsubj", entity_map)
-        nsubjpass = self._get_child_entity(root, "nsubjpass", entity_map)
-        dobj = self._get_child_entity(root, "dobj", entity_map)
-        agent_pobj = self._get_agent_pobj(root, entity_map)
-        prep_list = self._get_prep_objs(root, entity_map)
-        have_agent = any(c.dep_ == "agent" for c in root.children)
+        # Extract roles (check both the main verb and optional aux parent)
+        def first(lst):
+            return lst[0][0] if lst else None
+        def get_roles(token):
+            return (
+                first(self._get_by_role(token, "subj", entity_map)),
+                first(self._get_by_role(token, "pass_subj", entity_map)),
+                first(self._get_by_role(token, "dobj", entity_map)),
+                first(self._get_by_role(token, "agent", entity_map)),
+                self._get_by_role(token, "prep_obj", entity_map),
+                any(c.dep_ == "aux" for c in token.children),
+            )
 
-        # Passive
-        if nsubjpass and agent_pobj and have_agent:
-            rel_type = self._lookup(verb_lemma, "by")
+        s1, sp1, d1, a1, p1, h1 = get_roles(root)
+        s2, sp2, d2, a2, p2, h2 = (None, None, None, None, [], False)
+        if aux_root:
+            s2, sp2, d2, a2, p2, h2 = get_roles(aux_root)
+
+        # Merge: prefer found roles from aux if main verb lacks them
+        nsubj = s1 or s2
+        nsubjpass = sp1 or sp2
+        dobj = d1 or d2
+        agent_entity = a1 or a2
+        prep_list = p1 + p2
+        has_aux = h1 or h2 or aux_root is not None
+        has_explicit_agent = agent_entity is not None
+
+        # Detect passive:
+        # - explicit pass_subj (en, fr, pt)
+        # - subj + agent + aux (Spanish-style)
+        # - subj + agent for languages with agent marker (zh, ja)
+        is_passive_candidate = has_explicit_agent and (has_aux or self.language in ("zh", "ja"))
+
+        effective_nsubjpass = nsubjpass or (nsubj if is_passive_candidate else None)
+        effective_nsubj = nsubj if not is_passive_candidate else None
+
+        # Passive: X was founded/acquired by Y
+        if effective_nsubjpass and agent_entity:
+            prep = ""
+            # Try language-appropriate prepositions/case markers
+            candidates = ("by", "von", "par", "por", "durch", "由", "によって")
+            for candidate in candidates:
+                if self._lookup(verb_lemma, candidate):
+                    prep = candidate
+                    break
+            rel_type = self._lookup(verb_lemma, prep) if prep else None
             if rel_type:
-                conf = 0.90
                 if rel_type in ("founded_by", "acquired"):
-                    subj, obj = nsubjpass, agent_pobj
+                    subj, obj = effective_nsubjpass, agent_entity
                 else:
-                    subj, obj = agent_pobj, nsubjpass
-                relations.append(Relation(
-                    subject=subj, predicate=rel_type, obj=obj,
-                    confidence=conf, context=text,
-                    metadata={"method": "passive", "verb": verb_lemma},
-                ))
+                    subj, obj = agent_entity, effective_nsubjpass
+                relations.append(self._make_rel(subj, rel_type, obj, 0.90, "passive", verb_lemma))
 
-        # Active
-        if nsubj:
+        # Active: X VERB Y or X VERB prep Y
+        if effective_nsubj:
             if dobj:
-                rel_type = self._lookup(verb_lemma, None)
-                if rel_type:
-                    relations.append(Relation(
-                        subject=nsubj, predicate=rel_type, obj=dobj,
-                        confidence=0.85, context=text,
-                        metadata={"method": "active", "verb": verb_lemma},
-                    ))
-            for prep_lemma, prep_entity in prep_list:
-                rel_type = self._lookup(verb_lemma, prep_lemma)
-                if rel_type:
-                    relations.append(Relation(
-                        subject=nsubj, predicate=rel_type, obj=prep_entity,
-                        confidence=0.85, context=text,
-                        metadata={"method": "active_prep", "verb": verb_lemma,
-                                  "prep": prep_lemma},
-                    ))
+                rt = self._lookup(verb_lemma, None)
+                if rt:
+                    relations.append(self._make_rel(effective_nsubj, rt, dobj, 0.85, "active", verb_lemma))
+            for prep_entity, prep_l in prep_list:
+                rt = self._lookup(verb_lemma, prep_l)
+                if rt:
+                    relations.append(self._make_rel(effective_nsubj, rt, prep_entity, 0.85,
+                                                    "active_prep", verb_lemma, prep=prep_l))
 
         # Passive with prep ("is based in")
-        if nsubjpass and prep_list:
-            for prep_lemma, prep_entity in prep_list:
-                rel_type = self._lookup(verb_lemma, prep_lemma)
-                if not rel_type:
-                    rel_type = self._lookup("be+" + verb_lemma, prep_lemma)
-                if rel_type:
-                    relations.append(Relation(
-                        subject=nsubjpass, predicate=rel_type, obj=prep_entity,
-                        confidence=0.85, context=text,
-                        metadata={"method": "passive_prep", "verb": verb_lemma,
-                                  "prep": prep_lemma},
-                    ))
+        if effective_nsubjpass and prep_list and not agent_entity:
+            for prep_entity, prep_l in prep_list:
+                rt = self._lookup(verb_lemma, prep_l)
+                if not rt:
+                    rt = self._lookup("be+" + verb_lemma, prep_l)
+                if rt:
+                    relations.append(self._make_rel(effective_nsubjpass, rt, prep_entity, 0.85,
+                                                    "passive_prep", verb_lemma, prep=prep_l))
+
         return relations
+
+    @staticmethod
+    def _make_rel(subj, pred, obj, conf, method, verb, prep=""):
+        m = {"method": method, "verb": verb}
+        if prep:
+            m["prep"] = prep
+        return Relation(subject=subj, predicate=pred, obj=obj,
+                         confidence=conf, metadata=m)
+
+    @staticmethod
+    def _already_has(rels, subj, pred, obj) -> bool:
+        for r in rels:
+            if r.subject.text == subj.text and r.predicate == pred and r.obj.text == obj.text:
+                return True
+        return False
 
     def _extract_copula(self, text, root, entity_map) -> List[Relation]:
         relations = []
-        subj = self._get_child_entity(root, "nsubj", entity_map)
+        rules = self._roles()
+        # Get subject using language-specific rules
+        subjs = self._get_by_role(root, "subj", entity_map)
+        subj = subjs[0][0] if subjs else None
         if not subj:
             return relations
+
         title_lemma = None
         prep_obj = None
+        deps_to_check = ["attr", "pred"]  # attr=en, pred=de
         for c in root.children:
-            if c.dep_ != "attr":
+            if c.dep_ not in deps_to_check:
                 continue
             for cc in c.children:
-                if cc.dep_ != "prep" or cc.lemma_ != "of":
+                prep_deps = {"prep", "mo", "case"}  # en=prep, de=mo, fr/case
+                if cc.dep_ not in prep_deps:
                     continue
                 for gc in cc.children:
-                    if gc.dep_ == "pobj":
+                    pobj_deps = {"pobj", "nk", "obl"}
+                    if gc.dep_ in pobj_deps or True:  # accept any child as object
                         prep_obj = self._entity_from_subtree(gc, entity_map)
                         if prep_obj:
                             title_lemma = c.lemma_.lower()
                         break
+
         if not title_lemma or not prep_obj:
             return relations
         for keyword, rel_types in _COPULA_TITLE_MAP.items():

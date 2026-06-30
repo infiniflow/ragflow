@@ -13,15 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from .extractor import Extractor
-from .spacy_ner import NerExtractor
-from .relation_extractor import RelationExtractor
+from .ner_extractor import NERExtractor
+from .dep_relation_extractor import DepRelationExtractor
 from .types import Entity, ExtractionResult, Relation
 
 __all__ = [
-    "Extractor",
-    "NerExtractor",
-    "RelationExtractor",
+    "NERExtractor",
+    "DepRelationExtractor",
     "Entity",
     "Relation",
     "ExtractionResult",
