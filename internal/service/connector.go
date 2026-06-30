@@ -35,6 +35,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -46,6 +47,15 @@ const (
 	connectorStatusUnstarted = "0"
 	defaultConnectorFreq     = 5
 	defaultConnectorTimeout  = 60 * 29
+
+	// boxWebFlowTTLSecs is the lifetime of a stored Box OAuth web flow state,
+	// matching WEB_FLOW_TTL_SECS in api/apps/restful_apis/connector_api.py.
+	boxWebFlowTTLSecs = 15 * 60
+	// boxAuthorizeURL is Box's OAuth 2.0 authorization endpoint.
+	boxAuthorizeURL = "https://account.box.com/api/oauth2/authorize"
+	// defaultBoxWebOAuthRedirectURI mirrors BOX_WEB_OAUTH_REDIRECT_URI in
+	// common/data_source/config.py.
+	defaultBoxWebOAuthRedirectURI = "http://localhost:9380/v1/connector/box/oauth/web/callback"
 	webFlowTTL               = 15 * time.Minute
 	googleOAuthAuthorizeURL  = "https://accounts.google.com/o/oauth2/auth"
 	googleOAuthTokenURL      = "https://oauth2.googleapis.com/token"
@@ -112,6 +122,66 @@ type RebuildConnectorRequest struct {
 	KbID string `json:"kb_id"`
 }
 
+// BoxWebOAuthFlow is the result of starting a Box web OAuth flow.
+type BoxWebOAuthFlow struct {
+	FlowID           string `json:"flow_id"`
+	AuthorizationURL string `json:"authorization_url"`
+	ExpiresIn        int    `json:"expires_in"`
+}
+
+// boxWebOAuthRedirectURI resolves the Box OAuth redirect URI, preferring the
+// request value, then the BOX_WEB_OAUTH_REDIRECT_URI env var, then the default.
+func boxWebOAuthRedirectURI(requested string) string {
+	if requested != "" {
+		return requested
+	}
+	if env := os.Getenv("BOX_WEB_OAUTH_REDIRECT_URI"); env != "" {
+		return env
+	}
+	return defaultBoxWebOAuthRedirectURI
+}
+
+// boxWebStateCacheKey mirrors _web_state_cache_key(flow_id, "box") in
+// api/apps/restful_apis/connector_api.py.
+func boxWebStateCacheKey(flowID string) string {
+	return fmt.Sprintf("box_web_flow_state:%s", flowID)
+}
+
+// StartBoxWebOAuth begins a Box OAuth web flow: it builds the Box authorization
+// URL and stores the flow state in Redis so the callback can complete it.
+// Equivalent to start_box_web_oauth in api/apps/restful_apis/connector_api.py.
+func (s *ConnectorService) StartBoxWebOAuth(userID, clientID, clientSecret, redirectURI string) (*BoxWebOAuthFlow, error) {
+	redirectURI = boxWebOAuthRedirectURI(redirectURI)
+	flowID := common.GenerateUUID()
+
+	params := url.Values{}
+	params.Set("client_id", clientID)
+	params.Set("response_type", "code")
+	params.Set("redirect_uri", redirectURI)
+	params.Set("state", flowID)
+	authURL := boxAuthorizeURL + "?" + params.Encode()
+
+	redisClient := cache.Get()
+	if redisClient == nil {
+		return nil, fmt.Errorf("redis is not available to store the OAuth flow state")
+	}
+
+	payload := map[string]interface{}{
+		"user_id":       userID,
+		"auth_url":      authURL,
+		"client_id":     clientID,
+		"client_secret": clientSecret,
+		"created_at":    time.Now().Unix(),
+	}
+	if !redisClient.SetObj(boxWebStateCacheKey(flowID), payload, boxWebFlowTTLSecs*time.Second) {
+		return nil, fmt.Errorf("failed to persist the OAuth flow state")
+	}
+
+	return &BoxWebOAuthFlow{
+		FlowID:           flowID,
+		AuthorizationURL: authURL,
+		ExpiresIn:        boxWebFlowTTLSecs,
+	}, nil
 type StartGoogleWebOAuthRequest struct {
 	Credentials json.RawMessage `json:"credentials"`
 	RedirectURI string          `json:"redirect_uri,omitempty"`

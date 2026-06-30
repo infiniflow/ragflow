@@ -555,6 +555,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
 				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 				connector.POST("/:connector_id/test", r.connectorHandler.TestConnector)
+				connector.POST("/box/oauth/web/start", r.connectorHandler.StartBoxWebOAuth)
 			}
 
 			// MCP server routes. Per-server CRUD ships via separate PRs that

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,6 +90,17 @@ func (s fakeConnectorService) RebuildConnector(string, string, string) (bool, co
 		return false, s.code, s.err
 	}
 	return true, common.CodeSuccess, nil
+}
+
+func (s fakeConnectorService) StartBoxWebOAuth(string, string, string, string) (*service.BoxWebOAuthFlow, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &service.BoxWebOAuthFlow{
+		FlowID:           "flow-1",
+		AuthorizationURL: "https://account.box.com/api/oauth2/authorize?client_id=cid&response_type=code&state=flow-1",
+		ExpiresIn:        900,
+	}, nil
 }
 
 func TestConnectorHandlerTestConnector(t *testing.T) {
@@ -206,6 +218,63 @@ func TestConnectorHandlerDeleteConnector(t *testing.T) {
 			}
 			if tt.wantMsg != "" && body["message"] != tt.wantMsg {
 				t.Fatalf("message=%v", body["message"])
+			}
+		})
+	}
+}
+
+func TestConnectorHandlerStartBoxWebOAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name     string
+		body     string
+		service  fakeConnectorService
+		wantCode common.ErrorCode
+	}{
+		{
+			name:     "success",
+			body:     `{"client_id":"cid","client_secret":"secret"}`,
+			service:  fakeConnectorService{},
+			wantCode: common.CodeSuccess,
+		},
+		{
+			name:     "missing credentials",
+			body:     `{"client_id":"cid"}`,
+			service:  fakeConnectorService{},
+			wantCode: common.CodeArgumentError,
+		},
+		{
+			name:     "invalid body",
+			body:     `not-json`,
+			service:  fakeConnectorService{},
+			wantCode: common.CodeArgumentError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &ConnectorHandler{connectorService: tt.service}
+			router := gin.New()
+			router.POST("/api/v1/connectors/box/oauth/web/start", func(c *gin.Context) {
+				c.Set("user", &entity.User{ID: "tenant-1"})
+				h.StartBoxWebOAuth(c)
+			})
+
+			resp := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/connectors/box/oauth/web/start", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(resp, req)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+			}
+
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+				t.Fatalf("unmarshal response: %v", err)
+			}
+			if body["code"] != float64(tt.wantCode) {
+				t.Fatalf("code=%v want=%v body=%v", body["code"], tt.wantCode, body)
 			}
 		})
 	}

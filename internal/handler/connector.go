@@ -372,6 +372,64 @@ func (h *ConnectorHandler) DeleteConnector(c *gin.Context) {
 	})
 }
 
+// StartBoxWebOAuthRequest is the body for starting a Box web OAuth flow.
+type StartBoxWebOAuthRequest struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	RedirectURI  string `json:"redirect_uri"`
+}
+
+// StartBoxWebOAuth starts a Box OAuth web flow.
+// @Summary Start Box OAuth Web Flow
+// @Description Build the Box authorization URL and store the flow state (equivalent to Python's start_box_web_oauth)
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/connectors/box/oauth/web/start [post]
+func (h *ConnectorHandler) StartBoxWebOAuth(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req StartBoxWebOAuthRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	if strings.TrimSpace(req.ClientID) == "" || strings.TrimSpace(req.ClientSecret) == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "Box client_id and client_secret are required.",
+		})
+		return
+	}
+
+	flow, err := h.connectorService.StartBoxWebOAuth(user.ID, req.ClientID, req.ClientSecret, req.RedirectURI)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    flow,
+		"message": "success",
+	})
+}
+
 // RebuildConnector rebuild connector
 // @Summary Rebuild Connector
 // @Description Trigger a rebuild for an accessible connector and knowledge base
