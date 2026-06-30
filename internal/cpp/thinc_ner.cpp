@@ -133,11 +133,51 @@ static uint64_t feat_norm(const std::string& t) {
     std::string lo=t; std::transform(lo.begin(),lo.end(),lo.begin(),::tolower);
     return hash_feat(lo);
 }
+// UTF-8 aware: get first Unicode codepoint as string
+static std::string utf8_first(const std::string& s) {
+    if(s.empty()) return "";
+    unsigned char c=(unsigned char)s[0];
+    int l=1;
+    if((c&0xE0)==0xC0) l=2;
+    else if((c&0xF0)==0xE0) l=3;
+    else if((c&0xF8)==0xF0) l=4;
+    return s.substr(0,(size_t)l<=s.size()?l:1);
+}
+// Count Unicode codepoints in a string
+static size_t utf8_len(const std::string& s) {
+    size_t n=0;
+    for(size_t i=0;i<s.size();n++){
+        unsigned char c=(unsigned char)s[i];
+        if((c&0x80)==0) i+=1;
+        else if((c&0xE0)==0xC0) i+=2;
+        else if((c&0xF0)==0xE0) i+=3;
+        else if((c&0xF8)==0xF0) i+=4;
+        else i+=1;
+    }
+    return n;
+}
+// Get suffix: last `count` Unicode codepoints
+static std::string utf8_last(const std::string& s, size_t count) {
+    size_t ulen=utf8_len(s);
+    if(ulen<=count) return s;
+    // Find byte position of the (ulen-count)-th codepoint
+    size_t pos=0;
+    for(size_t i=0;i<ulen-count;i++){
+        unsigned char c=(unsigned char)s[pos];
+        if((c&0x80)==0) pos+=1;
+        else if((c&0xE0)==0xC0) pos+=2;
+        else if((c&0xF0)==0xE0) pos+=3;
+        else if((c&0xF8)==0xF0) pos+=4;
+        else pos+=1;
+    }
+    return s.substr(pos);
+}
 static uint64_t feat_prefix(const std::string& t) {
-    return hash_feat(t.empty()?"":std::string(1,t[0]));
+    return hash_feat(t.empty()?"":utf8_first(t));
 }
 static uint64_t feat_suffix(const std::string& t) {
-    return hash_feat(t.size()>=3?t.substr(t.size()-3):t);
+    size_t ulen=utf8_len(t);
+    return hash_feat(ulen>=3?utf8_last(t,3):t);
 }
 static uint64_t feat_shape(const std::string& t) {
     std::string sh;

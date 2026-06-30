@@ -28,6 +28,7 @@ package extractor
 //
 // #include <stdlib.h>
 // #include "../../../cpp/rag_analyzer_c_api.h"
+// #include "../../../cpp/thinc_parser.h"
 import "C"
 import (
 	"encoding/json"

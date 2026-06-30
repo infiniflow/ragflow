@@ -14,20 +14,26 @@
 #  limitations under the License.
 #
 """
-Combined entity and relation extractor — orchestrates NerExtractor + RelationExtractor.
+Combined entity and relation extractor — orchestrates NerExtractor + relation extraction.
 
 This is the primary entry point for the rag/graphrag/ner package.
 """
+import logging
 from typing import List, Optional
 
+import spacy
+
 from .spacy_ner import NerExtractor
-from .relation_extractor import RelationExtractor
+from .dep_relation_extractor import DepRelationExtractor
 from .types import ExtractionResult
 
 
 class Extractor:
     """
     Combined entity and relation extractor.
+
+    Uses spaCy's dependency parse for multilingual relation extraction
+    (replacing the previous regex-based approach).
 
     Usage:
 
@@ -56,21 +62,36 @@ class Extractor:
             model_name=spacy_model,
             confidence_threshold=ner_confidence_threshold,
         )
-        self._rel = RelationExtractor(
+        self._rel = DepRelationExtractor(
             language=language,
             confidence_threshold=relation_confidence_threshold,
         )
         self.language = language
+        self._model_name = spacy_model
+        self._nlp = None
 
-    def extract(self, text: str, extract_relations: bool = True) -> ExtractionResult:
+    def _ensure_model(self):
+        """Lazy-load spaCy model with parser for dependency extraction."""
+        if self._nlp is None:
+            try:
+                self._nlp = spacy.load(self._model_name)
+            except Exception:
+                logging.warning("Failed to load spaCy '%s' for dep parsing",
+                                self._model_name)
+
+    def extract(self, text: str, extract_relations: bool = True,
+                **options) -> ExtractionResult:
         """
         Extract entities (and optionally relations) from text.
+        Uses spaCy dependency parse for relation extraction (over regex).
         """
         entities = self._ner.extract(text)
 
         relations = []
         if extract_relations and len(entities) >= 2:
-            relations = self._rel.extract(text, entities)
+            self._ensure_model()
+            doc = self._nlp(text) if self._nlp else None
+            relations = self._rel.extract(text, entities, doc=doc)
 
         return ExtractionResult(
             entities=entities,
