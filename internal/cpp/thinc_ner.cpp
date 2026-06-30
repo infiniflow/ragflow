@@ -191,8 +191,8 @@ static uint64_t feat_shape(const std::string& t) {
     return hash_feat(sh);
 }
 // Extract features based on n_embed count. Returns vector of hash values.
-// en (6): NORM, PREFIX, SUFFIX, SHAPE, SPACY, IS_SPACE
-// zh (5): NORM, PREFIX, SUFFIX, SHAPE, IS_SPACE
+// NER model's tok2vec uses 4 features: NORM, PREFIX, SUFFIX, SHAPE
+// (The pipeline's standalone tok2vec uses 6 features including SPACY and IS_SPACE.)
 // Feature order matches the HashEmbed table order in the model.
 static std::vector<uint64_t> extract_features(const std::string& t, int n_embed) {
     std::vector<uint64_t> ids;
@@ -200,11 +200,9 @@ static std::vector<uint64_t> extract_features(const std::string& t, int n_embed)
     ids.push_back(feat_prefix(t));   // #1: PREFIX
     ids.push_back(feat_suffix(t));   // #2: SUFFIX
     ids.push_back(feat_shape(t));    // #3: SHAPE
-    if(n_embed==6) {
-        ids.push_back(1);            // #4: SPACY (1 for non-space) — en only
-        ids.push_back(0);            // #5: IS_SPACE (0 for non-space) — en only
-    } else {
-        ids.push_back(0);            // #4: IS_SPACE (0 for non-space) — zh only
+    if(n_embed>=5) {
+        ids.push_back(1);            // #4: SPACY (1 for non-space)
+        ids.push_back(0);            // #5: IS_SPACE (0 for non-space)
     }
     return ids;
 }
@@ -311,8 +309,11 @@ struct State {
     ResBlk res[4]; int n_res=0;
     // NER hidden (96→64)
     std::vector<float> hW,hB; int hO=64; bool has_hid=false;
-    // NER precomputable affine (first piece: 64→64)
-    std::vector<float> pW,pB; bool has_pre=false;
+    // PrecomputableAffine: W_full[nP=3][nO=64][nI=2][nD=64], b_full[nO=64][nI=2]
+    // We use f=0 (first feature only): pre_out[p][o] = sum_d W[p][o][0][d] * hid[d] + b[o][0]
+    std::vector<float> pW_full; // flattened [3*64*2*64]
+    std::vector<float> pB_full; // flattened [64*2]
+    int p_nP=3, p_nO=64, p_nI=2, p_nD=64; bool has_pre=false;
     // Classifier (64→n_actions)
     std::vector<float> cW,cB; int nAct=0; bool has_cls=false;
     std::vector<std::string> actLbl;
@@ -368,8 +369,28 @@ static bool load(const std::string& dir, State* s) {
         if(ld(pk+"W",&rb.W,&r0,&r1,&r2)){ld(pk+"B",&rb.b);ld(pk+"lnG",&rb.lnG);ld(pk+"lnb",&rb.lnb);rb.has=true;s->n_res++;}}
     // NER hidden
     if(ld("hW",&s->hW,&r0,&r1)){s->hO=r0;ld("hB",&s->hB);s->has_hid=true;}
-    // Precomputable affine (first piece)
-    if(ld("pW",&s->pW,&r0,&r1)){ld("pB",&s->pB);s->has_pre=true;}
+    // PrecomputableAffine: load full 4D W and 2D b
+    {
+        auto* e=ck.get("pW_full"); if(e){
+            auto sv=e->get("shape"),ov=e->get("offset"),cv=e->get("count");
+            if(sv&&ov&&cv){
+                int nP=sv->arr.size()>=1?sv->arr[0].as_int():1;
+                int nO=sv->arr.size()>=2?sv->arr[1].as_int():1;
+                int nI=sv->arr.size()>=3?sv->arr[2].as_int():1;
+                int nD=sv->arr.size()>=4?sv->arr[3].as_int():1;
+                s->p_nP=nP; s->p_nO=nO; s->p_nI=nI; s->p_nD=nD;
+                size_t total = (size_t)nP * nO * nI * nD;
+                s->pW_full = sl(ov->as_i64(), cv->as_i64());
+                s->has_pre = s->pW_full.size() >= total;
+            }
+        }
+        if(auto* pb_e=ck.get("pB_full")){
+            auto pb_ov=pb_e->get("offset"),pb_cv=pb_e->get("count");
+            if(pb_ov&&pb_cv){
+                s->pB_full = sl(pb_ov->as_i64(), pb_cv->as_i64());
+            }
+        }
+    }
     // Classifier
     if(ld("cW",&s->cW,&r0,&r1)){s->nAct=r0;ld("cB",&s->cB);s->has_cls=true;}
 
@@ -407,7 +428,7 @@ char* ThincNER_Predict(ThincNERHandle h, const char* tj) {
     int n=(int)tok.size(); if(!n)return strdup("[]");
     int NE=(int)s->embeds.size(), D=96, EC=NE*D;
 
-    // ---- Step 1: HashEmbed → concat (variable dims: 6×96=576 en, 5×96=480 zh) ----
+    // ---- Step 1: HashEmbed → concat (NER model: 4×96=384, pipe: 6×96=576) ----
     std::vector<float> emb((size_t)n*EC,0);
     for(int i=0;i<n;i++){
         auto ids=extract_features(tok[i],NE);
@@ -440,31 +461,94 @@ char* ThincNER_Predict(ThincNERHandle h, const char* tj) {
         for(int i=0;i<n;i++){float* op=enc.data()+(size_t)i*D;for(int j=0;j<D;j++)op[j]+=ln[(size_t)i*D+j];}
     }
 
-    // ---- Step 5: NER hidden (96→64) ----
-    std::vector<float> hid((size_t)n*s->hO);
-    if(s->has_hid){for(int i=0;i<n;i++){linear(hid.data()+(size_t)i*s->hO,enc.data()+(size_t)i*D,s->hW.data(),s->hB.data(),s->hO,D);relu_inplace(hid.data()+(size_t)i*s->hO,s->hO);}}
-    else{for(int i=0;i<n;i++){int c=std::min(D,s->hO);memcpy(hid.data()+i*s->hO,enc.data()+i*D,c*4);}}
+	// ---- Step 5: NER tok2vec linear (96→64, no ReLU) ----
+	// The NER model's layers[0] ends with a bare linear (no activation).
+	// This produces the 64-dim token vectors that feed into the PrecomputableAffine.
+	std::vector<float> hid((size_t)n*s->hO);
+	if(s->has_hid){for(int i=0;i<n;i++){linear(hid.data()+(size_t)i*s->hO,enc.data()+(size_t)i*D,s->hW.data(),s->hB.data(),s->hO,D);}}
+	else{for(int i=0;i<n;i++){int c=std::min(D,s->hO);memcpy(hid.data()+i*s->hO,enc.data()+i*D,c*4);}}
 
-    // ---- Step 6: PrecomputableAffine (64→64) ----
-    std::vector<float> pre((size_t)n*s->hO);
-    if(s->has_pre){for(int i=0;i<n;i++){linear(pre.data()+(size_t)i*s->hO,hid.data()+(size_t)i*s->hO,s->pW.data(),s->pB.data(),s->hO,s->hO);relu_inplace(pre.data()+(size_t)i*s->hO,s->hO);}}
-    else pre=hid;
+	// ---- Step 6: PrecomputableAffine → Maxout → Classifier → constrained decoding ----
+	// Matches the spaCy ParserStepModel's predict_states formula:
+	//   cached[t][f][o*nP+p] = W[f,o,p,:] @ hid[t] + b[o,p]  (f=0..nF-1, W=[nF,nO,nP,nI])
+	//   unmaxed[o,nP+p] = sum_f cached[t][f][o*nP+p]  (sum over nF features)
+	//   unmaxed += bias[o,p]  (add bias once, not nF times)
+	//   hid_vec[o] = max(unmaxed[o*nP+0], unmaxed[o*nP+1])
+	//   scores[a] = cW[a][:] @ hid_vec + cB[a]
+	auto label_type = [](const std::string& lbl) -> char { return lbl.empty() ? 'O' : lbl[0]; };
+	auto label_etype = [](const std::string& lbl) -> std::string { return lbl.size()<3?"":lbl.substr(2); };
 
-    // ---- Step 7: Classifier (64→n_actions) ----
-    std::vector<int> act(n,0);
-    if(s->has_cls){for(int i=0;i<n;i++){std::vector<float> sc(s->nAct);linear(sc.data(),pre.data()+(size_t)i*s->hO,s->cW.data(),s->cB.data(),s->nAct,s->hO);
-        int bst=0;float bv=sc[0];for(int a=1;a<s->nAct;a++)if(sc[a]>bv){bv=sc[a];bst=a;}act[i]=bst;}}
+	std::vector<std::string> tl(n, "O");
+	if(s->has_cls && s->has_pre){
+		int nF=s->p_nP, nO=s->p_nO, nP=s->p_nI, nD=s->p_nD; // W: [nF, nO, nP, nI]
+		std::vector<float> unmaxed((size_t)nO * nP, 0);
+		std::vector<float> hid_vec(nO, 0);
+		std::vector<float> scores(s->nAct, 0);
 
-    // ---- Step 8: BILUO labels ----
-    std::vector<std::string> tl(n);
-    for(int i=0;i<n;i++){
-        int a=act[i];
-        tl[i]=(a>=0&&a<(int)s->actLbl.size())?s->actLbl[a]:"O";
+		for(int i=0;i<n;i++){
+			const float* h = hid.data() + (size_t)i * nO;
 
-    }
+			// PrecomputableAffine: pre[f][o][p] = W[f][o][p][:] @ h + b[o][p]
+			memset(unmaxed.data(), 0, (size_t)nO * nP * sizeof(float));
+			for(int f=0;f<nF;f++){
+				for(int o=0;o<nO;o++){
+					for(int p=0;p<nP;p++){
+						// Index into pW_full: [f][o][p][d]
+						size_t base = (((size_t)f * nO + o) * nP + p) * nD;
+						float val = 0;
+						for(int d=0;d<nD;d++){
+							val += s->pW_full[base + d] * h[d];
+						}
+						unmaxed[(size_t)o * nP + p] += val;
+					}
+				}
+			}
 
-    // ---- Step 9: Decode ----
-    auto ents=decode_biluo(tok,tl);
+			// Add bias ONCE (not nF times)
+			for(int o=0;o<nO;o++){
+				for(int p=0;p<nP;p++){
+					unmaxed[(size_t)o * nP + p] += s->pB_full[(size_t)o * nP + p];
+				}
+			}
+
+			// Maxout: hid_vec[o] = max_p unmaxed[o*nP + p]
+			for(int o=0;o<nO;o++){
+				float best = unmaxed[(size_t)o * nP];
+				for(int p=1;p<nP;p++){
+					float v = unmaxed[(size_t)o * nP + p];
+					if(v > best) best = v;
+				}
+				hid_vec[o] = best;
+			}
+
+			// Classifier: scores = cW @ hid_vec + cB
+			linear(scores.data(), hid_vec.data(), s->cW.data(), s->cB.data(), s->nAct, nO);
+
+			// Constrained greedy decoding
+			char prev_type = i>0 ? label_type(tl[i-1]) : 'O';
+			std::string prev_etype = i>0 ? label_etype(tl[i-1]) : "";
+			int bst=-1; float bv=-1e30f;
+			for(int a=0;a<s->nAct;a++){
+				const std::string& lbl = (a<(int)s->actLbl.size()) ? s->actLbl[a] : "O";
+				if(lbl.empty()) continue;
+				char ct = label_type(lbl);
+				std::string ce = label_etype(lbl);
+				bool valid=false;
+				if(prev_type=='O'||prev_type=='L'||prev_type=='U')
+					valid = (ct=='O'||ct=='B'||ct=='U');
+				else if(prev_type=='B'||prev_type=='I'){
+					if(ct=='O') valid=true;
+					else if((ct=='I'||ct=='L')&&ce==prev_etype) valid=true;
+				}
+				if(!valid) continue;
+				if(scores[a]>bv){bv=scores[a];bst=a;}
+			}
+			if(bst>=0) tl[i] = s->actLbl[bst];
+		}
+	}
+
+	// ---- Step 8: BILUO decode ----
+	auto ents=decode_biluo(tok,tl);
     std::string r="["; for(size_t i=0;i<ents.size();i++){if(i)r+=",";r+="{\"text\":\""+ents[i].text+"\",\"label\":\""+ents[i].label+"\",\"start\":"+std::to_string(ents[i].start)+",\"end\":"+std::to_string(ents[i].end)+",\"confidence\":"+std::to_string(ents[i].conf)+"}";} r+="]";
     return strdup(r.c_str());
 }

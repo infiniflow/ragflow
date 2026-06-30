@@ -283,7 +283,7 @@ struct ParserModel {
                     // W[p][w][o][d] = [nP][nI][nO][nO]
                     for(int o=0;o<nO;o++){
                         float s = pb_pre[(size_t)w*nO + o];
-                        for(int d=0;d<nO;d++) s += pW_pre[((size_t)p*nO*nI + (size_t)w)*(size_t)nO*nO + (size_t)o*nO + d] * hidden[(size_t)i*nO + d];
+                        for(int d=0;d<nO;d++) s += pW_pre[((size_t)p*nO*nI + (size_t)o*nI + w)*nO + d] * hidden[(size_t)i*nO + d];
                         out[(size_t)o*nI] = s;
                     }
                 }
@@ -296,7 +296,7 @@ struct ParserModel {
             return precomp[(size_t)ri*nP*nO*nI + (size_t)p*nO*nI + (size_t)w + (size_t)o*nI];
         };
         
-        // 3. Arc-hybrid state machine
+                // 3. Arc-hybrid state machine
         out_heads.assign(n_tokens, -1);
         out_labels.assign(n_tokens, "");
         std::vector<int> stack;
@@ -348,7 +348,9 @@ struct ParserModel {
             // Classify
             for(int a=0;a<n_actions;a++){
                 float s=pb_cls[a];
-                for(int j=0;j<nP*nI*nO;j++) s+=pW_cls[(size_t)a*(nP*nI*nO)+j]*feats[j];
+                // Use HIDDEN state directly (64-dim) as classifier input
+                int cls_idx = b0 >= 0 ? b0 : (s0 >= 0 ? s0 : 0);
+                for(int j=0;j<nO;j++) s += pW_cls[(size_t)a*nO+j] * hidden[(size_t)cls_idx*nO+j];
                 scores[a]=s;
             }
             
@@ -400,7 +402,11 @@ struct TaggerState {
 ThincParserHandle ThincParser_Create(const char* ner_dir, const char* parser_dir) {
     auto* s=new ParserState();
     if(!ner_dir||!parser_dir){delete s;return nullptr;}
-    if(!s->tok2vec.load(std::string(ner_dir))){delete s;return nullptr;}
+    // Load PIPELINE tok2vec from <base>/tok2vec/ subdirectory (not NER's internal 4HE).
+    // ner_dir is typically <model_base>/ner/.
+    std::string base = std::string(ner_dir);
+    if(base.size()>=4 && base.substr(base.size()-4)=="/ner") base.resize(base.size()-4);
+    if(!s->tok2vec.load(base+"/tok2vec")){delete s;return nullptr;}
     if(!s->parser.load(std::string(parser_dir))){delete s;return nullptr;}
     s->loaded=true;
     return s;
@@ -447,7 +453,10 @@ void ThincParser_FreeString(char* p) { free(p); }
 ThincTaggerHandle ThincTagger_Create(const char* ner_dir, const char* tagger_dir) {
     auto* s=new TaggerState();
     if(!ner_dir||!tagger_dir){delete s;return nullptr;}
-    if(!s->tok2vec.load(std::string(ner_dir))){delete s;return nullptr;}
+    // Load PIPELINE tok2vec from <base>/tok2vec/ (6HE, not NER's internal 4HE)
+    std::string tbase = std::string(ner_dir);
+    if(tbase.size()>=4 && tbase.substr(tbase.size()-4)=="/ner") tbase.resize(tbase.size()-4);
+    if(!s->tok2vec.load(tbase+"/tok2vec")){delete s;return nullptr;}
     std::ifstream cf(std::string(tagger_dir)+"/model.ckpt"); if(!cf){delete s;return nullptr;}
     std::stringstream cb;cb<<cf.rdbuf();
     JVal ck=JParser().parse(cb.str()); if(ck.type!=JVal::OBJ){delete s;return nullptr;}
@@ -498,11 +507,21 @@ char* ThincTagger_Predict(ThincTaggerHandle h, const char* tokens_json) {
         }
     }
     
+    // Strip morphologizer output to just POS (e.g. "Gender=Masc|Number=Sing|POS=NOUN" → "NOUN")
+    // For non-morphologizer models the tag string is used as-is.
+    auto pos_only = [](const std::string& t) -> std::string {
+        auto p = t.find("POS=");
+        if(p==std::string::npos) return t;
+        auto s = p+4;
+        auto e = t.find_first_of("|;", s);
+        if(e==std::string::npos) e = t.size();
+        return t.substr(s, e-s);
+    };
     std::string r="[";
     for(int i=0;i<n;i++){
         if(i)r+=",";
         std::string tag = best_tags[i] < (int)s->tags.size() ? s->tags[best_tags[i]] : "";
-        r+="{\"text\":\""+tokens[i]+"\",\"tag\":\""+tag+"\",\"index\":"+std::to_string(i)+"}";
+        r+="{\"text\":\""+tokens[i]+"\",\"tag\":\""+pos_only(tag)+"\",\"index\":"+std::to_string(i)+"}";
     }
     r+="]";
     return strdup(r.c_str());

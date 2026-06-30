@@ -271,18 +271,10 @@ func (e *Extractor) getPredictor(modelDir string) ModelPredictor {
 
 // ExtractEntities extracts named entities from text using C++ ThincNER.
 func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
-	cText := C.CString(text)
-	cLang := C.CString(e.Lang)
-	defer C.free(unsafe.Pointer(cText))
-	defer C.free(unsafe.Pointer(cLang))
-
-	cTokens := C.ThincNER_Tokenize(cText, cLang)
-	if cTokens == nil {
+	tokensJSON := tokenizeText(text, e.Lang)
+	if tokensJSON == "" {
 		return nil, fmt.Errorf("tokenization failed")
 	}
-	defer C.ThincNER_FreeString(cTokens)
-
-	tokensJSON := C.GoString(cTokens)
 
 	modelDir := e.findModelDir()
 	predict := e.getPredictor(modelDir)
@@ -304,6 +296,8 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 	}
 
 	// Dedup by (text.lower(), start_char) — matching Python NERExtractor
+	// For CJK, strip spaces from entity text (BILUO decoder joins tokens with spaces)
+	isCJK := e.Lang == "zh" || e.Lang == "ja"
 	seen := make(map[string]bool)
 	entities := make([]Entity, 0, len(rawEntities))
 	for _, re := range rawEntities {
@@ -313,7 +307,11 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 		if re.Confidence < e.ConfidenceThreshold {
 			continue
 		}
-		key := strings.ToLower(re.Text) + "|" + strconv.Itoa(re.Start)
+		text := re.Text
+		if isCJK {
+			text = strings.ReplaceAll(text, " ", "")
+		}
+		key := strings.ToLower(text) + "|" + strconv.Itoa(re.Start)
 		if seen[key] {
 			continue
 		}
@@ -323,7 +321,7 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 			appType = strings.ToLower(re.Label)
 		}
 		entities = append(entities, Entity{
-			Text:       re.Text,
+			Text:       text,
 			Label:      re.Label,
 			StartChar:  re.Start,
 			EndChar:    re.End,
@@ -356,7 +354,8 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// tokenizeText tokenizes text via C++ tokenizer, returns JSON array of token strings.
+// tokenizeText tokenizes text via C++ tokenizer (all languages).
+// Returns JSON array of token strings.
 func tokenizeText(text, lang string) string {
 	cText := C.CString(text)
 	cLang := C.CString(lang)
