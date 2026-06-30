@@ -358,7 +358,8 @@ def test_create_validation_guards(monkeypatch):
     _set_request_json(monkeypatch, module, {"name": "srv", "url": "http://unsafe", "server_type": "sse"})
     _stub_url_safety(monkeypatch, module, {"http://unsafe"})
     res = _run(module.create.__wrapped__())
-    assert "blocked unsafe url" in res["message"]
+    assert "Invalid url" in res["message"]
+    assert "blocked unsafe url" not in res["message"]
 
 
 @pytest.mark.p2
@@ -464,7 +465,8 @@ def test_update_validation_guards(monkeypatch):
     _set_request_json(monkeypatch, module, {"mcp_id": "mcp-1", "url": "http://unsafe"})
     _stub_url_safety(monkeypatch, module, {"http://unsafe"})
     res = _run(module.update("mcp-1"))
-    assert "blocked unsafe url" in res["message"]
+    assert "Invalid url" in res["message"]
+    assert "blocked unsafe url" not in res["message"]
 
 
 @pytest.mark.p2
@@ -667,7 +669,8 @@ def test_import_multiple_mixed_results(monkeypatch):
     assert results["non_string_url"]["success"] is False
     assert "Invalid url" in results["non_string_url"]["message"]
     assert results["unsafe"]["success"] is False
-    assert "blocked unsafe url" in results["unsafe"]["message"]
+    assert "Invalid url" in results["unsafe"]["message"]
+    assert "blocked unsafe url" not in results["unsafe"]["message"]
     assert results["tool_err"]["success"] is False
     assert "tool call failed" in results["tool_err"]["message"]
     assert results["insert_fail"]["success"] is False
@@ -735,6 +738,20 @@ def test_detail_download_success_and_exception(monkeypatch):
 
 
 @pytest.mark.p2
+def test_assert_mcp_url_is_safe_hides_guard_details(monkeypatch, caplog):
+    module = _load_mcp_api(monkeypatch)
+    _stub_url_safety(monkeypatch, module, {"http://unsafe"})
+
+    with caplog.at_level("WARNING", logger=module.logger.name):
+        hostname, resolved_ip, error = module._assert_mcp_url_is_safe("http://unsafe")
+
+    assert hostname == ""
+    assert resolved_ip == ""
+    assert error == "Invalid url."
+    assert "blocked unsafe url" in caplog.text
+
+
+@pytest.mark.p2
 def test_test_mcp_route_matrix_unit(monkeypatch):
     module = _load_mcp_api(monkeypatch)
     _stub_url_safety(monkeypatch, module)
@@ -746,6 +763,12 @@ def test_test_mcp_route_matrix_unit(monkeypatch):
     _set_request_json(monkeypatch, module, {"url": ["http://a"], "server_type": "sse"})
     res = _run(module.test_mcp("mcp-1"))
     assert "Invalid MCP url" in res["message"]
+
+    _stub_url_safety(monkeypatch, module, {"http://unsafe"})
+    _set_request_json(monkeypatch, module, {"url": "http://unsafe", "server_type": "sse"})
+    res = _run(module.test_mcp("mcp-1"))
+    assert "Invalid MCP url" in res["message"]
+    assert "blocked unsafe url" not in res["message"]
 
     _set_request_json(monkeypatch, module, {"url": "http://a", "server_type": "invalid"})
     res = _run(module.test_mcp("mcp-1"))
