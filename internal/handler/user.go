@@ -98,6 +98,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 	}
 
 	c.Header("Authorization", authToken)
+	setOAuthAuthCookie(c, authToken)
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")
 	c.Header("Access-Control-Allow-Headers", "*")
@@ -163,6 +164,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	// Set Authorization header with signed token
 	c.Header("Authorization", authToken)
+	setOAuthAuthCookie(c, authToken)
 	// Set CORS headers
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")
@@ -235,7 +237,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		})
 		return
 	}
-
+	setOAuthAuthCookie(c, authToken)
 	c.Header("Authorization", authToken)
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")

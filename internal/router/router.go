@@ -201,9 +201,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 			agentbotGroup := apiBetaAuth.Group("/agentbots")
 			RegisterAgentbotRoutes(agentbotGroup, r.botHandler)
 		}
-		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
 		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
+	}
+
+	apiJWTBetaAuth := engine.Group("/api/v1")
+	apiJWTBetaAuth.Use(r.authHandler.AuthJWTAPIBetaMiddleware())
+	{
+		apiJWTBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 	}
 
 	// Protected routes

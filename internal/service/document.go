@@ -228,7 +228,7 @@ var artifactUnsafeFilenameChars = regexp.MustCompile(`[^\pL\pN_.-]`)
 
 // GetDocumentImage retrieves an image object from storage.
 func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
-	parts := strings.Split(imageID, "-")
+	parts := strings.SplitN(imageID, "-", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return nil, fmt.Errorf("Image not found.")
 	}

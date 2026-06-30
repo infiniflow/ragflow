@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -211,11 +212,28 @@ func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
 		return
 	}
 
-	contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(imageID)))
-	if contentType == "" {
-		contentType = "image/JPEG"
-	}
+	contentType := documentImageContentType(imageID, data)
 	c.Data(http.StatusOK, contentType, data)
+}
+
+func documentImageContentType(imageID string, data []byte) string {
+	if contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(imageID))); strings.HasPrefix(contentType, "image/") {
+		return contentType
+	}
+	switch {
+	case bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")):
+		return "image/png"
+	case len(data) >= 3 && bytes.Equal(data[:3], []byte{0xff, 0xd8, 0xff}):
+		return "image/jpeg"
+	case bytes.HasPrefix(data, []byte("GIF87a")), bytes.HasPrefix(data, []byte("GIF89a")):
+		return "image/gif"
+	case len(data) >= 12 && bytes.Equal(data[:4], []byte("RIFF")) && bytes.Equal(data[8:12], []byte("WEBP")):
+		return "image/webp"
+	case bytes.HasPrefix(data, []byte("BM")):
+		return "image/bmp"
+	default:
+		return "application/octet-stream"
+	}
 }
 
 func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {

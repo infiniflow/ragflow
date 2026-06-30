@@ -98,6 +98,50 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 	}
 }
 
+func (h *AuthHandler) AuthJWTAPIBetaMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		auth := c.GetHeader("Authorization")
+
+		// no Authorization -> try session fallback if AUTH_JWT allowed.
+		if auth == "" {
+			if cookie, err := c.Cookie(oauthAuthCookie); err == nil {
+				auth = cookie
+			}
+		}
+
+		if auth == "" {
+			jsonError(c, common.CodeUnauthorized, "Authorization required")
+			c.Abort()
+			return
+		}
+
+		// AUTH_BETA
+		if u, code, err := h.userService.GetUserByBetaAPIToken(auth); err == nil && code == common.CodeSuccess {
+			c.Set("user", u)
+			c.Next()
+			return
+		}
+
+		// AUTH_JWT
+		if u, code, err := h.userService.GetUserByToken(auth); err == nil && code == common.CodeSuccess {
+			c.Set("user", u)
+			c.Next()
+			return
+		}
+
+		// AUTH_API
+		if u, code, err := h.userService.GetUserByAPIToken(auth); err == nil && code == common.CodeSuccess {
+			c.Set("user", u)
+			c.Set("auth_via_api_token", true)
+			c.Next()
+			return
+		}
+
+		jsonError(c, common.CodeUnauthorized, "Invalid auth credentials")
+		c.Abort()
+	}
+}
+
 // AuthMiddleware JWT auth middleware
 // Validates that the user is authenticated and is a superuser (admin)
 func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
