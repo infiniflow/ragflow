@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -239,7 +238,7 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 		return
 	}
 
-	questions, err := generateRelatedQuestions(user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
+	questions, err := service.GenerateRelatedQuestions(user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
 	if err != nil {
 		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
 		c.JSON(http.StatusOK, gin.H{
@@ -651,21 +650,4 @@ func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 		v := 0.3
 		req.VectorSimilarityWeight = &v
 	}
-}
-
-var relatedQuestionLineRe = regexp.MustCompile(`^\d+\.\s`)
-
-// parseRelatedQuestions extracts numbered list items from an LLM response.
-// Lines matching "^N. " are extracted and the number prefix is stripped.
-func parseRelatedQuestions(text string) []string {
-	var result []string
-	for _, line := range strings.Split(text, "\n") {
-		if relatedQuestionLineRe.MatchString(line) {
-			result = append(result, relatedQuestionLineRe.ReplaceAllString(line, ""))
-		}
-	}
-	if result == nil {
-		return []string{}
-	}
-	return result
 }

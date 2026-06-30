@@ -164,23 +164,6 @@ func (f *fakeRecommendationLLM) Chat(tenantID, modelID string, messages []modelM
 	return &modelModule.ChatResponse{Answer: &f.response}, nil
 }
 
-func TestChatRecommendationConfigSkipsZeroTopP(t *testing.T) {
-	cfg := relatedQuestionsConfig(map[string]interface{}{
-		"llm_setting": map[string]interface{}{
-			"temperature": float64(0.2),
-			"top_p":       float64(0),
-			"parameter":   map[string]interface{}{"unused": true},
-		},
-	})
-
-	if cfg == nil || cfg.Temperature == nil || *cfg.Temperature != 0.2 {
-		t.Fatalf("expected temperature 0.2, got %+v", cfg)
-	}
-	if cfg.TopP != nil {
-		t.Fatalf("expected zero top_p to be omitted, got %v", *cfg.TopP)
-	}
-}
-
 func TestDeleteChatHandlerSuccess(t *testing.T) {
 	db := setupChatHandlerTestDB(t)
 	createChatHandlerTestChat(t, db, "chat-1", "user-1")
