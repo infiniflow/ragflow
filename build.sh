@@ -143,7 +143,7 @@ check_office_oxide_deps() {
     case "$(uname -s)" in
         Linux)  lib_file="liboffice_oxide.so" ;;
         Darwin) lib_file="liboffice_oxide.dylib" ;;
-        *)      echo -e "${RED}Unsupported OS for office_oxide${NC}"; exit 1 ;;
+        *)      echo -e "${RED}Unsupported OS for office_oxide${NC}"; return 1 ;;
     esac
 
     local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
@@ -164,14 +164,14 @@ check_office_oxide_deps() {
             case "$(uname -m)" in
                 x86_64)  asset_name="native-linux-x86_64" ;;
                 aarch64|arm64) asset_name="native-linux-aarch64" ;;
-                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; exit 1 ;;
+                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; return 1 ;;
             esac
             ;;
         Darwin)
             case "$(uname -m)" in
                 x86_64)  asset_name="native-macos-x86_64" ;;
                 aarch64|arm64) asset_name="native-macos-aarch64" ;;
-                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; exit 1 ;;
+                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; return 1 ;;
             esac
             ;;
     esac
@@ -182,9 +182,9 @@ check_office_oxide_deps() {
     _download_and_extract "$release_url" "${OFFICE_OXIDE_PREFIX}"
 
     if [ ! -f "$lib_path" ]; then
-        echo -e "${RED}Error: Failed to install office_oxide native library (missing ${lib_path})${NC}"
+        echo -e "${YELLOW}Warning: Failed to install office_oxide native library (missing ${lib_path})${NC}"
         echo "  Try: curl -fsSL ${release_url} | tar xzf - -C ${OFFICE_OXIDE_PREFIX}"
-        exit 1
+        return 1
     fi
 
     echo -e "${GREEN}✓ office_oxide native library installed${NC}"
@@ -405,6 +405,7 @@ build_go() {
         eval "$install_cmd"
     fi
 
+    check_office_oxide_deps || true
     setup_cgo_env
 
     local strip_flags=()
@@ -445,35 +446,44 @@ build_go() {
     echo -e "${GREEN}✓ Go ingestor built successfully: $INGESTOR_BINARY${NC}"
 }
 
-# Configure CGO flags for native libraries (office_oxide, pdfium, pdf_oxide).
-# Call before any `go build` / `go test` step that links against these libraries.
+# Configure CGO flags for native libraries.
+# setup_cgo_env — base: -I and -L paths only, no -l flags (those live in
+#   each package's own #cgo LDFLAGS pragma). Safe to call even when native
+#   libs are absent — just skips the paths that don't exist.
+# setup_cgo_env_pdf — pdfium / pdf_oxide -L paths. Non-fatal when libs
+#   are missing. Only called by run_go_tests.
 setup_cgo_env() {
-    # ── office_oxide ──────────────────────────────────────────────────
-    check_office_oxide_deps
-    export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
-    export CGO_LDFLAGS="-L${OFFICE_OXIDE_PREFIX}/lib -loffice_oxide -Wl,-rpath,${OFFICE_OXIDE_PREFIX}/lib"
-    export LD_LIBRARY_PATH="${OFFICE_OXIDE_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    # ── office_oxide (header + search path only, no -loffice_oxide) ───
+    if [ -f "${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h" ]; then
+        export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
+    fi
+    if [ -f "${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.so" ] || [ -f "${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.dylib" ]; then
+        export CGO_LDFLAGS="-L${OFFICE_OXIDE_PREFIX}/lib${CGO_LDFLAGS:+ $CGO_LDFLAGS}"
+        export LD_LIBRARY_PATH="${OFFICE_OXIDE_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    fi
 
+    echo "CGO_CFLAGS:   $CGO_CFLAGS"
+    echo "CGO_LDFLAGS:  $CGO_LDFLAGS"
+}
+
+setup_cgo_env_pdf() {
     # ── pdfium ────────────────────────────────────────────────────────
-    check_pdfium_deps || return 1
+    check_pdfium_deps || true
     if [ -f "${PDFIUM_PREFIX}/libpdfium.so" ]; then
-        export CGO_LDFLAGS="$CGO_LDFLAGS -L${PDFIUM_PREFIX} -Wl,-rpath,${PDFIUM_PREFIX}"
+        export CGO_LDFLAGS="$CGO_LDFLAGS -L${PDFIUM_PREFIX}"
         export LD_LIBRARY_PATH="${PDFIUM_PREFIX}:${LD_LIBRARY_PATH}"
     fi
 
     # ── pdf_oxide ─────────────────────────────────────────────────────
-    check_pdf_oxide_deps || return 1
+    check_pdf_oxide_deps || true
     if [ -f "${PDF_OXIDE_PREFIX}/libpdf_oxide.so" ]; then
-        export CGO_LDFLAGS="$CGO_LDFLAGS -L${PDF_OXIDE_PREFIX} -lpdf_oxide -Wl,-rpath,${PDF_OXIDE_PREFIX}"
+        export CGO_LDFLAGS="$CGO_LDFLAGS -L${PDF_OXIDE_PREFIX}"
         export LD_LIBRARY_PATH="${PDF_OXIDE_PREFIX}:${LD_LIBRARY_PATH}"
     elif [ -f "${PDF_OXIDE_PREFIX}/libpdf_oxide.a" ]; then
         export CGO_LDFLAGS="$CGO_LDFLAGS ${PDF_OXIDE_PREFIX}/libpdf_oxide.a"
     fi
 
-    echo "CGO_CFLAGS:   $CGO_CFLAGS"
-    echo "Exporting CGO_CFLAGS: $CGO_CFLAGS"
-    echo "CGO_LDFLAGS:  $CGO_LDFLAGS"
-    echo "Exporting CGO_LDFLAGS: $CGO_LDFLAGS"
+    echo "CGO_LDFLAGS (with PDF): $CGO_LDFLAGS"
 }
 
 # Run Go unit tests with the same CGO env as `build_go`. Pass any extra args
@@ -482,7 +492,9 @@ run_go_tests() {
     print_section "Running Go tests"
 
     cd "$PROJECT_ROOT"
+    check_office_oxide_deps || true
     setup_cgo_env
+    setup_cgo_env_pdf
 
     if [ "$#" -eq 0 ]; then
         set -- ./...
@@ -521,6 +533,10 @@ run() {
     fi
 
     cd "$PROJECT_ROOT"
+
+    # Set LD_LIBRARY_PATH for native libraries that were linked at build time.
+    # Libraries are only in the search path when they were present during build.
+    setup_cgo_env
 
     # admin_server must be running before ragflow_server, otherwise ragflow_server's
     # heartbeats to admin will error out (see internal/development.md).
