@@ -16,6 +16,7 @@
 import logging
 import random
 from datetime import datetime
+from time import monotonic
 
 import xxhash
 from peewee import fn, Case, JOIN
@@ -954,6 +955,10 @@ class DocumentService(CommonService):
                 doc_progress = doc.progress if doc and doc.progress else 0.0
                 special_task_running = False
                 priority = 0
+                # Count this document's own not-yet-started tasks per priority so
+                # they can be excluded from the "tasks ahead in the queue" figure
+                # for the matching priority queue.
+                own_queued_by_priority = {}
                 for t in tsks:
                     task_type = (t.task_type or "").lower()
                     if task_type in PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES:
@@ -962,6 +967,8 @@ class DocumentService(CommonService):
                         finished = False
                     if t.progress == -1:
                         bad += 1
+                    if (t.progress or 0) == 0:
+                        own_queued_by_priority[t.priority] = own_queued_by_priority.get(t.priority, 0) + 1
                     prg += t.progress if t.progress >= 0 else 0
                     if (t.progress_msg or "").strip():
                         msg.append(t.progress_msg)
@@ -991,9 +998,14 @@ class DocumentService(CommonService):
                 if msg:
                     info["progress_msg"] = msg
                     if msg.endswith("created task graphrag") or msg.endswith("created task raptor") or msg.endswith("created task mindmap"):
-                        info["progress_msg"] += "\n%d tasks are ahead in the queue..." % get_queue_length(priority)
+                        # Exclude this document's own queued tasks in the same
+                        # priority queue: they are not "ahead" of itself, they
+                        # ARE the work being waited on.
+                        queue_ahead = max(0, get_queue_length(priority) - own_queued_by_priority.get(priority, 0))
+                        info["progress_msg"] += "\n%d tasks are ahead in the queue..." % queue_ahead
                 else:
-                    info["progress_msg"] = "%d tasks are ahead in the queue..." % get_queue_length(priority)
+                    queue_ahead = max(0, get_queue_length(priority) - own_queued_by_priority.get(priority, 0))
+                    info["progress_msg"] = "%d tasks are ahead in the queue..." % queue_ahead
                 info["update_time"] = current_timestamp()
                 info["update_date"] = get_format_time()
                 (cls.model.update(info).where((cls.model.id == d["id"]) & ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value))).execute())
@@ -1165,8 +1177,65 @@ def queue_per_doc_raptor_task(doc, priority):
     return task["id"]
 
 
+# Short-lived cache for the genuine queued-task backlog so the per-document
+# progress sync does not issue a COUNT query for every document each cycle.
+_PENDING_TASK_COUNT_CACHE = {"value": 0, "expire_at": 0.0}
+_PENDING_TASK_COUNT_TTL_SECONDS = 3.0
+
+
+def get_pending_task_count():
+    """Count tasks that are genuinely still waiting to be processed.
+
+    A task counts as "waiting" when it has not started yet (progress == 0) and
+    its document is still actively running (run == RUNNING and progress in
+    [0, 1)). Cancelled, failed and finished documents are excluded, so the
+    figure drops back to reality as soon as the user stops parsing.
+
+    Returns None when the count cannot be determined, so callers can fall back
+    to the raw Redis stream lag.
+    """
+    now = monotonic()
+    if _PENDING_TASK_COUNT_CACHE.get("expire_at", 0.0) > now:
+        return _PENDING_TASK_COUNT_CACHE["value"]
+    try:
+        count = int(
+            Task.select(fn.COUNT(Task.id))
+            .join(Document, on=(Task.doc_id == Document.id))
+            .where(
+                (Task.progress == 0)
+                & (Document.run == TaskStatus.RUNNING.value)
+                & (Document.progress >= 0)
+                & (Document.progress < 1)
+            )
+            .scalar()
+            or 0
+        )
+    except Exception:
+        logging.exception("get_pending_task_count failed")
+        return None
+    _PENDING_TASK_COUNT_CACHE["value"] = count
+    _PENDING_TASK_COUNT_CACHE["expire_at"] = now + _PENDING_TASK_COUNT_TTL_SECONDS
+    return count
+
+
 def get_queue_length(priority, suffix="common"):
+    """Return how many tasks are ahead in the processing queue.
+
+    The Redis stream consumer-group ``lag`` counts every message that has not
+    yet been delivered to a task executor, including messages whose tasks were
+    already cancelled/stopped. Those messages only stop counting once an
+    executor happens to read them, so after a user stops parsing the lag can
+    stay inflated indefinitely and parsing appears to hang forever
+    ("N tasks are ahead in the queue...").
+
+    To keep the figure honest, the raw lag is capped by the number of tasks
+    that are genuinely still waiting in the database, which self-heals the
+    moment work is cancelled or completes.
+    """
     group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority, suffix), SVR_CONSUMER_GROUP_NAME)
-    if not group_info:
-        return 0
-    return int(group_info.get("lag", 0) or 0)
+    lag = int(group_info.get("lag", 0) or 0) if group_info else 0
+
+    pending = get_pending_task_count()
+    if pending is None:
+        return lag
+    return min(lag, pending)

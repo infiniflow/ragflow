@@ -1473,6 +1473,9 @@ def _run_sync(user_id: str, req):
             has_unfinished_task = any((task.progress or 0) < 1 for task in tasks)
             if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.CANCEL.value] or has_unfinished_task:
                 cancel_all_task_of(doc_id)
+                # Drop the stale "N tasks are ahead in the queue..." text so a
+                # stopped document does not keep looking like it is still waiting.
+                info["progress_msg"] = ""
             else:
                 return RetCode.DATA_ERROR, "Cannot cancel a task that is not in RUNNING status"
         if all([rerun_with_delete, str(doc.run) == TaskStatus.DONE.value]):
@@ -1704,6 +1707,7 @@ async def stop_parse_documents(tenant_id, dataset_id):
                         "run": str(TaskStatus.CANCEL.value),
                         "progress": 0,
                         "chunk_num": 0,
+                        "progress_msg": "",
                     },
                 )
                 index_name = search.index_name(tenant_id)
