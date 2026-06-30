@@ -1,6 +1,4 @@
 import BackButton from '@/components/back-button';
-import { ModelTreeSelectFormField } from '@/components/model-tree-select';
-import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
@@ -8,18 +6,16 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Routes } from '@/routes';
+import { Plus } from 'lucide-react';
+import { useMemo } from 'react';
+import { useFieldArray, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import JsonView from 'react18-json-view';
 
-import { ICompilationTemplateSection } from '@/interfaces/database/compilation-template';
-
-import { FieldsSection } from './components/fields-section';
-import { useEditCompilationTemplate } from './hooks/use-edit-compilation-template';
-import {
-  DefaultFieldKeys,
-  getFieldKeyOrder,
-  SectionTitleKeyMap,
-} from './utils';
+import { CompilationTemplateKind } from '@/constants/compilation';
+import { TemplateCard } from './components/template-card';
+import { useEditCompilationTemplateGroup } from './hooks/use-edit-compilation-template-group';
+import { DefaultTemplateValues } from './utils';
 
 export default function EditCompilationTemplate() {
   const { t } = useTranslation();
@@ -28,13 +24,48 @@ export default function EditCompilationTemplate() {
     form,
     watchedValues,
     kindOptions,
-    sectionNames,
-    builtinTemplate,
-    typeOptions,
+    builtins,
     onSubmit,
     isLoading,
     navigateToCompilationTemplates,
-  } = useEditCompilationTemplate();
+  } = useEditCompilationTemplateGroup();
+
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: 'templates',
+  });
+
+  const watchedTemplates = useWatch({
+    control: form.control,
+    name: 'templates',
+  });
+
+  const isAddTemplateDisabled = watchedTemplates?.some(
+    (template) => template.kind === CompilationTemplateKind.Artifacts,
+  );
+
+  const hasNonArtifactsTemplate = watchedTemplates?.some(
+    (template) =>
+      template.kind && template.kind !== CompilationTemplateKind.Artifacts,
+  );
+
+  const availableKindOptions = useMemo(
+    () =>
+      hasNonArtifactsTemplate
+        ? kindOptions.filter(
+            (option) => option.value !== CompilationTemplateKind.Artifacts,
+          )
+        : kindOptions,
+    [hasNonArtifactsTemplate, kindOptions],
+  );
+
+  const handleAddTemplate = () => {
+    const firstTemplateLlmId = form.getValues('templates.0.llm_id');
+    append({
+      ...DefaultTemplateValues,
+      llm_id: firstTemplateLlmId || '',
+    });
+  };
 
   return (
     <section className="h-full flex flex-col">
@@ -43,7 +74,9 @@ export default function EditCompilationTemplate() {
           to={`${Routes.UserSetting}${Routes.CompilationTemplates}`}
         />
         <h2 className="text-xl font-medium text-text-primary">
-          {isCreate ? t('setting.addTemplate') : t('setting.editTemplate')}
+          {isCreate
+            ? t('setting.addTemplateGroup')
+            : t('setting.editTemplateGroup')}
         </h2>
       </header>
 
@@ -57,7 +90,7 @@ export default function EditCompilationTemplate() {
               <div className="max-w-2xl space-y-6 mx-auto">
                 <RAGFlowFormItem
                   name="name"
-                  label={t('setting.templateName')}
+                  label={t('setting.groupName')}
                   required
                 >
                   <Input placeholder={t('common.namePlaceholder')} />
@@ -65,7 +98,7 @@ export default function EditCompilationTemplate() {
 
                 <RAGFlowFormItem
                   name="description"
-                  label={t('setting.templateDescription')}
+                  label={t('setting.groupDescription')}
                 >
                   <Textarea
                     placeholder={t('common.descriptionPlaceholder')}
@@ -73,55 +106,29 @@ export default function EditCompilationTemplate() {
                   />
                 </RAGFlowFormItem>
 
-                <ModelTreeSelectFormField
-                  name="llm_id"
-                  label={t('setting.llmForExtraction')}
-                  required
-                />
-
-                <RAGFlowFormItem
-                  name="kind"
-                  label={t('knowledgeCompilation.builtinTemplates')}
-                  required
-                >
-                  <SelectWithSearch
-                    options={kindOptions}
-                    placeholder={t('common.selectPlaceholder')}
-                  />
-                </RAGFlowFormItem>
-
-                {sectionNames.map((sectionName, index) => {
-                  const builtinSection = builtinTemplate?.config?.[sectionName];
-
-                  const firstField = (
-                    builtinSection as ICompilationTemplateSection | undefined
-                  )?.fields?.[0];
-                  const firstFieldKeys = firstField
-                    ? Object.keys(firstField)
-                    : DefaultFieldKeys;
-                  const fieldKeys = getFieldKeyOrder(firstFieldKeys);
-
-                  return (
-                    <FieldsSection
-                      key={sectionName}
-                      name={`config.${sectionName}` as `config.${string}`}
-                      title={t(SectionTitleKeyMap[sectionName] ?? sectionName)}
-                      fieldKeys={fieldKeys}
-                      defaultOpen={index === 0}
-                      typeOptions={typeOptions}
+                <section className="space-y-4">
+                  {fields.map((field, index) => (
+                    <TemplateCard
+                      key={field.id}
+                      index={index}
+                      form={form}
+                      kindOptions={availableKindOptions}
+                      builtins={builtins}
+                      onRemove={remove}
+                      canRemove={fields.length > 1}
                     />
-                  );
-                })}
+                  ))}
+                </section>
 
-                <RAGFlowFormItem
-                  name="config.global_rules"
-                  label={t('setting.globalRules')}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleAddTemplate}
+                  disabled={isAddTemplateDisabled}
                 >
-                  <Textarea
-                    placeholder={t('setting.globalRulesPlaceholder')}
-                    rows={4}
-                  />
-                </RAGFlowFormItem>
+                  <Plus className="size-4 mr-2" />
+                  {t('setting.addTemplate')}
+                </Button>
               </div>
             </div>
 

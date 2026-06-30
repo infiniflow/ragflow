@@ -5,12 +5,12 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { ICompilationTemplate } from '@/interfaces/database/compilation-template';
+import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
 import { Pencil, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 type TemplateCardProps = {
-  data: ICompilationTemplate;
+  data: ICompilationTemplateGroup;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
 };
@@ -37,9 +37,9 @@ export function TemplateCard({ data, onEdit, onDelete }: TemplateCardProps) {
             </Button>
 
             <ConfirmDeleteDialog
-              title={t('setting.deleteTemplateModalTitle')}
+              title={t('setting.deleteTemplateGroupModalTitle')}
               content={{
-                title: t('setting.deleteTemplateModalContent'),
+                title: t('setting.deleteTemplateGroupModalContent'),
                 node: <ConfirmDeleteDialogNode name={data.name} />,
               }}
               onOk={() => onDelete(data.id)}
@@ -60,7 +60,7 @@ export function TemplateCard({ data, onEdit, onDelete }: TemplateCardProps) {
         </p>
 
         <Badge variant="secondary" className="mt-3 w-fit">
-          {t(`knowledgeCompilation.kind.${data.kind}`)}
+          {t('setting.templateCount', { count: data.templates?.length ?? 0 })}
         </Badge>
       </CardContent>
     </Card>

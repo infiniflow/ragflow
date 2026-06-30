@@ -3,22 +3,29 @@ import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
+import { ICompilationTemplateSection } from '@/interfaces/database/compilation-template';
 import { startCase } from 'lodash';
 import { Plus, Trash2 } from 'lucide-react';
-import { useFieldArray, useFormContext } from 'react-hook-form';
+import { useMemo } from 'react';
+import {
+  ArrayPath,
+  Path,
+  useFieldArray,
+  useFormContext,
+} from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
-import { Textarea } from '@/components/ui/textarea';
-
+import { useFieldTypeChange } from '../hooks/use-field-type-change';
 import { FormSchemaType } from '../schema';
 import { createEmptyField, FieldLabelKeyMap } from '../utils';
 
 type FieldsSectionProps = {
-  name: `config.${string}`;
+  name: Path<FormSchemaType>;
   title: string;
   fieldKeys: string[];
   defaultOpen?: boolean;
-  typeOptions: { label: string; value: string }[];
+  builtinSection?: ICompilationTemplateSection;
 };
 
 export function FieldsSection({
@@ -26,16 +33,26 @@ export function FieldsSection({
   title,
   fieldKeys,
   defaultOpen = false,
-  typeOptions,
+  builtinSection,
 }: FieldsSectionProps) {
   const { t } = useTranslation();
   const form = useFormContext<FormSchemaType>();
-  const fieldsPath = `${name}.fields` as const;
+  const fieldsPath = `${name}.fields` as ArrayPath<FormSchemaType>;
 
   const { fields, append, remove } = useFieldArray({
     name: fieldsPath,
     control: form.control,
   });
+
+  const typeOptions = useMemo(() => {
+    const typeSet = new Set<string>();
+    builtinSection?.fields?.forEach((field) => {
+      if (field.type) typeSet.add(field.type);
+    });
+    return Array.from(typeSet)
+      .sort()
+      .map((value) => ({ label: value, value }));
+  }, [builtinSection]);
 
   return (
     <Collapse defaultOpen={defaultOpen} title={title}>
@@ -75,28 +92,15 @@ export function FieldsSection({
                 </div>
 
                 {fieldKeys.map((key) => (
-                  <RAGFlowFormItem
+                  <FieldFormItem
                     key={key}
-                    name={`${fieldsPath}.${index}.${key}`}
-                    label={
-                      FieldLabelKeyMap[key]
-                        ? t(FieldLabelKeyMap[key])
-                        : startCase(key)
-                    }
-                    required
-                  >
-                    {key === 'type' ? (
-                      <SelectWithSearch
-                        options={typeOptions}
-                        placeholder={t('common.selectPlaceholder')}
-                      />
-                    ) : (
-                      <Textarea
-                        placeholder={t('setting.descriptionPlaceholder')}
-                        rows={2}
-                      />
-                    )}
-                  </RAGFlowFormItem>
+                    fieldKey={key}
+                    fieldName={`${fieldsPath}.${index}.${key}`}
+                    typeOptions={typeOptions}
+                    builtinSection={builtinSection}
+                    fieldsPath={fieldsPath}
+                    index={index}
+                  />
                 ))}
               </CardContent>
             </Card>
@@ -113,5 +117,58 @@ export function FieldsSection({
         </Button>
       </section>
     </Collapse>
+  );
+}
+
+type FieldFormItemProps = {
+  fieldKey: string;
+  fieldName: string;
+  typeOptions: { label: string; value: string }[];
+  builtinSection?: ICompilationTemplateSection;
+  fieldsPath: ArrayPath<FormSchemaType>;
+  index: number;
+};
+
+function FieldFormItem({
+  fieldKey,
+  fieldName,
+  typeOptions,
+  builtinSection,
+  fieldsPath,
+  index,
+}: FieldFormItemProps) {
+  const { t } = useTranslation();
+  const form = useFormContext<FormSchemaType>();
+  const handleTypeChange = useFieldTypeChange({
+    form,
+    builtinSection,
+    fieldsPath: fieldsPath as `templates.${number}.config.${string}.fields`,
+    index,
+  });
+
+  return (
+    <RAGFlowFormItem
+      name={fieldName}
+      label={
+        FieldLabelKeyMap[fieldKey]
+          ? t(FieldLabelKeyMap[fieldKey])
+          : startCase(fieldKey)
+      }
+      required
+    >
+      {fieldKey === 'type' ? (
+        (field) => (
+          <SelectWithSearch
+            options={typeOptions}
+            value={field.value}
+            onChange={(value) => handleTypeChange(field, value)}
+            disabled={field.disabled}
+            placeholder={t('common.selectPlaceholder')}
+          />
+        )
+      ) : (
+        <Textarea placeholder={t('setting.descriptionPlaceholder')} rows={2} />
+      )}
+    </RAGFlowFormItem>
   );
 }

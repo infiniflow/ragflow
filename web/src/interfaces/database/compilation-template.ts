@@ -10,13 +10,26 @@ export interface ICompilationTemplateSection {
   fields: ICompilationTemplateField[];
 }
 
+export interface ICompilationTemplateRaptorConfig {
+  prompt?: string;
+  max_token?: number;
+  threshold?: number;
+  rechunk?: boolean;
+}
+
 export interface ICompilationTemplateConfig {
   kind?: string;
   llm_id?: string;
   entity?: ICompilationTemplateSection;
   relation?: ICompilationTemplateSection;
+  raptor?: ICompilationTemplateRaptorConfig;
   global_rules?: string;
-  [section: string]: ICompilationTemplateSection | string | undefined;
+  [section: string]:
+    | ICompilationTemplateSection
+    | ICompilationTemplateRaptorConfig
+    | string
+    | boolean
+    | undefined;
 }
 
 export interface ICompilationTemplate {
@@ -40,4 +53,14 @@ export interface ICompilationTemplateBuiltin {
   display_name: string;
   description: string;
   config: ICompilationTemplateConfig;
+}
+
+export interface ICompilationTemplateGroup {
+  id: string;
+  name: string;
+  description?: string;
+  scope?: string;
+  create_time?: number;
+  update_time?: number;
+  templates: ICompilationTemplate[];
 }

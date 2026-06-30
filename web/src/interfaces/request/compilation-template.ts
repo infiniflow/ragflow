@@ -10,13 +10,26 @@ export interface ICompilationTemplateSectionRequest {
   fields: Array<Record<string, string>>;
 }
 
+export interface ICompilationTemplateRaptorConfigRequest {
+  prompt?: string;
+  max_token?: number;
+  threshold?: number;
+  rechunk?: boolean;
+}
+
 export interface ICompilationTemplateConfigRequest {
   kind?: string;
   llm_id?: string;
   entity?: ICompilationTemplateSectionRequest;
   relation?: ICompilationTemplateSectionRequest;
+  raptor?: ICompilationTemplateRaptorConfigRequest;
   global_rules?: string;
-  [section: string]: ICompilationTemplateSectionRequest | string | undefined;
+  [section: string]:
+    | ICompilationTemplateSectionRequest
+    | ICompilationTemplateRaptorConfigRequest
+    | string
+    | boolean
+    | undefined;
 }
 
 export interface ICreateCompilationTemplateRequestBody {
@@ -28,3 +41,17 @@ export interface ICreateCompilationTemplateRequestBody {
 
 export type IUpdateCompilationTemplateRequestBody =
   Partial<ICreateCompilationTemplateRequestBody>;
+
+export interface ICreateCompilationTemplateGroupRequestBody {
+  name: string;
+  description?: string;
+  templates: Array<{
+    name?: string;
+    description?: string;
+    kind: string;
+    config: ICompilationTemplateConfigRequest;
+  }>;
+}
+
+export type IUpdateCompilationTemplateGroupRequestBody =
+  Partial<ICreateCompilationTemplateGroupRequestBody>;

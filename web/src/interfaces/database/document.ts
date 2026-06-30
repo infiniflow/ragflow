@@ -60,7 +60,7 @@ export interface IParserConfig {
     enum?: string[];
   }>;
   enable_metadata?: boolean;
-  compilation_template_ids?: string[];
+  compilation_template_group_id?: string[];
 }
 
 interface Raptor {

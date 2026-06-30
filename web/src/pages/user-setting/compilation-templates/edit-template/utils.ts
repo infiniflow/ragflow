@@ -2,10 +2,16 @@ import { isEqual } from 'lodash';
 
 import {
   ICompilationTemplate,
+  ICompilationTemplateBuiltin,
+  ICompilationTemplateGroup,
+  ICompilationTemplateRaptorConfig,
   ICompilationTemplateSection,
 } from '@/interfaces/database/compilation-template';
+import { ICompilationTemplateConfigRequest } from '@/interfaces/request/compilation-template';
 
-import { FormSchemaType } from './schema';
+import { CompilationTemplateKind } from '@/constants/compilation';
+
+import { FormSchemaType, TemplateSchemaType } from './schema';
 
 export const DefaultFieldKeys = ['type', 'description', 'rule'];
 
@@ -23,7 +29,7 @@ export const getFieldKeyOrder = (keys: string[]): string[] => {
   );
 };
 
-export const DefaultValues: FormSchemaType = {
+export const DefaultTemplateValues: TemplateSchemaType = {
   name: '',
   description: '',
   llm_id: '',
@@ -32,11 +38,18 @@ export const DefaultValues: FormSchemaType = {
     kind: '',
     llm_id: '',
     global_rules: '',
+    example: '',
   },
 };
 
+export const DefaultValues: FormSchemaType = {
+  name: '',
+  description: '',
+  templates: [DefaultTemplateValues],
+};
+
 export const isConfigMetaKey = (key: string) =>
-  ['kind', 'llm_id', 'global_rules'].includes(key);
+  ['kind', 'llm_id', 'global_rules', 'example'].includes(key);
 
 export const createEmptyField = (keys: string[]) =>
   Object.fromEntries(keys.map((key) => [key, '']));
@@ -58,21 +71,83 @@ export const normalizeSection = (
   };
 };
 
-export const transformDetailToForm = (
-  detail: ICompilationTemplate,
-): FormSchemaType => {
-  const config = detail.config ?? {};
-  const sections: FormSchemaType['config'] = {
-    kind: config.kind ?? '',
-    llm_id: config.llm_id ?? '',
-    global_rules: config.global_rules ?? '',
+export const buildConfigFromBuiltin = (
+  builtinTemplate: ICompilationTemplateBuiltin,
+  kind: string,
+  llmId: string,
+): TemplateSchemaType['config'] => {
+  const sections: TemplateSchemaType['config'] = {
+    kind,
+    llm_id: llmId,
+    global_rules:
+      typeof builtinTemplate.config?.global_rules === 'string'
+        ? builtinTemplate.config.global_rules
+        : '',
+    example:
+      typeof builtinTemplate.config?.example === 'string'
+        ? builtinTemplate.config.example
+        : '',
   };
 
-  Object.entries(config).forEach(([key, value]) => {
+  if (kind === CompilationTemplateKind.Tree) {
+    const builtinRaptor: ICompilationTemplateRaptorConfig =
+      builtinTemplate.config?.raptor ?? {};
+    return {
+      ...sections,
+      raptor: {
+        prompt: builtinRaptor.prompt ?? '',
+        max_token: builtinRaptor.max_token ?? 512,
+        threshold: builtinRaptor.threshold ?? 0.1,
+        rechunk: builtinRaptor.rechunk ?? false,
+      },
+    };
+  }
+
+  Object.entries(builtinTemplate.config ?? {}).forEach(([key, value]) => {
     if (isConfigMetaKey(key)) return;
     sections[key] = normalizeSection(
       value as ICompilationTemplateSection,
-    ) as FormSchemaType['config'][string];
+    ) as TemplateSchemaType['config'][string];
+  });
+
+  return sections;
+};
+
+export const transformDetailToForm = (
+  detail: ICompilationTemplate,
+): TemplateSchemaType => {
+  const config = detail.config ?? {};
+  const base: TemplateSchemaType['config'] = {
+    kind: config.kind ?? '',
+    llm_id: config.llm_id ?? '',
+    global_rules: config.global_rules ?? '',
+    example: typeof config.example === 'string' ? config.example : '',
+  };
+
+  if (detail.kind === CompilationTemplateKind.Tree) {
+    const raptor: ICompilationTemplateRaptorConfig = config.raptor ?? {};
+    return {
+      name: detail.name ?? '',
+      description: detail.description ?? '',
+      llm_id: config.llm_id ?? '',
+      kind: detail.kind ?? '',
+      config: {
+        ...base,
+        raptor: {
+          prompt: raptor.prompt ?? '',
+          max_token: raptor.max_token ?? 512,
+          threshold: raptor.threshold ?? 0.1,
+          rechunk: raptor.rechunk ?? false,
+        },
+      },
+    };
+  }
+
+  Object.entries(config).forEach(([key, value]) => {
+    if (isConfigMetaKey(key)) return;
+    base[key] = normalizeSection(
+      value as ICompilationTemplateSection,
+    ) as TemplateSchemaType['config'][string];
   });
 
   return {
@@ -80,29 +155,54 @@ export const transformDetailToForm = (
     description: detail.description ?? '',
     llm_id: config.llm_id ?? '',
     kind: detail.kind ?? '',
-    config: sections,
+    config: base,
   };
 };
 
-export const transformFormToPayload = (values: FormSchemaType) => {
-  const config: Record<string, ICompilationTemplateSection | string> = {};
-  Object.entries(values.config).forEach(([key, value]) => {
+export const transformGroupDetailToForm = (
+  detail: ICompilationTemplateGroup,
+): FormSchemaType => {
+  const templates = (detail.templates ?? []).map((template) =>
+    transformDetailToForm(template),
+  );
+
+  return {
+    name: detail.name ?? '',
+    description: detail.description ?? '',
+    templates: templates.length > 0 ? templates : [DefaultTemplateValues],
+  };
+};
+
+export const transformTemplateToPayload = (template: TemplateSchemaType) => {
+  const config: ICompilationTemplateConfigRequest = {
+    kind: template.kind,
+    llm_id: template.llm_id,
+  };
+
+  Object.entries(template.config).forEach(([key, value]) => {
+    if (key === 'kind' || key === 'llm_id') return;
     if (isConfigMetaKey(key)) {
       if (typeof value === 'string') config[key] = value;
-    } else if (typeof value !== 'string') {
-      config[key] = value as ICompilationTemplateSection;
+    } else {
+      config[key] = value as ICompilationTemplateConfigRequest[string];
     }
   });
 
   return {
+    name: template.name,
+    description: template.description,
+    kind: template.kind,
+    config,
+  };
+};
+
+export const transformFormToPayload = (values: FormSchemaType) => {
+  return {
     name: values.name,
     description: values.description,
-    kind: values.kind,
-    config: {
-      kind: values.kind,
-      llm_id: values.llm_id,
-      ...config,
-    },
+    templates: values.templates.map((template) =>
+      transformTemplateToPayload(template),
+    ),
   };
 };
 

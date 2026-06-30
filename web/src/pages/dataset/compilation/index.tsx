@@ -41,7 +41,7 @@ export default function Compilation() {
   const { data: knowledgeBase } = useFetchKnowledgeBaseConfiguration();
   const { data: knowledgeGraph } = useFetchKnowledgeGraph();
   const [leftTab, setLeftTab] = useState<LeftPanelTab>(LeftPanelTab.Contents);
-  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Graph);
+  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.LlmWiki);
   const [selectedArtifact, setSelectedArtifact] = useState<IArtifact | null>(
     null,
   );

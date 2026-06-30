@@ -297,6 +297,9 @@ export default {
   compilationTemplates: `${restAPIv1}/compilation_templates`,
   compilationTemplate: (id: string) =>
     `${restAPIv1}/compilation_templates/${id}`,
+  compilationTemplateGroups: `${restAPIv1}/compilation_template_groups`,
+  compilationTemplateGroup: (id: string) =>
+    `${restAPIv1}/compilation_template_groups/${id}`,
 
   // mcp server
   listMcpServer: `${restAPIv1}/mcp/servers`,

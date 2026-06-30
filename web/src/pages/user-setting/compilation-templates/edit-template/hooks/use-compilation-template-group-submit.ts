@@ -1,47 +1,47 @@
 import { useCallback } from 'react';
 
 import {
-  ICreateCompilationTemplateRequestBody,
-  IUpdateCompilationTemplateRequestBody,
+  ICreateCompilationTemplateGroupRequestBody,
+  IUpdateCompilationTemplateGroupRequestBody,
 } from '@/interfaces/request/compilation-template';
 
 import { FormSchemaType } from '../schema';
 import { transformFormToPayload } from '../utils';
 
-type UseCompilationTemplateSubmitOptions = {
+type UseCompilationTemplateGroupSubmitOptions = {
   isCreate: boolean;
   id?: string;
-  createTemplate: (
-    params: ICreateCompilationTemplateRequestBody,
+  createGroup: (
+    params: ICreateCompilationTemplateGroupRequestBody,
   ) => Promise<{ code: number } & Record<string, unknown>>;
-  updateTemplate: (
+  updateGroup: (
     id: string,
-    params: IUpdateCompilationTemplateRequestBody,
+    params: IUpdateCompilationTemplateGroupRequestBody,
   ) => Promise<{ code: number } & Record<string, unknown>>;
   onSuccess: () => void;
 };
 
-export const useCompilationTemplateSubmit = ({
+export const useCompilationTemplateGroupSubmit = ({
   isCreate,
   id,
-  createTemplate,
-  updateTemplate,
+  createGroup,
+  updateGroup,
   onSuccess,
-}: UseCompilationTemplateSubmitOptions) => {
+}: UseCompilationTemplateGroupSubmitOptions) => {
   const onSubmit = useCallback(
     async (values: FormSchemaType) => {
       const payload = transformFormToPayload(values);
       let result;
       if (isCreate) {
-        result = await createTemplate(payload);
+        result = await createGroup(payload);
       } else if (id) {
-        result = await updateTemplate(id, payload);
+        result = await updateGroup(id, payload);
       }
       if (result?.code === 0) {
         onSuccess();
       }
     },
-    [createTemplate, id, isCreate, onSuccess, updateTemplate],
+    [createGroup, id, isCreate, onSuccess, updateGroup],
   );
 
   return { onSubmit };

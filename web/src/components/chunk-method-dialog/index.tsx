@@ -153,7 +153,7 @@ export function ChunkMethodDialog({
           )
           .optional(),
         enable_metadata: z.boolean().optional(),
-        compilation_template_ids: z.array(z.string()).optional(),
+        compilation_template_group_id: z.array(z.string()).optional(),
       }),
     })
     .superRefine((data, ctx) => {

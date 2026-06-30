@@ -1,31 +1,28 @@
 import {
-  useCreateCompilationTemplate,
-  useFetchBuiltinCompilationTemplates,
-  useFetchCompilationTemplate,
-  useUpdateCompilationTemplate,
-} from '@/hooks/use-compilation-template-request';
+  useCreateCompilationTemplateGroup,
+  useFetchCompilationTemplateGroup,
+  useUpdateCompilationTemplateGroup,
+} from '@/hooks/use-compilation-template-group-request';
+import { useFetchBuiltinCompilationTemplates } from '@/hooks/use-compilation-template-request';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
-export const useCompilationTemplateData = () => {
+export const useCompilationTemplateGroupData = () => {
   const { id } = useParams<{ id: string }>();
   const isCreate = id === 'create';
   const { t } = useTranslation();
 
-  const { data: detail } = useFetchCompilationTemplate(id);
-  const {
-    data: builtins,
-    typeOptions,
-    kindOptions: builtinKindOptions,
-  } = useFetchBuiltinCompilationTemplates();
+  const { data: detail } = useFetchCompilationTemplateGroup(id);
+  const { data: builtins, kindOptions: builtinKindOptions } =
+    useFetchBuiltinCompilationTemplates();
   const defaultModelDictionary = useFetchDefaultModelDictionary();
 
-  const { createTemplate, loading: createLoading } =
-    useCreateCompilationTemplate();
-  const { updateTemplate, loading: updateLoading } =
-    useUpdateCompilationTemplate();
+  const { createGroup, loading: createLoading } =
+    useCreateCompilationTemplateGroup();
+  const { updateGroup, loading: updateLoading } =
+    useUpdateCompilationTemplateGroup();
 
   const kindOptions = useMemo(
     () =>
@@ -43,11 +40,10 @@ export const useCompilationTemplateData = () => {
     isCreate,
     detail,
     builtins,
-    typeOptions,
     kindOptions,
     defaultModelDictionary,
-    createTemplate,
-    updateTemplate,
+    createGroup,
+    updateGroup,
     isLoading,
   };
 };

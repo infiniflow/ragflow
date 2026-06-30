@@ -4,9 +4,9 @@ import { SearchInput } from '@/components/ui/input';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
-  useDeleteCompilationTemplate,
-  useFetchCompilationTemplatesByPage,
-} from '@/hooks/use-compilation-template-request';
+  useDeleteCompilationTemplateGroup,
+  useFetchCompilationTemplateGroupsByPage,
+} from '@/hooks/use-compilation-template-group-request';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback } from 'react';
@@ -18,15 +18,15 @@ import { TemplateCard } from './template-card';
 export default function CompilationTemplates() {
   const { t } = useTranslation();
   const {
-    templates,
+    groups,
     total,
     searchString,
     handleInputChange,
     pagination,
     setPagination,
-  } = useFetchCompilationTemplatesByPage();
+  } = useFetchCompilationTemplateGroupsByPage();
 
-  const { deleteTemplate } = useDeleteCompilationTemplate();
+  const { deleteGroup } = useDeleteCompilationTemplateGroup();
   const { navigateToCompilationTemplate } = useNavigatePage();
 
   const handlePageChange = useCallback(
@@ -49,9 +49,9 @@ export default function CompilationTemplates() {
 
   const handleDelete = useCallback(
     async (id: string) => {
-      await deleteTemplate(id);
+      await deleteGroup(id);
     },
-    [deleteTemplate],
+    [deleteGroup],
   );
 
   return (
@@ -78,7 +78,7 @@ export default function CompilationTemplates() {
 
             <Button onClick={handleAdd}>
               <Plus />
-              {t('setting.addTemplate')}
+              {t('setting.addTemplateGroup')}
             </Button>
           </div>
         </header>
@@ -86,9 +86,9 @@ export default function CompilationTemplates() {
     >
       <div className="h-full flex flex-col">
         <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto p-5">
-          {templates.length > 0 ? (
+          {groups.length > 0 ? (
             <CardContainer>
-              {templates.map((item) => (
+              {groups.map((item) => (
                 <TemplateCard
                   key={item.id}
                   data={item}

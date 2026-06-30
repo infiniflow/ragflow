@@ -8,13 +8,33 @@ export const buildSectionSchema = (t: (key: string) => string) =>
       .min(1),
   });
 
-export const buildFormSchema = (t: (key: string) => string) =>
+export const buildRaptorConfigSchema = (t: (key: string) => string) =>
   z.object({
-    name: z.string().min(1, t('setting.templateNameRequired')),
+    prompt: z.string().optional(),
+    max_token: z.number().min(1, t('setting.maxTokenRequired')),
+    threshold: z.number().min(0).max(1),
+    rechunk: z.boolean().optional(),
+  });
+
+export const buildTemplateSchema = (t: (key: string) => string) =>
+  z.object({
+    name: z.string().optional(),
     description: z.string().optional(),
     llm_id: z.string().min(1, t('setting.llmForExtractionRequired')),
     kind: z.string().min(1, t('setting.templateKindRequired')),
-    config: z.record(z.union([buildSectionSchema(t), z.string()])),
+    config: z.record(
+      z.union([buildRaptorConfigSchema(t), buildSectionSchema(t), z.string()]),
+    ),
   });
 
+export const buildFormSchema = (t: (key: string) => string) =>
+  z.object({
+    name: z.string().min(1, t('setting.groupNameRequired')),
+    description: z.string().optional(),
+    templates: z.array(buildTemplateSchema(t)).min(1),
+  });
+
+export type TemplateSchemaType = z.infer<
+  ReturnType<typeof buildTemplateSchema>
+>;
 export type FormSchemaType = z.infer<ReturnType<typeof buildFormSchema>>;

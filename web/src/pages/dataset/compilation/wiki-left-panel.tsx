@@ -121,7 +121,7 @@ export function WikiLeftPanel({
   return (
     <aside className="size-full flex flex-col">
       <Tabs value={tab} onValueChange={onTabChange} className="p-3">
-        <TabsList className="w-full grid grid-cols-2">
+        <TabsList className="grid grid-cols-2 w-80">
           <TabsTrigger value={LeftPanelTab.Contents}>
             {t('knowledgeDetails.contents')}
           </TabsTrigger>
