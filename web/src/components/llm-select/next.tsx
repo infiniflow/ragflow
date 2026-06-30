@@ -38,7 +38,7 @@ const NextInnerLLMSelect = forwardRef<
     const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
     const ttsModel = useMemo(() => {
-      return showSpeech2TextModel ? ['tts'] : [];
+      return showSpeech2TextModel ? ['asr'] : [];
     }, [showSpeech2TextModel]);
 
     const modelTypes = useMemo(() => {
