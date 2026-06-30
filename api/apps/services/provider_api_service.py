@@ -882,7 +882,7 @@ def update_model(tenant_id: str, provider_id_or_name: str, instance_id_or_name: 
 
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, model_name)
     to_update = {}
-    if update_dict.get("status") != model_obj.status:
+    if "status" in update_dict and update_dict.get("status") != model_obj.status:
         to_update.update({"status": update_dict["status"]})
     new_extra = {}
     if "max_tokens" in update_dict:
