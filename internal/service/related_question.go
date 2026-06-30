@@ -26,13 +26,8 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-// RelatedQuestionLLM is the LLM interface used to generate related questions.
-type RelatedQuestionLLM interface {
-	Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error)
-}
-
 // GenerateRelatedQuestions generates related search questions for chat/searchbot endpoints.
-func GenerateRelatedQuestions(tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, llm RelatedQuestionLLM) ([]string, error) {
+func GenerateRelatedQuestions(tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, llm *ChatLLM) ([]string, error) {
 	if llm == nil {
 		return nil, fmt.Errorf("LLM not configured")
 	}

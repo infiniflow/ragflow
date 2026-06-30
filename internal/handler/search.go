@@ -30,9 +30,9 @@ import (
 type SearchHandler struct {
 	searchService *service.SearchService
 	userService   *service.UserService
-	streamLLM     streamingLLM
+	streamLLM     *service.TenantStreamingLLM
 	askService    *service.AskService
-	sseWriter     SSEWriter
+	sseWriter     *service.SSEWriter
 }
 
 // NewSearchHandler create search handler
@@ -40,12 +40,12 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 	return &SearchHandler{
 		searchService: searchService,
 		userService:   userService,
-		sseWriter:     &ginSSEWriter{},
+		sseWriter:     service.NewSSEWriter(&ginSSEWriter{}),
 	}
 }
 
 // SetCompletionDependencies wires the streaming search completion runtime.
-func (h *SearchHandler) SetCompletionDependencies(streamLLM streamingLLM, askService *service.AskService) {
+func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.TenantStreamingLLM, askService *service.AskService) {
 	h.streamLLM = streamLLM
 	h.askService = askService
 }
@@ -480,7 +480,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 
 	writer := h.sseWriter
 	if writer == nil {
-		writer = &ginSSEWriter{}
+		writer = service.NewSSEWriter(&ginSSEWriter{})
 	}
 	if plan.ModelID == "" {
 		writer.Write(c, sseError("chat model not configured"))
@@ -495,7 +495,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		return
 	}
 
-	adapter := &askStreamAdapter{llm: h.streamLLM, tenantID: plan.UserID, modelID: plan.ModelID}
+	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: plan.UserID, ModelID: plan.ModelID}
 
 	hadError := false
 	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.KBIDs, plan.Options) {

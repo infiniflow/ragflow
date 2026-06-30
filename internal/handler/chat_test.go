@@ -81,7 +81,7 @@ func TestChatMindMapHandlerSuccess(t *testing.T) {
 		}, nil
 	}}
 	h := NewChatHandler(service.NewChatService(), service.NewUserService())
-	h.SetMindMapDependencies(nil, nil, llm, chunks)
+	h.SetMindMapDependencies(nil, nil, service.NewChatLLM(llm), service.NewChunkRetriever(chunks))
 	c, w := setupGinContextWithUser("POST", "/api/v1/chat/mindmap", `{"question":"What is search?","kb_ids":["kb-1"]}`)
 
 	h.MindMap(c)
@@ -114,7 +114,7 @@ func TestChatRecommendationHandlerSuccess(t *testing.T) {
 		response: "Here are related questions:\n1. How does hybrid search work?\n2. What improves retrieval quality?",
 	}
 	h := NewChatHandler(service.NewChatService(), service.NewUserService())
-	h.SetMindMapDependencies(nil, service.NewTenantService(), llm, nil)
+	h.SetMindMapDependencies(nil, service.NewTenantService(), service.NewChatLLM(llm), nil)
 	c, w := setupGinContextWithUser("POST", "/api/v1/chat/recommendation", `{"question":"hybrid search"}`)
 
 	h.Recommendation(c)

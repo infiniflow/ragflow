@@ -17,7 +17,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,28 +27,10 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
 
 	"go.uber.org/zap"
 )
-
-// chatLLM is the interface for LLM calls used by chat-style handlers.
-type chatLLM interface {
-	Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error)
-}
-
-// ChunkRetriever abstracts chunk retrieval for the searchbots handler.
-type ChunkRetriever interface {
-	RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
-}
-
-// streamingLLM abstracts streaming chat for the Ask endpoint.
-// The returned channel delivers raw text deltas from the LLM.
-// Implementations should respect ctx cancellation to prevent goroutine leaks.
-type streamingLLM interface {
-	ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error)
-}
 
 // SearchBotAskRequest is the request body for POST /api/v1/searchbots/ask.
 type SearchBotAskRequest struct {
@@ -63,55 +44,6 @@ type SearchBotMindMapRequest struct {
 	Question string             `json:"question" binding:"required"`
 	KbIDs    common.StringSlice `json:"kb_ids" binding:"required"`
 	SearchID string             `json:"search_id,omitempty"`
-}
-
-// ModelProviderLLM wraps ModelProviderService to implement chatLLM.
-type ModelProviderLLM struct {
-	Svc *service.ModelProviderService
-}
-
-func (r *ModelProviderLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
-	chatModel, err := r.Svc.GetChatModel(tenantID, modelID)
-	if err != nil {
-		return nil, err
-	}
-	return chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, config)
-}
-
-// ChatStream implements streamingLLM.
-func (r *ModelProviderLLM) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
-	chatModel, err := r.Svc.GetChatModel(tenantID, modelID)
-	if err != nil {
-		return nil, err
-	}
-	return chatStreamWithContext(ctx, chatModel, messages, config), nil
-}
-
-// chatStreamWithContext creates a streaming LLM channel that stops sending
-// when ctx is cancelled, preventing goroutine leaks on client disconnect.
-func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel, messages []modelModule.Message, config *modelModule.ChatConfig) <-chan string {
-	ch := make(chan string, 256)
-	go func() {
-		defer close(ch)
-		if err := chatModel.ModelDriver.ChatStreamlyWithSender(*chatModel.ModelName, messages, chatModel.APIConfig, config,
-			func(delta *string, _ *string) error {
-				if delta == nil {
-					return nil
-				}
-				select {
-				case ch <- *delta:
-					return nil
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-			}); err != nil {
-			if err == context.Canceled || err == context.DeadlineExceeded {
-				return
-			}
-			common.Warn("ChatStreamlyWithSender returned error", zap.Error(err))
-		}
-	}()
-	return ch
 }
 
 // SearchBotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval_test.
@@ -171,37 +103,23 @@ type SearchBotRequest struct {
 type SearchBotHandler struct {
 	searchSvc *service.SearchService
 	tenantSvc *service.TenantService
-	llm       chatLLM
-	streamLLM streamingLLM
-	chunkSvc  ChunkRetriever
+	llm       *service.ChatLLM
+	streamLLM *service.TenantStreamingLLM
+	chunkSvc  *service.ChunkRetriever
 	askSvc    *service.AskService
-	sseWriter SSEWriter
+	sseWriter *service.SSEWriter
 }
 
 // NewSearchBotHandler creates a new SearchBotHandler.
-func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm chatLLM, chunkSvc ChunkRetriever) *SearchBotHandler {
-	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc, sseWriter: &ginSSEWriter{}}
+func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm *service.ChatLLM, chunkSvc *service.ChunkRetriever) *SearchBotHandler {
+	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc, sseWriter: service.NewSSEWriter(&ginSSEWriter{})}
 }
 
 // SetStreamLLM sets the streaming LLM for the Ask endpoint.
-func (h *SearchBotHandler) SetStreamLLM(llm streamingLLM) { h.streamLLM = llm }
+func (h *SearchBotHandler) SetStreamLLM(llm *service.TenantStreamingLLM) { h.streamLLM = llm }
 
 // SetAskService sets the AskService used by the Ask endpoint.
 func (h *SearchBotHandler) SetAskService(svc *service.AskService) { h.askSvc = svc }
-
-// askStreamAdapter adapts handler.streamingLLM to service.StreamingLLM.
-type askStreamAdapter struct {
-	llm      streamingLLM
-	tenantID string
-	modelID  string
-}
-
-func (a *askStreamAdapter) ChatStream(ctx context.Context, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
-	if a.llm == nil {
-		return nil, fmt.Errorf("streaming LLM not configured")
-	}
-	return a.llm.ChatStream(ctx, a.tenantID, a.modelID, messages, config)
-}
 
 // Handle generates related search questions based on a user query.
 // @Summary Generate Related Questions
@@ -378,7 +296,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	adapter := &askStreamAdapter{llm: h.streamLLM, tenantID: user.ID, modelID: modelID}
+	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: user.ID, ModelID: modelID}
 	for delta := range h.askSvc.Stream(ctx, adapter, user.ID, req.Question, filtered) {
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
@@ -573,11 +491,6 @@ func sseMarker(marker string) string {
 	payload := ssePayload{Code: 0, Message: "", Data: d}
 	b, _ := json.Marshal(payload)
 	return fmt.Sprintf("data: %s\n\n", string(b))
-}
-
-// SSEWriter writes an SSE event to the client.
-type SSEWriter interface {
-	Write(c *gin.Context, data string)
 }
 
 // ginSSEWriter is the production SSEWriter backed by gin.Context.Stream.
