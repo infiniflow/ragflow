@@ -9,10 +9,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useDeleteAgent, useDuplicateAgent } from '@/hooks/use-agent-request';
+import { useDeleteAgent } from '@/hooks/use-agent-request';
 import { IFlow } from '@/interfaces/database/agent';
-import { MouseEventHandler, PropsWithChildren, useCallback, useState } from 'react';
 import { PenLine, Tag, Trash2 } from 'lucide-react';
+import {
+  MouseEventHandler,
+  PropsWithChildren,
+  useCallback,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentTagEditor } from './agent-tag-editor';
 import { useRenameAgent } from './use-rename-agent';
@@ -55,6 +60,7 @@ export function AgentDropdown({
           <DropdownMenuItem onClick={handleShowAgentRenameModal}>
             {t('common.rename')} <PenLine />
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleEditTags}>
             {t('flow.editTags')} <Tag />
           </DropdownMenuItem>
