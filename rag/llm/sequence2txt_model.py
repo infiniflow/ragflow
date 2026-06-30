@@ -472,6 +472,7 @@ class FunASRSeq2txt(GPTSeq2txt):
     _FACTORY_NAME = "FunASR"
 
     def __init__(self, key, model_name="sensevoice", base_url="http://localhost:8000/v1", **kwargs):
+        """Initialize an OpenAI-compatible client for a local FunASR server."""
         if not base_url:
             base_url = "http://localhost:8000/v1"
         # FunASR doesn't require auth; OpenAI client refuses empty key

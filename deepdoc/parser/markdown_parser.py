@@ -424,6 +424,7 @@ class MarkdownElementExtractor:
         }
 
     def _extract_code_block(self, start_pos):
+        """Extract a fenced code block with CommonMark closing-fence rules."""
         end_pos = start_pos
         content_lines = [self.lines[start_pos]]
 
