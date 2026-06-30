@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -58,6 +59,7 @@ func AssertURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
 		return "", "", fmt.Errorf("URL is missing a host.")
 	}
 
+	allowAny := allowAnyHost()
 	addrs, err := LookupHost(hostname)
 	if err != nil {
 		return "", "", fmt.Errorf("Could not resolve hostname '%s': %v", hostname, err)
@@ -71,7 +73,7 @@ func AssertURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
 		if ip == nil {
 			return "", "", fmt.Errorf("Could not parse resolved address '%s' for hostname '%s'.", addr, hostname)
 		}
-		if !isGlobalIP(effectiveIP(ip)) {
+		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
 			return "", "", fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed.", ip.String())
 		}
 		if resolvedIP == "" {
@@ -79,6 +81,15 @@ func AssertURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
 		}
 	}
 	return hostname, resolvedIP, nil
+}
+
+func allowAnyHost() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ALLOW_ANY_HOST"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func schemeAllowed(scheme string) bool {
