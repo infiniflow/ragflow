@@ -560,7 +560,7 @@ class LLM4Tenant:
         self.langfuse = None
 
         # Release underlying model instance if it has a close method
-        if self.mdl and hasattr(self.mdl, "close") and callable(getattr(self.mdl, "close")):
+        if self.mdl and callable(getattr(self.mdl, "close", None)):
             try:
                 self.mdl.close()
             except Exception:

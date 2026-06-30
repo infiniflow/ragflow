@@ -1476,6 +1476,7 @@ def _run_sync(user_id: str, req):
                 # Drop the stale "N tasks are ahead in the queue..." text so a
                 # stopped document does not keep looking like it is still waiting.
                 info["progress_msg"] = ""
+                logging.debug("Cleared progress_msg on cancel for doc %s", doc_id)
             else:
                 return RetCode.DATA_ERROR, "Cannot cancel a task that is not in RUNNING status"
         if all([rerun_with_delete, str(doc.run) == TaskStatus.DONE.value]):
@@ -1710,6 +1711,7 @@ async def stop_parse_documents(tenant_id, dataset_id):
                         "progress_msg": "",
                     },
                 )
+                logging.debug("Cleared progress_msg on stop-parse for doc %s", doc_id)
                 index_name = search.index_name(tenant_id)
                 if settings.docStoreConn.index_exist(index_name, doc.kb_id):
                     settings.docStoreConn.delete({"doc_id": doc.id}, index_name, doc.kb_id)

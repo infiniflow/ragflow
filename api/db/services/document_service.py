@@ -1177,13 +1177,14 @@ def queue_per_doc_raptor_task(doc, priority):
     return task["id"]
 
 
-# Short-lived cache for the genuine queued-task backlog so the per-document
-# progress sync does not issue a COUNT query for every document each cycle.
-_PENDING_TASK_COUNT_CACHE = {"value": 0, "expire_at": 0.0}
+# Short-lived per-priority cache for the genuine queued-task backlog so the
+# per-document progress sync does not issue a COUNT query for every document
+# each cycle. Keyed by priority (None means "all priorities").
+_PENDING_TASK_COUNT_CACHE = {}
 _PENDING_TASK_COUNT_TTL_SECONDS = 3.0
 
 
-def get_pending_task_count():
+def get_pending_task_count(priority=None):
     """Count tasks that are genuinely still waiting to be processed.
 
     A task counts as "waiting" when it has not started yet (progress == 0) and
@@ -1191,14 +1192,18 @@ def get_pending_task_count():
     [0, 1)). Cancelled, failed and finished documents are excluded, so the
     figure drops back to reality as soon as the user stops parsing.
 
+    When ``priority`` is given, only tasks queued at that priority are counted,
+    so the figure stays consistent with the per-priority Redis queue it caps.
+
     Returns None when the count cannot be determined, so callers can fall back
     to the raw Redis stream lag.
     """
     now = monotonic()
-    if _PENDING_TASK_COUNT_CACHE.get("expire_at", 0.0) > now:
-        return _PENDING_TASK_COUNT_CACHE["value"]
+    cached = _PENDING_TASK_COUNT_CACHE.get(priority)
+    if cached and cached.get("expire_at", 0.0) > now:
+        return cached["value"]
     try:
-        count = int(
+        query = (
             Task.select(fn.COUNT(Task.id))
             .join(Document, on=(Task.doc_id == Document.id))
             .where(
@@ -1207,14 +1212,14 @@ def get_pending_task_count():
                 & (Document.progress >= 0)
                 & (Document.progress < 1)
             )
-            .scalar()
-            or 0
         )
+        if priority is not None:
+            query = query.where(Task.priority == priority)
+        count = int(query.scalar() or 0)
     except Exception:
         logging.exception("get_pending_task_count failed")
         return None
-    _PENDING_TASK_COUNT_CACHE["value"] = count
-    _PENDING_TASK_COUNT_CACHE["expire_at"] = now + _PENDING_TASK_COUNT_TTL_SECONDS
+    _PENDING_TASK_COUNT_CACHE[priority] = {"value": count, "expire_at": now + _PENDING_TASK_COUNT_TTL_SECONDS}
     return count
 
 
@@ -1235,7 +1240,7 @@ def get_queue_length(priority, suffix="common"):
     group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority, suffix), SVR_CONSUMER_GROUP_NAME)
     lag = int(group_info.get("lag", 0) or 0) if group_info else 0
 
-    pending = get_pending_task_count()
+    pending = get_pending_task_count(priority)
     if pending is None:
         return lag
     return min(lag, pending)

@@ -90,6 +90,7 @@ async def _cancel_task(task_id):
             _, doc = DocumentService.get_by_id(doc_id)
             if doc and str(doc.run) in (TaskStatus.RUNNING.value, TaskStatus.SCHEDULE.value):
                 DocumentService.update_by_id(doc_id, {"run": TaskStatus.CANCEL.value, "progress": 0, "progress_msg": ""})
+                logging.debug("Cleared progress_msg on task cancel: task_id=%s doc_id=%s", task_id, doc_id)
     except Exception as e:
         logging.warning("Failed to update document run status for task %s: %s", task_id, str(e))
 

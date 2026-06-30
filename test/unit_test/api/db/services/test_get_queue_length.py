@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import sys
 import types
 import warnings
@@ -32,8 +33,8 @@ def _install_cv2_stub_if_unavailable():
     try:
         import cv2  # noqa: F401
         return
-    except Exception:
-        pass
+    except ImportError as exc:
+        logging.debug("cv2 unavailable; installing test stub: %s", exc)
 
     stub = types.ModuleType("cv2")
 
@@ -57,7 +58,7 @@ from api.db.services import document_service as ds  # noqa: E402
 @pytest.fixture(autouse=True)
 def _reset_pending_cache(monkeypatch):
     """Disable the short-lived backlog cache so each test is deterministic."""
-    monkeypatch.setattr(ds, "_PENDING_TASK_COUNT_CACHE", {"value": 0, "expire_at": 0.0})
+    monkeypatch.setattr(ds, "_PENDING_TASK_COUNT_CACHE", {})
     monkeypatch.setattr(ds, "_PENDING_TASK_COUNT_TTL_SECONDS", 0.0)
     yield
 
@@ -69,7 +70,7 @@ def _patch_lag(monkeypatch, lag):
 
 
 def _patch_pending(monkeypatch, pending):
-    monkeypatch.setattr(ds, "get_pending_task_count", lambda: pending)
+    monkeypatch.setattr(ds, "get_pending_task_count", lambda *_a, **_k: pending)
 
 
 @pytest.mark.p2
@@ -123,10 +124,11 @@ class TestGetPendingTaskCount:
 
     def test_uses_cache_within_ttl(self, monkeypatch):
         monkeypatch.setattr(ds, "_PENDING_TASK_COUNT_TTL_SECONDS", 60.0)
+        # Cache is keyed by priority (None == "all priorities").
         monkeypatch.setattr(
             ds,
             "_PENDING_TASK_COUNT_CACHE",
-            {"value": 11, "expire_at": ds.monotonic() + 60.0},
+            {None: {"value": 11, "expire_at": ds.monotonic() + 60.0}},
         )
 
         def _boom(*_a, **_k):
@@ -134,3 +136,18 @@ class TestGetPendingTaskCount:
 
         monkeypatch.setattr(ds.Task, "select", _boom)
         assert ds.get_pending_task_count() == 11
+
+    def test_cache_is_per_priority(self, monkeypatch):
+        monkeypatch.setattr(ds, "_PENDING_TASK_COUNT_TTL_SECONDS", 60.0)
+        # Priority 1 is cached; priority 0 is not -> only priority 0 hits the DB.
+        monkeypatch.setattr(
+            ds,
+            "_PENDING_TASK_COUNT_CACHE",
+            {1: {"value": 3, "expire_at": ds.monotonic() + 60.0}},
+        )
+
+        def _boom(*_a, **_k):
+            raise AssertionError("DB must not be queried for a cached priority")
+
+        monkeypatch.setattr(ds.Task, "select", _boom)
+        assert ds.get_pending_task_count(1) == 3
