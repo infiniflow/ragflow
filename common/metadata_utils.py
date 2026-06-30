@@ -204,8 +204,9 @@ async def apply_meta_data_filter(
     ``get_flatted_meta_by_kbs`` round-trip entirely.
 
     Returns:
-        list of doc_ids, ["-999"] when manual filters yield no result, or None
-        when auto/semi_auto filters return empty.
+        list of doc_ids (may be empty to indicate no restriction),
+        ["-999"] when manual filters yield no result, or None when
+        meta_data_filter is falsy (i.e. not configured).
     """
     from rag.prompts.generator import gen_meta_filter  # move from the top of the file to avoid circular import
 
@@ -244,11 +245,26 @@ async def apply_meta_data_filter(
         return meta_filter(_get_metas(), conditions, logic)
 
     if method == "auto":
-        filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
+        # Fix #13987 — if the KB has no tags at all, skip the LLM round-trip
+        # and fall through to unfiltered retrieval. Previously this branch
+        # always called gen_meta_filter and then returned None on empty
+        # conditions, which caused vector search to be skipped entirely.
+        current_metas = _get_metas()
+        if not current_metas:
+            return doc_ids
+        filters: dict = await gen_meta_filter(chat_mdl, current_metas, question)
         logging.debug(f"Metadata filter(auto) generated: {filters}")
-        doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
-        if not doc_ids:
-            return None
+        matched = _run_metadata_filter(filters["conditions"], filters.get("logic", "and"))
+        if matched:
+            doc_ids.extend(matched)
+        else:
+            # LLM generated conditions but nothing matched — fall back to
+            # unfiltered retrieval (return base doc_ids) instead of returning
+            # None and silently skipping search. See #13987.
+            logging.info(
+                "Auto metadata filter produced conditions that matched no documents; "
+                "falling back to unfiltered retrieval."
+            )
     elif method == "semi_auto":
         selected_keys = []
         constraints = {}
@@ -268,9 +284,17 @@ async def apply_meta_data_filter(
             if filtered_metas:
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
                 logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
-                doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
-                if not doc_ids:
-                    return None
+                matched = _run_metadata_filter(filters["conditions"], filters.get("logic", "and"))
+                if matched:
+                    doc_ids.extend(matched)
+                else:
+                    # Same fall-back as auto mode — don't skip vector search
+                    # just because the LLM-generated conditions matched none
+                    # of the docs.  See #13987.
+                    logging.info(
+                        "Semi-auto metadata filter produced conditions that matched no documents; "
+                        "falling back to unfiltered retrieval."
+                    )
     elif method == "manual":
         filters = meta_data_filter.get("manual", [])
         if manual_value_resolver:
