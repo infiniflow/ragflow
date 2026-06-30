@@ -570,9 +570,10 @@ class OCR:
                     self.text_recognizer = [TextRecognizer(model_dir)]
 
             except Exception:
-                model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
-                                              local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
-                                              local_dir_use_symlinks=False)
+                model_dir = snapshot_download(
+                    repo_id="InfiniFlow/deepdoc",
+                    local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
+                )
                 
                 if settings.PARALLEL_DEVICES > 0:
                     self.text_detector = []
@@ -670,19 +671,13 @@ class OCR:
         if device_id is None:
             device_id = 0
 
-        time_dict = {'det': 0, 'rec': 0, 'cls': 0, 'all': 0}
-
         if img is None:
-            return None, None, time_dict
+            return None
 
-        start = time.time()
-        dt_boxes, elapse = self.text_detector[device_id](img)
-        time_dict['det'] = elapse
+        dt_boxes, _ = self.text_detector[device_id](img)
 
         if dt_boxes is None:
-            end = time.time()
-            time_dict['all'] = end - start
-            return None, None, time_dict
+            return None
 
         return zip(self.sorted_boxes(dt_boxes), [
                    ("", 0) for _ in range(len(dt_boxes))])

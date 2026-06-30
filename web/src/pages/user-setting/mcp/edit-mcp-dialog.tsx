@@ -105,7 +105,7 @@ export function EditMcpDialog({
       : tools;
   }, [data.variables?.tools, tools]);
 
-  const disabled = !!!tools?.length || testLoading || fieldChanged;
+  const disabled = !tools?.length || testLoading || fieldChanged;
 
   return (
     // <Dialog open onOpenChange={hideModal}>
@@ -174,6 +174,7 @@ export function EditMcpDialog({
       onCancel={hideModal}
       cancelText={t('common.cancel')}
       okText={t('common.save')}
+      maskClosable={false}
       footer={
         <DialogFooter>
           <DialogClose asChild>
@@ -196,7 +197,7 @@ export function EditMcpDialog({
         form={form}
         setFieldChanged={setFieldChanged}
       ></EditMcpForm>
-      <Card className="bg-transparent">
+      <Card className="bg-transparent mt-4">
         <CardContent className="p-3">
           <Collapse
             title={

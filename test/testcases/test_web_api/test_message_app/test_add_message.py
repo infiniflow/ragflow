@@ -17,7 +17,7 @@ import time
 import uuid
 import pytest
 
-from test_web_api.common import list_memory_message, add_message
+from test_common import list_memory_message, add_message
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 

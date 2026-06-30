@@ -7,11 +7,11 @@ import { ChevronRight } from 'lucide-react';
 import React from 'react';
 
 const treeVariants = cva(
-  'group hover:before:opacity-100 before:absolute before:rounded-lg before:left-0 px-2 before:w-full before:opacity-0 before:bg-accent/70 before:h-[2rem] before:-z-10',
+  'group hover:before:opacity-100 before:absolute before:rounded-lg before:left-0 px-2 before:w-full before:opacity-0 before:bg-accent/70 before:h-[2rem] before:-z-10 text-text-secondary',
 );
 
 const selectedTreeVariants = cva(
-  'before:opacity-100 before:bg-[#4E74Fd]/70 text-accent-foreground',
+  'before:opacity-100 before:bg-bg-card text-accent-foreground',
 );
 
 export interface TreeDataItem {
@@ -355,4 +355,4 @@ const TreeActions = ({
   );
 };
 
-export { TreeView, type TreeDataItem };
+export { TreeView };

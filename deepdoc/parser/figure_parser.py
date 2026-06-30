@@ -20,6 +20,7 @@ from PIL import Image
 
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from common.connection_utils import timeout
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
 from rag.prompts.generator import vision_llm_figure_describe_prompt, vision_llm_figure_describe_prompt_with_context
@@ -47,7 +48,8 @@ def vision_figure_parser_docx_wrapper(sections, tbls, callback=None,**kwargs):
     if not sections:
         return tbls
     try:
-        vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+        vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+        vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
         callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
     except Exception:
         vision_model = None
@@ -66,13 +68,14 @@ def vision_figure_parser_figure_xlsx_wrapper(images,callback=None, **kwargs):
     if not images:
         return []
     try:
-        vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+        vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+        vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
         callback(0.2, "Visual model detected. Attempting to enhance Excel image extraction...")
     except Exception:
         vision_model = None
     if vision_model:
         figures_data = [((
-                        img["image"],   # Image.Image
+                        img["image"],   # Image.Image or LazyImage (converted by ensure_pil_image)
                         [img["image_description"]]     # description list (must be list)
                     ),
                     [
@@ -94,7 +97,8 @@ def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
     parser_config = kwargs.get("parser_config", {})
     context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
     try:
-        vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+        vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+        vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
         callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
     except Exception:
         vision_model = None
@@ -132,7 +136,8 @@ def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kw
     if not chunks:
         return []
     try:
-        vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+        vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+        vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
         callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
     except Exception:
         vision_model = None
@@ -203,13 +208,17 @@ class VisionFigureParser:
             if len(item) == 2 and isinstance(item[0], tuple) and len(item[0]) == 2 and isinstance(item[1], list) and isinstance(item[1][0], tuple) and len(item[1][0]) == 5:
                 img_desc = item[0]
                 img = ensure_pil_image(img_desc[0])
-                assert len(img_desc) == 2 and isinstance(img, Image.Image) and isinstance(img_desc[1], list), "Should be (figure, [description])"
+                if img is None:
+                    continue
+                assert len(img_desc) == 2 and isinstance(img_desc[1], list), "Should be (figure, [description])"
                 self.figures.append(img)
                 self.descriptions.append(img_desc[1])
                 self.positions.append(item[1])
             else:
                 img = ensure_pil_image(item[0])
-                assert len(item) == 2 and isinstance(img, Image.Image) and isinstance(item[1], list), f"Unexpected form of figure data: get {len(item)=}, {item=}"
+                if img is None:
+                    continue
+                assert len(item) == 2 and isinstance(item[1], list), f"Unexpected form of figure data: get {len(item)=}, {item=}"
                 self.figures.append(img)
                 self.descriptions.append(item[1])
 

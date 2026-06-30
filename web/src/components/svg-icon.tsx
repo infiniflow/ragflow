@@ -72,6 +72,8 @@ const themeIcons = [
   LLMFactory.Meituan,
   LLMFactory.Longcat,
   LLMFactory.MinerU,
+  LLMFactory.JiekouAI,
+  LLMFactory.Perplexity,
 ];
 
 const svgIcons = [
@@ -85,6 +87,8 @@ const svgIcons = [
   LLMFactory.N1n,
   // LLMFactory.DeerAPI,
   LLMFactory.Avian,
+  LLMFactory.RAGcon,
+  LLMFactory.NewAPI,
 ];
 
 export const LlmIcon = ({
@@ -142,8 +146,8 @@ export const HomeIcon = ({
   imgClass,
 }: {
   name: string;
-  height?: string;
-  width?: string;
+  height?: string | number;
+  width?: string | number;
   imgClass?: string;
 }) => {
   const isDark = useIsDarkTheme();

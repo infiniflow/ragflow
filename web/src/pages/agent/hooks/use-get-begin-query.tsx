@@ -1,7 +1,7 @@
 import { AgentGlobals, AgentStructuredOutputField } from '@/constants/agent';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { DefaultOptionType } from '@/interfaces/antd-compat';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
   buildNodeOutputOptions,
   buildOutputOptions,
@@ -173,6 +173,38 @@ export function useBuildBeginDynamicVariableOptions() {
 
 const Env = 'env.';
 
+function splitOperatorOutputValue(value?: string) {
+  if (!value) {
+    return {};
+  }
+
+  const [nodeId, output] = value.split('@');
+  return { nodeId, output };
+}
+
+function filterDocGeneratorDownloadOutputOptions(
+  groups: Array<{
+    options: Array<{ value?: string } & Record<string, any>>;
+  }>,
+  allowDocGeneratorDownloadOutput: boolean,
+  getOperatorTypeFromId: (nodeId?: string) => string | undefined,
+) {
+  return groups.map((group) => ({
+    ...group,
+    options: group.options.filter((option) => {
+      const { nodeId, output } = splitOperatorOutputValue(option.value);
+      if (
+        output === 'download' &&
+        getOperatorTypeFromId(nodeId) === Operator.DocGenerator
+      ) {
+        return allowDocGeneratorDownloadOutput;
+      }
+
+      return true;
+    }),
+  }));
+}
+
 export function useBuildGlobalWithBeginVariableOptions() {
   const { data } = useFetchAgent();
   const dynamicBeginOptions = useBuildBeginDynamicVariableOptions();
@@ -270,6 +302,9 @@ export function useBuildQueryVariableOptions({
 } & BuildQueryVariableOptions = {}) {
   const node = useContext(AgentFormContext) || n;
   const nodes = useGraphStore((state) => state.nodes);
+  const getOperatorTypeFromId = useGraphStore(
+    (state) => state.getOperatorTypeFromId,
+  );
 
   const options = useBuildVariableOptions(node?.id, node?.parentId);
 
@@ -282,14 +317,22 @@ export function useBuildQueryVariableOptions({
     [AgentVariableType.Begin]: globalWithBeginVariableOptions,
     [AgentVariableType.Conversation]: conversationOptions,
   };
+  const allowDocGeneratorDownloadOutput =
+    node?.data?.label === Operator.Message;
 
   const nextOptions = useMemo(() => {
-    return [
-      ...globalWithBeginVariableOptions,
-      ...conversationOptions,
-      ...options,
-    ];
-  }, [conversationOptions, globalWithBeginVariableOptions, options]);
+    return filterDocGeneratorDownloadOutputOptions(
+      [...globalWithBeginVariableOptions, ...conversationOptions, ...options],
+      allowDocGeneratorDownloadOutput,
+      getOperatorTypeFromId,
+    );
+  }, [
+    allowDocGeneratorDownloadOutput,
+    conversationOptions,
+    getOperatorTypeFromId,
+    globalWithBeginVariableOptions,
+    options,
+  ]);
 
   // Which options are entirely under external control?
   if (!isEmpty(nodeIds) || !isEmpty(variablesExceptOperatorOutputs)) {
@@ -299,10 +342,11 @@ export function useBuildQueryVariableOptions({
       variablesExceptOperatorOutputs?.map((x) => AgentVariableOptionsMap[x]) ??
       [];
 
-    return [
-      ...flatten(variablesExceptOperatorOutputsOptions),
-      ...nodeOutputOptions,
-    ];
+    return filterDocGeneratorDownloadOutputOptions(
+      [...flatten(variablesExceptOperatorOutputsOptions), ...nodeOutputOptions],
+      allowDocGeneratorDownloadOutput,
+      getOperatorTypeFromId,
+    );
   }
   return nextOptions;
 }
@@ -312,7 +356,7 @@ export function useFilterQueryVariableOptionsByTypes({
   nodeIds = [],
   variablesExceptOperatorOutputs,
 }: {
-  types?: JsonSchemaDataType[];
+  types?: (JsonSchemaDataType | VariableType)[];
 } & BuildQueryVariableOptions) {
   const nextOptions = useBuildQueryVariableOptions({
     nodeIds,
@@ -326,15 +370,19 @@ export function useFilterQueryVariableOptionsByTypes({
             ...x,
             options: x.options.filter(
               (y) =>
-                types?.some((x) =>
-                  toLower(x).startsWith('array')
-                    ? toLower(y.type).includes(toLower(x))
-                    : toLower(y.type) === toLower(x),
-                ) ||
+                types?.some((x) => {
+                  const lowerX = toLower(x);
+                  const lowerYType = toLower(y.type);
+                  return lowerX.startsWith('array')
+                    ? lowerYType.includes(lowerX)
+                    : lowerYType === lowerX ||
+                        (lowerX === toLower(VariableType.File) &&
+                          lowerYType === `array<${lowerX}>`);
+                }) ||
                 // agent structured output
                 isAgentStructured(
                   y.value,
-                  y.value.slice(-AgentStructuredOutputField.length),
+                  y.value?.slice(-AgentStructuredOutputField.length),
                 ),
             ),
           };

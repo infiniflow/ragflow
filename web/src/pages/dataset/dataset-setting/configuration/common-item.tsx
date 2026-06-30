@@ -3,10 +3,8 @@ import {
   FormFieldType,
   RenderField,
 } from '@/components/dynamic-form';
-import {
-  SelectWithSearch,
-  SelectWithSearchFlagOptionType,
-} from '@/components/originui/select-with-search';
+import { ModelTreeSelect, ModelTypeMap } from '@/components/model-tree-select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,9 +17,8 @@ import {
 import { Radio } from '@/components/ui/radio';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
-import { LlmModelType } from '@/constants/knowledge';
+import { ParseType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
 import { history } from '@/utils/simple-history-util';
 import { t } from 'i18next';
@@ -51,7 +48,6 @@ import {
   useHandleKbEmbedding,
   useHasParsedDocument,
   useSelectChunkMethodList,
-  useSelectEmbeddingModelOptions,
 } from '../hooks';
 interface IProps {
   line?: 1 | 2;
@@ -60,7 +56,7 @@ interface IProps {
   name?: string;
 }
 export function ChunkMethodItem(props: IProps) {
-  const { line } = props;
+  const { line, name = 'parser_id' } = props;
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   // const handleChunkMethodSelectChange = useHandleChunkMethodSelectChange(form);
@@ -69,10 +65,12 @@ export function ChunkMethodItem(props: IProps) {
   return (
     <FormField
       control={form.control}
-      name={'parser_id'}
+      name={name}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-1">
-          <div className={line === 1 ? 'flex items-center' : ''}>
+        <FormItem className="items-center gap-1">
+          <div
+            className={line === 1 ? 'flex items-center' : 'flex flex-col gap-1'}
+          >
             <FormLabel
               required
               tooltip={t('chunkMethodTip')}
@@ -82,7 +80,7 @@ export function ChunkMethodItem(props: IProps) {
             >
               {t('builtIn')}
             </FormLabel>
-            <div className={line === 1 ? 'w-3/4 ' : 'w-full'}>
+            <div className={line === 1 ? 'w-3/4' : 'w-full'}>
               <FormControl>
                 <SelectWithSearch
                   {...field}
@@ -107,37 +105,38 @@ export const EmbeddingSelect = ({
   field,
   name,
   disabled = false,
+  testId,
 }: {
   isEdit: boolean;
   field: FieldValues;
   name?: string;
   disabled?: boolean;
+  testId?: string;
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
-  const embeddingModelOptions = useSelectEmbeddingModelOptions();
   const { handleChange } = useHandleKbEmbedding();
 
   const oldValue = useMemo(() => {
-    const embdStr = form.getValues(name || 'embd_id');
+    const embdStr = form.getValues(name || 'embedding_model');
     return embdStr || '';
-  }, [form]);
+  }, [form, name]);
   const [loading, setLoading] = useState(false);
   return (
     <Spin
       spinning={loading}
-      className={cn(' rounded-lg after:bg-bg-base', {
+      className={cn('rounded-lg after:bg-bg-base', {
         'opacity-20': loading,
       })}
     >
-      <SelectWithSearch
+      <ModelTreeSelect
+        modelTypes={ModelTypeMap.embd_id}
         onChange={async (value) => {
           field.onChange(value);
           if (isEdit && disabled) {
             setLoading(true);
             const res = await handleChange({
               embed_id: value,
-              // callback: field.onChange,
             });
             if (res.code !== 0) {
               field.onChange(oldValue);
@@ -147,8 +146,8 @@ export const EmbeddingSelect = ({
         }}
         disabled={disabled && !isEdit}
         value={field.value}
-        options={embeddingModelOptions}
         placeholder={t('embeddingModelPlaceholder')}
+        testId={testId}
       />
     </Spin>
   );
@@ -162,19 +161,19 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
     <>
       <FormField
         control={form.control}
-        name={'embd_id'}
+        name={'embedding_model'}
         render={({ field }) => (
-          <FormItem className={cn(' items-center space-y-0 ')}>
+          <FormItem className={cn('items-center space-y-0')}>
             <div
               className={cn('flex', {
-                ' items-center': line === 1,
+                'items-center': line === 1,
                 'flex-col gap-1': line === 2,
               })}
             >
               <FormLabel
                 required
                 tooltip={t('embeddingModelTip')}
-                className={cn('text-sm  whitespace-wrap ', {
+                className={cn('text-sm whitespace-wrap', {
                   'w-1/4': line === 1,
                 })}
               >
@@ -188,6 +187,7 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
                     isEdit={!!isEdit}
                     field={field}
                     disabled={disabled}
+                    testId="ds-settings-basic-embedding-model-select"
                   ></EmbeddingSelect>
                 </FormControl>
               </div>
@@ -203,19 +203,25 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
   );
 }
 
-export function ParseTypeItem({ line = 2 }: { line?: number }) {
+export function ParseTypeItem({
+  line = 2,
+  name = 'parseType',
+}: {
+  line?: number;
+  name?: string;
+}) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
 
   return (
     <FormField
       control={form.control}
-      name={'parseType'}
+      name={name}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
+        <FormItem className="items-center space-y-0">
           <div
             className={cn('flex', {
-              ' items-center': line === 1,
+              'items-center': line === 1,
               'flex-col gap-1': line === 2,
             })}
           >
@@ -238,8 +244,8 @@ export function ParseTypeItem({ line = 2 }: { line?: number }) {
                       line === 1 ? 'w-1/2' : 'w-3/4',
                     )}
                   >
-                    <Radio value={1}>{t('builtIn')}</Radio>
-                    <Radio value={2}>{t('manualSetup')}</Radio>
+                    <Radio value={ParseType.BuiltIn}>{t('builtIn')}</Radio>
+                    <Radio value={ParseType.Pipeline}>{t('manualSetup')}</Radio>
                   </div>
                 </Radio.Group>
               </FormControl>
@@ -264,7 +270,7 @@ export function EnableAutoGenerateItem() {
       control={form.control}
       name={'enableAutoGenerate'}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
+        <FormItem className="items-center space-y-0">
           <div className="flex items-center">
             <FormLabel
               tooltip={t('enableAutoGenerateTip')}
@@ -300,7 +306,7 @@ export function EnableTocToggle() {
       control={form.control}
       name={'parser_config.toc_extraction'}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
+        <FormItem className="items-center space-y-0">
           <div className="flex items-center">
             <FormLabel
               tooltip={t('tocExtractionTip')}
@@ -313,6 +319,7 @@ export function EnableTocToggle() {
                 <Switch
                   checked={field.value}
                   onCheckedChange={field.onChange}
+                  data-testid="ds-settings-parser-page-index-switch"
                 />
               </FormControl>
             </div>
@@ -345,6 +352,8 @@ export function ImageContextWindow() {
               defaultValue={0}
               min={0}
               max={256}
+              sliderTestId="ds-settings-parser-image-table-context-window-slider"
+              numberInputTestId="ds-settings-parser-image-table-context-window-input"
             />
           </FormControl>
           <div className="flex pt-1">
@@ -363,8 +372,11 @@ export function OverlappedPercent() {
       percentage={true}
       name="parser_config.overlapped_percent"
       label={t('knowledgeConfiguration.overlappedPercent')}
+      tooltip={t('knowledgeConfiguration.overlappedPercentTip')}
       max={0.3}
       step={0.01}
+      sliderTestId="ds-settings-parser-overlapped-percent-slider"
+      numberInputTestId="ds-settings-parser-overlapped-percent-input"
     ></SliderInputFormField>
   );
 }
@@ -405,8 +417,8 @@ export function AutoMetadata({
             avatar={knowledgeBase.avatar}
             name={knowledgeBase.name}
             className="size-8"
-          ></RAGFlowAvatar>
-          <div className=" text-text-primary text-base space-y-1 overflow-hidden">
+          />
+          <div className="text-text-primary text-base space-y-1 truncate overflow-hidden">
             {knowledgeBase.name}
           </div>
         </div>
@@ -439,7 +451,12 @@ export function AutoMetadata({
     tooltip: t('knowledgeConfiguration.autoMetadataTip'),
     render: (fieldProps: ControllerRenderProps) => (
       <div className="flex items-center justify-between">
-        <Button type="button" variant="ghost" onClick={handleClickOpenMetadata}>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={handleClickOpenMetadata}
+          data-testid="ds-settings-metadata-open-modal-btn"
+        >
           <div className="flex items-center gap-2">
             <Settings />
             {t('knowledgeConfiguration.settings')}
@@ -448,6 +465,7 @@ export function AutoMetadata({
         <Switch
           checked={fieldProps.value}
           onCheckedChange={fieldProps.onChange}
+          data-testid="ds-settings-metadata-switch"
         />
       </div>
     ),
@@ -500,6 +518,11 @@ export function AutoMetadata({
           }) => {
             handleSaveMetadata(data);
           }}
+          testId="ds-settings-metadata-modal"
+          okButtonTestId="ds-settings-metadata-modal-save-btn"
+          addButtonTestId="ds-settings-metadata-add-btn"
+          nestedModalTestId="ds-settings-metadata-add-modal"
+          nestedModalOkButtonTestId="ds-settings-metadata-add-modal-confirm-btn"
         />
       )}
     </>
@@ -517,18 +540,14 @@ export const LLMSelect = ({
   disabled?: boolean;
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
-  const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Chat,
-    LlmModelType.Image2text,
-  ]);
   return (
-    <SelectWithSearch
-      onChange={async (value) => {
+    <ModelTreeSelect
+      modelTypes={ModelTypeMap.llm_id}
+      onChange={(value) => {
         field.onChange(value);
       }}
       disabled={disabled && !isEdit}
       value={field.value}
-      options={modelOptions as SelectWithSearchFlagOptionType[]}
       placeholder={t('embeddingModelPlaceholder')}
     />
   );
@@ -544,10 +563,10 @@ export function LLMModelItem({ line = 1, isEdit, label, name }: IProps) {
         control={form.control}
         name={name ?? 'llm_id'}
         render={({ field }) => (
-          <FormItem className={cn(' items-center space-y-0 ')}>
+          <FormItem className={cn('items-center space-y-0')}>
             <div
               className={cn('flex', {
-                ' items-center': line === 1,
+                'items-center': line === 1,
                 'flex-col gap-1': line === 2,
               })}
             >

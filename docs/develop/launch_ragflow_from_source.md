@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 3
 slug: /launch_ragflow_from_source
 sidebar_custom_props: {
   categoryIcon: LucideMonitorPlay
@@ -46,14 +46,14 @@ cd ragflow/
 2. Install RAGFlow service's Python dependencies:
 
    ```bash
-   uv sync --python 3.12 --frozen
+   uv sync --python 3.13 --frozen
    ```
    *A virtual environment named `.venv` is created, and all Python dependencies are installed into the new environment.*
 
    If you need to run tests against the RAGFlow service, install the test dependencies:
 
    ```bash
-   uv sync --python 3.12 --group test --frozen && uv pip install sdk/python --group test
+   uv sync --python 3.13 --group test --frozen && uv pip install sdk/python --group test
    ```
 
 ### Launch third-party services
@@ -90,7 +90,7 @@ docker compose -f docker/docker-compose-base.yml up -d
    ```
 
 3. **Optional:** If you cannot access HuggingFace, set the HF_ENDPOINT environment variable to use a mirror site:
- 
+
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
@@ -101,7 +101,7 @@ docker compose -f docker/docker-compose-base.yml up -d
 
    ```shell
    JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so;
-   LD_PRELOAD=$JEMALLOC_PATH python rag/svr/task_executor.py 1;
+   LD_PRELOAD=$JEMALLOC_PATH python rag/svr/task_executor.py -i 1;
    ```
    ```shell
    python api/ragflow_server.py;

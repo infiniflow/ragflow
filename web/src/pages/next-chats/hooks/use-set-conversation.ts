@@ -1,35 +1,17 @@
-import { MessageType } from '@/constants/chat';
-import { useUpdateConversation } from '@/hooks/use-chat-request';
+import { useCreateSession } from '@/hooks/use-chat-request';
 import { useCallback } from 'react';
 import { useParams } from 'react-router';
 
 export const useSetConversation = () => {
-  const { id: dialogId } = useParams();
-  const { updateConversation } = useUpdateConversation();
+  const { id: chatId } = useParams();
+  const { createSession } = useCreateSession();
 
   const setConversation = useCallback(
-    async (
-      message: string,
-      isNew: boolean = false,
-      conversationId?: string,
-    ) => {
-      const data = await updateConversation({
-        dialog_id: dialogId,
-        name: message,
-        is_new: isNew,
-        conversation_id: conversationId,
-        message: [
-          {
-            role: MessageType.Assistant,
-            content: message,
-            conversationId,
-          },
-        ],
-      });
-
+    async (name: string) => {
+      const data = await createSession({ chatId: chatId!, name });
       return data;
     },
-    [updateConversation, dialogId],
+    [createSession, chatId],
   );
 
   return { setConversation };

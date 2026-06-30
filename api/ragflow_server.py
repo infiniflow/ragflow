@@ -14,18 +14,20 @@
 #  limitations under the License.
 #
 
-# from beartype import BeartypeConf
-# from beartype.claw import beartype_all  # <-- you didn't sign up for this
-# beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
+print("Start RAGFlow server...")
 
 import time
 start_ts = time.time()
 
-import logging
 import os
+
+# LiteLLM fetches a model cost map from GitHub during import unless this is set.
+# The API server should not block startup on external network access.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
+import logging
 import signal
 import sys
-import traceback
 import threading
 import uuid
 import faulthandler
@@ -139,18 +141,34 @@ if __name__ == '__main__':
         t = threading.Thread(target=update_progress, daemon=True)
         t.start()
 
+    def start_chat_channels():
+        try:
+            from api.channels.bootstrap import start_channel_server
+            logging.info("Starting chat channel server thread")
+            t = threading.Thread(
+                target=start_channel_server,
+                args=(stop_event,),
+                daemon=True,
+                name="chat-channels",
+            )
+            t.start()
+        except Exception:
+            logging.exception("Failed to start chat channel server")
+
     if RuntimeConfig.DEBUG:
         if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
             threading.Timer(1.0, delayed_start_update_progress).start()
+            start_chat_channels()
     else:
         threading.Timer(1.0, delayed_start_update_progress).start()
+        start_chat_channels()
 
     # start http server
     try:
         logging.info(f"RAGFlow server is ready after {time.time() - start_ts}s initialization.")
-        app.run(host=settings.HOST_IP, port=settings.HOST_PORT)
-    except Exception:
-        traceback.print_exc()
+        app.run(host=settings.HOST_IP, port=settings.HOST_PORT, use_reloader=RuntimeConfig.DEBUG, debug=False)
+    except Exception as e:
+        logging.exception(f"Unhandled exception: {e}")
         stop_event.set()
         stop_event.wait(1)
         os.kill(os.getpid(), signal.SIGKILL)

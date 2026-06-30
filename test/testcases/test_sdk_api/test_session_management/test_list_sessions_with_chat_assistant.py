@@ -226,7 +226,7 @@ class TestSessionsWithChatAssistantList:
 
         with pytest.raises(Exception) as exception_info:
             chat_assistant.list_sessions()
-        assert "You don't own the assistant" in str(exception_info.value)
+        assert "No authorization." in str(exception_info.value)
 
 
 @pytest.mark.p2

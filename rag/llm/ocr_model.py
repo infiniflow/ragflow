@@ -19,6 +19,7 @@ import os
 from typing import Any, Optional
 
 from deepdoc.parser.mineru_parser import MinerUParser
+from deepdoc.parser.opendataloader_parser import OpenDataLoaderParser
 from deepdoc.parser.paddleocr_parser import PaddleOCRParser
 
 
@@ -116,7 +117,7 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
             # lower-case keys (UI), upper-case PADDLEOCR_* (env auto-provision), env vars
             return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
 
-        self.paddleocr_api_url = _resolve_config("paddleocr_api_url", "PADDLEOCR_API_URL", "")
+        self.paddleocr_base_url = _resolve_config("paddleocr_base_url", "PADDLEOCR_BASE_URL", "") or _resolve_config("paddleocr_api_url", "PADDLEOCR_API_URL", "")
         self.paddleocr_algorithm = _resolve_config("paddleocr_algorithm", "PADDLEOCR_ALGORITHM", "PaddleOCR-VL")
         self.paddleocr_access_token = _resolve_config("paddleocr_access_token", "PADDLEOCR_ACCESS_TOKEN", None)
 
@@ -131,7 +132,7 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
 
         PaddleOCRParser.__init__(
             self,
-            api_url=self.paddleocr_api_url,
+            base_url=self.paddleocr_base_url or None,
             access_token=self.paddleocr_access_token,
             algorithm=self.paddleocr_algorithm,
         )
@@ -145,4 +146,70 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
             raise RuntimeError(f"PaddleOCR server not accessible: {reason}")
 
         sections, tables = PaddleOCRParser.parse_pdf(self, filepath=filepath, binary=binary, callback=callback, parse_method=parse_method, **kwargs)
+        return sections, tables
+
+    def parse_image(self, filepath: str, binary=None, callback=None, **kwargs) -> str:
+        ok, reason = self.check_available()
+        if not ok:
+            raise RuntimeError(f"PaddleOCR server not accessible: {reason}")
+
+        logging.info(f"PaddleOCR parse_image start: {filepath}")
+        result = PaddleOCRParser.parse_image(self, filepath=filepath, binary=binary, callback=callback, **kwargs)
+        logging.info(f"PaddleOCR parse_image done: {filepath}, text length: {len(result)}")
+        return result
+
+
+class OpenDataLoaderOcrModel(Base, OpenDataLoaderParser):
+    _FACTORY_NAME = "OpenDataLoader"
+
+    def __init__(self, key: str | dict, model_name: str, **kwargs):
+        Base.__init__(self, key, model_name, **kwargs)
+        raw_config = {}
+        if key:
+            try:
+                raw_config = json.loads(key)
+            except Exception:
+                raw_config = {}
+
+        config = raw_config.get("api_key", raw_config)
+        if not isinstance(config, dict):
+            config = {}
+
+        def _resolve_config(key: str, env_key: str, default=""):
+            return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
+
+        redacted_config = {}
+        for k, v in config.items():
+            if any(s in k.lower() for s in ("key", "password", "token", "secret")):
+                redacted_config[k] = "[REDACTED]"
+            else:
+                redacted_config[k] = v
+        logging.info(f"Parsed OpenDataLoader config (sensitive fields redacted): {redacted_config}")
+
+        OpenDataLoaderParser.__init__(self)
+        self.api_url = _resolve_config("opendataloader_apiserver", "OPENDATALOADER_APISERVER", "").rstrip("/")
+        self.api_key = _resolve_config("opendataloader_api_key", "OPENDATALOADER_API_KEY", "").strip()
+        timeout_val = _resolve_config("opendataloader_timeout", "OPENDATALOADER_TIMEOUT", "600") or "600"
+        try:
+            self.timeout = int(timeout_val)
+        except (TypeError, ValueError):
+            self.timeout = 600
+
+    def check_available(self) -> tuple[bool, str]:
+        ok = self.check_installation()
+        return ok, "" if ok else "OpenDataLoader service not reachable"
+
+    def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw", **kwargs):
+        ok, reason = self.check_available()
+        if not ok:
+            raise RuntimeError(f"OpenDataLoader service not accessible: {reason}")
+
+        sections, tables = OpenDataLoaderParser.parse_pdf(
+            self,
+            filepath=filepath,
+            binary=binary,
+            callback=callback,
+            parse_method=parse_method,
+            **kwargs,
+        )
         return sections, tables

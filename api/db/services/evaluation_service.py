@@ -39,6 +39,7 @@ from api.db.services.dialog_service import DialogService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
 from common.constants import StatusEnum
+from common.token_utils import num_tokens_from_string
 
 
 class EvaluationService(CommonService):
@@ -417,6 +418,12 @@ class EvaluationService(CommonService):
                     answer = ans.get("answer", "")
                     retrieved_chunks = ans.get("reference", {}).get("chunks", [])
                     break
+            else:
+                ans = {}
+                logging.warning(
+                    "Evaluation case %s produced no answer from chat; token_usage will reflect empty output",
+                    case.get("id", "unknown"),
+                )
 
             execution_time = timer() - start_time
 
@@ -430,6 +437,27 @@ class EvaluationService(CommonService):
                 dialog=dialog
             )
 
+            # Track token usage: use full prompt from async_chat when available.
+            # Note: Counts use tiktoken (cl100k_base), which matches OpenAI models but is an
+            # approximation for other providers (Anthropic, local models, etc.). Downstream
+            # consumers should treat these values as estimates for cost tracking.
+            full_prompt = ans.get("prompt", "")
+            if full_prompt:
+                prompt_tokens = num_tokens_from_string(full_prompt)
+            else:
+                logging.debug(
+                    "Evaluation case %s: ans has no 'prompt' key; using question-only count "
+                    "(undercounts system + retrieved context)",
+                    case.get("id", "unknown"),
+                )
+                prompt_tokens = num_tokens_from_string(case.get("question", "") or "")
+            completion_tokens = num_tokens_from_string(answer or "")
+            token_usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            }
+
             # Save result
             result_id = get_uuid()
             result = {
@@ -440,7 +468,7 @@ class EvaluationService(CommonService):
                 "retrieved_chunks": retrieved_chunks,
                 "metrics": metrics,
                 "execution_time": execution_time,
-                "token_usage": None,  # TODO: Track token usage
+                "token_usage": token_usage,
                 "create_time": current_timestamp()
             }
 

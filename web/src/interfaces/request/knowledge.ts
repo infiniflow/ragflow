@@ -24,10 +24,14 @@ export interface IFetchKnowledgeListRequestBody {
 }
 
 export interface IFetchKnowledgeListRequestParams {
-  kb_id?: string;
-  keywords?: string;
+  id?: string;
   page?: number;
   page_size?: number;
+  ext?: {
+    keywords?: string;
+    owner_ids?: string[];
+    parser_id?: string;
+  };
 }
 
 export interface IFetchDocumentListRequestBody {

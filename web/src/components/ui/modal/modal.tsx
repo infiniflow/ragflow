@@ -1,8 +1,9 @@
 // src/components/ui/modal.tsx
+import React from 'react';
 import { cn } from '@/lib/utils';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { AlertCircle, CheckCircle, Info, Loader, X } from 'lucide-react';
-import { FC, ReactNode, useCallback, useEffect, useMemo } from 'react';
+import React, { FC, ReactNode, useCallback, useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { useTranslation } from 'react-i18next';
 import { DialogDescription } from '../dialog';
@@ -164,7 +165,7 @@ const Modal: ModalType = ({
             )}
           >
             {confirmLoading && (
-              <Loader className="inline-block mr-2 h-4 w-4 animate-spin" />
+              <Loader className="inline-block me-2 h-4 w-4 animate-spin" />
             )}
             {okText ?? t('modal.okText')}
           </button>
@@ -253,7 +254,7 @@ const Modal: ModalType = ({
               <DialogPrimitive.Close asChild>
                 <button
                   type="button"
-                  className="flex absolute right-5 top-5 h-7 w-7 items-center justify-center text-text-secondary rounded-full hover:text-text-primary focus-visible:outline-none"
+                  className="flex absolute end-5 top-5 h-7 w-7 items-center justify-center text-text-secondary rounded-full hover:text-text-primary focus-visible:outline-none"
                   onClick={handleCancel}
                 >
                   {closeIcon}

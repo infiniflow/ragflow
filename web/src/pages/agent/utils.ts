@@ -1,13 +1,13 @@
-import { FormInstance, FormListFieldData } from '@/interfaces/antd-compat';
 import {
   DSL,
+  DSLComponents,
   GlobalVariableType,
   IAgentForm,
   ICategorizeForm,
   ICategorizeItem,
   ICategorizeItemResult,
+  RAGFlowNodeType,
 } from '@/interfaces/database/agent';
-import { DSLComponents, RAGFlowNodeType } from '@/interfaces/database/flow';
 import { buildSelectOptions } from '@/utils/component-util';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
@@ -33,15 +33,16 @@ import {
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
+  TitleChunkerMethod,
   TypesWithArray,
   WebhookSecurityAuthType,
 } from './constant';
 import { BeginFormSchemaType } from './form/begin-form/schema';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
-import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-form';
 import { ParserFormSchemaType } from './form/parser-form';
-import { SplitterFormSchemaType } from './form/splitter-form';
+import { TitleChunkerFormSchemaType } from './form/title-chunker-form';
+import { TokenChunkerFormSchemaType } from './form/token-chunker-form';
 import { BeginQuery, IPosition } from './interface';
 
 function buildAgentExceptionGoto(edges: Edge[], nodeId: string) {
@@ -211,9 +212,13 @@ function transformParserParams(params: ParserFormSchemaType) {
   >((pre, cur) => {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
-        ParserFormSchemaType['setups'][0] & { suffix: string[] }
+        ParserFormSchemaType['setups'][0] & { suffix: string[] } & {
+          two_column_check: boolean;
+          enable_multi_column: boolean;
+        }
       > = {
         output_format: cur.output_format,
+        preprocess: cur.preprocess,
         suffix: FileTypeSuffixMap[cur.fileFormat as FileType],
       };
 
@@ -223,6 +228,11 @@ function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             parse_method: cur.parse_method,
             lang: cur.lang,
+            vlm: { llm_id: cur.vlm?.llm_id },
+            flatten_media_to_text: cur.flatten_media_to_text,
+            enable_multi_column: cur.enable_multi_column,
+            remove_toc: cur.remove_toc,
+            remove_header_footer: cur.remove_header_footer || false,
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -235,6 +245,8 @@ function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             parse_method: cur.parse_method,
+            vlm: { llm_id: cur.vlm?.llm_id },
+            flatten_media_to_text: cur.flatten_media_to_text,
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -269,11 +281,41 @@ function transformParserParams(params: ParserFormSchemaType) {
             fields: cur.fields,
           };
           break;
+        case FileType.Doc:
+          filteredSetup = {
+            ...filteredSetup,
+            vlm: { llm_id: cur.vlm?.llm_id },
+            flatten_media_to_text: cur.flatten_media_to_text,
+            remove_header_footer: cur.remove_header_footer || false,
+          };
+          break;
+        case FileType.Docx:
+          filteredSetup = {
+            ...filteredSetup,
+            vlm: { llm_id: cur.vlm?.llm_id },
+            flatten_media_to_text: cur.flatten_media_to_text,
+            remove_header_footer: cur.remove_header_footer || false,
+          };
+          break;
+        case FileType.Html:
+          filteredSetup = {
+            ...filteredSetup,
+            remove_toc: cur.remove_toc,
+            remove_header_footer: cur.remove_header_footer || false,
+          };
+          break;
+        case FileType.TextMarkdown:
+          filteredSetup = {
+            ...filteredSetup,
+            vlm: { llm_id: cur.vlm?.llm_id },
+            flatten_media_to_text: cur.flatten_media_to_text,
+          };
+          break;
         case FileType.Video:
         case FileType.Audio:
           filteredSetup = {
             ...filteredSetup,
-            llm_id: cur.llm_id,
+            vlm: { llm_id: cur.vlm?.llm_id },
           };
           break;
         default:
@@ -288,13 +330,19 @@ function transformParserParams(params: ParserFormSchemaType) {
   return { ...params, setups };
 }
 
-function transformSplitterParams(params: SplitterFormSchemaType) {
+function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
   const { image_table_context_window, ...rest } = params;
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
     ...rest,
-    overlapped_percent: Number(params.overlapped_percent) / 100,
-    delimiters: transformObjectArrayToPureArray(params.delimiters, 'value'),
+    overlapped_percent:
+      params.delimiter_mode === 'one'
+        ? 0
+        : Number(params.overlapped_percent) / 100,
+    delimiters:
+      params.delimiter_mode === 'delimiter'
+        ? transformObjectArrayToPureArray(params.delimiters, 'value')
+        : [],
     table_context_size: imageTableContextWindow,
     image_context_size: imageTableContextWindow,
 
@@ -305,14 +353,34 @@ function transformSplitterParams(params: SplitterFormSchemaType) {
   };
 }
 
-function transformHierarchicalMergerParams(
-  params: HierarchicalMergerFormSchemaType,
-) {
-  const levels = params.levels.map((x) =>
-    transformObjectArrayToPureArray(x.expressions, 'expression'),
+function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
+  const activeRules =
+    (params.method === TitleChunkerMethod.Group
+      ? params.groupRules
+      : params.hierarchyRules) ?? params.rules;
+
+  const levels = (activeRules || []).map((rule) =>
+    transformObjectArrayToPureArray(rule.levels, 'expression'),
   );
 
-  return { ...params, hierarchy: Number(params.hierarchy), levels };
+  const hierarchyValue =
+    (params.method === TitleChunkerMethod.Group
+      ? params.hierarchyGroup
+      : params.hierarchyHierarchy) ?? params.hierarchy;
+
+  return {
+    ...omit(params, [
+      'hierarchyRules',
+      'groupRules',
+      'hierarchyHierarchy',
+      'hierarchyGroup',
+    ]),
+    method: params.method,
+    hierarchy: Number(hierarchyValue || 0),
+    include_heading_content: Boolean(params.include_heading_content),
+    root_chunk_as_heading: Boolean(params.root_chunk_as_heading),
+    levels,
+  };
 }
 
 function transformExtractorParams(params: ExtractorFormSchemaType) {
@@ -388,6 +456,14 @@ function transformBeginParams(params: BeginFormSchemaType) {
         required_claims: security?.jwt?.required_claims.map((x) => x.value),
       };
     }
+    if (
+      params.security?.auth_type === WebhookSecurityAuthType.None &&
+      params.security?.allow_anonymous
+    ) {
+      nextSecurity.allow_anonymous = true;
+    } else {
+      delete nextSecurity.allow_anonymous;
+    }
     return {
       ...params,
       schema: transformRequestSchemaToJsonschema(params.schema),
@@ -436,12 +512,12 @@ export const buildDslComponentsByGraph = (
           params = transformParserParams(params);
           break;
 
-        case Operator.Splitter:
-          params = transformSplitterParams(params);
+        case Operator.TokenChunker:
+          params = transformTokenChunkerParams(params);
           break;
 
-        case Operator.HierarchicalMerger:
-          params = transformHierarchicalMergerParams(params);
+        case Operator.TitleChunker:
+          params = transformTitleChunkerParams(params);
           break;
         case Operator.Extractor:
           params = transformExtractorParams(params);
@@ -497,8 +573,9 @@ export const buildDslGlobalVariables = (
   return { globals: globalVariablesResult, variables: globalVariables };
 };
 
+// TODO: This is caused by `useSendMessageBySSE`; it is recommended to sort out the logic.
 export const receiveMessageError = (res: any) =>
-  res && (res?.response.status !== 200 || res?.data?.code !== 0);
+  res && res?.response.status !== 200;
 
 // Replace the id in the object with text
 export const replaceIdWithText = (
@@ -571,22 +648,6 @@ export const isKeysEqual = (currentKeys: string[], previousKeys: string[]) => {
 export const getOperatorIndex = (handleTitle: string) => {
   return handleTitle.split(' ').at(-1);
 };
-
-// Get the value of other forms except itself
-export const getOtherFieldValues = (
-  form: FormInstance,
-  formListName: string = 'items',
-  field: FormListFieldData,
-  latestField: string,
-) =>
-  (form.getFieldValue([formListName]) ?? [])
-    .map((x: any) => {
-      return get(x, latestField);
-    })
-    .filter(
-      (x: string) =>
-        x !== form.getFieldValue([formListName, field.name, latestField]),
-    );
 
 export const generateSwitchHandleText = (idx: number) => {
   return `Case ${idx + 1}`;

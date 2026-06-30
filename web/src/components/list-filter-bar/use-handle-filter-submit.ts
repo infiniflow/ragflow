@@ -26,7 +26,7 @@ const mergeFilterValue = (
   filterValue: FilterValue,
   ids: string[],
 ): FilterValue => {
-  let value = {} as FilterValue;
+  const value = {} as FilterValue;
   for (const key in filterValue) {
     if (Array.isArray(filterValue[key])) {
       const keyIds = filterValue[key] as string[];
@@ -49,16 +49,21 @@ export function useHandleFilterSubmit() {
   );
 
   const checkValue = useCallback((filters: FilterCollection[]) => {
-    if (!filters?.length || !filterValue) {
+    if (!filters?.length) {
       return;
     }
-    let validFields = filters.reduce((pre, cur) => {
+
+    const validFields = filters.reduce((pre, cur) => {
       return [...pre, ...getFilterIds(cur as FilterType)];
     }, [] as string[]);
+
     if (!validFields.length) {
       return;
     }
+
     setFilterValue((preValue) => {
+      if (!preValue) return preValue;
+
       const newValue: FilterValue = mergeFilterValue(preValue, validFields);
       return newValue;
     });

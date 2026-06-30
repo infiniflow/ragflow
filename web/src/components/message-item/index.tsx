@@ -7,18 +7,16 @@ import {
 } from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import { memo, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
+import { isEmpty } from 'lodash';
+import { DocumentDownloadButton } from '../document-download-button';
 import MarkdownContent from '../markdown-content';
 import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
 import { ReferenceImageList } from '../next-message-item/reference-image-list';
 import { UploadedMessageFiles } from '../next-message-item/uploaded-message-files';
-import {
-  PDFDownloadButton,
-  extractPDFDownloadInfo,
-  removePDFDownloadInfo,
-} from '../pdf-download-button';
 import { RAGFlowAvatar } from '../ragflow-avatar';
 import SvgIcon from '../svg-icon';
 import { useTheme } from '../theme-provider';
@@ -54,7 +52,9 @@ const MessageItem = ({
   showLikeButton = true,
   showLoudspeaker = true,
   visibleAvatar = true,
+  nickname,
 }: IProps) => {
+  const { t } = useTranslation();
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
@@ -67,19 +67,11 @@ const MessageItem = ({
     return reference?.doc_aggs ?? [];
   }, [reference?.doc_aggs]);
 
-  // Extract PDF download info from message content
-  const pdfDownloadInfo = useMemo(
-    () => extractPDFDownloadInfo(item.content),
-    [item.content],
+  const documentDownloadInfos = useMemo(
+    () => item.downloads ?? [],
+    [item.downloads],
   );
-
-  // If we have PDF download info, extract the remaining text
-  const messageContent = useMemo(() => {
-    if (!pdfDownloadInfo) return item.content;
-
-    // Remove the JSON part from the content to avoid showing it
-    return removePDFDownloadInfo(item.content, pdfDownloadInfo);
-  }, [item.content, pdfDownloadInfo]);
+  const messageContent = item.content;
 
   const handleRegenerateMessage = useCallback(() => {
     regenerateMessage?.(item);
@@ -99,7 +91,7 @@ const MessageItem = ({
         })}
       >
         <div
-          className={classNames(styles.messageItemContent, {
+          className={classNames(styles.messageItemContent, 'group', {
             [styles.messageItemContentReverse]: item.role === MessageType.User,
           })}
         >
@@ -109,6 +101,7 @@ const MessageItem = ({
                 className="size-10"
                 avatar={avatar ?? '/logo.svg'}
                 isPerson
+                name={nickname}
               />
             ) : avatarDialog ? (
               <RAGFlowAvatar
@@ -129,7 +122,7 @@ const MessageItem = ({
               index !== 0 && (
                 <AssistantGroupButton
                   messageId={item.id}
-                  content={item.content}
+                  content={messageContent}
                   prompt={item.prompt}
                   showLikeButton={showLikeButton}
                   audioBinary={item.audio_binary}
@@ -138,22 +131,15 @@ const MessageItem = ({
               )
             ) : (
               <UserGroupButton
-                content={item.content}
+                content={messageContent}
                 messageId={item.id}
                 removeMessageById={removeMessageById}
                 regenerateMessage={regenerateMessage && handleRegenerateMessage}
                 sendLoading={sendLoading}
               ></UserGroupButton>
             )}
-            {/* Show PDF download button if download info is present */}
-            {pdfDownloadInfo && (
-              <PDFDownloadButton
-                downloadInfo={pdfDownloadInfo}
-                className="mb-2"
-              />
-            )}
             {/* Show message content if there's any text besides the download */}
-            {messageContent && (
+            {(messageContent || sendLoading) && (
               <div
                 className={cn(
                   isAssistant
@@ -164,12 +150,16 @@ const MessageItem = ({
                   { '!bg-bg-card': !isAssistant },
                 )}
               >
-                <MarkdownContent
-                  loading={loading}
-                  content={messageContent}
-                  reference={reference}
-                  clickDocumentButton={clickDocumentButton}
-                ></MarkdownContent>
+                {sendLoading && isEmpty(messageContent) ? (
+                  t('common.running')
+                ) : (
+                  <MarkdownContent
+                    loading={loading}
+                    content={messageContent}
+                    reference={reference}
+                    clickDocumentButton={clickDocumentButton}
+                  ></MarkdownContent>
+                )}
               </div>
             )}
             {isAssistant && (
@@ -190,6 +180,16 @@ const MessageItem = ({
                   files={uploadedFiles as UploadResponseDataType[]}
                 ></UploadedMessageFiles>
               )}
+            {documentDownloadInfos.length > 0 && (
+              <div className="mt-3 space-y-3">
+                {documentDownloadInfos.map((downloadInfo, index) => (
+                  <div key={`${downloadInfo.filename}-${index}`}>
+                    {index > 0 && <div className="my-6 h-px bg-border" />}
+                    <DocumentDownloadButton downloadInfo={downloadInfo} />
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         </div>
       </section>

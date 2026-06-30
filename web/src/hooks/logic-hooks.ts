@@ -1,7 +1,6 @@
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { MessageType } from '@/constants/chat';
-import { LanguageTranslationMap } from '@/constants/common';
 import { FormInstance } from '@/interfaces/antd-compat';
 import { Pagination } from '@/interfaces/common';
 import { ResponseType } from '@/interfaces/database/base';
@@ -11,7 +10,7 @@ import {
   IMessage,
   Message,
 } from '@/interfaces/database/chat';
-import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IKnowledgeFile } from '@/interfaces/database/dataset';
 import { changeLanguageAsync } from '@/locales/config';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
@@ -27,11 +26,10 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useTranslation } from 'react-i18next';
 import { v4 as uuid } from 'uuid';
 import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
-import { useFetchTenantInfo, useSaveSetting } from './use-user-setting-request';
+import { useSaveSetting } from './use-user-setting-request';
 
 export function usePrevious<T>(value: T) {
   const ref = useRef<T>();
@@ -52,15 +50,15 @@ export const useSetSelectedRecord = <T = IKnowledgeFile>() => {
 };
 
 export const useChangeLanguage = () => {
-  const { i18n } = useTranslation();
   const { saveSetting } = useSaveSetting();
 
-  const changeLanguage = (lng: string) => {
-    const targetLng =
-      LanguageTranslationMap[lng as keyof typeof LanguageTranslationMap];
-    changeLanguageAsync(targetLng);
-    saveSetting({ language: lng });
-  };
+  const changeLanguage = useCallback(
+    (lng: string) => {
+      changeLanguageAsync(lng);
+      saveSetting({ language: lng });
+    },
+    [saveSetting],
+  );
 
   return changeLanguage;
 };
@@ -74,10 +72,14 @@ export const useGetPaginationWithRouter = () => {
   } = useSetPaginationParams();
 
   const onPageChange: Pagination['onChange'] = useCallback(
-    (pageNumber: number, pageSize?: number) => {
-      setPaginationParams(pageNumber, pageSize);
+    (pageNumber: number, size?: number) => {
+      if (size !== pageSize) {
+        setPaginationParams(1, size);
+      } else {
+        setPaginationParams(pageNumber, size);
+      }
     },
-    [setPaginationParams],
+    [setPaginationParams, pageSize],
   );
 
   const setCurrentPagination = useCallback(
@@ -202,9 +204,7 @@ function useSetDoneRecord() {
   };
 }
 
-export const useSendMessageWithSse = (
-  url: string = api.completeConversation,
-) => {
+export const useSendMessageWithSse = () => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
   const { doneRecord, clearDoneRecord, setDoneRecordById, allDone } =
@@ -239,6 +239,7 @@ export const useSendMessageWithSse = (
 
   const send = useCallback(
     async (
+      url: string,
       body: any,
       controller?: AbortController,
     ): Promise<{ response: Response; data: ResponseType } | undefined> => {
@@ -262,6 +263,7 @@ export const useSendMessageWithSse = (
           .pipeThrough(new EventSourceParserStream())
           .getReader();
 
+        // eslint-disable-next-line no-constant-condition
         while (true) {
           try {
             const x = await reader?.read();
@@ -277,7 +279,8 @@ export const useSendMessageWithSse = (
                 if (typeof d !== 'boolean') {
                   setAnswer((prev) => {
                     const prevAnswer = prev.answer || '';
-                    const currentAnswer = d.answer || '';
+                    const currentAnswer =
+                      d.final && prevAnswer ? '' : d.answer || '';
 
                     let newAnswer: string;
                     if (prevAnswer && currentAnswer.startsWith(prevAnswer)) {
@@ -297,18 +300,17 @@ export const useSendMessageWithSse = (
                     return {
                       ...d,
                       answer: newAnswer,
-                      conversationId: body?.conversation_id,
+                      conversationId: body?.session_id ?? body?.conversation_id,
                       chatBoxId: body.chatBoxId,
                     };
                   });
                 }
-              } catch (e) {
+              } catch {
                 // Swallow parse errors silently
               }
             }
-          } catch (e) {
-            if (e instanceof DOMException && e.name === 'AbortError') {
-              console.log('Request was aborted by user or logic.');
+          } catch (error) {
+            if (error instanceof DOMException && error.name === 'AbortError') {
               break;
             }
           }
@@ -316,14 +318,14 @@ export const useSendMessageWithSse = (
         setDoneValue(body, true);
         resetAnswer();
         return { data: await res, response };
-      } catch (e) {
+      } catch {
         setDoneValue(body, true);
 
         resetAnswer();
         // Swallow fetch errors silently
       }
     },
-    [initializeSseRef, setDoneValue, url, resetAnswer],
+    [initializeSseRef, setDoneValue, resetAnswer],
   );
 
   const stopOutputMessage = useCallback(() => {
@@ -343,7 +345,7 @@ export const useSendMessageWithSse = (
   };
 };
 
-export const useSpeechWithSse = (url: string = api.tts) => {
+export const useSpeechWithSse = (url: string = api.chatsTts) => {
   const read = useCallback(
     async (body: any) => {
       const response = await fetch(url, {
@@ -359,7 +361,7 @@ export const useSpeechWithSse = (url: string = api.tts) => {
         if (res?.code !== 0) {
           message.error(res?.message);
         }
-      } catch (error) {
+      } catch {
         // Swallow errors silently
       }
       return response;
@@ -749,12 +751,6 @@ export const useSelectItem = (defaultId?: string) => {
   }, [defaultId]);
 
   return { selectedId, handleItemClick };
-};
-
-export const useFetchModelId = () => {
-  const { data: tenantInfo } = useFetchTenantInfo(true);
-
-  return tenantInfo?.llm_id ?? '';
 };
 
 const ChunkTokenNumMap = {

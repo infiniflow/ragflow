@@ -1,5 +1,9 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import {
+  ModelTreeSelectFormField,
+  ModelTypeMap,
+} from '@/components/model-tree-select';
+import {
   SelectWithSearch,
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
@@ -8,7 +12,10 @@ import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { ParserMethodFormField } from './common-form-fields';
+import {
+  FlattenMediaToTextFormField,
+  ParserMethodFormField,
+} from './common-form-fields';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
@@ -30,6 +37,9 @@ export function SpreadsheetFormFields({ prefix }: CommonProps) {
 
   const parseMethod = useWatch({
     name: parseMethodName,
+  });
+  const flattenMediaToText = useWatch({
+    name: buildFieldNameWithPrefix('flatten_media_to_text', prefix),
   });
 
   // Spreadsheet only supports DeepDOC and TCADPParser
@@ -89,6 +99,15 @@ export function SpreadsheetFormFields({ prefix }: CommonProps) {
         prefix={prefix}
         optionsWithoutLLM={optionsWithoutLLM}
       ></ParserMethodFormField>
+      <FlattenMediaToTextFormField prefix={prefix} />
+      {!flattenMediaToText && (
+        <ModelTreeSelectFormField
+          name={buildFieldNameWithPrefix('vlm.llm_id', prefix)}
+          label={t('chat.model')}
+          modelTypes={ModelTypeMap.img2txt_id}
+          allowClear
+        />
+      )}
       {tcadpOptionsShown && (
         <>
           <RAGFlowFormItem

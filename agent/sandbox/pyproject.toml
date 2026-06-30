@@ -3,12 +3,12 @@ name = "gvisor-sandbox"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12,<3.15"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi>=0.115.12",
     "httpx>=0.28.1",
     "pydantic>=2.11.4",
-    "requests>=2.32.3",
+    "requests>=2.32.4",
     "slowapi>=0.1.9",
     "uvicorn>=0.34.2",
 ]

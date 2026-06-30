@@ -35,8 +35,8 @@ from api.db import FileType
 
 # Robustness and resource limits: reject oversized inputs to avoid DoS and OOM.
 MAX_BLOB_SIZE_THUMBNAIL = 50 * 1024 * 1024  # 50 MiB for thumbnail generation
-MAX_BLOB_SIZE_PDF = 100 * 1024 * 1024       # 100 MiB for PDF repair / read
-GHOSTSCRIPT_TIMEOUT_SEC = 120                # Timeout for Ghostscript subprocess
+MAX_BLOB_SIZE_PDF = 100 * 1024 * 1024  # 100 MiB for PDF repair / read
+GHOSTSCRIPT_TIMEOUT_SEC = 120  # Timeout for Ghostscript subprocess
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
@@ -64,13 +64,17 @@ def filename_type(filename):
     if re.match(r".*\.pdf$", filename):
         return FileType.PDF.value
 
-    if re.match(r".*\.(msg|eml|doc|docx|ppt|pptx|yml|xml|htm|json|jsonl|ldjson|csv|txt|ini|xls|xlsx|wps|rtf|hlp|pages|numbers|key|md|mdx|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|html|sql)$", filename):
+    if re.match(
+        r".*\.(msg|eml|doc|docx|ppt|pptx|yml|xml|htm|json|jsonl|ldjson|csv|txt|ini|xls|xlsx|wps|rtf|hlp|pages|numbers|key|md|mdx|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|html|sql|epub)$", filename
+    ):
         return FileType.DOC.value
 
     if re.match(r".*\.(wav|flac|ape|alac|wavpack|wv|mp3|aac|ogg|vorbis|opus)$", filename):
         return FileType.AURAL.value
 
-    if re.match(r".*\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng|icon|ico|mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa|mp4|avi|mkv)$", filename):
+    if re.match(
+        r".*\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng|icon|ico|mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa|mp4|avi|mkv)$", filename
+    ):
         return FileType.VISUAL.value
 
     return FileType.OTHER.value
@@ -103,23 +107,21 @@ def thumbnail_img(filename, blob):
     if re.match(r".*\.pdf$", filename):
         try:
             with sys.modules[LOCK_KEY_pdfplumber]:
-                pdf = pdfplumber.open(BytesIO(blob))
-                if not pdf.pages:
-                    pdf.close()
-                    return None
-                buffered = BytesIO()
-                resolution = 32
-                img = None
-                for _ in range(10):
-                    pdf.pages[0].to_image(resolution=resolution).annotated.save(buffered, format="png")
-                    img = buffered.getvalue()
-                    if len(img) >= 64000 and resolution >= 2:
-                        resolution = resolution / 2
-                        buffered = BytesIO()
-                    else:
-                        break
-                pdf.close()
-                return img
+                with pdfplumber.open(BytesIO(blob)) as pdf:
+                    if not pdf.pages:
+                        return None
+                    buffered = BytesIO()
+                    resolution = 32
+                    img = None
+                    for _ in range(10):
+                        pdf.pages[0].to_image(resolution=resolution).annotated.save(buffered, format="png")
+                        img = buffered.getvalue()
+                        if len(img) >= 64000 and resolution >= 2:
+                            resolution = resolution / 2
+                            buffered = BytesIO()
+                        else:
+                            break
+                    return img
         except Exception:
             return None
 

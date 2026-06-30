@@ -92,6 +92,11 @@ class MemoryService(CommonService):
         memories = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id))
         if filter_dict.get("tenant_id"):
             memories = memories.where(cls.model.tenant_id.in_(filter_dict["tenant_id"]))
+        if filter_dict.get("accessible_user_id"):
+            memories = memories.where(
+                (cls.model.tenant_id == filter_dict["accessible_user_id"]) |
+                (cls.model.permissions == "team")
+            )
         if filter_dict.get("memory_type"):
             memory_type_int = calculate_memory_type(filter_dict["memory_type"])
             memories = memories.where(cls.model.memory_type.bin_and(memory_type_int) > 0)
@@ -168,3 +173,25 @@ class MemoryService(CommonService):
     @DB.connection_context()
     def delete_memory(cls, memory_id: str):
         return cls.delete_by_id(memory_id)
+
+    @classmethod
+    @DB.connection_context()
+    def get_null_tenant_embd_id_row(cls):
+        fields = [
+            cls.model.id,
+            cls.model.tenant_id,
+            cls.model.embd_id
+        ]
+        objs = cls.model.select(*fields).where(cls.model.tenant_embd_id.is_null())
+        return list(objs)
+
+    @classmethod
+    @DB.connection_context()
+    def get_null_tenant_llm_id_row(cls):
+        fields = [
+            cls.model.id,
+            cls.model.tenant_id,
+            cls.model.llm_id
+        ]
+        objs = cls.model.select(*fields).where(cls.model.tenant_llm_id.is_null())
+        return list(objs)

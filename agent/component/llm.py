@@ -24,7 +24,7 @@ import json_repair
 from functools import partial
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
-from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
 from agent.component.base import ComponentBase, ComponentParamBase
 from common.connection_utils import timeout
 from rag.prompts.generator import tool_call_summary, message_fit_in, citation_prompt, structured_output_prompt
@@ -84,10 +84,12 @@ class LLM(ComponentBase):
 
     def __init__(self, canvas, component_id, param: ComponentParamBase):
         super().__init__(canvas, component_id, param)
-        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id),
-                                  self._param.llm_id, max_retries=self._param.max_retries,
-                                  retry_interval=self._param.delay_after_error
-                                  )
+        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
+        model_type = "chat" if "chat" in model_types else model_types[0]
+        chat_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
+        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config,
+                                  max_retries=self._param.max_retries,
+                                  retry_interval=self._param.delay_after_error)
         self.imgs = []
 
     def get_input_form(self) -> dict[str, dict]:
@@ -223,10 +225,45 @@ class LLM(ComponentBase):
 
         return value
 
+    def _collect_sys_files(self) -> tuple[list[str], list[str]]:
+        files = self._canvas.globals.get("sys.files") or []
+        if not files:
+            logging.debug("[LLM] sys.files empty; skipping attachment injection")
+            return [], []
+
+        logging.info("[LLM] sys.files present: count=%d", len(files))
+
+        explicit = "{sys.files}" in (self._param.sys_prompt or "")
+        if not explicit and isinstance(self._param.prompts, list):
+            for p in self._param.prompts:
+                if isinstance(p, dict) and "{sys.files}" in (p.get("content") or ""):
+                    explicit = True
+                    break
+        if explicit:
+            logging.info("[LLM] prompt template references {sys.files}; skipping auto-injection (explicit=%s)", explicit)
+            return [], []
+
+        text_parts: list[str] = []
+        image_data_uris: list[str] = []
+        for f in files:
+            if not isinstance(f, str):
+                logging.debug("[LLM] skipping non-str sys.files entry: type=%s", type(f).__name__)
+                continue
+            if f.startswith("data:image/"):
+                image_data_uris.append(f)
+            else:
+                text_parts.append(f)
+        logging.info(
+            "[LLM] sys.files split: text_parts=%d image_data_uris=%d (explicit=%s)",
+            len(text_parts), len(image_data_uris), explicit,
+        )
+        return text_parts, image_data_uris
+
     def _prepare_prompt_variables(self):
         self.imgs = []
         if self._param.visual_files_var:
-            self.imgs.extend(self._extract_data_images(self._canvas.get_variable_value(self._param.visual_files_var)))
+            visual_val = self._canvas.get_variable_value(self._param.visual_files_var)
+            self.imgs.extend(self._extract_data_images(visual_val))
 
         args = {}
         vars = self.get_input_elements() if not self._param.debug_inputs else self._param.debug_inputs
@@ -244,14 +281,45 @@ class LLM(ComponentBase):
                     args[k] = str(args[k])
             self.set_input_value(k, args[k])
 
-        self.imgs = self._uniq_images(self.imgs + extracted_imgs)
-        if self.imgs and TenantLLMService.llm_id2llm_type(self._param.llm_id) == LLMType.CHAT.value:
-            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT.value,
-                                      self._param.llm_id, max_retries=self._param.max_retries,
+        sys_file_texts, sys_file_imgs = self._collect_sys_files()
+        prev_img_count = len(self.imgs) + len(extracted_imgs)
+        self.imgs = self._uniq_images(self.imgs + extracted_imgs + sys_file_imgs)
+        logging.debug(
+            "[LLM] imgs rebuilt: total=%d sys_files_added=%d unique_dropped=%d",
+            len(self.imgs), len(sys_file_imgs), max(0, prev_img_count + len(sys_file_imgs) - len(self.imgs)),
+        )
+        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
+        if self.imgs and LLMType.IMAGE2TEXT.value in model_types:
+            model_type = LLMType.IMAGE2TEXT.value
+        elif LLMType.CHAT.value in model_types:
+            model_type = LLMType.CHAT.value
+        else:
+            model_type = model_types[0]
+        model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
+        if self.imgs:
+            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), model_config, max_retries=self._param.max_retries,
                                       retry_interval=self._param.delay_after_error
                                       )
 
         msg, sys_prompt = self._sys_prompt_and_msg(self._canvas.get_history(self._param.message_history_window_size)[:-1], args)
+
+        if sys_file_texts:
+            joined = "\n\n".join(sys_file_texts)
+            merged_idx = -1
+            for i in range(len(msg) - 1, -1, -1):
+                if msg[i].get("role") == "user":
+                    msg[i]["content"] = (msg[i].get("content") or "") + "\n\n" + joined
+                    merged_idx = i
+                    break
+            else:
+                msg.append({"role": "user", "content": joined})
+                merged_idx = len(msg) - 1
+            logging.info(
+                "[LLM] sys.files text merged into msg: parts=%d total_chars=%d msg_index=%d action=%s",
+                len(sys_file_texts), len(joined), merged_idx,
+                "merged_into_existing_user" if merged_idx < len(msg) - 1 or msg[merged_idx].get("content", "") != joined else "appended_new_user",
+            )
+
         user_defined_prompt, sys_prompt = self._extract_prompts(sys_prompt)
         if self._param.cite and self._canvas.get_reference()["chunks"]:
             sys_prompt += citation_prompt(user_defined_prompt)
@@ -343,6 +411,8 @@ class LLM(ComponentBase):
             return re.sub(r"(<think>|</think>)", "", delta_ans)
 
         stream_kwargs = {"images": self.imgs} if self.imgs else {}
+        extra_chat_kwargs = self._get_chat_template_kwargs()
+        stream_kwargs.update(extra_chat_kwargs)
         async for ans in self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **stream_kwargs):
             if self.check_if_canceled("LLM streaming"):
                 return
@@ -373,6 +443,7 @@ class LLM(ComponentBase):
             return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
 
         prompt, msg, _ = self._prepare_prompt_variables()
+        extra_chat_kwargs = self._get_chat_template_kwargs()
         error: str = ""
         output_structure = None
         try:
@@ -391,7 +462,7 @@ class LLM(ComponentBase):
                     int(self.chat_mdl.max_length * 0.97),
                 )
                 error = ""
-                ans = await self._generate_async(msg_fit)
+                ans = await self._generate_async(msg_fit, **extra_chat_kwargs)
                 msg_fit.pop(0)
                 if ans.find("**ERROR**") >= 0:
                     logging.error(f"LLM response error: {ans}")
@@ -424,7 +495,7 @@ class LLM(ComponentBase):
                 [{"role": "system", "content": prompt}, *deepcopy(msg)], int(self.chat_mdl.max_length * 0.97)
             )
             error = ""
-            ans = await self._generate_async(msg_fit)
+            ans = await self._generate_async(msg_fit, **extra_chat_kwargs)
             msg_fit.pop(0)
             if ans.find("**ERROR**") >= 0:
                 logging.error(f"LLM response error: {ans}")
@@ -442,6 +513,24 @@ class LLM(ComponentBase):
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         return asyncio.run(self._invoke_async(**kwargs))
+
+    def _get_chat_template_kwargs(self) -> dict[str, Any]:
+        chat_template_kwargs = self._canvas.globals.get("sys.chat_template_kwargs")
+        if chat_template_kwargs is None:
+            return {}
+
+        # The API should pass this as a JSON object, but accept a JSON string for compatibility.
+        if isinstance(chat_template_kwargs, str):
+            try:
+                chat_template_kwargs = json_repair.loads(chat_template_kwargs)
+            except Exception:
+                logging.warning("Ignore invalid sys.chat_template_kwargs: expected JSON object or JSON string object.")
+                return {}
+
+        if not isinstance(chat_template_kwargs, dict):
+            logging.warning("Ignore invalid sys.chat_template_kwargs type: %s", type(chat_template_kwargs).__name__)
+            return {}
+        return {"chat_template_kwargs": chat_template_kwargs}
 
     async def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str, user_defined_prompt:dict={}):
         summ = await tool_call_summary(self.chat_mdl, func_name, params, results, user_defined_prompt)

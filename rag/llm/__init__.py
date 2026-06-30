@@ -19,7 +19,7 @@
 import importlib
 import inspect
 
-from strenum import StrEnum
+from enum import StrEnum
 
 
 class SupportedLiteLLMProvider(StrEnum):
@@ -59,11 +59,15 @@ class SupportedLiteLLMProvider(StrEnum):
     n1n = "n1n"
     HunYuan = "Tencent Hunyuan"
     Avian = "Avian"
+    Astraflow = "Astraflow"
+    Astraflow_CN = "Astraflow-CN"
+    FuturMix = "FuturMix"
 
 
 FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Tongyi_Qianwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     SupportedLiteLLMProvider.Dashscope: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    SupportedLiteLLMProvider.DeepSeek: "https://api.deepseek.com/v1",
     SupportedLiteLLMProvider.Moonshot: "https://api.moonshot.cn/v1",
     SupportedLiteLLMProvider.Ollama: "",
     SupportedLiteLLMProvider.LongCat: "https://api.longcat.chat/openai",
@@ -87,6 +91,9 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.n1n: "https://api.n1n.ai/v1",
     SupportedLiteLLMProvider.HunYuan: "https://api.hunyuan.cloud.tencent.com/v1",
     SupportedLiteLLMProvider.Avian: "https://api.avian.io/v1",
+    SupportedLiteLLMProvider.Astraflow: "https://api-us-ca.umodelverse.ai/v1",
+    SupportedLiteLLMProvider.Astraflow_CN: "https://api.modelverse.cn/v1",
+    SupportedLiteLLMProvider.FuturMix: "https://futurmix.ai/v1",
 }
 
 
@@ -98,7 +105,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.xAI: "xai/",
     SupportedLiteLLMProvider.DeepInfra: "deepinfra/",
     SupportedLiteLLMProvider.Groq: "groq/",
-    SupportedLiteLLMProvider.Cohere: "",  # don't need a prefix
+    SupportedLiteLLMProvider.Cohere: "cohere_chat/",
     SupportedLiteLLMProvider.Gemini: "gemini/",
     SupportedLiteLLMProvider.DeepSeek: "deepseek/",
     SupportedLiteLLMProvider.Nvidia: "nvidia_nim/",
@@ -127,6 +134,9 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.n1n: "openai/",
     SupportedLiteLLMProvider.HunYuan: "openai/",
     SupportedLiteLLMProvider.Avian: "openai/",
+    SupportedLiteLLMProvider.Astraflow: "openai/",
+    SupportedLiteLLMProvider.Astraflow_CN: "openai/",
+    SupportedLiteLLMProvider.FuturMix: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})
@@ -136,6 +146,7 @@ RerankModel = globals().get("RerankModel", {})
 Seq2txtModel = globals().get("Seq2txtModel", {})
 TTSModel = globals().get("TTSModel", {})
 OcrModel = globals().get("OcrModel", {})
+ModelMeta = globals().get("ModelMeta", {})
 
 
 MODULE_MAPPING = {
@@ -146,6 +157,7 @@ MODULE_MAPPING = {
     "sequence2txt_model": Seq2txtModel,
     "tts_model": TTSModel,
     "ocr_model": OcrModel,
+    "model_meta": ModelMeta,
 }
 
 package_name = __name__
@@ -179,7 +191,6 @@ for module_name, mapping_dict in MODULE_MAPPING.items():
                 else:
                     mapping_dict[obj._FACTORY_NAME] = obj
 
-
 __all__ = [
     "ChatModel",
     "CvModel",
@@ -188,4 +199,5 @@ __all__ = [
     "Seq2txtModel",
     "TTSModel",
     "OcrModel",
+    "ModelMeta",
 ]

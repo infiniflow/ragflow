@@ -20,6 +20,7 @@ export default {
       chinese: '中国語（簡体字）',
       traditionalChinese: '中国語（繁体字）',
       bulgarian: 'ブルガリア語',
+      arabic: 'アラビア語',
       language: '言語',
       languageMessage: 'あなたの言語を入力してください！',
       languagePlaceholder: 'あなたの言語を選択してください',
@@ -37,6 +38,7 @@ export default {
       pleaseInput: '入力してください',
       submit: '送信',
       japanese: '日本語',
+      owner: '所有者',
     },
     login: {
       login: 'ログイン',
@@ -329,6 +331,8 @@ export default {
     },
     chunk: {
       chunk: 'チャンク',
+      createChunk: 'チャンクを作成',
+      editChunk: 'チャンクを編集',
       bulk: '一括',
       selectAll: 'すべて選択',
       enabledSelected: '選択を有効化',
@@ -349,6 +353,9 @@ export default {
       questionTip: `質問が指定されている場合、チャンクの埋め込みはそれらに基づきます。`,
     },
     chat: {
+      chatSupport: 'チャットサポート',
+      replyInstantly: '通常、即座に返信します',
+      typeYourMessage: 'メッセージを入力...',
       messagePlaceholder: 'メッセージを入力してください...',
       exit: '終了',
       multipleModels: '複数モデル',
@@ -510,6 +517,12 @@ export default {
       },
       cancel: 'キャンセル',
       chatSetting: 'チャット設定',
+      showChunkMetadata: 'チャンクのメタデータを表示',
+      showChunkMetadataTip:
+        '取得したテキストチャンクの横に文書メタデータ（タイトル、ページ番号、アップロード日など）を表示します',
+      metadataFields: 'メタデータフィールド',
+      metadataFieldsTip:
+        '各チャンクに表示するメタデータフィールドを選択してください',
     },
     setting: {
       profile: 'プロファイル',
@@ -569,6 +582,8 @@ export default {
         'APIキーがOpenAIからのものであれば無視してください。他の中間プロバイダーはAPIキーと共にこのベースURLを提供します。',
       tongyiBaseUrlTip:
         '中国ユーザーの場合、記入不要または https://dashscope.aliyuncs.com/compatible-mode/v1 を使用してください。国際ユーザーは https://dashscope-intl.aliyuncs.com/compatible-mode/v1 を使用してください',
+      siliconBaseUrlTip:
+        '中国ユーザーの場合、入力不要または https://api.siliconflow.cn/v1 を使用してください。国際ユーザーは https://api.siliconflow.com/v1 を使用してください',
       tongyiBaseUrlPlaceholder: '（国際ユーザーのみ、ヒントをご覧ください）',
       minimaxBaseUrlTip:
         '国際ユーザーのみ：https://api.minimax.io/v1 を使用してください。',
@@ -622,8 +637,8 @@ export default {
       FishAudioLink: 'FishAudioの使用方法',
       TencentCloudLink: 'TencentCloud ASRの使用方法',
       volcModelNameMessage: 'モデル名を入力してください！',
-      addEndpointID: 'モデルのエンドポイントID',
-      endpointIDMessage: 'モデルのエンドポイントIDを入力してください',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'モデルのModel IDを入力してください',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'ARK_API_KEYを入力してください',
       bedrockModelNameMessage: 'モデル名を入力してください！',
@@ -689,6 +704,8 @@ export default {
       sureQuit: '参加したチームから退出してもよろしいですか？',
       modelsToBeAddedTooltip:
         'モデルプロバイダーがリストにないが「OpenAI互換」を謳っている場合は、OpenAI-API-compatible カードを選択して関連モデルを追加してください。',
+      dingtalkAITableDescription:
+        'Dingtalk AI Table に接続し、指定されたテーブルからレコードを同期します。',
     },
     message: {
       registered: '登録完了！',
@@ -739,13 +756,13 @@ export default {
       directory: 'ディレクトリ',
       uploadTitle: 'クリックまたはドラッグしてファイルをアップロード',
       uploadDescription:
-        'RAGFlowは、単一またはバッチでのファイルアップロードをサポートします。ローカルにデプロイされた RAGFlow の場合: アップロードごとの合計ファイルサイズ制限は 1GB、バッチアップロードの制限は 32 ファイルです。アカウントごとのファイル総数には制限がありません。demo.ragflow.io の場合: アップロードごとの合計ファイルサイズ制限は 10MB、各ファイルは 10MB を超えず、アカウントごとに最大 128 ファイルまでです。',
+        'RAGFlowは、単一またはバッチでのファイルアップロードをサポートします。ローカルにデプロイされた RAGFlow の場合: アップロードごとの合計ファイルサイズ制限は 1GB、バッチアップロードの制限は 32 ファイルです。アカウントごとのファイル総数には制限がありません。cloud.ragflow.io の場合: アップロードごとの合計ファイルサイズ制限は 10MB、各ファイルは 10MB を超えず、アカウントごとに最大 128 ファイルまでです。',
       local: 'ローカルアップロード',
       s3: 'S3アップロード',
       preview: 'プレビュー',
       fileError: 'ファイルエラー',
       uploadLimit:
-        'RAGFlowは、単一またはバッチでのファイルアップロードをサポートします。ローカルにデプロイされた RAGFlow の場合: アップロードごとの合計ファイルサイズ制限は 1GB、バッチアップロードの制限は 32 ファイルです。アカウントごとのファイル総数には制限がありません。demo.ragflow.io の場合: アップロードごとの合計ファイルサイズ制限は 10MB、各ファイルは 10MB を超えず、アカウントごとに最大 128 ファイルまでです。',
+        'RAGFlowは、単一またはバッチでのファイルアップロードをサポートします。ローカルにデプロイされた RAGFlow の場合: アップロードごとの合計ファイルサイズ制限は 1GB、バッチアップロードの制限は 32 ファイルです。アカウントごとのファイル総数には制限がありません。cloud.ragflow.io の場合: アップロードごとの合計ファイルサイズ制限は 10MB、各ファイルは 10MB を超えず、アカウントごとに最大 128 ファイルまでです。',
       destinationFolder: '保存先フォルダ',
     },
     flow: {
@@ -815,10 +832,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'SearXNGのインスタンスURLを提供して検索を行うコンポーネント。TopNとインスタンスURLを指定してください。',
-      pdfGenerator: 'ドキュメント生成',
-      pDFGenerator: 'ドキュメント生成',
-      pdfGeneratorDescription: `マークダウン形式のコンテンツからドキュメント（PDF、DOCX、TXT）を生成するコンポーネント。カスタムスタイル、画像、テーブルをサポート。サポート：**太字**、*斜体*、# 見出し、- リスト、| 構文のテーブル。`,
-      pDFGeneratorDescription: `マークダウン形式のコンテンツからドキュメント（PDF、DOCX、TXT）を生成するコンポーネント。カスタムスタイル、画像、テーブルをサポート。サポート：**太字**、*斜体*、# 見出し、- リスト、| 構文のテーブル。`,
+      docGenerator: 'ドキュメント生成',
+      docGeneratorDescription: `Markdown コンテンツからファイルを生成します。`,
       subtitle: 'サブタイトル',
       logoImage: 'ロゴ画像',
       logoPosition: 'ロゴ位置',
@@ -1187,6 +1202,11 @@ export default {
         'LLMのタスクを説明し、どのように応答すべきかを指定し、他のさまざまな要件を概説するためにシステムプロンプトを使用します。システムプロンプトは、LLMのさまざまなデータ入力として機能するキー（変数）と共に使用されることがよくあります。使用するキーを表示するには、スラッシュ `/` または (x) ボタンを使用します。',
       promptMessage: 'プロンプトは必須です',
       runningHintText: '動作中です...🕞 ',
+      tags: 'タグ',
+      canvasCategory: 'キャンバスカテゴリ',
+      created: '作成日',
+      id: 'ID',
+      logTitle: 'タイトル',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1195,6 +1215,15 @@ export default {
       file: 'ファイル',
       knowledge: 'ナレッジ',
       chat: 'チャット',
+    },
+    language: {
+      english: '英語',
+      chinese: '中国語',
+      russian: 'ロシア語',
+      bulgarian: 'ブルガリア語',
+      arabic: 'アラビア語',
+      turkish: 'トルコ語',
+      korean: '韓国語',
     },
   },
 };

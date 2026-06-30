@@ -73,7 +73,7 @@ class DataOperations(ComponentBase,ABC):
                 continue
         if self._param.operations == "select_keys":
             self._select_keys()
-        elif self._param.operations == "recursive_eval":
+        elif self._param.operations == "literal_eval":
             self._literal_eval()
         elif self._param.operations == "combine":
             self._combine()
@@ -94,9 +94,9 @@ class DataOperations(ComponentBase,ABC):
 
     def _recursive_eval(self, data):
         if isinstance(data, dict):
-            return {k: self.recursive_eval(v) for k, v in data.items()}
+            return {k: self._recursive_eval(v) for k, v in data.items()}
         if isinstance(data, list):
-            return [self.recursive_eval(item) for item in data]
+            return [self._recursive_eval(item) for item in data]
         if isinstance(data, str):
             try:
                 if (

@@ -11,23 +11,30 @@ import { get, isEmpty } from 'lodash';
 import { ReactNode } from 'react';
 
 export function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
-  return nodeIds.reduce<string[]>((pre, nodeId) => {
-    const currentEdges = edges.filter((x) => x.target === nodeId);
-
-    const upstreamNodeIds: string[] = currentEdges.map((x) => x.source);
-
-    const ids = upstreamNodeIds.concat(
-      filterAllUpstreamNodeIds(edges, upstreamNodeIds),
-    );
-
-    ids.forEach((x) => {
-      if (pre.every((y) => y !== x)) {
-        pre.push(x);
+  // Iterative BFS with a visited set so cycles in the upstream graph
+  // (e.g. answer:0 ↔ exesql:0 in the v1 exesql.json fixture) cannot
+  // recurse forever. The previous recursive implementation had no cycle
+  // detection and would blow the stack on any cyclic dsl.
+  const visited = new Set<string>(nodeIds);
+  const result: string[] = [];
+  let frontier = [...nodeIds];
+  while (frontier.length) {
+    const next: string[] = [];
+    for (const nodeId of frontier) {
+      const upstreamIds = edges
+        .filter((x) => x.target === nodeId)
+        .map((x) => x.source);
+      for (const id of upstreamIds) {
+        if (!visited.has(id)) {
+          visited.add(id);
+          result.push(id);
+          next.push(id);
+        }
       }
-    });
-
-    return pre;
-  }, []);
+    }
+    frontier = next;
+  }
+  return result;
 }
 
 export function filterChildNodeIds(nodes: BaseNode[], nodeId?: string) {
@@ -61,13 +68,32 @@ export function buildSecondaryOutputOptions(
   }));
 }
 
+function getNodeOutputs(x: BaseNode) {
+  const outputs = x.data.form?.outputs ?? {};
+  if (x.data.label !== Operator.Code) {
+    return outputs;
+  }
+
+  return {
+    ...outputs,
+    content: outputs.content ?? {
+      type: JsonSchemaDataType.String,
+      value: '',
+    },
+    attachments: outputs.attachments ?? {
+      type: 'Array<String>',
+      value: [],
+    },
+  };
+}
+
 export function buildOutputOptions(x: BaseNode) {
   return {
     label: x.data.name,
     value: x.id,
     title: x.data.name,
     options: buildSecondaryOutputOptions(
-      x.data.form.outputs,
+      getNodeOutputs(x),
       x.id,
       x.data.name,
       <OperatorIcon name={x.data.label as Operator} />,
@@ -83,7 +109,7 @@ export function buildNodeOutputOptions({
   nodeIds: string[];
 }) {
   const nodeWithOutputList = nodes.filter(
-    (x) => nodeIds.some((y) => y === x.id) && !isEmpty(x.data?.form?.outputs),
+    (x) => nodeIds.some((y) => y === x.id) && !isEmpty(getNodeOutputs(x)),
   );
 
   return nodeWithOutputList.map((x) => buildOutputOptions(x));
@@ -114,7 +140,7 @@ export function buildChildOutputOptions({
   nodeId?: string;
 }) {
   const nodeWithOutputList = nodes.filter(
-    (x) => x.parentId === nodeId && !isEmpty(x.data?.form?.outputs),
+    (x) => x.parentId === nodeId && !isEmpty(getNodeOutputs(x)),
   );
 
   return nodeWithOutputList.map((x) => buildOutputOptions(x));

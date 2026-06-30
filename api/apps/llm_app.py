@@ -25,8 +25,23 @@ from api.db.services.llm_service import LLMService
 from api.utils.api_utils import get_allowed_llm_factories, get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from common.constants import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
-from rag.utils.base64_image import test_image
-from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel, OcrModel, Seq2txtModel
+
+
+def _resolve_my_llm_is_tools(o_dict: dict) -> bool:
+    decode_api_key_config = getattr(TenantLLMService, "_decode_api_key_config", None)
+    if callable(decode_api_key_config):
+        _, is_tools, _ = decode_api_key_config(o_dict.get("api_key", ""))
+        if is_tools is not None:
+            return bool(is_tools)
+
+    try:
+        base_name, fid = TenantLLMService.split_model_name_and_factory(o_dict["llm_name"])
+        llm_cfg = LLMService.query(llm_name=base_name, fid=fid) if fid else LLMService.query(llm_name=base_name)
+        if not llm_cfg and fid:
+            llm_cfg = LLMService.query(llm_name=base_name)
+        return bool(llm_cfg[0].is_tools) if llm_cfg else False
+    except Exception:
+        return False
 
 
 @manager.route("/factories", methods=["GET"])  # noqa: F821
@@ -34,7 +49,7 @@ from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel, O
 def factories():
     try:
         fac = get_allowed_llm_factories()
-        fac = [f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI", "Builtin"]]
+        fac = [f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI", "Builtin", "siliconflow_intl"]]
         llms = LLMService.get_all()
         mdl_types = {}
         for m in llms:
@@ -61,16 +76,27 @@ def factories():
 @validate_request("llm_factory", "api_key")
 async def set_api_key():
     req = await get_request_json()
+    from rag.llm import ChatModel, EmbeddingModel, RerankModel
+
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False
     factory = req["llm_factory"]
+    base_url = req.get("base_url", "")
+    source_factory = req.get("source_fid", factory)
     extra = {"provider": factory}
     timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
+    source_llms = list(LLMService.query(fid=source_factory))
+    if not source_llms:
+        msg = f"No models configured for {factory} (source: {source_factory})."
+        if req.get("verify", False):
+            return get_json_result(data={"message": msg, "success": False})
+        return get_data_error_result(message=msg)
+
     msg = ""
-    for llm in LLMService.query(fid=factory):
+    for llm in source_llms:
         if not embd_passed and llm.model_type == LLMType.EMBEDDING.value:
             assert factory in EmbeddingModel, f"Embedding model from {factory} is not supported yet."
-            mdl = EmbeddingModel[factory](req["api_key"], llm.llm_name, base_url=req.get("base_url"))
+            mdl = EmbeddingModel[factory](req["api_key"], llm.llm_name, base_url=base_url)
             try:
                 arr, tc = await asyncio.wait_for(
                     asyncio.to_thread(mdl.encode, ["Test if the api key is available"]),
@@ -83,24 +109,30 @@ async def set_api_key():
                 msg += f"\nFail to access embedding model({llm.llm_name}) using this api key." + str(e)
         elif not chat_passed and llm.model_type == LLMType.CHAT.value:
             assert factory in ChatModel, f"Chat model from {factory} is not supported yet."
-            mdl = ChatModel[factory](req["api_key"], llm.llm_name, base_url=req.get("base_url"), **extra)
+            mdl = ChatModel[factory](req["api_key"], llm.llm_name, base_url=base_url, **extra)
             try:
-                m, tc = await asyncio.wait_for(
-                    mdl.async_chat(
+                async def check_streamly():
+                    async for chunk in mdl.async_chat_streamly(
                         None,
-                        [{"role": "user", "content": "Hello! How are you doing!"}],
-                        {"temperature": 0.9, "max_tokens": 50},
-                    ),
-                    timeout=timeout_seconds,
-                )
-                if m.find("**ERROR**") >= 0:
-                    raise Exception(m)
-                chat_passed = True
+                        [{"role": "user", "content": "Hi"}],
+                        {"temperature": 0.9},
+                    ):
+                        if chunk and isinstance(chunk, str) and chunk.find("**ERROR**") < 0:
+                            return True
+                    return False
+
+                result = await asyncio.wait_for(check_streamly(), timeout=timeout_seconds)
+                if result:
+                    chat_passed = True
+                else:
+                    raise Exception("No valid response received")
             except Exception as e:
                 msg += f"\nFail to access model({llm.fid}/{llm.llm_name}) using this api key." + str(e)
         elif not rerank_passed and llm.model_type == LLMType.RERANK.value:
-            assert factory in RerankModel, f"Re-rank model from {factory} is not supported yet."
-            mdl = RerankModel[factory](req["api_key"], llm.llm_name, base_url=req.get("base_url"))
+            if factory not in RerankModel:
+                msg += f"\nRerank model from {factory} is not supported yet."
+                continue
+            mdl = RerankModel[factory](req["api_key"], llm.llm_name, base_url=base_url)
             try:
                 arr, tc = await asyncio.wait_for(
                     asyncio.to_thread(mdl.similarity, "What's the weather?", ["Is it sunny today?"]),
@@ -118,16 +150,16 @@ async def set_api_key():
 
     if req.get("verify", False):
         return get_json_result(data={"message": msg, "success": len(msg.strip())==0})
-    
+
     if msg:
         return get_data_error_result(message=msg)
 
-    llm_config = {"api_key": req["api_key"], "api_base": req.get("base_url", "")}
+    llm_config = {"api_key": req["api_key"], "api_base": base_url}
     for n in ["model_type", "llm_name"]:
         if n in req:
             llm_config[n] = req[n]
 
-    for llm in LLMService.query(fid=factory):
+    for llm in source_llms:
         llm_config["max_tokens"] = llm.max_tokens
         if not TenantLLMService.filter_update([TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == factory, TenantLLM.llm_name == llm.llm_name], llm_config):
             TenantLLMService.save(
@@ -148,13 +180,60 @@ async def set_api_key():
 @validate_request("llm_factory")
 async def add_llm():
     req = await get_request_json()
+    from rag.llm import ChatModel, CvModel, EmbeddingModel, OcrModel, RerankModel, Seq2txtModel, TTSModel
+
     factory = req["llm_factory"]
-    api_key = req.get("api_key", "x")
     llm_name = req.get("llm_name")
     timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
 
     if factory not in [f.name for f in get_allowed_llm_factories()]:
         return get_data_error_result(message=f"LLM factory {factory} is not allowed")
+
+    # When editing an existing model the frontend leaves the api_key input blank
+    # and strips it from the payload, so req["api_key"] is missing. Without a
+    # fallback the validation below would run with the "x" placeholder and the
+    # upstream provider would return "Your API key is invalid" — recover the
+    # saved key from DB. Use only the *decoded* api_key (never the raw JSON
+    # payload) so factories that pack extra fields into api_key
+    # (OpenRouter, Bedrock, …) can rebuild their JSON correctly with whatever
+    # new fields the user did provide via apikey_json.
+    if req.get("api_key") is None and llm_name:
+        _LLM_NAME_SUFFIX = {
+            "LocalAI": "___LocalAI",
+            "HuggingFace": "___HuggingFace",
+            "OpenAI-API-Compatible": "___OpenAI-API",
+            "VLLM": "___VLLM",
+        }
+        saved_llm_name = llm_name + _LLM_NAME_SUFFIX.get(factory, "")
+        logging.debug(
+            "add_llm: attempting api_key recovery factory=%s llm_name=%s saved_llm_name=%s tenant_id=%s",
+            factory, llm_name, saved_llm_name, current_user.id,
+        )
+        existing_llms = TenantLLMService.query(
+            tenant_id=current_user.id,
+            llm_factory=factory,
+            llm_name=saved_llm_name,
+        )
+        logging.debug(
+            "add_llm: api_key recovery query matched=%d factory=%s saved_llm_name=%s",
+            len(existing_llms) if existing_llms else 0, factory, saved_llm_name,
+        )
+        if existing_llms:
+            existing_api_key, _, _ = TenantLLMService._decode_api_key_config(
+                existing_llms[0].api_key
+            )
+            logging.debug(
+                "add_llm: api_key recovery decoded=%s factory=%s saved_llm_name=%s",
+                "present" if existing_api_key else "absent", factory, saved_llm_name,
+            )
+            if existing_api_key:
+                req["api_key"] = existing_api_key
+                logging.info(
+                    "add_llm: recovered saved api_key from existing record factory=%s saved_llm_name=%s tenant_id=%s",
+                    factory, saved_llm_name, current_user.id,
+                )
+
+    api_key = req.get("api_key", "x")
 
     def apikey_json(keys):
         nonlocal req
@@ -162,7 +241,7 @@ async def add_llm():
 
     if factory == "VolcEngine":
         # For VolcEngine, due to its special authentication method
-        # Assemble ark_api_key endpoint_id into api_key
+        # Assemble ark_api_key model_id into api_key; keep endpoint_id in backend payload for compatibility
         api_key = apikey_json(["ark_api_key", "endpoint_id"])
 
     elif factory == "Tencent Cloud":
@@ -172,7 +251,9 @@ async def add_llm():
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
         # Assemble bedrock_ak, bedrock_sk, bedrock_region
-        api_key = apikey_json(["auth_mode", "bedrock_ak", "bedrock_sk", "bedrock_region", "aws_role_arn"])
+        # Write into req["api_key"] to prevent the "existing key" override logic from replacing it
+        req["api_key"] = apikey_json(["auth_mode", "bedrock_ak", "bedrock_sk", "bedrock_region", "aws_role_arn"])
+        api_key = req["api_key"]
 
     elif factory == "LocalAI":
         llm_name += "___LocalAI"
@@ -213,6 +294,9 @@ async def add_llm():
     elif factory == "PaddleOCR":
         api_key = apikey_json(["api_key", "provider_order"])
 
+    elif factory == "OpenDataLoader":
+        api_key = apikey_json(["api_key", "provider_order"])
+
     llm = {
         "tenant_id": current_user.id,
         "llm_factory": factory,
@@ -251,35 +335,42 @@ async def add_llm():
                 **extra,
             )
             try:
-                m, tc = await asyncio.wait_for(
-                    mdl.async_chat(
+                async def check_streamly():
+                    async for chunk in mdl.async_chat_streamly(
                         None,
-                        [{"role": "user", "content": "Hello! How are you doing!"}],
+                        [{"role": "user", "content": "Hi"}],
                         {"temperature": 0.9},
-                    ),
-                    timeout=timeout_seconds,
-                )
-                if not tc and m.find("**ERROR**:") >= 0:
-                    raise Exception(m)
+                    ):
+                        if chunk and isinstance(chunk, str) and chunk.find("**ERROR**:") < 0:
+                            return True
+                    return False
+
+                result = await asyncio.wait_for(check_streamly(), timeout=timeout_seconds)
+                if not result:
+                    raise Exception("No valid response received")
             except Exception as e:
                 msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
 
         case LLMType.RERANK.value:
-            assert factory in RerankModel, f"RE-rank model from {factory} is not supported yet."
-            try:
-                mdl = RerankModel[factory](key=model_api_key, model_name=mdl_nm, base_url=model_base_url)
-                arr, tc = await asyncio.wait_for(
-                    asyncio.to_thread(mdl.similarity, "Hello~ RAGFlower!", ["Hi, there!", "Ohh, my friend!"]),
-                    timeout=timeout_seconds,
-                )
-                if len(arr) == 0:
-                    raise Exception("Not known.")
-            except KeyError:
-                msg += f"{factory} dose not support this model({factory}/{mdl_nm})"
-            except Exception as e:
-                msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
+            if factory not in RerankModel:
+                msg += f"\nRerank model from {factory} is not supported yet."
+            else:
+                try:
+                    mdl = RerankModel[factory](key=model_api_key, model_name=mdl_nm, base_url=model_base_url)
+                    arr, tc = await asyncio.wait_for(
+                        asyncio.to_thread(mdl.similarity, "Hello~ RAGFlower!", ["Hi, there!", "Ohh, my friend!"]),
+                        timeout=timeout_seconds,
+                    )
+                    if len(arr) == 0:
+                        raise Exception("Not known.")
+                except KeyError:
+                    msg += f"{factory} does not support this model({factory}/{mdl_nm})"
+                except Exception as e:
+                    msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
 
         case LLMType.IMAGE2TEXT.value:
+            from rag.utils.base64_image import test_image
+
             assert factory in CvModel, f"Image to text model from {factory} is not supported yet."
             mdl = CvModel[factory](key=model_api_key, model_name=mdl_nm, base_url=model_base_url)
             try:
@@ -330,9 +421,12 @@ async def add_llm():
 
     if req.get("verify", False):
         return get_json_result(data={"message": msg, "success": len(msg.strip()) == 0})
-    
+
     if msg:
         return get_data_error_result(message=msg)
+
+    if "is_tools" in req:
+        llm["api_key"] = TenantLLMService._encode_api_key_config(llm["api_key"], bool(req["is_tools"]))
 
     if not TenantLLMService.filter_update([TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == factory, TenantLLM.llm_name == llm["llm_name"]], llm):
         TenantLLMService.save(**llm)
@@ -374,6 +468,7 @@ async def delete_factory():
 def my_llms():
     try:
         TenantLLMService.ensure_mineru_from_env(current_user.id)
+        TenantLLMService.ensure_opendataloader_from_env(current_user.id)
         include_details = request.args.get("include_details", "false").lower() == "true"
 
         if include_details:
@@ -394,12 +489,14 @@ def my_llms():
 
                 res[o_dict["llm_factory"]]["llm"].append(
                     {
+                        "id": o_dict["id"],
                         "type": o_dict["model_type"],
                         "name": o_dict["llm_name"],
                         "used_token": o_dict["used_tokens"],
                         "api_base": o_dict["api_base"] or "",
                         "max_tokens": o_dict["max_tokens"] or 8192,
                         "status": o_dict["status"] or "1",
+                        "is_tools": _resolve_my_llm_is_tools(o_dict),
                     }
                 )
         else:
@@ -407,7 +504,7 @@ def my_llms():
             for o in TenantLLMService.get_my_llms(current_user.id):
                 if o["llm_factory"] not in res:
                     res[o["llm_factory"]] = {"tags": o["tags"], "llm": []}
-                res[o["llm_factory"]]["llm"].append({"type": o["model_type"], "name": o["llm_name"], "used_token": o["used_tokens"], "status": o["status"]})
+                res[o["llm_factory"]]["llm"].append({"id": o["id"], "type": o["model_type"], "name": o["llm_name"], "used_token": o["used_tokens"], "status": o["status"]})
 
         return get_json_result(data=res)
     except Exception as e:
@@ -425,10 +522,12 @@ async def list_app():
         TenantLLMService.ensure_mineru_from_env(tenant_id)
         objs = TenantLLMService.query(tenant_id=tenant_id)
         facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key and o.status == StatusEnum.VALID.value])
+        tenant_llm_mapping = {f"{o.llm_name}@{o.llm_factory}": o for o in objs}
         status = {(o.llm_name + "@" + o.llm_factory) for o in objs if o.status == StatusEnum.VALID.value}
         llms = LLMService.get_all()
         llms = [m.to_dict() for m in llms if m.status == StatusEnum.VALID.value and m.fid not in weighted and (m.fid == "Builtin" or (m.llm_name + "@" + m.fid) in status)]
         for m in llms:
+            m["id"] = tenant_llm_mapping.get(m["llm_name"] + "@" + m["fid"], TenantLLM(id=None)).id
             m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deployed
             if "tei-" in os.getenv("COMPOSE_PROFILES", "") and m["model_type"] == LLMType.EMBEDDING and m["fid"] == "Builtin" and m["llm_name"] == os.getenv("TEI_MODEL", ""):
                 m["available"] = True
@@ -437,7 +536,7 @@ async def list_app():
         for o in objs:
             if o.llm_name + "@" + o.llm_factory in llm_set:
                 continue
-            llms.append({"llm_name": o.llm_name, "model_type": o.model_type, "fid": o.llm_factory, "available": True, "status": StatusEnum.VALID.value})
+            llms.append({"id": o.id, "llm_name": o.llm_name, "model_type": o.model_type, "fid": o.llm_factory, "available": True, "status": StatusEnum.VALID.value})
 
         res = {}
         for m in llms:

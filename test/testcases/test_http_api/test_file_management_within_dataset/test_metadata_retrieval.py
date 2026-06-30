@@ -27,11 +27,14 @@ from common import (
     delete_datasets,
     list_documents,
     update_document,
+    upload_documents,
+    parse_documents,
+    retrieval_chunks,
 )
 from utils import wait_for
 
 
-@wait_for(30, 1, "Document parsing timeout")
+@wait_for(120, 1, "Document parsing timeout")
 def _condition_parsing_complete(_auth, dataset_id):
     res = list_documents(_auth, dataset_id)
     if res["code"] != 0:
@@ -39,7 +42,7 @@ def _condition_parsing_complete(_auth, dataset_id):
 
     for doc in res["data"]["docs"]:
         status = doc.get("run", "UNKNOWN")
-        if status == "FAILED":
+        if status in ("FAIL", "FAILED"):
             pytest.fail(f"Document parsing failed: {doc}")
             return False
         if status != "DONE":
@@ -62,35 +65,16 @@ def add_dataset_with_metadata(HttpApiAuth):
     import requests
     from configs import HOST_ADDRESS, VERSION
 
-    metadata_config = {
-        "type": "object",
-        "properties": {
-            "character": {
-                "description": "Historical figure name",
-                "type": "string"
-            },
-            "era": {
-                "description": "Historical era",
-                "type": "string"
-            },
-            "achievements": {
-                "description": "Major achievements",
-                "type": "array",
-                "items": {
-                    "type": "string"
-                }
-            }
-        }
-    }
-
-    res = requests.post(
-        url=f"{HOST_ADDRESS}/{VERSION}/kb/update_metadata_setting",
+    res = requests.put(
+        url=f"{HOST_ADDRESS}/api/{VERSION}/datasets/{dataset_id}/metadata/config",
         headers={"Content-Type": "application/json"},
         auth=HttpApiAuth,
         json={
-            "kb_id": dataset_id,
-            "metadata": metadata_config,
-            "enable_metadata": False
+            "metadata": [
+                {"key": "character", "type": "string", "description": "Historical figure name"},
+                {"key": "era", "type": "string", "description": "Historical era"},
+                {"key": "achievements", "type": "list", "description": "Major achievements"},
+            ]
         }
     ).json()
 
@@ -112,8 +96,6 @@ class TestMetadataWithRetrieval:
 
         Verifies that chunks are only retrieved from documents matching the metadata condition.
         """
-        from common import upload_documents, parse_documents, retrieval_chunks
-
         dataset_id = add_dataset_with_metadata
 
         # Create two documents with different metadata

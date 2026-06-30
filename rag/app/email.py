@@ -18,6 +18,7 @@ import logging
 from email import policy
 from email.parser import BytesParser
 from rag.app.naive import chunk as naive_chunk
+from common.constants import MAXIMUM_PAGE_NUMBER
 import re
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_chunks
 from deepdoc.parser import HtmlParser, TxtParser
@@ -29,7 +30,7 @@ def chunk(
         filename,
         binary=None,
         from_page=0,
-        to_page=100000,
+        to_page=MAXIMUM_PAGE_NUMBER,
         lang="Chinese",
         callback=None,
         **kwargs,

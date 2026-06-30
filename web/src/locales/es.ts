@@ -20,6 +20,7 @@ export default {
       chinese: 'Chino simplificado',
       traditionalChinese: 'Chino tradicional',
       bulgarian: 'Búlgaro',
+      arabic: 'Árabe',
       language: 'Idioma',
       languageMessage: '¡Por favor ingresa tu idioma!',
       languagePlaceholder: 'Selecciona tu idioma',
@@ -31,6 +32,8 @@ export default {
       preview: 'Vista previa',
       move: 'Mover',
       warn: 'Advertencia',
+      owner: 'Propietario',
+      running: 'Ejecutando...',
     },
     login: {
       login: 'Iniciar sesión',
@@ -180,6 +183,9 @@ export default {
     // Otros bloques de traducción
     // Continua con la misma estructura
     chat: {
+      chatSupport: 'Soporte de chat',
+      replyInstantly: 'Normalmente respondemos al instante',
+      typeYourMessage: 'Escribe tu mensaje...',
       newConversation: 'Nueva conversación',
       createAssistant: 'Crear un asistente',
       assistantSetting: 'Configuración del asistente',
@@ -296,6 +302,12 @@ export default {
       multiTurnTip:
         'En conversaciones de múltiples rondas, la consulta a la base de conocimiento se optimiza. El gran modelo se llamará para consumir tokens adicionales.',
       description: 'Description of assistant',
+      showChunkMetadata: 'Mostrar metadatos del fragmento',
+      showChunkMetadataTip:
+        'Mostrar metadatos del documento (título, número de página, fecha de carga, etc.) junto a los fragmentos de texto recuperados',
+      metadataFields: 'Campos de metadatos',
+      metadataFieldsTip:
+        'Seleccione qué campos de metadatos mostrar con cada fragmento',
     },
     setting: {
       profile: 'Perfil',
@@ -358,6 +370,8 @@ export default {
         'Si tu clave API es de OpenAI, ignora esto. Cualquier otro proveedor intermedio proporcionará esta URL base junto con la clave API.',
       tongyiBaseUrlTip:
         'Para usuarios chinos, no es necesario rellenar o usar https://dashscope.aliyuncs.com/compatible-mode/v1. Para usuarios internacionales, usar https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Para usuarios chinos, no es necesario rellenar o usar https://api.siliconflow.cn/v1. Para usuarios internacionales, usar https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Solo para usuarios internacionales, por favor ver consejo)',
       minimaxBaseUrlTip:
@@ -412,8 +426,8 @@ export default {
       FishAudioLink: 'Cómo usar FishAudio',
       TencentCloudLink: 'Cómo usar TencentCloud ASR',
       volcModelNameMessage: '¡Por favor ingresa el nombre de tu modelo!',
-      addEndpointID: 'EndpointID del modelo',
-      endpointIDMessage: '¡Por favor ingresa el EndpointID del modelo!',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: '¡Por favor ingresa el Model ID del modelo!',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: '¡Por favor ingresa tu ARK_API_KEY!',
       bedrockModelNameMessage: '¡Por favor ingresa el nombre de tu modelo!',
@@ -470,6 +484,8 @@ export default {
       apiVersionMessage: '¡Por favor ingresa la versión de la API!',
       modelsToBeAddedTooltip:
         'Si tu proveedor de modelos no aparece en la lista pero afirma ser compatible con OpenAI, selecciona la tarjeta OpenAI-API-compatible para añadir el/los modelo(s) correspondiente(s).',
+      dingtalkAITableDescription:
+        'Conéctese a Dingtalk AI Table y sincronice registros de una tabla especificada.',
     },
     message: {
       registered: '¡Registrado!',
@@ -520,13 +536,13 @@ export default {
       directory: 'Directorio',
       uploadTitle: 'Haz clic o arrastra el archivo a esta área para subir',
       uploadDescription:
-        'RAGFlow admite la carga de archivos de forma individual o por lotes. Para un RAGFlow desplegado localmente: el límite total de tamaño de archivo por carga es de 1 GB, con un límite de carga por lote de 32 archivos. No hay límite en el número total de archivos por cuenta. Para demo.ragflow.io: el límite total de tamaño de archivo por carga es de 10 MB, con cada archivo no excediendo los 10 MB y un máximo de 128 archivos por cuenta.',
+        'RAGFlow admite la carga de archivos de forma individual o por lotes. Para un RAGFlow desplegado localmente: el límite total de tamaño de archivo por carga es de 1 GB, con un límite de carga por lote de 32 archivos. No hay límite en el número total de archivos por cuenta. Para cloud.ragflow.io: el límite total de tamaño de archivo por carga es de 10 MB, con cada archivo no excediendo los 10 MB y un máximo de 128 archivos por cuenta.',
       local: 'Subidas locales',
       s3: 'Subidas a S3',
       preview: 'Vista previa',
       fileError: 'Error en el archivo',
       uploadLimit:
-        'RAGFlow admite la carga de archivos de forma individual o por lotes. Para un RAGFlow desplegado localmente: el límite total de tamaño de archivo por carga es de 1 GB, con un límite de carga por lote de 32 archivos. No hay límite en el número total de archivos por cuenta. Para demo.ragflow.io: el límite total de tamaño de archivo por carga es de 10 MB, con cada archivo no excediendo los 10 MB y un máximo de 128 archivos por cuenta.',
+        'RAGFlow admite la carga de archivos de forma individual o por lotes. Para un RAGFlow desplegado localmente: el límite total de tamaño de archivo por carga es de 1 GB, con un límite de carga por lote de 32 archivos. No hay límite en el número total de archivos por cuenta. Para cloud.ragflow.io: el límite total de tamaño de archivo por carga es de 10 MB, con cada archivo no excediendo los 10 MB y un máximo de 128 archivos por cuenta.',
       destinationFolder: 'Carpeta de destino',
     },
     flow: {
@@ -606,10 +622,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Un componente que busca a través de la URL de la instancia SearXNG que proporcionas. Especifica TopN y la URL de la instancia.',
-      pdfGenerator: 'Generador de Documentos',
-      pDFGenerator: 'Generador de Documentos',
-      pdfGeneratorDescription: `Un componente que genera documentos (PDF, DOCX, TXT) desde contenido formateado en markdown con estilo personalizable, imágenes y tablas. Soporta: **negrita**, *cursiva*, # encabezados, - listas, tablas con sintaxis |.`,
-      pDFGeneratorDescription: `Un componente que genera documentos (PDF, DOCX, TXT) desde contenido formateado en markdown con estilo personalizable, imágenes y tablas. Soporta: **negrita**, *cursiva*, # encabezados, - listas, tablas con sintaxis |.`,
+      docGenerator: 'Generador de Documentos',
+      docGeneratorDescription: `Genera un archivo a partir de contenido Markdown.`,
       subtitle: 'Subtítulo',
       logoImage: 'Imagen Logo',
       logoPosition: 'Posición Logo',
@@ -923,6 +937,11 @@ export default {
         'Si la respuesta está formateada en HTML y solo se desea el contenido principal, actívelo.',
       invalidUrl:
         'Debe ser una URL válida o una URL con marcadores de posición de variables en el formato {nombre_variable} o {componente@variable}',
+      tags: 'Etiquetas',
+      canvasCategory: 'Categoría de canvas',
+      created: 'Creado',
+      id: 'ID',
+      logTitle: 'Título',
     },
     footer: {
       profile: 'Todos los derechos reservados @ React',
@@ -931,6 +950,15 @@ export default {
       file: 'Archivo',
       knowledge: 'Conocimiento',
       chat: 'Chat',
+    },
+    language: {
+      english: 'Ingles',
+      chinese: 'Chino',
+      russian: 'Ruso',
+      bulgarian: 'Búlgaro',
+      arabic: 'Árabe',
+      turkish: 'Turco',
+      korean: 'Coreano',
     },
   },
 };

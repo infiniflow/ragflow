@@ -43,6 +43,7 @@ from peewee import (
     Metadata,
     Model,
     TextField,
+    PrimaryKeyField,
 )
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
@@ -54,7 +55,7 @@ from api.utils.configs import deserialize_b64, serialize_b64
 
 from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
 from common.decorator import singleton
-from common.constants import ParserType
+from common.constants import ParserType, MAXIMUM_TASK_PAGE_NUMBER
 from common import settings
 
 
@@ -704,6 +705,8 @@ def fill_db_model_object(model_object, human_model_dict):
 
 
 class User(DataBaseModel, AuthUser):
+    SENSITIVE_FIELDS = {"password", "access_token", "email"}
+
     id = CharField(max_length=32, primary_key=True)
     access_token = CharField(max_length=255, null=True, index=True)
     nickname = CharField(max_length=100, null=False, help_text="nicky name", index=True)
@@ -725,8 +728,20 @@ class User(DataBaseModel, AuthUser):
         return self.email
 
     def get_id(self):
-        jwt = Serializer(secret_key=settings.SECRET_KEY)
+        jwt = Serializer(secret_key=settings.get_secret_key())
         return jwt.dumps(str(self.access_token))
+
+    def to_safe_dict(self, *, for_self: bool = False):
+        """Return a dict with sensitive fields stripped for API responses.
+
+        Email is treated as sensitive in generic serialization. Pass for_self=True
+        when returning the authenticated user's own record (login, profile, etc.).
+        """
+        result = {k: v for k, v in self.to_dict().items() if k not in self.SENSITIVE_FIELDS}
+        if for_self:
+            result["email"] = self.email
+        logging.debug("User %s serialized safely, filtered fields: %s", self.id, self.SENSITIVE_FIELDS)
+        return result
 
     class Meta:
         db_table = "user"
@@ -737,11 +752,18 @@ class Tenant(DataBaseModel):
     name = CharField(max_length=100, null=True, help_text="Tenant name", index=True)
     public_key = CharField(max_length=255, null=True, index=True)
     llm_id = CharField(max_length=128, null=False, help_text="default llm ID", index=True)
+    tenant_llm_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     embd_id = CharField(max_length=128, null=False, help_text="default embedding model ID", index=True)
+    tenant_embd_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     asr_id = CharField(max_length=128, null=False, help_text="default ASR model ID", index=True)
+    tenant_asr_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     img2txt_id = CharField(max_length=128, null=False, help_text="default image to text model ID", index=True)
+    tenant_img2txt_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     rerank_id = CharField(max_length=128, null=False, help_text="default rerank model ID", index=True)
+    tenant_rerank_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     tts_id = CharField(max_length=256, null=True, help_text="default tts model ID", index=True)
+    tenant_tts_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    ocr_id = CharField(max_length=256, null=True, help_text="default OCR model ID", index=True)
     parser_ids = CharField(max_length=256, null=False, help_text="document processors", index=True)
     credit = IntegerField(default=512, index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
@@ -808,14 +830,15 @@ class LLM(DataBaseModel):
 
 
 class TenantLLM(DataBaseModel):
+    id = PrimaryKeyField()
     tenant_id = CharField(max_length=32, null=False, index=True)
     llm_factory = CharField(max_length=128, null=False, help_text="LLM factory name", index=True)
     model_type = CharField(max_length=128, null=True, help_text="LLM, Text Embedding, Image2Text, ASR", index=True)
     llm_name = CharField(max_length=128, null=True, help_text="LLM name", default="", index=True)
     api_key = TextField(null=True, help_text="API KEY")
     api_base = CharField(max_length=255, null=True, help_text="API Base")
-    max_tokens = IntegerField(default=8192, index=True)
-    used_tokens = IntegerField(default=0, index=True)
+    max_tokens = IntegerField(default=8192, help_text="Max context token num", index=True)
+    used_tokens = IntegerField(default=0, help_text="Used token num", index=True)
     status = CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
@@ -823,7 +846,9 @@ class TenantLLM(DataBaseModel):
 
     class Meta:
         db_table = "tenant_llm"
-        primary_key = CompositeKey("tenant_id", "llm_factory", "llm_name")
+        indexes = (
+            (("tenant_id", "llm_factory", "llm_name"), True),
+        )
 
 
 class TenantLangfuse(DataBaseModel):
@@ -847,6 +872,7 @@ class Knowledgebase(DataBaseModel):
     language = CharField(max_length=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
     description = TextField(null=True, help_text="KB description")
     embd_id = CharField(max_length=128, null=False, help_text="default embedding model ID", index=True)
+    tenant_embd_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
     created_by = CharField(max_length=32, null=False, index=True)
     doc_num = IntegerField(default=0, index=True)
@@ -888,7 +914,7 @@ class Document(DataBaseModel):
     created_by = CharField(max_length=32, null=False, help_text="who created it", index=True)
     name = CharField(max_length=255, null=True, help_text="file name", index=True)
     location = CharField(max_length=255, null=True, help_text="where dose it store", index=True)
-    size = IntegerField(default=0, index=True)
+    size = BigIntegerField(default=0, index=True)
     token_num = IntegerField(default=0, index=True)
     chunk_num = IntegerField(default=0, index=True)
     progress = FloatField(default=0, index=True)
@@ -896,6 +922,8 @@ class Document(DataBaseModel):
     process_begin_at = DateTimeField(null=True, index=True)
     process_duration = FloatField(default=0)
     suffix = CharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
+
+    content_hash = CharField(max_length=32, null=True, help_text="xxhash128 of document content for change detection", default="", index=True)
 
     run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0", index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
@@ -911,7 +939,7 @@ class File(DataBaseModel):
     created_by = CharField(max_length=32, null=False, help_text="who created it", index=True)
     name = CharField(max_length=255, null=False, help_text="file name or folder name", index=True)
     location = CharField(max_length=255, null=True, help_text="where dose it store", index=True)
-    size = IntegerField(default=0, index=True)
+    size = BigIntegerField(default=0, index=True)
     type = CharField(max_length=32, null=False, help_text="file extension", index=True)
     source_type = CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)
 
@@ -928,11 +956,43 @@ class File2Document(DataBaseModel):
         db_table = "file2document"
 
 
+class FileCommit(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    folder_id = CharField(max_length=32, null=False, help_text="workspace folder id", index=True)
+    parent_id = CharField(max_length=32, null=True, help_text="parent commit id", index=True)
+    message = CharField(max_length=512, default="", help_text="commit message")
+    author_id = CharField(max_length=32, null=False, help_text="user who created the commit", index=True)
+    file_count = IntegerField(default=0, help_text="number of files in this commit")
+    tree_state = LongTextField(null=True, help_text="JSON snapshot of the full folder tree at this commit")
+
+    class Meta:
+        db_table = "file_commit"
+
+
+class FileCommitItem(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    commit_id = CharField(max_length=32, null=False, help_text="commit id", index=True)
+    file_id = CharField(max_length=32, null=False, help_text="file id", index=True)
+    operation = CharField(max_length=16, null=False, help_text="add / modify / delete / rename", index=True)
+    old_hash = CharField(max_length=64, null=True, help_text="old content hash", index=True)
+    new_hash = CharField(max_length=64, null=True, help_text="new content hash", index=True)
+    old_location = CharField(max_length=255, null=True, help_text="old storage location")
+    new_location = CharField(max_length=255, null=True, help_text="new storage location")
+    old_name = CharField(max_length=255, null=True, help_text="old file name (for rename)")
+    new_name = CharField(max_length=255, null=True, help_text="new file name (for rename)")
+
+    class Meta:
+        db_table = "file_commit_item"
+        indexes = (
+            (("commit_id", "file_id"), True),  # unique composite index
+        )
+
+
 class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)
     from_page = IntegerField(default=0)
-    to_page = IntegerField(default=100000000)
+    to_page = IntegerField(default=MAXIMUM_TASK_PAGE_NUMBER)
     task_type = CharField(max_length=32, null=False, default="")
     priority = IntegerField(default=0)
 
@@ -954,6 +1014,7 @@ class Dialog(DataBaseModel):
     icon = TextField(null=True, help_text="icon base64 string")
     language = CharField(max_length=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
     llm_id = CharField(max_length=128, null=False, help_text="default llm ID")
+    tenant_llm_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
 
     llm_setting = JSONField(null=False, default={"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7, "presence_penalty": 0.4, "max_tokens": 512})
     prompt_type = CharField(max_length=16, null=False, default="simple", help_text="simple|advanced", index=True)
@@ -973,7 +1034,7 @@ class Dialog(DataBaseModel):
     do_refer = CharField(max_length=1, null=False, default="1", help_text="it needs to insert reference index into answer or not")
 
     rerank_id = CharField(max_length=128, null=False, help_text="default rerank model ID")
-
+    tenant_rerank_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     kb_ids = JSONField(null=False, default=[])
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
@@ -1020,6 +1081,7 @@ class API4Conversation(DataBaseModel):
     round = IntegerField(default=0, index=True)
     thumb_up = IntegerField(default=0, index=True)
     errors = TextField(null=True, help_text="errors")
+    version_title = CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False)
 
     class Meta:
         db_table = "api_4_conversation"
@@ -1032,9 +1094,11 @@ class UserCanvas(DataBaseModel):
     title = CharField(max_length=255, null=True, help_text="Canvas title")
 
     permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
+    release = BooleanField(null=False, help_text="is released", default=False, index=True)
     description = TextField(null=True, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
     canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
+    tags = CharField(max_length=512, null=False, default="", help_text="Comma-separated tags for organizing agents", index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -1047,6 +1111,7 @@ class CanvasTemplate(DataBaseModel):
     title = JSONField(null=True, default=dict, help_text="Canvas title")
     description = JSONField(null=True, default=dict, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
+    canvas_types = ListField(null=True, default=list, help_text="Canvas types")
     canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
     dsl = JSONField(null=True, default={})
 
@@ -1060,6 +1125,7 @@ class UserCanvasVersion(DataBaseModel):
 
     title = CharField(max_length=255, null=True, help_text="Canvas title")
     description = TextField(null=True, help_text="Canvas description")
+    release = BooleanField(null=False, help_text="is released", default=False, index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -1181,6 +1247,22 @@ class Connector2Kb(DataBaseModel):
         db_table = "connector2kb"
 
 
+class ChatChannel(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, help_text="Bot name", index=False)
+    channel = CharField(max_length=128, null=False, help_text="Chat channel type", index=True)
+    config = JSONField(null=False, default={}, help_text="Channel credential & settings")
+    chat_id = CharField(max_length=32, null=True, default=None, help_text="connected chat id", index=True)
+    status = IntegerField(default=1, index=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        db_table = "chat_channel"
+
+
 class DateTimeTzField(CharField):
     field_type = 'VARCHAR'
 
@@ -1205,6 +1287,7 @@ class DateTimeTzField(CharField):
 class SyncLogs(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     connector_id = CharField(max_length=32, index=True)
+    task_type = CharField(max_length=32, null=False, default="sync", index=True)
     status = CharField(max_length=128, null=False, help_text="Processing status", index=True)
     from_beginning = CharField(max_length=1, null=True, help_text="", default="0", index=False)
     new_docs_indexed = IntegerField(default=0, index=False)
@@ -1294,7 +1377,9 @@ class Memory(DataBaseModel):
     memory_type = IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=raw, 2=semantic, 4=episodic, 8=procedural. E.g., 5 enables raw + episodic.")
     storage_type = CharField(max_length=32, default='table', null=False, index=True, help_text="table|graph")
     embd_id = CharField(max_length=128, null=False, index=False, help_text="embedding model ID")
+    tenant_embd_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     llm_id = CharField(max_length=128, null=False, index=False, help_text="chat model ID")
+    tenant_llm_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     permissions = CharField(max_length=16, null=False, index=True, help_text="me|team", default="me")
     description = TextField(null=True, help_text="description")
     memory_size = IntegerField(default=5242880, null=False, index=False)
@@ -1313,6 +1398,64 @@ class SystemSettings(DataBaseModel):
     value = TextField(null=False, help_text="Configuration value (JSON, string, etc.)")
     class Meta:
         db_table = "system_settings"
+
+class TenantModelProvider(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    provider_name = CharField(max_length=128, null=False, index=False, help_text="LLM provider name")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+
+    class Meta:
+        db_table = "tenant_model_provider"
+        indexes = (
+            (("tenant_id", "provider_name"), True),
+        )
+
+class TenantModelInstance(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    instance_name = CharField(max_length=128, null=False, index=False, help_text="Model instance name")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    api_key = CharField(max_length=512, null=False, index=False, help_text="API key")
+    status = CharField(max_length=32, default="active", index=False)
+    extra = CharField(max_length=512, default="{}", index=False)
+
+    class Meta:
+        db_table = "tenant_model_instance"
+
+
+class TenantModel(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    model_name = CharField(max_length=128, null=True, index=False, help_text="Model name")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    instance_id = CharField(max_length=32, null=False, index=True)
+    model_type = CharField(max_length=32, null=False, index=False, help_text="Model type")
+    status = CharField(max_length=32, default="active", index=False)
+    extra = CharField(max_length=1024, default="{}", index=False)
+
+    class Meta:
+        db_table = "tenant_model"
+
+
+class TenantModelGroup(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    group_type = CharField(max_length=32, null=False, index=False, help_text="Group type")
+    model_name = CharField(max_length=128, null=True, index=False, help_text="Model name")
+    strategy = CharField(max_length=32, default="weighted", index=False, help_text="Routing strategy")
+
+    class Meta:
+        db_table = "tenant_model_group"
+
+class TenantModelGroupMapping(DataBaseModel):
+    group_id = CharField(max_length=32, null=False, index=True, help_text="Group ID")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    instance_id = CharField(max_length=32, null=False, index=False)
+    model_id = CharField(max_length=32, null=False, index=True)
+    weight = IntegerField(default=100, index=False, help_text="Routing weight")
+    status = CharField(max_length=32, default="active", index=False)
+
+    class Meta:
+        db_table = "tenant_model_group_mapping"
+        primary_key = CompositeKey("group_id", "provider_id", "instance_id", "model_id")
+
 
 def alter_db_add_column(migrator, table_name, column_name, column_type):
     try:
@@ -1350,6 +1493,43 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
 
 def migrate_add_unique_email(migrator):
     """Deduplicates user emails and add UNIQUE constraint to email column (idempotent)"""
+    # step 0: check existing index state on user.email and prepare for unique constraint
+    try:
+        if settings.DATABASE_TYPE.upper() == "POSTGRES":
+            cursor = DB.execute_sql("""
+                SELECT COUNT(*)
+                FROM pg_indexes
+                WHERE tablename = 'user'
+                  AND indexname = 'user_email'
+            """)
+            result = cursor.fetchone()
+            if result and result[0] > 0:
+                logging.info("UNIQUE index on user.email already exists, skipping migration")
+                return
+        else:
+            # Fetch the first index on email: tells us both the name and whether it's unique.
+            # non_unique=0 means unique, non_unique=1 means non-unique.
+            cursor = DB.execute_sql("""
+                SELECT index_name, non_unique
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'user'
+                  AND column_name = 'email'
+                LIMIT 1
+            """)
+            row = cursor.fetchone()
+            if row:
+                index_name, non_unique = row
+                if non_unique == 0:
+                    logging.info("UNIQUE index on user.email already exists, skipping migration")
+                    return
+                # Non-unique index exists (e.g. from old peewee index=True); drop it so
+                # the upcoming ADD UNIQUE INDEX does not hit MySQL error 1061 "Duplicate key name".
+                DB.execute_sql(f"ALTER TABLE `user` DROP INDEX `{index_name}`")
+                logging.info(f"Dropped non-unique index '{index_name}' on user.email before adding unique index")
+    except Exception as ex:
+        logging.warning(f"Failed to check/prepare email index on user table: {ex}, continuing with migration")
+
     # step 1: rename duplicate rows so the UNIQUE constraint can be applied
     try:
         duplicates = User.select(User.email).group_by(User.email).having(fn.COUNT(User.id) > 1).tuples()
@@ -1384,6 +1564,146 @@ def migrate_add_unique_email(migrator):
         logging.critical("Failed to add UNIQUE constraint on user.email: %s", ex)
 
 
+
+def update_tenant_llm_to_id_primary_key():
+    """Add ID and set to primary key step by step."""
+    if settings.DATABASE_TYPE.upper() == "POSTGRES":
+        _update_tenant_llm_to_id_primary_key_postgres()
+    else:
+        _update_tenant_llm_to_id_primary_key_mysql()
+
+
+def _update_tenant_llm_to_id_primary_key_mysql():
+    """MySQL implementation: Add ID column and set as AUTO_INCREMENT primary key."""
+    try:
+        with DB.atomic():
+            # 0. Check if 'id' column already exists
+            cursor = DB.execute_sql("""
+                            SELECT COLUMN_NAME
+                            FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_SCHEMA = DATABASE()
+                            AND TABLE_NAME = 'tenant_llm'
+                            AND COLUMN_NAME = 'id'
+                        """)
+            if cursor.rowcount > 0:
+                return
+
+            # 1. Add nullable column
+            DB.execute_sql("ALTER TABLE tenant_llm ADD COLUMN temp_id INT NULL")
+
+            # 2. Set ID using MySQL user variables
+            DB.execute_sql("SET @row = 0;")
+            DB.execute_sql("UPDATE tenant_llm SET temp_id = (@row := @row + 1) ORDER BY tenant_id, llm_factory, llm_name;")
+
+            # 3. Drop old primary key
+            DB.execute_sql("ALTER TABLE tenant_llm DROP PRIMARY KEY")
+
+            # 4. Update ID column to primary key with AUTO_INCREMENT
+            DB.execute_sql("""
+            ALTER TABLE tenant_llm
+            MODIFY COLUMN temp_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY
+            """)
+
+            # 5. Add unique key
+            DB.execute_sql("""
+                ALTER TABLE tenant_llm
+                ADD CONSTRAINT uk_tenant_llm UNIQUE (tenant_id, llm_factory, llm_name)
+            """)
+
+            # 6. rename
+            DB.execute_sql("ALTER TABLE tenant_llm RENAME COLUMN temp_id TO id")
+
+            logging.info("Successfully updated tenant_llm to id primary key.")
+
+    except Exception as e:
+        logging.error(str(e))
+        cursor = DB.execute_sql("""
+                                    SELECT COLUMN_NAME
+                                    FROM INFORMATION_SCHEMA.COLUMNS
+                                    WHERE TABLE_SCHEMA = DATABASE()
+                                    AND TABLE_NAME = 'tenant_llm'
+                                    AND COLUMN_NAME = 'temp_id'
+                                """)
+        if cursor.rowcount > 0:
+            DB.execute_sql("ALTER TABLE tenant_llm DROP COLUMN temp_id")
+
+
+def _update_tenant_llm_to_id_primary_key_postgres():
+    """PostgreSQL implementation: Add SERIAL primary key column to tenant_llm."""
+    try:
+        with DB.atomic():
+            # 0. Check if 'id' column already exists
+            cursor = DB.execute_sql("""
+                            SELECT column_name
+                            FROM information_schema.columns
+                            WHERE table_catalog = current_database()
+                            AND table_name = 'tenant_llm'
+                            AND column_name = 'id'
+                        """)
+            if cursor.rowcount > 0:
+                return
+
+            # 1. Add nullable integer column
+            DB.execute_sql("ALTER TABLE tenant_llm ADD COLUMN temp_id INTEGER NULL")
+
+            # 2. Assign sequential row numbers ordered consistently
+            DB.execute_sql("""
+                UPDATE tenant_llm
+                SET temp_id = subq.rn
+                FROM (
+                    SELECT ctid,
+                           ROW_NUMBER() OVER (ORDER BY tenant_id, llm_factory, llm_name) AS rn
+                    FROM tenant_llm
+                ) AS subq
+                WHERE tenant_llm.ctid = subq.ctid
+            """)
+
+            # 3. Drop old composite primary key constraint
+            cursor = DB.execute_sql("""
+                SELECT constraint_name
+                FROM information_schema.table_constraints
+                WHERE table_catalog = current_database()
+                  AND table_name = 'tenant_llm'
+                  AND constraint_type = 'PRIMARY KEY'
+            """)
+            row = cursor.fetchone()
+            if row:
+                DB.execute_sql(f'ALTER TABLE tenant_llm DROP CONSTRAINT "{row[0]}"')
+
+            # 4. Make temp_id NOT NULL and create a sequence for it
+            DB.execute_sql("ALTER TABLE tenant_llm ALTER COLUMN temp_id SET NOT NULL")
+            DB.execute_sql("CREATE SEQUENCE IF NOT EXISTS tenant_llm_id_seq")
+            DB.execute_sql("""
+                SELECT setval('tenant_llm_id_seq', COALESCE((SELECT MAX(temp_id) FROM tenant_llm), 0))
+            """)
+            DB.execute_sql("ALTER TABLE tenant_llm ALTER COLUMN temp_id SET DEFAULT nextval('tenant_llm_id_seq')")
+            DB.execute_sql("ALTER SEQUENCE tenant_llm_id_seq OWNED BY tenant_llm.temp_id")
+            DB.execute_sql("ALTER TABLE tenant_llm ADD PRIMARY KEY (temp_id)")
+
+            # 5. Add unique constraint
+            DB.execute_sql("""
+                ALTER TABLE tenant_llm
+                ADD CONSTRAINT uk_tenant_llm UNIQUE (tenant_id, llm_factory, llm_name)
+            """)
+
+            # 6. Rename temp_id to id
+            DB.execute_sql("ALTER TABLE tenant_llm RENAME COLUMN temp_id TO id")
+
+            logging.info("Successfully updated tenant_llm to id primary key (PostgreSQL).")
+
+    except Exception as e:
+        logging.error(str(e))
+        cursor = DB.execute_sql("""
+                                    SELECT column_name
+                                    FROM information_schema.columns
+                                    WHERE table_catalog = current_database()
+                                    AND table_name = 'tenant_llm'
+                                    AND column_name = 'temp_id'
+                                """)
+        if cursor.rowcount > 0:
+            DB.execute_sql("ALTER TABLE tenant_llm DROP COLUMN temp_id")
+
+
 def migrate_db():
     logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
@@ -1407,6 +1727,7 @@ def migrate_db():
     alter_db_add_column(migrator, "task", "task_type", CharField(max_length=32, null=False, default=""))
     alter_db_add_column(migrator, "task", "priority", IntegerField(default=0))
     alter_db_add_column(migrator, "user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True))
+    alter_db_add_column(migrator, "user_canvas", "release", BooleanField(null=False, help_text="is released", default=False, index=True))
     alter_db_add_column(migrator, "llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False))
     alter_db_add_column(migrator, "mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=dict))
     alter_db_rename_column(migrator, "task", "process_duation", "process_duration")
@@ -1418,7 +1739,9 @@ def migrate_db():
     alter_db_column_type(migrator, "canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description"))
     alter_db_add_column(migrator, "user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
     alter_db_add_column(migrator, "canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
+    alter_db_add_column(migrator, "canvas_template", "canvas_types", ListField(null=True, default=list, help_text="Canvas types"))
     alter_db_add_column(migrator, "knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
+    alter_db_add_column(migrator, "chat_channel", "dialog_id", CharField(max_length=32, null=True, help_text="connected dialog id", index=True))
     alter_db_add_column(migrator, "document", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "raptor_task_id", CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True))
@@ -1432,8 +1755,54 @@ def migrate_db():
     alter_db_add_column(migrator, "llm_factories", "rank", IntegerField(default=0, index=False))
     alter_db_add_column(migrator, "api_4_conversation", "name", CharField(max_length=255, null=True, help_text="conversation name", index=False))
     alter_db_add_column(migrator, "api_4_conversation", "exp_user_id", CharField(max_length=255, null=True, help_text="exp_user_id", index=True))
+    alter_db_add_column(migrator, "sync_logs", "task_type", CharField(max_length=32, null=False, default="sync", index=True))
     # Migrate system_settings.value from CharField to TextField for longer sandbox configs
     alter_db_column_type(migrator, "system_settings", "value", TextField(null=False, help_text="Configuration value (JSON, string, etc.)"))
+    alter_db_add_column(migrator, "document", "content_hash", CharField(max_length=32, null=True, help_text="xxhash128 of document content for change detection", default="", index=True))
+    update_tenant_llm_to_id_primary_key()
+    alter_db_add_column(migrator, "tenant", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
+    alter_db_add_column(migrator, "tenant", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
+    alter_db_add_column(migrator, "tenant", "tenant_asr_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
+    alter_db_add_column(migrator, "tenant", "tenant_img2txt_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
+    alter_db_add_column(migrator, "tenant", "tenant_rerank_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
+    alter_db_add_column(migrator, "tenant", "tenant_tts_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
+    alter_db_add_column(migrator, "dialog", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
+    alter_db_add_column(migrator, "dialog", "tenant_rerank_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
+    alter_db_add_column(migrator, "memory", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
+    alter_db_add_column(migrator, "memory", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
+    alter_db_add_column(migrator, "user_canvas_version", "release", BooleanField(null=False, help_text="is released", default=False, index=True))
+    alter_db_add_column(migrator, "user_canvas", "tags", CharField(max_length=512, null=False, default="", help_text="Comma-separated tags for organizing agents", index=True))
+    alter_db_add_column(migrator, "api_4_conversation", "version_title", CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False))
+    alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
+    alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
+    alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
+    alter_db_column_type(migrator, "chat_channel", "status", IntegerField(default=1, index=True))
+    alter_db_rename_column(migrator, "chat_channel", "dialog_id", "chat_id")
+    # Drop both the explicit "idx_*" name from later migrations AND the
+    # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
+    # original TenantModelInstance definition (commit dc4b82523). Databases
+    # created before #15460 dropped the model's `indexes = ((...,), True)`
+    # tuple still carry the auto-named compound unique index, which makes a
+    # second instance with an empty api_key (e.g. Ollama) fail with
+    # "Duplicate entry ... for key 'tenantmodelinstance_api_key_provider_id'"
+    # — see #15699.
+    legacy_indexes = [
+        ("tenant_model_instance", "idx_api_key_provider_id"),
+        ("tenant_model_instance", "tenantmodelinstance_api_key_provider_id"),
+        ("tenant_model", "idx_provider_model_instance"),
+    ]
+    for table_name, index_name in legacy_indexes:
+        try:
+            migrate(migrator.drop_index(table_name, index_name))
+        except (OperationalError, ProgrammingError) as ex:
+            msg = str(ex)
+            if "1091" in msg or "can't DROP" in msg.lower() or "does not exist" in msg.lower() or "already exists" in msg.lower():
+                pass
+            else:
+                logging.critical(f"Failed to drop index {index_name} on {table_name}: {ex}")
+        except Exception as ex:
+            logging.critical(f"Failed to drop index {index_name} on {table_name}: {ex}")
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)

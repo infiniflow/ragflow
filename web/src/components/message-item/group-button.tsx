@@ -56,8 +56,16 @@ export const AssistantGroupButton = ({
 
   return (
     <>
-      <div className="flex gap-1" role="toolbar">
-        <CopyToClipboard text={content} className="border-0" size="icon-xs" />
+      <div
+        className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+        role="toolbar"
+      >
+        <CopyToClipboard
+          text={content}
+          className="border-0"
+          size="icon-xs"
+          avoidButtonWrapper
+        />
 
         {showLoudspeaker && (
           <>
@@ -102,7 +110,12 @@ export const AssistantGroupButton = ({
           </>
         )}
         {prompt && (
-          <Button onClick={showPromptModal}>
+          <Button
+            onClick={showPromptModal}
+            variant="transparent"
+            size="icon-xs"
+            className="border-0"
+          >
             <PromptIcon style={{ fontSize: '16px' }} />
           </Button>
         )}
@@ -147,8 +160,13 @@ export const UserGroupButton = ({
   const { t } = useTranslation();
 
   return (
-    <div className="flex gap-1">
-      <CopyToClipboard text={content} className="border-0" size="icon-xs" />
+    <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      <CopyToClipboard
+        text={content}
+        className="border-0"
+        size="icon-xs"
+        avoidButtonWrapper
+      />
 
       {regenerateMessage && (
         <Tooltip>

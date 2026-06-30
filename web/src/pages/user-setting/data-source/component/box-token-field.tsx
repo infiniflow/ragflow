@@ -127,7 +127,10 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
             string,
             any
           >;
-          const { user_id: _userId, code, ...rest } = credentials;
+          const code = credentials.code;
+          const rest = { ...credentials };
+          delete rest.user_id;
+          delete rest.code;
 
           const finalValue: Record<string, any> = {
             ...rest,
@@ -173,7 +176,7 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
         setWebStatus('error');
         setWebStatusMessage(errorMessage);
         clearWebState();
-      } catch (_error) {
+      } catch {
         message.error('Unable to retrieve authorization result.');
         setWebStatus('error');
         setWebStatusMessage('Unable to retrieve authorization result.');
@@ -304,7 +307,7 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
       } else {
         message.error(data.message || 'Failed to start Box authorization.');
       }
-    } catch (_error) {
+    } catch {
       message.error('Failed to start Box authorization.');
     } finally {
       setSubmitLoading(false);
@@ -319,7 +322,7 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
   ]);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex w-full flex-col gap-3">
       {(hasConfigured || hasAuthorized) && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-dashed border-muted-foreground/40 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
           <div className="flex flex-wrap items-center gap-2">
@@ -342,7 +345,11 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
         </div>
       )}
 
-      <Button variant="outline" onClick={handleOpenDialog}>
+      <Button
+        variant="outline"
+        className="w-full justify-start"
+        onClick={handleOpenDialog}
+      >
         {hasConfigured ? 'Get Box credentials' : 'Configure Box credentials'}
       </Button>
 

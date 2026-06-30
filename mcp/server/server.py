@@ -32,7 +32,7 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
-from strenum import StrEnum
+from enum import StrEnum
 
 
 class LaunchMode(StrEnum):
@@ -58,6 +58,8 @@ JSON_RESPONSE = True
 class RAGFlowConnector:
     _MAX_DATASET_CACHE = 32
     _CACHE_TTL = 300
+    # Keep in sync with api.utils.pagination_utils.REST_API_MAX_PAGE_SIZE.
+    _REST_API_MAX_PAGE_SIZE = 100
 
     _dataset_metadata_cache: OrderedDict[str, tuple[dict, float | int]] = OrderedDict()  # "dataset_id" -> (metadata, expiry_ts)
     _document_metadata_cache: OrderedDict[str, tuple[list[tuple[str, dict]], float | int]] = OrderedDict()  # "dataset_id" -> ([(document_id, doc_metadata)], expiry_ts)
@@ -127,35 +129,106 @@ class RAGFlowConnector:
         self._document_metadata_cache[dataset_id] = (doc_id_meta_list, self._get_expiry_timestamp())
         self._document_metadata_cache.move_to_end(dataset_id)
 
-    async def list_datasets(
+    async def _fetch_datasets_page(
         self,
         *,
         api_key: str,
-        page: int = 1,
-        page_size: int = 1000,
+        page: int,
+        page_size: int,
         orderby: str = "create_time",
         desc: bool = True,
         id: str | None = None,
         name: str | None = None,
     ):
+        """Fetch one structured page of accessible datasets from the backend API."""
         params = {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc}
         if id:
-            params['id'] = id
-        if name :
-            params['name'] = name
-            
+            params["id"] = id
+        if name:
+            params["name"] = name
+
         res = await self._get("/datasets", params, api_key=api_key)
         if not res or res.status_code != 200:
-            raise Exception([types.TextContent(type="text", text="Cannot process this operation.")])
+            error_message = None
+            if res is not None:
+                try:
+                    error_message = res.json().get("message")
+                except Exception:
+                    error_message = None
+            raise Exception([types.TextContent(type="text", text=error_message or "Cannot process this operation.")])
 
-        res = res.json()
-        if res.get("code") == 0:
-            result_list = []
-            for data in res["data"]:
-                d = {"description": data["description"], "id": data["id"]}
-                result_list.append(json.dumps(d, ensure_ascii=False))
-            return "\n".join(result_list)
-        return ""
+        res_json = res.json()
+        if res_json.get("code") != 0:
+            raise Exception([types.TextContent(type="text", text=res_json.get("message", "Cannot process this operation."))])
+
+        return res_json
+
+    async def _fetch_all_datasets(
+        self,
+        *,
+        api_key: str,
+        orderby: str = "create_time",
+        desc: bool = True,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        """Fetch all accessible datasets without exceeding the REST API page-size limit."""
+        datasets = []
+        page = 1
+
+        while True:
+            logging.debug("fetching all /datasets page=%s page_size=%s", page, self._REST_API_MAX_PAGE_SIZE)
+            res_json = await self._fetch_datasets_page(
+                api_key=api_key,
+                page=page,
+                page_size=self._REST_API_MAX_PAGE_SIZE,
+                orderby=orderby,
+                desc=desc,
+                id=id,
+                name=name,
+            )
+            page_datasets = res_json.get("data", [])
+            logging.debug("received %s datasets from page=%s", len(page_datasets), page)
+            if not page_datasets:
+                break
+
+            datasets.extend(page_datasets)
+            total = res_json.get("total")
+            if total is not None and len(datasets) >= total:
+                break
+
+            page += 1
+
+        return datasets
+
+    async def list_datasets(self, *, api_key: str, page: int = 1, page_size: int = -1, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None):
+        """Return accessible datasets as newline-delimited JSON for MCP tool descriptions."""
+        if page_size == -1:
+            datasets = await self._fetch_all_datasets(api_key=api_key, orderby=orderby, desc=desc, id=id, name=name)
+        else:
+            page_size = min(page_size, self._REST_API_MAX_PAGE_SIZE)
+            res_json = await self._fetch_datasets_page(api_key=api_key, page=page, page_size=page_size, orderby=orderby, desc=desc, id=id, name=name)
+            datasets = res_json["data"]
+
+        result_list = []
+        for data in datasets:
+            d = {"description": data["description"], "id": data["id"]}
+            result_list.append(json.dumps(d, ensure_ascii=False))
+        return "\n".join(result_list)
+
+    async def resolve_dataset_ids(self, *, api_key: str):
+        """Resolve all accessible dataset IDs for MCP retrieval fallback."""
+        logging.info("Resolving accessible dataset IDs for MCP retrieval")
+        try:
+            datasets = await self._fetch_all_datasets(api_key=api_key)
+        except Exception as exc:
+            logging.warning("resolve_dataset_ids failed to fetch /datasets error=%s", exc)
+            raise
+
+        dataset_ids = [data["id"] for data in datasets if data.get("id")]
+        resolved = list(dict.fromkeys(dataset_ids))
+        logging.info("resolve_dataset_ids resolved %s accessible dataset IDs", len(resolved))
+        return resolved
 
     async def retrieval(
         self,
@@ -176,21 +249,12 @@ class RAGFlowConnector:
         if document_ids is None:
             document_ids = []
 
-        # If no dataset_ids provided or empty list, get all available dataset IDs
         if not dataset_ids:
-            dataset_list_str = await self.list_datasets(api_key=api_key)
-            dataset_ids = []
-
-            # Parse the dataset list to extract IDs
-            if dataset_list_str:
-                for line in dataset_list_str.strip().split("\n"):
-                    if line.strip():
-                        try:
-                            dataset_info = json.loads(line.strip())
-                            dataset_ids.append(dataset_info["id"])
-                        except (json.JSONDecodeError, KeyError):
-                            # Skip malformed lines
-                            continue
+            logging.info("MCP retrieval omitted dataset_ids; resolving accessible datasets")
+            dataset_ids = await self.resolve_dataset_ids(api_key=api_key)
+            if not dataset_ids:
+                logging.info("MCP retrieval found no accessible datasets for current user")
+                raise Exception([types.TextContent(type="text", text="No accessible datasets found.")])
 
         data_json = {
             "page": page,
@@ -270,38 +334,47 @@ class RAGFlowConnector:
                     page_size = 30
                     doc_id_meta_list = []
                     docs = {}
-                    while page:
-                        docs_res = await self._get(f"/datasets/{dataset_id}/documents?page={page}", api_key=api_key)
+                    while True:
+                        docs_res = await self._get(f"/datasets/{dataset_id}/documents?page={page}&page_size={page_size}", api_key=api_key)
                         if not docs_res:
+                            # Transport-level failure: stop without caching a partial result.
                             break
                         docs_data = docs_res.json()
-                        if docs_data.get("code") == 0 and docs_data.get("data", {}).get("docs"):
-                            for doc in docs_data["data"]["docs"]:
-                                doc_id = doc.get("id")
-                                if not doc_id:
-                                    continue
-                                doc_meta = {
-                                    "document_id": doc_id,
-                                    "name": doc.get("name", ""),
-                                    "location": doc.get("location", ""),
-                                    "type": doc.get("type", ""),
-                                    "size": doc.get("size"),
-                                    "chunk_count": doc.get("chunk_count"),
-                                    "create_date": doc.get("create_date", ""),
-                                    "update_date": doc.get("update_date", ""),
-                                    "token_count": doc.get("token_count"),
-                                    "thumbnail": doc.get("thumbnail", ""),
-                                    "dataset_id": doc.get("dataset_id", dataset_id),
-                                    "meta_fields": doc.get("meta_fields", {}),
-                                }
-                                doc_id_meta_list.append((doc_id, doc_meta))
-                                docs[doc_id] = doc_meta
-
-                            page += 1
-                            if docs_data.get("data", {}).get("total", 0) - page * page_size <= 0:
-                                page = None
+                        if docs_data.get("code") != 0:
+                            # API error: stop instead of re-requesting the same page forever.
+                            break
+                        page_docs = docs_data.get("data", {}).get("docs") or []
+                        for doc in page_docs:
+                            doc_id = doc.get("id")
+                            if not doc_id:
+                                continue
+                            doc_meta = {
+                                "document_id": doc_id,
+                                "name": doc.get("name", ""),
+                                "location": doc.get("location", ""),
+                                "type": doc.get("type", ""),
+                                "size": doc.get("size"),
+                                "chunk_count": doc.get("chunk_count"),
+                                "create_date": doc.get("create_date", ""),
+                                "update_date": doc.get("update_date", ""),
+                                "token_count": doc.get("token_count"),
+                                "thumbnail": doc.get("thumbnail", ""),
+                                "dataset_id": doc.get("dataset_id", dataset_id),
+                                "meta_fields": doc.get("meta_fields", {}),
+                            }
+                            doc_id_meta_list.append((doc_id, doc_meta))
+                            docs[doc_id] = doc_meta
 
                         self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
+
+                        # A page smaller than page_size (including an empty one) is the
+                        # last page. This terminates empty/exhausted result sets, which
+                        # previously looped forever re-requesting the same page (#16248),
+                        # and replaces the old `total - page * page_size` check that
+                        # stopped one page early and silently dropped documents.
+                        if len(page_docs) < page_size:
+                            break
+                        page += 1
                 if docs:
                     document_cache.update(docs)
 
@@ -522,22 +595,6 @@ async def call_tool(
         rerank_id = arguments.get("rerank_id")
         force_refresh = arguments.get("force_refresh", False)
 
-        # If no dataset_ids provided or empty list, get all available dataset IDs
-        if not dataset_ids:
-            dataset_list_str = await connector.list_datasets(api_key=api_key)
-            dataset_ids = []
-
-            # Parse the dataset list to extract IDs
-            if dataset_list_str:
-                for line in dataset_list_str.strip().split("\n"):
-                    if line.strip():
-                        try:
-                            dataset_info = json.loads(line.strip())
-                            dataset_ids.append(dataset_info["id"])
-                        except (json.JSONDecodeError, KeyError):
-                            # Skip malformed lines
-                            continue
-
         return await connector.retrieval(
             api_key=api_key,
             dataset_ids=dataset_ids,
@@ -639,7 +696,7 @@ def create_starlette_app():
         )
 
     return Starlette(
-        debug=True,
+        debug=False,
         routes=routes,
         middleware=middleware,
         lifespan=streamablehttp_lifespan,

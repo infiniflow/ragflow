@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useDeleteKnowledge } from '@/hooks/use-knowledge-request';
-import { IKnowledge } from '@/interfaces/database/knowledge';
+import { IDataset } from '@/interfaces/database/dataset';
 import { PenLine, Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -22,7 +22,7 @@ export function DatasetDropdown({
   dataset,
 }: PropsWithChildren &
   Pick<ReturnType<typeof useRenameDataset>, 'showDatasetRenameModal'> & {
-    dataset: IKnowledge;
+    dataset: IDataset;
   }) {
   const { t } = useTranslation();
   const { deleteKnowledge } = useDeleteKnowledge();

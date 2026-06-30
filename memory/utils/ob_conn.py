@@ -24,9 +24,12 @@ from sqlalchemy import Column, String, Integer
 from sqlalchemy.dialects.mysql import LONGTEXT
 
 from common.decorator import singleton
+from memory.utils.aggregation_utils import aggregate_by_field
+from memory.utils.highlight_utils import get_highlight_from_messages
 from common.doc_store.doc_store_base import MatchExpr, OrderByExpr, FusionExpr, MatchTextExpr, MatchDenseExpr
 from common.doc_store.ob_conn_base import OBConnectionBase, get_value_str, vector_search_template
 from common.float_utils import get_float
+from rag.nlp import is_english
 from rag.nlp.rag_tokenizer import tokenize, fine_grained_tokenize
 
 # Column definitions for memory message table
@@ -604,10 +607,19 @@ class OBConnection(OBConnectionBase):
 
     def get_highlight(self, res, keywords: list[str], field_name: str):
         """Get highlighted text for search results."""
-        # TODO: Implement highlight functionality for OceanBase memory
-        return {}
+        if isinstance(res, tuple):
+            res = res[0]
+        messages = getattr(res, "messages", None)
+        return get_highlight_from_messages(
+            messages, keywords, field_name, is_english_fn=lambda s: is_english([s])
+        )
 
     def get_aggregation(self, res, field_name: str):
         """Get aggregation for search results."""
-        # TODO: Implement aggregation functionality for OceanBase memory
-        return []
+        if isinstance(res, tuple):
+            res_obj = res[0]
+        else:
+            res_obj = res
+
+        messages = getattr(res_obj, "messages", None)
+        return aggregate_by_field(messages, field_name)

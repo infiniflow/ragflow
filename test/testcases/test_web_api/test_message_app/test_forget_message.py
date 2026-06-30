@@ -16,7 +16,7 @@
 import random
 import pytest
 import requests
-from test_web_api.common import forget_message, list_memory_message, get_message_content
+from test_common import forget_message, list_memory_message, get_message_content
 from configs import HOST_ADDRESS, INVALID_API_TOKEN, VERSION
 from libs.auth import RAGFlowWebApiAuth
 

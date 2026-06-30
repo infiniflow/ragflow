@@ -2,7 +2,7 @@ import { Connection, Edge, getOutgoers } from '@xyflow/react';
 import React, { useCallback, useEffect } from 'react';
 // import { shallow } from 'zustand/shallow';
 import { settledModelVariableMap } from '@/constants/knowledge';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { get, lowerFirst, omit } from 'lodash';
 import { UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';

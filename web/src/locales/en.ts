@@ -4,7 +4,7 @@ export default {
       confirm: 'Confirm',
       back: 'Back',
       noResults: 'No results found',
-      selectPlaceholder: 'select value',
+      selectPlaceholder: 'Select value',
       selectAll: 'Select all',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete it ?',
@@ -14,10 +14,12 @@ export default {
       yes: 'Yes',
       no: 'No',
       total: 'Total',
+      top: 'Top {{top}}',
       rename: 'Rename',
       name: 'Name',
       save: 'Save',
       namePlaceholder: 'Please input name',
+      descriptionPlaceholder: 'Enter description',
       next: 'Next',
       create: 'Create',
       edit: 'Edit',
@@ -27,12 +29,24 @@ export default {
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
       russian: 'Russian',
+      indonesian: 'Indonesian',
+      indonesia: 'Indonesian',
+      spanish: 'Spanish',
+      vietnamese: 'Vietnamese',
+      japanese: 'Japanese',
+      german: 'German',
+      french: 'French',
+      italian: 'Italian',
       bulgarian: 'Bulgarian',
+      arabic: 'Arabic',
+      turkish: 'Turkish',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
       copy: 'Copy',
       copied: 'Copied',
+      viewMore: 'View more',
+      viewLess: 'View less',
       comingSoon: 'Coming soon',
       download: 'Download',
       close: 'Close',
@@ -49,9 +63,11 @@ export default {
       openInNewTab: 'Chat in new tab',
       previousPage: 'Previous',
       nextPage: 'Next',
+      previous: 'Previous',
       add: 'Add',
       remove: 'Remove',
       search: 'Search',
+      reset: 'Reset',
       noDataFound: 'No data found.',
       noData: 'No data available',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
@@ -64,6 +80,9 @@ export default {
       },
       selected: 'Selected',
       seeAll: 'See all',
+      bulkOperate: 'Bulk operate',
+      owner: 'Owner',
+      running: 'Running...',
     },
     login: {
       loginTitle: 'Sign in to your account',
@@ -86,7 +105,7 @@ export default {
       title: 'A leading RAG engine for LLM context',
       start: "Let's get started",
       description:
-        'Sign up for free to explore top RAG technology. Create knowledge bases and AIs to empower your business.',
+        'Sign up for free to explore top RAG technology. Create datasets and AIs to empower your business.',
       review: 'from 500+ reviews',
       seeAll: 'See all',
     },
@@ -99,11 +118,176 @@ export default {
       setting: 'User settings',
       logout: 'Log out',
       fileManager: 'File',
+      skills: 'Skills',
       flow: 'Agent',
       search: 'Search',
       welcome: 'Welcome to',
       dataset: 'Dataset',
       memories: 'Memory',
+      discord: 'Discord',
+      github: 'GitHub',
+      help: 'Help',
+    },
+    skills: {
+      title: 'Skills',
+      selectSpace: 'Select a skill space to get started',
+      spacePlaceholder: 'Enter space name',
+      createSpace: 'Create skill space',
+      createSpaceTitle: 'Create new skill space',
+      createSpaceDescription:
+        'Create a new space to organize and manage your skills.',
+      spaceName: 'Space name',
+      spaceNamePlaceholder: 'e.g., my-space',
+      spaceNameRequired: 'Please enter space name',
+      noSpaces: 'No skill space yet. Create your first one!',
+      enterSpace: 'Enter',
+      spaceCreated: 'Skill space created successfully',
+      spaceDeleted: 'Skill space deleted successfully',
+      fetchError: 'Failed to fetch skills',
+      deleteSpaceTitle: 'Delete skill space',
+      deleteSpaceDescription:
+        'Are you sure you want to delete this skill space? This action cannot be undone and all skills in this space will be permanently deleted.',
+      deleteSpaceName: 'Space name',
+      uploadSuccess: 'Skill uploaded successfully',
+      uploadError: 'Failed to upload skill',
+      deleteSuccess: 'Skill deleted successfully',
+      deleteError: 'Failed to delete skill',
+      skillExists:
+        'A skill with this name already exists. Please delete it first or use a different name.',
+      uploadSkill: 'Upload skill',
+      searchPlaceholder: 'Search skills...',
+      noSkills: 'No skills yet. Upload your first skill.',
+      noSearchResults: 'No skills matching your search',
+      filesCount: '{{count}} files',
+      foldersCount: '{{count}} folders',
+      pageInfo: 'Page {{current}} of {{total}}',
+      totalSkills: '{{total}} skills total',
+      backToSkills: 'Back to skills',
+      selectFileToView: 'Select a file to view',
+      skillName: 'Skill name',
+      skillNamePlaceholder: 'e.g., my-awesome-skill',
+      skillNameHelp: 'Only letters, numbers, hyphens and underscores allowed',
+      source: 'Source',
+      version: 'Version',
+      skillVersion: 'Version',
+      skillVersionPlaceholder: 'e.g., 1.0.0',
+      versionFormatHelp: 'Version must be in semver format (e.g., 1.0.0)',
+      versionRequired: 'Version is required',
+      selectFilesOrFolder: 'Select files or folder',
+      uploadDescription:
+        'Upload skill files. You can drag and drop files or select a folder.',
+      selectFolder: 'Select folder',
+      dragFilesHint: 'or drag files below',
+      dragFilesTitle: 'Drag skill folder here',
+      dragFilesDescription:
+        'Drag and drop a skill folder here, or use the "Select Folder" button below.',
+      filesSelected: '{{count}} files selected',
+      uploading: 'Uploading...',
+      files: 'Files',
+      noFiles: 'No files',
+      versionHistory: 'Version history',
+      selectVersion: 'Select version to preview',
+      latest: 'Latest',
+      metadata: {
+        basic: 'Basic info',
+        emoji: 'Emoji',
+        skillKey: 'Skill key',
+        always: 'Always active',
+        primaryEnv: 'Primary Environment Variable',
+        requires: 'Requirements',
+        requiredBins: 'Required Binaries',
+        requiredEnv: 'Required Environment Variables',
+        anyBins: 'At Least One Required',
+        install: 'Dependencies',
+        links: 'Links',
+        homepage: 'Homepage',
+        repository: 'Repository',
+        documentation: 'Documentation',
+      },
+      validation: {
+        missing_skill_md:
+          'Invalid skill: SKILL.md not found. Please ensure your skill directory contains a valid SKILL.md file.',
+        invalid_frontmatter:
+          'Invalid skill: SKILL.md must have valid frontmatter (start and end with ---).',
+        missing_name:
+          'Invalid skill: SKILL.md frontmatter must include a "name" field.',
+        invalid_name_format:
+          'Invalid skill: "name" must be lowercase and URL-safe (letters, numbers, hyphens only).',
+        invalid_version:
+          'Invalid skill: "version" must be valid semver (e.g., 1.0.0).',
+        invalid_metadata: 'Invalid skill: metadata contains invalid fields.',
+        invalid_file_type: 'Invalid skill: Only text-based files are allowed.',
+        invalid_path: 'Invalid skill: File path contains invalid characters.',
+        file_too_large:
+          'Invalid skill: Individual file size exceeds 5MB limit.',
+        total_size_exceeded:
+          'Invalid skill: Total bundle size exceeds 50MB limit.',
+        no_files: 'No files selected. Please select a skill folder.',
+        noValidFiles: 'No valid files found. Please check your selection.',
+        junkFilesFound:
+          'Temporary files detected (e.g., .DS_Store). Please remove them before uploading.',
+        read_failed: 'Invalid skill: Failed to read SKILL.md file.',
+        invalid: 'Invalid skill format.',
+        valid: 'Valid skill format. Ready to upload.',
+        versionExists:
+          'This version already exists. Please use a different version number.',
+        error: 'Validation failed',
+      },
+      parsedMetadata: 'Parsed from SKILL.md:',
+      addSkill: 'Add Skill',
+      upload: 'Upload',
+      importFromGit: 'Import from Git',
+      gitPlatform: 'Platform',
+      repoUrl: 'Repository URL',
+      repoUrlHelp: 'Supports repository URL with optional path',
+      accessToken: 'Access Token',
+      githubTokenHelp:
+        'For private repos or higher rate limits (5000 req/hour)',
+      giteeTokenHelp: 'For private repos or higher rate limits (2000 req/hour)',
+      rateLimitInfo: 'Rate Limit Info',
+      githubRateLimit:
+        'Public repos: 60 requests/hour per IP. Use token for 5000 req/hour.',
+      giteeRateLimit:
+        'Public repos: 1000 requests/hour per IP. Use token for 2000 req/hour.',
+      import: 'Import',
+      importing: 'Importing...',
+      configureSearch: 'Configure Search',
+    },
+    skillSearch: {
+      configTitle: 'Skill Search Configuration',
+      configDesc: 'Configure how skills are indexed and searched',
+      embeddingModel: 'Embedding Model',
+      embeddingModelPlaceholder: 'Select an embedding model',
+      vectorSimilarityWeight: 'Vector Similarity Weight',
+      similarityThreshold: 'Similarity Threshold',
+      topK: 'Top K Results',
+      indexFields: 'Index Fields',
+      indexFieldsDesc: 'Select which fields to include in the search index',
+      fieldName: 'Name',
+      fieldNameDesc: 'Skill name',
+      fieldTags: 'Tags',
+      fieldTagsDesc: 'Skill tags',
+      fieldDescription: 'Description',
+      fieldDescriptionDesc: 'Skill description',
+      fieldContent: 'Content',
+      fieldContentDesc: 'Skill content (e.g., README)',
+      weight: 'Weight',
+      pureVector: 'Vector Only',
+      hybrid: 'Hybrid',
+      keyword: 'Keyword',
+      vector: 'Vector',
+      keywordOnly: 'Keyword Only',
+      balanced: 'Balanced',
+      vectorOnly: 'Vector Only',
+      reindex: 'Reindex All',
+      reindexing: 'Reindexing...',
+      reindexSuccess: 'Reindexed successfully',
+      pleaseSelectEmbeddingModel: 'Please select an embedding model',
+      saveSuccess: 'Saved successfully',
+      saveError: 'Failed to save',
+      semanticSearchPlaceholder: 'Search skills by meaning...',
+      switchToSemantic: 'Switch to semantic search',
+      switchToLocal: 'Switch to local search',
     },
     memories: {
       llmTooltip:
@@ -163,6 +347,7 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         action: 'Action',
       },
       config: {
+        descriptionPlaceholder: 'Describe your memory',
         memorySizeTooltip: `Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes).
 Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.`,
         avatar: 'Avatar',
@@ -188,7 +373,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeList: {
       welcome: 'Welcome back',
-      description: 'Which knowledge bases will you use today?',
+      description: 'Which datasets will you use today?',
       createKnowledgeBase: 'Create dataset',
       name: 'Name',
       namePlaceholder: 'Please input name.',
@@ -196,12 +381,12 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       searchKnowledgePlaceholder: 'Search',
       noMoreData: `That's all. Nothing more.`,
       parserRequired: 'Chunk method is required',
+      dataFlowRequired: 'Data flow is required',
     },
     knowledgeDetails: {
       metadata: {
         fields: 'fields',
         selectFiles: 'Selected {{count}} files',
-        type: 'Type',
         fieldNameInvalid: 'Field name can only contain letters or underscores.',
         builtIn: 'Built-in',
         generation: 'Generation',
@@ -232,6 +417,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         value: 'Value',
         action: 'Action',
         field: 'Field',
+        type: 'Type',
         description: 'Description',
         fieldName: 'Field name',
         editMetadata: 'Edit metadata',
@@ -240,11 +426,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         deleteManageFieldAllWarn:
           'This field and all its corresponding values will be deleted from all associated files.',
         deleteManageValueAllWarn:
-          'This value will be deleted from from all associated files.',
+          'This value will be deleted from all associated files.',
         deleteManageFieldSingleWarn:
-          'This field and all its corresponding values will be deleted from this files.',
+          'This field and all its corresponding values will be deleted from this file.',
         deleteManageValueSingleWarn:
-          'This value will be deleted from this files.',
+          'This value will be deleted from this file.',
         deleteSettingFieldWarn: `This field will be deleted; existing metadata won't be affected.`,
         deleteSettingValueWarn: `This value will be deleted; existing metadata won't be affected.`,
       },
@@ -270,6 +456,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       raptor: 'RAPTOR',
       processingType: 'Processing type',
       dataPipeline: 'Switch or configure ingestion pipeline.',
+      dataPipelineTitle: 'Ingestion pipeline',
       operations: 'Operations',
       taskId: 'Task ID',
       duration: 'Duration',
@@ -349,11 +536,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       filesSelected: 'Files selected',
       upload: 'Upload',
       run: 'Parse',
-      runningStatus0: 'PENDING',
-      runningStatus1: 'PARSING',
-      runningStatus2: 'CANCELED',
-      runningStatus3: 'SUCCESS',
-      runningStatus4: 'FAIL',
+      runningStatus0: 'Pending',
+      runningStatus1: 'Parsing',
+      runningStatus2: 'Cancelled',
+      runningStatus3: 'Success',
+      runningStatus4: 'Fail',
       pageRanges: 'Page ranges',
       pageRangesTip:
         'Range of pages to be parsed; pages outside this range will not be processed.',
@@ -375,13 +562,13 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       changeSpecificCategory: 'Change specific category',
       uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For demo.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
+        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For cloud.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
       chunk: 'Chunk',
       bulk: 'Bulk',
       cancel: 'Cancel',
       close: 'Close',
       rerankModel: 'Rerank model',
-      rerankPlaceholder: 'Please select',
+      rerankPlaceholder: 'Select value',
       rerankTip: `Optional. If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time. If you wish to use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with docker-compose-gpu.yml.`,
       topK: 'Top-K',
       topKTip: `Used together with the Rerank model, this setting defines the number of text chunks to be sent to the specified reranking model.`,
@@ -394,7 +581,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
 
       html4excel: 'Excel to HTML',
-      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the knowledge base will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,
+      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,
       autoKeywords: 'Auto-keyword',
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Auto-question',
@@ -428,6 +615,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      randomSeedTip:
+        'Seed is the starting point for a pseudo-random algorithm that ensures reproducibility of the same output across different runs.',
+      datasetDescription: 'Describe your dataset',
+      overlappedPercentTip: 'The overlapped percent between two nearby chunks',
       globalIndexModelTip:
         'Used to generate Knowledge graphs, RAPTOR, auto-metadata, auto-keyword and auto-question. Model performance will affects generation quality.',
       globalIndexModel: 'Indexing model',
@@ -500,12 +691,12 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       buildItFromScratch: 'Build it from scratch',
       dataFlow: 'Pipeline',
       parseType: 'Parse type',
-      manualSetup: 'Choose pipeline',
+      manualSetup: 'Pipeline',
       builtIn: 'Built-in',
       titleDescription:
-        'Update your memory configuration here, particularly the LLM and prompts.',
-      name: 'Knowledge base name',
-      photo: 'Knowledge base photo',
+        'Update your dataset configuration here, particularly the LLM and prompts.',
+      name: 'Dataset name',
+      photo: 'Dataset photo',
       photoTip: 'You can upload an image up to 4 MB.',
       description: 'Description',
       language: 'Document language',
@@ -516,9 +707,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       chunkTokenNumber: 'Recommended chunk size',
       chunkTokenNumberMessage: 'Chunk token number for text is required',
       embeddingModelTip:
-        'The default embedding model used by the knowledge base. Once the knowledge base has chunks, when switching the embedding model, the system randomly samples a few chunks for a compatibility check, re-embeds them with the new embedding model, and computes cosine similarity between the new and old vectors. Switching is allowed only when the average similarity of the sample is ≥ 0.9. Otherwise, you must delete all chunks in the knowledge base before you can change it.',
+        'The default embedding model used by the dataset. Once the dataset has chunks, when switching the embedding model, the system randomly samples a few chunks for a compatibility check, re-embeds them with the new embedding model, and computes cosine similarity between the new and old vectors. Switching is allowed only when the average similarity of the sample is ≥ 0.9. Otherwise, you must delete all chunks in the dataset before you can change it.',
       permissionsTip:
-        "If it is set to 'Team', all your team members will be able to manage the knowledge base.",
+        "If it is set to 'Team', all your team members will be able to manage the dataset.",
       chunkTokenNumberTip:
         'It kind of sets the token threshold for a creating a chunk. A segment with fewer tokens than this threshold will be combined with the following segments until the token count exceeds the threshold, at which point a chunk is created. No new chunk is created unless a delimiter is encountered, even if the threshold is exceeded.',
       chunkMethod: 'Chunking method',
@@ -529,6 +720,37 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
       chunkMethodPlaceholder: 'Please select a chunking method.',
+      tableColumnMode: 'Column mode',
+      tableColumnModeAuto: 'Auto',
+      tableColumnModeManual: 'Manual',
+      tableColumnModeAutoDescription:
+        'All columns are included in chunk text and stored as metadata (RAGFlow default).',
+      tableColumnRoles: 'Column roles',
+      tableColumnRolesTip:
+        'Choose which columns to include in chunk text (indexed for vector and full-text search), in metadata only (filterable), or both. Changes apply to new parses; re-parse existing documents for roles to take effect.',
+      tableColumnRoleIndexing: 'Indexing',
+      tableColumnRoleMetadata: 'Metadata',
+      tableColumnRoleBoth: 'Both',
+      tableColumnRolesEmpty:
+        'Upload and parse a CSV or Excel file to begin configuring column roles.',
+      tableColumnRolesReparseTip:
+        'Re-parse existing documents for the new column roles to take effect.',
+      parserLabel: {
+        naive: 'General',
+        qa: 'Q&A',
+        resume: 'Resume',
+        manual: 'Manual',
+        table: 'Table',
+        paper: 'Paper',
+        book: 'Book',
+        laws: 'Laws',
+        presentation: 'Presentation',
+        picture: 'Picture',
+        one: 'One',
+        audio: 'Audio',
+        email: 'Email',
+        tag: 'Tag',
+      },
       save: 'Save',
       me: 'Only me',
       team: 'Team',
@@ -539,7 +761,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'The following screenshots are provided for clarification.',
       dialogueExamplesTitle: 'view',
       methodEmpty:
-        'This will display a visual explanation of the knowledge base categories',
+        'This will display a visual explanation of the dataset categories',
       book: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       For each book in PDF, please set the <i>page ranges</i> to remove unwanted information and reduce analysis time.</p>`,
       laws: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -553,8 +775,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       naive: `<p>Supported file formats are <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPTX, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
       <p>This method chunks files using a 'naive' method: </p>
       <p>
+      <ul>
       <li>Use vision detection model to split the texts into smaller segments.</li>
-      <li>Then, combine adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</li></p>`,
+      <li>Then, combine adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</li></ul></p>`,
       paper: `<p>Only <b>PDF</b> file is supported.</p><p>
       Papers will be split by section, such as <i>abstract, 1.1, 1.2</i>. </p><p>
       This approach enables the LLM to summarize the paper more effectively and to provide more comprehensive, understandable responses.
@@ -566,6 +789,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       <p>
       This chunking method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.
     </p>
+    <ul>
     <li>
       If a file is in <b>XLSX</b> or <b>XLS (Excel 97-2003)</b> format, it should contain two columns without headers: one for questions and the other for answers, with the question column preceding the answer column. Multiple sheets are
       acceptable, provided the columns are properly structured.
@@ -573,6 +797,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     <li>
       If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate questions and answers.
     </li>
+    </ul>
     <p>
       <i>
         Lines of texts that fail to follow the above rules will be ignored, and
@@ -617,9 +842,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
 <p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</p>
 <p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
 <p>Ensure that you set the <b>Entity types</b>.</p>`,
-      tag: `<p>A knowledge base using the 'Tag' chunking method functions as a tag set. Other knowledge bases use it to tag their chunks, and queries to these knowledge bases are also tagged using this tag set.</p>
+      tag: `<p>A dataset using the 'Tag' chunking method functions as a tag set. Other datasets use it to tag their chunks, and queries to these datasets are also tagged using this tag set.</p>
 <p>A tag set will <b>NOT</b> be directly involved in a Retrieval-Augmented Generation (RAG) process.</p>
-<p>Each chunk in this knowledge base is an independent description-tag pair.</p>
+<p>Each chunk in this dataset is an independent description-tag pair.</p>
 <p>Supported file formats include <b>XLSX</b> and <b>CSV/TXT</b>:</p>
 <p>If a file is in <b>XLSX</b> format, it should contain two columns without headers: one for tag descriptions and the other for tag names, with the Description column preceding the Tag column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
 <p>If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate descriptions and tags.</p>
@@ -643,6 +868,11 @@ The above is the content you need to summarize.`,
       thresholdTip:
         'In RAPTOR, chunks are clustered by their semantic similarity. The Threshold parameter sets the minimum similarity required for chunks to be grouped together. A higher Threshold means fewer chunks in each cluster, while a lower one means more.',
       thresholdMessage: 'Threshold is required',
+      clusteringMethod: 'Clustering method',
+      clusteringMethodTip:
+        'Select the RAPTOR clustering method. AHC can use a larger max cluster value, but may require more memory on large inputs.',
+      clusteringMethodGmm: 'GMM',
+      clusteringMethodAhc: 'AHC',
       maxCluster: 'Max cluster',
       maxClusterTip: 'The maximum number of clusters to create.',
       maxClusterMessage: 'Max cluster is required',
@@ -651,7 +881,7 @@ The above is the content you need to summarize.`,
       entityTypes: 'Entity types',
       vietnamese: 'Vietnamese',
       pageRank: 'Page rank',
-      pageRankTip: `You can assign a higher PageRank score to specific knowledge bases during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these knowledge bases, increasing their ranking. See https://ragflow.io/docs/dev/set_page_rank for details.`,
+      pageRankTip: `You can assign a higher PageRank score to specific datasets during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these datasets, increasing their ranking. See https://ragflow.io/docs/dev/set_page_rank for details.`,
       tagName: 'Tag',
       frequency: 'Frequency',
       searchTags: 'Search tags',
@@ -659,12 +889,12 @@ The above is the content you need to summarize.`,
       tagTable: 'Table',
       tagSet: 'Tag sets',
       tagSetTip: `
-     <p> Select one or multiple tag knowledge bases to auto-tag chunks in your knowledge base. See https://ragflow.io/docs/dev/use_tag_sets for details.</p>
+     <p> Select one or multiple tag datasets to auto-tag chunks in your dataset. See https://ragflow.io/docs/dev/use_tag_sets for details.</p>
 <p>The user query will also be auto-tagged.</p>
 This auto-tagging feature enhances retrieval by adding another layer of domain-specific knowledge to the existing dataset.
 <p>Difference between auto-tag and auto-keyword:</p>
 <ul>
-  <li>A tag knowledge base is a user-defined close set, whereas keywords extracted by the LLM can be regarded as an open set.</li>
+  <li>A tag dataset is a user-defined close set, whereas keywords extracted by the LLM can be regarded as an open set.</li>
   <li>You must upload tag sets in specified formats before running the auto-tag feature.</li>
   <li>The auto-keyword feature is dependent on the LLM and consumes a significant number of tokens.</li>
 </ul>
@@ -674,11 +904,15 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addTag: 'Add tag',
       useGraphRag: 'Knowledge graph',
       useGraphRagTip:
-        'Construct a knowledge graph over file chunks of the current knowledge base to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/dev/construct_knowledge_graph for details.',
+        'Construct a knowledge graph over file chunks of the current dataset to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/dev/construct_knowledge_graph for details.',
       graphRagMethod: 'Method',
       graphRagMethodTip: `
       Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
-      General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
+      General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships.</br>
+      NER: Use spaCy NER and rule-based keyword extraction to extract entities and relationships. No LLM is required for extraction itself, making it fast and resource-efficient.`,
+      graphRagBatchChunkTokenSize: 'Batch chunk token size',
+      graphRagBatchChunkTokenSizeTip:
+        'The token limit for each batch of chunks sent to the LLM for knowledge graph entity and relation extraction. Not applied to NER.',
       resolution: 'Entity resolution',
       resolutionTip: `An entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph`,
       community: 'Community reports',
@@ -687,6 +921,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       theDocumentBeingParsedCannotBeDeleted:
         'The document being parsed cannot be deleted',
       lastWeek: 'from last week',
+      top: 'Top',
     },
     chunk: {
       type: 'Type',
@@ -695,7 +930,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         table: 'Table',
         text: 'Text',
       },
+      size: 'Size',
+      uploadedTime: 'Uploaded time',
       chunk: 'Chunk',
+      createChunk: 'Create chunk',
+      editChunk: 'Edit chunk',
       bulk: 'Bulk',
       selectAll: 'Select all',
       enabledSelected: 'Enable selected',
@@ -723,6 +962,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       delete: 'Delete',
     },
     chat: {
+      chatSupport: 'Chat Support',
+      replyInstantly: 'We typically reply instantly',
+      typeYourMessage: 'Type your message...',
       messagePlaceholder: 'Type your message here...',
       exit: 'Exit',
       multipleModels: 'Multiple models',
@@ -740,29 +982,39 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       sendPlaceholder: 'Message the assistant...',
       chatConfiguration: 'Chat configuration',
       chatConfigurationDescription:
-        ' Set up a chat assistant for your selected datasets (knowledge bases) here! 💕',
+        ' Set up a chat assistant for your selected datasets (datasets) here! 💕',
       assistantName: 'Assistant name',
       assistantNameMessage: 'Assistant name is required',
       namePlaceholder: 'e.g. Resume Jarvis',
       assistantAvatar: 'Assistant avatar',
       language: 'Language',
       emptyResponse: 'Empty response',
-      emptyResponseTip: `Set this as a response if no results are retrieved from the knowledge bases for your query, or leave this field blank to allow the LLM to improvise when nothing is found.`,
-      emptyResponseMessage: `Empty response will be triggered when nothing relevant is retrieved from knowledge bases. You must clear the 'Empty response' field if no knowledge base is selected.`,
+      emptyResponseTip: `Set this as a response if no results are retrieved from the datasets for your query, or leave this field blank to allow the LLM to improvise when nothing is found.`,
+      emptyResponseMessage: `Empty response will be triggered when nothing relevant is retrieved from datasets. You must clear the 'Empty response' field if no dataset is selected.`,
+      emptyResponsePlaceholder:
+        'The answer you are looking for is not found in the dataset!',
       setAnOpener: 'Opening greeting',
       setAnOpenerInitial: `Hi! I'm your assistant. What can I do for you?`,
       setAnOpenerTip: 'Set an opening greeting for users.',
       knowledgeBases: 'Datasets',
+      knowledgeBasesPlaceholder: 'Select value',
       knowledgeBasesMessage: 'Please select',
       knowledgeBasesTip:
-        'Select the datasets to associate with this chat assistant. An empty knowledge base will not appear in the dropdown list.',
+        'Select the datasets to associate with this chat assistant. An empty dataset will not appear in the dropdown list.',
       system: 'System prompt',
+      systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+
+**Essential Rules:**
+  - Your answer must be derived **solely** from this dataset: {knowledge}.
+  - **When information is available**: Summarize the content to give a detailed answer.
+  - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the knowledge base!"
+  - **Always consider** the entire conversation history.`,
       systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
 
       **Essential Rules:**
-        - Your answer must be derived **solely** from this knowledge base: \`{knowledge}\`.
+        - Your answer must be derived **solely** from this dataset: \`{knowledge}\`.
         - **When information is available**: Summarize the content to give a detailed answer.
-        - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the knowledge base!"
+        - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the dataset!"
         - **Always consider** the entire conversation history.`,
       systemMessage: 'Please input!',
       systemTip:
@@ -770,7 +1022,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       topN: 'Top N',
       topNTip: `Not all chunks with similarity score above the 'similarity threshold' will be sent to the LLM. This selects 'Top N' chunks from the retrieved ones.`,
       variable: 'Variable',
-      variableTip: `Used together with RAGFlow's chat assistant management APIs, variables can help develop more flexible system prompt strategies. The defined variables will be used by 'System prompt' as part of the prompts for the LLM. {knowledge} is a reserved special variable representing chunks retrieved from specified knowledge base(s), and all variables should be enclosed in curly braces {} in the 'System prompt'. See https://ragflow.io/docs/dev/set_chat_variables for details.`,
+      variableTip: `Used together with RAGFlow's chat assistant management APIs, variables can help develop more flexible system prompt strategies. The defined variables will be used by 'System prompt' as part of the prompts for the LLM. {knowledge} is a reserved special variable representing chunks retrieved from specified dataset(s), and all variables should be enclosed in curly braces {} in the 'System prompt'. See https://ragflow.io/docs/dev/set_chat_variables for details.`,
       add: 'Add',
       key: 'Key',
       optional: 'Optional',
@@ -807,6 +1059,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
+      thinking: 'Thinking',
+      thinkingDefault: 'System default',
+      thinkingEnabled: 'Enabled',
+      thinkingDisabled: 'Disabled',
+      thinkingTip:
+        'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show quote',
       quoteTip: 'Whether to display the original text as a reference.',
       selfRag: 'Self-RAG',
@@ -829,6 +1087,17 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       created: 'Created',
       action: 'Action',
       embedModalTitle: 'Embed into webpage',
+      published: 'Published',
+      publishedTooltip:
+        'Use the published version for this embed. When enabled, the generated URL includes release=true.',
+      embedType: 'Embed type',
+      fullscreenChat: 'Fullscreen chat (traditional iframe)',
+      floatingWidget: 'Floating widget (Intercom-style)',
+      theme: 'Theme',
+      light: 'Light',
+      dark: 'Dark',
+      enableStreaming: 'Enable streaming responses',
+      muteWidget: 'Mute widget sounds',
       comingSoon: 'Coming soon',
       fullScreenTitle: 'Full embed',
       fullScreenDescription:
@@ -854,10 +1123,10 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'This optimizes user queries using context in a multi-round conversation. When enabled, it will consume additional LLM tokens.',
       howUseId: 'How to use chat ID?',
       description: 'Description of assistant',
-      descriptionPlaceholder: 'e.g. A chat assistant for resume.',
+      descriptionPlaceholder: "I'm a chat assistant.",
       useKnowledgeGraph: 'Use knowledge graph',
       useKnowledgeGraphTip:
-        'Whether to use knowledge graph(s) in the specified knowledge base(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.',
+        'Whether to use knowledge graph(s) in the specified dataset(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.',
       keyword: 'Keyword analysis',
       keywordTip: `Use LLM to analyze user's questions, extract keywords which will be emphasize during the relevance computation. Works well with lengthy queries but will increase response time.`,
       languageTip:
@@ -868,10 +1137,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       reasoning: 'Reasoning',
       reasoningTip: `Whether to enable a reasoning workflow during question answering, as seen in models like Deepseek-R1 or OpenAI o1. When enabled, this allows the model to access external knowledge and tackle complex questions in a step-by-step manner, leveraging techniques like chain-of-thought reasoning. This approach enhances the model's ability to provide accurate responses by breaking down problems into manageable steps, improving performance on tasks that require logical reasoning and multi-step thinking.`,
       tavilyApiKeyTip:
-        'If an API key is correctly set here, Tavily-based web searches will be used to supplement knowledge base retrieval.',
+        'If an API key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
       tavilyApiKeyHelp: 'How to get it?',
       crossLanguage: 'Cross-language search',
+      crossLanguagePlaceholder: 'Select value',
       crossLanguageTip: `Select one or more languages for cross‑language search. If no language is selected, the system searches with the original query.`,
       createChat: 'Create chat',
       metadata: 'Meta data',
@@ -889,14 +1159,23 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       cancel: 'Cancel',
       chatSetting: 'Chat setting',
       tocEnhance: 'PageIndex',
-      tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach mimics human information-searching behavior in books.`,
+      tocEnhanceTip: `During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach mimics human information-searching behavior in books.`,
       batchDeleteSessions: 'Batch delete',
       deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
+      showChunkMetadata: 'Show chunk metadata',
+      showChunkMetadataTip:
+        'Display document metadata (e.g., title, page number, upload date) alongside retrieved text chunks',
+      metadataFields: 'Metadata fields',
+      metadataFieldsTip:
+        'Select which metadata fields to display with each chunk',
     },
     setting: {
       Verify: 'Verify',
       keyValid: 'Your API key is valid.',
       keyInvalid: 'Your API key is invalid.',
+      enableToolCall: 'Enable tool call',
+      enableToolCallTip:
+        'Allow this model to call tools when the selected model type supports tool calling.',
       deleteModel: 'Delete model',
       bedrockCredentialsHint:
         'Tip: Leave Access Key / Secret Key blank to use AWS IAM authentication.',
@@ -921,6 +1200,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       selectModelPlaceholder: 'Select model',
       configureModelTitle: 'Configure model',
       connectorNameTip: 'A descriptive name for the connector',
+      syncDeletedFiles: 'Sync deleted files',
       confluenceIsCloudTip:
         'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
@@ -942,6 +1222,8 @@ Example: Virtual Hosted Style`,
       newDocs: 'New docs',
       timeStarted: 'Time started',
       log: 'Log',
+      rssDescription:
+        'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
       confluenceDescription:
         'Integrate your Confluence workspace to search documentation.',
       s3Description:
@@ -978,6 +1260,20 @@ Example: Virtual Hosted Style`,
         'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
+      teamsDescription:
+        'Connect Microsoft Teams via Microsoft Graph to sync channel posts and replies.',
+      teamsTenantIdTip:
+        'Azure AD tenant ID. Requires an app with Team.ReadBasic.All and ChannelMessage.Read.All application permissions (admin consent).',
+      slackDescription:
+        'Connect your Slack workspace to sync channel messages and threads.',
+      slackBotTokenTip:
+        'Slack bot user OAuth token (starts with xoxb-). The app needs the channels:read, channels:history, and users:read scopes.',
+      slackChannelsTip:
+        'Optional: channel names to sync (e.g., general). Leave empty to sync all accessible channels.',
+      sharepointDescription:
+        'Connect a SharePoint site via Microsoft Graph to sync its document libraries.',
+      sharepointSiteUrlTip:
+        'Full URL of the SharePoint site to index, e.g. https://contoso.sharepoint.com/sites/MySite. Requires an Azure AD app with Sites.Read.All and Files.Read.All application permissions (admin consent).',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',
       bitbucketTopWorkspaceTip:
         'The Bitbucket workspace to index (e.g., "atlassian" from https://bitbucket.org/atlassian/workspace ).',
@@ -992,6 +1288,8 @@ Example: Virtual Hosted Style`,
         'Connect GitHub to sync pull requests and issues for retrieval.',
       airtableDescription:
         'Connect to Airtable and synchronize files from a specified table within a designated workspace.',
+      dingtalkAITableDescription:
+        'Connect to Dingtalk AI Table and synchronize records from a specified table.',
       gitlabDescription:
         'Connect GitLab to sync repositories, issues, merge requests, and related documentation.',
       asanaDescription:
@@ -1107,9 +1405,165 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       postgresqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      bigqueryDescription:
+        'Connect to Google BigQuery to sync rows from a table or a custom GoogleSQL query.',
+      bigqueryProjectIdTip:
+        'GCP project that owns the query jobs (e.g. my-gcp-project).',
+      bigqueryLocationTip:
+        'Default location for the client and query jobs, such as US or EU. Leave empty to let BigQuery infer it.',
+      bigqueryServiceAccountJsonTip:
+        'Service account key JSON with BigQuery access. Paste the full key file contents.',
+      bigqueryDatasetIdTip:
+        'Dataset id for table mode. Required together with Table ID when no SQL query is provided.',
+      bigqueryTableIdTip:
+        'Table id for table mode. Required together with Dataset ID when no SQL query is provided.',
+      bigqueryQueryTip:
+        'Custom GoogleSQL query. Takes precedence over Dataset ID and Table ID. Standard SQL only.',
+      bigqueryContentColumnsTip:
+        'Comma-separated column names whose values will be combined as document content for vectorization.',
+      bigqueryMetadataColumnsTip:
+        'Comma-separated column names to store as document metadata (not vectorized, but searchable).',
+      bigqueryIdColumnTip:
+        'Column to use as unique document ID. If not specified, a hash of the content will be used.',
+      bigqueryTimestampColumnTip:
+        'Timestamp, datetime, date, or numeric column for incremental sync. Only rows newer than the last sync will be fetched.',
+      bigqueryMaximumBytesBilledTip:
+        'Hard cost guard applied to every query job, in bytes. Defaults to 1 GiB.',
+      bigqueryJobTimeoutMsTip:
+        'Optional per-query job timeout in milliseconds.',
+      rest_apiDescription:
+        'Connect any REST API endpoint as a data source using a flexible, configuration-driven connector.',
+      onedriveDescription:
+        'Connect OneDrive or OneDrive for Business to index files and folders via Microsoft Graph delta queries.',
+      onedriveTenantIdTip:
+        'Azure Active Directory tenant ID (Directory ID) of the Microsoft 365 organisation.',
+      onedriveClientIdTip:
+        'Application (client) ID of the Azure AD app registration with Files.Read.All permission.',
+      onedriveClientSecretTip:
+        'Client secret value generated in the Azure AD app registration.',
+      onedriveFolderPathTip:
+        'Optional sub-folder path to limit indexing (e.g. /Documents/Reports). Leave blank to index the entire drive.',
+      outlookDescription:
+        'Connect Outlook / Microsoft 365 mailboxes and index messages via Microsoft Graph delta queries.',
+      outlookTenantIdTip:
+        'Azure Active Directory tenant ID (Directory ID) of the Microsoft 365 organisation.',
+      outlookClientIdTip:
+        'Application (client) ID of the Azure AD app registration with Mail.Read permission.',
+      outlookClientSecretTip:
+        'Client secret value generated in the Azure AD app registration.',
+      outlookFolderTip:
+        'Mail folder to sync (e.g. inbox, sentitems, archive). Defaults to inbox.',
+      outlookUserIdsTip:
+        'Comma-separated UPNs or object IDs of mailboxes to sync. Leave blank to sync every mailbox in the tenant (requires User.Read.All).',
+      salesforceDescription:
+        'Connect a Salesforce org and index CRM records (Accounts, Contacts, Opportunities, Cases, Knowledge articles) via SOQL with incremental sync.',
+      salesforceInstanceUrlTip:
+        'Salesforce org URL, e.g. https://your-domain.my.salesforce.com (no trailing slash).',
+      salesforceClientIdTip:
+        'Consumer Key of a Connected App with Client Credentials Flow enabled and the api scope.',
+      salesforceClientSecretTip:
+        'Consumer Secret of the Connected App used for client-credentials authentication.',
+      salesforceObjectsTip:
+        'Comma-separated SObject API names to index. Defaults to Account, Contact, Opportunity, Case, Knowledge__kav.',
+      salesforceApiVersionTip:
+        'Salesforce REST API version (e.g. v59.0). Use the version your org supports.',
+      azure_blobDescription:
+        'Index blobs from an Azure Blob Storage container into a knowledge base. Supports account-key, connection-string, and SAS-token auth. Unchanged blobs are skipped via ETag fingerprinting.',
+      azureBlobAuthModeTip:
+        'Choose the authentication method. Account Key and Connection String require container_name; SAS Token requires container_url + sas_token.',
+      azureBlobAccountNameTip:
+        'Azure storage account name (e.g. mystorageaccount). Required for account-key auth.',
+      azureBlobAccountKeyTip:
+        'Storage account access key (Base64-encoded). Required for account-key auth.',
+      azureBlobConnectionStringTip:
+        'Full Azure Storage connection string (DefaultEndpointsProtocol=https;AccountName=...;...). Required for connection-string auth.',
+      azureBlobContainerUrlTip:
+        'Full HTTPS URL of the container (e.g. https://account.blob.core.windows.net/container). Required for SAS-token auth.',
+      azureBlobSasTokenTip:
+        'SAS query string (without the leading "?"). Required for SAS-token auth.',
+      azureBlobContainerNameTip:
+        'Name of the container to index. Required for account-key and connection-string auth.',
+      azureBlobPrefixTip:
+        'Optional blob name prefix to limit indexing to a virtual folder (e.g. documents/reports/). Leave blank to index the entire container.',
+      restApiQueryParamsTip:
+        'Key=value pairs (one per line) sent as URL query parameters. Use this instead of embedding params in the URL.',
+      restApiHeadersTip:
+        'Optional JSON object of additional HTTP headers to send with every request.',
+      restApiItemsPathTip:
+        'Field name or JSONPath to the array of items in the response. Leave empty to auto-detect (tries "items", "results", "data", etc.).',
+      restApiIdFieldTip:
+        'Field path within each item used to build a stable document ID. Leave empty to auto-generate from content hash.',
+      restApiContentFieldsTip:
+        'Comma-separated list of item fields to concatenate into the document content.',
+      restApiMetadataFieldsTip:
+        'Comma-separated list of item fields to store as metadata.',
+      restApiNextCursorPathTip:
+        'JSONPath expression that resolves to the next-page cursor in the API response.',
+      restApiPollTimestampFieldTip:
+        'Field path in each item that represents the last updated time, used for incremental sync.',
+      restApiRequestBodyTip:
+        'Optional JSON body to send for POST requests. Used together with query params and pagination.',
+      restApiRequestDelayTip:
+        'Delay in seconds between consecutive page requests. Helps avoid rate limiting from the API. Set to 0 to disable.',
+      restApiValidationApiKeyRequired:
+        'API key is required when Auth Type is API Key (Header).',
+      restApiValidationApiKeyHeaderNameRequired:
+        'API key header name is required when Auth Type is API Key (Header).',
+      restApiValidationBearerTokenRequired:
+        'Bearer token is required when Auth Type is Bearer Token.',
+      restApiValidationBasicUsernameRequired:
+        'Username is required when Auth Type is Basic Auth.',
+      restApiValidationBasicPasswordRequired:
+        'Password is required when Auth Type is Basic Auth.',
+      restApiTestConnection: 'Test connection',
+      restApiTestSuccess: 'REST API connector validated successfully.',
+      restApiTestFailed:
+        'REST API connector validation failed. Please check your configuration and logs.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',
+      chatChannels: 'Chat channels',
+      chatChannelsDescription: 'Manage your chat channel bots and credentials',
+      channelEmptyTip:
+        'No chat channels added yet. Select one below to connect.',
+      availableChannels: 'Available channels',
+      availableChannelsDescription: 'Select a chat channel to add',
+      addChannelModalTitle: 'Add {{name}} bot',
+      editChannelModalTitle: 'Edit {{name}} bot',
+      deleteChannelModalTitle: 'Delete chat channel',
+      deleteChannelModalContent:
+        'Are you sure you want to delete this chat channel bot? This action cannot be undone.',
+      connectDialog: 'Connect assistant',
+      connectDialogTitle: 'Connect {{name}} to an assistant',
+      selectDialog: 'Select an assistant',
+      connectDialogTip:
+        'Messages received by this channel will be answered by the connected assistant. Clear the selection to disconnect.',
+      notConnected: 'No assistant connected',
+      chatChannelDesc: {
+        clickclack: 'Connect a ClickClack bot',
+        discord: 'Connect a Discord bot',
+        dingtalk: 'Connect a DingTalk bot',
+        feishu: 'Connect a Feishu / Lark bot',
+        googlechat: 'Connect a Google Chat bot',
+        irc: 'Connect to an IRC server',
+        line: 'Connect a LINE messaging bot',
+        matrix: 'Connect a Matrix bot',
+        mattermost: 'Connect a Mattermost bot',
+        msteams: 'Connect a Microsoft Teams bot',
+        nextcloud_talk: 'Connect a Nextcloud Talk bot',
+        nostr: 'Connect a Nostr bot',
+        qqbot: 'Connect a QQ bot',
+        slack: 'Connect a Slack bot',
+        synology_chat: 'Connect a Synology Chat bot',
+        telegram: 'Connect a Telegram bot',
+        tlon: 'Connect a Tlon (Urbit) bot',
+        twitch: 'Connect a Twitch chat bot',
+        wecom: 'Connect a WeCom bot',
+        whatsapp: 'Connect a WhatsApp bot (QR pairing)',
+        yuanbao: 'Connect a Tencent Yuanbao bot',
+        zalo: 'Connect a Zalo bot',
+        zalouser: 'Connect a personal Zalo account',
+      },
       save: 'Save',
       search: 'Search',
       availableModels: 'Available models',
@@ -1134,6 +1588,9 @@ Example: Virtual Hosted Style`,
       api: 'API',
       username: 'Name',
       usernameMessage: 'Please input your username!',
+      usernameMaxLength: 'Name must be at most {{max}} characters.',
+      usernameInvalidCharacters:
+        "Name can only contain letters, numbers, spaces, and . _ ' -",
       photo: 'Your photo',
       photoDescription: 'This will be displayed on your profile.',
       colorSchema: 'Color schema',
@@ -1172,21 +1629,56 @@ Example: Virtual Hosted Style`,
         'If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key.',
       tongyiBaseUrlTip:
         'For Chinese users, no need to fill in or use https://dashscope.aliyuncs.com/compatible-mode/v1. For international users, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'For Chinese users, no need to fill in or use https://api.siliconflow.cn/v1. For international users, use https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder: '(International users only, please see tip)',
       minimaxBaseUrlTip:
         'International users only: use https://api.minimax.io/v1',
       minimaxBaseUrlPlaceholder:
         '(International users only, fill in https://api.minimax.io/v1)',
+      openaiBaseUrlPlaceholder: 'https://api.openai.com/v1',
+      anthropicBaseUrlPlaceholder: 'https://api.anthropic.com/v1',
+      siliconflowBaseUrlPlaceholder: 'https://api.siliconflow.cn/v1',
+      groupId: 'Group ID',
+      providerOrder: 'Provider order',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlMessage: 'Please input the PaddleOCR API URL!',
+      paddleocrApiUrlPlaceholder:
+        'e.g. https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio Access Token',
+      paddleocrAccessTokenMessage: 'Access token for PaddleOCR API (optional)',
+      paddleocrAccessTokenPlaceholder: 'Your AI Studio token (optional)',
+      paddleocrAlgorithm: 'PaddleOCR Algorithm',
+      paddleocrAlgorithmMessage: 'Please select a PaddleOCR algorithm',
+      mineruApiserver: 'MinerU API Server',
+      mineruApiserverMessage: 'Please input the MinerU API Server URL!',
+      mineruApiserverPlaceholder: 'e.g. http://host.docker.internal:9987',
+      mineruOutputDir: 'MinerU Output Directory',
+      mineruOutputDirMessage: 'Please input the MinerU output directory!',
+      mineruOutputDirPlaceholder: '/tmp/mineru',
+      mineruBackend: 'MinerU Backend',
+      mineruBackendMessage: 'Please select a MinerU backend!',
+      mineruSelectBackend: 'Select processing backend',
+      mineruServerUrl: 'MinerU Server URL',
+      mineruServerUrlMessage: 'Please input the MinerU Server URL!',
+      mineruServerUrlPlaceholder: 'e.g. http://your-vllm-server:30000',
+      mineruDeleteOutput: 'Delete Output Files',
+      mineruDeleteOutputMessage: 'Invalid value for delete output',
+      opendataloaderApiserver: 'OpenDataLoader API Server',
+      opendataloaderApiserverMessage:
+        'Please input the OpenDataLoader API Server!',
+      opendataloaderApiserverPlaceholder:
+        'http://your-opendataloader-service:9383',
       modify: 'Modify',
       systemModelSettings: 'Set default models',
       chatModel: 'LLM',
-      chatModelTip: 'The default LLM for each newly created knowledge base.',
+      chatModelTip: 'The default LLM for each newly created dataset.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'The default embedding model for each newly created knowledge base. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        'The default VLM for each newly created knowledge base. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'The default ASR model for each newly created dataset. Use this model to translate voices to corresponding text.',
@@ -1200,6 +1692,10 @@ Example: Virtual Hosted Style`,
       addLlmTitle: 'Add LLM',
       editLlmTitle: 'Edit {{name}} model',
       editModel: 'Edit model',
+      instanceName: 'Instance name',
+      instanceNameMessage: 'Please input the instance name!',
+      instanceNameTip:
+        'A unique name to identify this provider instance under the same factory.',
       modelName: 'Model name',
       modelID: 'Model ID',
       modelUid: 'Model UID',
@@ -1225,8 +1721,8 @@ Example: Virtual Hosted Style`,
       FishAudioLink: 'How to use FishAudio',
       TencentCloudLink: 'How to use TencentCloud ASR',
       volcModelNameMessage: 'Please input your model name!',
-      addEndpointID: 'EndpointID of the model',
-      endpointIDMessage: 'Please input your EndpointID of the model',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Please input your Model ID of the model',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Please input your ARK_API_KEY',
       bedrockModelNameMessage: 'Please input your model name!',
@@ -1312,6 +1808,8 @@ Example: Virtual Hosted Style`,
       updateDate: 'Date',
       role: 'State',
       invite: 'Invite member',
+      inviteTip:
+        'Only registered users can be invited. Please register the account before sending an invitation.',
       agree: 'Accept',
       refuse: 'Decline',
       teamMembers: 'Team members',
@@ -1361,11 +1859,31 @@ Example: Virtual Hosted Style`,
         rerank: 'Rerank',
         sequence2text: 'sequence2text',
         tts: 'TTS',
-        image2text: 'OCR',
+        image2text: 'VLM',
+        ocr: 'OCR',
         speech2text: 'ASR',
       },
       showToc: 'Show content',
       hideToc: 'Hide content',
+      listModels: 'List models',
+      allModels: 'All models',
+      listModelsSearchPlaceholder: 'Search models…',
+      listModelsEmpty: 'No models available',
+      listModelsLoading: 'Loading models…',
+      selectModelBeforeVerify:
+        'Please select at least one model before verification.',
+      addCustomModel: 'Add custom model',
+      addCustomModelTitle: 'Add custom model',
+      editCustomModelTitle: 'Edit model',
+      modelMaxTokens: 'Max tokens',
+      modelFeatures: 'Model features',
+      modelFeatureToolCall: 'Tool call',
+      modelFeatureFunctionCall: 'Function call',
+      modelNameRequired: 'Model name is required',
+      modelNameDuplicate: 'Model name already exists',
+      modelTypeRequired: 'Please select at least one model type',
+      modelMaxTokensMessage: 'Max tokens must be a number',
+      modelMaxTokensMinMessage: 'Max tokens must be at least 0',
     },
     message: {
       registered: 'Registered!',
@@ -1403,6 +1921,8 @@ Example: Virtual Hosted Style`,
       hint: 'hint',
     },
     fileManager: {
+      uploadFolderTitle: 'Upload folder',
+      folder: 'Folder',
       files: 'Files',
       name: 'Name',
       uploadDate: 'Upload date',
@@ -1418,7 +1938,7 @@ Example: Virtual Hosted Style`,
       directory: 'Directory',
       uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For demo.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
+        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For cloud.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
       local: 'Local uploads',
       s3: 'S3 uploads',
       preview: 'Preview',
@@ -1429,6 +1949,38 @@ Example: Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      preprocess: {
+        preprocess: 'Preprocess',
+        mainContent: 'Main content',
+        abstract: 'Abstract',
+        author: 'Author',
+        sectionTitle: 'Section title',
+      },
+      tags: 'Tags',
+      canvasCategory: 'Canvas category',
+      editTags: 'Edit tags',
+      editTagsDescription:
+        'Add tags to organize and filter your agents. Press Enter or comma to add.',
+      tagsPlaceholder: 'Add a tag and press Enter',
+      tagSuggestionsLabel: 'Existing tags',
+      removeTagAriaLabel: 'Remove {{tag}}',
+      includeHeadingContent: 'Separate parent-heading content',
+      includeHeadingContentTip:
+        'When enabled, chunks include only their heading path and content; content immediately following a parent heading is kept as a separate chunk.',
+      rootAsHeading: 'Set first chunk as global context',
+      rootAsHeadingTip:
+        'Treats the first split as a global heading to maintain consistent context across the document hierarchy. Ideal for resumes where the first section identifies the subject.',
+      hierarchyTip: `Construct a heading tree and produce self-contained chunks, each carrying its full ancestral path (e.g. Part 1 › Chapter 3 › Section 2 + body text).\n
+Best for: Highly structured texts — such as legal statutes, regulations, contracts, and technical specs — where each chunk must be identifiable by its position in the hierarchy.`,
+      groupTip: `Split the document flat at a chosen heading level, merging adjacent small sections to ensure semantic flow. Chunks exclude ancestral path.\n
+Best for: Documents with flowing, contextually connected content — such as books, manuals, reports, and articles — where narrative coherence depends on keeping adjacent paragraphs together.`,
+      enableMultiColumn: 'Detect multi-column layout',
+      enableMultiColumnTip:
+        'Detect and parse multi-column page layouts to preserve the correct reading order. Turn this on for PDFs or documents with two-column or newspaper-style layouts.',
+      removeToc: 'Remove original table of contents',
+      removeTocTip:
+        'Remove the table of contents included in the original PDF, so it is not parsed as regular content or chunked for retrieval.',
+      removeHeaderFooter: 'Remove header and footer',
       autoPlay: 'Auto play audio',
       downloadFileTypeTip: 'The file type to download',
       downloadFileType: 'Download file type',
@@ -1445,6 +1997,7 @@ Example: Virtual Hosted Style`,
       other: 'Other',
       ingestionPipeline: 'Ingestion pipeline',
       agents: 'Agents',
+      publishedAt: 'Published at',
       days: 'Days',
       beginInput: 'Begin input',
       ref: 'Variable',
@@ -1476,6 +2029,13 @@ Example: Virtual Hosted Style`,
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
+      one: 'One',
+      oneChunkTitle: 'Note',
+      oneChunkDescription:
+        'All parsed sections will be merged in order into a single chunk.',
+      flattenMediaToText: 'Disable vision model',
+      flattenMediaToTextTip:
+        'Treat image and table sections as plain text and skip vision enhancement.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',
       merge: 'Merge',
       split: 'Split',
@@ -1496,6 +2056,20 @@ Example: Virtual Hosted Style`,
       maxRounds: 'Max reflection rounds',
       delayAfterError: 'Delay after error',
       maxRetries: 'Max retry rounds',
+      maxSteps: 'Max steps',
+      headless: 'Headless',
+      enableDefaultExtensions: 'Enable default extensions',
+      enableDefaultExtensionsTip:
+        'Enable browser-use default extensions (uBlock, cookie handling, ClearURLs). Disable this to avoid runtime extension downloads.',
+      chromiumSandbox: 'Chromium sandbox',
+      chromiumSandboxTip:
+        'Whether to enable Chromium sandbox. In Docker root environments this is usually disabled; on regular hosts it is recommended to enable.',
+      persistSession: 'Persist session',
+      persistSessionTip:
+        'When enabled, this Browser node reuses its browser session to avoid repeated logins.',
+      uploadSources: 'Upload sources',
+      uploadSourcesTip:
+        'Supports file IDs, file URLs, or variables. You can separate multiple values with commas or use a JSON array format (for example ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Advanced settings',
       addTools: 'Add tools',
       sysPromptDefaultValue: `
@@ -1526,6 +2100,7 @@ Example: Virtual Hosted Style`,
       citeTip: 'citeTip',
       name: 'Name',
       nameMessage: 'Please input name',
+      lastSavedAt: 'Last saved at',
       description: 'Description',
       descriptionMessage: 'This is an agent for a specific task.',
       examples: 'Examples',
@@ -1556,7 +2131,7 @@ Example: Virtual Hosted Style`,
       title: 'ID:',
       beginDescription: 'This is where the flow begins.',
       answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
-      retrievalDescription: `A component that retrieves information from specified knowledge bases (datasets). Ensure that the knowledge bases you select use the same embedding model.`,
+      retrievalDescription: `A component that retrieves information from specified datasets (datasets). Ensure that the datasets you select use the same embedding model.`,
       generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
       categorizeDescription: `A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component.`,
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
@@ -1565,7 +2140,7 @@ Example: Virtual Hosted Style`,
         'This component returns the final data output of the workflow along with predefined message content. ',
       keywordDescription: `A component that retrieves top N search results from user's input. Ensure the TopN value is set properly before use.`,
       switchDescription: `A component that evaluates conditions based on the output of previous components and directs the flow of execution accordingly. It allows for complex branching logic by defining cases and specifying actions for each case or default action if no conditions are met.`,
-      wikipediaDescription: `A component that searches from wikipedia.org, using TopN to specify the number of search results. It supplements the existing knowledge bases.`,
+      wikipediaDescription: `A component that searches from wikipedia.org, using TopN to specify the number of search results. It supplements the existing datasets.`,
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
         {input}
   The above is the content you need to summarize.`,
@@ -1588,17 +2163,24 @@ Example: Virtual Hosted Style`,
       keywordExtract: 'Keyword',
       keywordExtractDescription: `A component that extracts keywords from a user query, with Top N specifying the number of keywords to extract.`,
       baidu: 'Baidu',
-      baiduDescription: `A component that searches from baidu.com, using TopN to specify the number of search results. It supplements the existing knowledge bases.`,
+      baiduDescription: `A component that searches from baidu.com, using TopN to specify the number of search results. It supplements the existing datasets.`,
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
-        'A component that searches from duckduckgo.com, allowing you to specify the number of search results using TopN. It supplements the existing knowledge bases.',
+        'A component that searches from duckduckgo.com, allowing you to specify the number of search results using TopN. It supplements the existing datasets.',
       searXNG: 'SearXNG',
       searXNGDescription:
         'A component that searches via your provided SearXNG instance URL. Specify TopN and the instance URL.',
-      pdfGenerator: 'Docs Generator',
-      pDFGenerator: 'Docs Generator',
-      pdfGeneratorDescription: `A component that generates documents (PDF, DOCX, TXT) from markdown-formatted content with customizable styling, images, and tables. Supports: **bold**, *italic*, # headings, - lists, tables with | syntax.`,
-      pDFGeneratorDescription: `A component that generates documents (PDF, DOCX, TXT) from markdown-formatted content with customizable styling, images, and tables. Supports: **bold**, *italic*, # headings, - lists, tables with | syntax.`,
+      keenableSearch: 'Keenable',
+      keenableSearchDescription:
+        'A web search component powered by Keenable, a search API built for AI agents. Works without an API key by default (keyless free tier); add a key to lift rate limits.',
+      keenableMode: 'Search mode',
+      keenableSite: 'Site',
+      keenableApiKeyTip: 'Optional. Leave blank to use the keyless free tier.',
+      docGenerator: 'Doc Generator',
+      docGeneratorDescription: `Generate a file from Markdown content.`,
+      browser: 'Browser',
+      browserDescription:
+        'Automate browser tasks. Supports model configuration and prompt-driven actions. Upload sources support file IDs and URLs, and downloaded files can be saved to a target folder.',
       subtitle: 'Subtitle',
       logoImage: 'Logo Image',
       logoPosition: 'Logo Position',
@@ -1626,23 +2208,23 @@ Example: Virtual Hosted Style`,
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:
-        'A component that searches from https://pubmed.ncbi.nlm.nih.gov/, allowing you to specify the number of search results using TopN. It supplements the existing knowledge bases.',
+        'A component that searches from https://pubmed.ncbi.nlm.nih.gov/, allowing you to specify the number of search results using TopN. It supplements the existing datasets.',
       email: 'Email',
       emailTip:
         'E-mail is a required field. You must input an E-mail address here.',
       arXiv: 'ArXiv',
       arXivDescription:
-        'A component that searches from https://arxiv.org/, allowing you to specify the number of search results using TopN. It supplements the existing knowledge bases.',
+        'A component that searches from https://arxiv.org/, allowing you to specify the number of search results using TopN. It supplements the existing datasets.',
       sortBy: 'Sort by',
       submittedDate: 'Submitted date',
       lastUpdatedDate: 'Last updated date',
       relevance: 'Relevance',
       google: 'Google',
       googleDescription:
-        'A component that searches from https://www.google.com/, allowing you to specify the number of search results using TopN. It supplements the existing knowledge bases. Please note that this requires an API key from serpapi.com.',
+        'A component that searches from https://www.google.com/, allowing you to specify the number of search results using TopN. It supplements the existing datasets. Please note that this requires an API key from serpapi.com.',
       bing: 'Bing',
       bingDescription:
-        'A component that searches from https://www.bing.com/, allowing you to specify the number of search results using TopN. It supplements the existing knowledge bases. Please note that this requires an API key from microsoft.com.',
+        'A component that searches from https://www.bing.com/, allowing you to specify the number of search results using TopN. It supplements the existing datasets. Please note that this requires an API key from microsoft.com.',
       apiKey: 'API KEY',
       country: 'Country & region',
       language: 'Language',
@@ -1782,6 +2364,7 @@ Example: Virtual Hosted Style`,
       dbType: 'Database type',
       database: 'Database',
       username: 'Username',
+      userId: 'User ID',
       host: 'Host',
       port: 'Port',
       password: 'Password',
@@ -2002,6 +2585,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       }`,
       datatype: 'MINE type of the HTTP request',
       insertVariableTip: `Enter / Insert variables`,
+      mergePath: 'Merge path',
+      mergePathTip:
+        'When enabled, a dot suffix immediately after a variable is merged into a path query, such as {node@result.name}.',
       historyVersion: 'Version history',
       version: {
         created: 'Created',
@@ -2039,8 +2625,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       promptMessage: 'Prompt is required',
       infor: 'Information run',
       knowledgeBasesTip:
-        'Select the knowledge bases to associate with this chat assistant, or choose variables containing knowledge base IDs below.',
-      knowledgeBaseVars: 'Knowledge base variables',
+        'Select the datasets to associate with this chat assistant, or choose variables containing dataset IDs below.',
+      knowledgeBaseVars: 'Dataset variables',
       code: 'Code',
       codeDescription: 'It allows developers to write custom Python logic.',
       dataOperations: 'Data operations',
@@ -2130,10 +2716,21 @@ This process aggregates variables from multiple branches into a single variable 
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
       frameworkPrompts: 'Framework',
       release: 'Publish',
+      production: 'Production',
+      productionTooltip:
+        'This version is published to production. Access it via the API or the embedded page.',
+      confirmPublish: 'Confirm publish',
+      publishIngestionPipeline:
+        'You are about to publish this Ingestion pipeline.',
+      publishAgent: 'You are about to publish this agent',
+      linkedDataset: 'Linked dataset:',
+      lastPublished: 'Last published',
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
-      ceateAgent: 'Agent flow',
+      duplicate: 'Duplicate',
+      copyOfAgentName: '{{name}} (copy)',
+      ceateAgent: 'Workflow',
       createPipeline: 'Ingestion pipeline',
       chooseAgentType: 'Choose agent type',
       parser: 'Parser',
@@ -2143,12 +2740,12 @@ This process aggregates variables from multiple branches into a single variable 
       tokenizerRequired: 'Please add the Indexer node first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
-      splitter: 'Token',
-      splitterDescription:
+      tokenChunker: 'Token Chunker',
+      tokenChunkerDescription:
         'Split text into chunks by token length with optional delimiters and overlap.',
-      hierarchicalMergerDescription:
-        'Split documents into sections by title hierarchy with regex rules for finer control.',
-      hierarchicalMerger: 'Title',
+      titleChunkerDescription:
+        'Split documents into sections by title hierarchy. Define heading levels with regex rules, then choose Hierarchy or Group mode to control how chunks are structured.',
+      titleChunker: 'Title Chunker',
       extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
@@ -2159,15 +2756,22 @@ This process aggregates variables from multiple branches into a single variable 
         spreadsheet: 'Spreadsheet',
         image: 'Image',
         email: 'Email',
-        'text&markdown': 'Text & Markup',
-        word: 'Word',
+        markdown: 'Markdown',
+        'text&code': 'Text & Code',
+        html: 'HTML',
+        doc: 'DOC',
+        docx: 'DOCX',
         slides: 'PPTX',
         audio: 'Audio',
         video: 'Video',
       },
       fields: 'Field',
       addParser: 'Add Parser',
+      rule: 'Rule',
+      addRule: 'Add rule',
+      group: 'Group',
       hierarchy: 'Hierarchy',
+      addRegularExpressions: 'Add regular expressions',
       regularExpressions: 'Regular Expressions',
       overlappedPercent: 'Overlapped percent (%)',
       searchMethod: 'Search method',
@@ -2270,7 +2874,7 @@ Important structured information may include: names, dates, locations, events, k
         renameKeys: 'Rename keys',
       },
       ListOperationsOptions: {
-        topN: 'Top N',
+        nth: 'Nth',
         head: 'Head',
         tail: 'Tail',
         sort: 'Sort',
@@ -2278,6 +2882,9 @@ Important structured information may include: names, dates, locations, events, k
         dropDuplicates: 'Drop duplicates',
       },
       sortMethod: 'Sort method',
+      strictMode: 'Strict mode',
+      strictModeTip:
+        'Off uses lenient behavior and returns an empty result for invalid n. On uses strict behavior and raises an error for out-of-range n.',
       SortMethodOptions: {
         asc: 'Ascending',
         desc: 'Descending',
@@ -2307,6 +2914,9 @@ Important structured information may include: names, dates, locations, events, k
           'Accepted Response: The system returns an acknowledgment immediately after the request is validated, while the workflow continues to execute asynchronously in the background. /Final Response: The system returns a response only after the workflow execution is completed.',
         authMethods: 'Authentication methods',
         authType: 'Authentication type',
+        allowAnonymous: 'Allow anonymous access',
+        allowAnonymousTip:
+          'Anyone with this webhook URL can trigger the agent when this is enabled.',
         limit: 'Request frequency limit',
         per: 'Time period',
         maxBodySize: 'Maximum body size',
@@ -2338,6 +2948,15 @@ Important structured information may include: names, dates, locations, events, k
       },
       saveToMemory: 'Save to memory',
       retrievalFrom: 'Retrieval from',
+      id: 'ID',
+      state: 'State',
+      number: 'Number',
+      latestDate: 'Latest date',
+      createDate: 'Create date',
+      noDataToExport: 'No data to export',
+      success: 'Success',
+      failed: 'Failed',
+      logTitle: 'Title',
     },
     llmTools: {
       bad_calculator: {
@@ -2396,6 +3015,7 @@ Important structured information may include: names, dates, locations, events, k
       okText: 'Save',
       cancelText: 'Cancel',
       chooseDataset: 'Please select a dataset first',
+      selectLocalePlaceholder: 'Select a locale',
     },
     language: {
       english: 'English',
@@ -2408,10 +3028,12 @@ Important structured information may include: names, dates, locations, events, k
       vietnamese: 'Vietnamese',
       russian: 'Russian',
       bulgarian: 'Bulgarian',
+      arabic: 'Arabic',
+      turkish: 'Turkish',
     },
     pagination: {
       total: 'Total {{total}}',
-      page: '{{page}} /Page',
+      page: '{{page}} / Page',
     },
     dataflowParser: {
       result: 'Result',
@@ -2488,6 +3110,8 @@ Important structured information may include: names, dates, locations, events, k
       notFoundSearch: 'Search app not found',
       memoryTitle: 'No memory created yet',
       notFoundMemory: 'Memory not found',
+      skillsTitle: 'No skill space created yet',
+      notFoundSkills: 'Skill space not found',
       addNow: 'Add Now',
     },
 
@@ -2504,6 +3128,7 @@ Important structured information may include: names, dates, locations, events, k
       import: 'Import',
       description: 'Description',
       noDescription: 'No description',
+      none: 'None',
 
       resourceType: {
         dataset: 'Dataset',

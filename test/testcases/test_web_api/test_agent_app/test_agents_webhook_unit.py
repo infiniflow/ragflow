@@ -60,7 +60,7 @@ class _DummyRequest:
     def __init__(
         self,
         *,
-        path="/api/v1/webhook/agent-1",
+        path="/api/v1/agents/agent-1/webhook",
         method="POST",
         headers=None,
         content_length=0,
@@ -167,6 +167,12 @@ def _default_webhook_params(
     }
 
 
+def _anonymous_security(**overrides):
+    security = {"auth_type": "none", "allow_anonymous": True}
+    security.update(overrides)
+    return security
+
+
 def _make_webhook_cvs(module, *, params=None, dsl=None, canvas_category=None):
     if dsl is None:
         if params is None:
@@ -193,24 +199,49 @@ def _patch_background_task(monkeypatch, module):
     monkeypatch.setattr(module.asyncio, "create_task", _fake_create_task)
 
 
-def _load_agents_app(monkeypatch):
+def _load_agents_app(monkeypatch, *, target="rest"):
     repo_root = Path(__file__).resolve().parents[4]
 
     common_pkg = ModuleType("common")
     common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
+    settings_mod = ModuleType("common.settings")
+    settings_mod.DATABASE_TYPE = "mysql"
+    settings_mod.docStoreConn = SimpleNamespace(
+        index_exist=lambda *_args, **_kwargs: False,
+        delete=lambda *_args, **_kwargs: None,
+    )
+    common_pkg.settings = settings_mod
+    monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
 
     agent_pkg = ModuleType("agent")
-    agent_pkg.__path__ = []
+    agent_pkg.__path__ = [str(repo_root / "agent")]
     canvas_mod = ModuleType("agent.canvas")
     canvas_mod.Canvas = _StubCanvas
+    component_mod = ModuleType("agent.component")
+    component_mod.LLM = type("_StubAgentLLM", (), {})
+    dsl_migration_mod = ModuleType("agent.dsl_migration")
+    dsl_migration_mod.normalize_chunker_dsl = lambda dsl: dsl
     agent_pkg.canvas = canvas_mod
+    agent_pkg.component = component_mod
+    agent_pkg.dsl_migration = dsl_migration_mod
     monkeypatch.setitem(sys.modules, "agent", agent_pkg)
     monkeypatch.setitem(sys.modules, "agent.canvas", canvas_mod)
+    monkeypatch.setitem(sys.modules, "agent.component", component_mod)
+    monkeypatch.setitem(sys.modules, "agent.dsl_migration", dsl_migration_mod)
 
     services_pkg = ModuleType("api.db.services")
     services_pkg.__path__ = []
     monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
+
+    db_models_mod = ModuleType("api.db.db_models")
+    db_models_mod.Task = type("_StubTask", (), {"doc_id": "doc_id"})
+    db_models_mod.APIToken = type(
+        "_StubAPIToken",
+        (),
+        {"query": staticmethod(lambda **_kwargs: [])},
+    )
+    monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
 
     canvas_service_mod = ModuleType("api.db.services.canvas_service")
 
@@ -222,6 +253,10 @@ def _load_agents_app(monkeypatch):
         @staticmethod
         def get_list(*_args, **_kwargs):
             return []
+
+        @staticmethod
+        def get_by_tenant_ids(*_args, **_kwargs):
+            return [], 0
 
         @staticmethod
         def save(**_kwargs):
@@ -239,9 +274,47 @@ def _load_agents_app(monkeypatch):
         def get_by_id(_id):
             return False, None
 
+        @staticmethod
+        def get_by_canvas_id(_id):
+            return False, None
+
+        @staticmethod
+        def accessible(*_args, **_kwargs):
+            return True
+
     canvas_service_mod.UserCanvasService = _StubUserCanvasService
+    canvas_service_mod.CanvasTemplateService = type("_StubCanvasTemplateService", (), {})
+    canvas_service_mod.completion = lambda *_args, **_kwargs: None
+    canvas_service_mod.completion_openai = lambda *_args, **_kwargs: None
     monkeypatch.setitem(sys.modules, "api.db.services.canvas_service", canvas_service_mod)
     services_pkg.canvas_service = canvas_service_mod
+
+    api_service_mod = ModuleType("api.db.services.api_service")
+
+    class _StubAPI4ConversationService:
+        @staticmethod
+        def get_names(*_args, **_kwargs):
+            return []
+
+        @staticmethod
+        def get_list(*_args, **_kwargs):
+            return 0, []
+
+    api_service_mod.API4ConversationService = _StubAPI4ConversationService
+    monkeypatch.setitem(sys.modules, "api.db.services.api_service", api_service_mod)
+    services_pkg.api_service = api_service_mod
+
+    document_service_mod = ModuleType("api.db.services.document_service")
+    document_service_mod.DocumentService = type(
+        "_StubDocumentService",
+        (),
+        {
+            "clear_chunk_num_when_rerun": staticmethod(lambda *_args, **_kwargs: True),
+            "update_by_id": staticmethod(lambda *_args, **_kwargs: True),
+        },
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.document_service", document_service_mod)
+    services_pkg.document_service = document_service_mod
 
     file_service_mod = ModuleType("api.db.services.file_service")
 
@@ -253,6 +326,38 @@ def _load_agents_app(monkeypatch):
     file_service_mod.FileService = _StubFileService
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
     services_pkg.file_service = file_service_mod
+
+    knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
+    knowledgebase_service_mod.KnowledgebaseService = type(
+        "_StubKnowledgebaseService",
+        (),
+        {"query": staticmethod(lambda **_kwargs: [])},
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
+    services_pkg.knowledgebase_service = knowledgebase_service_mod
+
+    pipeline_log_service_mod = ModuleType("api.db.services.pipeline_operation_log_service")
+    pipeline_log_service_mod.PipelineOperationLogService = type(
+        "_StubPipelineOperationLogService",
+        (),
+        {
+            "get_documents_info": staticmethod(lambda *_args, **_kwargs: []),
+            "update_by_id": staticmethod(lambda *_args, **_kwargs: True),
+        },
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.pipeline_operation_log_service", pipeline_log_service_mod)
+    services_pkg.pipeline_operation_log_service = pipeline_log_service_mod
+
+    task_service_mod = ModuleType("api.db.services.task_service")
+    task_service_mod.CANVAS_DEBUG_DOC_ID = "debug-doc-id"
+    task_service_mod.TaskService = type(
+        "_StubTaskService",
+        (),
+        {"filter_delete": staticmethod(lambda *_args, **_kwargs: True)},
+    )
+    task_service_mod.queue_dataflow = lambda *_args, **_kwargs: (True, "")
+    monkeypatch.setitem(sys.modules, "api.db.services.task_service", task_service_mod)
+    services_pkg.task_service = task_service_mod
 
     canvas_version_mod = ModuleType("api.db.services.user_canvas_version")
 
@@ -290,6 +395,11 @@ def _load_agents_app(monkeypatch):
 
     user_service_mod = ModuleType("api.db.services.user_service")
 
+    class _StubTenantService:
+        @staticmethod
+        def get_joined_tenants_by_user_id(_tenant_id):
+            return []
+
     class _StubUserService:
         @staticmethod
         def query(**_kwargs):
@@ -299,15 +409,23 @@ def _load_agents_app(monkeypatch):
         def get_by_id(_id):
             return False, None
 
+    user_service_mod.TenantService = _StubTenantService
     user_service_mod.UserService = _StubUserService
     monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
     services_pkg.user_service = user_service_mod
+    services_pkg.TenantService = _StubTenantService
     services_pkg.UserService = _StubUserService
 
     # Stub api.apps package to prevent api/apps/__init__.py from executing
     # (it triggers heavy imports like quart, settings, DB connections).
     api_apps_pkg = ModuleType("api.apps")
     api_apps_pkg.__path__ = []
+    api_apps_pkg.current_user = SimpleNamespace(id="tenant-1")
+
+    def _identity_decorator(func):
+        return func
+
+    api_apps_pkg.login_required = _identity_decorator
     monkeypatch.setitem(sys.modules, "api.apps", api_apps_pkg)
 
     api_apps_services_pkg = ModuleType("api.apps.services")
@@ -354,7 +472,23 @@ def _load_agents_app(monkeypatch):
     redis_mod.REDIS_CONN = redis_obj
     monkeypatch.setitem(sys.modules, "rag.utils.redis_conn", redis_mod)
 
-    module_path = repo_root / "api" / "apps" / "sdk" / "agents.py"
+    rag_pkg = ModuleType("rag")
+    rag_pkg.__path__ = []
+    rag_flow_pkg = ModuleType("rag.flow")
+    rag_flow_pkg.__path__ = []
+    rag_flow_pipeline_mod = ModuleType("rag.flow.pipeline")
+    rag_flow_pipeline_mod.Pipeline = type("_StubPipeline", (), {})
+    rag_nlp_pkg = ModuleType("rag.nlp")
+    rag_search_mod = ModuleType("rag.nlp.search")
+    rag_search_mod.index_name = lambda tenant_id: f"idx-{tenant_id}"
+    rag_nlp_pkg.search = rag_search_mod
+    monkeypatch.setitem(sys.modules, "rag", rag_pkg)
+    monkeypatch.setitem(sys.modules, "rag.flow", rag_flow_pkg)
+    monkeypatch.setitem(sys.modules, "rag.flow.pipeline", rag_flow_pipeline_mod)
+    monkeypatch.setitem(sys.modules, "rag.nlp", rag_nlp_pkg)
+    monkeypatch.setitem(sys.modules, "rag.nlp.search", rag_search_mod)
+
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "agent_api.py"
     spec = importlib.util.spec_from_file_location("test_agents_webhook_unit", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -374,27 +508,35 @@ def _assert_bad_request(res, expected_substring):
 def test_agents_crud_unit_branches(monkeypatch):
     module = _load_agents_app(monkeypatch)
 
+    monkeypatch.setattr(module.TenantService, "get_joined_tenants_by_user_id", lambda _tenant_id: [])
     monkeypatch.setattr(
         module,
         "request",
-        SimpleNamespace(args={"id": "missing", "title": "missing", "desc": "false", "page": "1", "page_size": "10"}),
+        SimpleNamespace(args={"owner_ids": "other-tenant", "desc": "false", "page": "1", "page_size": "10"}),
     )
-    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [])
     res = module.list_agents.__wrapped__("tenant-1")
-    assert res["code"] == module.RetCode.DATA_ERROR
-    assert "doesn't exist" in res["message"]
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+    assert "authorized owner_ids" in res["message"]
 
     captured = {}
 
-    def fake_get_list(_tenant_id, _page, _page_size, _orderby, desc, *_rest):
+    def fake_get_by_tenant_ids(owner_ids, tenant_id, page, page_size, orderby, desc, keywords, canvas_category, tags):
+        captured["owner_ids"] = owner_ids
+        captured["tenant_id"] = tenant_id
+        captured["page"] = page
+        captured["page_size"] = page_size
+        captured["orderby"] = orderby
         captured["desc"] = desc
-        return [{"id": "agent-1"}]
+        captured["keywords"] = keywords
+        captured["canvas_category"] = canvas_category
+        captured["tags"] = tags
+        return [{"id": "agent-1"}], 1
 
-    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [{"id": "agent-1"}])
-    monkeypatch.setattr(module.UserCanvasService, "get_list", fake_get_list)
+    monkeypatch.setattr(module.UserCanvasService, "get_by_tenant_ids", fake_get_by_tenant_ids)
     monkeypatch.setattr(module, "request", SimpleNamespace(args={"desc": "true"}))
     res = module.list_agents.__wrapped__("tenant-1")
     assert res["code"] == module.RetCode.SUCCESS
+    assert captured["owner_ids"] == ["tenant-1"]
     assert captured["desc"] is True
 
     async def req_no_dsl():
@@ -433,12 +575,22 @@ def test_agents_crud_unit_branches(monkeypatch):
         return {"dsl": {"nodes": []}, "title": "  webhook-agent  ", "unused": None}
 
     monkeypatch.setattr(module, "get_request_json", req_update)
-    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: False)
-    res = _run(module.update_agent.__wrapped__("tenant-1", "agent-1"))
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_a, **_kw: False)
+
+    @module._require_canvas_access_async
+    async def _dummy_update(agent_id, tenant_id):
+        return module.get_json_result(data=True)
+
+    res = _run(_dummy_update(agent_id="agent-1", tenant_id="tenant-1"))
     assert res["code"] == module.RetCode.OPERATING_ERROR
 
-    calls = {"update": 0, "save_or_replace_latest": 0}
-    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: True)
+    calls = {"update": 0, "save_or_replace_latest": 0, "replace_for_set": 0}
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_a, **_kw: True)
+    monkeypatch.setattr(
+        module.UserCanvasService,
+        "get_by_id",
+        lambda _id: (True, SimpleNamespace(title="agent-1", canvas_category=module.CanvasCategory.Agent)),
+    )
     monkeypatch.setattr(
         module.UserCanvasService,
         "update_by_id",
@@ -449,12 +601,22 @@ def test_agents_crud_unit_branches(monkeypatch):
         "save_or_replace_latest",
         lambda *_args, **_kwargs: calls.__setitem__("save_or_replace_latest", calls["save_or_replace_latest"] + 1),
     )
-    res = _run(module.update_agent.__wrapped__("tenant-1", "agent-1"))
+    monkeypatch.setattr(
+        module.CanvasReplicaService,
+        "replace_for_set",
+        lambda **_kwargs: calls.__setitem__("replace_for_set", calls["replace_for_set"] + 1) or True,
+    )
+    res = _run(module.update_agent.__wrapped__("agent-1", "tenant-1"))
     assert res["code"] == module.RetCode.SUCCESS
-    assert calls == {"update": 1, "save_or_replace_latest": 1}
+    assert calls == {"update": 1, "save_or_replace_latest": 1, "replace_for_set": 1}
 
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: False)
-    res = module.delete_agent.__wrapped__("tenant-1", "agent-1")
+
+    @module._require_canvas_owner_sync
+    def _dummy_delete(agent_id, tenant_id):
+        return module.get_json_result(data=True)
+
+    res = _dummy_delete(agent_id="agent-1", tenant_id="tenant-1")
     assert res["code"] == module.RetCode.OPERATING_ERROR
 
 
@@ -498,7 +660,15 @@ def test_webhook_security_dispatch(monkeypatch):
         _DummyRequest(headers={"Content-Type": "application/json"}, json_body={}, args={"a": "b"}),
     )
 
-    for security in ({}, {"auth_type": "none"}):
+    for security, message in (
+        ({}, "Webhook security is required"),
+        ({"auth_type": "none"}, "Anonymous webhook access requires allow_anonymous"),
+    ):
+        cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=security))
+        monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id, _cvs=cvs: (True, _cvs))
+        _assert_bad_request(_run(module.webhook("agent-1")), message)
+
+    for security in (_anonymous_security(), _anonymous_security(allow_anonymous="true")):
         cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=security))
         monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id, _cvs=cvs: (True, _cvs))
         res = _run(module.webhook("agent-1"))
@@ -511,6 +681,30 @@ def test_webhook_security_dispatch(monkeypatch):
 
 
 @pytest.mark.p2
+def test_webhook_test_requires_owner(monkeypatch):
+    module = _load_agents_app(monkeypatch)
+    _patch_background_task(monkeypatch, module)
+
+    monkeypatch.setattr(
+        module,
+        "request",
+        _DummyRequest(path="/api/v1/agents/agent-1/webhook/test", headers={"Content-Type": "application/json"}, json_body={}),
+    )
+
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [])
+    denied = _run(module.webhook_test(agent_id="agent-1"))
+    assert denied["code"] == module.RetCode.OPERATING_ERROR
+    assert "Only the owner" in denied["message"]
+
+    cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=_anonymous_security()))
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [cvs])
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
+    allowed = _run(module.webhook_test(agent_id="agent-1"))
+    assert hasattr(allowed, "status_code")
+    assert allowed.status_code == 200
+
+
+@pytest.mark.p2
 def test_webhook_max_body_size(monkeypatch):
     module = _load_agents_app(monkeypatch)
     _patch_background_task(monkeypatch, module)
@@ -518,18 +712,18 @@ def test_webhook_max_body_size(monkeypatch):
     base_request = _DummyRequest(headers={"Content-Type": "application/json"}, json_body={})
     monkeypatch.setattr(module, "request", base_request)
 
-    cvs = _make_webhook_cvs(module, params=_default_webhook_params(security={"auth_type": "none"}))
+    cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=_anonymous_security()))
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
     res = _run(module.webhook("agent-1"))
     assert hasattr(res, "status_code")
     assert res.status_code == 200
 
-    security = {"auth_type": "none", "max_body_size": "123"}
+    security = _anonymous_security(max_body_size="123")
     cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=security))
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
     _assert_bad_request(_run(module.webhook("agent-1")), "Invalid max_body_size format")
 
-    security = {"auth_type": "none", "max_body_size": "11mb"}
+    security = _anonymous_security(max_body_size="11mb")
     cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=security))
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
     _assert_bad_request(_run(module.webhook("agent-1")), "exceeds maximum allowed size")
@@ -539,9 +733,33 @@ def test_webhook_max_body_size(monkeypatch):
         "request",
         _DummyRequest(headers={"Content-Type": "application/json"}, json_body={}, content_length=2048),
     )
-    security = {"auth_type": "none", "max_body_size": "1kb"}
+    security = _anonymous_security(max_body_size="1kb")
     cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=security))
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
+    _assert_bad_request(_run(module.webhook("agent-1")), "Request body too large")
+
+    monkeypatch.setattr(
+        module,
+        "request",
+        _DummyRequest(headers={"Content-Type": "application/json"}, json_body={}, content_length=10 * 1024 * 1024 + 1),
+    )
+    security = _anonymous_security()
+    cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=security))
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
+    _assert_bad_request(_run(module.webhook("agent-1")), "Request body too large")
+
+    token_security = {"auth_type": "token", "token": {"token_header": "X-TOKEN", "token_value": "ok"}}
+    cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=token_security))
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
+    monkeypatch.setattr(
+        module,
+        "request",
+        _DummyRequest(
+            headers={"Content-Type": "application/json", "X-TOKEN": "ok"},
+            json_body={},
+            content_length=10 * 1024 * 1024 + 1,
+        ),
+    )
     _assert_bad_request(_run(module.webhook("agent-1")), "Request body too large")
 
 
@@ -557,14 +775,14 @@ def test_webhook_ip_whitelist(monkeypatch):
     )
 
     for whitelist in ([], ["127.0.0.0/24"], ["127.0.0.1"]):
-        security = {"auth_type": "none", "ip_whitelist": whitelist}
+        security = _anonymous_security(ip_whitelist=whitelist)
         cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=security))
         monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id, _cvs=cvs: (True, _cvs))
         res = _run(module.webhook("agent-1"))
         assert hasattr(res, "status_code"), res
         assert res.status_code == 200
 
-    security = {"auth_type": "none", "ip_whitelist": ["10.0.0.1"]}
+    security = _anonymous_security(ip_whitelist=["10.0.0.1"])
     cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=security))
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
     _assert_bad_request(_run(module.webhook("agent-1")), "is not allowed")
@@ -577,25 +795,47 @@ def test_webhook_rate_limit(monkeypatch):
 
     monkeypatch.setattr(module, "request", _DummyRequest(headers={"Content-Type": "application/json"}, json_body={}))
 
-    cvs = _make_webhook_cvs(module, params=_default_webhook_params(security={"auth_type": "none"}))
+    cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=_anonymous_security()))
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
     res = _run(module.webhook("agent-1"))
     assert hasattr(res, "status_code")
     assert res.status_code == 200
 
-    bad_limit = {"auth_type": "none", "rate_limit": {"limit": 0, "per": "minute"}}
+    module.REDIS_CONN.bucket_result = [0]
+    cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=_anonymous_security()))
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
+    _assert_bad_request(_run(module.webhook("agent-1")), "Too many requests")
+
+    module.REDIS_CONN.bucket_result = [1]
+    token_security = {"auth_type": "token", "token": {"token_header": "X-TOKEN", "token_value": "ok"}}
+    cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=token_security))
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
+    monkeypatch.setattr(
+        module,
+        "request",
+        _DummyRequest(headers={"Content-Type": "application/json", "X-TOKEN": "ok"}, json_body={}),
+    )
+    res = _run(module.webhook("agent-1"))
+    assert hasattr(res, "status_code")
+    assert res.status_code == 200
+
+    module.REDIS_CONN.bucket_result = [0]
+    _assert_bad_request(_run(module.webhook("agent-1")), "Too many requests")
+
+    module.REDIS_CONN.bucket_result = [1]
+    bad_limit = _anonymous_security(rate_limit={"limit": 0, "per": "minute"})
     cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=bad_limit))
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
     _assert_bad_request(_run(module.webhook("agent-1")), "rate_limit.limit must be > 0")
 
-    bad_per = {"auth_type": "none", "rate_limit": {"limit": 1, "per": "week"}}
+    bad_per = _anonymous_security(rate_limit={"limit": 1, "per": "week"})
     cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=bad_per))
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
     _assert_bad_request(_run(module.webhook("agent-1")), "Invalid rate_limit.per")
 
     module.REDIS_CONN.bucket_result = [0]
     module.REDIS_CONN.bucket_exc = None
-    denied = {"auth_type": "none", "rate_limit": {"limit": 1, "per": "minute"}}
+    denied = _anonymous_security(rate_limit={"limit": 1, "per": "minute"})
     cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=denied))
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
     _assert_bad_request(_run(module.webhook("agent-1")), "Too many requests")
@@ -713,7 +953,7 @@ def test_webhook_parse_request_branches(monkeypatch):
     module = _load_agents_app(monkeypatch)
     _patch_background_task(monkeypatch, module)
 
-    security = {"auth_type": "none"}
+    security = _anonymous_security()
     params = _default_webhook_params(security=security, content_types="application/json")
     cvs = _make_webhook_cvs(module, params=params)
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
@@ -779,7 +1019,7 @@ def test_webhook_parse_request_branches(monkeypatch):
 def test_webhook_canvas_constructor_exception(monkeypatch):
     module = _load_agents_app(monkeypatch)
 
-    params = _default_webhook_params(security={"auth_type": "none"})
+    params = _default_webhook_params(security=_anonymous_security())
     cvs = _make_webhook_cvs(module, params=params)
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
     monkeypatch.setattr(
@@ -803,6 +1043,11 @@ def test_webhook_canvas_constructor_exception(monkeypatch):
 @pytest.mark.p2
 def test_webhook_trace_polling_branches(monkeypatch):
     module = _load_agents_app(monkeypatch)
+    monkeypatch.setattr(
+        module.UserCanvasService,
+        "get_by_id",
+        lambda _id: (True, _CanvasRecord(canvas_category=module.CanvasCategory.Agent, dsl={}, user_id="tenant-1")),
+    )
 
     # Missing since_ts.
     monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args()))
@@ -887,7 +1132,7 @@ def test_webhook_parse_request_form_and_raw_body_paths(monkeypatch):
     module = _load_agents_app(monkeypatch)
     _patch_background_task(monkeypatch, module)
 
-    security = {"auth_type": "none"}
+    security = _anonymous_security()
 
     def _run_with(params, req):
         cvs = _make_webhook_cvs(module, params=params)
@@ -976,7 +1221,7 @@ def test_webhook_schema_extract_cast_defaults_and_validation_errors(monkeypatch)
     }
 
     params = _default_webhook_params(
-        security={"auth_type": "none"},
+        security=_anonymous_security(),
         content_types="application/json",
         schema=base_schema,
     )
@@ -1055,7 +1300,7 @@ def test_webhook_schema_extract_cast_defaults_and_validation_errors(monkeypatch)
 
     for schema, body_payload, expected_substring in failure_cases:
         params = _default_webhook_params(
-            security={"auth_type": "none"},
+            security=_anonymous_security(),
             content_types="application/json",
             schema=schema,
         )
@@ -1077,7 +1322,7 @@ def test_webhook_immediate_response_status_and_template_validation(monkeypatch):
 
     def _run_case(response_cfg):
         params = _default_webhook_params(
-            security={"auth_type": "none"},
+            security=_anonymous_security(),
             content_types="application/json",
             response=response_cfg,
         )
@@ -1140,16 +1385,17 @@ def test_webhook_background_run_success_and_error_trace_paths(monkeypatch):
 
     monkeypatch.setattr(module, "Canvas", _CanvasSuccess)
 
-    params = _default_webhook_params(security={"auth_type": "none"}, content_types="application/json")
+    params = _default_webhook_params(security=_anonymous_security(), content_types="application/json")
     cvs = _make_webhook_cvs(module, params=params)
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [cvs])
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
     monkeypatch.setattr(
         module,
         "request",
-        _DummyRequest(path="/api/v1/webhook_test/agent-1", headers={"Content-Type": "application/json"}, json_body={}),
+        _DummyRequest(path="/api/v1/agents/agent-1/webhook/test", headers={"Content-Type": "application/json"}, json_body={}),
     )
 
-    res = _run(module.webhook("agent-1"))
+    res = _run(module.webhook_test(agent_id="agent-1"))
     assert res.status_code == 200
     assert len(tasks) == 1
     _run(tasks.pop(0))
@@ -1171,8 +1417,9 @@ def test_webhook_background_run_success_and_error_trace_paths(monkeypatch):
     tasks.clear()
     redis_store.clear()
     cvs = _make_webhook_cvs(module, params=params)
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [cvs])
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id, _cvs=cvs: (True, _cvs))
-    res = _run(module.webhook("agent-1"))
+    res = _run(module.webhook_test(agent_id="agent-1"))
     assert res.status_code == 200
     _run(tasks.pop(0))
     trace_obj = json.loads(redis_store[key])
@@ -1187,8 +1434,9 @@ def test_webhook_background_run_success_and_error_trace_paths(monkeypatch):
     monkeypatch.setattr(module.REDIS_CONN, "set_obj", lambda *_args, **_kwargs: None)
     tasks.clear()
     cvs = _make_webhook_cvs(module, params=params)
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [cvs])
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id, _cvs=cvs: (True, _cvs))
-    _run(module.webhook("agent-1"))
+    _run(module.webhook_test(agent_id="agent-1"))
     _run(tasks.pop(0))
     assert any("Failed to append webhook trace" in msg for msg in log_messages)
 
@@ -1202,11 +1450,12 @@ def test_webhook_sse_success_and_exception_paths(monkeypatch):
     monkeypatch.setattr(module.REDIS_CONN, "set_obj", lambda key, obj, _ttl: redis_store.__setitem__(key, json.dumps(obj)))
 
     params = _default_webhook_params(
-        security={"auth_type": "none"},
+        security=_anonymous_security(),
         content_types="application/json",
         execution_mode="Deferred",
     )
     cvs = _make_webhook_cvs(module, params=params)
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [cvs])
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
 
     class _CanvasSSESuccess(_StubCanvas):
@@ -1220,9 +1469,9 @@ def test_webhook_sse_success_and_exception_paths(monkeypatch):
     monkeypatch.setattr(
         module,
         "request",
-        _DummyRequest(path="/api/v1/webhook_test/agent-1", headers={"Content-Type": "application/json"}, json_body={}),
+        _DummyRequest(path="/api/v1/agents/agent-1/webhook/test", headers={"Content-Type": "application/json"}, json_body={}),
     )
-    res = _run(module.webhook("agent-1"))
+    res = _run(module.webhook_test(agent_id="agent-1"))
     assert res.status_code == 201
     payload = json.loads(_run(res.get_data(as_text=True)))
     assert payload == {"message": "<think></think>Hello", "success": True, "code": 201}
@@ -1236,9 +1485,9 @@ def test_webhook_sse_success_and_exception_paths(monkeypatch):
     monkeypatch.setattr(
         module,
         "request",
-        _DummyRequest(path="/api/v1/webhook_test/agent-1", headers={"Content-Type": "application/json"}, json_body={}),
+        _DummyRequest(path="/api/v1/agents/agent-1/webhook/test", headers={"Content-Type": "application/json"}, json_body={}),
     )
-    res = _run(module.webhook("agent-1"))
+    res = _run(module.webhook_test(agent_id="agent-1"))
     assert res.status_code == 400
     payload = json.loads(_run(res.get_data(as_text=True)))
     assert payload["code"] == 400
@@ -1249,6 +1498,11 @@ def test_webhook_sse_success_and_exception_paths(monkeypatch):
 @pytest.mark.p2
 def test_webhook_trace_encoded_id_generation(monkeypatch):
     module = _load_agents_app(monkeypatch)
+    monkeypatch.setattr(
+        module.UserCanvasService,
+        "get_by_id",
+        lambda _id: (True, _CanvasRecord(canvas_category=module.CanvasCategory.Agent, dsl={}, user_id="tenant-1")),
+    )
 
     webhooks_obj = {
         "webhooks": {

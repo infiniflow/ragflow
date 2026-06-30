@@ -156,7 +156,7 @@ class TestTableParserDatasetChat:
             except Exception as e:
                 print(f"[Teardown] Warning: Failed to delete chat assistant: {e}")
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "question, expected_answer_pattern",
         [

@@ -188,6 +188,10 @@ interface MultiSelectProps
   showSelectAll?: boolean;
   popoverTestId?: string;
   optionTestIdPrefix?: string;
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  isSearching?: boolean;
+  shouldFilter?: boolean;
 }
 
 export const MultiSelect = React.forwardRef<
@@ -209,6 +213,10 @@ export const MultiSelect = React.forwardRef<
       showSelectAll = true,
       popoverTestId,
       optionTestIdPrefix,
+      searchValue,
+      onSearchChange,
+      isSearching = false,
+      shouldFilter,
       ...props
     },
     ref,
@@ -239,6 +247,33 @@ export const MultiSelect = React.forwardRef<
         'options' in option ? option.options : [option],
       );
     }, [options]);
+
+    const disabledValueSet = React.useMemo(() => {
+      return new Set(
+        flatOptions
+          .filter((option) => option.disabled)
+          .map((option) => option.value),
+      );
+    }, [flatOptions]);
+
+    const preserveDisabledValues = React.useCallback(
+      (values: string[]) => {
+        const disabledSelectedValues = selectedValues.filter((value) =>
+          disabledValueSet.has(value),
+        );
+
+        return Array.from(
+          new Set<string>([...disabledSelectedValues, ...values]),
+        );
+      },
+      [disabledValueSet, selectedValues],
+    );
+
+    const canRemoveValue = React.useCallback(
+      (value: string) => !disabledValueSet.has(value),
+      [disabledValueSet],
+    );
+
     const handleInputKeyDown = (
       event: React.KeyboardEvent<HTMLInputElement>,
     ) => {
@@ -246,13 +281,26 @@ export const MultiSelect = React.forwardRef<
         setIsPopoverOpen(true);
       } else if (event.key === 'Backspace' && !event.currentTarget.value) {
         const newSelectedValues = [...selectedValues];
-        newSelectedValues.pop();
+        const removableIndex = [...newSelectedValues]
+          .reverse()
+          .findIndex((value) => canRemoveValue(value));
+        if (removableIndex < 0) {
+          return;
+        }
+        newSelectedValues.splice(
+          newSelectedValues.length - 1 - removableIndex,
+          1,
+        );
         setSelectedValues(newSelectedValues);
         onValueChange(newSelectedValues);
       }
     };
 
     const toggleOption = (option: string) => {
+      if (disabledValueSet.has(option)) {
+        return;
+      }
+
       const newSelectedValues = selectedValues.includes(option)
         ? selectedValues.filter((value) => value !== option)
         : [...selectedValues, option];
@@ -261,8 +309,9 @@ export const MultiSelect = React.forwardRef<
     };
 
     const handleClear = () => {
-      setSelectedValues([]);
-      onValueChange([]);
+      const nextValues = preserveDisabledValues([]);
+      setSelectedValues(nextValues);
+      onValueChange(nextValues);
     };
 
     const handleTogglePopover = () => {
@@ -270,7 +319,9 @@ export const MultiSelect = React.forwardRef<
     };
 
     const clearExtraOptions = () => {
-      const newSelectedValues = selectedValues.slice(0, maxCount);
+      const newSelectedValues = preserveDisabledValues(
+        selectedValues.slice(0, maxCount),
+      );
       setSelectedValues(newSelectedValues);
       onValueChange(newSelectedValues);
     };
@@ -279,7 +330,9 @@ export const MultiSelect = React.forwardRef<
       if (selectedValues.length === flatOptions.length) {
         handleClear();
       } else {
-        const allValues = flatOptions.map((option) => option.value);
+        const allValues = preserveDisabledValues(
+          flatOptions.map((option) => option.value),
+        );
         setSelectedValues(allValues);
         onValueChange(allValues);
       }
@@ -325,13 +378,15 @@ export const MultiSelect = React.forwardRef<
                           <div className="max-w-28 text-ellipsis overflow-hidden">
                             {option?.label}
                           </div>
-                          <XCircle
-                            className="h-4 w-4 cursor-pointer"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              toggleOption(value);
-                            }}
-                          />
+                          {canRemoveValue(value) && (
+                            <XCircle
+                              className="h-4 w-4 cursor-pointer"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleOption(value);
+                              }}
+                            />
+                          )}
                         </div>
                       </Badge>
                     );
@@ -387,15 +442,19 @@ export const MultiSelect = React.forwardRef<
           onEscapeKeyDown={() => setIsPopoverOpen(false)}
           data-testid={popoverTestId}
         >
-          <Command className="p-5 pb-8">
-            {options && options.length > 0 && (
+          <Command className="p-5 pb-8" shouldFilter={shouldFilter}>
+            {((options && options.length > 0) || onSearchChange) && (
               <CommandInput
                 placeholder={t('common.search') + '...'}
                 onKeyDown={handleInputKeyDown}
+                value={searchValue}
+                onValueChange={onSearchChange}
               />
             )}
             <CommandList className="mt-2">
-              <CommandEmpty>No results found.</CommandEmpty>
+              <CommandEmpty>
+                {isSearching ? t('common.searching') : t('common.noDataFound')}
+              </CommandEmpty>
               <CommandGroup>
                 {showSelectAll && options && options.length > 0 && (
                   <CommandItem
@@ -426,7 +485,11 @@ export const MultiSelect = React.forwardRef<
                           key={option.value}
                           isSelected={isSelected}
                           toggleOption={toggleOption}
-                          optionTestId={optionTestIdPrefix ? `${optionTestIdPrefix}-option-${idx}` : undefined}
+                          optionTestId={
+                            optionTestIdPrefix
+                              ? `${optionTestIdPrefix}-option-${idx}`
+                              : undefined
+                          }
                         ></MultiCommandItem>
                       );
                     },
@@ -444,7 +507,11 @@ export const MultiSelect = React.forwardRef<
                           key={option.value}
                           isSelected={isSelected}
                           toggleOption={toggleOption}
-                          optionTestId={optionTestIdPrefix ? `${optionTestIdPrefix}-option-${optIdx}` : undefined}
+                          optionTestId={
+                            optionTestIdPrefix
+                              ? `${optionTestIdPrefix}-option-${optIdx}`
+                              : undefined
+                          }
                         ></MultiCommandItem>
                       );
                     })}
@@ -459,7 +526,7 @@ export const MultiSelect = React.forwardRef<
                         onSelect={handleClear}
                         className="flex-1 justify-center cursor-pointer"
                       >
-                        Clear
+                        {t('common.clear')}
                       </CommandItem>
                       <Separator
                         orientation="vertical"

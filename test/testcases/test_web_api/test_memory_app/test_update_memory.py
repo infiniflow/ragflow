@@ -16,7 +16,7 @@
 import re
 
 import pytest
-from test_web_api.common import update_memory
+from test_common import update_memory
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils import encode_avatar
@@ -105,6 +105,14 @@ class TestMemoryUpdate:
         res = update_memory(WebApiAuth, memory_ids[0], payload)
         assert res["code"] == 0, res
         assert res["data"]["llm_id"] == llm_id, res
+
+    @pytest.mark.p2
+    def test_reject_direct_tenant_model_ids(self, WebApiAuth, add_memory_func):
+        memory_ids = add_memory_func
+        payload = {"tenant_llm_id": 999999, "tenant_embd_id": 999998}
+        res = update_memory(WebApiAuth, memory_ids[0], payload)
+        assert res["code"] == 101, res
+        assert "Do not set tenant_llm_id or tenant_embd_id directly" in res["message"], res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

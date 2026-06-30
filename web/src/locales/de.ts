@@ -29,6 +29,7 @@ export default {
       traditionalChinese: 'Traditionelles Chinesisch',
       russian: 'Russisch',
       bulgarian: 'Bulgarisch',
+      arabic: 'Arabisch',
       german: 'Deutsch',
       language: 'Sprache',
       languageMessage: 'Bitte geben Sie Ihre Sprache ein!',
@@ -67,6 +68,7 @@ export default {
       },
       selected: 'Ausgewählt',
       seeAll: 'Alle anzeigen',
+      owner: 'Eigentümer',
     },
     login: {
       loginTitle: 'Melden Sie sich bei Ihrem Konto an',
@@ -193,7 +195,6 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
     },
     knowledgeDetails: {
       metadata: {
-        type: 'Typ',
         fieldNameInvalid:
           'Feldname darf nur Buchstaben oder Unterstriche enthalten.',
         builtIn: 'Eingebaut',
@@ -237,6 +238,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
         value: 'Wert',
         action: 'Aktion',
         field: 'Feld',
+        type: 'Typ',
         description: 'Beschreibung',
         fieldName: 'Feldname',
         editMetadata: 'Metadaten bearbeiten',
@@ -370,7 +372,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       changeSpecificCategory: 'Spezifische Kategorie ändern',
       uploadTitle: 'Ziehen Sie Ihre Datei hierher, um sie hochzuladen',
       uploadDescription:
-        'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Für lokal bereitgestelltes RAGFlow: Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto. Für demo.ragflow.io: Die maximale Dateigröße pro Upload beträgt 10 MB, wobei jede Datei nicht größer als 10 MB sein darf und maximal 128 Dateien pro Konto erlaubt sind.',
+        'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Für lokal bereitgestelltes RAGFlow: Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto. Für cloud.ragflow.io: Die maximale Dateigröße pro Upload beträgt 10 MB, wobei jede Datei nicht größer als 10 MB sein darf und maximal 128 Dateien pro Konto erlaubt sind.',
       chunk: 'Chunk',
       bulk: 'Masse',
       cancel: 'Abbrechen',
@@ -686,8 +688,9 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'Erstellen Sie einen Wissensgraph über Dateiabschnitte der aktuellen Wissensbasis, um die Beantwortung von Fragen mit mehreren Schritten und verschachtelter Logik zu verbessern. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/construct_knowledge_graph.',
       graphRagMethod: 'Methode',
       graphRagMethodTip: `
-      Light: (Standard) Verwendet von github.com/HKUDS/LightRAG bereitgestellte Prompts, um Entitäten und Beziehungen zu extrahieren. Diese Option verbraucht weniger Tokens, weniger Speicher und weniger Rechenressourcen.</br>
-      General: Verwendet von github.com/microsoft/graphrag bereitgestellte Prompts, um Entitäten und Beziehungen zu extrahieren`,
+      Light: (Standard) Verwendet von github.com/HKUDS/LightRAG bereitgestellte Prompts, um Entitäten und Beziehierungen zu extrahieren. Diese Option verbraucht weniger Tokens, weniger Speicher und weniger Rechenressourcen.</br>
+      General: Verwendet von github.com/microsoft/graphrag bereitgestellte Prompts, um Entitäten und Beziehierungen zu extrahieren.</br>
+      NER: Verwendet spaCy NER und regelbasierte Schlüsselwortextraktion, um Entitäten und Beziehungen zu extrahieren. Für die Extraktion selbst ist kein LLM erforderlich, was es schnell und ressourceneffizient macht.`,
       resolution: 'Entitätsauflösung',
       resolutionTip: `Ein Entitäts-Deduplizierungsschalter. Wenn aktiviert, wird das LLM ähnliche Entitäten kombinieren - z.B. '2025' und 'das Jahr 2025' oder 'IT' und 'Informationstechnologie' - um einen genaueren Graphen zu konstruieren`,
       community: 'Generierung von Gemeinschaftsberichten',
@@ -705,6 +708,8 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         text: 'Text',
       },
       chunk: 'Chunk',
+      createChunk: 'Chunk erstellen',
+      editChunk: 'Chunk bearbeiten',
       bulk: 'Masse',
       selectAll: 'Alle auswählen',
       enabledSelected: 'Ausgewählte aktivieren',
@@ -735,6 +740,9 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       delete: 'Löschen',
     },
     chat: {
+      chatSupport: 'Chat-Support',
+      replyInstantly: 'Wir antworten in der Regel sofort',
+      typeYourMessage: 'Nachricht eingeben...',
       messagePlaceholder: 'Geben Sie hier Ihre Nachricht ein...',
       exit: 'Verlassen',
       multipleModels: 'Mehrere Modelle',
@@ -912,6 +920,12 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'Während der Analyse des Dokuments wurden Inhaltsverzeichnisinformationen generiert (siehe Option "Inhaltsverzeichnis-Extraktion aktivieren" in der allgemeinen Methode). Dies ermöglicht es dem großen Modell, Inhaltsverzeichniselemente zurückzugeben, die für die Abfrage des Benutzers relevant sind, und diese Elemente zu verwenden, um verwandte Chunks abzurufen und diese Chunks während des Sortiervorgangs zu gewichten. Dieser Ansatz leitet sich von der Nachahmung der Verhaltenslogik ab, wie Menschen in Büchern nach Wissen suchen.',
       batchDeleteSessions: 'Stapel löschen',
       deleteSelectedConfirm: 'Die ausgewählten {count} Sitzung(en) löschen?',
+      showChunkMetadata: 'Chunk-Metadaten anzeigen',
+      showChunkMetadataTip:
+        'Dokumentmetadaten (z. B. Titel, Seitenzahl, Uploaddatum) neben den abgerufenen Textabschnitten anzeigen',
+      metadataFields: 'Metadatenfelder',
+      metadataFieldsTip:
+        'Wählen Sie aus, welche Metadatenfelder für jeden Abschnitt angezeigt werden sollen',
     },
     setting: {
       deleteModel: 'Modell löschen',
@@ -1010,12 +1024,15 @@ Beispiel: Virtual Hosted Style`,
         'Kommagetrennte Repository-Slugs, z. B.: repo-one,repo-two',
       connectorNameTip:
         'Geben Sie einen aussagekräftigen Namen für den Connector an',
+      syncDeletedFiles: 'Gelöschte Dateien synchronisieren',
       boxDescription:
         'Verbinden Sie Ihr Box-Laufwerk, um Dateien und Ordner zu synchronisieren.',
       githubDescription:
         'Verbinden Sie GitHub, um Pull Requests und Issues zur Recherche zu synchronisieren.',
       airtableDescription:
         'Verbinden Sie sich mit Airtable und synchronisieren Sie Dateien aus einer bestimmten Tabelle in einem vorgesehenen Arbeitsbereich.',
+      dingtalkAITableDescription:
+        'Verbinden Sie sich mit Dingtalk AI Table und synchronisieren Sie Datensätze aus einer bestimmten Tabelle.',
       asanaDescription:
         'Verbinden Sie sich mit Asana und synchronisieren Sie Dateien aus einem bestimmten Arbeitsbereich.',
       imapDescription:
@@ -1034,19 +1051,18 @@ Beispiel: Virtual Hosted Style`,
         'Die vollstaendige URL Ihres SeaFile-Servers inklusive Protokoll. Beispiel: https://seafile.example.com - Kein abschliessender Schraegstrich und kein Pfad nach der Domain.',
       seafileAccountScopeTip:
         'Synchronisiert alle Bibliotheken, die für den unten angegebenen Konto-API-Token sichtbar sind.',
-      seafileTokenPanelHeading: 
+      seafileTokenPanelHeading:
         'Wählen Sie eine der folgenden Authentifizierungsmethoden:',
-      seafileTokenPanelAccountBullet: 
+      seafileTokenPanelAccountBullet:
         '- gewährt Zugriff auf alle Ihre Bibliotheken.',
-      seafileTokenPanelLibraryBullet: 
+      seafileTokenPanelLibraryBullet:
         '- auf eine einzelne Bibliothek beschränkt (sicherer).',
       seafileValidationAccountTokenRequired:
         'Konto-API-Token ist erforderlich für den Umfang „Gesamtes Konto"',
       seafileValidationTokenRequired:
         'Geben Sie entweder einen Konto-API-Token oder einen Bibliotheks-Token an',
-      seafileValidationLibraryIdRequired: 
-        'Bibliotheks-ID ist erforderlich',
-      seafileValidationDirectoryPathRequired: 
+      seafileValidationLibraryIdRequired: 'Bibliotheks-ID ist erforderlich',
+      seafileValidationDirectoryPathRequired:
         'Verzeichnispfad ist erforderlich',
       seafileSyncScopeTip:
         'Legt fest, was synchronisiert wird: ' +
@@ -1178,6 +1194,8 @@ Beispiel: Virtual Hosted Style`,
         'Wenn Ihr API-Schlüssel von OpenAI stammt, ignorieren Sie dies. Andere Zwischenanbieter geben diese Basis-URL mit dem API-Schlüssel an.',
       tongyiBaseUrlTip:
         'Für chinesische Benutzer ist keine Eingabe erforderlich oder verwenden Sie https://dashscope.aliyuncs.com/compatible-mode/v1. Für internationale Benutzer verwenden Sie https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Für chinesische Benutzer ist keine Eingabe erforderlich oder verwenden Sie https://api.siliconflow.cn/v1. Für internationale Benutzer verwenden Sie https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Nur für internationale Benutzer, bitte Hinweis beachten)',
       minimaxBaseUrlTip:
@@ -1234,8 +1252,8 @@ Beispiel: Virtual Hosted Style`,
       FishAudioLink: 'Wie verwende ich FishAudio',
       TencentCloudLink: 'Wie verwende ich TencentCloud ASR',
       volcModelNameMessage: 'Bitte geben Sie Ihren Modellnamen ein!',
-      addEndpointID: 'EndpointID des Modells',
-      endpointIDMessage: 'Bitte geben Sie Ihre EndpointID des Modells ein',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Bitte geben Sie Ihre Model ID ein',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Bitte geben Sie Ihren ARK_API_KEY ein',
       bedrockModelNameMessage: 'Bitte geben Sie Ihren Modellnamen ein!',
@@ -1428,7 +1446,7 @@ Beispiel: Virtual Hosted Style`,
       directory: 'Verzeichnis',
       uploadTitle: 'Ziehen Sie Ihre Datei hierher, um sie hochzuladen',
       uploadDescription:
-        'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Für lokal bereitgestelltes RAGFlow: Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto. Für demo.ragflow.io: Die maximale Dateigröße pro Upload beträgt 10 MB, wobei jede Datei nicht größer als 10 MB sein darf und maximal 128 Dateien pro Konto erlaubt sind.',
+        'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Für lokal bereitgestelltes RAGFlow: Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto. Für cloud.ragflow.io: Die maximale Dateigröße pro Upload beträgt 10 MB, wobei jede Datei nicht größer als 10 MB sein darf und maximal 128 Dateien pro Konto erlaubt sind.',
       local: 'Lokale Uploads',
       s3: 'S3-Uploads',
       preview: 'Vorschau',
@@ -1619,10 +1637,8 @@ Beispiel: Virtual Hosted Style`,
       searXNG: 'SearXNG',
       searXNGDescription:
         'Eine Komponente, die auf https://searxng.org/ sucht und Ihnen ermöglicht, die Anzahl der Suchergebnisse mit TopN anzugeben. Sie ergänzt die vorhandenen Wissensdatenbanken.',
-      pdfGenerator: 'Dokumentengenerator',
-      pDFGenerator: 'Dokumentengenerator',
-      pdfGeneratorDescription: `Eine Komponente, die Dokumente (PDF, DOCX, TXT) aus markdown-formatierten Inhalten mit anpassbarem Stil, Bildern und Tabellen generiert. Unterstützt: **fett**, *kursiv*, # Überschriften, - Listen, Tabellen mit | Syntax.`,
-      pDFGeneratorDescription: `Eine Komponente, die Dokumente (PDF, DOCX, TXT) aus markdown-formatierten Inhalten mit anpassbarem Stil, Bildern und Tabellen generiert. Unterstützt: **fett**, *kursiv*, # Überschriften, - Listen, Tabellen mit | Syntax.`,
+      docGenerator: 'Dokumentengenerator',
+      docGeneratorDescription: `Erzeugt eine Datei aus Markdown-Inhalten.`,
       subtitle: 'Untertitel',
       logoImage: 'Logo-Bild',
       logoPosition: 'Logo-Position',
@@ -2172,12 +2188,10 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       tokenizerRequired: 'Bitte fügen Sie zuerst den Indexer-Knoten hinzu',
       tokenizerDescription:
         'Transformiert Text in die erforderliche Datenstruktur (z.B. Vektoreinbettungen für die Embedding-Suche) abhängig von der gewählten Suchmethode.',
-      splitter: 'Token',
-      splitterDescription:
+      tokenChunkerDescription:
         'Teilt Text in Chunks nach Token-Länge mit optionalen Trennzeichen und Überlappung.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'Teilt Dokumente in Abschnitte nach Titelhierarchie mit Regex-Regeln für feinere Kontrolle.',
-      hierarchicalMerger: 'Titel',
       extractor: 'Transformer',
       extractorDescription:
         'Verwendet ein LLM, um strukturierte Erkenntnisse aus Dokument-Chunks zu extrahieren – wie Zusammenfassungen, Klassifizierungen usw.',
@@ -2189,6 +2203,8 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
         image: 'Bild',
         email: 'E-Mail',
         'text&markdown': 'Text & Markup',
+        code: 'Code',
+        html: 'HTML',
         word: 'Word',
         slides: 'PPTX',
         audio: 'Audio',
@@ -2366,6 +2382,10 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       saveToMemory: 'Im Gedächtnis speichern',
       retrievalFrom: 'Abruf von',
       tocDataSource: 'Datenquelle',
+      tags: 'Tags',
+      canvasCategory: 'Canvas-Kategorie',
+      id: 'ID',
+      logTitle: 'Titel',
     },
     llmTools: {
       bad_calculator: {
@@ -2424,6 +2444,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       okText: 'Speichern',
       cancelText: 'Abbrechen',
       chooseDataset: 'Bitte wählen Sie zuerst einen Datensatz aus',
+      selectLocalePlaceholder: 'Sprache auswählen',
     },
     language: {
       english: 'Englisch',
@@ -2436,10 +2457,12 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       vietnamese: 'Vietnamesisch',
       russian: 'Russisch',
       bulgarian: 'Bulgarisch',
+      arabic: 'Arabisch',
+      turkish: 'Türkisch',
     },
     pagination: {
       total: 'Gesamt {{total}}',
-      page: '{{page}} /Seite',
+      page: '{{page}} / Seite',
     },
     dataflowParser: {
       result: 'Ergebnis',

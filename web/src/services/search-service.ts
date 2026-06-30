@@ -1,6 +1,5 @@
 import api from '@/utils/api';
-import registerServer, { registerNextServer } from '@/utils/register-server';
-import request from '@/utils/request';
+import { registerNextServer } from '@/utils/register-server';
 
 const {
   createSearch,
@@ -13,6 +12,7 @@ const {
   getRelatedQuestionsShare,
   getSearchDetailShare,
 } = api;
+
 const methods = {
   createSearch: {
     url: createSearch,
@@ -20,16 +20,16 @@ const methods = {
   },
   getSearchList: {
     url: getSearchList,
-    method: 'post',
+    method: 'get',
   },
-  deleteSearch: { url: deleteSearch, method: 'post' },
+  deleteSearch: { url: deleteSearch, method: 'delete' },
   getSearchDetail: {
     url: getSearchDetail,
     method: 'get',
   },
   updateSearchSetting: {
     url: updateSearchSetting,
-    method: 'post',
+    method: 'put',
   },
   askShare: {
     url: askShare,
@@ -43,14 +43,13 @@ const methods = {
     url: getRelatedQuestionsShare,
     method: 'post',
   },
-
   getSearchDetailShare: {
     url: getSearchDetailShare,
     method: 'get',
   },
 } as const;
-const searchService = registerServer<keyof typeof methods>(methods, request);
-export const searchServiceNext =
-  registerNextServer<keyof typeof methods>(methods);
+
+const searchService = registerNextServer<keyof typeof methods>(methods);
+export const searchServiceNext = searchService;
 
 export default searchService;

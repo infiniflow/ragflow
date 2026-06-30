@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { INoteNode } from '@/interfaces/database/flow';
+import { INoteNode } from '@/interfaces/database/agent';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { NotebookPen } from 'lucide-react';
 import { memo } from 'react';

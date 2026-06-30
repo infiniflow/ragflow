@@ -3,7 +3,6 @@ import {
   useGetChatSearchParams,
   useUploadAndParseFile,
 } from '@/hooks/use-chat-request';
-import { generateConversationId } from '@/utils/chat';
 import { useCallback, useState } from 'react';
 import { useChatUrlParams } from './use-chat-url';
 import { useSetConversation } from './use-set-conversation';
@@ -16,7 +15,7 @@ export function useUploadFile() {
   );
   const { setConversation } = useSetConversation();
   const { conversationId, isNew } = useGetChatSearchParams();
-  const { setIsNew, setConversationBoth } = useChatUrlParams();
+  const { setConversationBoth } = useChatUrlParams();
 
   type FileUploadParameters = Parameters<
     NonNullable<FileUploadProps['onUpload']>
@@ -58,20 +57,11 @@ export function useUploadFile() {
         Array.isArray(files) &&
         files.length
       ) {
-        const currentConversationId = generateConversationId();
-
-        if (conversationId === '') {
-          setConversationBoth(currentConversationId, 'true');
-        }
-
-        const data = await setConversation(
-          files[0].name,
-          true,
-          conversationId || currentConversationId,
-        );
-        if (data.code === 0) {
-          setIsNew('');
-          handleUploadFile(files, options, data.data?.id);
+        const data = await setConversation(files[0].name);
+        if (data?.code === 0) {
+          const backendConvId = data.data.id;
+          setConversationBoth(backendConvId, '');
+          handleUploadFile(files, options, backendConvId);
         }
       } else {
         handleUploadFile(files, options);
@@ -83,7 +73,6 @@ export function useUploadFile() {
       isNew,
       setConversation,
       setConversationBoth,
-      setIsNew,
     ],
   );
 

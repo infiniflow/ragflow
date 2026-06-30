@@ -1,5 +1,5 @@
 ---
-sidebar_position: 10
+sidebar_position: 20
 slug: /faq
 sidebar_custom_props: {
   sidebarIcon: LucideCircleQuestionMark
@@ -68,11 +68,11 @@ These limitations led us to develop [Infinity](https://github.com/infiniflow/inf
 
 ---
 
-### Differences between demo.ragflow.io and a locally deployed open-source RAGFlow service?
+### Differences between cloud.ragflow.io and a locally deployed open-source RAGFlow service?
 
-demo.ragflow.io demonstrates the capabilities of RAGFlow Enterprise. Its DeepDoc models are pre-trained using proprietary data and it offers much more sophisticated team permission controls. Essentially, demo.ragflow.io serves as a preview of RAGFlow's forthcoming SaaS (Software as a Service) offering.
+cloud.ragflow.io demonstrates the capabilities of RAGFlow Enterprise. Its DeepDoc models are pre-trained using proprietary data and it offers much more sophisticated team permission controls. Essentially, cloud.ragflow.io serves as a preview of RAGFlow's forthcoming SaaS (Software as a Service) offering.
 
-You can deploy an open-source RAGFlow service and call it from a Python client or through RESTful APIs. However, this is not supported on demo.ragflow.io.
+You can deploy an open-source RAGFlow service and call it from a Python client or through RESTful APIs. However, this is not supported on cloud.ragflow.io.
 
 ---
 
@@ -147,9 +147,18 @@ When debugging your chat assistant, you can use AI search as a reference to veri
 
 ---
 
+### Get a `Request error 404: undefined` when upgrading to v0.26.2
+
+To resolve this issue, do either of the following:
+
+- Pull the latest source code from the [main branch](https://github.com/infiniflow/ragflow), then pull and start the v0.26.2 image.
+- Update `RAGFLOW_IMAGE` from `infiniflow/ragflow:latest` to `infiniflow/ragflow:v0.26.2` in the [.env file](https://github.com/infiniflow/ragflow/blob/main/docker/.env), then restart the service.
+
 ### How to build the RAGFlow image from scratch?
 
 See [Build a RAGFlow Docker image](./develop/build_docker_image.mdx).
+
+---
 
 ### Cannot access https://huggingface.co
 
@@ -182,6 +191,12 @@ To fix this issue, use https://hf-mirror.com instead:
 
 ---
 
+### `Fail to access model(Ollama/xxxxx)`
+
+Ollama may time out or fail during its first model load due to memory constraints or out-of-memory (OOM). It is best to test your local model in isolation first. If sharing hardware with other services, memory exhaustion is likely. To resolve this, switch to a smaller model or increase RAM.
+
+---
+
 ### `MaxRetryError: HTTPSConnectionPool(host='hf-mirror.com', port=443)`
 
 This error suggests that you do not have Internet access or are unable to connect to hf-mirror.com. Try the following:
@@ -192,6 +207,20 @@ This error suggests that you do not have Internet access or are unable to connec
    ```
    - ~/deepdoc:/ragflow/rag/res/deepdoc
    ```
+
+---
+
+### `RuntimeError: Unable to start Tika server.`
+
+This error is almost always caused by Java not being installed or not accessible in the environment. See [here](https://github.com/infiniflow/ragflow/issues/13194) for detailed instructions.
+
+---
+
+### `Cannot stat '/etc/nginx/conf.d/ragflow.conf.python': No such file or directory`
+
+To resolve this, either download the missing file from the corresponding tag on [GitHub](https://github.com/infiniflow/ragflow) or update `~/ragflow/docker/docker-compose.yml` as follows: 
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/docker-compose_missing.jpg)
 
 ---
 
@@ -229,6 +258,74 @@ You will not log in to RAGFlow unless the server is fully initialized. Run `dock
 Ignore this warning and continue. All system warnings can be ignored.
 
 ![](https://github.com/infiniflow/ragflow/assets/93570324/ef5a6194-084a-4fe3-bdd5-1c025b40865c)
+
+---
+
+### `xxx tasks are ahead in the queue`
+
+### For RAGFlow versions earlier than v0.26.0
+
+1. Clear the Redis task queue:
+
+```bash
+$ docker exec -it ragflow-redis /bin/bash
+# In container
+$ redis-cli -a infini_rag_flow
+# In redis-cli
+select 1
+XGROUP DESTROY rag_flow_svr_queue rag_flow_svr_task_broker
+XGROUP CREATE rag_flow_svr_queue rag_flow_svr_task_broker $ MKSTREAM
+# When CREATE raises and error:
+FLUSHDB
+```
+
+2. If the parser remains stuck at 0%, restart the RAGFlow containers using one of the following methods:
+
+```bash
+# Option 1: Restart specific container
+docekr restart docker-redis-1 docker-ragflow-cpu-1
+
+# Option 2: Recreate containers via Docker Compose
+docker compose -f docker/docker-compose.yml down
+docker compose -f docker/docker-compose.yml up -d
+
+# Option 3: Reset all Docker containers
+# WARNING: Run this ONLY if your environment contains no other non-RAGFlow containers.
+docker stop $(docker ps -aq)
+docker rm $(docker ps -aq)
+```
+
+### For RAGFlow v0.26.0 and later
+
+1. Clear the Redis task queue:
+
+```bash
+$ docker exec -it ragflow-redis /bin/bash
+# In container
+$ redis-cli -a infini_rag_flow
+# In redis-cli
+select 1
+XGROUP DESTROY te.0.common_queue te.0.common_task_broker
+XGROUP CREATE te.0.common_queue te.0.common_task_broker $ MKSTREAM
+# When CREATE raises and error:
+FLUSHDB
+```
+
+2. If the parser remains stuck at 0%, restart the RAGFlow containers using one of the following methods:
+
+```bash
+# Option 1: Restart specific container
+docekr restart docker-redis-1 docker-ragflow-cpu-1
+
+# Option 2: Recreate containers via Docker Compose
+docker compose -f docker/docker-compose.yml down
+docker compose -f docker/docker-compose.yml up -d
+
+# Option 3: Reset all Docker containers
+# WARNING: Run this ONLY if your environment contains no other non-RAGFlow containers.
+docker stop $(docker ps -aq)
+docker rm $(docker ps -aq)
+```
 
 ---
 
@@ -349,7 +446,7 @@ Your IP address or port number may be incorrect. If you are using the default co
 
 A correct Ollama IP address and port is crucial to adding models to Ollama:
 
-- If you are on demo.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address. Note that 127.0.0.1 is not a publicly accessible IP address.
+- If you are on cloud.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address. Note that 127.0.0.1 is not a publicly accessible IP address.
 - If you deploy RAGFlow locally, ensure that Ollama and RAGFlow are in the same LAN and can communicate with each other.
 
 See [Deploy a local LLM](./guides/models/deploy_local_llm.mdx) for more information.
@@ -445,7 +542,7 @@ See [Acquire a RAGFlow API key](./develop/acquire_ragflow_api_key.md).
 
 ### How to upgrade RAGFlow?
 
-See [Upgrade RAGFlow](./guides/upgrade_ragflow.mdx) for more information.
+See [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx) for more information.
 
 ---
 
@@ -567,6 +664,24 @@ RAGFlow supports MinerU's `vlm-http-client` backend, enabling you to delegate do
 When using the `vlm-http-client` backend, the RAGFlow server requires no GPU, only network connectivity. This enables cost-effective distributed deployment with multiple RAGFlow instances sharing one remote vLLM server.
 :::
 
+### How to use an external Docling Serve server for document parsing?
+
+RAGFlow supports Docling in two modes:
+
+1. **Local Docling** (existing mode): install Docling in the RAGFlow runtime (`USE_DOCLING=true`) and parse in-process.
+2. **External Docling Serve** (remote mode): point RAGFlow to a Docling Serve endpoint.
+
+To enable remote mode, set:
+
+```bash
+DOCLING_SERVER_URL=http://your-docling-serve-host:5001
+```
+
+Behavior:
+
+- When `DOCLING_SERVER_URL` is set, RAGFlow sends PDFs to Docling Serve using `/v1/convert/source` (and falls back to `/v1alpha/convert/source` for older servers).
+- When `DOCLING_SERVER_URL` is not set, RAGFlow uses local in-process Docling.
+
 ### How to use PaddleOCR for document parsing?
 
 From v0.24.0 onwards, RAGFlow includes PaddleOCR as an optional PDF parser. Please note that RAGFlow acts only as a *remote client* for PaddleOCR, calling the PaddleOCR API to parse PDFs and reading the returned files.
@@ -645,3 +760,26 @@ http://localhost:8080/layout-parsing
 | `PADDLEOCR_ACCESS_TOKEN` | Access token for official API | `None` | Only when using official API |
 
 Environment variables can be used for auto-provisioning, but are not required if configuring via UI. When environment variables are set, these values are used to auto-provision a PaddleOCR model for the tenant on first use.
+
+
+### How do I use Ollama with RAGFlow for local LLM inference?
+
+RAGFlow supports Ollama as a local model provider for private, offline inference.
+
+**Step 1: Start Ollama and pull a model**
+
+```bash
+export OLLAMA_HOST=0.0.0.0
+ollama serve
+ollama pull llama3
+```
+
+**Step 2: Add Ollama in RAGFlow**
+
+1. Go to **Settings** > **Model providers** > **Ollama**.
+2. Set the Base URL to `http://host.docker.internal:11434` (Docker) or `http://localhost:11434` (bare-metal).
+3. Enter the model name (e.g., `llama3`) and click **Save**.
+
+**Step 3: Use Ollama in your assistant**
+
+- Open an assistant's **Configuration** page and select the Ollama model under **Chat model**.

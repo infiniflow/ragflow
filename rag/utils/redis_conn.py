@@ -176,7 +176,7 @@ class RedisDB:
         try:
             return self.REDIS.exists(k)
         except Exception as e:
-            logging.warning("RedisDB.exist " + str(k) + " got exception: " + str(e))
+            logging.warning("RedisDB.exist got exception: %s", str(e))
             self.__open__()
 
     def get(self, k):
@@ -185,7 +185,7 @@ class RedisDB:
         try:
             return self.REDIS.get(k)
         except Exception as e:
-            logging.warning("RedisDB.get " + str(k) + " got exception: " + str(e))
+            logging.warning("RedisDB.get got exception: %s", str(e))
             self.__open__()
 
     def set_obj(self, k, obj, exp=3600):
@@ -193,7 +193,7 @@ class RedisDB:
             self.REDIS.set(k, json.dumps(obj, ensure_ascii=False), exp)
             return True
         except Exception as e:
-            logging.warning("RedisDB.set_obj " + str(k) + " got exception: " + str(e))
+            logging.warning("RedisDB.set_obj got exception: %s", str(e))
             self.__open__()
         return False
 
@@ -202,7 +202,7 @@ class RedisDB:
             self.REDIS.set(k, v, exp)
             return True
         except Exception as e:
-            logging.warning("RedisDB.set " + str(k) + " got exception: " + str(e))
+            logging.warning("RedisDB.set got exception: %s", str(e))
             self.__open__()
         return False
 
@@ -211,7 +211,7 @@ class RedisDB:
             self.REDIS.sadd(key, member)
             return True
         except Exception as e:
-            logging.warning("RedisDB.sadd " + str(key) + " got exception: " + str(e))
+            logging.warning("RedisDB.sadd got exception: %s", str(e))
             self.__open__()
         return False
 
@@ -220,7 +220,7 @@ class RedisDB:
             self.REDIS.srem(key, member)
             return True
         except Exception as e:
-            logging.warning("RedisDB.srem " + str(key) + " got exception: " + str(e))
+            logging.warning("RedisDB.srem got exception: %s", str(e))
             self.__open__()
         return False
 
@@ -240,7 +240,7 @@ class RedisDB:
             self.REDIS.zadd(key, {member: score})
             return True
         except Exception as e:
-            logging.warning("RedisDB.zadd " + str(key) + " got exception: " + str(e))
+            logging.warning("RedisDB.zadd got exception: %s", str(e))
             self.__open__()
         return False
 
@@ -249,7 +249,7 @@ class RedisDB:
             res = self.REDIS.zcount(key, min, max)
             return res
         except Exception as e:
-            logging.warning("RedisDB.zcount " + str(key) + " got exception: " + str(e))
+            logging.warning("RedisDB.zcount got exception: %s", str(e))
             self.__open__()
         return 0
 
@@ -258,7 +258,7 @@ class RedisDB:
             res = self.REDIS.zpopmin(key, count)
             return res
         except Exception as e:
-            logging.warning("RedisDB.zpopmin " + str(key) + " got exception: " + str(e))
+            logging.warning("RedisDB.zpopmin got exception: %s", str(e))
             self.__open__()
         return None
 
@@ -280,6 +280,17 @@ class RedisDB:
         except Exception as e:
             logging.warning(
                 f"RedisDB.zremrangebyscore {key} got exception: {e}"
+            )
+            self.__open__()
+        return 0
+
+    def zcard(self, key: str):
+        try:
+            res = self.REDIS.zcard(key)
+            return res
+        except Exception as e:
+            logging.warning(
+                f"RedisDB.zcard {key} got exception: {e}"
             )
             self.__open__()
         return 0
@@ -333,6 +344,42 @@ class RedisDB:
             logging.warning("RedisDB.generate_auto_increment_id got exception: " + str(e))
             self.__open__()
         return -1
+
+    def get_or_create_secret_key(self, key_name: str, new_value: str) -> str:
+        """
+        Atomically get an existing key or create a new one.
+
+        This method guarantees that across multiple concurrent calls, only one
+        key will be created and all callers will receive the same key.
+
+        Returns:
+            The secret key string
+
+        Raises:
+            redis.RedisError: If Redis operations fail
+        """
+        # First, try to get the existing key
+        existing_value = self.REDIS.get(key_name)
+        if existing_value is not None:
+            logging.debug("Retrieved existing key from Redis")
+            return existing_value
+
+        # Use SETNX to atomically set the key only if it doesn't exist
+        # SETNX returns True if the key was set, False if it already existed
+        if self.REDIS.setnx(key_name, new_value):
+            logging.info("Successfully created new secret key in Redis")
+            return new_value
+
+        # SETNX failed, meaning another process created the key concurrently
+        # Retrieve and return that key
+        final_key = self.REDIS.get(key_name)
+        if final_key is None:
+            # This should rarely happen, but retry if it does
+            logging.warning("Key disappeared during concurrent access, retrying...")
+            return self.get_or_create_secret_key(key_name, new_value)
+
+        logging.debug("Retrieved key created by another process")
+        return final_key
 
     def transaction(self, key, value, exp=3600):
         try:
@@ -483,7 +530,7 @@ class RedisDB:
             self.REDIS.delete(key)
             return True
         except Exception as e:
-            logging.warning("RedisDB.delete " + str(key) + " got exception: " + str(e))
+            logging.warning("RedisDB.delete got exception: %s", str(e))
             self.__open__()
         return False
 

@@ -14,11 +14,14 @@
 #  limitations under the License.
 #
 
+import os
 from enum import Enum, IntEnum
-from strenum import StrEnum
+from enum import StrEnum
 
 SERVICE_CONF = "service_conf.yaml"
 RAG_FLOW_SERVICE_NAME = "ragflow"
+SANDBOX_ARTIFACT_BUCKET = os.environ.get("SANDBOX_ARTIFACT_BUCKET", "sandbox-artifacts")
+SANDBOX_ARTIFACT_EXPIRE_DAYS = int(os.environ.get("SANDBOX_ARTIFACT_EXPIRE_DAYS", "7"))
 
 
 class CustomEnum(Enum):
@@ -63,6 +66,12 @@ class StatusEnum(Enum):
     INVALID = "0"
 
 
+class ActiveStatusEnum(Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    UNSUPPORTED = "unsupported"
+
+
 class ActiveEnum(Enum):
     ACTIVE = "1"
     INACTIVE = "0"
@@ -90,6 +99,11 @@ class TaskStatus(StrEnum):
 VALID_TASK_STATUS = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL, TaskStatus.SCHEDULE}
 
 
+class ConnectorTaskType(StrEnum):
+    SYNC = "sync"
+    PRUNE = "prune"
+
+
 class ParserType(StrEnum):
     PRESENTATION = "presentation"
     LAWS = "laws"
@@ -111,8 +125,10 @@ class ParserType(StrEnum):
 class FileSource(StrEnum):
     LOCAL = ""
     KNOWLEDGEBASE = "knowledgebase"
+    RSS = "rss"
     S3 = "s3"
     NOTION = "notion"
+    REST_API = "rest_api"
     DISCORD = "discord"
     CONFLUENCE = "confluence"
     GMAIL = "gmail"
@@ -138,6 +154,12 @@ class FileSource(StrEnum):
     SEAFILE = "seafile"
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"
+    BIGQUERY = "bigquery"
+    DINGTALK_AI_TABLE = "dingtalk_ai_table"
+    ONEDRIVE = "onedrive"
+    OUTLOOK = "outlook"
+    SALESFORCE = "salesforce"
+    AZURE_BLOB = "azure_blob"
 
 
 class PipelineTaskType(StrEnum):
@@ -218,6 +240,9 @@ class ForgettingPolicy(StrEnum):
 # ENV_MINERU_OUTPUT_DIR = "MINERU_OUTPUT_DIR"
 # ENV_MINERU_BACKEND = "MINERU_BACKEND"
 # ENV_MINERU_DELETE_OUTPUT = "MINERU_DELETE_OUTPUT"
+# ENV_DOCLING_SERVER_URL = "DOCLING_SERVER_URL"
+# ENV_DOCLING_OUTPUT_DIR = "DOCLING_OUTPUT_DIR"
+# ENV_DOCLING_DELETE_OUTPUT = "DOCLING_DELETE_OUTPUT"
 # ENV_TCADP_OUTPUT_DIR = "TCADP_OUTPUT_DIR"
 # ENV_LM_TIMEOUT_SECONDS = "LM_TIMEOUT_SECONDS"
 # ENV_LLM_MAX_RETRIES = "LLM_MAX_RETRIES"
@@ -232,9 +257,15 @@ class ForgettingPolicy(StrEnum):
 # ENV_TRACE_MALLOC_ENABLED = "TRACE_MALLOC_ENABLED"
 
 PAGERANK_FLD = "pagerank_fea"
-SVR_QUEUE_NAME = "rag_flow_svr_queue"
+SVR_QUEUE_NAME = "te"
 SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
 TAG_FLD = "tag_feas"
+
+# Maximum page number used as "unlimited" sentinel value.
+# Parsing layer (chunk/Pdf.__call__) uses MAXIMUM_PAGE_NUMBER.
+# Task/DB layer (Task model) uses MAXIMUM_PAGE_NUMBER * 1000 to avoid collision with user-specified page ranges.
+MAXIMUM_PAGE_NUMBER = 100000
+MAXIMUM_TASK_PAGE_NUMBER = MAXIMUM_PAGE_NUMBER * 1000
 
 
 MINERU_ENV_KEYS = ["MINERU_APISERVER", "MINERU_OUTPUT_DIR", "MINERU_BACKEND", "MINERU_SERVER_URL", "MINERU_DELETE_OUTPUT"]
@@ -246,9 +277,15 @@ MINERU_DEFAULT_CONFIG = {
     "MINERU_DELETE_OUTPUT": 1,
 }
 
-PADDLEOCR_ENV_KEYS = ["PADDLEOCR_API_URL", "PADDLEOCR_ACCESS_TOKEN", "PADDLEOCR_ALGORITHM"]
+PADDLEOCR_ENV_KEYS = ["PADDLEOCR_BASE_URL", "PADDLEOCR_API_URL", "PADDLEOCR_ACCESS_TOKEN", "PADDLEOCR_ALGORITHM"]
 PADDLEOCR_DEFAULT_CONFIG = {
+    "PADDLEOCR_BASE_URL": "",
     "PADDLEOCR_API_URL": "",
     "PADDLEOCR_ACCESS_TOKEN": None,
     "PADDLEOCR_ALGORITHM": "PaddleOCR-VL",
+}
+
+OPENDATALOADER_ENV_KEYS = ["OPENDATALOADER_APISERVER"]
+OPENDATALOADER_DEFAULT_CONFIG = {
+    "OPENDATALOADER_APISERVER": "",
 }

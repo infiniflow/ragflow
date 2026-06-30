@@ -22,6 +22,7 @@ a pool of Docker containers with gVisor for secure code execution.
 """
 
 import base64
+import os
 import time
 import uuid
 from typing import Dict, Any, List, Optional
@@ -40,10 +41,10 @@ class SelfManagedProvider(SandboxProvider):
     """
 
     def __init__(self):
-        self.endpoint: str = "http://localhost:9385"
+        self.endpoint: str = "http://sandbox-executor-manager:9385"
         self.timeout: int = 30
         self.max_retries: int = 3
-        self.pool_size: int = 10
+        self.pool_size: int = 3
         self._initialized: bool = False
 
     def initialize(self, config: Dict[str, Any]) -> bool:
@@ -52,7 +53,7 @@ class SelfManagedProvider(SandboxProvider):
 
         Args:
             config: Configuration dictionary with keys:
-                - endpoint: HTTP endpoint (default: "http://localhost:9385")
+                - endpoint: HTTP endpoint (default: "http://sandbox-executor-manager:9385")
                 - timeout: Request timeout in seconds (default: 30)
                 - max_retries: Maximum retry attempts (default: 3)
                 - pool_size: Container pool size for info (default: 10)
@@ -60,30 +61,13 @@ class SelfManagedProvider(SandboxProvider):
         Returns:
             True if initialization successful, False otherwise
         """
-        self.endpoint = config.get("endpoint", "http://localhost:9385")
+        self.endpoint = config.get("endpoint", "http://sandbox-executor-manager:9385")
         self.timeout = config.get("timeout", 30)
         self.max_retries = config.get("max_retries", 3)
-        self.pool_size = config.get("pool_size", 10)
+        self.pool_size = config.get("executor_manager_pool_size", config.get("pool_size", 3))
 
         # Validate endpoint is accessible
         if not self.health_check():
-            # Try to fall back to SANDBOX_HOST from settings if we are using localhost
-            if "localhost" in self.endpoint or "127.0.0.1" in self.endpoint:
-                try:
-                    from api import settings
-                    if settings.SANDBOX_HOST and settings.SANDBOX_HOST not in self.endpoint:
-                        original_endpoint = self.endpoint
-                        self.endpoint = f"http://{settings.SANDBOX_HOST}:9385"
-                        if self.health_check():
-                            import logging
-                            logging.warning(f"Sandbox self_managed: Connected using settings.SANDBOX_HOST fallback: {self.endpoint} (original: {original_endpoint})")
-                            self._initialized = True
-                            return True
-                        else:
-                            self.endpoint = original_endpoint # Restore if fallback also fails
-                except ImportError:
-                    pass
-
             return False
 
         self._initialized = True
@@ -187,6 +171,7 @@ class SelfManagedProvider(SandboxProvider):
                 )
 
             result = response.json()
+            structured_result = result.get("result") or {}
 
             return ExecutionResult(
                 stdout=result.get("stdout", ""),
@@ -199,6 +184,10 @@ class SelfManagedProvider(SandboxProvider):
                     "memory_used_kb": result.get("memory_used_kb"),
                     "detail": result.get("detail"),
                     "instance_id": instance_id,
+                    "artifacts": result.get("artifacts", []),
+                    "result_present": structured_result.get("present", False),
+                    "result_value": structured_result.get("value"),
+                    "result_type": structured_result.get("type"),
                 }
             )
 
@@ -265,9 +254,11 @@ class SelfManagedProvider(SandboxProvider):
                 "type": "string",
                 "required": True,
                 "label": "Executor Manager Endpoint",
-                "placeholder": "http://localhost:9385",
-                "default": "http://localhost:9385",
-                "description": "HTTP endpoint of the executor_manager service"
+                "placeholder": "http://sandbox-executor-manager:9385",
+                "default": "http://sandbox-executor-manager:9385",
+                "description": "HTTP endpoint used by RAGFlow to call sandbox-executor-manager.",
+                "scope": "runtime",
+                "readonly": False,
             },
             "timeout": {
                 "type": "integer",
@@ -276,26 +267,86 @@ class SelfManagedProvider(SandboxProvider):
                 "default": 30,
                 "min": 5,
                 "max": 300,
-                "description": "HTTP request timeout for code execution"
+                "description": "Maximum request time for a single code execution call. Unit: seconds.",
+                "scope": "runtime",
+                "readonly": False,
             },
-            "max_retries": {
-                "type": "integer",
+            "executor_manager_image": {
+                "type": "string",
                 "required": False,
-                "label": "Max Retries",
-                "default": 3,
-                "min": 0,
-                "max": 10,
-                "description": "Maximum number of retry attempts for failed requests"
+                "label": "Executor Manager Image",
+                "default": os.getenv("SANDBOX_EXECUTOR_MANAGER_IMAGE", "infiniflow/sandbox-executor-manager:latest"),
+                "description": "Docker image used by sandbox-executor-manager.",
+                "scope": "deployment",
+                "readonly": True,
             },
-            "pool_size": {
+            "executor_manager_pool_size": {
                 "type": "integer",
                 "required": False,
                 "label": "Container Pool Size",
-                "default": 10,
+                "default": int(os.getenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "3")),
                 "min": 1,
                 "max": 100,
-                "description": "Size of the container pool (configured in executor_manager)"
-            }
+                "description": "Container pool size used by sandbox-executor-manager.",
+                "scope": "deployment",
+                "readonly": True,
+            },
+            "base_python_image": {
+                "type": "string",
+                "required": False,
+                "label": "Base Python Image",
+                "default": os.getenv("SANDBOX_BASE_PYTHON_IMAGE", "infiniflow/sandbox-base-python:latest"),
+                "description": "Python runtime image used by executor-managed containers.",
+                "scope": "deployment",
+                "readonly": True,
+            },
+            "base_nodejs_image": {
+                "type": "string",
+                "required": False,
+                "label": "Base Node.js Image",
+                "default": os.getenv("SANDBOX_BASE_NODEJS_IMAGE", "infiniflow/sandbox-base-nodejs:latest"),
+                "description": "Node.js runtime image used by executor-managed containers.",
+                "scope": "deployment",
+                "readonly": True,
+            },
+            "executor_manager_port": {
+                "type": "integer",
+                "required": False,
+                "label": "Executor Manager Port",
+                "default": int(os.getenv("SANDBOX_EXECUTOR_MANAGER_PORT", "9385")),
+                "min": 1,
+                "max": 65535,
+                "description": "Host port exposed by sandbox-executor-manager.",
+                "scope": "deployment",
+                "readonly": True,
+            },
+            "enable_seccomp": {
+                "type": "boolean",
+                "required": False,
+                "label": "Enable Seccomp",
+                "default": os.getenv("SANDBOX_ENABLE_SECCOMP", "false").lower() == "true",
+                "description": "Whether sandbox-executor-manager starts containers with seccomp enabled.",
+                "scope": "deployment",
+                "readonly": True,
+            },
+            "max_memory": {
+                "type": "string",
+                "required": False,
+                "label": "Max Memory",
+                "default": os.getenv("SANDBOX_MAX_MEMORY", "256m"),
+                "description": "Memory limit applied to each sandbox container. Common format: 256m or 1g.",
+                "scope": "deployment",
+                "readonly": True,
+            },
+            "sandbox_timeout": {
+                "type": "string",
+                "required": False,
+                "label": "Sandbox Timeout",
+                "default": os.getenv("SANDBOX_TIMEOUT", "10s"),
+                "description": "Executor-manager container timeout for each sandbox run. Common format: 10s or 1m.",
+                "scope": "deployment",
+                "readonly": True,
+            },
         }
 
     def _normalize_language(self, language: str) -> str:
@@ -342,7 +393,7 @@ class SelfManagedProvider(SandboxProvider):
                 return False, f"Invalid endpoint format: {endpoint}. Must start with http:// or https://"
 
         # Validate pool_size is positive
-        pool_size = config.get("pool_size", 10)
+        pool_size = config.get("executor_manager_pool_size", config.get("pool_size", 3))
         if isinstance(pool_size, int) and pool_size <= 0:
             return False, "Pool size must be greater than 0"
 

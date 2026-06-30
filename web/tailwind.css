@@ -286,6 +286,14 @@
   }
 }
 
+@layer base {
+  * {
+    /* Make this default */
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-default) var(--bg-card);
+  }
+}
+
 @layer utilities {
   .scrollbar-auto {
     /* hide scrollbar */

@@ -1,6 +1,6 @@
 import { INodeEvent } from '@/hooks/use-send-message';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { IMessage } from '@/interfaces/database/chat';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { HandleType, Position } from '@xyflow/react';
 import { Dispatch, SetStateAction, createContext } from 'react';
 import { useAddNode } from './hooks/use-add-node';
@@ -16,9 +16,9 @@ type AgentInstanceContextType = Pick<
   'addCanvasNode'
 > &
   Pick<ReturnType<typeof useShowFormDrawer>, 'showFormDrawer'> & {
-    lastNode: INodeEvent | null;
-    currentSendLoading: boolean;
-    startButNotFinishedNodeIds: string[];
+    lastNode?: INodeEvent | null;
+    currentSendLoading?: boolean;
+    startButNotFinishedNodeIds?: string[];
   };
 
 export const AgentInstanceContext = createContext<AgentInstanceContextType>(

@@ -23,6 +23,13 @@ from nltk.corpus import wordnet
 from common.file_utils import get_project_base_directory
 
 
+# Forces NLTK to load the corpus synchronously once, preventing concurrent tasks
+# from triggering the lazy-loading race condition.
+try:
+    wordnet.ensure_loaded()
+except Exception:
+    logging.warning("Fail to load wordnet.ensure_loaded()")
+
 class Dealer:
     def __init__(self, redis=None):
 
@@ -31,7 +38,9 @@ class Dealer:
         self.dictionary = None
         path = os.path.join(get_project_base_directory(), "rag/res", "synonym.json")
         try:
-            self.dictionary = json.load(open(path, 'r'))
+            with open(path, 'r') as f:
+                self.dictionary = json.load(f)
+
             self.dictionary = { (k.lower() if isinstance(k, str) else k): v for k, v in self.dictionary.items() }
         except Exception:
             logging.warning("Missing synonym.json")

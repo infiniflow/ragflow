@@ -40,6 +40,7 @@ class VariableAssignerParam(ComponentParamBase):
 
 class VariableAssigner(ComponentBase,ABC):
     component_name = "VariableAssigner"
+    _NO_PARAMETER_OPERATORS = {"clear", "remove_first", "remove_last"}
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
@@ -47,11 +48,14 @@ class VariableAssigner(ComponentBase,ABC):
             return
         else:
             for item in self._param.variables:
-                if any([not item.get("variable"), not item.get("operator"), not item.get("parameter")]):
-                    assert "Variable is not complete."
-                variable=item["variable"]
-                operator=item["operator"]
-                parameter=item["parameter"]
+                variable = item.get("variable")
+                operator = item.get("operator")
+                parameter = item.get("parameter")
+
+                if any([not variable, not operator]):
+                    raise ValueError("Variable is not complete.")
+                if operator not in self._NO_PARAMETER_OPERATORS and parameter is None:
+                    raise ValueError("Variable is not complete.")
                 variable_value=self._canvas.get_variable_value(variable)
                 new_variable=self._operate(variable_value,operator,parameter)
                 self._canvas.set_variable_value(variable, new_variable)
@@ -92,12 +96,12 @@ class VariableAssigner(ComponentBase,ABC):
             return ""
         elif isinstance(variable,dict):
             return {}
+        elif isinstance(variable,bool):
+            return False
         elif isinstance(variable,int):
             return 0
         elif isinstance(variable,float):
             return 0.0
-        elif isinstance(variable,bool):
-            return False
         else:
             return None
 
@@ -141,20 +145,18 @@ class VariableAssigner(ComponentBase,ABC):
             return variable + parameter
 
     def _remove_first(self,variable):
-        if len(variable)==0:
-            return variable
         if not isinstance(variable,list):
             return "ERROR:VARIABLE_NOT_LIST"
-        else:
-            return variable[1:]
+        if len(variable)==0:
+            return variable
+        return variable[1:]
 
     def _remove_last(self,variable):
-        if len(variable)==0:
-            return variable
         if not isinstance(variable,list):
             return "ERROR:VARIABLE_NOT_LIST"
-        else:
-            return variable[:-1]
+        if len(variable)==0:
+            return variable
+        return variable[:-1]
 
     def is_number(self, value):
         if isinstance(value, bool):

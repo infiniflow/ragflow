@@ -37,24 +37,24 @@ export const seafileConstant = (t: TFunction) => [
     ),
   },
   {
-  label: 'Account API Token',
-  name: 'config.credentials.seafile_token',
-  type: FormFieldType.Password,
-  required: false,
-  defaultValue: '',  
-  tooltip: t('setting.seafileTokenTip'),
-  shouldRender: (formValues: any) => {
-    const scope = formValues?.config?.sync_scope ?? 'account';
-    return scope === 'account';
+    label: 'Account API Token',
+    name: 'config.credentials.seafile_token',
+    type: FormFieldType.Password,
+    required: false,
+    defaultValue: '',
+    tooltip: t('setting.seafileTokenTip'),
+    shouldRender: (formValues: any) => {
+      const scope = formValues?.config?.sync_scope ?? 'account';
+      return scope === 'account';
+    },
+    customValidate: (val: string, formValues: any) => {
+      const scope = formValues?.config?.sync_scope ?? 'account';
+      if ((!val || val.trim() === '') && scope === 'account') {
+        return t('setting.seafileValidationAccountTokenRequired');
+      }
+      return true;
+    },
   },
-  customValidate: (val: string, formValues: any) => {
-    const scope = formValues?.config?.sync_scope ?? 'account';
-    if ((!val || val.trim() === '') && scope === 'account') {
-      return t('setting.seafileValidationAccountTokenRequired'); 
-    }
-    return true;
-  },
-},
   {
     label: 'Include Shared Libraries',
     name: 'config.include_shared',
@@ -68,7 +68,6 @@ export const seafileConstant = (t: TFunction) => [
     },
   },
 
-
   {
     // Contextual info panel explaining the two-token choice
     name: FilterFormField + '.token-tip',
@@ -80,11 +79,13 @@ export const seafileConstant = (t: TFunction) => [
     },
     render: () => (
       <div className="text-sm text-text-secondary bg-bg-card border border-border-button rounded-md px-3 py-2 space-y-1">
-        <p className="font-medium text-text-primary">{t('setting.seafileTokenPanelHeading')}</p>
+        <p className="font-medium text-text-primary">
+          {t('setting.seafileTokenPanelHeading')}
+        </p>
         <ul className="list-disc list-inside space-y-0.5">
           <li>
             <span className="font-medium">Account API Token</span>
-           {' ' + t('setting.seafileTokenPanelAccountBullet')}
+            {' ' + t('setting.seafileTokenPanelAccountBullet')}
           </li>
           <li>
             <span className="font-medium">Library Token</span>
@@ -118,7 +119,11 @@ export const seafileConstant = (t: TFunction) => [
     customValidate: (val: string, formValues: any) => {
       const scope = formValues?.config?.sync_scope;
       const accountToken = formValues?.config?.credentials?.seafile_token;
-      if (!val && !accountToken && (scope === 'library' || scope === 'directory')) {
+      if (
+        !val &&
+        !accountToken &&
+        (scope === 'library' || scope === 'directory')
+      ) {
         return t('setting.seafileValidationTokenRequired');
       }
       return true;
@@ -207,4 +212,3 @@ export const seafileConstant = (t: TFunction) => [
     hidden: true,
   },
 ];
-

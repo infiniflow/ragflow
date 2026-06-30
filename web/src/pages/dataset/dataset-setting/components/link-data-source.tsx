@@ -7,7 +7,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { IConnector } from '@/interfaces/database/knowledge';
+import { IConnector } from '@/interfaces/database/dataset';
 import { delSourceModal } from '@/pages/user-setting/data-source/component/delete-source-modal';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { useDataSourceRebuild } from '@/pages/user-setting/data-source/hooks';

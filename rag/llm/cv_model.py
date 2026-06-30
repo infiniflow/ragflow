@@ -25,6 +25,7 @@ from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urljoin
+from json.decoder import JSONDecodeError
 
 import requests
 from openai import OpenAI, AsyncOpenAI
@@ -38,6 +39,22 @@ from rag.prompts.generator import vision_llm_describe_prompt
 
 
 from common.misc_utils import thread_pool_exec
+
+def _qwen3_no_think_extra_body(model_name: str) -> dict[str, bool] | None:
+    """Build DashScope-compatible options that disable Qwen3.x thinking."""
+    if "qwen3." in model_name.lower():
+        return {"enable_thinking": False}
+    return None
+
+
+def _remove_sampling_params(model_name: str, gen_conf: dict | None) -> dict:
+    """Remove sampling options from Qwen3.x CV requests for now."""
+    sanitized_gen_conf = dict(gen_conf or {})
+    if "qwen3." in model_name.lower():
+        for key in ("temperature", "top_p"):
+            sanitized_gen_conf.pop(key, None)
+    return sanitized_gen_conf
+
 
 class Base(ABC):
     def __init__(self, **kwargs):
@@ -265,6 +282,8 @@ class GptV4(Base):
             messages=self.prompt(b64),
             extra_body=self.extra_body
         )
+        if not res.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
     def describe_with_prompt(self, image, prompt=None):
@@ -274,15 +293,29 @@ class GptV4(Base):
             messages=self.vision_llm_prompt(b64, prompt),
             extra_body=self.extra_body,
         )
+        if not res.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
+
+
+def _resolve_azure_credentials(key):
+    try:
+        key_obj = json.loads(key)
+        if isinstance(key_obj, dict):
+            return key_obj.get("api_key", ""), key_obj.get("api_version", "2024-02-01")
+        logging.warning(
+            "Azure credential payload parsed as JSON but is not an object; using raw api_key string"
+        )
+    except (json.JSONDecodeError, TypeError):
+        logging.warning("Azure credential payload is not valid JSON; using raw api_key string")
+    return key, "2024-02-01"
 
 
 class AzureGptV4(GptV4):
     _FACTORY_NAME = "Azure-OpenAI"
 
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
-        api_key = json.loads(key).get("api_key", "")
-        api_version = json.loads(key).get("api_version", "2024-02-01")
+        api_key, api_version = _resolve_azure_credentials(key)
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.async_client = AsyncAzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.model_name = model_name
@@ -306,6 +339,9 @@ class QWenCV(GptV4):
         if not base_url:
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        # Qwen3.x models can be registered as IMAGE2TEXT and routed through this CV wrapper.
+        # Disable thinking here so parser-side extraction tasks do not emit reasoning text.
+        self.extra_body = _qwen3_no_think_extra_body(self.model_name) or self.extra_body
 
     @staticmethod
     def _extract_text_from_content(content):
@@ -341,6 +377,7 @@ class QWenCV(GptV4):
         return "Please summarize this video in proper sentences."
 
     async def async_chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
+        gen_conf = _remove_sampling_params(self.model_name, gen_conf)
         if video_bytes:
             try:
                 summary, summary_num_tokens = self._process_video(video_bytes, filename, self._resolve_video_prompt(system, history, **kwargs))
@@ -437,7 +474,8 @@ class Zhipu4V(GptV4):
             del gen_conf["frequency_penalty"]
         return gen_conf
 
-    def _request(self, msg, stream, gen_conf={}):
+    def _request(self, msg, stream, gen_conf=None):
+        gen_conf = dict(gen_conf or {})
         response = requests.post(
             self.base_url,
             json={"model": self.model_name, "messages": msg, "stream": stream, **gen_conf},
@@ -445,6 +483,7 @@ class Zhipu4V(GptV4):
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
+            timeout=60,
         )
         return response.json()
 
@@ -505,6 +544,8 @@ class Zhipu4V(GptV4):
 
         resp = self.client.chat.completions.create(model=self.model_name, messages=messages, stream=False)
 
+        if not resp.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         content = resp.choices[0].message.content.strip()
         cleaned = re.sub(r"<\|(begin_of_box|end_of_box)\|>", "", content).strip()
 
@@ -530,13 +571,20 @@ class VolcEngineCV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="https://ark.cn-beijing.volces.com/api/v3", **kwargs):
         if not base_url:
             base_url = "https://ark.cn-beijing.volces.com/api/v3"
-        ark_api_key = json.loads(key).get("ark_api_key", "")
-        self.client = OpenAI(api_key=ark_api_key, base_url=base_url)
-        self.async_client = AsyncOpenAI(api_key=ark_api_key, base_url=base_url)
-        self.model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+
+        try:
+            api_key = json.loads(key).get("ark_api_key", "")
+            llm_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+
+        except JSONDecodeError:
+            api_key = key
+            llm_name = model_name
+
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.model_name = llm_name
         self.lang = lang
         Base.__init__(self, **kwargs)
-
 
 class LmStudioCV(GptV4):
     _FACTORY_NAME = "LM-Studio"
@@ -599,13 +647,17 @@ class OpenRouterCV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="https://openrouter.ai/api/v1", **kwargs):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
-        api_key = json.loads(key).get("api_key", "")
+        try:
+            api_key = json.loads(key).get("api_key", "")
+            provider_order = json.loads(key).get("provider_order", "")
+        except JSONDecodeError:
+            api_key = key
+            provider_order = ""
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.async_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
-        provider_order = json.loads(key).get("provider_order", "")
         self.extra_body = {}
         if provider_order:
 
@@ -1028,6 +1080,7 @@ class NvidiaCV(Base):
                 "Authorization": f"Bearer {self.key}",
             },
             json={"messages": self.prompt(b64)},
+            timeout=60,
         )
         response = response.json()
         return (
@@ -1035,7 +1088,8 @@ class NvidiaCV(Base):
             total_token_count_from_response(response),
         )
 
-    def _request(self, msg, gen_conf={}):
+    def _request(self, msg, gen_conf=None):
+        gen_conf = dict(gen_conf or {})
         response = requests.post(
             url=self.base_url,
             headers={
@@ -1044,6 +1098,7 @@ class NvidiaCV(Base):
                 "Authorization": f"Bearer {self.key}",
             },
             json={"messages": msg, **gen_conf},
+            timeout=60,
         )
         return response.json()
 
@@ -1183,6 +1238,22 @@ class AnthropicCV(Base):
 class GoogleCV(AnthropicCV, GeminiCV):
     _FACTORY_NAME = "Google Cloud"
 
+    @staticmethod
+    def _vertex_http_options(region: str):
+        region_norm = (region or "").strip().lower()
+        multipoint_hosts = {
+            "eu": "https://aiplatform.eu.rep.googleapis.com/",
+            "us": "https://aiplatform.us.rep.googleapis.com/",
+        }
+        base_url = multipoint_hosts.get(region_norm)
+        if base_url:
+            from google.genai.types import HttpOptions
+
+            # Gemini 3.x multi-region endpoints require *.rep hostnames
+            # instead of region-aiplatform host synthesis.
+            return HttpOptions(base_url=base_url, api_version="v1")
+        return None
+
     def __init__(self, key, model_name, lang="Chinese", base_url=None, **kwargs):
         import base64
 
@@ -1211,11 +1282,20 @@ class GoogleCV(AnthropicCV, GeminiCV):
                 self.client = AnthropicVertex(region=region, project_id=project_id)
         else:
             from google import genai
+            client_kwargs = {
+                "vertexai": True,
+                "project": project_id,
+                "location": region,
+            }
+            http_options = self._vertex_http_options(region)
+            if http_options is not None:
+                client_kwargs["http_options"] = http_options
             if access_token:
                 credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
-                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
+                client_kwargs["credentials"] = credits
+                self.client = genai.Client(**client_kwargs)
             else:
-                self.client = genai.Client(vertexai=True, project=project_id, location=region)
+                self.client = genai.Client(**client_kwargs)
         Base.__init__(self, **kwargs)
 
     def describe(self, image):
@@ -1252,3 +1332,102 @@ class MoonshotCV(GptV4):
         if not base_url:
             base_url = "https://api.moonshot.cn/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+
+
+class FuturMixCV(GptV4):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        logging.info("[FuturMix] CV initialized with model %s", model_name)
+
+
+class RAGconCV(GptV4):
+    """
+    RAGcon CV Provider - routes through LiteLLM proxy
+    
+    Supports vision models through LiteLLM.
+    Default Base URL: https://connect.ragcon.ai/v1
+    """
+    _FACTORY_NAME = "RAGcon"
+    
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+
+        # Initialize client
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name
+        self.lang = lang
+
+        Base.__init__(self, **kwargs)
+
+
+class BedrockCV(Base):
+    _FACTORY_NAME = "Bedrock"
+
+    def __init__(self, key, model_name, lang="Chinese", **kwargs):
+        self.model_name = f"bedrock/{model_name}"
+        self.lang = lang
+        self._parse_credentials(key)
+        Base.__init__(self, **kwargs)
+
+    def _parse_credentials(self, key):
+        bedrock_key = json.loads(key)
+        self.auth_mode = bedrock_key.get("auth_mode", "")
+        self.aws_region = bedrock_key.get("bedrock_region", "us-east-1")
+        self.aws_ak = bedrock_key.get("bedrock_ak", "")
+        self.aws_sk = bedrock_key.get("bedrock_sk", "")
+        self.aws_role_arn = bedrock_key.get("aws_role_arn", "")
+
+    def _get_aws_creds(self):
+        if self.auth_mode == "access_key_secret":
+            return {
+                "aws_region_name": self.aws_region,
+                "aws_access_key_id": self.aws_ak,
+                "aws_secret_access_key": self.aws_sk,
+            }
+        elif self.auth_mode == "iam_role":
+            import boto3
+            sts_client = boto3.client("sts", region_name=self.aws_region)
+            resp = sts_client.assume_role(RoleArn=self.aws_role_arn, RoleSessionName="BedrockCVSession")
+            creds = resp["Credentials"]
+            return {
+                "aws_region_name": self.aws_region,
+                "aws_access_key_id": creds["AccessKeyId"],
+                "aws_secret_access_key": creds["SecretAccessKey"],
+                "aws_session_token": creds["SessionToken"],
+            }
+        else:
+            return {"aws_region_name": self.aws_region}
+
+    def describe_with_prompt(self, image, prompt=None):
+        import litellm
+        b64 = self.image2base64(image)
+        messages = self.vision_llm_prompt(b64, prompt)
+        res = litellm.completion(
+            model=self.model_name,
+            messages=messages,
+            **self._get_aws_creds(),
+        )
+        return res.choices[0].message.content.strip(), total_token_count_from_response(res)
+
+    def describe(self, image):
+        return self.describe_with_prompt(image)
+
+
+class NewAPICv(GptV4):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name.split("___")[0]
+        self.lang = lang
+        Base.__init__(self, **kwargs)

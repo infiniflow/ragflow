@@ -36,7 +36,7 @@ class TestAuthorization:
     def test_auth_invalid(self, invalid_auth, expected_message):
         client = RAGFlow(invalid_auth, HOST_ADDRESS)
         with pytest.raises(Exception) as exception_info:
-            client.create_memory(**{"name": "test_memory", "memory_type": ["raw"], "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW", "llm_id": "glm-4-flash@ZHIPU-AI"})
+            client.create_memory(**{"name": "test_memory", "memory_type": ["raw"], "embd_id": "BAAI/bge-small-en-v1.5@Builtin", "llm_id": "glm-4-flash@ZHIPU-AI"})
         assert str(exception_info.value) == expected_message, str(exception_info.value)
 
 
@@ -50,7 +50,7 @@ class TestMemoryCreate:
         payload = {
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
-            "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
+            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
             "llm_id": "glm-4-flash@ZHIPU-AI"
         }
         memory = client.create_memory(**payload)
@@ -72,7 +72,7 @@ class TestMemoryCreate:
         payload = {
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
-            "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
+            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
             "llm_id": "glm-4-flash@ZHIPU-AI"
         }
         with pytest.raises(Exception) as exception_info:
@@ -86,7 +86,7 @@ class TestMemoryCreate:
         payload = {
             "name": name,
             "memory_type": ["something"],
-            "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
+            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
             "llm_id": "glm-4-flash@ZHIPU-AI"
         }
         with pytest.raises(Exception) as exception_info:
@@ -99,7 +99,7 @@ class TestMemoryCreate:
         payload = {
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
-            "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
+            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
             "llm_id": "glm-4-flash@ZHIPU-AI"
         }
         res1 = client.create_memory(**payload)

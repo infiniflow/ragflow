@@ -22,11 +22,10 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useFetchChunk } from '@/hooks/use-chunk-request';
 import { IModalProps } from '@/interfaces/common';
-import type { ChunkDocType } from '@/interfaces/database/knowledge';
+import type { ChunkDocType } from '@/interfaces/database/dataset';
 import React, { useCallback, useEffect, useState } from 'react';
 import { FieldValues, FormProvider, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useDeleteChunkByIds } from '../../hooks';
 import {
   transformTagFeaturesArrayToObject,
   transformTagFeaturesObjectToArray,
@@ -75,8 +74,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
     },
   });
   const [checked, setChecked] = useState(false);
-  const { removeChunk } = useDeleteChunkByIds();
-  const { data } = useFetchChunk(chunkId);
+  const { data } = useFetchChunk(chunkId, doc_id);
   const { t } = useTranslation();
   const isEditMode = !!chunkId;
 
@@ -99,12 +97,6 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
 
   const handleOk = form.handleSubmit(onSubmit);
 
-  const handleRemove = useCallback(() => {
-    if (chunkId) {
-      return removeChunk([chunkId], doc_id);
-    }
-  }, [chunkId, doc_id, removeChunk]);
-
   const handleCheck = useCallback(() => {
     setChecked(!checked);
   }, [checked]);
@@ -124,7 +116,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
 
   return (
     <Modal
-      title={`${chunkId ? t('common.edit') : t('common.create')} ${t('chunk.chunk')}`}
+      title={`${chunkId ? t('chunk.editChunk') : t('chunk.createChunk')}`}
       open={true}
       onOk={handleOk}
       onCancel={hideModal}
@@ -140,13 +132,16 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               <FormItem>
                 <FormLabel>{t('chunk.chunk')}</FormLabel>
                 <FormControl>
-                  <Textarea {...field} autoSize={{ minRows: 4, maxRows: 10 }} />
+                  <Textarea
+                    {...field}
+                    autoSize={{ minRows: 4, maxRows: 10 }}
+                    resize="vertical"
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
-
           {/* Do not display the type field in create mode */}
           {isEditMode && (
             <FormField
@@ -174,7 +169,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
             />
           )}
 
-          {isEditMode && form.getValues('doc_type_kwd') === 'image' && (
+          {(!isEditMode || form.getValues('doc_type_kwd') + '' === 'image') && (
             <FormField
               control={form.control}
               name="image"
@@ -213,7 +208,6 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               )}
             />
           )}
-
           <FormField
             control={form.control}
             name="important_kwd"
@@ -227,7 +221,6 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               </FormItem>
             )}
           />
-
           <FormField
             control={form.control}
             name="question_kwd"
@@ -255,7 +248,6 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               </FormItem>
             )}
           />
-
           {isTagParser && (
             <FormField
               control={form.control}
@@ -271,7 +263,6 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               )}
             />
           )}
-
           {!isTagParser && (
             <FormProvider {...form}>
               <TagFeatureItem />

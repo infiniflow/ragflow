@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import html
 import logging
 import os
 import re
@@ -32,9 +33,12 @@ import numpy as np
 import pdfplumber
 import requests
 from PIL import Image
-from strenum import StrEnum
+from enum import StrEnum
 
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
+from deepdoc.parser.utils import extract_pdf_outlines
+
+from common.constants import MAXIMUM_PAGE_NUMBER
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
@@ -48,6 +52,9 @@ class MinerUContentType(StrEnum):
     EQUATION = "equation"
     CODE = "code"
     LIST = "list"
+    HEADER = "header"
+    FOOTER = "footer"
+    PAGE_NUMBER = "page_number"
     DISCARDED = "discarded"
 
 
@@ -74,6 +81,7 @@ LANGUAGE_TO_MINERU_MAP = {
     'Greek': 'el',
     'Hindi': 'devanagari',
     'Bulgarian': 'cyrillic',
+    'Turkish': 'latin',
 }
 
 
@@ -201,6 +209,26 @@ class MinerUParser(RAGFlowPdfParser):
         except Exception:
             return False
 
+    @staticmethod
+    def _sanitize_section_text(section: str) -> str:
+        """Normalize MinerU text blocks before chunking.
+
+        MinerU may return HTML fragments (e.g. table_body with <tr>/<td>/<br>).
+        Keep human-readable text while removing tag noise that hurts chunking.
+        """
+        if not section:
+            return ""
+        section = html.unescape(section)
+        # Preserve rough structure before dropping tags.
+        section = re.sub(r"(?is)<\s*br\s*/?\s*>", "\n", section)
+        section = re.sub(r"(?is)</\s*(p|div|li|tr|h[1-6]|table|caption)\s*>", "\n", section)
+        section = re.sub(r"(?is)<[^>]+>", "", section)
+        # Collapse whitespace while preserving line boundaries.
+        section = re.sub(r"[ \t]+\n", "\n", section)
+        section = re.sub(r"\n{3,}", "\n\n", section)
+        section = re.sub(r"[ \t]{2,}", " ", section)
+        return section.strip()
+
     def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
 
@@ -301,29 +329,24 @@ class MinerUParser(RAGFlowPdfParser):
                 ) as response:
                     response.raise_for_status()
                     content_type = response.headers.get("Content-Type", "")
-                    if content_type.startswith("application/zip"):
-                        self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
-
-                        if callback:
-                            callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
-
-                        with open(output_zip_path, "wb") as f:
-                            response.raw.decode_content = True
-                            shutil.copyfileobj(response.raw, f)
-
-                        self.logger.info(f"[MinerU] Unzip to {output_path}...")
-                        self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
-
-                        if callback:
-                            callback(0.40, f"[MinerU] Unzip to {output_path}...")
-                    else:
-                        self.logger.warning(f"[MinerU] not zip returned from api: {content_type}")
-        except Exception as e:
+                    if not content_type.startswith("application/zip"):
+                        raise RuntimeError(f"[MinerU] not zip returned from api: {content_type}")
+                    self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
+                    if callback:
+                        callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
+                    with open(output_zip_path, "wb") as f:
+                        response.raw.decode_content = True
+                        shutil.copyfileobj(response.raw, f)
+                    self.logger.info(f"[MinerU] Unzip to {output_path}...")
+                    self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
+                    if callback:
+                        callback(0.40, f"[MinerU] Unzip to {output_path}...")
+            self.logger.info("[MinerU] Api completed successfully.")
+            return Path(output_path)
+        except requests.RequestException as e:
             raise RuntimeError(f"[MinerU] api failed with exception {e}")
-        self.logger.info("[MinerU] Api completed successfully.")
-        return Path(output_path)
 
-    def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
+    def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
         self.page_to = page_to
         try:
@@ -340,6 +363,11 @@ class MinerUParser(RAGFlowPdfParser):
         pn = [bx["page_idx"] + 1]
         positions = bx.get("bbox", (0, 0, 0, 0))
         x0, top, x1, bott = positions
+        # Normalize flipped coordinates (MinerU may report inverted bbox for flipped images)
+        if x0 > x1:
+            x0, x1 = x1, x0
+        if top > bott:
+            top, bott = bott, top
 
         if hasattr(self, "page_images") and self.page_images and len(self.page_images) > bx["page_idx"]:
             page_width, page_height = self.page_images[bx["page_idx"]].size
@@ -429,6 +457,12 @@ class MinerUParser(RAGFlowPdfParser):
 
             img0 = self.page_images[pns[0]]
             x0, y0, x1, y1 = int(left), int(top), int(right), int(min(bottom, img0.size[1]))
+            if x0 > x1:
+                x0, x1 = x1, x0
+            if y0 > y1:
+                y0, y1 = y1, y0
+            if x1 <= x0 or y1 <= y0:
+                continue
             crop0 = img0.crop((x0, y0, x1, y1))
             imgs.append(crop0)
             if 0 < ii < len(poss) - 1:
@@ -442,6 +476,13 @@ class MinerUParser(RAGFlowPdfParser):
                     continue
                 page = self.page_images[pn]
                 x0, y0, x1, y1 = int(left), 0, int(right), int(min(bottom, page.size[1]))
+                if x0 > x1:
+                    x0, x1 = x1, x0
+                if y0 > y1:
+                    y0, y1 = y1, y0
+                if x1 <= x0 or y1 <= y0:
+                    bottom -= page.size[1]
+                    continue
                 cimgp = page.crop((x0, y0, x1, y1))
                 imgs.append(cimgp)
                 if 0 < ii < len(poss) - 1:
@@ -497,7 +538,8 @@ class MinerUParser(RAGFlowPdfParser):
             return sanitized or "unnamed"
 
         safe_stem = _sanitize_filename(file_stem)
-        allowed_names = {f"{file_stem}_content_list.json", f"{safe_stem}_content_list.json"}
+        content_names = tuple(dict.fromkeys((f"{file_stem}_content_list.json", f"{safe_stem}_content_list.json")))
+        allowed_names = set(content_names)
         self.logger.info(f"[MinerU] Expected output files: {', '.join(sorted(allowed_names))}")
         self.logger.info(f"[MinerU] Searching output in: {output_dir}")
 
@@ -521,6 +563,84 @@ class MinerUParser(RAGFlowPdfParser):
                 if nested_alt.exists():
                     subdir = nested_alt.parent
                     json_file = nested_alt
+                else:
+                    # Try vlm subdirectory (for vlm-http-client backend)
+                    vlm_path = output_dir / "vlm" / f"{file_stem}_content_list.json"
+                    self.logger.info(f"[MinerU] Trying vlm subdirectory: {vlm_path}")
+                    attempted.append(vlm_path)
+                    if vlm_path.exists():
+                        subdir = vlm_path.parent
+                        json_file = vlm_path
+                    else:
+                        vlm_safe = output_dir / "vlm" / f"{safe_stem}_content_list.json"
+                        self.logger.info(f"[MinerU] Trying vlm subdirectory with sanitized name: {vlm_safe}")
+                        attempted.append(vlm_safe)
+                        if vlm_safe.exists():
+                            subdir = vlm_safe.parent
+                            json_file = vlm_safe
+
+        if not json_file:
+            parse_subdir = None
+            if backend.startswith("pipeline"):
+                parse_subdir = method
+            elif backend.startswith("hybrid"):
+                parse_subdir = f"hybrid_{method}"
+            elif backend.startswith("vlm"):
+                parse_subdir = "vlm"
+
+            if parse_subdir:
+                for content_name in content_names:
+                    for candidate in output_dir.glob(f"**/{parse_subdir}/{content_name}"):
+                        self.logger.info(f"[MinerU] Trying parse-method path: {candidate}")
+                        attempted.append(candidate)
+                        subdir = candidate.parent
+                        json_file = candidate
+                        break
+                    if json_file:
+                        break
+
+        if not json_file:
+            stem_dirs = tuple(dict.fromkeys((file_stem, safe_stem)))
+            patterns = []
+            if parse_subdir:
+                for stem_dir in stem_dirs:
+                    patterns.extend(
+                        [
+                            f"**/{stem_dir}/{parse_subdir}/content_list.json",
+                            f"**/{stem_dir}/{parse_subdir}/*_content_list.json",
+                        ]
+                    )
+                patterns.extend(
+                    [
+                        f"**/{parse_subdir}/content_list.json",
+                        f"**/{parse_subdir}/*_content_list.json",
+                    ]
+                )
+            for stem_dir in stem_dirs:
+                patterns.extend(
+                    [
+                        f"**/{stem_dir}/content_list.json",
+                        f"**/{stem_dir}/*_content_list.json",
+                    ]
+                )
+            patterns.extend(["**/content_list.json", "**/*_content_list.json"])
+
+            for pattern in patterns:
+                for candidate in sorted(output_dir.glob(pattern)):
+                    self.logger.info(f"[MinerU] Trying fallback path: {candidate}")
+                    if candidate.name.endswith("_content_list.json"):
+                        rel_parts = candidate.relative_to(output_dir).parts
+                        in_stem_dir = any(stem_dir in rel_parts for stem_dir in stem_dirs)
+                        stem_match = candidate.stem.startswith(file_stem) or candidate.stem.startswith(safe_stem)
+                        if not (stem_match or in_stem_dir):
+                            self.logger.info(f"[MinerU] Skip unrelated fallback candidate: {candidate}")
+                            continue
+                    attempted.append(candidate)
+                    subdir = candidate.parent
+                    json_file = candidate
+                    break
+                if json_file:
+                    break
 
         if not json_file:
             raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
@@ -534,10 +654,10 @@ class MinerUParser(RAGFlowPdfParser):
                     item[key] = str((subdir / item[key]).resolve())
         return data
 
-    def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None):
+    def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None, table_enable: bool = False):
         sections = []
         for output in outputs:
-            match output["type"]:
+            match output.get("type"):
                 case MinerUContentType.TEXT:
                     section = output.get("text", "")
                 case MinerUContentType.TABLE:
@@ -548,16 +668,36 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.IMAGE:
                     section = "".join(output.get("image_caption", [])) + "\n" + "".join(
                         output.get("image_footnote", []))
+                    # If a vision model enriched this image with a semantic
+                    # description (see _enhance_images_with_vlm), embed it in
+                    # the chunk so it becomes searchable / retrievable.
+                    vlm_description = (output.get("vlm_description") or "").strip()
+                    if vlm_description:
+                        section = (section.strip("\n") + "\n" + vlm_description).strip("\n") if section.strip() else vlm_description
                 case MinerUContentType.EQUATION:
                     section = output.get("text", "")
                 case MinerUContentType.CODE:
                     section = output.get("code_body", "") + "\n".join(output.get("code_caption", []))
                 case MinerUContentType.LIST:
                     section = "\n".join(output.get("list_items", []))
-                case MinerUContentType.DISCARDED:
-                    continue  # Skip discarded blocks entirely
+                case (
+                    MinerUContentType.HEADER
+                    | MinerUContentType.FOOTER
+                    | MinerUContentType.PAGE_NUMBER
+                    | MinerUContentType.DISCARDED
+                ):
+                    continue
+                case _:
+                    self.logger.debug("[MinerU] Skip unsupported section type=%s", output.get("type"))
+                    continue
 
-            if section and parse_method == "manual":
+            if not table_enable:
+                section = self._sanitize_section_text(section)
+            if not section:
+                self.logger.debug("[MinerU] Skip section after sanitization: type=%s", output.get("type"))
+                continue
+
+            if section and parse_method in {"manual", "pipeline"}:
                 sections.append((section, output["type"], self._line_tag(output)))
             elif section and parse_method == "paper":
                 sections.append((section + self._line_tag(output), output["type"]))
@@ -567,6 +707,49 @@ class MinerUParser(RAGFlowPdfParser):
 
     def _transfer_to_tables(self, outputs: list[dict[str, Any]]):
         return []
+
+    def _enhance_images_with_vlm(self, outputs: list[dict[str, Any]], vision_model, callback: Optional[Callable] = None):
+        """Generate semantic descriptions for image blocks via the tenant's
+        IMAGE2TEXT model, mirroring deepdoc's VisionFigureParser. Each
+        IMAGE block with a readable img_path gets a ``vlm_description``
+        field that ``_transfer_to_sections`` then folds into the chunk
+        text — closing issue #14869.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from rag.app.picture import vision_llm_chunk
+        from rag.prompts.generator import vision_llm_figure_describe_prompt
+
+        image_jobs = [
+            (idx, item)
+            for idx, item in enumerate(outputs)
+            if item.get("type") == MinerUContentType.IMAGE
+            and item.get("img_path")
+            and os.path.exists(item["img_path"])
+        ]
+        if not image_jobs:
+            return
+
+        if callback:
+            callback(0.78, f"[MinerU] Generating VLM descriptions for {len(image_jobs)} images...")
+
+        prompt = vision_llm_figure_describe_prompt()
+
+        def worker(idx, item):
+            try:
+                with Image.open(item["img_path"]) as img:
+                    img.load()
+                    desc = vision_llm_chunk(binary=img, vision_model=vision_model, prompt=prompt)
+                return idx, (desc or "").strip()
+            except Exception as e:
+                logging.warning(f"[MinerU] VLM description failed for image #{idx}: {e}")
+                return idx, ""
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(worker, idx, item) for idx, item in image_jobs]
+            for fut in as_completed(futures):
+                idx, desc = fut.result()
+                if desc:
+                    outputs[idx]["vlm_description"] = desc
 
     def parse_pdf(
             self,
@@ -583,6 +766,7 @@ class MinerUParser(RAGFlowPdfParser):
     ) -> tuple:
         import shutil
 
+        self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
         temp_pdf = None
         created_tmp_dir = False
 
@@ -647,7 +831,14 @@ class MinerUParser(RAGFlowPdfParser):
             if callback:
                 callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
 
-            return self._transfer_to_sections(outputs, parse_method), self._transfer_to_tables(outputs)
+            vision_model = kwargs.get("vision_model")
+            if vision_model is not None:
+                try:
+                    self._enhance_images_with_vlm(outputs, vision_model, callback=callback)
+                except Exception as e:
+                    self.logger.warning(f"[MinerU] VLM image enhancement failed: {e}. Continuing without descriptions.")
+
+            return self._transfer_to_sections(outputs, parse_method, enable_table), self._transfer_to_tables(outputs)
         finally:
             if temp_pdf and temp_pdf.exists():
                 try:

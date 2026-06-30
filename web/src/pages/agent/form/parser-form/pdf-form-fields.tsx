@@ -1,5 +1,9 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import {
+  ModelTreeSelectFormField,
+  ModelTypeMap,
+} from '@/components/model-tree-select';
+import {
   SelectWithSearch,
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
@@ -8,7 +12,14 @@ import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { LanguageFormField, ParserMethodFormField } from './common-form-fields';
+import {
+  FlattenMediaToTextFormField,
+  LanguageFormField,
+  ParserMethodFormField,
+  RemoveHeaderFooterFormField,
+  RmdirFormField,
+  TwoColumnCheckFormField,
+} from './common-form-fields';
 import { CommonProps } from './interface';
 import { useSetInitialLanguage } from './use-set-initial-language';
 import { buildFieldNameWithPrefix } from './utils';
@@ -28,9 +39,11 @@ export function PdfFormFields({ prefix }: CommonProps) {
   const form = useFormContext();
 
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
-
   const parseMethod = useWatch({
     name: parseMethodName,
+  });
+  const flattenMediaToText = useWatch({
+    name: buildFieldNameWithPrefix('flatten_media_to_text', prefix),
   });
 
   const languageShown = useMemo(() => {
@@ -88,7 +101,19 @@ export function PdfFormFields({ prefix }: CommonProps) {
 
   return (
     <>
+      <TwoColumnCheckFormField prefix={prefix} />
+      <RmdirFormField prefix={prefix} />
+      <RemoveHeaderFooterFormField prefix={prefix} />
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
+      <FlattenMediaToTextFormField prefix={prefix} />
+      {!flattenMediaToText && (
+        <ModelTreeSelectFormField
+          name={buildFieldNameWithPrefix('vlm.llm_id', prefix)}
+          label={t('chat.model')}
+          modelTypes={ModelTypeMap.img2txt_id}
+          allowClear
+        />
+      )}
       {languageShown && <LanguageFormField prefix={prefix}></LanguageFormField>}
       {tcadpOptionsShown && (
         <>

@@ -39,6 +39,7 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
 - Naive: Skip OCR, TSR, and DLR tasks if _all_ your PDFs are plain text.
 - [MinerU](https://github.com/opendatalab/MinerU): (Experimental) An open-source tool that converts PDF into machine-readable formats.
 - [Docling](https://github.com/docling-project/docling): (Experimental) An open-source document processing tool for gen AI.
+- [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf): (Experimental) A deterministic, local-first PDF parser with structured JSON + Markdown output. Runs as a standalone service container so no Java runtime is needed on the RAGFlow host.
 - A third-party visual model from a specific model provider.
 
 :::danger IMPORTANT
@@ -64,6 +65,12 @@ Starting from v0.22.0, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF p
 3. In the web UI, navigate to your dataset's **Configuration** page and find the **Ingestion pipeline** section:  
    - If you decide to use a chunking method from the **Built-in** dropdown, ensure it supports PDF parsing, then select **MinerU** from the **PDF parser** dropdown.
    - If you use a custom ingestion pipeline instead, select **MinerU** in the **PDF parser** section of the **Parser** component.
+
+To use an external Docling Serve instance (instead of local in-process Docling), set:
+
+- `DOCLING_SERVER_URL`: The Docling Serve API endpoint (for example, `http://docling-host:5001`).
+
+When `DOCLING_SERVER_URL` is set, RAGFlow sends PDF content to Docling Serve (`/v1/convert/source`, with fallback to `/v1alpha/convert/source`) and ingests the returned markdown/text. If the variable is not set, RAGFlow keeps using local Docling (`USE_DOCLING=true` + installed package) behavior.
 
 :::note
 All MinerU environment variables are optional. When set, these values are used to auto-provision a MinerU OCR model for the tenant on first use. To avoid auto-provisioning, skip the environment variable settings and only configure MinerU from the **Model providers** page in the UI.

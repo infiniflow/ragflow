@@ -84,9 +84,8 @@ export const PopoverContent = ({ record }: IProps) => {
 export function ParsingCard({ record, handleShowLog }: IProps) {
   return (
     <Button
-      variant={'transparent'}
-      className="border-none"
-      size={'sm'}
+      variant="ghost"
+      size="icon-xs"
       onClick={() => handleShowLog?.(record)}
     >
       <Dot run={record.run}></Dot>

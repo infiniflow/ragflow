@@ -78,10 +78,18 @@ class KGSearch(Dealer):
                 continue
             if isinstance(ent["entity_kwd"], list):
                 ent["entity_kwd"] = ent["entity_kwd"][0]
+            # n_hop_with_weight may be absent (older chunks) or an empty string
+            # (the Infinity column default), neither of which json.loads handles.
+            n_hop_raw = ent.get("n_hop_with_weight") or "[]"
+            try:
+                n_hop_ents = json.loads(n_hop_raw)
+            except (json.JSONDecodeError, TypeError):
+                logging.warning(f"Failed to parse n_hop_with_weight for entity {ent.get('entity_kwd')}: {n_hop_raw}")
+                n_hop_ents = []
             res[ent["entity_kwd"]] = {
                 "sim": get_float(ent.get("_score", 0)),
                 "pagerank": get_float(ent.get("rank_flt", 0)),
-                "n_hop_ents": json.loads(ent.get("n_hop_with_weight", "[]")),
+                "n_hop_ents": n_hop_ents,
                 "description": ent.get("content_with_weight", "{}")
             }
         return res
@@ -91,7 +99,7 @@ class KGSearch(Dealer):
         es_res = self.dataStore.get_fields(es_res, ["content_with_weight", "_score", "from_entity_kwd", "to_entity_kwd",
                                                    "weight_int"])
         for _, ent in es_res.items():
-            if get_float(ent["_score"]) < sim_thr:
+            if get_float(ent.get("_score", 0)) < sim_thr:
                 continue
             f, t = sorted([ent["from_entity_kwd"], ent["to_entity_kwd"]])
             if isinstance(f, list):
@@ -99,7 +107,7 @@ class KGSearch(Dealer):
             if isinstance(t, list):
                 t = t[0]
             res[(f, t)] = {
-                "sim": get_float(ent["_score"]),
+                "sim": get_float(ent.get("_score", 0)),
                 "pagerank": get_float(ent.get("weight_int", 0)),
                 "description": ent["content_with_weight"]
             }
@@ -111,7 +119,7 @@ class KGSearch(Dealer):
         filters = deepcopy(filters)
         filters["knowledge_graph_kwd"] = "entity"
         matchDense = self.get_vector(", ".join(keywords), emb_mdl, 1024, sim_thr)
-        es_res = self.dataStore.search(["content_with_weight", "entity_kwd", "rank_flt"], [], filters, [matchDense],
+        es_res = self.dataStore.search(["content_with_weight", "entity_kwd", "rank_flt", "n_hop_with_weight"], [], filters, [matchDense],
                                        OrderByExpr(), 0, N,
                                        idxnms, kb_ids)
         return self._ent_info_from_(es_res, sim_thr)
@@ -184,7 +192,9 @@ class KGSearch(Dealer):
                         nhop_pathes[(f, t)]["sim"] += ent["sim"] / (2 + i)
                     else:
                         nhop_pathes[(f, t)]["sim"] = ent["sim"] / (2 + i)
-                    nhop_pathes[(f, t)]["pagerank"] = wts[i]
+                    nhop_pathes[(f, t)]["pagerank"] = max(
+                        nhop_pathes[(f, t)].get("pagerank", 0), wts[i]
+                    )
 
         logging.info("Retrieved entities: {}".format(list(ents_from_query.keys())))
         logging.info("Retrieved relations: {}".format(list(rels_from_txt.keys())))
@@ -299,7 +309,7 @@ class KGSearch(Dealer):
         fltr["knowledge_graph_kwd"] = "community_report"
         fltr["entities_kwd"] = entities
         comm_res = self.dataStore.search(fields, [], fltr, [],
-                                         OrderByExpr(), 0, topn, idxnms, kb_ids)
+                                         odr, 0, topn, idxnms, kb_ids)
         comm_res_fields = self.dataStore.get_fields(comm_res, fields)
         txts = []
         for ii, (_, row) in enumerate(comm_res_fields.items()):
@@ -318,7 +328,7 @@ if __name__ == "__main__":
     from common.constants import LLMType
     from api.db.services.knowledgebase_service import KnowledgebaseService
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.user_service import TenantService
+    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
     from rag.nlp import search
 
     settings.init_settings()
@@ -329,10 +339,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     kb_id = args.kb_id
-    _, tenant = TenantService.get_by_id(args.tenant_id)
-    llm_bdl = LLMBundle(args.tenant_id, LLMType.CHAT, tenant.llm_id)
+    llm_config = get_tenant_default_model_by_type(args.tenant_id, LLMType.CHAT)
+    llm_bdl = LLMBundle(args.tenant_id, llm_config)
     _, kb = KnowledgebaseService.get_by_id(kb_id)
-    embed_bdl = LLMBundle(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    embd_model_config = get_model_config_from_provider_instance(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    embed_bdl = LLMBundle(args.tenant_id, embd_model_config)
 
     kg = KGSearch(settings.docStoreConn)
     print(asyncio.run(kg.retrieval({"question": args.question, "kb_ids": [kb_id]},

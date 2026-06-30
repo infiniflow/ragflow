@@ -10,7 +10,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Plus, X } from 'lucide-react';
+import { LucidePlus, LucideTrash2 } from 'lucide-react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Separator } from '../ui/separator';
@@ -51,7 +51,9 @@ export function DynamicPageRange() {
                 </FormItem>
               )}
             />
+
             <Separator className="w-3 "></Separator>
+
             <FormField
               control={form.control}
               name={`parser_config.pages.${index}.to`}
@@ -70,19 +72,27 @@ export function DynamicPageRange() {
                 </FormItem>
               )}
             />
-            <Button variant={'ghost'} onClick={() => remove(index)}>
-              <X />
+
+            <Button
+              className="ml-4"
+              size="icon"
+              variant="outline"
+              onClick={() => remove(index)}
+            >
+              <LucideTrash2 />
             </Button>
           </div>
         );
       })}
+
       <Button
         onClick={() => append({ from: 1, to: 100 })}
-        className="mt-4 border-dashed w-full"
-        variant={'outline'}
+        block
+        className="mt-4"
+        variant="dashed"
         type="button"
       >
-        <Plus />
+        <LucidePlus />
         {t('knowledgeDetails.addPage')}
       </Button>
     </div>

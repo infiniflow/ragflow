@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import llm_factories, llm_list
+from test_common import llm_factories, llm_list
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 

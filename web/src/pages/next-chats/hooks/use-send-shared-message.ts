@@ -6,7 +6,7 @@ import {
   useSelectDerivedMessages,
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
-import { useCreateNextSharedConversation } from '@/hooks/use-chat-request';
+import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import { Message } from '@/interfaces/database/chat';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
@@ -47,12 +47,10 @@ export const useSendSharedMessage = () => {
     sharedId: conversationId,
     data: data,
   } = useGetSharedChatSearchParams();
-  const { createSharedConversation: setConversation } =
-    useCreateNextSharedConversation();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
-  const { send, answer, done, stopOutputMessage } = useSendMessageWithSse(
-    `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${conversationId}/completions`,
-  );
+  const completionUrl = `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${conversationId}/completions`;
+  const { data: chatInfo } = useFetchExternalChatInfo();
+  const { send, answer, done, stopOutputMessage } = useSendMessageWithSse();
   const {
     derivedMessages,
     removeLatestMessage,
@@ -72,13 +70,14 @@ export const useSendSharedMessage = () => {
       enableThinking?: boolean,
       enableInternet?: boolean,
     ) => {
-      const res = await send({
+      const res = await send(completionUrl, {
         conversation_id: id ?? conversationId,
         quote: true,
         question: message.content,
         session_id: get(derivedMessages, '0.session_id'),
         reasoning: enableThinking,
         internet: enableInternet,
+        ...(chatInfo?.llm_id ? { model_name: chatInfo.llm_id } : {}),
       });
 
       if (isCompletionError(res)) {
@@ -87,7 +86,15 @@ export const useSendSharedMessage = () => {
         removeLatestMessage();
       }
     },
-    [send, conversationId, derivedMessages, setValue, removeLatestMessage],
+    [
+      send,
+      completionUrl,
+      conversationId,
+      derivedMessages,
+      setValue,
+      removeLatestMessage,
+      chatInfo,
+    ],
   );
 
   const handleSendMessage = useCallback(
@@ -96,27 +103,19 @@ export const useSendSharedMessage = () => {
       enableThinking?: boolean,
       enableInternet?: boolean,
     ) => {
-      if (conversationId !== '') {
-        sendMessage(message, undefined, enableThinking, enableInternet);
-      } else {
-        const data = await setConversation('user id');
-        if (data.code === 0) {
-          const id = data.data.id;
-          sendMessage(message, id, enableThinking, enableInternet);
-        }
-      }
+      sendMessage(message, undefined, enableThinking, enableInternet);
     },
-    [conversationId, setConversation, sendMessage],
+    [sendMessage],
   );
 
   const fetchSessionId = useCallback(async () => {
     const payload = { question: '' };
-    const ret = await send({ ...payload, ...data });
+    const ret = await send(completionUrl, { ...payload, ...data });
     if (isCompletionError(ret)) {
-      message.error(ret?.data.message);
+      message.error(ret?.data.message ?? 'Unknown error');
       setHasError(true);
     }
-  }, [send]);
+  }, [send, completionUrl]);
 
   useEffect(() => {
     fetchSessionId();

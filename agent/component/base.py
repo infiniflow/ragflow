@@ -31,6 +31,8 @@ from common.connection_utils import timeout
 
 from common.misc_utils import thread_pool_exec
 
+_logger = logging.getLogger(__name__)
+
 _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
 _DEPRECATED_PARAMS = "_deprecated_params"
 _USER_FEEDED_PARAMS = "_user_feeded_params"
@@ -366,6 +368,7 @@ class ComponentBase(ABC):
     component_name: str
     thread_limiter = asyncio.Semaphore(int(os.environ.get("MAX_CONCURRENT_CHATS", 10)))
     variable_ref_patt = r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
+    iteration_alias_patt = r"\{* *\{(item|index|result)\} *\}*"
 
     def __str__(self):
         """
@@ -480,14 +483,28 @@ class ComponentBase(ABC):
             return self._param.inputs.get(key, {}).get("value")
 
         res = {}
-        for var, o in self.get_input_elements().items():
+        input_elements = self.get_input_elements()
+        _logger.debug(
+            "[Base] Component '%s' (%s) resolving inputs. Input element keys: %s",
+            self._id, self.component_name, list(input_elements.keys()),
+        )
+        for var, o in input_elements.items():
             v = self.get_param(var)
             if v is None:
+                _logger.debug("[Base]   var '%s': param is None, skipping", var)
                 continue
             if isinstance(v, str) and self._canvas.is_reff(v):
-                self.set_input_value(var, self._canvas.get_variable_value(v))
+                resolved = self._canvas.get_variable_value(v)
+                self.set_input_value(var, resolved)
+                _logger.debug("[Base]   var '%s': resolved ref '%s' -> %s", var, v, json.dumps(resolved, ensure_ascii=False, default=str)[:200])
+            elif isinstance(v, str) and re.search(self.variable_ref_patt, v):
+                elements = self.get_input_elements_from_text(v)
+                kv = {k: e.get('value', '') for k, e in elements.items()}
+                self.set_input_value(var, self.string_format(v, kv))
+                _logger.debug("[Base]   var '%s': resolved text refs '%s' -> %s", var, v, json.dumps(kv, ensure_ascii=False, default=str)[:200])
             else:
                 self.set_input_value(var, v)
+                _logger.debug("[Base]   var '%s': literal value -> %s", var, json.dumps(v, ensure_ascii=False, default=str)[:200])
             res[var] = self.get_input_value(var)
         return res
 
@@ -496,6 +513,23 @@ class ComponentBase(ABC):
             return self._param.debug_inputs
 
         return {var: self.get_input_value(var) for var, o in self.get_input_elements().items()}
+
+    def _resolve_iteration_alias_ref(self, exp: str) -> str | None:
+        if exp not in {"item", "index", "result"}:
+            return None
+
+        parent = self.get_parent()
+        if not parent or parent.component_name.lower() != "iteration":
+            return None
+
+        for cid, cpn in self._canvas.components.items():
+            if cpn.get("parent_id") != parent._id:
+                continue
+            if cpn["obj"].component_name.lower() != "iterationitem":
+                continue
+            return f"{cid}@{exp}"
+
+        return None
 
     def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
         res = {}
@@ -506,6 +540,20 @@ class ComponentBase(ABC):
                 "name": (self._canvas.get_component_name(cpn_id) + f"@{var_nm}") if cpn_id else exp,
                 "value": self._canvas.get_variable_value(exp),
                 "_retrieval": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
+                "_cpn_id": cpn_id
+            }
+        for r in re.finditer(self.iteration_alias_patt, txt, flags=re.IGNORECASE | re.DOTALL):
+            exp = r.group(1)
+            if exp in res:
+                continue
+            ref = self._resolve_iteration_alias_ref(exp)
+            if not ref:
+                continue
+            cpn_id, var_nm = ref.split("@", 1)
+            res[exp] = {
+                "name": (self._canvas.get_component_name(cpn_id) + f"@{var_nm}"),
+                "value": self._canvas.get_variable_value(ref),
+                "_retrieval": self._canvas.get_variable_value(f"{cpn_id}@_references"),
                 "_cpn_id": cpn_id
             }
         return res
@@ -525,6 +573,10 @@ class ComponentBase(ABC):
         if key not in self._param.inputs:
             return None
         return self._param.inputs[key].get("value")
+
+    @staticmethod
+    def be_output(v):
+        return pd.DataFrame([{"content": v}])
 
     def get_component_name(self, cpn_id) -> str:
         return self._canvas.get_component(cpn_id)["obj"].component_name.lower()

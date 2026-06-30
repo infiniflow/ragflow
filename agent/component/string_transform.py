@@ -18,7 +18,9 @@ import re
 from abc import ABC
 from typing import Any
 
-from jinja2 import Template as Jinja2Template
+from jinja2.sandbox import SandboxedEnvironment
+
+_jinja2_sandbox = SandboxedEnvironment()
 from agent.component.base import ComponentParamBase
 from common.connection_utils import timeout
 from .message import Message
@@ -96,14 +98,14 @@ class StringTransform(Message, ABC):
         script, kwargs = self.get_kwargs(script, kwargs, self._param.delimiters[0])
 
         if self._is_jinjia2(script):
-            template = Jinja2Template(script)
+            template = _jinja2_sandbox.from_string(script)
             try:
                 script = template.render(kwargs)
             except Exception:
                 pass
 
         for k,v in kwargs.items():
-            if not v:
+            if v is None:
                 v = ""
             script = re.sub(k, lambda match: v, script)
 

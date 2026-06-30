@@ -21,12 +21,16 @@ from agent.component.base import ComponentParamBase, ComponentBase
 from api.db.services.file_service import FileService
 
 
+_INITIAL_USER_INPUT_CONSUMED_KEY = "sys.__initial_user_input_consumed__"
+
+
 class UserFillUpParam(ComponentParamBase):
 
     def __init__(self):
         super().__init__()
         self.enable_tips = True
         self.tips = "Please fill up the form"
+        self.layout_recognize = ""
 
     def check(self) -> bool:
         return True
@@ -34,6 +38,52 @@ class UserFillUpParam(ComponentParamBase):
 
 class UserFillUp(ComponentBase):
     component_name = "UserFillUp"
+
+    def _merge_runtime_inputs(self, runtime_inputs):
+        if runtime_inputs:
+            return runtime_inputs
+
+        fields = self.get_input_elements()
+        if not fields:
+            return {}
+
+        if self._canvas.globals.get(_INITIAL_USER_INPUT_CONSUMED_KEY):
+            return {}
+
+        query = self._canvas.globals.get("sys.query")
+        if query is None or query == "":
+            return {}
+
+        if isinstance(query, dict):
+            matched = {
+                key: value if isinstance(value, dict) else {"value": value}
+                for key, value in query.items()
+                if key in fields
+            }
+            if matched:
+                self._canvas.globals[_INITIAL_USER_INPUT_CONSUMED_KEY] = True
+            return matched
+
+        if len(fields) == 1:
+            field_name = next(iter(fields))
+            self._canvas.globals[_INITIAL_USER_INPUT_CONSUMED_KEY] = True
+            return {field_name: {"value": query}}
+
+        return {}
+
+    def _resolve_input_value(self, value, layout_recognize):
+        if isinstance(value, dict) and value.get("type", "").lower().find("file") >= 0:
+            if value.get("optional") and value.get("value", None) is None:
+                return None
+
+            file_value = value["value"]
+            files = file_value if isinstance(file_value, list) else [file_value]
+            return FileService.get_files(files, layout_recognize=layout_recognize)
+
+        if isinstance(value, dict):
+            return value.get("value")
+
+        return value
 
     def _invoke(self, **kwargs):
         if self.check_if_canceled("UserFillUp processing"):
@@ -61,20 +111,14 @@ class UserFillUp(ComponentBase):
                 content = re.sub(r"\{%s\}"%k, ans, content)
 
             self.set_output("tips", content)
-        for k, v in kwargs.get("inputs", {}).items():
+        layout_recognize = self._param.layout_recognize or None
+        merged_inputs = self._merge_runtime_inputs(kwargs.get("inputs", {}))
+        for k, v in merged_inputs.items():
             if self.check_if_canceled("UserFillUp processing"):
                 return
-            if isinstance(v, dict) and v.get("type", "").lower().find("file") >= 0:
-                if v.get("optional") and v.get("value", None) is None:
-                    v = None
-                else:
-                    file_value = v["value"]
-                    # Support both single file (backward compatibility) and multiple files
-                    files = file_value if isinstance(file_value, list) else [file_value]
-                    v = FileService.get_files(files)
-            else:
-                v = v.get("value")
-            self.set_output(k, v)
+            resolved = self._resolve_input_value(v, layout_recognize)
+            self.set_output(k, resolved)
+            self.set_input_value(k, resolved)
 
     def thoughts(self) -> str:
         return "Waiting for your input..."

@@ -21,7 +21,7 @@ from common.query_base import QueryBase
 from common.doc_store.doc_store_base import MatchDenseExpr, MatchTextExpr
 from common.float_utils import get_float
 from rag.nlp import rag_tokenizer, term_weight, synonym
-
+from rag.utils.redis_conn import REDIS_CONN
 
 def get_vector(txt, emb_mdl, topk=10, similarity=0.1):
     if isinstance(similarity, str) and len(similarity) > 0:
@@ -44,7 +44,7 @@ class MsgTextQuery(QueryBase):
 
     def __init__(self):
         self.tw = term_weight.Dealer()
-        self.syn = synonym.Dealer()
+        self.syn = synonym.Dealer(redis=REDIS_CONN.REDIS if REDIS_CONN.is_alive() else None)
         self.query_fields = [
             "content"
         ]
@@ -72,7 +72,9 @@ class MsgTextQuery(QueryBase):
             syns = []
             for tk, w in tks_w[:256]:
                 syn = self.syn.lookup(tk)
-                syn = rag_tokenizer.tokenize(" ".join(syn)).split()
+                # Strip single quotes to avoid Infinity lexer TokenError
+                # (e.g. WordNet returns "cat-o'-nine-tails" for "cat")
+                syn = re.sub(r"'", "", rag_tokenizer.tokenize(" ".join(syn))).split()
                 keywords.extend(syn)
                 syn = ["\"{}\"^{:.4f}".format(s, w / 4.) for s in syn if s.strip()]
                 syns.append(" ".join(syn))

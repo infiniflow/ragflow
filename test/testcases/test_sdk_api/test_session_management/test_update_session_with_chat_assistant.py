@@ -95,4 +95,4 @@ class TestSessionWithChatAssistantUpdate:
 
         with pytest.raises(Exception) as exception_info:
             sessions[0].update({"name": "valid_name"})
-        assert "You do not own the session" in str(exception_info.value)
+        assert "No authorization." in str(exception_info.value)

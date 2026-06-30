@@ -26,6 +26,7 @@ from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByE
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
+from common.tag_feature_utils import parse_tag_features
 from common import settings
 
 from common.misc_utils import thread_pool_exec
@@ -59,6 +60,63 @@ class Dealer:
         vector_column_name = f"q_{len(embedding_data)}_vec"
         return MatchDenseExpr(vector_column_name, embedding_data, 'float', 'cosine', topk, {"similarity": similarity})
 
+    async def _existing_doc_ids(self, doc_ids: list[str]) -> set[str]:
+        if not doc_ids:
+            return set()
+
+        unique_doc_ids = list(dict.fromkeys(doc_ids))
+
+        def _load():
+            from api.db.services.document_service import DocumentService
+
+            return {row["id"] for row in DocumentService.get_by_ids(unique_doc_ids).dicts()}
+
+        return await thread_pool_exec(_load)
+
+    async def _prune_deleted_chunks(self, sres: SearchResult) -> SearchResult:
+        # Temporary safety net:
+        # Some delete paths can leave stale chunks in the doc store if the DB row
+        # is removed but the vector record is not fully cleaned up. We filter those
+        # chunks here so chat/retrieval does not surface content from deleted docs.
+        # Keep this as a fallback, not as the primary delete mechanism.
+        chunk_doc_ids = [chunk.get("doc_id") for chunk in sres.field.values() if chunk and chunk.get("doc_id")]
+        if not chunk_doc_ids:
+            return sres
+
+        existing_doc_ids = await self._existing_doc_ids(chunk_doc_ids)
+        if len(existing_doc_ids) == len(set(chunk_doc_ids)):
+            return sres
+
+        filtered_ids = []
+        filtered_field = {}
+        filtered_highlight = {} if sres.highlight else sres.highlight
+        removed = 0
+
+        for chunk_id in sres.ids:
+            chunk = sres.field.get(chunk_id)
+            if not chunk or chunk.get("doc_id") not in existing_doc_ids:
+                removed += 1
+                continue
+
+            filtered_ids.append(chunk_id)
+            filtered_field[chunk_id] = chunk
+            if sres.highlight and chunk_id in sres.highlight:
+                filtered_highlight[chunk_id] = sres.highlight[chunk_id]
+
+        if removed:
+            logging.warning("Pruned %s stale chunks whose documents no longer exist.", removed)
+
+        return self.SearchResult(
+            total=len(filtered_ids),
+            ids=filtered_ids,
+            query_vector=sres.query_vector,
+            field=filtered_field,
+            highlight=filtered_highlight,
+            aggregation=sres.aggregation,
+            keywords=sres.keywords,
+            group_docs=sres.group_docs,
+        )
+
     def get_filters(self, req):
         condition = dict()
         for key, field in {"kb_ids": "kb_id", "doc_ids": "doc_id"}.items():
@@ -90,15 +148,16 @@ class Dealer:
 
         src = req.get("fields",
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
-                       "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
+                       "doc_id", "chunk_order_int", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
                        "question_kwd", "question_tks", "doc_type_kwd",
-                       "available_int", "content_with_weight", "mom_id", PAGERANK_FLD, TAG_FLD])
+                       "available_int", "content_with_weight", "mom_id", PAGERANK_FLD, TAG_FLD, "row_id()"])
         kwds = set([])
 
         qst = req.get("question", "")
         q_vec = []
         if not qst:
             if req.get("sort"):
+                orderBy.asc("chunk_order_int")
                 orderBy.asc("page_num_int")
                 orderBy.asc("top_int")
                 orderBy.desc("create_timestamp_flt")
@@ -121,7 +180,13 @@ class Dealer:
             else:
                 matchDense = await self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
                 q_vec = matchDense.embedding_data
-                if not settings.DOC_ENGINE_INFINITY:
+                # ES path no longer fetches chunk vectors here. The clean
+                # cosine score is recovered later via a second KNN-only call
+                # in retrieval(); chunk vectors are fetched on demand for
+                # citations (see Dealer.fetch_chunk_vectors). OceanBase
+                # still relies on local rerank against chunk vectors, so
+                # keep pulling them for that backend.
+                if settings.DOC_ENGINE_OCEANBASE:
                     src.append(f"q_{len(q_vec)}_vec")
 
                 fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
@@ -193,16 +258,18 @@ class Dealer:
                         i += 1
                     pieces_.append("".join(pieces[st: i]) + "\n")
                 else:
+                    # Sentence boundary regex includes Arabic punctuation (، ؛ ؟ ۔)
                     pieces_.extend(
                         re.split(
-                            r"([^\|][；。？!！\n]|[a-z][.?;!][ \n])",
+                            r"([^\|][；。？!！،؛؟۔\n]|[a-z\u0600-\u06FF][.?;!،؛؟][ \n])",
                             pieces[i]))
                     i += 1
             pieces = pieces_
         else:
-            pieces = re.split(r"([^\|][；。？!！\n]|[a-z][.?;!][ \n])", answer)
+            # Sentence boundary regex includes Arabic punctuation (، ؛ ؟ ۔)
+            pieces = re.split(r"([^\|][；。？!！،؛؟۔\n]|[a-z\u0600-\u06FF][.?;!،؛؟][ \n])", answer)
         for i in range(1, len(pieces)):
-            if re.match(r"([^\|][；。？!！\n]|[a-z][.?;!][ \n])", pieces[i]):
+            if re.match(r"([^\|][；。？!！،؛؟۔\n]|[a-z\u0600-\u06FF][.?;!،؛؟][ \n])", pieces[i]):
                 pieces[i - 1] += pieces[i][0]
                 pieces[i] = pieces[i][1:]
         idx = []
@@ -276,12 +343,18 @@ class Dealer:
             return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
 
         q_denor = np.sqrt(np.sum([s * s for t, s in query_rfea.items() if t != PAGERANK_FLD]))
+        if q_denor == 0:
+            return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
         for i in search_res.ids:
             nor, denor = 0, 0
             if not search_res.field[i].get(TAG_FLD):
                 rank_fea.append(0)
                 continue
-            for t, sc in eval(search_res.field[i].get(TAG_FLD, "{}")).items():
+            tag_feas = parse_tag_features(search_res.field[i].get(TAG_FLD), allow_json_string=True, allow_python_literal=True)
+            if not tag_feas:
+                rank_fea.append(0)
+                continue
+            for t, sc in tag_feas.items():
                 if t in query_rfea:
                     nor += query_rfea[t] * sc
                 denor += sc * sc
@@ -290,6 +363,113 @@ class Dealer:
             else:
                 rank_fea.append(nor / np.sqrt(denor) / q_denor)
         return np.array(rank_fea) * 10. + pageranks
+
+    async def _knn_scores(self, sres: "Dealer.SearchResult",
+                          idx_names: str | list[str],
+                          kb_ids: list[str]) -> dict[str, float]:
+        """
+        Second-pass ES call that returns the cosine similarity between the
+        query embedding and each candidate chunk's embedding, filtered to the
+        chunk ids the original search already surfaced. We rely on ES to do
+        the vector math so the chunk vectors never leave the engine.
+        """
+        if not sres.ids or not sres.query_vector:
+            return {}
+        dim = len(sres.query_vector)
+        matchDense = MatchDenseExpr(
+            f"q_{dim}_vec",
+            sres.query_vector,
+            "float",
+            "cosine",
+            len(sres.ids),
+            {"similarity": 0.0},
+        )
+        condition = {"id": list(sres.ids)}
+        res = await thread_pool_exec(
+            self.dataStore.search,
+            [],  # no _source fields needed; we only want _id and _score
+            [],
+            condition,
+            [matchDense],
+            OrderByExpr(),
+            0,
+            len(sres.ids),
+            idx_names,
+            kb_ids,
+        )
+        return self.dataStore.get_scores(res)
+
+    async def fetch_chunk_vectors(self, chunk_ids: list[str],
+                                  tenant_ids: str | list[str],
+                                  kb_ids: list[str],
+                                  dim: int) -> dict[str, list[float]]:
+        """
+        Citation-time helper: fetch only the embedding vectors for an
+        explicit set of chunk ids. Used by callers that need to compute
+        answer-vs-chunk similarity locally (e.g. insert_citations) so the
+        main retrieval path can keep skipping vector transport.
+        """
+        if not chunk_ids:
+            return {}
+        if isinstance(tenant_ids, str):
+            idx_names = [index_name(tid) for tid in tenant_ids.split(",")]
+        else:
+            idx_names = [index_name(tid) for tid in tenant_ids]
+        vec_field = f"q_{dim}_vec"
+        res = await thread_pool_exec(
+            self.dataStore.search,
+            [vec_field],
+            [],
+            {"id": list(chunk_ids)},
+            [],
+            OrderByExpr(),
+            0,
+            len(chunk_ids),
+            idx_names,
+            kb_ids,
+        )
+        fields = self.dataStore.get_fields(res, [vec_field])
+        out: dict[str, list[float]] = {}
+        zero = [0.0] * dim
+        for cid, doc in fields.items():
+            v = doc.get(vec_field)
+            if isinstance(v, str):
+                v = [get_float(x) for x in v.split("\t")]
+            if not isinstance(v, list) or len(v) != dim:
+                v = zero
+            out[cid] = v
+        return out
+
+    def rerank_with_knn(self, sres, query, knn_scores: dict[str, float],
+                        tkweight=0.3, vtweight=0.7,
+                        cfield="content_ltks",
+                        rank_feature: dict | None = None):
+        """
+        Merge ES-side KNN cosine similarity with locally computed term
+        similarity using the user-configured weights. Replaces the older
+        local-only rerank() for the ES path, which depended on shipping
+        chunk vectors back to the application.
+        """
+        _, keywords = self.qryr.question(query)
+
+        for i in sres.ids:
+            if isinstance(sres.field[i].get("important_kwd", []), str):
+                sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
+        ins_tw = []
+        for i in sres.ids:
+            content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
+            title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
+            question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
+            important_kwd = sres.field[i].get("important_kwd", [])
+            tks = content_ltks + title_tks * 2 + important_kwd * 5 + question_tks * 6
+            ins_tw.append(tks)
+
+        tksim = np.array(self.qryr.token_similarity(keywords, ins_tw), dtype=np.float64)
+        vtsim = np.array([knn_scores.get(chunk_id, 0.0) for chunk_id in sres.ids],
+                         dtype=np.float64)
+        rank_fea = self._rank_feature_scores(rank_feature, sres)
+        sim = tkweight * tksim + vtweight * vtsim + rank_fea
+        return sim, tksim, vtsim
 
     def rerank(self, sres, query, tkweight=0.3,
                vtweight=0.7, cfield="content_ltks",
@@ -340,14 +520,20 @@ class Dealer:
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
         for i in sres.ids:
+            #content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
             content_ltks = sres.field[i][cfield].split()
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
             tks = content_ltks + title_tks + important_kwd
             ins_tw.append(tks)
 
+        docs = [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw]
+
         tksim = self.qryr.token_similarity(keywords, ins_tw)
-        vtsim, _ = rerank_mdl.similarity(query, [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw])
+        # rerank_mdl.similarity() returns scores normalized to [0, 1] for every
+        # provider (see RerankModel.Base.similarity), so the blend below stays
+        # on a single scale regardless of the configured reranker.
+        vtsim, _ = rerank_mdl.similarity(query, docs)
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
 
@@ -358,6 +544,31 @@ class Dealer:
                                            ins_embd,
                                            rag_tokenizer.tokenize(ans).split(),
                                            rag_tokenizer.tokenize(inst).split())
+
+    @staticmethod
+    def _rerank_window(page_size: int, top: int = 0) -> int:
+        """Candidate-window size shared by retrieval's block fetch and slice.
+
+        ``retrieval`` reuses this value BOTH as the backend block size and as
+        the modulus for extracting a single page from a (re)ranked block::
+
+            req["page"] = global_offset // window   # which block to fetch
+            begin       = global_offset %  window   # where the page starts
+
+        For those two to agree the window MUST be an exact multiple of
+        ``page_size``; otherwise blocks and pages drift apart and deep
+        pagination silently drops results and returns short pages.
+
+        The window targets a provider-friendly pool of ~64 candidates, bounded
+        by ``top`` when given (i.e. when an external reranker is active), and is
+        always rounded UP to a whole number of pages to preserve the invariant.
+        """
+        if page_size <= 1:
+            return min(30, top) if top > 0 else 30
+        window = math.ceil(64 / page_size) * page_size
+        if top > 0:
+            window = min(window, math.ceil(top / page_size) * page_size)
+        return window
 
     async def retrieval(
             self,
@@ -375,18 +586,24 @@ class Dealer:
             rerank_mdl=None,
             highlight=False,
             rank_feature: dict | None = {PAGERANK_FLD: 10},
+            trace_id=None,
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
 
-        # Ensure RERANK_LIMIT is multiple of page_size
-        RERANK_LIMIT = math.ceil(64 / page_size) * page_size if page_size > 1 else 1
-        RERANK_LIMIT = max(30, RERANK_LIMIT)
+        # Candidate window for block-based pagination. It MUST stay a multiple
+        # of page_size so the block fetched (global_offset // RERANK_LIMIT) and
+        # the in-block page slice (global_offset % RERANK_LIMIT) stay aligned;
+        # see _rerank_window. When an external reranker is active the pool is
+        # also bounded by top.
+        RERANK_LIMIT = self._rerank_window(page_size, top if rerank_mdl else 0)
+        page = max(page, 1)
+        global_offset = (page - 1) * page_size
         req = {
             "kb_ids": kb_ids,
             "doc_ids": doc_ids,
-            "page": math.ceil(page_size * page / RERANK_LIMIT),
+            "page": global_offset // RERANK_LIMIT + 1,
             "size": RERANK_LIMIT,
             "question": question,
             "vector": True,
@@ -394,19 +611,39 @@ class Dealer:
             "similarity": similarity_threshold,
             "available_int": 1,
         }
+        logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
 
-        sres = await self.search(req, [index_name(tid) for tid in tenant_ids], kb_ids, embd_mdl, highlight,
+        idx_names = [index_name(tid) for tid in tenant_ids]
+        sres = await self.search(req, idx_names, kb_ids, embd_mdl, highlight,
                            rank_feature=rank_feature)
+        # Temporary retrieval-side guard: prune chunks whose parent document no
+        # longer exists before reranking and returning results.
+        sres = await self._prune_deleted_chunks(sres)
+        if sres.total == 0:
+            ranks["doc_aggs"] = []
+            return ranks
+
+        term_similarity_weight = 1 - vector_similarity_weight
+        logging.debug(
+            "[Search] retrieval weights: trace_id=%s kb_count=%s similarity_threshold=%s "
+            "vector_similarity_weight=%s full_text_weight=%s rerank_enabled=%s",
+            trace_id,
+            len(kb_ids),
+            similarity_threshold,
+            vector_similarity_weight,
+            term_similarity_weight,
+            bool(rerank_mdl),
+        )
 
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(
                 rerank_mdl,
                 sres,
                 question,
-                1 - vector_similarity_weight,
+                term_similarity_weight,
                 vector_similarity_weight,
                 rank_feature=rank_feature,
             )
@@ -417,12 +654,27 @@ class Dealer:
                 sim = [s if s is not None else 0.0 for s in sim]
                 tsim = sim
                 vsim = sim
-            else:
-                # ElasticSearch doesn't normalize each way score before fusion.
+            elif settings.DOC_ENGINE_OCEANBASE:
+                # OceanBase still returns chunk vectors in the result; use
+                # the historical local rerank that depends on them.
                 sim, tsim, vsim = self.rerank(
                     sres,
                     question,
-                    1 - vector_similarity_weight,
+                    term_similarity_weight,
+                    vector_similarity_weight,
+                    rank_feature=rank_feature,
+                )
+            else:
+                # ES path: ask ES for the clean cosine score via a second
+                # KNN-only call filtered by the candidate ids, then merge it
+                # with locally computed term similarity using the user's
+                # weight. Chunk vectors stay in the index.
+                knn_scores = await self._knn_scores(sres, idx_names, kb_ids)
+                sim, tsim, vsim = self.rerank_with_knn(
+                    sres,
+                    question,
+                    knn_scores,
+                    term_similarity_weight,
                     vector_similarity_weight,
                     rank_feature=rank_feature,
                 )
@@ -432,10 +684,12 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
-        sorted_idx = np.argsort(sim_np * -1)
+        # Use stable sort for deterministic ordering when scores are tied
+        sorted_idx = np.argsort(sim_np * -1, kind='stable')
 
         # When vector_similarity_weight is 0, similarity_threshold is not meaningful for term-only scores.
         post_threshold = 0.0 if vector_similarity_weight <= 0 else similarity_threshold
+
         valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= post_threshold]
         filtered_count = len(valid_idx)
         ranks["total"] = int(filtered_count)
@@ -444,9 +698,7 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
-        max_pages = max(RERANK_LIMIT // max(page_size, 1), 1)
-        page_index = (page - 1) % max_pages
-        begin = page_index * page_size
+        begin = global_offset % RERANK_LIMIT
         end = begin + page_size
         page_idx = valid_idx[begin:end]
 
@@ -461,6 +713,11 @@ class Dealer:
             did = chunk.get("doc_id", "")
 
             position_int = chunk.get("position_int", [])
+            # Chunk vectors are no longer fetched during the main retrieval
+            # call. Fall back to whatever the chunk happens to carry (Infinity
+            # path) and otherwise emit a zero placeholder so the downstream
+            # shape stays stable. Citation callers refill this via
+            # Dealer.fetch_chunk_vectors when needed.
             d = {
                 "chunk_id": id,
                 "content_ltks": chunk["content_ltks"],
@@ -469,6 +726,7 @@ class Dealer:
                 "docnm_kwd": dnm,
                 "kb_id": chunk["kb_id"],
                 "important_kwd": chunk.get("important_kwd", []),
+                "tag_kwd": chunk.get("tag_kwd", []),
                 "image_id": chunk.get("img_id", ""),
                 "similarity": float(sim_np[i]),
                 "vector_similarity": float(vsim[i]),
@@ -477,6 +735,7 @@ class Dealer:
                 "positions": position_int,
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),
                 "mom_id": chunk.get("mom_id", ""),
+                "row_id": chunk.get("row_id()"),
             }
             if highlight and sres.highlight:
                 if id in sres.highlight:
@@ -519,7 +778,13 @@ class Dealer:
                    kb_ids: list[str], max_count=1024,
                    offset=0,
                    fields=["docnm_kwd", "content_with_weight", "img_id"],
-                   sort_by_position: bool = False):
+                   sort_by_position: bool = False,
+                   retrieve_all: bool = False):
+        """Return chunks for a document.
+
+        By default, preserve the historical max_count cap. When retrieve_all is
+        True, keep paging until the doc store returns fewer rows than requested.
+        """
         condition = {"doc_id": doc_id}
 
         fields_set = set(fields or [])
@@ -537,17 +802,22 @@ class Dealer:
 
         res = []
         bs = 128
-        for p in range(offset, max_count, bs):
-            es_res = self.dataStore.search(fields, [], condition, [], orderBy, p, bs, index_name(tenant_id),
+        p = offset
+        while retrieve_all or p < max_count:
+            limit = bs if retrieve_all else min(bs, max_count - p)
+            if limit <= 0:
+                break
+            es_res = self.dataStore.search(fields, [], condition, [], orderBy, p, limit, index_name(tenant_id),
                                            kb_ids)
             dict_chunks = self.dataStore.get_fields(es_res, fields)
             for id, doc in dict_chunks.items():
                 doc["id"] = id
             if dict_chunks:
                 res.extend(dict_chunks.values())
-            # FIX: Solo terminar si no hay chunks, no si hay menos de bs
-            if len(dict_chunks.values()) == 0:
+            chunk_count = len(dict_chunks)
+            if chunk_count == 0 or chunk_count < limit:
                 break
+            p += limit
         return res
 
     def all_tags(self, tenant_id: str, kb_ids: list[str], S=1000):
@@ -678,6 +948,13 @@ class Dealer:
         vector_size = 1024
         for id, cks in mom_chunks.items():
             chunk = self.dataStore.get(id, idx_nms[0], [ck["kb_id"] for ck in cks])
+            if chunk is None:
+                logging.warning(
+                    "Parent chunk '%s' not found in the index; falling back to %d child chunk(s).",
+                    id, len(cks),
+                )
+                chunks.extend(cks)
+                continue
             d = {
                 "chunk_id": id,
                 "content_ltks": " ".join([ck["content_ltks"] for ck in cks]),

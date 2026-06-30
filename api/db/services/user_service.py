@@ -191,6 +191,7 @@ class TenantService(CommonService):
             cls.model.asr_id,
             cls.model.img2txt_id,
             cls.model.tts_id,
+            cls.model.ocr_id,
             cls.model.parser_ids,
             UserTenant.role]
         return list(cls.model.select(*fields)
@@ -225,6 +226,12 @@ class TenantService(CommonService):
     def user_gateway(cls, tenant_id):
         hash_obj = hashlib.sha256(tenant_id.encode("utf-8"))
         return int(hash_obj.hexdigest(), 16)%len(settings.MINIO)
+
+    @classmethod
+    @DB.connection_context()
+    def get_null_tenant_model_id_rows(cls):
+        objs = cls.model.select().orwhere(cls.model.tenant_llm_id.is_null(), cls.model.tenant_embd_id.is_null(), cls.model.tenant_asr_id.is_null(), cls.model.tenant_tts_id.is_null(), cls.model.tenant_rerank_id.is_null(), cls.model.tenant_img2txt_id.is_null())
+        return list(objs)
 
 
 class UserTenantService(CommonService):

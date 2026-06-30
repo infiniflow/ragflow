@@ -57,7 +57,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
   });
   const [checked, setChecked] = useState(false);
   const { removeChunk } = useDeleteChunkByIds();
-  const { data } = useFetchChunk(chunkId);
+  const { data } = useFetchChunk(chunkId, doc_id);
   const { t } = useTranslation();
 
   const isTagParser = parserId === 'tag';
@@ -98,7 +98,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
 
   return (
     <Modal
-      title={`${chunkId ? t('common.edit') : t('common.create')} ${t('chunk.chunk')}`}
+      title={t(chunkId ? 'chunk.editChunk' : 'chunk.createChunk')}
       open={true}
       onOk={handleOk}
       onCancel={hideModal}

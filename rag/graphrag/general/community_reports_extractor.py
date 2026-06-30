@@ -1,7 +1,6 @@
 # Copyright (c) 2024 Microsoft Corporation.
 # Licensed under the MIT License
 
-from common.misc_utils import thread_pool_exec
 
 """
 Reference:
@@ -13,18 +12,18 @@ import logging
 import json
 import os
 import re
-from typing import Callable
+from typing import Any, Awaitable, Callable
 from dataclasses import dataclass
 import networkx as nx
 import pandas as pd
 
 from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
-from common.connection_utils import timeout
 from rag.graphrag.general import leiden
 from rag.graphrag.general.community_report_prompt import COMMUNITY_REPORT_PROMPT
 from rag.graphrag.general.extractor import Extractor
 from rag.graphrag.general.leiden import add_community_info2graph
+from rag.graphrag.checkpoints import community_checkpoint_key
 from rag.llm.chat_model import Base as CompletionLLM
 from rag.graphrag.utils import perform_variable_replacements, dict_has_keys_with_types, chat_limiter
 from common.token_utils import num_tokens_from_string
@@ -55,7 +54,14 @@ class CommunityReportsExtractor(Extractor):
         self._extraction_prompt = COMMUNITY_REPORT_PROMPT
         self._max_report_length = max_report_length or 1500
 
-    async def __call__(self, graph: nx.Graph, callback: Callable | None = None, task_id: str = ""):
+    async def __call__(
+        self,
+        graph: nx.Graph,
+        callback: Callable | None = None,
+        task_id: str = "",
+        checkpoints: dict[str, Any] | None = None,
+        save_checkpoint: Callable[[str, Any], Awaitable[bool]] | None = None,
+    ):
         enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
         for node_degree in graph.degree:
             graph.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
@@ -65,8 +71,9 @@ class CommunityReportsExtractor(Extractor):
         res_str = []
         res_dict = []
         over, token_count = 0, 0
-        @timeout(120)
-        async def extract_community_report(community):
+        checkpoints = checkpoints or {}
+
+        async def extract_community_report(level, community):
             nonlocal res_str, res_dict, over, token_count
             if task_id:
                 if has_canceled(task_id):
@@ -78,6 +85,19 @@ class CommunityReportsExtractor(Extractor):
             ents = cm["nodes"]
             if len(ents) < 2:
                 return
+            checkpoint_key = community_checkpoint_key(str(level), str(cm_id), list(ents))
+            checkpoint = checkpoints.get(checkpoint_key)
+            if isinstance(checkpoint, dict):
+                response = checkpoint.get("structured_output")
+                output = checkpoint.get("output")
+                if isinstance(response, dict) and isinstance(output, str):
+                    add_community_info2graph(graph, response.get("entities", ents), response.get("title", ""))
+                    res_str.append(output)
+                    res_dict.append(response)
+                    over += 1
+                    if callback:
+                        callback(msg=f"Communities: {over}/{total}, used tokens: {token_count}")
+                    return
             ent_list = [{"entity": ent, "description": graph.nodes[ent]["description"]} for ent in ents]
             ent_df = pd.DataFrame(ent_list)
 
@@ -104,12 +124,12 @@ class CommunityReportsExtractor(Extractor):
             async with chat_limiter:
                 try:
                     timeout = 180 if enable_timeout_assertion else 1000000000
-                    response = await asyncio.wait_for(thread_pool_exec(self._chat,text,[{"role": "user", "content": "Output:"}],{},task_id),timeout=timeout)
+                    response = await asyncio.wait_for(self._async_chat(text, [{"role": "user", "content": "Output:"}], {}, task_id), timeout=timeout)
                 except asyncio.TimeoutError:
-                    logging.warning("extract_community_report._chat timeout, skipping...")
+                    logging.warning("extract_community_report._async_chat timeout, skipping...")
                     return
                 except Exception as e:
-                    logging.error(f"extract_community_report._chat failed: {e}")
+                    logging.error(f"extract_community_report._async_chat failed: {e}")
                     return
             token_count += num_tokens_from_string(text + response)
             response = re.sub(r"^[^\{]*", "", response)
@@ -134,7 +154,10 @@ class CommunityReportsExtractor(Extractor):
             response["weight"] = weight
             response["entities"] = ents
             add_community_info2graph(graph, ents, response["title"])
-            res_str.append(self._get_text_output(response))
+            output = self._get_text_output(response)
+            if save_checkpoint:
+                await save_checkpoint(checkpoint_key, {"structured_output": response, "output": output})
+            res_str.append(output)
             res_dict.append(response)
             over += 1
             if callback:
@@ -148,7 +171,7 @@ class CommunityReportsExtractor(Extractor):
                 if task_id and has_canceled(task_id):
                     logging.info(f"Task {task_id} cancelled before community processing.")
                     raise TaskCanceledException(f"Task {task_id} was cancelled")
-                tasks.append(asyncio.create_task(extract_community_report(community)))
+                tasks.append(asyncio.create_task(extract_community_report(level, community)))
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:

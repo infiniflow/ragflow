@@ -1,5 +1,5 @@
 <div align="center">
-<a href="https://demo.ragflow.io/">
+<a href="https://cloud.ragflow.io/">
 <img src="web/src/assets/logo-with-text.svg" width="350" alt="ragflow logo">
 </a>
 </div>
@@ -10,20 +10,22 @@
   <a href="./README_tzh.md"><img alt="繁體版中文自述文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
   <a href="./README_ja.md"><img alt="日本語のREADME" src="https://img.shields.io/badge/日本語-DFE0E5"></a>
   <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-DFE0E5"></a>
+  <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DFE0E5"></a>
   <a href="./README_id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-DFE0E5"></a>
   <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DFE0E5"></a>
-  <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DFE0E5"></a>
+  <a href="./README_ar.md"><img alt="README in Arabic" src="https://img.shields.io/badge/Arabic-DFE0E5"></a>
+  <a href="./README_tr.md"><img alt="Türkçe README" src="https://img.shields.io/badge/Türkçe-DFE0E5"></a>
 </p>
 
 <p align="center">
     <a href="https://x.com/intent/follow?screen_name=infiniflowai" target="_blank">
         <img src="https://img.shields.io/twitter/follow/infiniflow?logo=X&color=%20%23f5f5f5" alt="follow on X(Twitter)">
     </a>
-    <a href="https://demo.ragflow.io" target="_blank">
-        <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
+    <a href="https://cloud.ragflow.io" target="_blank">
+        <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.24.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.2">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -37,11 +39,10 @@
 </p>
 
 <h4 align="center">
+  <a href="https://cloud.ragflow.io">Cloud</a> |
   <a href="https://ragflow.io/docs/dev/">Document</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/12241">Roadmap</a> |
-  <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
-  <a href="https://demo.ragflow.io">Demo</a>
+  <a href="https://discord.gg/NjYzJD3GM3">Discord</a>
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -56,11 +57,11 @@
 <summary><b>📕 目录</b></summary>
 
 - 💡 [RAGFlow 是什么？](#-RAGFlow-是什么)
-- 🎮 [Demo](#-demo)
+- 🎮 [快速开始](#-快速开始)
 - 📌 [近期更新](#-近期更新)
 - 🌟 [主要功能](#-主要功能)
 - 🔎 [系统架构](#-系统架构)
-- 🎬 [快速开始](#-快速开始)
+- 🎬 [自主托管](#-自主托管)
 - 🔧 [系统配置](#-系统配置)
 - 🔨 [以源代码启动服务](#-以源代码启动服务)
 - 📚 [技术文档](#-技术文档)
@@ -75,9 +76,9 @@
 
 [RAGFlow](https://ragflow.io/) 是一款领先的开源检索增强生成（[RAG](https://ragflow.io/basics/what-is-rag)）引擎，通过融合前沿的 RAG 技术与 Agent 能力，为大型语言模型提供卓越的上下文层。它提供可适配任意规模企业的端到端 RAG 工作流，凭借融合式[上下文引擎](https://ragflow.io/basics/what-is-agent-context-engine)与预置的 Agent 模板，助力开发者以极致效率与精度将复杂数据转化为高可信、生产级的人工智能系统。
 
-## 🎮 Demo 试用
+## 🎮 快速开始
 
-请登录网址 [https://demo.ragflow.io](https://demo.ragflow.io) 试用 demo。
+请登录网址 [https://cloud.ragflow.io](https://cloud.ragflow.io) 体验云服务。
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -86,7 +87,10 @@
 
 ## 🔥 近期更新
 
-- 2025-12-26 支持AI代理的“记忆”功能。
+- 2026-06-15 支持飞书、Discord、Telegram、Line 等多种聊天渠道。
+- 2026-04-24 支持 DeepSeek v4.
+- 2026-03-24 发布 [RAGFlow 官方 Skill](https://clawhub.ai/yingfeng/ragflow-skill) — 提供官方 Skill 以通过 OpenClaw 访问 RAGFlow 数据集。
+- 2025-12-26 支持 AI 代理的"记忆"功能。
 - 2025-11-19 支持 Gemini 3 Pro。
 - 2025-11-12 支持从 Confluence、S3、Notion、Discord、Google Drive 进行数据同步。
 - 2025-10-23 支持 MinerU 和 Docling 作为文档解析方法。
@@ -94,10 +98,8 @@
 - 2025-08-08 支持 OpenAI 最新的 GPT-5 系列模型。
 - 2025-08-01 支持 agentic workflow 和 MCP。
 - 2025-05-23 Agent 新增 Python/JS 代码执行器组件。
-- 2025-05-05 支持跨语言查询。
 - 2025-03-19 PDF 和 DOCX 中的图支持用多模态大模型去解析得到描述。
-- 2024-12-18 升级了 DeepDoc 的文档布局分析模型。
-- 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。
+
 
 ## 🎉 关注项目
 
@@ -141,7 +143,7 @@
 <img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
-## 🎬 快速开始
+## 🎬 自主托管
 
 ### 📝 前提条件
 
@@ -149,6 +151,7 @@
 - RAM >= 16 GB
 - Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
+- Python >= 3.13
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): 仅在你打算使用 RAGFlow 的代码执行器（沙箱）功能时才需要安装。
 
 > [!TIP]
@@ -189,12 +192,12 @@
 > 请注意，目前官方提供的所有 Docker 镜像均基于 x86 架构构建，并不提供基于 ARM64 的 Docker 镜像。
 > 如果你的操作系统是 ARM64 架构，请参考[这篇文档](https://ragflow.io/docs/dev/build_docker_image)自行构建 Docker 镜像。
 
-   > 运行以下命令会自动下载 RAGFlow Docker 镜像 `v0.24.0`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.24.0` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。
+   > 运行以下命令会自动下载 RAGFlow Docker 镜像 `v0.26.2`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.26.2` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。
 
    ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.24.0
+   # git checkout v0.26.2
    # 可选：使用稳定版本标签（查看发布：https://github.com/infiniflow/ragflow/releases）
    # 这一步确保代码中的 entrypoint.sh 文件与 Docker 镜像的版本保持一致。
 
@@ -219,7 +222,7 @@
    > 如果你遇到 Docker 镜像拉不下来的问题，可以在 **docker/.env** 文件内根据变量 `RAGFLOW_IMAGE` 的注释提示选择华为云或者阿里云的相应镜像。
    >
    > - 华为云镜像名：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow`
-   > - 阿里云镜像名：`infiniflow-registry.cn-shanghai.cr.aliyuncs.com/infiniflow/ragflow`
+   > - 阿里云镜像名：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow`
 
 4. 服务器启动成功后再次确认服务器状态：
 
@@ -326,8 +329,8 @@ docker build --platform linux/amd64 \
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.12 # install RAGFlow dependent python modules
-   uv run download_deps.py
+   uv sync --python 3.13 # install RAGFlow dependent python modules
+   uv run python3 ragflow_deps/download_deps.py
    pre-commit install
    ```
 
@@ -396,8 +399,8 @@ docker build --platform linux/amd64 \
 - [Quickstart](https://ragflow.io/docs/dev/)
 - [Configuration](https://ragflow.io/docs/dev/configurations)
 - [Release notes](https://ragflow.io/docs/dev/release_notes)
-- [User guides](https://ragflow.io/docs/dev/category/guides)
-- [Developer guides](https://ragflow.io/docs/dev/category/developers)
+- [User guides](https://ragflow.io/docs/category/user-guides)
+- [Developer guides](https://ragflow.io/docs/category/developer-guides)
 - [References](https://ragflow.io/docs/dev/category/references)
 - [FAQs](https://ragflow.io/docs/dev/faq)
 
@@ -407,8 +410,8 @@ docker build --platform linux/amd64 \
 
 ## 🏄 开源社区
 
-- [Discord](https://discord.gg/zd4qPW6t)
-- [Twitter](https://twitter.com/infiniflowai)
+- [Discord](https://discord.gg/NjYzJD3GM3)
+- [X](https://x.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 贡献指南
