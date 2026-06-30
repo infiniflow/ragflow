@@ -42,6 +42,15 @@ class Base(ABC):
             transcription = self.client.audio.transcriptions.create(model=self.model_name, file=audio_file)
         return transcription.text.strip(), num_tokens_from_string(transcription.text.strip())
 
+    def transcription_with_timestamps(self, audio_path, **kwargs):
+        """Return a list of {"text": str, "start": float, "end": float} segments.
+
+        Providers that support verbose_json (Whisper-compatible) override this.
+        The default falls back to a single segment with no timing.
+        """
+        text, _ = self.transcription(audio_path, **kwargs)
+        return [{"text": text, "start": 0.0, "end": 0.0}]
+
     def audio2base64(self, audio):
         if isinstance(audio, bytes):
             return base64.b64encode(audio).decode("utf-8")
@@ -58,6 +67,24 @@ class GPTSeq2txt(Base):
             base_url = "https://api.openai.com/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
+
+    def transcription_with_timestamps(self, audio_path, **kwargs):
+        with open(audio_path, "rb") as audio_file:
+            try:
+                result = self.client.audio.transcriptions.create(
+                    model=self.model_name,
+                    file=audio_file,
+                    response_format="verbose_json",
+                    timestamp_granularities=["segment"],
+                )
+                segments = getattr(result, "segments", None) or []
+                if segments:
+                    return [{"text": s.text.strip(), "start": float(s.start), "end": float(s.end)} for s in segments]
+            except Exception as e:
+                logging.warning("[%s] transcription_with_timestamps failed, falling back to untimed: %s", self.__class__.__name__, e)
+        # Provider didn't return segments — fall back to single untimed segment
+        text, _ = self.transcription(audio_path, **kwargs)
+        return [{"text": text, "start": 0.0, "end": 0.0}]
 
 
 class StepFunSeq2txt(GPTSeq2txt):
@@ -207,6 +234,41 @@ class XinferenceSeq2txt(Base):
 
         except requests.exceptions.RequestException as e:
             return f"**ERROR**: {str(e)}", 0
+
+    def transcription_with_timestamps(self, audio_path, **kwargs):
+        if isinstance(audio_path, str):
+            with open(audio_path, "rb") as f:
+                audio_data = f.read()
+            audio_file_name = audio_path.split("/")[-1]
+        else:
+            audio_data = audio_path
+            audio_file_name = "audio.wav"
+
+        payload = {
+            "model": self.model_name,
+            "language": kwargs.get("language", "zh"),
+            "response_format": "verbose_json",
+            "temperature": 0.7,
+        }
+        files = {"file": (audio_file_name, audio_data, "audio/wav")}
+        try:
+            response = requests.post(f"{self.base_url}/v1/audio/transcriptions", files=files, data=payload, timeout=60)
+            response.raise_for_status()
+            result = response.json()
+            segments = result.get("segments", [])
+            if segments:
+                return [
+                    {
+                        "text": s.get("text", "").strip(),
+                        "start": float(s.get("start", 0.0)),
+                        "end": float(s.get("end", 0.0)),
+                    }
+                    for s in segments
+                ]
+        except Exception as e:
+            logging.warning("[XinferenceSeq2txt] transcription_with_timestamps failed, falling back to untimed: %s", e)
+        text, _ = self.transcription(audio_path, **kwargs)
+        return [{"text": text, "start": 0.0, "end": 0.0}]
 
 
 class TencentCloudSeq2txt(Base):

@@ -189,6 +189,20 @@ class LLMBundle(LLM4Tenant):
 
         return txt
 
+    def transcription_with_timestamps(self, audio):
+        if self.langfuse:
+            generation = self.langfuse.start_observation(trace_context=self.trace_context, as_type="generation", name="transcription_with_timestamps", metadata={"model": self.model_config["llm_name"]})
+
+        segments = self.mdl.transcription_with_timestamps(audio)
+        used_tokens = sum(num_tokens_from_string(s["text"]) for s in segments)
+        logging.info("LLMBundle.transcription_with_timestamps used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+
+        if self.langfuse:
+            generation.update(output={"segments": len(segments)}, usage_details={"total_tokens": used_tokens})
+            generation.end()
+
+        return segments
+
     def stream_transcription(self, audio):
         mdl = self.mdl
         supports_stream = hasattr(mdl, "stream_transcription") and callable(getattr(mdl, "stream_transcription"))
