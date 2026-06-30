@@ -42,7 +42,7 @@
   <a href="https://cloud.ragflow.io">Cloud</a> |
   <a href="https://ragflow.io/docs/dev/">Dokümantasyon</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/12241">Yol Haritası</a> |
-  <a href="https://discord.gg/NjYzJD3GM3">Discord</a> 
+  <a href="https://discord.gg/NjYzJD3GM3">Discord</a>
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -314,10 +314,10 @@ docker build --platform linux/amd64 \
 
 ## 🔨 Geliştirme İçin Kaynaktan Hizmet Başlatma
 
-1. `uv` ve `pre-commit` yükleyin veya zaten yüklüyse bu adımı atlayın:
+1. `uv` yükleyin veya zaten yüklüyse bu adımı atlayın:
 
    ```bash
-   pipx install uv pre-commit
+   pipx install uv
    ```
 2. Kaynak kodunu klonlayın ve Python bağımlılıklarını yükleyin:
 
@@ -326,7 +326,7 @@ docker build --platform linux/amd64 \
    cd ragflow/
    uv sync --python 3.13 # RAGFlow'un bağımlı Python modüllerini yükler
    uv run python3 ragflow_deps/download_deps.py
-   pre-commit install
+   lefthook install
    ```
 3. Bağımlı hizmetleri (MinIO, Elasticsearch, Redis ve MySQL) Docker Compose kullanarak başlatın:
 
