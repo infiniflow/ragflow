@@ -102,6 +102,9 @@ def test_chunks_add_list_get_update_delete_cycle(rest_client, create_document):
     assert list_payload["code"] == 0, list_payload
     assert list_payload["data"]["total"] == 1, list_payload
     assert list_payload["data"]["chunks"][0]["id"] == chunk_id, list_payload
+    # Issue #14771: chunk listing returns a download URL so callers can fetch
+    # the source document without composing the path themselves.
+    assert list_payload["data"]["chunks"][0]["document_download_url"] == f"/api/v1/datasets/{dataset_id}/documents/{document_id}", list_payload
 
     get_res = rest_client.get(f"{base_path}/{chunk_id}")
     assert get_res.status_code == 200
@@ -370,10 +373,13 @@ def test_chunk_delete_basic_contract(rest_client, create_document):
     ]
 
     for scenario_name, payload, expected_code, expected_message, remaining in cases:
-        _reset_chunk_batch(rest_client, base_path)
+        baseline_id, _ = _reset_chunk_batch(rest_client, base_path)
         request_body = payload
-        generated_ids = rest_client.get(base_path).json()["data"]["chunks"][1:]
-        generated_ids = [chunk["id"] for chunk in generated_ids]
+        generated_ids = [
+            chunk["id"]
+            for chunk in rest_client.get(base_path).json()["data"]["chunks"]
+            if chunk["id"] != baseline_id
+        ]
         if callable(payload):
             request_body = payload(generated_ids)
         res = rest_client.delete(base_path, json=request_body)

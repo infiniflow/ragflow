@@ -1080,8 +1080,13 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
     ranks["total"] = len(ranks["chunks"])
 
+    from api.utils.api_utils import build_document_download_url
+
     for c in ranks["chunks"]:
         c.pop("vector", None)
+        download_url = build_document_download_url(c.get("kb_id"), c.get("doc_id"))
+        if download_url:
+            c["document_download_url"] = download_url
     ranks["labels"] = labels
 
     return True, ranks
@@ -1452,8 +1457,13 @@ async def search_datasets(tenant_id: str, req: dict):
     ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
     ranks["total"] = len(ranks["chunks"])
 
+    from api.utils.api_utils import build_document_download_url
+
     for c in ranks["chunks"]:
         c.pop("vector", None)
+        download_url = build_document_download_url(c.get("kb_id"), c.get("doc_id"))
+        if download_url:
+            c["document_download_url"] = download_url
     ranks["labels"] = labels
 
     return True, ranks

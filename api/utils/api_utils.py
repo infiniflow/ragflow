@@ -319,6 +319,23 @@ def generate_confirmation_token():
     return "ragflow-" + secrets.token_urlsafe(32)
 
 
+def build_document_download_url(dataset_id, document_id):
+    """Return the API path that streams a document's source file.
+
+    Mirrors the document-download route declared in
+    api/apps/restful_apis/document_api.py
+    (GET /api/v1/datasets/<dataset_id>/documents/<document_id>) so callers
+    of retrieval/chunk responses can move from chunk text to the source file
+    without composing the path themselves. Returns None if either id is
+    missing — chunks occasionally surface without a dataset/document id
+    (e.g. knowledge-graph synthetic chunks) and we don't want to advertise
+    an unusable URL.
+    """
+    if not dataset_id or not document_id:
+        return None
+    return f"/api/v1/datasets/{dataset_id}/documents/{document_id}"
+
+
 def get_parser_config(chunk_method, parser_config):
     if not chunk_method:
         chunk_method = "naive"

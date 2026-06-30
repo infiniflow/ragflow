@@ -39,6 +39,7 @@ from api.db.services.task_service import TaskService, cancel_all_task_of, queue_
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
+    build_document_download_url,
     check_duplicate_ids,
     construct_json_result,
     get_error_data_result,
@@ -104,6 +105,7 @@ class Chunk(BaseModel):
     image_id: str = ""
     available: bool = True
     positions: list[list[int]] = Field(default_factory=list)
+    document_download_url: str = ""
 
     @validator("positions")
     def validate_positions(cls, value):
@@ -395,6 +397,13 @@ async def retrieval_test(tenant_id):
             "kb_id": "dataset_id",
         }
         ranks["chunks"] = [{key_mapping.get(key, key): value for key, value in chunk.items()} for chunk in ranks["chunks"]]
+        for rename_chunk in ranks["chunks"]:
+            download_url = build_document_download_url(
+                rename_chunk.get("dataset_id"),
+                rename_chunk.get("document_id"),
+            )
+            if download_url:
+                rename_chunk["document_download_url"] = download_url
         return get_result(data=ranks)
     except Exception as e:
         if "not_found" in str(e):
@@ -454,6 +463,9 @@ async def list_chunks(tenant_id, dataset_id, document_id):
             "tag_kwd": chunk.get("tag_kwd", []),
             "tag_feas": chunk.get("tag_feas", {}),
         }
+        download_url = build_document_download_url(final_chunk["dataset_id"], final_chunk["document_id"])
+        if download_url:
+            final_chunk["document_download_url"] = download_url
         res["chunks"].append(final_chunk)
         _ = Chunk(**final_chunk)
     elif settings.docStoreConn.index_exist(search.index_name(dataset_tenant_id), dataset_id):
@@ -483,6 +495,9 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                 "available": bool(int(sres.field[chunk_id].get("available_int", "1"))),
                 "positions": sres.field[chunk_id].get("position_int", []),
             }
+            download_url = build_document_download_url(d["dataset_id"], d["document_id"])
+            if download_url:
+                d["document_download_url"] = download_url
             res["chunks"].append(d)
             _ = Chunk(**d)
     return get_result(data=res)
