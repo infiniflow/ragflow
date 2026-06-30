@@ -138,9 +138,11 @@ async def update(search_id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
-        search_app = SearchService.query(tenant_id=current_user.id, id=search_id)[0]
-        if not search_app:
+        search_apps = SearchService.query(tenant_id=current_user.id, id=search_id)
+        if not search_apps:
+            logging.warning("Search update target not found: search_id=%s tenant_id=%s", search_id, current_user.id)
             return get_json_result(data=False, message=f"Cannot find search {search_id}", code=RetCode.DATA_ERROR)
+        search_app = search_apps[0]
 
         if req["name"].lower() != search_app.name.lower() and len(SearchService.query(name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value)) >= 1:
             return get_data_error_result(message="Duplicated search name.")
