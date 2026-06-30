@@ -3837,17 +3837,7 @@ func (c *CLI) APIRemoveTaskCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to remove tasks: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("remove tasks failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "remove tasks")
 }
 
 func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {

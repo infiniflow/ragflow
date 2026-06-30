@@ -284,8 +284,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.DELETE("/:chat_id/sessions", r.chatSessionHandler.DeleteSessions)
 				chats.GET("/:chat_id/sessions/:session_id", r.chatSessionHandler.GetSession)
 				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
-				chats.DELETE("/:chat_id/sessions/:session_id/messages/:msg_id", r.chatSessionHandler.DeleteSessionMessage)
-				chats.PUT("/:chat_id/sessions/:session_id/messages/:msg_id/feedback", r.chatSessionHandler.UpdateMessageFeedback)
 			}
 
 			// OpenAI-compatible chat completions route
@@ -364,6 +362,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				searches.GET("/:search_id", r.searchHandler.GetSearch)
 				searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
 				searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
+				searches.POST("/:search_id/completion", r.searchHandler.Completion)
+				searches.POST("/:search_id/completions", r.searchHandler.Completion)
 			}
 
 			file := v1.Group("/files")

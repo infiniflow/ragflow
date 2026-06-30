@@ -191,6 +191,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowUsersSummaryCommand(cmd)
 	case "admin_show_users_activity_command":
 		return c.AdminShowUsersActivityCommand(cmd)
+	case "admin_show_users_plan_command":
+		return c.AdminShowUsersPlanCommand(cmd)
 	case "admin_list_users_command":
 		return c.AdminListUsersCommand(cmd)
 	case "admin_list_users_condition_command":
