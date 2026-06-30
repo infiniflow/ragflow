@@ -43,7 +43,7 @@ struct JParser {
 };
 
 // =========================================================================
-// MurmurHash2 64-bit (vocab string→ID, seed=1)
+// MurmurHash2 64-bit (vocab string→ID, seed=0 matching spaCy StringStore)
 // =========================================================================
 static uint64_t mh2_64a(const void* key, int len, uint64_t seed) {
     const uint64_t m=0xc6a4a7935bd1e995ULL; const int r=47;
@@ -55,7 +55,7 @@ static uint64_t mh2_64a(const void* key, int len, uint64_t seed) {
     case 1:h^=d[0];h*=m;break;}
     h^=h>>r;h*=m;h^=h>>r; return h;
 }
-static uint64_t hash_feat(const std::string& s) { return s.empty()?0:mh2_64a(s.data(),(int)s.size(),1); }
+static uint64_t hash_feat(const std::string& s) { return s.empty()?0:mh2_64a(s.data(),(int)s.size(),0); }
 
 // =========================================================================
 // MurmurHash3_x64_128 (exact copy from mmh3 package, verified against thinc)
@@ -173,11 +173,17 @@ static std::string utf8_last(const std::string& s, size_t count) {
     return s.substr(pos);
 }
 static uint64_t feat_prefix(const std::string& t) {
-    return hash_feat(t.empty()?"":utf8_first(t));
+    // spaCy: string[:1].lower() → hash the lowercased prefix
+    std::string p = t.empty() ? "" : utf8_first(t);
+    std::transform(p.begin(), p.end(), p.begin(), ::tolower);
+    return hash_feat(p);
 }
 static uint64_t feat_suffix(const std::string& t) {
+    // spaCy: string[-3:].lower() → hash the lowercased suffix
     size_t ulen=utf8_len(t);
-    return hash_feat(ulen>=3?utf8_last(t,3):t);
+    std::string s = ulen>=3 ? utf8_last(t,3) : t;
+    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+    return hash_feat(s);
 }
 static uint64_t feat_shape(const std::string& t) {
     std::string sh;
@@ -490,6 +496,11 @@ char* ThincNER_Predict(ThincNERHandle h, const char* tj) {
 	//   unmaxed += bias[o,p]  (add bias once, not nF times)
 	//   hid_vec[o] = max(unmaxed[o*nP+0], unmaxed[o*nP+1])
 	//   scores[a] = cW[a][:] @ hid_vec + cB[a]
+	//
+	// Feature token indices match spaCy's BiluoPushDown transition system:
+	//   f=0: B(0) = buffer front = current token index
+	//   f=1: S(0) = stack top = entity_start if in entity, else back-off to B(0)
+	//   f=2: S(1) = stack second = back-off to B(0) (stack has ≤1 item in simple case)
 	auto label_type = [](const std::string& lbl) -> char { return lbl.empty() ? 'O' : lbl[0]; };
 	auto label_etype = [](const std::string& lbl) -> std::string { return lbl.size()<3?"":lbl.substr(2); };
 
@@ -499,20 +510,31 @@ char* ThincNER_Predict(ThincNERHandle h, const char* tj) {
 		std::vector<float> unmaxed((size_t)nO * nP, 0);
 		std::vector<float> hid_vec(nO, 0);
 		std::vector<float> scores(s->nAct, 0);
+		int entity_start = -1; // token index of current B-entity start, -1 = no entity
 
 		for(int i=0;i<n;i++){
-			const float* h = hid.data() + (size_t)i * nO;
+			// Determine feature token indices from transition state
+			// (matches spaCy BiluoPushDown B(0)/S(0)/S(1) mapping)
+			int ft[3];
+			ft[0] = i;                          // B(0) = current token
+			if(entity_start >= 0) {
+				ft[1] = entity_start;               // S(0) = entity start
+				ft[2] = i;                          // S(1) = back-off to B(0)
+			} else {
+				ft[1] = i;                          // S(0) = back-off to B(0)
+				ft[2] = i;                          // S(1) = back-off to B(0)
+			}
 
-			// PrecomputableAffine: pre[f][o][p] = W[f][o][p][:] @ h + b[o][p]
+			// PrecomputableAffine: pre[f][o][p] = W[f][o][p][:] @ hid[ft[f]] + b[o][p]
 			memset(unmaxed.data(), 0, (size_t)nO * nP * sizeof(float));
 			for(int f=0;f<nF;f++){
+				const float* hf = hid.data() + (size_t)ft[f] * nO;
 				for(int o=0;o<nO;o++){
 					for(int p=0;p<nP;p++){
-						// Index into pW_full: [f][o][p][d]
 						size_t base = (((size_t)f * nO + o) * nP + p) * nD;
 						float val = 0;
 						for(int d=0;d<nD;d++){
-							val += s->pW_full[base + d] * h[d];
+							val += s->pW_full[base + d] * hf[d];
 						}
 						unmaxed[(size_t)o * nP + p] += val;
 					}
@@ -558,7 +580,14 @@ char* ThincNER_Predict(ThincNERHandle h, const char* tj) {
 				if(!valid) continue;
 				if(scores[a]>bv){bv=scores[a];bst=a;}
 			}
-			if(bst>=0) tl[i] = s->actLbl[bst];
+			if(bst>=0) {
+				tl[i] = s->actLbl[bst];
+				// Update entity_start for next token (BiluoPushDown stack tracking)
+				char ct = label_type(tl[i]);
+				if(ct == 'B') entity_start = i;
+				else if(ct == 'I' || ct == 'L') { /* entity continues, keep entity_start */ }
+				else entity_start = -1; // O or U → no entity open
+			}
 		}
 	}
 

@@ -79,7 +79,7 @@ static uint64_t mh2_64a(const void* key, int len, uint64_t seed) {
     case 4:h^=uint64_t(d[3])<<24;case 3:h^=uint64_t(d[2])<<16;case 2:h^=uint64_t(d[1])<<8;case 1:h^=d[0];h*=m;break;}
     h^=h>>r;h*=m;h^=h>>r;return h;
 }
-static uint64_t hash_feat(const std::string& s){return s.empty()?0:mh2_64a(s.data(),(int)s.size(),1);}
+static uint64_t hash_feat(const std::string& s){return s.empty()?0:mh2_64a(s.data(),(int)s.size(),0);}
 
 struct HashEmbed{
     int n_rows=0,nO=0;uint32_t seed=0;std::vector<float> table;
@@ -131,8 +131,8 @@ static std::string u8_last(const std::string& s, size_t count){
 }
 static std::vector<uint64_t> extract_features(const std::string& t, int n_embed){
     auto fn=[&](const std::string& s){return hash_feat(s);};
-    auto fp=[&](const std::string& s){return hash_feat(s.empty()?"":u8_first(s));};
-    auto fs=[&](const std::string& s){return hash_feat(u8_len(s)>=3?u8_last(s,3):s);};
+    auto fp=[&](const std::string& s){std::string p=s.empty()?"":u8_first(s);std::transform(p.begin(),p.end(),p.begin(),::tolower);return hash_feat(p);};
+    auto fs=[&](const std::string& s){std::string su=u8_len(s)>=3?u8_last(s,3):s;std::transform(su.begin(),su.end(),su.begin(),::tolower);return hash_feat(su);};
     auto fsh=[&](const std::string& t2){std::string sh;for(unsigned char c:t2){if(c>0x7F)sh+='x';else if(std::isupper(c))sh+='X';else if(std::islower(c))sh+='x';else if(std::isdigit(c))sh+='d';else sh+=c;}return hash_feat(sh);};
     std::vector<uint64_t> ids;
     std::string lo=t;std::transform(lo.begin(),lo.end(),lo.begin(),::tolower);

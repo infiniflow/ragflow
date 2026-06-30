@@ -77,14 +77,17 @@ func extractRelationsWithOpts(text string, entities []Entity, lang string, maxDi
 		patterns = relationPatterns["en"]
 	}
 
-	entityMap := make(map[string]Entity, len(entities)*2)
+	// Build multimap: entity text → all occurrences (handles duplicate entity names)
+	entityMultiMap := make(map[string][]Entity, len(entities))
 	for _, e := range entities {
-		entityMap[strings.ToLower(e.Text)] = e
+		key := strings.ToLower(e.Text)
+		entityMultiMap[key] = append(entityMultiMap[key], e)
 		// Also add punctuation-stripped version
 		cleaned := strings.TrimRight(e.Text, ".,;:!?")
 		cleaned = strings.TrimSpace(cleaned)
 		if cleaned != e.Text {
-			entityMap[strings.ToLower(cleaned)] = e
+			ckey := strings.ToLower(cleaned)
+			entityMultiMap[ckey] = append(entityMultiMap[ckey], e)
 		}
 	}
 
@@ -100,59 +103,97 @@ func extractRelationsWithOpts(text string, entities []Entity, lang string, maxDi
 	if hasOffsets {
 		sentenceSpans = splitSentences(text)
 	}
-	sameSentence := func(c1, c2 int) bool {
-		if !hasOffsets || len(sentenceSpans) == 0 {
-			return true
-		}
-		for _, sp := range sentenceSpans {
-			if sp[0] <= c1 && c1 < sp[1] && sp[0] <= c2 && c2 < sp[1] {
-				return true
-			}
-		}
-		return false
-	}
 
 	seen := make(map[string]bool)
 	var relations []Relation
 
 	// Phase 1: Pattern-based typed relations
-	for _, entry := range patterns {
-		matches := entry.pattern.FindAllStringSubmatch(text, -1)
-		for _, m := range matches {
-			if len(m) < 3 {
-				continue
-			}
-			subjText := strings.TrimSpace(m[1])
-			objText := strings.TrimSpace(m[2])
-			subj := findEntityByText(subjText, entityMap)
-			obj := findEntityByText(objText, entityMap)
-			if subj.Text == "" || obj.Text == "" {
-				continue
-			}
+	// Process each sentence separately to prevent cross-sentence regex matches.
+	// When entities have no offsets, fall back to full-text matching.
+	if hasOffsets && len(sentenceSpans) > 0 {
+		for _, entry := range patterns {
+			for _, sp := range sentenceSpans {
+				sentText := text[sp[0]:sp[1]]
+				matches := entry.pattern.FindAllStringSubmatchIndex(sentText, -1)
+				for _, m := range matches {
+					if len(m) < 6 {
+						continue
+					}
+					subjStart, subjEnd := m[2], m[3]
+					objStart, objEnd := m[4], m[5]
+					if subjStart < 0 || objStart < 0 {
+						continue
+					}
+					// Adjust to absolute positions
+					absSubjStart := subjStart + sp[0]
+					absSubjEnd := subjEnd + sp[0]
+					absObjStart := objStart + sp[0]
+					absObjEnd := objEnd + sp[0]
+					subjText := strings.TrimSpace(text[absSubjStart:absSubjEnd])
+					objText := strings.TrimSpace(text[absObjStart:absObjEnd])
+					subj := findEntityByText(subjText, absSubjStart, entityMultiMap)
+					obj := findEntityByText(objText, absObjStart, entityMultiMap)
+					if subj.Text == "" || obj.Text == "" {
+						continue
+					}
+					key := subj.Text + "|" + entry.predicate + "|" + obj.Text
+					if seen[key] {
+						continue
+					}
+					seen[key] = true
 
-			// Cross-sentence filter: skip if entities are in different sentences
-			// (matches Python RelationExtractor._extract_with_patterns)
-			if !sameSentence(subj.StartChar, obj.StartChar) {
-				continue
+					var ctx string
+					absMatchStart := m[0] + sp[0]
+					absMatchEnd := m[1] + sp[0]
+					ctx = extractContext(text, text[absMatchStart:absMatchEnd])
+					relations = append(relations, Relation{
+						Subject:    subj,
+						Predicate:  entry.predicate,
+						Object:     obj,
+						Confidence: 0.8,
+						Context:    ctx,
+					})
+				}
 			}
+		}
+	} else {
+		// No offsets: process full text
+		for _, entry := range patterns {
+			matches := entry.pattern.FindAllStringSubmatchIndex(text, -1)
+			for _, m := range matches {
+				if len(m) < 6 {
+					continue
+				}
+				subjStart, subjEnd := m[2], m[3]
+				objStart, objEnd := m[4], m[5]
+				if subjStart < 0 || objStart < 0 {
+					continue
+				}
+				subjText := strings.TrimSpace(text[subjStart:subjEnd])
+				objText := strings.TrimSpace(text[objStart:objEnd])
+				subj := findEntityByText(subjText, subjStart, entityMultiMap)
+				obj := findEntityByText(objText, objStart, entityMultiMap)
+				if subj.Text == "" || obj.Text == "" {
+					continue
+				}
+				key := subj.Text + "|" + entry.predicate + "|" + obj.Text
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
 
-			key := subj.Text + "|" + entry.predicate + "|" + obj.Text
-			if seen[key] {
-				continue
+				var ctx string
+				if len(m) >= 2 && m[0] >= 0 {
+					ctx = extractContext(text, text[m[0]:m[1]])
+				}
+				relations = append(relations, Relation{
+					Subject:    subj,
+					Predicate:  entry.predicate,
+					Object:     obj,
+					Confidence: 0.8,
+					Context:    ctx,
+				})
 			}
-			seen[key] = true
-
-			var ctx string
-			if len(m) >= 2 {
-				ctx = extractContext(text, m[0])
-			}
-			relations = append(relations, Relation{
-				Subject:    subj,
-				Predicate:  entry.predicate,
-				Object:     obj,
-				Confidence: 0.8,
-				Context:    ctx,
-			})
 		}
 	}
 
@@ -224,28 +265,71 @@ func extractCooccurrence(text string, entities []Entity, maxDistance int) []Rela
 	return relations
 }
 
-// findEntityByText matches Python's _find_entity logic.
-// Strips trailing punctuation and handles "and/or" postfix.
-func findEntityByText(raw string, entityMap map[string]Entity) Entity {
+// findEntityByText finds the entity occurrence closest to matchPos.
+// Uses multimap to handle duplicate entity names at different positions.
+func findEntityByText(raw string, matchPos int, entityMultiMap map[string][]Entity) Entity {
 	text := strings.TrimSpace(raw)
 	// Strip trailing punctuation
 	for len(text) > 0 && strings.ContainsAny(text[len(text)-1:], ".,;:!?") {
 		text = strings.TrimSpace(text[:len(text)-1])
 	}
-	key := strings.ToLower(text)
-	if ent, ok := entityMap[key]; ok {
+	ent := findClosest(text, matchPos, entityMultiMap)
+	if ent.Text != "" {
 		return ent
 	}
-	// Try removing trailing " and ..." / " or ..."
+	// Try stripping trailing " and ..." / " or ..." / ", ..."
+	key := strings.ToLower(text)
 	for _, sep := range []string{" and ", " or ", ", "} {
 		if idx := strings.Index(key, sep); idx > 0 {
-			candidate := key[:idx]
-			if ent, ok := entityMap[candidate]; ok {
-				return ent
+			if e := findClosest(key[:idx], matchPos, entityMultiMap); e.Text != "" {
+				return e
 			}
 		}
 	}
+	// Try progressively shorter word sequences (right-to-left word stripping)
+	// Handles cases like "Google in" → try "Google" or "Microsoft. Microsoft" → try "microsoft" (stripped)
+	words := strings.Fields(key)
+	for i := len(words) - 1; i > 0; i-- {
+		candidate := strings.Join(words[:i], " ")
+		// Strip trailing punctuation from candidate before lookup
+		candidate = strings.TrimRight(candidate, ".,;:!?")
+		candidate = strings.TrimSpace(candidate)
+		if e := findClosest(candidate, matchPos, entityMultiMap); e.Text != "" {
+			return e
+		}
+	}
 	return Entity{}
+}
+
+// findClosest returns the entity occurrence closest to matchPos from the multimap.
+// Also tries stripping trailing punctuation from name if exact match fails.
+func findClosest(name string, matchPos int, multiMap map[string][]Entity) Entity {
+	entries := multiMap[strings.ToLower(name)]
+	if len(entries) == 0 {
+		// Try with trailing punctuation stripped
+		cleaned := strings.TrimRight(name, ".,;:!?")
+		cleaned = strings.TrimSpace(cleaned)
+		if cleaned != name {
+			entries = multiMap[strings.ToLower(cleaned)]
+		}
+	}
+	if len(entries) == 0 {
+		return Entity{}
+	}
+	if len(entries) == 1 {
+		return entries[0]
+	}
+	// Multiple occurrences: pick the one whose span center is closest to matchPos
+	best := entries[0]
+	bestDist := abs(best.StartChar + best.EndChar - 2*matchPos)
+	for i := 1; i < len(entries); i++ {
+		d := abs(entries[i].StartChar + entries[i].EndChar - 2*matchPos)
+		if d < bestDist {
+			best = entries[i]
+			bestDist = d
+		}
+	}
+	return best
 }
 
 func extractContext(text string, matchStr string) string {
@@ -297,19 +381,56 @@ func max(a, b int) int {
 	return b
 }
 
-// splitSentences splits text into sentence spans [start, end),
-// matching Python's: re.finditer(r'[^.!?]+(?:[.!?](?=\s|$))+', text)
-// Uses Go-compatible regex (no lookahead) with manual space check.
+// splitSentences splits text into sentence spans [start, end).
+// Matches Python's: re.finditer(r'[^.!?]+(?:[.!?](?=\s|$))+', text)
+// Go RE2 lacks lookahead, so this manually identifies sentence boundaries:
+// - Periods followed by uppercase letter or end-of-string are sentence ends.
+// - Periods followed by lowercase letter are abbreviations (e.g., "Inc."), not sentence ends.
+// - ! and ? are always sentence-ending.
 func splitSentences(text string) [][2]int {
-	re := regexp.MustCompile(`[^.!?]+[.!?]+`)
-	matches := re.FindAllStringIndex(text, -1)
 	var spans [][2]int
-	for _, m := range matches {
-		end := m[1]
-		// Punctuation must be followed by space or end-of-string
-		if end == len(text) || text[end] == ' ' {
-			spans = append(spans, [2]int{m[0], end})
+	start := 0
+	for i := 0; i < len(text); {
+		ch := text[i]
+		if ch == '!' || ch == '?' {
+			end := i + 1
+			spans = append(spans, [2]int{start, end})
+			start = end
+			i = end
+			continue
 		}
+		if ch == '.' {
+			// Check if this period is a sentence end or abbreviation
+			// Sentence end: period followed by space(s) + uppercase or end-of-string
+			// Abbreviation: period followed by space(s) + lowercase
+			end := i + 1
+			next := end
+			for next < len(text) && text[next] == ' ' {
+				next++
+			}
+			if next >= len(text) {
+				// Period at end of text = sentence end
+				spans = append(spans, [2]int{start, end})
+				start = end
+				i = end
+				continue
+			}
+			if text[next] >= 'A' && text[next] <= 'Z' {
+				// Period + space + uppercase = sentence end
+				spans = append(spans, [2]int{start, end})
+				start = end
+				i = end
+				continue
+			}
+			// Lowercase after period = abbreviation, not sentence end
+			i = end
+			continue
+		}
+		i++
+	}
+	// Remaining text after last sentence boundary
+	if start < len(text) {
+		spans = append(spans, [2]int{start, len(text)})
 	}
 	if len(spans) == 0 && len(text) > 0 {
 		spans = append(spans, [2]int{0, len(text)})
