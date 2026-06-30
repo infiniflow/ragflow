@@ -1460,8 +1460,12 @@ func (s *ChatPipelineService) AsyncChatSolo(
 					}
 				}
 			}
+			finalAnswer := ExtractVisibleAnswer(thinkState.fullText)
+			if finalAnswer == "" {
+				finalAnswer = fullAnswer
+			}
 			out <- AsyncChatResult{
-				Answer:      fullAnswer,
+				Answer:      finalAnswer,
 				Reference:   map[string]interface{}{},
 				AudioBinary: nil,
 				CreatedAt:   float64(time.Now().Unix()),
@@ -2287,7 +2291,7 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 	}
 	contents := make([]chunkContent, 0, len(chunksRaw))
 	for _, ck := range chunksRaw {
-		c := getMapString(ck, "content", "content_with_weight")
+		c := getMapString(ck, "content_with_weight", "content")
 		if c == "" {
 			continue
 		}
@@ -2314,7 +2318,7 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 	var result []string
 	for i := 0; i < chunksNum; i++ {
 		ck := chunksRaw[i]
-		c := getMapString(ck, "content", "content_with_weight")
+		c := getMapString(ck, "content_with_weight", "content")
 		if c == "" {
 			continue
 		}

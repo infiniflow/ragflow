@@ -44,6 +44,8 @@ type ThinkStreamState struct {
 	thinkBuffer string
 	// answerBuffer accumulates answer-side text before token-batch flushing
 	answerBuffer string
+	// carry holds text at the end of a chunk that may be a partial <think> or </think> prefix.
+	carry string
 }
 
 // ThinkDeltaKind describes the type of a think-tag delta event.
@@ -66,7 +68,13 @@ func emitText(state *ThinkStreamState, section string, text string, minTokens in
 		return "", 0
 	}
 	if section == "think" {
-		return text, ThinkDeltaText
+		state.thinkBuffer += text
+		if tokenizer.NumTokensFromString(state.thinkBuffer) >= minTokens {
+			out := state.thinkBuffer
+			state.thinkBuffer = ""
+			return out, ThinkDeltaText
+		}
+		return "", 0
 	}
 	state.answerBuffer += text
 	if tokenizer.NumTokensFromString(state.answerBuffer) >= minTokens {
@@ -102,6 +110,22 @@ func stripThinkTags(s string) string {
 	return stripThinkReplacer.Replace(s)
 }
 
+// tagPrefixLen returns the length of the longest suffix of s that could be a
+// PARTIAL start of "<think>" or "</think>". Returns 0 if the suffix is a complete
+// tag or no prefix match exists.
+func tagPrefixLen(s string) int {
+	for i := 0; i < len(s); i++ {
+		sub := s[i:]
+		if sub == thinkOpen || sub == thinkClose {
+			return 0 // complete tag, not a partial prefix
+		}
+		if strings.HasPrefix(thinkOpen, sub) || strings.HasPrefix(thinkClose, sub) {
+			return len(sub)
+		}
+	}
+	return 0
+}
+
 // NextThinkDelta processes the next chunk of LLM output and returns any
 // visible text or tag boundary markers that should be emitted.
 func NextThinkDelta(state *ThinkStreamState, chunk string, minTokens int) []ThinkDelta {
@@ -121,7 +145,17 @@ func NextThinkDelta(state *ThinkStreamState, chunk string, minTokens int) []Thin
 		return nil
 	}
 	state.fullText += newPart
-	pending := newPart
+
+	// Prepend carry from previous chunk that may complete a partial tag.
+	pending := state.carry + newPart
+	state.carry = ""
+
+	// Check if pending ends with a partial <think> or </think> prefix.
+	// Save it as carry so it isn't emitted as visible text.
+	if n := tagPrefixLen(pending); n > 0 {
+		state.carry = pending[len(pending)-n:]
+		pending = pending[:len(pending)-n]
+	}
 
 	var deltas []ThinkDelta
 
@@ -252,6 +286,10 @@ func FlushRemaining(state *ThinkStreamState) []ThinkDelta {
 	if state.pendingAfterClose != "" {
 		deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaText, Value: state.pendingAfterClose})
 		state.pendingAfterClose = ""
+	}
+	if state.carry != "" {
+		deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaText, Value: state.carry})
+		state.carry = ""
 	}
 	return deltas
 }

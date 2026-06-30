@@ -3797,6 +3797,9 @@ func (p *Parser) parseChatCompletionsBody() (*Command, error) {
 	cmd.Params["max_tokens"] = 0
 	cmd.Params["stream"] = false
 
+	// Track which options were explicitly set (distinguishes from defaults).
+	cmd.Params["_set"] = map[string]bool{}
+
 	// Required positional: <question>
 	question, err := p.parseQuotedString()
 	if err != nil {
@@ -3815,6 +3818,7 @@ func (p *Parser) parseChatCompletionsBody() (*Command, error) {
 			}
 			cmd.Params[name] = v
 			p.nextToken()
+			markSet(cmd, name)
 		case "temperature", "top_p", "frequency_penalty", "presence_penalty":
 			v, err := p.parseFloat()
 			if err != nil {
@@ -3822,6 +3826,7 @@ func (p *Parser) parseChatCompletionsBody() (*Command, error) {
 			}
 			cmd.Params[name] = v
 			p.nextToken()
+			markSet(cmd, name)
 		case "max_tokens":
 			v, err := p.parseNumber()
 			if err != nil {
@@ -3829,12 +3834,14 @@ func (p *Parser) parseChatCompletionsBody() (*Command, error) {
 			}
 			cmd.Params["max_tokens"] = v
 			p.nextToken()
+			markSet(cmd, "max_tokens")
 		case "stream", "pass_all_history", "legacy":
 			v, err := p.parseBool()
 			if err != nil {
 				return fmt.Errorf("CHAT COMPLETIONS %s: expected true|false, got %s", name, p.curToken.Value)
 			}
 			cmd.Params[name] = v
+			markSet(cmd, name)
 		case "history":
 			raw, err := p.parseQuotedString()
 			if err != nil {
@@ -3888,6 +3895,19 @@ optionsLoop:
 	}
 
 	return cmd, nil
+}
+
+func markSet(cmd *Command, name string) {
+	if s, ok := cmd.Params["_set"].(map[string]bool); ok {
+		s[name] = true
+	}
+}
+
+func isSet(cmd *Command, name string) bool {
+	if s, ok := cmd.Params["_set"].(map[string]bool); ok {
+		return s[name]
+	}
+	return false
 }
 
 // parseJSONLiteral consumes a TokenQuotedString whose payload is a JSON

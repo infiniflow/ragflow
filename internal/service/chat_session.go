@@ -907,12 +907,15 @@ func (s *ChatSessionService) ChatCompletions(
 				return fail(errors.New("Session does not belong to this chat!"))
 			}
 		} else {
-			session = s.createSessionForCompletion(chatID, dialog, userID)
+			session, err = s.createSessionForCompletion(chatID, dialog, userID)
+			if err != nil {
+				return fail(err)
+			}
 			sessionID = session.ID
 		}
 
 		if passAllHistory {
-			session.Message, _ = json.Marshal(map[string]interface{}{"messages": requestMessages})
+			session.Message, _ = json.Marshal(requestMessages)
 		} else {
 			session = s.appendSessionMessage(session, requestMsg)
 		}
@@ -1164,7 +1167,7 @@ func (s *ChatSessionService) buildDefaultCompletionDialog(tenantID string) *enti
 }
 
 // createSessionForCompletion mirrors Python _create_session_for_completion.
-func (s *ChatSessionService) createSessionForCompletion(chatID string, dialog *entity.Chat, userID string) *entity.ChatSession {
+func (s *ChatSessionService) createSessionForCompletion(chatID string, dialog *entity.Chat, userID string) (*entity.ChatSession, error) {
 	newID := common.GenerateUUID()
 	name := "New session"
 
@@ -1175,12 +1178,10 @@ func (s *ChatSessionService) createSessionForCompletion(chatID string, dialog *e
 		}
 	}
 
-	msgObj := map[string]interface{}{
-		"messages": []map[string]interface{}{
-			{"role": "assistant", "content": prologue},
-		},
+	msg := []map[string]interface{}{
+		{"role": "assistant", "content": prologue},
 	}
-	msgJSON, _ := json.Marshal(msgObj)
+	msgJSON, _ := json.Marshal(msg)
 	refJSON, _ := json.Marshal([]interface{}{})
 
 	session := &entity.ChatSession{
@@ -1191,45 +1192,25 @@ func (s *ChatSessionService) createSessionForCompletion(chatID string, dialog *e
 		UserID:    &userID,
 		Reference: refJSON,
 	}
-	_ = s.chatSessionDAO.Create(session)
-	return session
+	if err := s.chatSessionDAO.Create(session); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 // appendSessionMessage appends the last user message to the session's message history.
 func (s *ChatSessionService) appendSessionMessage(session *entity.ChatSession, requestMsg []map[string]interface{}) *entity.ChatSession {
-	var msgObj map[string]interface{}
-	if len(session.Message) > 0 {
-		json.Unmarshal(session.Message, &msgObj)
-	}
-	if msgObj == nil {
-		msgObj = map[string]interface{}{"messages": []interface{}{}}
-	}
-	msgs, _ := msgObj["messages"].([]interface{})
-	if msgs == nil {
-		msgs = []interface{}{}
-	}
+	msgs := parseMessages(session.Message)
 	msgs = append(msgs, requestMsg[len(requestMsg)-1])
-	msgObj["messages"] = msgs
-	session.Message, _ = json.Marshal(msgObj)
+	session.Message, _ = json.Marshal(msgs)
 	return session
 }
 
 // filterSystemAndLeadingAssistant filters system messages and leading assistant messages from session history.
 func (s *ChatSessionService) filterSystemAndLeadingAssistant(session *entity.ChatSession) []map[string]interface{} {
-	var msgObj map[string]interface{}
-	if len(session.Message) > 0 {
-		json.Unmarshal(session.Message, &msgObj)
-	}
-	msgs, _ := msgObj["messages"].([]interface{})
-	if msgs == nil {
-		return nil
-	}
+	messages := parseMessages(session.Message)
 	var result []map[string]interface{}
-	for _, m := range msgs {
-		msg, _ := m.(map[string]interface{})
-		if msg == nil {
-			continue
-		}
+	for _, msg := range messages {
 		role, _ := msg["role"].(string)
 		if role == "system" {
 			continue
@@ -1263,21 +1244,10 @@ func (s *ChatSessionService) appendAssistantToSession(session *entity.ChatSessio
 
 // getSessionMessagesAsSlice returns the session's messages as a slice of maps.
 func (s *ChatSessionService) getSessionMessagesAsSlice(session *entity.ChatSession) []map[string]interface{} {
-	var msgObj map[string]interface{}
-	if len(session.Message) > 0 {
-		json.Unmarshal(session.Message, &msgObj)
-	}
-	msgs, _ := msgObj["messages"].([]interface{})
-	if msgs == nil {
+	if session == nil {
 		return nil
 	}
-	result := make([]map[string]interface{}, 0, len(msgs))
-	for _, m := range msgs {
-		if msg, ok := m.(map[string]interface{}); ok {
-			result = append(result, msg)
-		}
-	}
-	return result
+	return parseMessages(session.Message)
 }
 
 // sendSSEError sends an error in SSE format through the stream channel.
@@ -1382,34 +1352,29 @@ func marshalJSONWithSpaces(v interface{}) string {
 	if err != nil {
 		return "{}"
 	}
-	// Add space after colon between key-value pairs.
-	// json.Marshal always produces "":"quoted" or ":number" or ":null" etc.
-	s := string(data)
-	s = strings.ReplaceAll(s, `":"`, `": "`)
-	s = strings.ReplaceAll(s, `":{`, `": {`)
-	s = strings.ReplaceAll(s, `":[`, `": [`)
-	s = strings.ReplaceAll(s, `":null`, `": null`)
-	s = strings.ReplaceAll(s, `":false`, `": false`)
-	s = strings.ReplaceAll(s, `":true`, `": true`)
-	s = replaceColonNumber(s)
-	// Add space after comma between JSON values.
-	s = strings.ReplaceAll(s, `,"`, `, "`)
-	s = strings.ReplaceAll(s, `,{`, `, {`)
-	s = strings.ReplaceAll(s, `,[`, `, [`)
-	s = strings.ReplaceAll(s, `,null`, `, null`)
-	s = strings.ReplaceAll(s, `,false`, `, false`)
-	s = strings.ReplaceAll(s, `,true`, `, true`)
-	s = replaceCommaNumber(s)
-	return s
+	return addJSONSpacesOutsideStrings(data)
 }
 
-// replaceColonNumber adds space after ":<digit>" (e.g. ":0" → ": 0", ":1782119189" → ": 1782119189").
-func replaceColonNumber(s string) string {
+func addJSONSpacesOutsideStrings(data []byte) string {
 	var b strings.Builder
-	b.Grow(len(s) + 16)
-	for i := 0; i < len(s); i++ {
-		b.WriteByte(s[i])
-		if s[i] == ':' && i+1 < len(s) && (s[i+1] >= '0' && s[i+1] <= '9') {
+	b.Grow(len(data) + 16)
+	inString := false
+	escaped := false
+	for _, c := range data {
+		b.WriteByte(c)
+		if escaped {
+			escaped = false
+			continue
+		}
+		if inString && c == '\\' {
+			escaped = true
+			continue
+		}
+		if c == '"' {
+			inString = !inString
+			continue
+		}
+		if !inString && (c == ':' || c == ',') {
 			b.WriteByte(' ')
 		}
 	}
@@ -1442,22 +1407,16 @@ func sanitizeJSONFloats(v interface{}) interface{} {
 			out[i] = sanitizeJSONFloats(vv)
 		}
 		return out
+	case []map[string]interface{}:
+		out := make([]map[string]interface{}, len(val))
+		for i, item := range val {
+			sanitized, _ := sanitizeJSONFloats(item).(map[string]interface{})
+			out[i] = sanitized
+		}
+		return out
 	default:
 		return v
 	}
-}
-
-// replaceCommaNumber adds space after ",<digit>" (e.g. ",173368" → ", 173368").
-func replaceCommaNumber(s string) string {
-	var b strings.Builder
-	b.Grow(len(s) + 16)
-	for i := 0; i < len(s); i++ {
-		b.WriteByte(s[i])
-		if s[i] == ',' && i+1 < len(s) && (s[i+1] >= '0' && s[i+1] <= '9') {
-			b.WriteByte(' ')
-		}
-	}
-	return b.String()
 }
 
 // sseMarshalChunk converts an answer map to the ordered sseAnswerChunk struct
@@ -1512,15 +1471,25 @@ func (s *ChatSessionService) structureAnswer(session *entity.ChatSession, answer
 }
 
 func (s *ChatSessionService) updateSessionMessages(session *entity.ChatSession, messages []map[string]interface{}, reference []interface{}) {
-	// Update session with new messages and reference
-	messagesJSON, _ := json.Marshal(messages)
-	referenceJSON, _ := json.Marshal(reference)
+	messagesJSON, err := json.Marshal(messages)
+	if err != nil {
+		common.Warn("updateSessionMessages: failed to marshal messages", zap.Error(err))
+		return
+	}
+	referenceJSON, err := json.Marshal(reference)
+	if err != nil {
+		common.Warn("updateSessionMessages: failed to marshal reference", zap.Error(err))
+		return
+	}
 
 	updates := map[string]interface{}{
 		"message":   messagesJSON,
 		"reference": referenceJSON,
 	}
-	s.chatSessionDAO.UpdateByID(session.ID, updates)
+	if err := s.chatSessionDAO.UpdateByID(session.ID, updates); err != nil {
+		common.Warn("updateSessionMessages: DAO update failed", zap.Error(err))
+		return
+	}
 	session.Message = messagesJSON
 	session.Reference = referenceJSON
 }
@@ -1620,16 +1589,16 @@ func (s *ChatSessionService) chunksFormat(reference map[string]interface{}) []ma
 	for _, chunk := range raw {
 		out = append(out, map[string]interface{}{
 			"id":                getValue(chunk, "chunk_id", "id"),
-			"content":           getValue(chunk, "content", "content_with_weight"),
+			"content":           getValue(chunk, "content_with_weight", "content"),
 			"document_id":       getValue(chunk, "doc_id", "document_id"),
 			"document_name":     getValue(chunk, "docnm_kwd", "document_name"),
 			"dataset_id":        getValue(chunk, "kb_id", "dataset_id"),
 			"image_id":          getValue(chunk, "image_id", "img_id"),
 			"positions":         getValue(chunk, "positions", "position_int"),
 			"url":               chunk["url"],
-			"similarity":        chunk["similarity"],
-			"vector_similarity": chunk["vector_similarity"],
-			"term_similarity":   chunk["term_similarity"],
+			"similarity":        sanitizeJSONFloats(chunk["similarity"]),
+			"vector_similarity": sanitizeJSONFloats(chunk["vector_similarity"]),
+			"term_similarity":   sanitizeJSONFloats(chunk["term_similarity"]),
 			"row_id":            chunk["row_id"],
 			"doc_type":          getValue(chunk, "doc_type_kwd", "doc_type"),
 			"document_metadata": chunk["document_metadata"],

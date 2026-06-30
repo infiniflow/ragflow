@@ -4222,29 +4222,29 @@ func buildChatCompletionsRequestBody(cmd *Command) (map[string]interface{}, erro
 		body["question"] = question
 	}
 
-	// Optional flags
-	if v, ok := cmd.Params["pass_all_history"].(bool); ok && v {
+	// Optional flags — only emit when explicitly set
+	if isSet(cmd, "pass_all_history") && cmd.Params["pass_all_history"].(bool) {
 		body["pass_all_history_messages"] = true
 	}
-	if v, ok := cmd.Params["legacy"].(bool); ok && v {
+	if isSet(cmd, "legacy") && cmd.Params["legacy"].(bool) {
 		body["legacy"] = true
 	}
 
 	// Generation params — only emit when explicitly set
-	if v, ok := cmd.Params["temperature"].(float64); ok && v != 0.0 {
-		body["temperature"] = v
+	if isSet(cmd, "temperature") {
+		body["temperature"] = cmd.Params["temperature"]
 	}
-	if v, ok := cmd.Params["max_tokens"].(int); ok && v != 0 {
-		body["max_tokens"] = v
+	if isSet(cmd, "max_tokens") {
+		body["max_tokens"] = cmd.Params["max_tokens"]
 	}
-	if v, ok := cmd.Params["top_p"].(float64); ok && v != 0.0 {
-		body["top_p"] = v
+	if isSet(cmd, "top_p") {
+		body["top_p"] = cmd.Params["top_p"]
 	}
-	if v, ok := cmd.Params["frequency_penalty"].(float64); ok && v != 0.0 {
-		body["frequency_penalty"] = v
+	if isSet(cmd, "frequency_penalty") {
+		body["frequency_penalty"] = cmd.Params["frequency_penalty"]
 	}
-	if v, ok := cmd.Params["presence_penalty"].(float64); ok && v != 0.0 {
-		body["presence_penalty"] = v
+	if isSet(cmd, "presence_penalty") {
+		body["presence_penalty"] = cmd.Params["presence_penalty"]
 	}
 
 	return body, nil
@@ -4287,23 +4287,17 @@ func (c *CLI) oneshotChatCompletions(url string, body map[string]interface{}) (R
 // streamChatCompletions performs a streaming POST and collects SSE chunks.
 func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (ResponseIf, error) {
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-	resp, err := httpClient.Request("POST", url, "web", nil, body)
+	reader, err := httpClient.RequestStream("POST", url, "web", nil, body)
 	if err != nil {
 		return nil, fmt.Errorf("chat completions stream: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return &ChatCompletionsResponse{
-			Code:     resp.StatusCode,
-			Message:  string(resp.Body),
-			Duration: resp.Duration,
-			raw:      resp.Body,
-		}, nil
-	}
+	defer reader.Close()
 
+	start := time.Now()
+	scanner := bufio.NewScanner(reader)
 	var fullContent string
-	lines := strings.Split(string(resp.Body), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" || !strings.HasPrefix(line, "data:") {
 			continue
 		}
@@ -4313,29 +4307,24 @@ func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (Re
 			continue
 		}
 		var chunk struct {
-			Choices []struct {
-				Delta struct {
-					Content string `json:"content"`
-				} `json:"delta"`
-			} `json:"choices"`
+			Code    int                `json:"code"`
+			Message string             `json:"message"`
+			Data    chatCompletionData `json:"data"`
 		}
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
 			continue
 		}
-		if len(chunk.Choices) > 0 {
-			if d := chunk.Choices[0].Delta.Content; d != "" {
-				fullContent += d
-			}
+		if chunk.Data.Answer != "" {
+			fullContent += chunk.Data.Answer
 		}
 	}
 
 	fullContent = strings.TrimLeft(fullContent, "\n\r")
 	return &ChatCompletionsResponse{
-		Duration: resp.Duration,
+		Duration: time.Since(start).Seconds(),
 		Data: &chatCompletionData{
 			Answer: fullContent,
 		},
 		streamed: true,
-		raw:      resp.Body,
 	}, nil
 }

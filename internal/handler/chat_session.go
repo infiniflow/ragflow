@@ -104,7 +104,8 @@ type ChatCompletionsRequest struct {
 	Question               string                   `json:"question,omitempty"`
 	Files                  []interface{}            `json:"files,omitempty"`
 	LLMID                  string                   `json:"llm_id,omitempty"`
-	PassAllHistoryMessages bool                     `json:"pass_all_history_messages,omitempty"`
+	PassAllHistoryMessages *bool                    `json:"pass_all_history_messages,omitempty"`
+	PassAllHistory         *bool                    `json:"pass_all_history,omitempty"`
 	Legacy                 bool                     `json:"legacy,omitempty"`
 	Stream                 *bool                    `json:"stream"`
 	Temperature            *float64                 `json:"temperature,omitempty"`
@@ -138,8 +139,14 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	}
 
 	var req ChatCompletionsRequest
-	if b, err := json.Marshal(rawBody); err == nil {
-		_ = json.Unmarshal(b, &req)
+	b, err := json.Marshal(rawBody)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+	if err := json.Unmarshal(b, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
 	}
 
 	// Normalize session_id / conversation_id
@@ -164,6 +171,15 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	}
 	if req.MaxTokens != nil {
 		genConfig["max_tokens"] = *req.MaxTokens
+	}
+
+	// Resolve pass_all_history from either alias
+	passAllHistory := false
+	if req.PassAllHistory != nil {
+		passAllHistory = *req.PassAllHistory
+	}
+	if req.PassAllHistoryMessages != nil {
+		passAllHistory = *req.PassAllHistoryMessages
 	}
 
 	// Remove known keys from rawBody; what remains is passthrough kwargs
@@ -202,7 +218,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 				req.ChatID, sessionID,
 				req.Messages, req.Question, req.Files,
 				req.LLMID, genConfig, kwargs,
-				req.PassAllHistoryMessages, req.Legacy,
+				passAllHistory, req.Legacy,
 				true, streamChan,
 			)
 		}()
@@ -221,7 +237,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 			req.ChatID, sessionID,
 			req.Messages, req.Question, req.Files,
 			req.LLMID, genConfig, kwargs,
-			req.PassAllHistoryMessages, req.Legacy,
+			passAllHistory, req.Legacy,
 			false, nil,
 		)
 		if err != nil {

@@ -1061,7 +1061,7 @@ Required positional:
   'question'  the user question
 
 Named options (any order; all optional with defaults):
-  chat_id           '...'  the dialog id (required by server)
+  chat_id           '...'  the dialog id (optional)
   session           '...'  existing session/conversation id
   llm               '...'  override the dialog's LLM
   system            '...'  override the system prompt

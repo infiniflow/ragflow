@@ -980,7 +980,7 @@ func getChunkID(c map[string]interface{}) string {
 }
 
 func chunkContent(c map[string]interface{}) string {
-	for _, key := range []string{"content", "content_with_weight"} {
+	for _, key := range []string{"content_with_weight", "content"} {
 		if v, ok := c[key]; ok {
 			s := fmt.Sprint(v)
 			return strings.TrimSpace(s)
