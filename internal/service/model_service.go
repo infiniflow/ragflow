@@ -33,20 +33,34 @@ import (
 )
 
 // parseModelName parses a composite model name in format "model@instance@provider" or "model@provider"
-// Returns modelName, instanceName, providerName separately
+// Returns modelName, instanceName, providerName separately.
+//
+// The composite key is right-anchored: providerName is always the *last*
+// '@'-separated field, instanceName is the second-to-last (when present),
+// and everything to the left is the bare model name. Some model names
+// legitimately contain '@' characters themselves (e.g. LM Studio embedding
+// model IDs such as `text-embedding-nomic-embed-text-v1.5@q8_0`), which
+// produces composite keys like
+// `text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio`. When the
+// split yields more than 3 fields we rejoin the leading fields back into the
+// modelName so any embedded '@' characters are preserved verbatim.
 func parseModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
 	parts := strings.Split(compositeName, "@")
-	if len(parts) == 3 {
+	switch len(parts) {
+	case 3:
 		// Format: model@instance@provider
 		return parts[0], parts[1], parts[2], nil
-	} else if len(parts) == 2 {
+	case 2:
 		// Format: model@provider -> instance defaults to "default"
 		return parts[0], "default", parts[1], nil
-	} else if len(parts) == 1 {
+	case 1:
 		return parts[0], "", "", fmt.Errorf("provider name missing in model name: %s", compositeName)
 	}
-
-	return "", "", "", fmt.Errorf("invalid model name format: %s", compositeName)
+	// len(parts) > 3: any '@' characters embedded in the leftmost modelName
+	// component must be preserved in that component instead of being dropped
+	// or assigned to the instance/provider fields.
+	n := len(parts)
+	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
 }
 
 func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {

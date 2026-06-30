@@ -188,19 +188,27 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str | enum.Enum
 
 def split_model_name(model_name: str):
     # Parse model_name: {model_name} or {model_name}@{factory_name} or {model_name}@{instance_name}@{factory_name}
-    parts = model_name.split("@")
-    if len(parts) == 1:
-        pure_model_name = parts[0]
-        provider_name = ""
-        instance_name = ""
-    elif len(parts) == 2:
-        pure_model_name = parts[0]
-        provider_name = parts[1]
+    #
+    # The composite key is right-anchored on the provider: the *last* '@'-separated
+    # field is the factory/provider, the second-to-last is the instance (when
+    # present), and everything to the left is the bare model name. Some model
+    # names legitimately contain '@' characters themselves (e.g. LM Studio
+    # embedding model IDs such as `text-embedding-nomic-embed-text-v1.5@q8_0`),
+    # which produces composite keys like
+    # `text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio`.
+    # Use rsplit with maxsplit=2 from the right so any '@' characters embedded
+    # in the leftmost model-name component are preserved as part of that name.
+    parts = model_name.rsplit("@", 2)
+    n = len(parts)
+    if n == 3:
+        pure_model_name, instance_name, provider_name = parts
+    elif n == 2:
+        pure_model_name, provider_name = parts
         instance_name = "default"
     else:
         pure_model_name = parts[0]
-        instance_name = parts[1]
-        provider_name = parts[2]
+        provider_name = ""
+        instance_name = ""
     return pure_model_name, instance_name, provider_name
 
 
