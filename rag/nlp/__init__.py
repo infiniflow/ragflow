@@ -920,6 +920,30 @@ def title_frequency(bull, sections):
     return most_level, levels
 
 
+def _normalize_sections_2tuple(sections):
+    """Normalize sections to 2-tuples (text, tag) with defensive shape checks."""
+    normalized = []
+    dropped = 0
+    for s in sections:
+        if isinstance(s, str):
+            if s:
+                normalized.append((s, ""))
+            else:
+                dropped += 1
+            continue
+        if not isinstance(s, (tuple, list)) or len(s) == 0:
+            dropped += 1
+            continue
+        txt = s[0]
+        if not txt:
+            dropped += 1
+            continue
+        normalized.append((txt, s[-1] if len(s) >= 2 else ""))
+    if dropped:
+        logging.debug("Dropped %d malformed/empty sections during normalization", dropped)
+    return normalized
+
+
 def not_title(txt):
     if re.match(r"第[零一二三四五六七八九十百0-9]+条", txt):
         return False
@@ -933,6 +957,9 @@ def tree_merge(bull, sections, depth):
         return sections
     if isinstance(sections[0], type("")):
         sections = [(s, "") for s in sections]
+
+    # Normalize to 2-tuples for consistent unpacking
+    sections = _normalize_sections_2tuple(sections)
 
     # filter out position information in pdf sections
     sections = [(t, o) for t, o in sections if
@@ -982,6 +1009,8 @@ def hierarchical_merge(bull, sections, depth):
         return []
     if isinstance(sections[0], type("")):
         sections = [(s, "") for s in sections]
+    # Normalize to 2-tuples for consistent unpacking
+    sections = _normalize_sections_2tuple(sections)
     sections = [(t, o) for t, o in sections if
                 t and len(t.split("@")[0].strip()) > 1 and not re.match(r"[0-9]+$", t.split("@")[0].strip())]
     bullets_size = len(BULLET_PATTERN[bull])
@@ -1075,6 +1104,8 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
         sections = [sections]
     if isinstance(sections[0], str):
         sections = [(s, "") for s in sections]
+    # Normalize to 2-tuples for consistent unpacking
+    sections = _normalize_sections_2tuple(sections)
     cks = [""]
     tk_nums = [0]
 

@@ -212,8 +212,23 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if name in ["tcadp", "docling", "mineru", "paddleocr"]:
             parser_config["chunk_token_num"] = 0
 
-        for txt, poss in raw_sections:
+        dropped = 0
+        for sec in raw_sections:
+            if not isinstance(sec, (tuple, list)) or len(sec) == 0:
+                dropped += 1
+                continue
+            txt = sec[0] or ""
+            if not isinstance(txt, str):
+                txt = str(txt)
+            if not txt:
+                dropped += 1
+                continue
+            poss = sec[-1] if len(sec) >= 2 else ""
+            if not isinstance(poss, str):
+                poss = ""
             sections.append(txt + poss)
+        if dropped:
+            logging.debug("Dropped %d malformed/empty raw_sections", dropped)
 
         callback(0.8, "Finish parsing.")
     elif re.search(r"\.(txt|md|markdown|mdx)$", filename, re.IGNORECASE):

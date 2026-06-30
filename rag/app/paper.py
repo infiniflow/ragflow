@@ -193,7 +193,11 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER,
                 "title": filename,
                 "authors": " ",
                 "abstract": "",
-                "sections": sections,
+                "sections": [
+                    (s[0], s[-1] if len(s) >= 2 else "")
+                    for s in sections
+                    if isinstance(s, (tuple, list)) and len(s) > 0 and s[0]
+                ],
                 "tables": tables
             }
 

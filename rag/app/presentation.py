@@ -226,7 +226,13 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         callback(0.8, "Finish parsing.")
 
-        for pn, (txt, img) in enumerate(sections):
+        dropped = 0
+        for pn, sec in enumerate(sections):
+            if not isinstance(sec, (tuple, list)) or len(sec) == 0 or not sec[0]:
+                dropped += 1
+                continue
+            txt = sec[0] if isinstance(sec[0], str) else str(sec[0])
+            img = sec[-1] if len(sec) >= 2 else None
             d = copy.deepcopy(doc)
             pn += from_page
             if not is_image_like(img):
@@ -239,6 +245,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             d["position_int"] = [(pn + 1, 0, img.size[0] if img else 0, 0, img.size[1] if img else 0)]
             tokenize(d, txt, eng)
             res.append(d)
+        if dropped:
+            logging.debug("Dropped %d malformed/empty PDF page sections", dropped)
         return res
 
     raise NotImplementedError("file type not supported yet(ppt, pptx, pdf supported)")
