@@ -641,6 +641,7 @@ def prompts():
 def list_agents(tenant_id):
     keywords = request.args.get("keywords", "")
     canvas_category = request.args.get("canvas_category")
+    canvas_type = request.args.get("canvas_type")
     owner_ids = [item for item in request.args.get("owner_ids", "").strip().split(",") if item]
     tags = [item for item in request.args.get("tags", "").strip().split(",") if item]
 
@@ -675,6 +676,7 @@ def list_agents(tenant_id):
         keywords,
         canvas_category,
         tags,
+        canvas_type,
     )
 
     return get_json_result(data={"canvas": canvas, "total": total})
