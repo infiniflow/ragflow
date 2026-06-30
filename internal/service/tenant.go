@@ -566,7 +566,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 			ModelProvider: defaultASRModelProvider,
 			ModelInstance: defaultASRModelInstance,
 			ModelName:     defaultASRModelName,
-			ModelType:     "asr",
+			ModelType:     "speech2text",
 			Enable:        defaultASREnable,
 		})
 	}
@@ -577,39 +577,35 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 			ModelProvider: defaultImage2TextModelProvider,
 			ModelInstance: defaultImage2TextModelInstance,
 			ModelName:     defaultImage2TextModelName,
-			ModelType:     "vision",
+			ModelType:     "image2text",
 			Enable:        defaultImage2TextModelEnable,
 		})
 	}
 
-	if ownedTenant.OCRID == nil {
-		return result, nil
+	if ownedTenant.OCRID != nil {
+		defaultOCRModelProvider, defaultOCRModelInstance, defaultOCRModelName, defaultOCRModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, *ownedTenant.OCRID, "ocr")
+		if err == nil {
+			result = append(result, ModelItem{
+				ModelProvider: defaultOCRModelProvider,
+				ModelInstance: defaultOCRModelInstance,
+				ModelName:     defaultOCRModelName,
+				ModelType:     "ocr",
+				Enable:        defaultOCRModelEnable,
+			})
+		}
 	}
 
-	defaultOCRModelProvider, defaultOCRModelInstance, defaultOCRModelName, defaultOCRModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, *ownedTenant.OCRID, "ocr")
-	if err == nil {
-		result = append(result, ModelItem{
-			ModelProvider: defaultOCRModelProvider,
-			ModelInstance: defaultOCRModelInstance,
-			ModelName:     defaultOCRModelName,
-			ModelType:     "ocr",
-			Enable:        defaultOCRModelEnable,
-		})
-	}
-
-	if ownedTenant.TTSID == nil {
-		return result, nil
-	}
-
-	defaultTTSModelProvider, defaultTTSModelInstance, defaultTTSModelName, defaultTTSModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, *ownedTenant.TTSID, "tts")
-	if err == nil {
-		result = append(result, ModelItem{
-			ModelProvider: defaultTTSModelProvider,
-			ModelInstance: defaultTTSModelInstance,
-			ModelName:     defaultTTSModelName,
-			ModelType:     "tts",
-			Enable:        defaultTTSModelEnable,
-		})
+	if ownedTenant.TTSID != nil {
+		defaultTTSModelProvider, defaultTTSModelInstance, defaultTTSModelName, defaultTTSModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, *ownedTenant.TTSID, "tts")
+		if err == nil {
+			result = append(result, ModelItem{
+				ModelProvider: defaultTTSModelProvider,
+				ModelInstance: defaultTTSModelInstance,
+				ModelName:     defaultTTSModelName,
+				ModelType:     "tts",
+				Enable:        defaultTTSModelEnable,
+			})
+		}
 	}
 
 	return result, nil

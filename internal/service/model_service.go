@@ -880,6 +880,17 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, modelTypeFilter str
 				}
 				merged := make([]string, 0, len(mergedSet))
 				for t := range mergedSet {
+					// Normalize config-file tags to the values the front-end
+					// expects (matching Python's MODEL_TAG_TO_TYPE in
+					// models_api_service.py:38). Config JSONs use "asr"/"vision"
+					// but the front-end ModelTypeMap filters on
+					// "speech2text"/"image2text".
+					switch t {
+					case "asr":
+						t = "speech2text"
+					case "vision":
+						t = "image2text"
+					}
 					merged = append(merged, t)
 				}
 				added = append(added, map[string]interface{}{
