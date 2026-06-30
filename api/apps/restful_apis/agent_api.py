@@ -1393,7 +1393,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             canvas_title=getattr(cvs, "title", ""),
             canvas_category=getattr(cvs, "canvas_category", CanvasCategory.Agent),
             return_trace=bool(req.get("return_trace", False)),
-            stream=req.get("stream", True),
+            stream=req.get("stream", False),
             chat_template_kwargs=req.get("chat_template_kwargs"),
         )
 
@@ -1541,12 +1541,12 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             canvas_title=canvas_title,
             canvas_category=canvas_category,
             return_trace=bool(req.get("return_trace", False)),
-            stream=req.get("stream", True),
+            stream=req.get("stream", False),
             chat_template_kwargs=req.get("chat_template_kwargs"),
         )
 
     return_trace = bool(req.get("return_trace", False))
-    if req.get("stream", True):
+    if req.get("stream", False):
 
         async def generate():
             async for ans in _iter_session_completion_events(tenant_id, agent_id, req, return_trace):
