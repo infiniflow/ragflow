@@ -119,77 +119,56 @@ func parseArgs() (*serverArgs, error) {
 	return args, nil
 }
 
-func printGeneralHelp() {
-	fmt.Fprintf(os.Stderr, "Usage: %s (--api|--admin|--ingestor) [OPTIONS]\n\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
-	fmt.Fprintf(os.Stderr, "Mode selection (default: --api):\n")
-	fmt.Fprintf(os.Stderr, "  --api          \tRun as API server\n")
-	fmt.Fprintf(os.Stderr, "  --admin        \tRun as admin server\n")
-	fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n\n")
-	fmt.Fprintf(os.Stderr, "Common options:\n")
-	fmt.Fprintf(os.Stderr, "  --config, -f string\tPath to configuration file\n")
-	fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
-	fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
-	fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n\n")
-	fmt.Fprintf(os.Stderr, "Run '%s --api --help' for API server options.\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "Run '%s --admin --help' for admin server options.\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "Run '%s --ingestor --help' for ingester options.\n", os.Args[0])
-}
-
-func printAPIHelp() {
-	fmt.Fprintf(os.Stderr, "Usage: %s --api [OPTIONS]\n\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "RAGFlow API Server\n\n")
-	fmt.Fprintf(os.Stderr, "Options:\n")
-	fmt.Fprintf(os.Stderr, "  -p, --port int\t\tServer port (overrides config file)\n")
-	fmt.Fprintf(os.Stderr, "  --config string\t\tPath to configuration file\n")
-	fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-	fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
-	fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
-}
-
-func printAdminHelp() {
-	fmt.Fprintf(os.Stderr, "Usage: %s --admin [OPTIONS]\n\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "RAGFlow Admin Server\n\n")
-	fmt.Fprintf(os.Stderr, "Options:\n")
-	fmt.Fprintf(os.Stderr, "  --config string\t\tPath to configuration file\n")
-	fmt.Fprintf(os.Stderr, "  --init-superuser\t\tInitialize superuser account\n")
-	fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-	fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
-	fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
-}
-
-func printIngestorHelp() {
-	fmt.Fprintf(os.Stderr, "Usage: %s --ingestor [OPTIONS]\n\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "RAGFlow Ingestion Worker - Document ingestion processing\n\n")
-	fmt.Fprintf(os.Stderr, "Options:\n")
-	fmt.Fprintf(os.Stderr, "  -f, --config string\t\tPath to config file\n")
-	fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
-	fmt.Fprintf(os.Stderr, "  --admin-host string\t\tAdmin server host (overrides config file)\n")
-	fmt.Fprintf(os.Stderr, "  --admin-port int\t\tAdmin server port (overrides config file)\n")
-	fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-	fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
-	fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
+func printHelp(args *serverArgs) {
+	switch {
+	case args.mode == nil:
+		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
+		fmt.Fprintf(os.Stderr, "Mode selection (default: --api):\n")
+		fmt.Fprintf(os.Stderr, "  --api          \tRun as API server\n")
+		fmt.Fprintf(os.Stderr, "  --admin        \tRun as admin server\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n\n")
+		fmt.Fprintf(os.Stderr, "Common options:\n")
+		fmt.Fprintf(os.Stderr, "  --config string\tPath to configuration file\n")
+		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
+		fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n\n")
+		fmt.Fprintf(os.Stderr, "Run '%s --api --help' for API server options.\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Run '%s --admin --help' for admin server options.\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Run '%s --ingestor --help' for ingester options.\n", os.Args[0])
+	case *args.mode == "api":
+		fmt.Fprintf(os.Stderr, "Usage: %s --api [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "RAGFlow API Server\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		fmt.Fprintf(os.Stderr, "  --port int     \tServer port (overrides config file)\n")
+		fmt.Fprintf(os.Stderr, "  --config string\tPath to configuration file\n")
+		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
+		fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n")
+	case *args.mode == "admin":
+		fmt.Fprintf(os.Stderr, "Usage: %s --admin [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "RAGFlow Admin Server\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		fmt.Fprintf(os.Stderr, "  --config string\t\tPath to configuration file\n")
+		fmt.Fprintf(os.Stderr, "  --port int    \t\tServer port (overrides config file)\n")
+		fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account\n")
+		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
+		fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n")
+	case *args.mode == "ingestor":
+		fmt.Fprintf(os.Stderr, "Usage: %s --ingestor [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "RAGFlow Ingestion Worker - Document ingestion processing\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		fmt.Fprintf(os.Stderr, "  --config string\t\tPath to config file\n")
+		fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
+		fmt.Fprintf(os.Stderr, "  --admin-host string\t\tAdmin server host:port (overrides config file)\n")
+		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
+		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
+	}
 }
 
 func main() {
-	// Scan args for mode and help BEFORE flag registration,
-	// so we can show mode-specific help without parsing all flags.
-	arguments, err := parseArgs()
-	if err != nil {
-		fmt.Printf("Failed to parse arguments: %v\n", err)
-		return
-	}
-
-	if arguments.versionFlag {
-		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
-		return
-	}
-	return
-}
-
-func main1() {
-	// Scan args for mode and help BEFORE flag registration,
-	// so we can show mode-specific help without parsing all flags.
 	arguments, err := parseArgs()
 	if err != nil {
 		fmt.Printf("Failed to parse arguments: %v\n", err)
@@ -201,78 +180,10 @@ func main1() {
 		return
 	}
 
-	//if wantVersion {
-	//	fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
-	//	return
-	//}
-	//
-	//if wantHelp {
-	//	switch mode {
-	//	case "admin":
-	//		printAdminHelp()
-	//	case "ingestor":
-	//		printIngestorHelp()
-	//	default:
-	//		printAPIHelp()
-	//	}
-	//	return
-	//}
-
-	// Register mode flags (for mode detection during normal run)
-	var adminMode bool
-	var ingestorMode bool
-	var apiMode bool
-	flag.BoolVar(&adminMode, "admin", false, "Run as admin server")
-	flag.BoolVar(&ingestorMode, "ingestor", false, "Run as ingestion worker")
-	flag.BoolVar(&apiMode, "api", false, "Run as API server")
-
-	// Common flags
-	var configPath string
-	flag.StringVar(&configPath, "config", "", "Path to configuration file")
-	flag.StringVar(&configPath, "f", "", "Path to config file (shorthand)")
-	var debugFlag bool
-	flag.BoolVar(&debugFlag, "debug", false, "Enable debug-level logging")
-	var versionFlag bool
-	flag.BoolVar(&versionFlag, "version", false, "Print version information and exit")
-	flag.BoolVar(&versionFlag, "v", false, "Print version information and exit (shorthand)")
-
-	// Admin-specific flags
-	var initSuperuser bool
-	flag.BoolVar(&initSuperuser, "init-superuser", false, "Initialize superuser account")
-
-	// Ingestion-specific flags
-	var ingestorName string
-	flag.StringVar(&ingestorName, "name", "default_ingestion", "Ingestion server name")
-	var adminHost string
-	flag.StringVar(&adminHost, "admin-host", "", "Admin server host (overrides config file)")
-	var adminPort int
-	flag.IntVar(&adminPort, "admin-port", 0, "Admin server port (overrides config file)")
-
-	// API-specific flags
-	var portFlag int
-	flag.IntVar(&portFlag, "port", 0, "Server port (overrides config file)")
-	flag.IntVar(&portFlag, "p", 0, "Server port (shorthand)")
-
-	// When flag.Parse() encounters an error (unknown flag), show general help
-	flag.Usage = printGeneralHelp
-
-	flag.Parse()
-
-	// Handle --version flag (from parsed flags, defensive)
-	if versionFlag {
-		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
+	if arguments.helpFlag {
+		printHelp(arguments)
 		return
 	}
-
-	// Determine mode from parsed flags; default to the pre-scan result
-	//switch {
-	//case adminMode:
-	//	runAdmin(configPath, debugFlag, initSuperuser)
-	//case ingestorMode:
-	//	runIngestor(configPath, debugFlag, ingestorName, adminHost, adminPort)
-	//default:
-	//	runAPI(configPath, debugFlag, portFlag)
-	//}
 }
 
 // ---------------------------------------------------------------------------
