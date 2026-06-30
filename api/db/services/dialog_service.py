@@ -34,7 +34,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
-from common.metadata_utils import apply_meta_data_filter
+from common.metadata_utils import apply_meta_data_filter, derive_prompt_meta_fields
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
@@ -753,7 +753,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         )
         _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), metadata_fields)
 
-    knowledges = kb_prompt(kbinfos, max_tokens)
+    knowledges = kb_prompt(kbinfos, max_tokens, meta_fields=derive_prompt_meta_fields(dialog.meta_data_filter))
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
 
     retrieval_ts = timer()
@@ -1700,7 +1700,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         )
         _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), metadata_fields)
 
-    knowledges = kb_prompt(kbinfos, max_tokens)
+    knowledges = kb_prompt(kbinfos, max_tokens, meta_fields=derive_prompt_meta_fields(meta_data_filter))
     sys_prompt = PROMPT_JINJA_ENV.from_string(ASK_SUMMARY).render(knowledge="\n".join(knowledges))
 
     msg = [{"role": "user", "content": question}]

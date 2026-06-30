@@ -132,7 +132,38 @@ def message_fit_in(msg, max_length=4000):
     return count(), msg
 
 
-def kb_prompt(kbinfos, max_tokens, hash_id=False):
+def kb_prompt(kbinfos, max_tokens, hash_id=False, meta_fields=None):
+    """
+    Build the knowledge-base prompt block from retrieved chunks.
+
+    Args:
+        kbinfos: retrieval result with "chunks" / "doc_aggs".
+        max_tokens: token budget for the produced prompt block.
+        hash_id: whether to hash chunk IDs in the prompt.
+        meta_fields: optional iterable controlling which document metadata
+            fields to surface in the prompt:
+
+            - ``None`` (default): include every metadata field present on
+              each chunk (legacy behaviour, used when no conversation-level
+              ``meta_data_filter`` is configured or when the filter mode is
+              ``auto``, which is unpredictable).
+            - empty collection (``set()``/``[]``): suppress all metadata in
+              the prompt, regardless of what enrichment may have populated
+              on each chunk. This is what conversation mode ``disabled``
+              should pass.
+            - non-empty collection: include only the named metadata keys.
+              Used by ``manual`` / ``semi_auto`` so the prompt only shows
+              fields the user actually filtered on (token-efficient).
+    """
+    meta_fields_set: set[str] | None
+    skip_metadata = False
+    if meta_fields is None:
+        meta_fields_set = None
+    else:
+        meta_fields_set = set(meta_fields)
+        if not meta_fields_set:
+            skip_metadata = True
+
     knowledges = [get_value(ck, "content", "content_with_weight") for ck in kbinfos["chunks"]]
     kwlg_len = len(knowledges)
     used_token_count = 0
@@ -159,9 +190,12 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
         cnt = "\nID: {}".format(i if not hash_id else hash_str2int(get_value(ck, "id", "chunk_id"), 500))
         cnt += draw_node("Title", get_value(ck, "docnm_kwd", "document_name"))
         cnt += draw_node("URL", ck.get('url', ''))
-        meta = ck.get("document_metadata") or {}
-        for k, v in meta.items():
-            cnt += draw_node(k, v)
+        if not skip_metadata:
+            meta = ck.get("document_metadata") or {}
+            if meta_fields_set is not None:
+                meta = {k: v for k, v in meta.items() if k in meta_fields_set}
+            for k, v in meta.items():
+                cnt += draw_node(k, v)
         cnt += "\n└── Content:\n"
         cnt += get_value(ck, "content", "content_with_weight")
         knowledges.append(cnt)
