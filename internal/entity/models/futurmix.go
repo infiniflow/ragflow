@@ -296,7 +296,46 @@ func (f *FuturMixModel) Rerank(modelName *string, query string, documents []stri
 
 // ListModels is not documented as a public endpoint by FuturMix.
 func (f *FuturMixModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", f.Name())
+	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), f.baseModel.URLSuffix.Models)
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", BearerAuth(apiConfig))
+
+	resp, err := f.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return ParseListModel(modelList), nil
 }
 
 // CheckConnection is not exposed by the FuturMix API.
