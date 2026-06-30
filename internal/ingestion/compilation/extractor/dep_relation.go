@@ -239,6 +239,7 @@ var copulaDeps = map[string]struct {
 }
 
 // be-verb surface forms across all 7 languages (used for copula detection).
+// Duplicate strings between languages are normalised into a single entry.
 var beVerbs = map[string]bool{
 	// English
 	"is": true, "are": true, "was": true, "were": true, "be": true, "been": true, "being": true,
@@ -246,8 +247,13 @@ var beVerbs = map[string]bool{
 	"ist": true, "sind": true, "bin": true, "bist": true, "seid": true,
 	"war": true, "waren": true, "gewesen": true, "sein": true,
 	// French
-	"est": true, "suis": true, "es": true, "sommes": true, "êtes": true, "sont": true,
+	"est": true, "suis": true, "sommes": true, "êtes": true, "sont": true,
 	"était": true, "étant": true, "être": true,
+	// Spanish + Portuguese (shared forms; french "es" omitted to avoid key collision)
+	"es": true, "é": true, "son": true, "são": true,
+	"está": true, "están": true, "estão": true,
+	"era": true, "eran": true, "eram": true,
+	"ser": true, "sido": true, "siendo": true, "sendo": true,
 }
 
 // DepToken holds token dependency info from the C++ parser.
@@ -271,7 +277,8 @@ type roleResult struct {
 
 // DepExtractRelations extracts typed relations from a dependency parse tree.
 // lang is the language code (en/zh/de/fr/es/pt/ja).
-func DepExtractRelations(text string, tokens []DepToken, entities []Entity, lang string) []Relation {
+// maxDistance is the max character distance for co-occurrence (0 = use default 100).
+func DepExtractRelations(text string, tokens []DepToken, entities []Entity, lang string, maxDistance int) []Relation {
 	entityMap := buildEntityMapMulti(entities)
 	var relations []Relation
 
@@ -312,7 +319,10 @@ func DepExtractRelations(text string, tokens []DepToken, entities []Entity, lang
 	}
 
 	// Co-occurrence (always, matching Python DepRelationExtractor.extract())
-	relations = append(relations, extractCooccurrence(text, entities, 100)...)
+	if maxDistance <= 0 {
+		maxDistance = 100
+	}
+	relations = append(relations, extractCooccurrence(text, entities, maxDistance)...)
 
 	relations = inferMultiHop(relations)
 	relations = dedupRelations(relations)
@@ -615,7 +625,7 @@ func extractCopula(text string, rootIdx int, tokens []DepToken, entityMap map[st
 				continue
 			}
 			for _, gc := range childrenOf(cc.Index, tokens) {
-				if containsDep(gc.Dep, cd.objDeps) || true { // accept any child as object
+				if containsDep(gc.Dep, cd.objDeps) {
 					if ent := findEntityInSubtree(gc.Index, tokens, entityMap); ent != nil {
 						prepObj = ent
 						titleLemma = strings.ToLower(c.Text)

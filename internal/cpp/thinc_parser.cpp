@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -26,9 +27,11 @@ struct JParser {
     char nx(){while(p<e&&(*p==' '||*p=='\t'||*p=='\n'||*p=='\r'))++p;return p<e?*p++:0;}
     JVal pv(){char c=pk();if(c=='{')return po();if(c=='[')return pa();if(c=='"')return ps();if(c=='t'||c=='f')return pb();
         if(c=='n'){nx();nx();nx();nx();return JVal{};}return pn();}
-    JVal po(){JVal v;v.type=JVal::OBJ;nx();while(pk()!='}'){auto k=ps();nx();v.obj[k.str]=pv();if(pk()==',')nx();else break;}nx();return v;}
-    JVal pa(){JVal v;v.type=JVal::ARR;nx();while(pk()!=']'){v.arr.push_back(pv());if(pk()==',')nx();else break;}nx();return v;}
-    JVal ps(){JVal v;v.type=JVal::STR;nx();while(p<e&&*p!='"'){if(*p=='\\'){++p;if(p<e)v.str+=*p++;}else v.str+=*p++;}if(p<e)++p;return v;}
+    JVal po(){JVal v;v.type=JVal::OBJ;nx();while(p<e&&pk()!='}'){auto k=ps();nx();v.obj[k.str]=pv();if(p<e&&pk()==',')nx();else break;}if(p<e)nx();return v;}
+    JVal pa(){JVal v;v.type=JVal::ARR;nx();while(p<e&&pk()!=']'){v.arr.push_back(pv());if(p<e&&pk()==',')nx();else break;}if(p<e)nx();return v;}
+    JVal ps(){JVal v;v.type=JVal::STR;nx();while(p<e&&*p!='"'){if(*p=='\\'){++p;if(p<e){
+        switch(*p){case'"':case'\\':case'/':v.str+=*p++;break;case'n':v.str+='\n';++p;break;case't':v.str+='\t';++p;break;case'r':v.str+='\r';++p;break;case'b':v.str+='\b';++p;break;case'f':v.str+='\f';++p;break;case'u':{if(p+4<e){char tmp[5]={p[1],p[2],p[3],p[4],0};v.str+=(char)strtol(tmp,nullptr,16);p+=5;}else{++p;}}break;default:v.str+=*p++;break;}
+    }}else v.str+=*p++;}if(p<e)++p;return v;}
     JVal pn(){JVal v;v.type=JVal::NUM;auto s=p;if(p<e&&*p=='-')++p;while(p<e&&(*p>='0'&&*p<='9'))++p;
         if(p<e&&*p=='.'){++p;while(p<e&&(*p>='0'&&*p<='9'))++p;}
         if(p<e&&(*p=='e'||*p=='E')){++p;if(p<e&&(*p=='+'||*p=='-'))++p;while(p<e&&(*p>='0'&&*p<='9'))++p;}
@@ -153,7 +156,8 @@ struct Tok2vecModel {
         std::stringstream cb;cb<<cf.rdbuf();
         JVal ck=JParser().parse(cb.str()); if(ck.type!=JVal::OBJ)return false;
         std::ifstream bf(dir+"/model.bin",std::ios::binary|std::ios::ate); if(!bf)return false;
-        size_t bz=bf.tellg();bf.seekg(0); std::vector<float> bin(bz/4); bf.read((char*)bin.data(),bz);
+        size_t bz=bf.tellg();bf.seekg(0); if(bz%4!=0||bz==0)return false;
+        std::vector<float> bin(bz/4); bf.read((char*)bin.data(),bz);
         auto sl=[&](int64_t o,int64_t c)->std::vector<float>{
             if(o+c>(int64_t)bin.size())return{}; return std::vector<float>(bin.begin()+o,bin.begin()+o+c);
         };
@@ -179,7 +183,9 @@ struct Tok2vecModel {
         if(ff){std::stringstream fb;fb<<ff.rdbuf();auto cfg=JParser().parse(fb.str());auto* sa=cfg.get("embed_seeds");
             if(sa&&sa->type==JVal::ARR)for(int i=0;i<(int)sa->arr.size()&&i<(int)embeds.size();i++)embeds[i].seed=(uint32_t)sa->arr[i].as_int();}
         int r0=0,r1=0,r2=0;
-        if(ld("poW",&poW,&r0,&r1,&r2)){po_nO=r0;po_nP=r1;po_nI=r2;ld("poB",&poB);}
+        if(!ld("poW",&poW,&r0,&r1,&r2))return false;
+        po_nO=r0;po_nP=r1;po_nI=r2;
+        if(!ld("poB",&poB))return false;
         if(ld("poG",&poG)){ld("poB2",&poB2);has_poLN=true;}
         for(int ri=0;ri<4;ri++){auto pk="res"+std::to_string(ri);auto& rb=res[ri];
             if(ld(pk+"W",&rb.W,&r0,&r1,&r2)){ld(pk+"B",&rb.b);ld(pk+"lnG",&rb.lnG);ld(pk+"lnb",&rb.lnb);rb.has=true;n_res++;}}
@@ -226,7 +232,8 @@ struct ParserModel {
         std::stringstream cb;cb<<cf.rdbuf();
         JVal ck=JParser().parse(cb.str()); if(ck.type!=JVal::OBJ)return false;
         std::ifstream bf(dir+"/model.bin",std::ios::binary|std::ios::ate); if(!bf)return false;
-        size_t bz=bf.tellg();bf.seekg(0); std::vector<float> bin(bz/4); bf.read((char*)bin.data(),bz);
+        size_t bz=bf.tellg();bf.seekg(0); if(bz%4!=0||bz==0)return false;
+        std::vector<float> bin(bz/4); bf.read((char*)bin.data(),bz);
         auto sl=[&](int64_t o,int64_t c)->std::vector<float>{
             if(o+c>(int64_t)bin.size())return{}; return std::vector<float>(bin.begin()+o,bin.begin()+o+c);
         };
@@ -273,10 +280,10 @@ struct ParserModel {
                 for(int w=0;w<nI;w++){
                     size_t base = toff + (size_t)p*nO*nI + (size_t)w;
                     float* out = precomp.data() + base;
-                    // W[p][o][w][d], b[o][w]
+                    // W[p][w][o][d] = [nP][nI][nO][nO]
                     for(int o=0;o<nO;o++){
                         float s = pb_pre[(size_t)w*nO + o];
-                        for(int d=0;d<nO;d++) s += pW_pre[((size_t)p*nO*nI + (size_t)w)*nO + o] * hidden[(size_t)i*nO + d];
+                        for(int d=0;d<nO;d++) s += pW_pre[((size_t)p*nO*nI + (size_t)w)*(size_t)nO*nO + (size_t)o*nO + d] * hidden[(size_t)i*nO + d];
                         out[(size_t)o*nI] = s;
                     }
                 }
@@ -296,7 +303,8 @@ struct ParserModel {
         std::vector<int> buffer(n_tokens);
         for(int i=0;i<n_tokens;i++) buffer[i]=i;
         
-        // Action indices
+        // Validate move_names covers all actions before indexing
+        if((int)move_names.size()!=n_actions){out_heads.clear();out_labels.clear();return;}
         int act_S=-1, act_D=-1;
         for(int i=0;i<(int)move_names.size();i++){
             if(move_names[i]=="S") act_S=i;

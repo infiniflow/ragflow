@@ -16,7 +16,9 @@ typedef void* ThincParserHandle;
 typedef void* ThincTaggerHandle;
 
 // Parser: create/destroy
-ThincParserHandle ThincParser_Create(const char* model_parser_dir, const char* model_vocab_dir);
+// model_ner_dir: path to NER model directory (shared tok2vec weights + vocab).
+// model_parser_dir: path to parser model directory.
+ThincParserHandle ThincParser_Create(const char* model_ner_dir, const char* model_parser_dir);
 void ThincParser_Destroy(ThincParserHandle handle);
 
 // Run dependency parser on pre-tokenized text.

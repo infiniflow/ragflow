@@ -34,6 +34,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"unsafe"
@@ -208,7 +209,8 @@ func (e *Extractor) extractRelations(text string, entities []Entity) []Relation 
 	if fb, ok := langFallback[e.Lang]; ok {
 		relLang = fb
 	}
-	// Try dep-based extraction via C++ parser
+	// Try dep-based extraction via C++ parser — uses e.Lang (not relLang) so
+	// de/fr/es/pt/ja apply their language-specific DepExtractRelations rules.
 	tokensJSON := tokenizeText(text, e.Lang)
 	if tokensJSON == "" {
 		return extractRelationsWithOpts(text, entities, relLang, e.MaxDistance)
@@ -225,7 +227,7 @@ func (e *Extractor) extractRelations(text string, entities []Entity) []Relation 
 		for i, d := range deps {
 			depTokens[i] = DepToken{Text: d.Text, Head: d.Head, Dep: d.Dep, Index: d.Index}
 		}
-		if rels := DepExtractRelations(text, depTokens, entities, relLang); len(rels) > 0 {
+		if rels := DepExtractRelations(text, depTokens, entities, e.Lang, e.MaxDistance); len(rels) > 0 {
 			return rels
 		}
 	}
@@ -244,10 +246,14 @@ func (e *Extractor) getPredictor(modelDir string) ModelPredictor {
 	handle := C.ThincNER_Create(cModelDir, cModelVocab)
 	C.free(unsafe.Pointer(cModelDir))
 	C.free(unsafe.Pointer(cModelVocab))
-	p := func(tokensJSON string) (string, error) {
-		if handle == nil {
-			return "", fmt.Errorf("ThincNER handle is nil")
+	// Don't cache a nil handle — return a one-shot error predictor instead.
+	if handle == nil {
+		fn := func(tokensJSON string) (string, error) {
+			return "", fmt.Errorf("ThincNER handle is nil for model dir: %s", modelDir)
 		}
+		return fn
+	}
+	p := func(tokensJSON string) (string, error) {
 		e.mu.Lock()
 		cTokensJSON := C.CString(tokensJSON)
 		cResult := C.ThincNER_Predict(handle, cTokensJSON)
@@ -307,7 +313,7 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 		if re.Confidence < e.ConfidenceThreshold {
 			continue
 		}
-		key := strings.ToLower(re.Text) + "|" + string(rune(re.Start))
+		key := strings.ToLower(re.Text) + "|" + strconv.Itoa(re.Start)
 		if seen[key] {
 			continue
 		}
