@@ -24,7 +24,17 @@ import (
 	"os"
 	"os/signal"
 	"ragflow/internal/admin"
+	"ragflow/internal/agent/audio"
+	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agent/runtime"
+	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/handler"
 	"ragflow/internal/ingestion"
+	"ragflow/internal/router"
+	"ragflow/internal/server/local"
+	"ragflow/internal/service"
+	"ragflow/internal/service/chunk"
+	"ragflow/internal/service/nlp"
 	"ragflow/internal/storage"
 	"ragflow/internal/tokenizer"
 	"strconv"
@@ -35,22 +45,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"ragflow/internal/agent/audio"
-	"ragflow/internal/agent/canvas"
 	_ "ragflow/internal/agent/component"
-	"ragflow/internal/agent/runtime"
-	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
-	"ragflow/internal/handler"
-	"ragflow/internal/router"
 	"ragflow/internal/server"
-	"ragflow/internal/server/local"
-	"ragflow/internal/service"
-	"ragflow/internal/service/chunk"
-	"ragflow/internal/service/nlp"
 	"ragflow/internal/utility"
 )
 
@@ -64,6 +64,7 @@ type serverArgs struct {
 	port          *int    // Used by admin, api
 	adminHost     *string // Used by api and ingestor for heartbeat
 	adminPort     *int    // Used by api and ingestor for heartbeat, "ip:port"
+	name          string  // server name
 }
 
 func parseArgs() (*serverArgs, error) {
@@ -188,6 +189,27 @@ func main() {
 		fmt.Printf("Failed to start %s server: %v\n", *arguments.mode, err)
 		os.Exit(1)
 	}
+
+	switch *arguments.mode {
+	case "api":
+		if err = runAPI(arguments); err != nil {
+			fmt.Printf("Failed to start API server: %v\n", err)
+			os.Exit(1)
+		}
+	case "admin":
+		if err = runAdmin(arguments); err != nil {
+			fmt.Printf("Failed to start admin server: %v\n", err)
+			os.Exit(1)
+		}
+	case "ingestor":
+		if err = runIngestor(arguments); err != nil {
+			fmt.Printf("Failed to start ingestion worker: %v\n", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
+		os.Exit(1)
+	}
 }
 
 func runCommon(args *serverArgs) error {
@@ -309,94 +331,17 @@ func runCommon(args *serverArgs) error {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
+	args.name = serverName
+
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// Admin server
-// ---------------------------------------------------------------------------
-
-func runAdmin(configPath string, debugFlag,
-	bool, initSuperuserFlag bool) {
-	// Initialize logger
-	if err := common.Init("info", common.FileOutput{Path: "admin_server.log"}); err != nil {
-		panic("failed to initialize logger: " + err.Error())
-	}
-
-	// Initialize configuration
-	if err := server.Init(configPath); err != nil {
-		common.Error("Failed to initialize configuration", err)
-		os.Exit(1)
-	}
-
-	cfg := server.GetConfig()
-
-	// Reinitialize logger with configured level if different
-	logLevel := cfg.Log.Level
-	if logLevel == "" {
-		logLevel = "info"
-	}
-	if debugFlag {
-		logLevel = "debug"
-	}
-
-	fileOut := common.FileOutput{
-		Path:       "admin_server.log",
-		MaxSize:    cfg.Log.MaxSize,
-		MaxBackups: cfg.Log.MaxBackups,
-		MaxAge:     cfg.Log.MaxAge,
-		Compress:   common.ResolveCompress(cfg.Log.Compress),
-	}
-	if cfg.Log.Path != "" {
-		fileOut.Path = cfg.Log.Path
-	}
-	if err := common.Init(logLevel, fileOut); err != nil {
-		common.Error("Failed to reinitialize logger with configured level", err)
-	}
-
-	// Set logger for server package
-	server.SetLogger(common.Logger)
-
-	common.Info("Server mode", zap.String("mode", cfg.Server.Mode))
-
-	// Set Gin mode
-	if cfg.Server.Mode == "release" {
-		gin.SetMode(gin.ReleaseMode)
-	} else {
-		gin.SetMode(gin.DebugMode)
-	}
-
-	// Initialize database
-	if err := dao.InitDB(); err != nil {
-		common.Error("Failed to initialize database", err)
-		os.Exit(1)
-	}
-
-	// Initialize doc engine
-	if err := engine.Init(&cfg.DocEngine); err != nil {
-		common.Fatal("Failed to initialize doc engine", zap.Error(err))
-	}
-	defer engine.Close()
-
-	// Initialize Redis cache
-	if err := redis.Init(&cfg.Redis); err != nil {
-		common.Fatal("Failed to initialize Redis", zap.Error(err))
-	}
-	defer redis.Close()
-
-	if err := engine.InitMessageQueueEngine(cfg.TaskExecutor.MessageQueueType); err != nil {
-		common.Error("Failed to initialize message queue engine", err)
-	}
-
-	// Initialize server variables (runtime variables that can change during operation)
-	if err := server.InitVariables(redis.Get()); err != nil {
-		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
-	}
-
+func runAdmin(args *serverArgs) error {
 	adminService := admin.NewService()
 	adminHandler := admin.NewHandler(adminService)
 
-	if initSuperuserFlag {
+	if args.initSuperUser {
+		// Initialize default admin user
 		if err := adminService.InitDefaultAdmin(); err != nil {
 			common.Error("Failed to initialize default admin user", err)
 		}
@@ -416,7 +361,8 @@ func runAdmin(configPath string, debugFlag,
 	r.Setup(ginEngine)
 
 	// Create HTTP server
-	addr := fmt.Sprintf(":%d", cfg.Admin.Port)
+	config := server.GetConfig()
+	addr := fmt.Sprintf(":%d", config.Admin.Port)
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: ginEngine,
@@ -438,7 +384,7 @@ func runAdmin(configPath string, debugFlag,
 
 	// Start HTTP server in a goroutine
 	go func() {
-		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", cfg.Admin.Port))
+		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", config.Admin.Port))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			common.Fatal("Failed to start server", zap.Error(err))
 		}
@@ -462,276 +408,10 @@ func runAdmin(configPath string, debugFlag,
 	}
 
 	common.Info("Admin HTTP server exited")
+	return nil
 }
 
-// ---------------------------------------------------------------------------
-// Ingestion worker
-// ---------------------------------------------------------------------------
-
-func runIngestor(configPath string, debugFlag bool, name string, adminHostArg string, adminPortArg int) {
-	// Initialize logger with default level
-	if err := common.Init("info", common.FileOutput{Path: "ingestion_server.log"}); err != nil {
-		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
-	}
-
-	// Initialize configuration
-	if err := server.Init(configPath); err != nil {
-		common.Fatal("Failed to initialize config", zap.Error(err))
-	}
-
-	config := server.GetConfig()
-
-	// Override admin server host with command line argument if provided
-	if adminHostArg != "" {
-		config.Admin.Host = adminHostArg
-		common.Info("Admin host overridden by command line argument", zap.String("admin_host", adminHostArg))
-	}
-
-	// Override admin server port with command line argument if provided
-	if adminPortArg > 0 {
-		config.Admin.Port = adminPortArg
-		common.Info("Admin port overridden by command line argument", zap.Int("admin_port", adminPortArg))
-	}
-
-	// Reinitialize logger with configured level if different
-	level := config.Log.Level
-	if level == "" {
-		level = "info"
-	}
-	if debugFlag {
-		level = "debug"
-	}
-
-	fileOut := common.FileOutput{
-		Path:       "ingestion_server.log",
-		MaxSize:    config.Log.MaxSize,
-		MaxBackups: config.Log.MaxBackups,
-		MaxAge:     config.Log.MaxAge,
-		Compress:   common.ResolveCompress(config.Log.Compress),
-	}
-	if config.Log.Path != "" {
-		fileOut.Path = config.Log.Path
-	}
-	if err := common.Init(level, fileOut); err != nil {
-		common.Error("Failed to reinitialize logger", err)
-	}
-	server.SetLogger(common.Logger)
-
-	common.Info("Starting RAGFlow Ingestion Worker")
-
-	// Initialize database
-	if err := dao.InitDB(); err != nil {
-		common.Fatal("Failed to initialize database", zap.Error(err))
-	}
-
-	// Initialize doc engine
-	if err := engine.Init(&config.DocEngine); err != nil {
-		common.Fatal("Failed to initialize doc engine", zap.Error(err))
-	}
-	defer engine.Close()
-
-	// Initialize Redis cache
-	if err := redis.Init(&config.Redis); err != nil {
-		common.Fatal("Failed to initialize Redis", zap.Error(err))
-	}
-	defer redis.Close()
-
-	// Initialize storage factory
-	if err := storage.InitStorageFactory(); err != nil {
-		common.Fatal("Failed to initialize storage factory", zap.Error(err))
-	}
-
-	if err := engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
-		common.Fatal(fmt.Sprintf("Failed to initialize message queue engine: %w", err))
-	}
-
-	// Initialize server variables (runtime variables from Redis)
-	if err := server.InitVariables(redis.Get()); err != nil {
-		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
-	}
-
-	// Initialize tokenizer (rag_analyzer)
-	tokenizerCfg := &tokenizer.PoolConfig{
-		DictPath: "/usr/share/infinity/resource",
-	}
-	if err := tokenizer.Init(tokenizerCfg); err != nil {
-		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
-	}
-	defer tokenizer.Close()
-
-	// Initialize global QueryBuilder using tokenizer's DictPath
-	if err := nlp.InitQueryBuilderFromTokenizer(tokenizerCfg.DictPath); err != nil {
-		common.Fatal("Failed to initialize query builder", zap.Error(err))
-	}
-
-	ingestor := ingestion.NewIngestor(name, 2, []string{"pdf", "docx", "txt"})
-
-	go func() {
-		err := ingestor.Start()
-		if err != nil {
-			common.Error("Failed to initialize ingestor", err)
-			return
-		}
-	}()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
-
-	// Print all configuration settings
-	server.PrintAll()
-	common.Info("\n    ____                      __  _\n" +
-		"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
-		"   / // __ \\/ __ `/ _ \\/ ___/ __/ / __ \\/ __ \\   / ___/ _ \\/ ___/ | / / _ \\/ ___/\n" +
-		" _/ // / / / /_/ /  __(__  ) /_/ / /_/ / / / /  (__  )  __/ /   | |/ /  __/ /\n" +
-		"/___/_/ /_/\\__, /\\___/____/\\__/_/\\____/_/ /_/  /____/\\___/_/    |___/\\___/_/\n" +
-		"          /____/\n")
-
-	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", utility.GetRAGFlowVersion()))
-
-	// Get local IP address for heartbeat reporting
-	localIP, err := utility.GetLocalIP()
-	if err != nil {
-		common.Fatal("fail to get local ip address")
-	}
-
-	// Initialize and start heartbeat reporter to admin server
-	service.AdminServiceClient = service.NewAdminClient(
-		common.Logger,
-		common.ServerTypeIngestion,
-		fmt.Sprintf("ingestor-%s", ingestor.ID()),
-		localIP,
-		-1,
-	)
-	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
-		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
-	} else {
-		// Start heartbeat reporter with 3 seconds interval
-		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
-				local.SetAdminStatus(0, "")
-			} else {
-				local.SetAdminStatus(1, err.Error())
-			}
-		})
-		heartbeatReporter.Start()
-		defer heartbeatReporter.Stop()
-	}
-
-	// Wait for either an OS signal or a shutdown command from the admin
-	select {
-	case sig := <-quit:
-		common.Info("Received signal", zap.String("signal", sig.String()))
-		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", name))
-	case <-ingestor.ShutdownCh:
-		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", name))
-	}
-
-	// Create context with timeout for graceful shutdown
-	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	ingestor.Stop()
-
-	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", name))
-}
-
-// ---------------------------------------------------------------------------
-// API server (default)
-// ---------------------------------------------------------------------------
-
-func runAPI(configPath string, debugFlag bool, portFlag int) {
-	// Temporarily default to debug while investigating the Go chat/SSE path.
-	if err := common.Init("debug", common.FileOutput{Path: "server_main.log"}); err != nil {
-		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
-	}
-
-	// Initialize configuration
-	if err := server.Init(configPath); err != nil {
-		common.Fatal("Failed to initialize config", zap.Error(err))
-	}
-
-	config := server.GetConfig()
-
-	// Override port with command line argument if provided
-	if portFlag > 0 {
-		config.Server.Port = portFlag
-		common.Info("Port overridden by command line argument", zap.Int("port", portFlag))
-	}
-
-	if config.Server.Port == 0 {
-		common.Fatal("Server port is not configured. Please specify via --port flag or config file.")
-	}
-
-	// Reinitialize logger with configured level if different
-	level := config.Log.Level
-	if level == "" {
-		level = "debug"
-	}
-	if debugFlag {
-		level = "debug"
-	}
-
-	fileOut := common.FileOutput{
-		Path:       "server_main.log",
-		MaxSize:    config.Log.MaxSize,
-		MaxBackups: config.Log.MaxBackups,
-		MaxAge:     config.Log.MaxAge,
-		Compress:   common.ResolveCompress(config.Log.Compress),
-	}
-	if config.Log.Path != "" {
-		fileOut.Path = config.Log.Path
-	}
-	if err := common.Init(level, fileOut); err != nil {
-		common.Error("Failed to reinitialize logger", err)
-	}
-	server.SetLogger(common.Logger)
-	if config.Log.Level == "" {
-		config.Log.Level = common.GetLevel()
-	}
-
-	common.Info("Server mode", zap.String("mode", config.Server.Mode))
-
-	// Print all configuration settings
-	server.PrintAll()
-
-	// Set Gin mode
-	if config.Server.Mode == "release" {
-		gin.SetMode(gin.ReleaseMode)
-	} else {
-		gin.SetMode(gin.DebugMode)
-	}
-
-	// Initialize database
-	if err := dao.InitDB(); err != nil {
-		common.Fatal("Failed to initialize database", zap.Error(err))
-	}
-
-	// Initialize doc engine
-	if err := engine.Init(&config.DocEngine); err != nil {
-		common.Fatal("Failed to initialize doc engine", zap.Error(err))
-	}
-	defer engine.Close()
-
-	// Initialize Redis cache
-	if err := redis.Init(&config.Redis); err != nil {
-		common.Fatal("Failed to initialize Redis", zap.Error(err))
-	}
-	defer redis.Close()
-
-	if err := storage.InitStorageFactory(); err != nil {
-		common.Fatal("Failed to initialize storage factory", zap.Error(err))
-	}
-
-	if err := engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
-		common.Error("Failed to initialize message queue engine", err)
-	}
-
-	// Initialize server variables (runtime variables that can change during operation)
-	if err := server.InitVariables(redis.Get()); err != nil {
-		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
-	}
-
+func runAPI(args *serverArgs) error {
 	// Initialize admin status (default: unavailable=1)
 	local.InitAdminStatus(1, "admin server not connected")
 
@@ -749,14 +429,28 @@ func runAPI(configPath string, debugFlag bool, portFlag int) {
 	defer tokenizer.Close()
 
 	// Initialize global QueryBuilder using tokenizer's DictPath
+	// This ensures the Synonym uses the same wordnet directory as tokenizer
 	if err := nlp.InitQueryBuilderFromTokenizer(tokenizerCfg.DictPath); err != nil {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	startAPIServer(config)
+	config := server.GetConfig()
+	startServer(config)
+
+	common.Info("Server exited")
+
+	return nil
 }
 
-func startAPIServer(config *server.Config) {
+func startServer(config *server.Config) {
+
+	// Set Gin mode
+	if config.Server.Mode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	} else {
+		gin.SetMode(gin.DebugMode)
+	}
+
 	// Initialize service layer
 	userService := service.NewUserService()
 	documentService := service.NewDocumentService()
@@ -809,17 +503,37 @@ func startAPIServer(config *server.Config) {
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	// Install the agent service's Redis-backed run infrastructure
-	//agentOpts := buildAgentRunOptions()
-	//agentService := service.NewAgentServiceWithOptions(
-	//	agentOpts.checkpointStore,
-	//	agentOpts.stateSerializer,
-	//	agentOpts.runTracker,
-	//)
-	//agentHandler := handler.NewAgentHandler(agentService, fileService)
-	//
-	//botService := service.NewBotService(agentService, llmService)
-	//botHandler := handler.NewBotHandler(botService)
+	// (CheckPointStore / StateSerializer / RunTracker). When Redis
+	// is unreachable (degraded boot, stand-alone mode, no-redis CI)
+	// the constructors return errors and we fall through to the
+	// in-memory / no-tracking path: the agent service treats nil
+	// options as the in-memory test path, so graceful degradation
+	// is a 1-line if-not-nil pass-through — no separate "boot" mode
+	// required.
+	agentOpts := buildAgentRunOptions()
+	agentService := service.NewAgentServiceWithOptions(
+		agentOpts.checkpointStore,
+		agentOpts.stateSerializer,
+		agentOpts.runTracker,
+	)
+	agentHandler := handler.NewAgentHandler(agentService, fileService)
 
+	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
+	// api/v1/agentbots/...) and the agent attachment download.
+	// BotService delegates the agentbot completion to agentService so
+	// both paths share the same canvas runner. Reuse the llmService
+	// already constructed above (line 222) — do NOT redeclare with
+	// `:=` since the variable is in scope.
+	botService := service.NewBotService(agentService, llmService)
+	botHandler := handler.NewBotHandler(botService)
+
+	// Wire the TTS synthesizer to the per-tenant model-provider
+	// dispatch. SynthesizeRequest is routed through
+	// ModelProviderService.AudioSpeech, which fans out to the
+	// tenant's configured TTS model driver. When the model
+	// provider is unconfigured, the synthesizer falls back to a
+	// no-op echo (the audio package contract), so this is always
+	// safe to call.
 	configureTTSSynthesizer(modelProviderService)
 	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
 	searchBotHandler := handler.NewSearchBotHandler(
@@ -837,16 +551,26 @@ func startAPIServer(config *server.Config) {
 	fileCommitHandler := handler.NewFileCommitHandler(service.NewFileCommitService())
 
 	// Dify retrieval handler
-	retrievalService := nlp.NewRetrievalService(docEngine, documentDAO)
+	docDAO := documentDAO
+	retrievalService := nlp.NewRetrievalService(docEngine, docDAO)
 	difyRetrievalHandler := handler.NewDifyRetrievalHandler(
 		knowledgebaseService,
 		modelProviderService,
 		metadataService,
 		retrievalService,
-		documentDAO,
+		docDAO,
 		docEngine,
 	)
-	// Per-tenant canvas-runtime override selector
+	// Per-tenant canvas-runtime override selector, backed by the
+	// existing Redis client and the global logger. The handler is
+	// ALWAYS constructed, even when Redis is briefly unavailable at
+	// startup, so the POST /api/v1/admin/canvas-runtime/:tenant_id
+	// endpoint stays registered and returns the explicit
+	// ErrSelectorNotConfigured (HTTP 500) path until Redis recovers.
+	// Skipping handler construction when rdb == nil silently removed
+	// the route until the next process restart, so a transient
+	// Redis blip at boot stranded canary operators with a 404 they
+	// could not diagnose from the client side. Keep the route hot.
 	var adminRuntimeSelector *runtime.Selector
 	if rdb := redis.Get().GetClient(); rdb != nil {
 		adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
@@ -854,12 +578,16 @@ func startAPIServer(config *server.Config) {
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatChannelHandler, langfuseHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, nil, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler, nil)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatChannelHandler, langfuseHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler, botHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
 
 	// Middleware
+	// Note: common.GinLogger() is registered inside router.Setup so the
+	// HTTP request log captures every endpoint the router owns (including
+	// those registered by Setup itself). Registering it here would run
+	// it twice for those endpoints and double every access-log line.
 	ginEngine.Use(gin.Recovery())
 
 	// Setup routes
@@ -909,12 +637,13 @@ func startAPIServer(config *server.Config) {
 	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
 		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
 	} else {
-		// Start heartbeat reporter with 3 seconds interval
+		// Start heartbeat reporter with 30 seconds interval
 		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
 			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
 				local.SetAdminStatus(0, "")
 			} else {
 				local.SetAdminStatus(1, err.Error())
+				//logger.Warn(fmt.Sprintf(err.Error()))
 			}
 		})
 		heartbeatReporter.Start()
@@ -937,16 +666,15 @@ func startAPIServer(config *server.Config) {
 	if err = srv.Shutdown(ctx); err != nil {
 		common.Fatal("Server forced to shutdown", zap.Error(err))
 	}
-
-	common.Info("Server exited")
 }
 
-// ---------------------------------------------------------------------------
-// Agent run options helpers (used by API server)
-// ---------------------------------------------------------------------------
-
 // agentRunOptions bundles the three optional injection slots the
-// agent service accepts via NewAgentServiceWithOptions.
+// agent service accepts via NewAgentServiceWithOptions: the Redis-
+// backed CheckPointStore, StateSerializer, and RunTracker. The
+// fields stay nil when the underlying constructors fail (Redis
+// unreachable, etc.); the agent service treats nil as "in-memory
+// / no-tracking" so the server continues to serve traffic without
+// requiring Redis to be up.
 type agentRunOptions struct {
 	checkpointStore canvas.CheckPointStore
 	stateSerializer canvas.StateSerializer
@@ -954,7 +682,12 @@ type agentRunOptions struct {
 }
 
 // buildAgentRunOptions installs the Redis-backed run infrastructure
-// when Redis is available.
+// when Redis is available. The Redis client is the one already
+// initialised at the top of main; the TTL is a conservative 24h for
+// both the checkpoint store and the run tracker. On any error
+// (Redis down at boot, constructor panic, nil-Redis fallback) we
+// log and return a zero-value struct — the agent service falls back
+// to the in-memory path transparently.
 func buildAgentRunOptions() agentRunOptions {
 	var out agentRunOptions
 	if !redis.IsEnabled() || redis.Get() == nil {
@@ -963,15 +696,114 @@ func buildAgentRunOptions() agentRunOptions {
 	}
 	cp := canvas.NewRedisCheckPointStore(24 * time.Hour)
 	out.checkpointStore = cp
+	// stateSerializer is intentionally left nil. eino's default
+	// InternalSerializer (used when no compose.WithSerializer is
+	// passed at compile time) already knows how to round-trip
+	// runtime.CanvasState because the runtime package registers
+	// it via compose.RegisterSerializableType[CanvasState] in
+	// init(). Overriding with RAGFlow's plain-JSON
+	// CanvasStateSerializer (json.Marshal/Unmarshal) produces
+	// bytes the InternalSerializer cannot decode on the resume
+	// pass — the UserFillUp two-node pattern surfaces this as
+	// "load checkpoint from store fail: cannot unmarshal object
+	// into Go struct field checkpoint.Channels of type
+	// compose.channel". Rely on eino's default instead.
 	rt := canvas.NewRunTracker(24 * time.Hour)
 	out.runTracker = rt
 	common.Info("agent: redis-backed run infra installed (24h TTL on checkpoint store + run tracker; eino default serializer)")
 	return out
 }
 
+func runIngestor(args *serverArgs) error {
+
+	ingestor := ingestion.NewIngestor(args.name, 2, []string{"pdf", "docx", "txt"})
+
+	go func() {
+		err := ingestor.Start()
+		if err != nil {
+			common.Error("Failed to initialize ingestor", err)
+			return
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
+
+	// Print all configuration settings
+	server.PrintAll()
+	common.Info("\n    ____                      __  _\n" +
+		"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
+		"   / // __ \\/ __ `/ _ \\/ ___/ __/ / __ \\/ __ \\   / ___/ _ \\/ ___/ | / / _ \\/ ___/\n" +
+		" _/ // / / / /_/ /  __(__  ) /_/ / /_/ / / / /  (__  )  __/ /   | |/ /  __/ /\n" +
+		"/___/_/ /_/\\__, /\\___/____/\\__/_/\\____/_/ /_/  /____/\\___/_/    |___/\\___/_/\n" +
+		"          /____/\n")
+
+	// Print RAGFlow version
+	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", utility.GetRAGFlowVersion()))
+
+	// Get local IP address for heartbeat reporting
+	localIP, err := utility.GetLocalIP()
+	if err != nil {
+		common.Fatal("fail to get local ip address")
+	}
+
+	// Initialize and start heartbeat reporter to admin server
+	service.AdminServiceClient = service.NewAdminClient(
+		common.Logger,
+		common.ServerTypeIngestion,
+		fmt.Sprintf("ingestor-%s", ingestor.ID()),
+		localIP,
+		-1,
+	)
+	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
+		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
+	} else {
+		// Start heartbeat reporter with 30 seconds interval
+		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
+			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
+				local.SetAdminStatus(0, "")
+			} else {
+				local.SetAdminStatus(1, err.Error())
+				//logger.Warn(fmt.Sprintf(err.Error()))
+			}
+		})
+		heartbeatReporter.Start()
+		defer heartbeatReporter.Stop()
+	}
+
+	// Wait for either an OS signal or a shutdown command from the admin
+	select {
+	case sig := <-quit:
+		common.Info("Received signal", zap.String("signal", sig.String()))
+		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", args.name))
+	case <-ingestor.ShutdownCh:
+		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", args.name))
+	}
+
+	// Create context with timeout for graceful shutdown
+	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	ingestor.Stop()
+
+	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", args.name))
+
+	return nil
+}
+
 // configureTTSSynthesizer installs the audio.ModelProviderFunc
 // that dispatches Synthesize requests through the project's
-// ModelProviderService.
+// ModelProviderService. The model provider's AudioSpeech method
+// (internal/service/model_service.go) resolves the per-tenant TTS
+// model driver, sends the request upstream, and returns
+// synthesized audio bytes.
+//
+// The audio package's NewTTSDispatchFunc helper converts the
+// audio.SynthesizeRequest shape into the model's dispatch shape
+// (audioContent = req.Text, voice/lang → TTSConfig.Params,
+// ModelName from req.Engine). When the model provider is
+// unconfigured (nil dispatcher) the helper returns nil, which
+// reverts the audio package to its default stub.
 func configureTTSSynthesizer(modelProviderService *service.ModelProviderService) {
 	if modelProviderService == nil {
 		common.Info("agent: model provider service not initialised; TTS in no-op echo mode")
