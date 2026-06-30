@@ -41,6 +41,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
 	enginetypes "ragflow/internal/engine/types"
@@ -1273,7 +1274,12 @@ func documentParseTaskRanges(doc *entity.Document, bucket, objectName string) ([
 			}
 		}
 		if len(ranges) == 0 {
-			ranges = append(ranges, documentParsePageRange{from: 0, to: maximumTaskPageNumber})
+			// pages == 0 means page count detection failed (e.g. compressed
+			// PDF). Instead of creating a 100000000-page task that crashes
+			// the Python task_executor, create a single whole-document task
+			// with from=0, to=0 so the parser processes the entire file
+			// without page-range splitting.
+			ranges = append(ranges, documentParsePageRange{from: 0, to: 0})
 		}
 		return ranges, nil
 	}
@@ -1410,7 +1416,20 @@ func documentEstimatePDFPageCount(binary []byte) int64 {
 	if len(binary) == 0 {
 		return 0
 	}
-	return int64(len(documentPDFPagePattern.FindAll(binary, -1)))
+	// Fast path: regex works for uncompressed PDFs.
+	count := int64(len(documentPDFPagePattern.FindAll(binary, -1)))
+	if count > 0 {
+		return count
+	}
+	// Fallback for compressed PDFs where /Type /Page is inside a
+	// compressed object stream: use pdf_oxide to get the real page count.
+	if doc, err := pdfoxide.OpenBytes(binary); err == nil {
+		defer doc.Close()
+		if pages, err := doc.PageCount(); err == nil {
+			return int64(pages)
+		}
+	}
+	return 0
 }
 
 func documentEstimateTableRowCount(name string, binary []byte) int {
