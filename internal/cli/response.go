@@ -58,6 +58,24 @@ func (r *CommonResponse) PrintOut() {
 	}
 }
 
+func HandleCommonResponse(response *Response, command string) (ResponseIf, error) {
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to %s: HTTP %d, body: %s", command, response.StatusCode, string(response.Body))
+	}
+
+	var result CommonResponse
+	if err := json.Unmarshal(response.Body, &result); err != nil {
+		return nil, fmt.Errorf("%s failed: invalid JSON (%w)", command, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = response.Duration
+	return &result, nil
+}
+
 type ModelsResponse struct {
 	Code         int                                 `json:"code"`
 	Data         map[string][]map[string]interface{} `json:"data"`
@@ -142,6 +160,24 @@ func (r *CommonDataResponse) PrintOut() {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
+}
+
+func HandleCommonDataResponse(response *Response, command string) (ResponseIf, error) {
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to %s: HTTP %d, body: %s", command, response.StatusCode, string(response.Body))
+	}
+
+	var result CommonDataResponse
+	if err := json.Unmarshal(response.Body, &result); err != nil {
+		return nil, fmt.Errorf("%s failed: invalid JSON (%w)", command, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = response.Duration
+	return &result, nil
 }
 
 type ListDocumentsResponse struct {
@@ -451,6 +487,10 @@ func (r *SimpleResponse) PrintOut() {
 }
 
 func HandleSimpleResponse(response *Response, command string) (ResponseIf, error) {
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to %s: HTTP %d, body: %s", command, response.StatusCode, string(response.Body))
+	}
+
 	var result SimpleResponse
 	if err := json.Unmarshal(response.Body, &result); err != nil {
 		return nil, fmt.Errorf("%s failed: invalid JSON (%w)", command, err)
@@ -912,7 +952,7 @@ func printReferenceChunks(raw json.RawMessage) {
 
 	fmt.Println("Reference:")
 	for i, chunk := range chunks {
-		id := chunkID(chunk)
+		id := getChunkID(chunk)
 		content := chunkContent(chunk)
 		docName := chunkDocName(chunk)
 		fmt.Printf("  [ID:%d] id=%s content=%q", i, id, truncateStr(content, 120))
@@ -930,7 +970,7 @@ func printReferenceChunks(raw json.RawMessage) {
 	}
 }
 
-func chunkID(c map[string]interface{}) string {
+func getChunkID(c map[string]interface{}) string {
 	for _, key := range []string{"chunk_id", "id"} {
 		if v, ok := c[key]; ok {
 			return fmt.Sprint(v)
