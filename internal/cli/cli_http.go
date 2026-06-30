@@ -444,7 +444,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "api_list_default_models":
 		return c.APIListDefaultModelsCommand(cmd)
 	case "api_parse_documents":
-		return c.APIParseDocumentsUserCommand(cmd)
+		return c.APIParseDocumentsCommand(cmd)
 	case "api_start_ingestion":
 		return c.APIStartIngestionCommand(cmd)
 	case "api_stop_ingestion":

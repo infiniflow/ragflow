@@ -289,7 +289,7 @@ docker build --platform linux/amd64 \
 1. `uv` 와 `pre-commit` 을 설치하거나, 이미 설치된 경우 이 단계를 건너뜁니다:
 
    ```bash
-   pipx install uv pre-commit
+   pipx install uv
    ```
 
 2. 소스 코드를 클론하고 Python 의존성을 설치합니다:
@@ -299,7 +299,7 @@ docker build --platform linux/amd64 \
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
    uv run python3 ragflow_deps/download_deps.py
-   pre-commit install
+   lefthook install
    ```
 
 3. Docker Compose를 사용하여 의존 서비스(MinIO, Elasticsearch, Redis 및 MySQL)를 시작합니다:
