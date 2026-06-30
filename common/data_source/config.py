@@ -74,6 +74,7 @@ class DocumentSource(str, Enum):
     OUTLOOK = "outlook"
     SALESFORCE = "salesforce"
     AZURE_BLOB = "azure_blob"
+    FEISHU_DRIVE = "feishu_drive"
 
 
 class FileOrigin(str, Enum):

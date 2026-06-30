@@ -160,6 +160,7 @@ class FileSource(StrEnum):
     OUTLOOK = "outlook"
     SALESFORCE = "salesforce"
     AZURE_BLOB = "azure_blob"
+    FEISHU_DRIVE = "feishu_drive"
 
 
 class PipelineTaskType(StrEnum):

@@ -1197,6 +1197,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '连接 GitHub，可同步 Pull Request 与 Issue 内容用于检索。',
       airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',
       dingtalkAITableDescription: '连接钉钉AI表格，同步指定表格中的记录。',
+      feishu_driveDescription:
+        '连接飞书/Lark 云空间，同步共享文件夹中上传的文件。',
+      feishuAppIdTip:
+        '飞书/Lark 自建应用的 App ID，在开发者后台「凭证与基础信息」中获取。',
+      feishuDomainTip:
+        '国内飞书应用选 Feishu（open.feishu.cn），国际版 Lark 应用选 Lark（open.larksuite.com）。',
+      feishuFolderTokenTip:
+        '文件夹 URL 末尾的 token（.../drive/folder/<token>）。留空则使用应用根目录。该文件夹需分享给应用。',
       gitlabDescription:
         '连接 GitLab，同步仓库、Issue、合并请求（MR）及相关文档内容。',
       asanaDescription: '连接 Asana，同步工作区中的文件。',
