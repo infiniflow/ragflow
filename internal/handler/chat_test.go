@@ -107,6 +107,59 @@ func TestChatMindMapHandlerSuccess(t *testing.T) {
 	}
 }
 
+func TestChatRecommendationHandlerSuccess(t *testing.T) {
+	setupChatHandlerTestDB(t)
+	llm := &fakeChatLLM{
+		response: "Here are related questions:\n1. How does hybrid search work?\n2. What improves retrieval quality?",
+	}
+	h := NewChatHandler(service.NewChatService(), service.NewUserService())
+	h.SetMindMapDependencies(nil, service.NewTenantService(), llm, nil)
+	c, w := setupGinContextWithUser("POST", "/api/v1/chat/recommendation", `{"question":"hybrid search"}`)
+
+	h.Recommendation(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp["message"])
+	}
+	questions, ok := resp["data"].([]interface{})
+	if !ok || len(questions) != 2 {
+		t.Fatalf("expected 2 questions, got %+v", resp["data"])
+	}
+	if questions[0] != "How does hybrid search work?" {
+		t.Fatalf("unexpected first question: %v", questions[0])
+	}
+	if llm.lastTenantID != "user-1" || llm.lastModelID != "model-a" {
+		t.Fatalf("unexpected LLM target: tenant=%q model=%q", llm.lastTenantID, llm.lastModelID)
+	}
+	if llm.lastConfig == nil || llm.lastConfig.Temperature == nil || *llm.lastConfig.Temperature != 0.9 {
+		t.Fatalf("expected default temperature 0.9, got %+v", llm.lastConfig)
+	}
+}
+
+func TestChatRecommendationConfigSkipsZeroTopP(t *testing.T) {
+	cfg := chatRecommendationConfig(map[string]interface{}{
+		"llm_setting": map[string]interface{}{
+			"temperature": float64(0.2),
+			"top_p":       float64(0),
+			"parameter":   map[string]interface{}{"unused": true},
+		},
+	})
+
+	if cfg == nil || cfg.Temperature == nil || *cfg.Temperature != 0.2 {
+		t.Fatalf("expected temperature 0.2, got %+v", cfg)
+	}
+	if cfg.TopP != nil {
+		t.Fatalf("expected zero top_p to be omitted, got %v", *cfg.TopP)
+	}
+}
+
 func TestDeleteChatHandlerSuccess(t *testing.T) {
 	db := setupChatHandlerTestDB(t)
 	createChatHandlerTestChat(t, db, "chat-1", "user-1")
