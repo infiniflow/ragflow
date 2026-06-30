@@ -1134,13 +1134,25 @@ func (s *ChatPipelineService) AsyncChat(
 						}
 						if isContentDelta(answer) {
 							fullAnswer += *answer
-							if buffered := BufferAnswerDelta(thinkState, *answer, 16); buffered != "" {
-								out <- AsyncChatResult{
-									Answer:      buffered,
-									Reference:   map[string]interface{}{},
-									AudioBinary: s.synthesizeTTS(ttsModel, buffered),
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
+							deltas := BufferAnswerDelta(thinkState, *answer, 16)
+							for _, d := range deltas {
+								if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+									out <- AsyncChatResult{
+										Answer:      "",
+										Reference:   map[string]interface{}{},
+										AudioBinary: nil,
+										CreatedAt:   float64(time.Now().Unix()),
+										Final:       false,
+										EndToThink:  true,
+									}
+								} else if d.Kind == ThinkDeltaText && d.Value != "" {
+									out <- AsyncChatResult{
+										Answer:      d.Value,
+										Reference:   map[string]interface{}{},
+										AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+										CreatedAt:   float64(time.Now().Unix()),
+										Final:       false,
+									}
 								}
 							}
 						}
@@ -1419,13 +1431,25 @@ func (s *ChatPipelineService) AsyncChatSolo(
 					}
 				if isContentDelta(answer) {
 					fullAnswer += *answer
-					if buffered := BufferAnswerDelta(thinkState, *answer, 16); buffered != "" {
-						out <- AsyncChatResult{
-							Answer:      buffered,
-							Reference:   map[string]interface{}{},
-							AudioBinary: s.synthesizeTTS(ttsModel, buffered),
-							CreatedAt:   float64(time.Now().Unix()),
-							Final:       false,
+					deltas := BufferAnswerDelta(thinkState, *answer, 16)
+					for _, d := range deltas {
+						if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+							out <- AsyncChatResult{
+								Answer:      "",
+								Reference:   map[string]interface{}{},
+								AudioBinary: nil,
+								CreatedAt:   float64(time.Now().Unix()),
+								Final:       false,
+								EndToThink:  true,
+							}
+						} else if d.Kind == ThinkDeltaText && d.Value != "" {
+							out <- AsyncChatResult{
+								Answer:      d.Value,
+								Reference:   map[string]interface{}{},
+								AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+								CreatedAt:   float64(time.Now().Unix()),
+								Final:       false,
+							}
 						}
 					}
 				}

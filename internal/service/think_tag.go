@@ -347,16 +347,31 @@ func ExtractVisibleAnswer(raw string) string {
 	return stripThinkTags(answer)
 }
 
-// BufferAnswerDelta accumulates answer text in state.answerBuffer.
-func BufferAnswerDelta(state *ThinkStreamState, text string, minTokens int) string {
-	if text == "" {
-		return ""
+// BufferAnswerDelta processes an answer delta through the think-state lifecycle.
+// When closePending is true, it first flushes the deferred think buffer and </think>
+// marker, then processes pendingAfterClose + the new answer text.
+func BufferAnswerDelta(state *ThinkStreamState, text string, minTokens int) []ThinkDelta {
+	if state == nil || text == "" {
+		return nil
 	}
-	state.answerBuffer += text
-	if tokenizer.NumTokensFromString(state.answerBuffer) < minTokens {
-		return ""
+	state.fullText += text
+
+	var deltas []ThinkDelta
+	if state.closePending {
+		state.closePending = false
+		if piece := flushThinkBufferInternal(state); piece.Value != "" {
+			deltas = append(deltas, piece)
+		}
+		state.inThink = false
+		deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaMarker, Value: thinkClose})
+		if state.pendingAfterClose != "" {
+			text = state.pendingAfterClose + text
+			state.pendingAfterClose = ""
+		}
 	}
-	out := state.answerBuffer
-	state.answerBuffer = ""
-	return out
+
+	if out, kind := emitText(state, "answer", text, minTokens); out != "" {
+		deltas = append(deltas, ThinkDelta{Kind: kind, Value: out})
+	}
+	return deltas
 }
