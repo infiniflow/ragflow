@@ -70,7 +70,14 @@ class _FakeRetriever:
         self.retrieval_calls = []
 
     async def retrieval(self, question, embd_mdl, tenant_id, kb_ids, **kwargs):
-        self.retrieval_calls.append({"question": question, "tenant_id": tenant_id, "kb_ids": list(kb_ids)})
+        self.retrieval_calls.append(
+            {
+                "question": question,
+                "tenant_id": tenant_id,
+                "kb_ids": list(kb_ids),
+                "kwargs": dict(kwargs),
+            }
+        )
         return {"chunks": list(self._chunks)}
 
     def retrieval_by_children(self, chunks, _tenant_ids):
@@ -182,7 +189,14 @@ class TestDifyRetrievalTenantCheck:
         """
         import logging
 
-        owner_kb = SimpleNamespace(id="kb-victim", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(
+            id="kb-victim",
+            tenant_id="tenant-owner",
+            tenant_embd_id="",
+            embd_id="bge",
+            similarity_threshold=0.2,
+            vector_similarity_weight=0.3,
+        )
         request_body = {
             "knowledge_id": "kb-victim",
             "query": "VICTIM_SECRET",
@@ -220,7 +234,14 @@ class TestDifyRetrievalTenantCheck:
     @pytest.mark.p1
     def test_same_tenant_request_succeeds(self, monkeypatch):
         """When the caller's tenant owns the KB, retrieval proceeds normally."""
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(
+            id="kb-owner",
+            tenant_id="tenant-owner",
+            tenant_embd_id="",
+            embd_id="bge",
+            similarity_threshold=0.2,
+            vector_similarity_weight=0.3,
+        )
         request_body = {
             "knowledge_id": "kb-owner",
             "query": "hello",
@@ -263,3 +284,125 @@ class TestDifyRetrievalTenantCheck:
 
         assert result["code"] == 404
         assert "not found" in result["message"].lower()
+
+
+@pytest.mark.p1
+class TestDifyRetrievalParams:
+    """Dataset retrieval settings and optional rerank for /dify/retrieval."""
+
+    @pytest.mark.p1
+    def test_resolve_retrieval_params_helpers(self, monkeypatch):
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, SimpleNamespace(id="kb", tenant_id="t", tenant_embd_id="", embd_id="e")),
+            accessible=True,
+            request_body={},
+        )
+        kb = SimpleNamespace(similarity_threshold=0.42, vector_similarity_weight=0.77)
+        st, vw = module._resolve_retrieval_params({}, kb)
+        assert st == 0.42
+        assert vw == 0.77
+        st2, vw2 = module._resolve_retrieval_params(
+            {"score_threshold": 0.11, "vector_similarity_weight": 0.22}, kb
+        )
+        assert st2 == 0.11
+        assert vw2 == 0.22
+
+    @pytest.mark.p1
+    def test_kb_defaults_used_when_retrieval_setting_omits_thresholds(self, monkeypatch):
+        owner_kb = SimpleNamespace(
+            id="kb-owner",
+            tenant_id="tenant-owner",
+            tenant_embd_id="",
+            embd_id="bge",
+            similarity_threshold=0.42,
+            vector_similarity_weight=0.77,
+        )
+        request_body = {"knowledge_id": "kb-owner", "query": "hello"}
+
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body=request_body,
+            chunks=[{"doc_id": "d1", "content_with_weight": "hello", "similarity": 0.8, "docnm_kwd": "doc.txt"}],
+        )
+
+        asyncio.run(module.retrieval(tenant_id="tenant-owner"))
+
+        assert len(module._fake_retriever.retrieval_calls) == 1
+        call = module._fake_retriever.retrieval_calls[0]["kwargs"]
+        assert call["similarity_threshold"] == 0.42
+        assert call["vector_similarity_weight"] == 0.77
+        assert call.get("rerank_mdl") is None
+
+    @pytest.mark.p1
+    def test_retrieval_setting_overrides_kb_defaults(self, monkeypatch):
+        owner_kb = SimpleNamespace(
+            id="kb-owner",
+            tenant_id="tenant-owner",
+            tenant_embd_id="",
+            embd_id="bge",
+            similarity_threshold=0.42,
+            vector_similarity_weight=0.77,
+        )
+        request_body = {
+            "knowledge_id": "kb-owner",
+            "query": "hello",
+            "retrieval_setting": {"score_threshold": 0.11, "vector_similarity_weight": 0.22, "top_k": 8},
+        }
+
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body=request_body,
+            chunks=[{"doc_id": "d1", "content_with_weight": "hello", "similarity": 0.8, "docnm_kwd": "doc.txt"}],
+        )
+
+        asyncio.run(module.retrieval(tenant_id="tenant-owner"))
+
+        call = module._fake_retriever.retrieval_calls[0]["kwargs"]
+        assert call["similarity_threshold"] == 0.11
+        assert call["vector_similarity_weight"] == 0.22
+
+    @pytest.mark.p1
+    def test_rerank_id_wires_rerank_model(self, monkeypatch):
+        owner_kb = SimpleNamespace(
+            id="kb-owner",
+            tenant_id="tenant-owner",
+            tenant_embd_id="",
+            embd_id="bge",
+            similarity_threshold=0.2,
+            vector_similarity_weight=0.3,
+        )
+        rerank_bundle = SimpleNamespace(name="rerank-bundle")
+        request_body = {
+            "knowledge_id": "kb-owner",
+            "query": "hello",
+            "rerank_id": "BAAI/bge-reranker-v2-m3@BAAI",
+        }
+
+        def _llm_bundle(_tenant, config):
+            if isinstance(config, dict) and config.get("type") == "rerank":
+                return rerank_bundle
+            return SimpleNamespace()
+
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body=request_body,
+            chunks=[{"doc_id": "d1", "content_with_weight": "hello", "similarity": 0.8, "docnm_kwd": "doc.txt"}],
+        )
+        monkeypatch.setattr(
+            module,
+            "get_model_config_from_provider_instance",
+            lambda _t, _ty, name: {"type": "rerank", "name": name},
+        )
+        monkeypatch.setattr(module, "LLMBundle", _llm_bundle)
+
+        asyncio.run(module.retrieval(tenant_id="tenant-owner"))
+
+        call = module._fake_retriever.retrieval_calls[0]["kwargs"]
+        assert call.get("rerank_mdl") is rerank_bundle
