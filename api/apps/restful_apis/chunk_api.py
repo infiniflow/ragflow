@@ -651,6 +651,189 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     return get_result(message=f"deleted {chunk_number} chunks")
 
 
+@manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks/merge", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def merge_chunks(tenant_id, dataset_id, document_id):
+    from rag.nlp import rag_tokenizer, search
+
+    logging.info(
+        f"merge_chunks start: dataset_id={dataset_id} document_id={document_id}"
+    )
+
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        logging.warning(
+            f"merge_chunks forbidden: dataset_id={dataset_id} document_id={document_id} tenant_id={tenant_id}"
+        )
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    doc = DocumentService.query(id=document_id, kb_id=dataset_id)
+    if not doc:
+        return get_error_data_result(message=f"You don't own the document {document_id}.")
+    doc = doc[0]
+    if doc.parser_id == ParserType.QA:
+        return get_error_data_result(message="Merging is not supported for Q&A documents.")
+    req = await get_request_json()
+    if not req:
+        return get_error_data_result(message="`chunk_ids` is required")
+    chunk_ids = req.get("chunk_ids")
+    if not isinstance(chunk_ids, list) or len(chunk_ids) < 2:
+        return get_error_data_result(message="`chunk_ids` must be a list of at least 2 chunk ids")
+    if any(not isinstance(cid, str) or not cid for cid in chunk_ids):
+        return get_error_data_result(message="`chunk_ids` must contain non-empty strings")
+    seen = set()
+    for cid in chunk_ids:
+        if cid in seen:
+            logging.warning(
+                f"merge_chunks duplicate id: dataset_id={dataset_id} document_id={document_id} chunk_id={cid}"
+            )
+            return get_error_data_result(message=f"Duplicate chunk id {cid} in `chunk_ids`")
+        seen.add(cid)
+
+    index = search.index_name(dataset_tenant_id)
+    sources = []
+    for cid in chunk_ids:
+        try:
+            chunk = settings.docStoreConn.get(cid, index, [dataset_id])
+        except Exception as exc:
+            if "NotFoundError" in str(exc):
+                logging.warning(
+                    f"merge_chunks source missing: dataset_id={dataset_id} document_id={document_id} chunk_id={cid}"
+                )
+                return get_error_data_result(message=f"Chunk {cid} not found in document {document_id}.")
+            logging.exception(exc)
+            return server_error_response(exc)
+        if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
+            logging.warning(
+                f"merge_chunks source missing: dataset_id={dataset_id} document_id={document_id} chunk_id={cid}"
+            )
+            return get_error_data_result(message=f"Chunk {cid} not found in document {document_id}.")
+        sources.append(chunk)
+
+    merged_content = "\n\n".join(s.get("content_with_weight", "") for s in sources)
+    if is_content_empty(merged_content):
+        return get_error_data_result(message="Merged content is empty.")
+
+    merged_keywords = []
+    merged_questions = []
+    merged_tags = []
+    keyword_seen = set()
+    question_seen = set()
+    tag_seen = set()
+    for s in sources:
+        for kw in s.get("important_kwd", []) or []:
+            if kw not in keyword_seen:
+                keyword_seen.add(kw)
+                merged_keywords.append(kw)
+        for q in s.get("question_kwd", []) or []:
+            if q not in question_seen:
+                question_seen.add(q)
+                merged_questions.append(q)
+        for t in s.get("tag_kwd", []) or []:
+            if t not in tag_seen:
+                tag_seen.add(t)
+                merged_tags.append(t)
+
+    new_chunk_id = xxhash.xxh64((merged_content + document_id).encode("utf-8")).hexdigest()
+    if new_chunk_id in seen:
+        logging.warning(
+            f"merge_chunks id collision: dataset_id={dataset_id} document_id={document_id} new_chunk_id={new_chunk_id}"
+        )
+        return get_error_data_result(message="Merged chunk collides with a source chunk id; please edit source content first.")
+
+    d = {
+        "id": new_chunk_id,
+        "content_with_weight": merged_content,
+        "content_ltks": rag_tokenizer.tokenize(merged_content),
+    }
+    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+    d["important_kwd"] = merged_keywords
+    d["important_tks"] = rag_tokenizer.tokenize(" ".join(merged_keywords))
+    d["question_kwd"] = merged_questions
+    d["question_tks"] = rag_tokenizer.tokenize("\n".join(merged_questions))
+    if merged_tags:
+        d["tag_kwd"] = merged_tags
+    d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
+    d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
+    d["kb_id"] = dataset_id
+    d["docnm_kwd"] = doc.name
+    d["doc_id"] = document_id
+
+    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
+    if tenant_embd_id:
+        model_config = get_model_config_by_id(tenant_embd_id)
+    else:
+        embd_id = DocumentService.get_embd_id(document_id)
+        model_config = get_model_config_by_type_and_name(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_mdl = TenantLLMService.model_instance(model_config)
+    v, c = embd_mdl.encode([doc.name, merged_content if not d["question_kwd"] else "\n".join(d["question_kwd"])])
+    v = 0.1 * v[0] + 0.9 * v[1]
+    d[f"q_{len(v)}_vec"] = v.tolist()
+    # Write sequence: insert the merged chunk first, then delete the source
+    # chunks and adjust counters. If anything after the insert fails, roll
+    # back the newly-inserted merged chunk on a best-effort basis so the
+    # store never ends up with both the source chunks and the merged chunk
+    # visible, or with drifted chunk counters.
+    settings.docStoreConn.insert([d], index, dataset_id)
+    try:
+        deleted = settings.docStoreConn.delete(
+            {"doc_id": document_id, "id": list(seen)},
+            index,
+            dataset_id,
+        )
+        if deleted != len(seen):
+            raise RuntimeError(
+                f"merge_chunks deleted source chunks {deleted}, expect {len(seen)}"
+            )
+        DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+        try:
+            DocumentService.decrement_chunk_num(document_id, dataset_id, 1, deleted, 0)
+        except Exception:
+            # Counter delete succeeded but decrement failed: revert the
+            # increment so document/knowledgebase counters do not drift.
+            DocumentService.decrement_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+            raise
+    except Exception as exc:
+        logging.error(
+            f"merge_chunks post-insert failure, rolling back: dataset_id={dataset_id} document_id={document_id} new_chunk_id={new_chunk_id} source_ids={list(seen)} error={exc}"
+        )
+        try:
+            settings.docStoreConn.delete(
+                {"doc_id": document_id, "id": [new_chunk_id]},
+                index,
+                dataset_id,
+            )
+        except Exception as rb_exc:
+            logging.error(
+                f"merge_chunks rollback failed to delete merged chunk: dataset_id={dataset_id} document_id={document_id} new_chunk_id={new_chunk_id} error={rb_exc}"
+            )
+        if isinstance(exc, RuntimeError):
+            return get_error_data_result(message=str(exc))
+        return server_error_response(exc)
+
+    logging.info(
+        f"merge_chunks success: dataset_id={dataset_id} document_id={document_id} new_chunk_id={new_chunk_id} source_ids={list(seen)} deleted={deleted}"
+    )
+
+    key_mapping = {
+        "id": "id",
+        "content_with_weight": "content",
+        "doc_id": "document_id",
+        "important_kwd": "important_keywords",
+        "tag_kwd": "tag_kwd",
+        "question_kwd": "questions",
+        "kb_id": "dataset_id",
+        "create_timestamp_flt": "create_timestamp",
+        "create_time": "create_time",
+        "document_keyword": "document",
+    }
+    renamed_chunk = {new_key: d[key] for key, new_key in key_mapping.items() if key in d}
+    _ = Chunk(**renamed_chunk)
+    return get_result(data={"chunk": renamed_chunk})
+
+
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks/<chunk_id>", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
