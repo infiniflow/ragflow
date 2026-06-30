@@ -66,21 +66,21 @@ from rag.nlp import (
 def _is_short_header(text, max_tokens=50):
     """
     Check if text is a short markdown header.
-    
+
     Args:
         text: The text to check
         max_tokens: Maximum tokens for a header to be considered "short"
-    
+
     Returns:
         bool: True if text is a short markdown header, False otherwise
     """
     if not text or not text.strip():
         return False
-    
+
     # Check if it matches markdown header pattern: 1-6 # followed by space
     if not re.match(r"^#{1,6}\s+", text.strip()):
         return False
-    
+
     # Check if token count is below threshold
     return num_tokens_from_string(text) < max_tokens
 
@@ -1062,9 +1062,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.1, "Start to parse.")
         sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?;。；！？"))
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
-        print("\n", "-"*150, "\n")
+        print("\n", "-" * 150, "\n")
         print(sections)
-        print("\n", "-"*150, "\n")
+        print("\n", "-" * 150, "\n")
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(md|markdown|mdx)$", filename, re.IGNORECASE):
@@ -1170,7 +1170,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     st = timer()
     overlapped_percent = normalize_overlapped_percent(parser_config.get("overlapped_percent", 0))
-    
+
     if is_markdown:
         merged_chunks = []
         merged_images = []
@@ -1255,10 +1255,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     # Attach PDF outline as transient metadata on the first chunk.
     # task_executor.py will extract and persist it as document metadata.
     if res and pdf_parser and getattr(pdf_parser, "outlines", None):
-        res[0]["__outline__"] = [
-            {"title": title, "depth": depth}
-            for title, depth, *_ in pdf_parser.outlines
-        ]
+        res[0]["__outline__"] = [{"title": title, "depth": depth} for title, depth, *_ in pdf_parser.outlines]
 
     return res
 

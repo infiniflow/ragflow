@@ -39,9 +39,28 @@ pre-commit:
       stage_fixed: true
     - name: web-prettier
       glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
-      run: npx --prefix web prettier --write --ignore-unknown {staged_files}
+      run: |
+        # Ensure web/node_modules is populated. CI runners don't run `npm install`
+        # before lefthook, and `npx` without local node_modules fetches the
+        # latest packages from the registry — which breaks because the pinned
+        # prettier plugins (prettier-plugin-organize-imports,
+        # prettier-plugin-packagejson) aren't auto-resolved and ESLint 10
+        # requires eslint.config.js.
+        if [ ! -d web/node_modules ]; then
+          echo "==> web/node_modules missing; running npm ci --prefix web"
+          npm ci --prefix web --no-audit --no-fund
+        fi
+        # `cd web` so prettier/eslint resolve their plugins from web/node_modules.
+        # {staged_files} is expanded by lefthook with repo-root-relative paths,
+        # so strip the `web/` prefix before passing to the tool.
+        cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --write --ignore-unknown
       stage_fixed: true
     - name: web-eslint
       glob: "web/**/*.{js,jsx,ts,tsx}"
-      run: npx --prefix web eslint --fix {staged_files}
+      run: |
+        if [ ! -d web/node_modules ]; then
+          echo "==> web/node_modules missing; running npm ci --prefix web"
+          npm ci --prefix web --no-audit --no-fund
+        fi
+        cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint --fix
       stage_fixed: true

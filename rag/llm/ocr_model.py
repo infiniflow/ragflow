@@ -237,11 +237,7 @@ class SoMarkOcrModel(Base, SoMarkParser):
         if not isinstance(config, dict):
             config = {}
 
-        key_as_secret = (
-            key
-            if isinstance(key, str) and key and not key.lstrip().startswith("{")
-            else ""
-        )
+        key_as_secret = key if isinstance(key, str) and key and not key.lstrip().startswith("{") else ""
 
         def _resolve(ui_key: str, env_key: str, default=""):
             return config.get(

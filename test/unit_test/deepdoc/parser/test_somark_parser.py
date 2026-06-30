@@ -54,24 +54,27 @@ def _make_parser(m, **feature_kwargs):
 def _sample_pages():
     """A minimal pages payload mixing text, title, figure, equation, table,
     toc (discarded), and an image block with no bbox (must be skipped)."""
-    return [{
-        "page_num": 0,
-        "page_size": {"w": 600, "h": 800},
-        "blocks": [
-            {"type": "text", "content": "hello world", "bbox": [10, 20, 100, 40]},
-            {"type": "title", "content": "Chapter 1", "title_level": 1, "bbox": [10, 5, 200, 18]},
-            {"type": "figure", "content": "Figure caption from understanding", "bbox": [50, 50, 300, 300]},
-            {"type": "table", "content": "<table><tr><td>a</td></tr></table>", "bbox": [10, 400, 500, 600]},
-            {"type": "equation", "content": "E=mc^2", "bbox": [10, 650, 200, 680]},
-            {"type": "cate_item", "content": "should be discarded", "bbox": [0, 0, 10, 10]},
-            {"type": "figure", "content": "no bbox -> skip"},  # no bbox at all
-        ],
-    }]
+    return [
+        {
+            "page_num": 0,
+            "page_size": {"w": 600, "h": 800},
+            "blocks": [
+                {"type": "text", "content": "hello world", "bbox": [10, 20, 100, 40]},
+                {"type": "title", "content": "Chapter 1", "title_level": 1, "bbox": [10, 5, 200, 18]},
+                {"type": "figure", "content": "Figure caption from understanding", "bbox": [50, 50, 300, 300]},
+                {"type": "table", "content": "<table><tr><td>a</td></tr></table>", "bbox": [10, 400, 500, 600]},
+                {"type": "equation", "content": "E=mc^2", "bbox": [10, 650, 200, 680]},
+                {"type": "cate_item", "content": "should be discarded", "bbox": [0, 0, 10, 10]},
+                {"type": "figure", "content": "no bbox -> skip"},  # no bbox at all
+            ],
+        }
+    ]
 
 
 # ---------------------------------------------------------------------
 # Type-mapping integrity (regression guard)
 # ---------------------------------------------------------------------
+
 
 def test_type_mapping_covers_every_non_discarded_block_type(monkeypatch):
     """Every SoMark block type that is not in ALWAYS_DISCARDED and is not a
@@ -109,6 +112,7 @@ def test_always_discarded_contains_toc_and_blank(monkeypatch):
 # _resolve_internal_type — all branches
 # ---------------------------------------------------------------------
 
+
 def test_resolve_internal_type_discards_toc_and_blank(monkeypatch):
     m = _load_somark_parser(monkeypatch)
     p = _make_parser(m)
@@ -145,14 +149,14 @@ def test_resolve_internal_type_image_blocks(monkeypatch):
     crop() recovery path; otherwise figures would be lost on the naive path."""
     m = _load_somark_parser(monkeypatch)
     p = _make_parser(m)
-    for btype in (m.SoMarkBlockType.FIGURE, m.SoMarkBlockType.CS,
-                  m.SoMarkBlockType.QRCODE, m.SoMarkBlockType.STAMP):
+    for btype in (m.SoMarkBlockType.FIGURE, m.SoMarkBlockType.CS, m.SoMarkBlockType.QRCODE, m.SoMarkBlockType.STAMP):
         assert p._resolve_internal_type(btype) == "image", btype
 
 
 # ---------------------------------------------------------------------
 # _block_text
 # ---------------------------------------------------------------------
+
 
 def test_block_text_image_returns_empty_string(monkeypatch):
     """Image-typed blocks contribute no text via _block_text; the figure is
@@ -184,6 +188,7 @@ def test_block_text_text_strips_whitespace(monkeypatch):
 # _transfer_to_sections — tuple shape contract
 # ---------------------------------------------------------------------
 
+
 def test_transfer_to_sections_naive_path_returns_2_tuples(monkeypatch):
     """parse_method=None (or anything not in {manual, pipeline}) — naive.py
     consumer — must receive 2-tuples (text, line_tag)."""
@@ -192,8 +197,7 @@ def test_transfer_to_sections_naive_path_returns_2_tuples(monkeypatch):
 
     secs = p._transfer_to_sections(_sample_pages())
 
-    assert all(isinstance(s, tuple) and len(s) == 2 for s in secs), \
-        "naive path must emit (text, line_tag) 2-tuples"
+    assert all(isinstance(s, tuple) and len(s) == 2 for s in secs), "naive path must emit (text, line_tag) 2-tuples"
     # 7 blocks - 1 cate_item discarded - 1 no-bbox figure skipped = 5 valid
     assert len(secs) == 5
 
@@ -206,12 +210,10 @@ def test_transfer_to_sections_pipeline_path_returns_3_tuples(monkeypatch):
 
     secs = p._transfer_to_sections(_sample_pages(), parse_method="pipeline")
 
-    assert all(isinstance(s, tuple) and len(s) == 3 for s in secs), \
-        "pipeline path must emit (text, layout_type, line_tag) 3-tuples"
+    assert all(isinstance(s, tuple) and len(s) == 3 for s in secs), "pipeline path must emit (text, layout_type, line_tag) 3-tuples"
     # Layout types must reflect block diversity, not collapse to all "text"
     layout_types = {s[1] for s in secs}
-    assert layout_types >= {"text", "image", "table", "equation"}, \
-        f"expected diverse layout types, got {layout_types}"
+    assert layout_types >= {"text", "image", "table", "equation"}, f"expected diverse layout types, got {layout_types}"
 
 
 def test_transfer_to_sections_naive_image_carries_caption_and_tag(monkeypatch):
@@ -261,11 +263,13 @@ def test_transfer_to_sections_skips_image_block_without_bbox(monkeypatch):
     would only pollute the chunk stream."""
     m = _load_somark_parser(monkeypatch)
     p = _make_parser(m)
-    pages = [{
-        "page_num": 0,
-        "page_size": {"w": 600, "h": 800},
-        "blocks": [{"type": "figure", "content": "no bbox"}],
-    }]
+    pages = [
+        {
+            "page_num": 0,
+            "page_size": {"w": 600, "h": 800},
+            "blocks": [{"type": "figure", "content": "no bbox"}],
+        }
+    ]
     assert p._transfer_to_sections(pages) == []
 
 
@@ -274,14 +278,16 @@ def test_transfer_to_sections_keeps_header_footer_when_flagged(monkeypatch):
     as text sections."""
     m = _load_somark_parser(monkeypatch)
     p = _make_parser(m, keep_header_footer=True)
-    pages = [{
-        "page_num": 0,
-        "page_size": {"w": 600, "h": 800},
-        "blocks": [
-            {"type": "header", "content": "doc title", "bbox": [0, 0, 100, 10]},
-            {"type": "footer", "content": "page 1", "bbox": [0, 790, 100, 800]},
-        ],
-    }]
+    pages = [
+        {
+            "page_num": 0,
+            "page_size": {"w": 600, "h": 800},
+            "blocks": [
+                {"type": "header", "content": "doc title", "bbox": [0, 0, 100, 10]},
+                {"type": "footer", "content": "page 1", "bbox": [0, 790, 100, 800]},
+            ],
+        }
+    ]
     secs = p._transfer_to_sections(pages)
     texts = [s[0] for s in secs]
     assert any("doc title" in t for t in texts)
@@ -291,6 +297,7 @@ def test_transfer_to_sections_keeps_header_footer_when_flagged(monkeypatch):
 # ---------------------------------------------------------------------
 # _line_tag format
 # ---------------------------------------------------------------------
+
 
 def test_line_tag_format(monkeypatch):
     """Tag format ``@@<page1based>\\t<x0>\\t<x1>\\t<y0>\\t<y1>##`` is the

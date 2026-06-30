@@ -143,21 +143,21 @@ class SoMarkParser(RAGFlowPdfParser):
     POLL_REQUEST_TIMEOUT = 30  # single poll request timeout
 
     def __init__(
-            self,
-            base_url: str,
-            api_key: str = "",
-            *,
-            image_format: str = "url",
-            formula_format: str = "latex",
-            table_format: str = "html",
-            cs_format: str = "image",
-            enable_text_cross_page: bool = False,
-            enable_table_cross_page: bool = False,
-            enable_title_level_recognition: bool = False,
-            enable_inline_image: bool = False,
-            enable_table_image: bool = True,
-            enable_image_understanding: bool = True,
-            keep_header_footer: bool = False,
+        self,
+        base_url: str,
+        api_key: str = "",
+        *,
+        image_format: str = "url",
+        formula_format: str = "latex",
+        table_format: str = "html",
+        cs_format: str = "image",
+        enable_text_cross_page: bool = False,
+        enable_table_cross_page: bool = False,
+        enable_title_level_recognition: bool = False,
+        enable_inline_image: bool = False,
+        enable_table_image: bool = True,
+        enable_image_understanding: bool = True,
+        keep_header_footer: bool = False,
     ):
         self.base_url = base_url.strip().rstrip("/")
         # Intentionally NOT stripping: caller may want to pass raw key as-is
@@ -223,16 +223,12 @@ class SoMarkParser(RAGFlowPdfParser):
             return False, f"[SoMark] usage check failed: {exc}"
 
         if resp.status_code >= 500:
-            return False, (
-                f"[SoMark] usage HTTP {resp.status_code}: {resp.text[:200]}"
-            )
+            return False, (f"[SoMark] usage HTTP {resp.status_code}: {resp.text[:200]}")
 
         try:
             body = resp.json()
         except ValueError:
-            return False, (
-                f"[SoMark] usage non-JSON response ({resp.status_code}): {resp.text[:200]}"
-            )
+            return False, (f"[SoMark] usage non-JSON response ({resp.status_code}): {resp.text[:200]}")
 
         code = body.get("code")
         message = body.get("message") or ""
@@ -247,10 +243,7 @@ class SoMarkParser(RAGFlowPdfParser):
         paid = usage.get("remaining_paid_pages") or 0
         free = usage.get("remaining_free_pages_this_month") or 0
         if paid == 0 and free == 0:
-            return False, (
-                "[SoMark] insufficient parse pages (remaining_paid_pages=0, "
-                "remaining_free_pages_this_month=0)"
-            )
+            return False, ("[SoMark] insufficient parse pages (remaining_paid_pages=0, remaining_free_pages_this_month=0)")
 
         return True, ""
 
@@ -275,9 +268,7 @@ class SoMarkParser(RAGFlowPdfParser):
         data.update(self._auth_field())
 
         safe_keys = [k for k in data if k != "api_key"]
-        self.logger.info(
-            f"[SoMark] submit {url} keys={safe_keys} has_api_key={bool(self.api_key)}"
-        )
+        self.logger.info(f"[SoMark] submit {url} keys={safe_keys} has_api_key={bool(self.api_key)}")
         if callback:
             callback(0.20, f"[SoMark] submitting task to {url}")
 
@@ -308,37 +299,29 @@ class SoMarkParser(RAGFlowPdfParser):
             # Inline parsing so the QPS-limit code can be distinguished from
             # other business errors before raising.
             if resp.status_code >= 500:
-                raise SoMarkAPIError(
-                    f"[SoMark] submit HTTP {resp.status_code}: {resp.text[:200]}"
-                )
+                raise SoMarkAPIError(f"[SoMark] submit HTTP {resp.status_code}: {resp.text[:200]}")
             try:
                 body = resp.json()
             except ValueError as exc:
-                raise SoMarkAPIError(
-                    f"[SoMark] submit non-JSON response ({resp.status_code}): {resp.text[:200]}"
-                ) from exc
+                raise SoMarkAPIError(f"[SoMark] submit non-JSON response ({resp.status_code}): {resp.text[:200]}") from exc
 
             code = body.get("code")
             if code == 0:
                 task_id = (body.get("data") or {}).get("task_id")
                 if not task_id:
                     raise SoMarkAPIError(f"[SoMark] submit returned no task_id: {body}")
-                self.logger.info(
-                    f"[SoMark] task submitted, task_id={task_id} attempts={attempt + 1}"
-                )
+                self.logger.info(f"[SoMark] task submitted, task_id={task_id} attempts={attempt + 1}")
                 return task_id
 
             # QPS / concurrency rejection: exponential backoff within budget.
             if code == self.QPS_LIMIT_CODE:
                 backoff = min(
-                    self.SUBMIT_BACKOFF_BASE_SECONDS * (2 ** attempt),
+                    self.SUBMIT_BACKOFF_BASE_SECONDS * (2**attempt),
                     self.SUBMIT_BACKOFF_MAX_SECONDS,
                 )
                 wait = backoff + random.random() * self.SUBMIT_BACKOFF_JITTER_SECONDS
                 if time.monotonic() + wait > deadline:
-                    raise SoMarkAPIError(
-                        "[SoMark] submit blocked by QPS limit; retry budget exhausted"
-                    )
+                    raise SoMarkAPIError("[SoMark] submit blocked by QPS limit; retry budget exhausted")
                 self.logger.info(
                     "[SoMark] submit hit QPS limit, retrying in %.2fs (attempt=%d)",
                     wait,
@@ -354,9 +337,7 @@ class SoMarkParser(RAGFlowPdfParser):
                 continue
 
             # Any other non-zero code: not retryable.
-            raise SoMarkAPIError(
-                f"[SoMark] submit business error code={code} message={body.get('message')}"
-            )
+            raise SoMarkAPIError(f"[SoMark] submit business error code={code} message={body.get('message')}")
 
     def _poll_task(self, task_id: str, callback: Optional[Callable] = None) -> dict:
         url = f"{self.base_url}{self.CHECK_PATH}"
@@ -383,23 +364,18 @@ class SoMarkParser(RAGFlowPdfParser):
             elapsed = time.monotonic() - started_at
 
             if status == "SUCCESS":
-                self.logger.info(
-                    f"[SoMark] task {task_id} completed after {attempt} poll(s) in {elapsed:.1f}s"
-                )
+                self.logger.info(f"[SoMark] task {task_id} completed after {attempt} poll(s) in {elapsed:.1f}s")
                 result = payload.get("result")
                 if not result:
                     raise SoMarkAPIError(f"[SoMark] SUCCESS but no result: {body}")
                 return result
             if status == "FAILED":
-                raise SoMarkAPIError(
-                    f"[SoMark] task {task_id} FAILED: {body.get('message')}"
-                )
+                raise SoMarkAPIError(f"[SoMark] task {task_id} FAILED: {body.get('message')}")
 
             if callback and attempt % 5 == 0:
                 callback(
                     0.40,
-                    f"[SoMark] still {status}, polled {attempt} time(s) "
-                    f"(elapsed={elapsed:.1f}s, next in {interval:.1f}s)",
+                    f"[SoMark] still {status}, polled {attempt} time(s) (elapsed={elapsed:.1f}s, next in {interval:.1f}s)",
                 )
 
             interval = min(
@@ -407,55 +383,40 @@ class SoMarkParser(RAGFlowPdfParser):
                 self.POLL_INTERVAL_MAX_SECONDS,
             )
 
-        raise SoMarkAPIError(
-            f"[SoMark] task {task_id} timed out after {self.POLL_BUDGET_SECONDS}s while waiting"
-        )
+        raise SoMarkAPIError(f"[SoMark] task {task_id} timed out after {self.POLL_BUDGET_SECONDS}s while waiting")
 
     @staticmethod
     def _parse_json_body(resp: requests.Response, stage: str) -> dict:
         if resp.status_code >= 500:
-            raise SoMarkAPIError(
-                f"[SoMark] {stage} HTTP {resp.status_code}: {resp.text[:200]}"
-            )
+            raise SoMarkAPIError(f"[SoMark] {stage} HTTP {resp.status_code}: {resp.text[:200]}")
         try:
             body = resp.json()
         except ValueError as exc:
-            raise SoMarkAPIError(
-                f"[SoMark] {stage} non-JSON response ({resp.status_code}): {resp.text[:200]}"
-            ) from exc
+            raise SoMarkAPIError(f"[SoMark] {stage} non-JSON response ({resp.status_code}): {resp.text[:200]}") from exc
 
         code = body.get("code")
         if code != 0:
-            raise SoMarkAPIError(
-                f"[SoMark] {stage} business error code={code} message={body.get('message')}"
-            )
+            raise SoMarkAPIError(f"[SoMark] {stage} business error code={code} message={body.get('message')}")
         return body
 
     # ---------------------------------------------------------------------
     # Page image rendering
     # ---------------------------------------------------------------------
     def __images__(
-            self,
-            fnm,
-            zoomin: int = 1,
-            page_from: int = 0,
-            page_to: int = MAXIMUM_PAGE_NUMBER,
-            callback=None,
+        self,
+        fnm,
+        zoomin: int = 1,
+        page_from: int = 0,
+        page_to: int = MAXIMUM_PAGE_NUMBER,
+        callback=None,
     ):
         self.page_from = page_from
         self.page_to = page_to
         try:
-            ctx = (
-                pdfplumber.open(fnm)
-                if isinstance(fnm, (str, PathLike))
-                else pdfplumber.open(BytesIO(fnm))
-            )
+            ctx = pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm))
             with ctx as pdf:
                 self.pdf = pdf
-                self.page_images = [
-                    p.to_image(resolution=72 * zoomin, antialias=True).original
-                    for _, p in enumerate(self.pdf.pages[page_from:page_to])
-                ]
+                self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original for _, p in enumerate(self.pdf.pages[page_from:page_to])]
         except Exception as exc:
             self.page_images = None
             self.total_page = 0
@@ -485,20 +446,14 @@ class SoMarkParser(RAGFlowPdfParser):
         if top > bott:
             top, bott = bott, top
 
-        if (
-                hasattr(self, "page_images")
-                and self.page_images
-                and len(self.page_images) > page_idx
-        ):
+        if hasattr(self, "page_images") and self.page_images and len(self.page_images) > page_idx:
             page_width, page_height = self.page_images[page_idx].size
             x0 = (x0 / src_w) * page_width
             x1 = (x1 / src_w) * page_width
             top = (top / src_h) * page_height
             bott = (bott / src_h) * page_height
 
-        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(
-            "-".join(str(p) for p in pn), x0, x1, top, bott
-        )
+        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join(str(p) for p in pn), x0, x1, top, bott)
 
     @staticmethod
     def extract_positions(txt: str):
@@ -729,12 +684,12 @@ class SoMarkParser(RAGFlowPdfParser):
     # Public entry point
     # ---------------------------------------------------------------------
     def parse_pdf(
-            self,
-            filepath: str | PathLike[str],
-            binary: BytesIO | bytes | None = None,
-            callback: Optional[Callable] = None,
-            parse_method: Optional[str] = None,
-            **kwargs,
+        self,
+        filepath: str | PathLike[str],
+        binary: BytesIO | bytes | None = None,
+        callback: Optional[Callable] = None,
+        parse_method: Optional[str] = None,
+        **kwargs,
     ) -> tuple:
         self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
 
@@ -772,9 +727,7 @@ class SoMarkParser(RAGFlowPdfParser):
             json_payload = outputs.get("json") or {}
             pages = json_payload.get("pages") or []
             if not pages:
-                self.logger.warning(
-                    "[SoMark] empty pages in response; nothing to chunk"
-                )
+                self.logger.warning("[SoMark] empty pages in response; nothing to chunk")
 
             if callback:
                 callback(

@@ -18,7 +18,18 @@ import os
 import enum
 import json
 from common import settings
-from common.constants import ActiveStatusEnum, LLMType, MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS, SOMARK_DEFAULT_CONFIG, SOMARK_ENV_KEYS
+from common.constants import (
+    ActiveStatusEnum,
+    LLMType,
+    MINERU_DEFAULT_CONFIG,
+    MINERU_ENV_KEYS,
+    OPENDATALOADER_DEFAULT_CONFIG,
+    OPENDATALOADER_ENV_KEYS,
+    PADDLEOCR_DEFAULT_CONFIG,
+    PADDLEOCR_ENV_KEYS,
+    SOMARK_DEFAULT_CONFIG,
+    SOMARK_ENV_KEYS,
+)
 from api.db.services.tenant_llm_service import TenantService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
@@ -32,6 +43,8 @@ def _factory_model_types(llm: dict) -> list[str]:
     if isinstance(model_type, list):
         return model_type
     return [model_type] if model_type else []
+
+
 def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | None]:
     if not raw_api_key:
         return raw_api_key, None, None
@@ -132,7 +145,7 @@ def ensure_paddleocr_from_env(tenant_id: str) -> str | None:
     )
 
 
-def get_tenant_default_model_by_type(tenant_id: str, model_type: str|enum.Enum):
+def get_tenant_default_model_by_type(tenant_id: str, model_type: str | enum.Enum):
     exist, tenant = TenantService.get_by_id(tenant_id)
     if not exist:
         raise LookupError("Tenant not found")
@@ -142,7 +155,7 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str|enum.Enum):
         case LLMType.EMBEDDING.value:
             model_name = tenant.embd_id
         case LLMType.SPEECH2TEXT.value:
-            model_name =  tenant.asr_id
+            model_name = tenant.asr_id
         case LLMType.IMAGE2TEXT.value:
             model_name = tenant.img2txt_id
         case LLMType.CHAT.value:
@@ -185,10 +198,7 @@ def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: st
     if instance_name != "default":
         raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
 
-    active_instances = [
-        inst for inst in TenantModelInstanceService.get_all_by_provider_id(provider_obj.id)
-        if inst.status == ActiveStatusEnum.ACTIVE.value
-    ]
+    active_instances = [inst for inst in TenantModelInstanceService.get_all_by_provider_id(provider_obj.id) if inst.status == ActiveStatusEnum.ACTIVE.value]
     if len(active_instances) == 1:
         logger.warning(
             "Model instance fallback applied for legacy default instance name",
@@ -204,16 +214,13 @@ def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: st
     raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
 
 
-def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum, model_name: str):
+def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.Enum, model_name: str):
     pure_model_name, instance_name, provider_name = split_model_name(model_name)
     model_type_val = model_type if isinstance(model_type, str) else model_type.value
     # Builtin embedding model
     compose_profiles = os.getenv("COMPOSE_PROFILES", "")
     is_tei_builtin_embedding = (
-            model_type_val == LLMType.EMBEDDING.value
-            and "tei-" in compose_profiles
-            and pure_model_name == os.getenv("TEI_MODEL", "")
-            and (provider_name == "Builtin" or not provider_name)
+        model_type_val == LLMType.EMBEDDING.value and "tei-" in compose_profiles and pure_model_name == os.getenv("TEI_MODEL", "") and (provider_name == "Builtin" or not provider_name)
     )
     if is_tei_builtin_embedding:
         # configured local embedding model
@@ -323,7 +330,10 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
         if not llm_list:
             raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
         types_in_json = _factory_model_types(llm_list[0])
-    return list(set(types_in_json + [model_obj.model_type for model_obj in model_objs if model_obj.status != ActiveStatusEnum.UNSUPPORTED.value]) - {model_obj.model_type for model_obj in model_objs if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value})
+    return list(
+        set(types_in_json + [model_obj.model_type for model_obj in model_objs if model_obj.status != ActiveStatusEnum.UNSUPPORTED.value])
+        - {model_obj.model_type for model_obj in model_objs if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value}
+    )
 
 
 def delete_models_by_instance_ids(instance_ids: list[str]):
