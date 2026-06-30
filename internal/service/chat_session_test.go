@@ -905,6 +905,81 @@ func TestParseMessages_LegacyWrappedObject(t *testing.T) {
 	}
 }
 
+func TestBuildSessionPayload_EmptyCollectionsEncodeAsEmptyArrays(t *testing.T) {
+	svc := &ChatSessionService{}
+	payload := svc.buildSessionPayload(&entity.ChatSession{
+		ID:        "session-1",
+		DialogID:  "chat-1",
+		Message:   nil,
+		Reference: json.RawMessage(`null`),
+	}, nil, false)
+
+	if payload.Messages == nil {
+		t.Fatal("messages is nil")
+	}
+	if payload.Reference == nil {
+		t.Fatal("reference is nil")
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	if !strings.Contains(string(body), `"messages":[]`) {
+		t.Fatalf("messages did not encode as empty array: %s", string(body))
+	}
+	if !strings.Contains(string(body), `"reference":[]`) {
+		t.Fatalf("reference did not encode as empty array: %s", string(body))
+	}
+}
+
+func TestParseCollections_ReturnEmptySlicesForMissingOrNull(t *testing.T) {
+	messageInputs := []json.RawMessage{
+		nil,
+		json.RawMessage(`null`),
+		json.RawMessage(`{"messages":null}`),
+	}
+	for _, input := range messageInputs {
+		got := parseMessages(input)
+		if got == nil || len(got) != 0 {
+			t.Fatalf("parseMessages(%s)=%#v", string(input), got)
+		}
+	}
+
+	referenceInputs := []json.RawMessage{
+		nil,
+		json.RawMessage(`null`),
+	}
+	for _, input := range referenceInputs {
+		got := parseReferenceList(input)
+		if got == nil || len(got) != 0 {
+			t.Fatalf("parseReferenceList(%s)=%#v", string(input), got)
+		}
+	}
+}
+
+func TestParseCollections_ReturnNilForMalformedData(t *testing.T) {
+	messageInputs := []json.RawMessage{
+		json.RawMessage(`not-json`),
+		json.RawMessage(`{"unexpected":[]}`),
+	}
+	for _, input := range messageInputs {
+		if got := parseMessages(input); got != nil {
+			t.Fatalf("parseMessages(%s)=%#v, want nil", string(input), got)
+		}
+	}
+
+	referenceInputs := []json.RawMessage{
+		json.RawMessage(`not-json`),
+		json.RawMessage(`{"unexpected":[]}`),
+	}
+	for _, input := range referenceInputs {
+		if got := parseReferenceList(input); got != nil {
+			t.Fatalf("parseReferenceList(%s)=%#v, want nil", string(input), got)
+		}
+	}
+}
+
 func TestCompletionStream_EmptyMessages(t *testing.T) {
 	svc := &ChatSessionService{
 		chatSessionDAO: &fakeSessionStore{},

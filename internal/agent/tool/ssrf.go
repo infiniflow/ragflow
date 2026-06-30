@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -83,6 +84,20 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 		return "", nil, fmt.Errorf("ssrf: empty host")
 	}
 
+	if allowAnyHost() {
+		if ip := net.ParseIP(host); ip != nil {
+			return host, ip, nil
+		}
+		ips, lerr := net.LookupIP(host)
+		if lerr != nil {
+			return "", nil, fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
+		}
+		if len(ips) == 0 {
+			return "", nil, fmt.Errorf("ssrf: %s has no A/AAAA records", host)
+		}
+		return host, ips[0], nil
+	}
+
 	// Short-circuit the well-known host aliases that DNS lookups may
 	// also catch, but defending against the literal name is cheap and
 	// saves a syscall on the common probe path.
@@ -134,6 +149,15 @@ func isPrivateOrLoopback(ip net.IP) bool {
 		return true
 	}
 	return false
+}
+
+func allowAnyHost() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ALLOW_ANY_HOST"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // SanitizeURL strips query parameters whose names match a small set of

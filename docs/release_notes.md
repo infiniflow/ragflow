@@ -46,7 +46,7 @@ Released on June 29, 2026.
 - Dataflow
   - Restores the dataflow rerun endpoint and ensures the ingestion response includes the DSL payload to reliably render the timeline and parser views. [#16292](https://github.com/infiniflow/ragflow/pull/16292)
   - Restores dataflow parser defaults and returns the actual SSE payload, ensuring pipeline runs correctly surface message IDs and log updates. [#16290](https://github.com/infiniflow/ragflow/pull/16290)
-- LLM: Failed to use the new `gemini-3.5-flash` model via the Google Cloud (Vertex AI) provider using `eu` or `us` region endpoint. This is resolved by explicitly multi-region routing requests to the required `aiplatform.<region>.rep.googleapis.com` domains instead of synthesized `<region>-aiplatform.googleapis.com` hosts. [#15990](https://github.com/infiniflow/ragflow/pull/15990)
+- LLM: Failed to use the new `gemini-3.5-flash` model via the Google Cloud (Vertex AI) provider using `eu` or `us` region endpoint. This is resolved by explicitly routing multi-region requests to the required `aiplatform.<region>.rep.googleapis.com` domains instead of the synthesized `<region>-aiplatform.googleapis.com` hosts. [#15990](https://github.com/infiniflow/ragflow/pull/15990)
 - UI/UX: The metadata add modal sent empty values to the backend. [#15229](https://github.com/infiniflow/ragflow/pull/15229)
 
 ## v0.26.1
