@@ -316,6 +316,9 @@ async def create_provider_instance(tenant_id: str = None, provider_id_or_name: s
           required:
             - instance_name
             - api_key
+            - base_url
+            - region
+            - model_info
           properties:
             instance_name:
               type: string
@@ -534,6 +537,113 @@ def show_provider_instance(tenant_id: str = None, provider_id_or_name: str = Non
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>", methods=["PUT"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def update_provider_instance(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None):
+    """
+    Update a provider instance.
+    ---
+    tags:
+      - Providers
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: provider_id_or_name
+        type: string
+        required: true
+        description: Provider ID or name.
+      - in: path
+        name: instance_id_or_name
+        type: string
+        required: true
+        description: Instance ID or name.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Instance update parameters.
+        required: true
+        schema:
+          type: object
+          required:
+            - instance_name
+            - api_key
+            - base_url
+            - region
+            - model_info
+          properties:
+            instance_name:
+              type: string
+              description: Instance name.
+            api_key:
+              type: string
+              description: API key.
+            base_url:
+              type: string
+              description: Base URL.
+            region:
+              type: string
+              description: Region.
+            model_info:
+              type: array
+              description: List of models to configure for this instance.
+              items:
+                type: object
+                properties:
+                  model_type:
+                    type: array
+                    description: Model types.
+                  model_name:
+                    type: string
+                    description: Model name.
+                  max_tokens:
+                    type: integer
+                    description: Max tokens.
+                  extra:
+                    type: object
+                    description: Extra model info (e.g. is_tools).
+    responses:
+      200:
+        description: Instance updated successfully.
+        schema:
+          type: object
+    """
+    data = await request.get_json()
+    if not provider_id_or_name:
+        return get_error_argument_result(message="provider_id_or_name is required")
+    if not instance_id_or_name:
+        return get_error_argument_result(message="instance_id_or_name is required")
+    if not data:
+        return get_error_argument_result(message="Request body is required")
+    required_keys = ["instance_name", "api_key", "base_url", "region", "model_info"]
+    missing = [k for k in required_keys if k not in data]
+    if missing:
+        return get_error_argument_result(message=f"Missing required fields: {', '.join(missing)}")
+
+    instance_name = data["instance_name"]
+    api_key = data["api_key"]
+    base_url = data["base_url"]
+    region = data["region"]
+    model_info = data["model_info"]
+
+    try:
+        success, msg = await provider_api_service.update_provider_instance(
+            tenant_id, provider_id_or_name, instance_id_or_name, instance_name, api_key, base_url, region, model_info
+        )
+        if success:
+            return get_result(message=msg)
+        else:
+            return get_error_data_result(message=msg)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")

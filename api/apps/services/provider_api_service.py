@@ -290,6 +290,177 @@ def show_provider_model(provider_id_or_name: str, model_name: str):
     }
 
 
+async def update_provider_instance(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str, instance_name: str, api_key: str|dict, base_url: str, region: str, model_info: list[dict]=None):
+    """
+    Update a provider instance.
+
+    Updates the instance's api_key, base_url, region, and re-creates all models
+    based on the provided model_info list.
+
+    :param tenant_id: tenant ID
+    :param provider_id_or_name: provider/factory ID or name
+    :param instance_id_or_name: instance ID or name
+    :param instance_name: instance name (used as a logical identifier)
+    :param api_key: API key
+    :param base_url: base url
+    :param region: region
+    :param model_info: model info, [{
+        "model_type": ["chat"],  # support multiple
+        "model_name": "name",
+        "max_tokens": 4096,
+        "extra": {
+            "is_tools": True
+        }
+    }]
+    :return: (success, result_or_error_message)
+    """
+    if not provider_id_or_name:
+        return False, "Provider ID or name is required"
+
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_id(tenant_id, provider_id_or_name)
+    if not provider_obj:
+        provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_id_or_name)
+    if not provider_obj:
+        return False, f"Provider '{provider_id_or_name}' does not exist"
+
+    provider_name = provider_obj.provider_name
+
+    # Find the instance
+    instance_obj = None
+    if instance_id_or_name:
+        _, instance_obj = TenantModelInstanceService.get_by_id(instance_id_or_name)
+    if instance_obj and instance_obj.provider_id != provider_obj.id:
+        instance_obj = None
+    if not instance_obj:
+        instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_id_or_name)
+    if not instance_obj:
+        return False, f"No instance found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
+
+    base_url = _normalize_provider_base_url(provider_name, base_url)
+    api_key = _normalize_provider_api_key(provider_name, api_key)
+
+    api_key_str = ""
+    if api_key:
+        api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
+
+    # Verify api_key
+    success, msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
+    if not success:
+        return False, msg
+
+    # Update instance record
+    update_dict = {
+        "api_key": api_key_str,
+    }
+    if instance_name != instance_obj.instance_name:
+        update_dict["instance_name"] = instance_name
+
+    extra_fields = {}
+    if base_url:
+        extra_fields["base_url"] = base_url
+    if region:
+        extra_fields["region"] = region
+    # Preserve existing extra fields not overwritten
+    existing_extra = json.loads(instance_obj.extra) if instance_obj.extra else {}
+    existing_extra.update(extra_fields)
+    update_dict["extra"] = json.dumps(existing_extra)
+    TenantModelInstanceService.update_by_id(instance_obj.id, update_dict)
+
+    # Use the (possibly updated) instance_name for model recreation
+    effective_instance_name = instance_name
+
+    # Upsert models: add new ones, update existing ones, remove ones no longer selected
+    existing_model_objs = TenantModelService.get_models_by_instance_id(instance_obj.id)
+    existing_model_names = {model_obj.model_name: model_obj for model_obj in existing_model_objs}
+
+    # Delete models that are no longer in the submitted model_info
+    submitted_model_names = set()
+    if model_info:
+        submitted_model_names = {m.get("model_name") for m in model_info if m.get("model_name")}
+    elif model_info is not None:
+        # model_info is explicitly an empty list — remove all models
+        submitted_model_names = set()
+    models_to_remove = set(existing_model_names.keys()) - submitted_model_names
+    if models_to_remove:
+        TenantModelService.delete_by_ids([existing_model_names[n].id for n in models_to_remove])
+
+    msg = ""
+    if model_info:
+        for model in model_info:
+            model_name = model.get("model_name")
+            if not model_name:
+                continue
+            verify_status = model_verify_result.get(model_name, ModelVerifyStatusEnum.UNKNOWN.value)
+            if model.get("extra"):
+                model["extra"].update({"verify": verify_status})
+            else:
+                model["extra"] = {"verify": verify_status}
+
+            if model_name in existing_model_names:
+                # Update existing model
+                update_dict = {}
+                if isinstance(model.get("model_type"), (str, list)):
+                    target_model_type = calculate_model_type(model["model_type"])
+                    if target_model_type != existing_model_names[model_name].model_type:
+                        update_dict["model_type"] = target_model_type
+                if model.get("max_tokens"):
+                    db_extra = json.loads(existing_model_names[model_name].extra) if existing_model_names[model_name].extra else {}
+                    db_extra.update({"max_tokens": model["max_tokens"]})
+                    if model.get("extra"):
+                        db_extra.update(model["extra"])
+                    update_dict["extra"] = json.dumps(db_extra)
+                elif model.get("extra"):
+                    db_extra = json.loads(existing_model_names[model_name].extra) if existing_model_names[model_name].extra else {}
+                    db_extra.update(model["extra"])
+                    update_dict["extra"] = json.dumps(db_extra)
+                if update_dict:
+                    TenantModelService.update_model(existing_model_names[model_name].id, update_dict)
+            else:
+                # Add new model
+                success, _msg = add_model_to_instance(tenant_id, provider_name, effective_instance_name, **model)
+                if not success:
+                    msg += _msg
+    else:
+        if model_info is None:
+            # model_info not provided — add all factory default models (same as create)
+            factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
+            factory_llms = factory_info[0]["llm"]
+            for llm in factory_llms:
+                llm_name = _factory_llm_name(llm)
+                verify_status = model_verify_result.get(llm_name, ModelVerifyStatusEnum.UNKNOWN.value)
+                if llm_name in existing_model_names:
+                    # Update existing
+                    update_dict = {}
+                    target_model_type = calculate_model_type(_factory_model_types(llm))
+                    if target_model_type != existing_model_names[llm_name].model_type:
+                        update_dict["model_type"] = target_model_type
+                    db_extra = json.loads(existing_model_names[llm_name].extra) if existing_model_names[llm_name].extra else {}
+                    db_extra.update({
+                        "max_tokens": llm["max_tokens"],
+                        "is_tools": llm.get("is_tools", False),
+                        "thinking": "thinking" in llm.get("features", []),
+                        "verify": verify_status,
+                    })
+                    update_dict["extra"] = json.dumps(db_extra)
+                    if update_dict:
+                        TenantModelService.update_model(existing_model_names[llm_name].id, update_dict)
+                else:
+                    success, _msg = add_model_to_instance(tenant_id, provider_name, effective_instance_name, **{
+                        "model_type": _factory_model_types(llm),
+                        "model_name": llm_name,
+                        "max_tokens": llm["max_tokens"],
+                        "extra": {
+                            "is_tools": llm.get("is_tools", False),
+                            "thinking": "thinking" in llm.get("features", []),
+                            "verify": verify_status,
+                        }
+                    })
+                    if not success:
+                        msg += _msg
+
+    return True, "success"
+
+
 async def create_provider_instance(tenant_id: str, provider_id_or_name: str, instance_name: str, api_key: str|dict, base_url: str, region: str, model_info: list[dict]=None):
     """
     Create a provider instance.
