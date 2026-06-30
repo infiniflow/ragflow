@@ -399,6 +399,17 @@ func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum 
 	}
 }
 
+func assertKBDocNum(t *testing.T, kbID string, want int64) {
+	t.Helper()
+	var got int64
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Select("doc_num").Where("id = ?", kbID).Scan(&got).Error; err != nil {
+		t.Fatalf("get kb doc_num %s: %v", kbID, err)
+	}
+	if got != want {
+		t.Fatalf("kb %s doc_num=%d, want %d", kbID, got, want)
+	}
+}
+
 func insertTestDoc(t *testing.T, id, kbID string, tokenNum, chunkNum int64) {
 	t.Helper()
 	doc := &entity.Document{
@@ -455,6 +466,29 @@ func insertTestFile(t *testing.T, id, parentID, name string, location *string) {
 	if err := dao.DB.Create(f).Error; err != nil {
 		t.Fatalf("insert test file: %v", err)
 	}
+}
+
+func TestCreateDocumentIncrementsKBDocNum(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-create", "tenant-1", 0, 0, 0)
+
+	svc := testDocumentService(t)
+	doc, err := svc.CreateDocument(&CreateDocumentRequest{
+		Name:      "created.txt",
+		KbID:      "kb-create",
+		ParserID:  "naive",
+		CreatedBy: "tenant-1",
+		Type:      "doc",
+		Source:    "local",
+	})
+	if err != nil {
+		t.Fatalf("CreateDocument failed: %v", err)
+	}
+	if doc == nil || doc.KbID != "kb-create" {
+		t.Fatalf("unexpected doc: %+v", doc)
+	}
+	assertKBDocNum(t, "kb-create", 1)
 }
 
 func TestDeleteDocumentFull_Basic(t *testing.T) {
@@ -643,6 +677,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		ParserConfig: entity.JSONMap{
 			"existing": "value",
 		},
+		DocNum: 1,
 	}
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert kb: %v", err)
@@ -694,6 +729,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	if string(storedBlob) != "abc" {
 		t.Fatalf("stored blob=%q, want abc", storedBlob)
 	}
+	assertKBDocNum(t, kb.ID, 2)
 }
 
 func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
@@ -741,6 +777,7 @@ func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
 	if linkCount != 1 {
 		t.Fatalf("link count=%d, want 1", linkCount)
 	}
+	assertKBDocNum(t, kb.ID, 1)
 }
 
 func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
