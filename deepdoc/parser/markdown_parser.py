@@ -20,6 +20,8 @@ import re
 
 from markdown import markdown
 
+logger = logging.getLogger(__name__)
+
 
 class RAGFlowMarkdownParser:
     def __init__(self, chunk_token_num=128):
@@ -296,6 +298,45 @@ class MarkdownElementExtractor:
         self._append_delimited_section(sections, text, last_end, len(text), include_meta)
         return sections
 
+    def _atomic_region_ranges(self, text: str):
+        """Return [(start, end), ...] half-open char offsets of regions that
+        must not be split by a sentence-level delimiter — currently fenced
+        code blocks (``` or ~~~, any fence length >= 3) — so the
+        delimiter-driven path in extract_elements can skip over them.
+
+        Honours CommonMark §4.5: the closing fence must use the same
+        fence character and have length >= the opening fence length, so
+        an outer ```` fence is not closed by an inner ``` line.
+        Closes part of #15482.
+        """
+        ranges: list[tuple[int, int]] = []
+        fence_re = re.compile(r"(?m)^[ \t]{0,3}(?P<fence>`{3,}|~{3,})")
+        pos = 0
+        while pos < len(text):
+            m = fence_re.search(text, pos)
+            if not m:
+                break
+            open_fence = m.group("fence")
+            open_char = open_fence[0]
+            open_len = len(open_fence)
+            close_re = re.compile(
+                rf"(?m)^[ \t]{{0,3}}{re.escape(open_char)}{{{open_len},}}[ \t]*$"
+            )
+            close = close_re.search(text, m.end())
+            if close:
+                end = close.end()
+            else:
+                # Unterminated fence: treat the rest of the document as
+                # atomic so a stray ``` doesn't poison the delimiter pass.
+                logger.debug(
+                    "Unterminated fenced code block at offset %d; marking remainder as atomic.",
+                    m.start(),
+                )
+                end = len(text)
+            ranges.append((m.start(), end))
+            pos = end
+        return ranges
+
     def extract_elements(self, delimiter=None, include_meta=False):
         """Extract individual elements (headers, code blocks, lists, etc.)"""
         sections = []
@@ -384,8 +425,10 @@ class MarkdownElementExtractor:
                 element = self._extract_header(i)
                 sections.append(element if include_meta else element["content"])
                 i = element["end_line"] + 1
-            elif self._get_fence_marker(line):
-                # code block
+            elif re.match(r"^[ \t]{0,3}(?:`{3,}|~{3,})", line):
+                # code block — recognise both ``` and ~~~ openings of any
+                # fence length >= 3 (CommonMark §4.5). Closes part of
+                # #15482.
                 element = self._extract_code_block(i)
                 sections.append(element if include_meta else element["content"])
                 i = element["end_line"] + 1
@@ -426,11 +469,35 @@ class MarkdownElementExtractor:
         content_lines = [self.lines[start_pos]]
         fence_char, fence_len = self._get_fence_marker(self.lines[start_pos])
 
-        # Find the end of the code block
+        # CommonMark §4.5: the closing fence must use the same fence
+        # character (` or ~) AND be at least as long as the opening
+        # fence. Capture the opening character and length, then close
+        # only on a matching equal-or-longer fence. This protects:
+        #   - outer ```` blocks containing inner ``` lines
+        #   - tilde-fenced ~~~ blocks
+        #   - blocks with info-string (e.g. ```python) — info-string
+        #     lives after the fence characters and is ignored.
+        # Closes part of #15482.
+        opening = self.lines[start_pos].lstrip()
+        fence_char = opening[0] if opening and opening[0] in ("`", "~") else "`"
+        open_len = 0
+        for ch in opening:
+            if ch == fence_char:
+                open_len += 1
+            else:
+                break
+        if open_len < 3:
+            # Defensive: caller already determined this line is a fence;
+            # guard against arbitrarily-short fences just in case.
+            open_len = 3
+
+        close_re = re.compile(
+            rf"^[ \t]{{0,3}}{re.escape(fence_char)}{{{open_len},}}[ \t]*$"
+        )
         for i in range(start_pos + 1, len(self.lines)):
             content_lines.append(self.lines[i])
             end_pos = i
-            if self._is_closing_fence(self.lines[i], fence_char, fence_len):
+            if close_re.match(self.lines[i]):
                 break
 
         return {
@@ -495,21 +562,28 @@ class MarkdownElementExtractor:
         end_pos = start_pos
         content_lines = [self.lines[start_pos]]
 
+        # Reused for both the current line and the one-line lookahead
+        # below. Recognises both ``` and ~~~ fences so a paragraph that
+        # runs into a tilde-fenced code block ends cleanly. Closes part
+        # of #15482.
+        def _is_block_start(s: str) -> bool:
+            return bool(
+                re.match(r"^#{1,6}\s+.*$", s)
+                or re.match(r"^[ \t]{0,3}(?:`{3,}|~{3,})", s)
+                or re.match(r"^\s*[-*+]\s+.*$", s)
+                or re.match(r"^\s*\d+\.\s+.*$", s)
+                or s.strip().startswith(">")
+            )
+
         i = start_pos + 1
         while i < len(self.lines):
             line = self.lines[i]
             # stop if we encounter a block element
-            if re.match(r"^#{1,6}\s+.*$", line) or self._get_fence_marker(line) or re.match(r"^\s*[-*+]\s+.*$", line) or re.match(r"^\s*\d+\.\s+.*$", line) or line.strip().startswith(">"):
+            if _is_block_start(line):
                 break
             elif not line.strip():
                 # check if the next line is a block element
-                if i + 1 < len(self.lines) and (
-                    re.match(r"^#{1,6}\s+.*$", self.lines[i + 1])
-                    or self._get_fence_marker(self.lines[i + 1])
-                    or re.match(r"^\s*[-*+]\s+.*$", self.lines[i + 1])
-                    or re.match(r"^\s*\d+\.\s+.*$", self.lines[i + 1])
-                    or self.lines[i + 1].strip().startswith(">")
-                ):
+                if i + 1 < len(self.lines) and _is_block_start(self.lines[i + 1]):
                     break
                 else:
                     content_lines.append(line)

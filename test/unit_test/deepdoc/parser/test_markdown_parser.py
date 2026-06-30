@@ -13,6 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+"""Regression tests for `MarkdownElementExtractor` improvements landed
+for #15482: nested fencing, tilde fences, and delimiter splitting that
+respects code-block boundaries.
+"""
 
 import importlib.util
 import sys
