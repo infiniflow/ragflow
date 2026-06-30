@@ -25,7 +25,8 @@ from quart import request, make_response
 from google_auth_oauthlib.flow import Flow
 
 from api.db import InputType
-from api.db.services.connector_service import ConnectorService, SyncLogsService
+from api.db.services.connector_service import Connector2KbService, ConnectorService, SyncLogsService
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
 from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import RetCode, TaskStatus
@@ -160,7 +161,26 @@ async def rebuild(connector_id):
     if "kb_id" not in req:
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message="required argument is missing: kb_id")
 
-    err = ConnectorService.rebuild(req["kb_id"], connector_id, current_user.id)
+    kb_id = req["kb_id"]
+    # Bind the caller-supplied kb_id to the caller's authorization context
+    # (fixes the CWE-284 class reported in #15268): the route already checked
+    # that the connector belongs to the caller, but rebuild() proceeds to
+    # delete docs and schedule sync tasks against `kb_id` — without these
+    # checks an authenticated user could target a kb they do not own.
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+        LOGGER.warning(
+            "rebuild denied: kb not accessible connector_id=%s kb_id=%s user_id=%s",
+            connector_id, kb_id, current_user.id,
+        )
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    if not Connector2KbService.query(connector_id=connector_id, kb_id=kb_id):
+        LOGGER.warning(
+            "rebuild denied: connector not bound to kb connector_id=%s kb_id=%s user_id=%s",
+            connector_id, kb_id, current_user.id,
+        )
+        return get_json_result(data=False, message="Connector is not bound to this knowledge base.", code=RetCode.AUTHENTICATION_ERROR)
+
+    err = ConnectorService.rebuild(kb_id, connector_id, current_user.id)
     if err:
         return get_json_result(data=False, message=err, code=RetCode.SERVER_ERROR)
     return get_json_result(data=True)
