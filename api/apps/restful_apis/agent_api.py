@@ -976,8 +976,10 @@ def delete_agent(agent_id, tenant_id):
 @add_tenant_id_to_kwargs
 @_require_canvas_access_async
 async def update_agent(agent_id, tenant_id):
-    req = {k: v for k, v in (await get_request_json()).items() if v is not None}
-    req["canvas_type"] = req.get("canvas_type","")
+    body = await get_request_json()
+    req = {k: v for k, v in body.items() if v is not None}
+    if "canvas_type" in body:
+        req["canvas_type"] = body["canvas_type"]
     req["release"] = bool(req.get("release", ""))
 
     if req.get("dsl") is not None:
