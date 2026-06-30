@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +44,23 @@ type TestDBConnectionRequest struct {
 	Password string      `json:"password"`
 }
 
+// AllowAnyHostForTest mirrors utility.AllowAnyHostForTest: a test-only
+// override that disables the SSRF guard in AssertHostIsSafe. Production
+// code MUST leave this at false. Tests that need to talk to a local
+// httptest server or stub-resolved DB host flip it on and reset it
+// in t.Cleanup.
+//
+// The previous form was an env-var check (ALLOW_ANY_HOST=1) which was
+// a live runtime toggle any operator could flip to disable the SSRF
+// guard globally. PR review round 6, Major #3: this is a process-
+// memory boolean only — no env var, no deployment flag, no path to
+// bypass from outside the test binary.
+var AllowAnyHostForTest = false
+
+func allowAnyHost() bool {
+	return AllowAnyHostForTest
+}
+
 // AssertHostIsSafe returns the first resolved public IP for host, or an
 // error when the host resolves to any non-public address. The check
 // mirrors the SSRF guard in the Python implementation so external
@@ -55,7 +71,7 @@ func AssertHostIsSafe(host string) (string, error) {
 		return "", errors.New("Host must not be empty.")
 	}
 	if allowAnyHost() {
-		zap.L().Warn("SSRF guard bypass enabled via ALLOW_ANY_HOST; allowing host without validation",
+		zap.L().Warn("SSRF guard bypass enabled via AllowAnyHostForTest; allowing host without validation",
 			zap.String("host", host),
 		)
 		return host, nil
@@ -100,15 +116,6 @@ func AssertHostIsSafe(host string) (string, error) {
 		return "", fmt.Errorf("Host %q resolved to no addresses.", host)
 	}
 	return resolvedIP, nil
-}
-
-func allowAnyHost() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("ALLOW_ANY_HOST"))) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
 }
 
 func isPublicAddr(addr netip.Addr) bool {

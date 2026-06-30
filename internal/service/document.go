@@ -69,6 +69,8 @@ type DocumentService struct {
 	taskDAO             *dao.TaskDAO
 	file2DocumentDAO    *dao.File2DocumentDAO
 	fileDAO             *dao.FileDAO
+	canvasDAO           *dao.UserCanvasDAO
+	api4ConvDAO         *dao.API4ConversationDAO
 }
 
 // NewDocumentService create document service
@@ -85,6 +87,8 @@ func NewDocumentService() *DocumentService {
 		taskDAO:             dao.NewTaskDAO(),
 		file2DocumentDAO:    dao.NewFile2DocumentDAO(),
 		fileDAO:             dao.NewFileDAO(),
+		canvasDAO:           dao.NewUserCanvasDAO(),
+		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
 	}
 }
 
@@ -243,7 +247,15 @@ func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
 }
 
 // GetDocumentArtifact retrieves a sandbox artifact from object storage.
-func (s *DocumentService) GetDocumentArtifact(filename string) (*ArtifactResponse, error) {
+//
+// userID scopes the lookup: a CodeExec sandbox artifact is only
+// returned when the caller owns (or has team access to) at least
+// one agent session whose `message` references this filename (or
+// its `documents/artifact/<name>` URL form). The authorization
+// gate runs BEFORE the storage read so a probe of an unknown
+// filename cannot distinguish "you cannot see it" from "it
+// exists" — both return ErrArtifactNotFound. Mirrors PR #16169.
+func (s *DocumentService) GetDocumentArtifact(filename, userID string) (*ArtifactResponse, error) {
 	basename := filepath.Base(filename)
 	if basename != filename || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
 		return nil, ErrArtifactInvalidFilename
@@ -253,6 +265,12 @@ func (s *DocumentService) GetDocumentArtifact(filename string) (*ArtifactRespons
 	contentType, ok := artifactContentTypes[ext]
 	if !ok {
 		return nil, ErrArtifactInvalidFileType
+	}
+
+	if !s.sandboxArtifactAccessible(basename, userID) {
+		// Same error as "object does not exist" to avoid leaking
+		// whether the artifact exists for a different user/agent.
+		return nil, ErrArtifactNotFound
 	}
 
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -281,11 +299,125 @@ func (s *DocumentService) GetDocumentArtifact(filename string) (*ArtifactRespons
 	}, nil
 }
 
+// sandboxArtifactDialogIDsForUser returns the distinct agent
+// (canvas) dialog_ids for sessions owned by userID whose
+// `message` blob references filename. A CodeExec artifact URL
+// appears in `message` as either a bare filename or the
+// `documents/artifact/<name>` form, so the helper matches both.
+//
+// Implemented as a direct GORM query on the
+// API4Conversation table — GORM's `Contains` maps to MySQL
+// `LIKE '%...%'` which is fine here because the storage path is
+// short and indexed lookup on (user_id, exp_user_id) keeps the
+// scan narrow.
+func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID string) []string {
+	if filename == "" || userID == "" {
+		return nil
+	}
+	// Escape SQL LIKE wildcards (%, _) before building the pattern.
+	// Without escaping, a caller could submit a filename like
+	// "%.png" or "_" and the LIKE query would match arbitrary
+	// referenced artifacts in any user's conversation — letting the
+	// caller pass the authorization check against one filename and
+	// then GET another artifact by name (PR review round 5, Major #8).
+	//
+	// Escape character: '!'. We avoid '\\' because SQL string
+	// literal parsing of '\\' is driver-specific (SQLite treats
+	// it as a single backslash, MySQL treats it as one, Postgres
+	// rejects the unterminated string) — '!' is a benign character
+	// in real filenames (artifact names rarely contain '!') and
+	// parses identically in every driver.
+	filenameSafe := escapeSQLLikePattern(filename)
+	artifactRefSafe := escapeSQLLikePattern("documents/artifact/" + filename)
+	filenamePattern := "%" + filenameSafe + "%"
+	artifactRefPattern := "%" + artifactRefSafe + "%"
+	dialogIDs := make(map[string]struct{})
+	rows, err := dao.DB.Model(&entity.API4Conversation{}).
+		Select("dialog_id").
+		Where("user_id = ? OR exp_user_id = ?", userID, userID).
+		Where(`message LIKE ? ESCAPE '!' OR message LIKE ? ESCAPE '!'`,
+			filenamePattern, artifactRefPattern).
+		Distinct("dialog_id").
+		Rows()
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err == nil && d != "" {
+			dialogIDs[d] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(dialogIDs))
+	for d := range dialogIDs {
+		out = append(out, d)
+	}
+	return out
+}
+
+// escapeSQLLikePattern escapes the SQL LIKE wildcards ('%', '_') and
+// the escape character itself ('!') so a literal user-supplied
+// filename can be safely interpolated into a `LIKE ? ESCAPE '!'`
+// pattern. Without this, "%.png" would match any string ending in
+// ".png" and "_" would match a single character — bypassing the
+// filename-specific authorization check. PR review round 5, Major #8.
+func escapeSQLLikePattern(s string) string {
+	r := strings.NewReplacer(`!`, `!!`, `%`, `!%`, `_`, `!_`)
+	return r.Replace(s)
+}
+
+// sandboxArtifactAccessible reports whether userID may reach at
+// least one agent canvas whose session references filename.
+// Mirrors `UserCanvasService.accessible(dialog_id, user_id)` from
+// the Python fix; on the Go side this is the same predicate as
+// UserCanvasDAO.Accessible (owner or team permission, with the
+// latter scoped to the caller's tenant membership — PR review
+// round 5).
+func (s *DocumentService) sandboxArtifactAccessible(filename, userID string) bool {
+	if userID == "" {
+		return false
+	}
+	// Fetch the caller's tenant list once; passing it into
+	// canvasDAO.Accessible ensures the team-permission branch only
+	// matches canvases the caller can actually see. An empty list
+	// (callers without tenant data) is safe — it effectively disables
+	// the team branch, so the only matches are canvases the caller
+	// directly owns.
+	tenantIDs, terr := dao.NewUserTenantDAO().GetTenantIDsByUserID(userID)
+	if terr != nil {
+		tenantIDs = nil
+	}
+	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(filename, userID) {
+		if s.canvasDAO.Accessible(dialogID, userID, tenantIDs) {
+			return true
+		}
+	}
+	return false
+}
+
 func sandboxArtifactBucket() string {
 	if bucket := os.Getenv("SANDBOX_ARTIFACT_BUCKET"); bucket != "" {
 		return bucket
 	}
 	return "sandbox-artifacts"
+}
+
+// Accessible reports whether docID belongs to a knowledge base
+// reachable by userID. Used by agent endpoints (e.g. RerunAgent,
+// PR #15145) to gate destructive / run-again actions on a document
+// the caller has access to. Returns false on any lookup failure or
+// empty inputs so callers can treat a denial as a 404-equivalent
+// and avoid leaking whether the document exists at all.
+func (s *DocumentService) Accessible(docID, userID string) bool {
+	if docID == "" || userID == "" {
+		return false
+	}
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil || doc == nil {
+		return false
+	}
+	return s.kbDAO.Accessible(doc.KbID, userID)
 }
 
 func sanitizeArtifactFilename(filename string) string {
