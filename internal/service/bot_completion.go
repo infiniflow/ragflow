@@ -54,6 +54,14 @@ import (
 // rendered as a python-style {code:500, message:str(e),
 // data:{answer:"**ERROR**..."}} frame.
 type ChatbotSSEFrame struct {
+	// Event is the canvas.RunEvent type ("message",
+	// "user_inputs", "workflow_finished", etc.). It is
+	// forwarded in the SSE envelope as the `event` field so the
+	// front-end can distinguish interactive form pauses from
+	// plain assistant text (PR #14589). The field is omitted
+	// from the JSON when empty to preserve the original wire
+	// shape for callers that do not set it.
+	Event     string         `json:"event,omitempty"`
 	Data      string         `json:"-"`
 	Reference map[string]any `json:"-"`
 	SessionID string         `json:"-"`
@@ -85,16 +93,26 @@ func WriteChatbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
 			},
 		}
 	} else {
+		data := map[string]any{
+			"answer":       f.Data,
+			"reference":    f.Reference,
+			"audio_binary": nil,
+			"id":           nil,
+			"session_id":   f.SessionID,
+		}
+		// Forward the canvas event type so the front-end can
+		// distinguish interactive form pauses ("user_inputs",
+		// "workflow_finished") from plain assistant messages
+		// (PR #14589). When Event is empty the field is omitted
+		// from the JSON so existing message frames stay
+		// byte-compatible.
+		if f.Event != "" {
+			data["event"] = f.Event
+		}
 		payload = map[string]any{
 			"code":    0,
 			"message": "",
-			"data": map[string]any{
-				"answer":       f.Data,
-				"reference":    f.Reference,
-				"audio_binary": nil,
-				"id":           nil,
-				"session_id":   f.SessionID,
-			},
+			"data":    data,
 		}
 	}
 	b, err := json.Marshal(payload)
@@ -150,6 +168,14 @@ func WriteDoneFrame(w http.ResponseWriter) error {
 // SDK then JSON.parse()s the `answer` string to extract the inner
 // fields. This matches the existing AgentbotCompletion behaviour.
 //
+// The event type is forwarded as the `event` field of the envelope
+// (PR #14589) so the front-end can distinguish interactive
+// `user_inputs` / `workflow_finished` events from plain `message`
+// streams and render the UserFillUp form vs the assistant text.
+// Without this field the form UI never appears because the
+// iframe SDK has no way to know the canvas paused for human
+// input.
+//
 // Returns the write error so callers can short-circuit; both nil
 // and io.ErrClosedPipe are tolerated because the client may have
 // disconnected mid-stream.
@@ -165,6 +191,7 @@ func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 		return nil
 	}
 	f := ChatbotSSEFrame{
+		Event:     ev.Type,
 		Data:      ev.Data,
 		Reference: map[string]any{},
 		SessionID: ev.SessionID,

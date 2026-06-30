@@ -197,9 +197,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		if r.botHandler != nil {
 			chatbotGroup := apiBetaAuth.Group("/chatbots")
-			RegisterChatbotRoutes(chatbotGroup, r.botHandler)
+			betaMW := r.authHandler.BetaAuthMiddleware()
+			RegisterChatbotRoutes(chatbotGroup, betaMW, r.botHandler)
 			agentbotGroup := apiBetaAuth.Group("/agentbots")
-			RegisterAgentbotRoutes(agentbotGroup, r.botHandler)
+			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
 		}
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
 		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)

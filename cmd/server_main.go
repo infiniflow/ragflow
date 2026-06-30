@@ -277,7 +277,8 @@ func startServer(config *server.Config) {
 		agentOpts.stateSerializer,
 		agentOpts.runTracker,
 	)
-	agentHandler := handler.NewAgentHandler(agentService, fileService)
+	agentHandler := handler.NewAgentHandler(agentService, fileService).
+		WithDocumentService(documentService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
