@@ -642,18 +642,28 @@ func (s *DocumentService) deleteDocRecordWithCounters(doc *entity.Document, kbID
 			return nil // already deleted by a concurrent request — skip counters
 		}
 
-		decErr := tx.Model(&entity.Knowledgebase{}).
+		result = tx.Model(&entity.Knowledgebase{}).
 			Where("id = ?", kbID).
 			Updates(map[string]interface{}{
 				"doc_num":   gorm.Expr("doc_num - 1"),
 				"chunk_num": gorm.Expr("chunk_num - ?", doc.ChunkNum),
 				"token_num": gorm.Expr("token_num - ?", doc.TokenNum),
-			}).Error
-		if decErr != nil {
-			common.Logger.Warn(fmt.Sprintf("deleteDocRecordWithCounters: failed to decrement KB %s: %v", kbID, decErr))
+			})
+		if result.Error != nil {
+			return fmt.Errorf("failed to decrement counters for KB %s: %w", kbID, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("knowledgebase %s not found", kbID)
 		}
 		return nil
 	})
+}
+
+func (s *DocumentService) rollbackAddFileFromKBError(doc *entity.Document, kbID string, err error) error {
+	if cleanupErr := s.deleteDocRecordWithCounters(doc, kbID); cleanupErr != nil {
+		return fmt.Errorf("%w; rollback cleanup failed: %w", err, cleanupErr)
+	}
+	return err
 }
 
 // cleanupFileReferences deletes file2document mappings for docID, and for each
@@ -2872,7 +2882,7 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 		if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
 			// Linkage failed: roll back the document row and blob so the partial
 			// state doesn't leave an invisible (unlisted) document behind.
-			_ = s.deleteDocRecordWithCounters(doc, kb.ID)
+			err = s.rollbackAddFileFromKBError(doc, kb.ID, err)
 			_ = storageImpl.Remove(kb.ID, location)
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
@@ -2909,8 +2919,7 @@ func (s *DocumentService) UploadEmptyDocument(kb *entity.Knowledgebase, tenantID
 		return nil, common.CodeServerError, err
 	}
 	if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
-		_ = s.deleteDocRecordWithCounters(doc, kb.ID)
-		return nil, common.CodeServerError, err
+		return nil, common.CodeServerError, s.rollbackAddFileFromKBError(doc, kb.ID, err)
 	}
 	return docToRawMap(doc), common.CodeSuccess, nil
 }
@@ -3053,7 +3062,7 @@ func (s *DocumentService) UploadWebDocument(kb *entity.Knowledgebase, tenantID, 
 		return nil, common.CodeServerError, err
 	}
 	if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
-		_ = s.deleteDocRecordWithCounters(doc, kb.ID)
+		err = s.rollbackAddFileFromKBError(doc, kb.ID, err)
 		_ = storageImpl.Remove(kb.ID, location)
 		return nil, common.CodeServerError, err
 	}

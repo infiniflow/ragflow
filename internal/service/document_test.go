@@ -1290,6 +1290,24 @@ func TestDeleteDocRecordWithCounters_DocAlreadyDeleted(t *testing.T) {
 	}
 }
 
+func TestDeleteDocRecordWithCounters_KBUpdateFailureRollsBackDocumentDelete(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestDoc(t, "doc-1", "missing-kb", 10, 5)
+
+	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	svc := testDocumentService(t)
+
+	if err := svc.deleteDocRecordWithCounters(doc, "missing-kb"); err == nil {
+		t.Fatal("expected missing KB counter update to return an error")
+	}
+
+	if _, err := dao.NewDocumentDAO().GetByID("doc-1"); err != nil {
+		t.Fatalf("expected document delete to roll back, got: %v", err)
+	}
+}
+
 func TestCleanupFileReferences_NoMappings(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
