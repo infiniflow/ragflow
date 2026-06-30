@@ -131,33 +131,6 @@ func OverlapX(a, b pdf.Rectangular) float64 {
 	return overlap / minWidth
 }
 
-// SortXByPage sorts boxes by page_number, then x0, then top.
-// After sorting, corrects for same-page boxes that have nearly the same x0
-// but inverted top ordering (a layout artifact).
-//
-// Python: pdf_parser.py:178 sort_X_by_page()
-func SortXByPage(boxes []pdf.TextBox, threshold float64) []pdf.TextBox {
-	sort.Slice(boxes, func(i, j int) bool {
-		if boxes[i].PageNumber != boxes[j].PageNumber {
-			return boxes[i].PageNumber < boxes[j].PageNumber
-		}
-		if boxes[i].X0 != boxes[j].X0 {
-			return boxes[i].X0 < boxes[j].X0
-		}
-		return boxes[i].Top < boxes[j].Top
-	})
-
-	for i := len(boxes) - 1; i >= 1; i-- {
-		for j := i - 1; j >= 0; j-- {
-			if math.Abs(boxes[j+1].X0-boxes[j].X0) < threshold &&
-				boxes[j+1].Top < boxes[j].Top &&
-				boxes[j+1].PageNumber == boxes[j].PageNumber {
-				boxes[j], boxes[j+1] = boxes[j+1], boxes[j]
-			}
-		}
-	}
-	return boxes
-}
 
 // MedianCharHeight computes the median character height for a page,
 // matching Python's np.median(char height) in __images__ (pdf_parser.py:1552).

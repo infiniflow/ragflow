@@ -22,6 +22,16 @@ type Parser struct {
 	Config pdf.ParserConfig
 }
 
+// pageResult holds per-page output from extractPages.
+type pageResult struct {
+	pg       int
+	ocrBoxes []pdf.TextBox
+	chars    []pdf.TextChar
+	ocrUsed  bool
+	pageImg  image.Image
+	err      error
+}
+
 // New creates a new Parser with the given config.
 func NewParser(cfg pdf.ParserConfig) *Parser {
 	return &Parser{Config: cfg}
@@ -164,16 +174,8 @@ func (p *Parser) extractPages(ctx context.Context, engine pdf.PDFEngine,
 	pageChars := make(map[int][]pdf.TextChar)
 	ocrUsedAny := false
 
-	type pr struct {
-		pg       int
-		ocrBoxes []pdf.TextBox
-		chars    []pdf.TextChar
-		ocrUsed  bool
-		pageImg  image.Image
-		err      error
-	}
 	pageCount := toPage - fromPage + 1
-	results := make([]pr, pageCount)
+	results := make([]pageResult, pageCount)
 
 	cap := p.Config.MaxOCRConcurrency
 	if cap <= 0 {
@@ -204,7 +206,7 @@ func (p *Parser) extractPages(ctx context.Context, engine pdf.PDFEngine,
 			} else {
 				ocrBoxes = lyt.CharsToBoxes(chars, pg, p.Config.SortByTop)
 			}
-			results[i] = pr{pg: pg, ocrBoxes: ocrBoxes, chars: chars, ocrUsed: ocrUsed}
+			results[i] = pageResult{pg: pg, ocrBoxes: ocrBoxes, chars: chars, ocrUsed: ocrUsed}
 			continue
 		}
 
@@ -213,7 +215,7 @@ func (p *Parser) extractPages(ctx context.Context, engine pdf.PDFEngine,
 			defer wg.Done()
 			select {
 			case <-ctx.Done():
-				results[i] = pr{pg: pg, err: ctx.Err()}
+				results[i] = pageResult{pg: pg, err: ctx.Err()}
 				return
 			case sem <- struct{}{}:
 			}
@@ -221,11 +223,11 @@ func (p *Parser) extractPages(ctx context.Context, engine pdf.PDFEngine,
 
 			pageImg, err := RenderPageToImage(engine, pg)
 			if err != nil {
-				results[i] = pr{pg: pg, err: err}
+				results[i] = pageResult{pg: pg, err: err}
 				return
 			}
 			if err := ctx.Err(); err != nil {
-				results[i] = pr{pg: pg, err: err}
+				results[i] = pageResult{pg: pg, err: err}
 				return
 			}
 
@@ -258,35 +260,11 @@ func (p *Parser) extractPages(ctx context.Context, engine pdf.PDFEngine,
 					ocrBoxes = lyt.CharsToBoxes(chars, pg, p.Config.SortByTop)
 				}
 			}
-			results[i] = pr{pg: pg, ocrBoxes: ocrBoxes, chars: chars, ocrUsed: ocrUsed, pageImg: pageImg}
+			results[i] = pageResult{pg: pg, ocrBoxes: ocrBoxes, chars: chars, ocrUsed: ocrUsed, pageImg: pageImg}
 		}(i, pg, chars)
 	}
 	wg.Wait()
-
-	var errs []error
-	for i := 0; i < pageCount; i++ {
-		r := results[i]
-		if r.err != nil {
-			slog.Warn("page OCR failed", "page", r.pg, "err", r.err)
-			errs = append(errs, fmt.Errorf("page %d: %w", r.pg, r.err))
-			continue
-		}
-		if r.ocrUsed {
-			boxes = append(boxes, r.ocrBoxes...)
-			ocrUsedAny = true
-		} else if len(r.ocrBoxes) > 0 {
-			boxes = append(boxes, r.ocrBoxes...)
-		}
-		if r.pageImg != nil {
-			pageImages[r.pg] = r.pageImg
-		}
-		pageChars[r.pg] = r.chars
-		if r.ocrUsed {
-			medianHeights[r.pg] = util.MedianCharHeight(r.chars)
-			medianWidths[r.pg] = util.MedianCharWidth(r.chars)
-		}
-	}
-	return boxes, pageChars, ocrUsedAny, errors.Join(errs...)
+	return mergePageResults(results, boxes, pageImages, pageChars, ocrUsedAny, medianHeights, medianWidths)
 }
 
 func (p *Parser) retryScanNoise(ctx context.Context, engine pdf.PDFEngine,
@@ -516,4 +494,34 @@ func matchTableImage(sec *pdf.Section, tableImgByRegion map[string]string) (stri
 		}
 	}
 	return "", false
+}
+
+// mergePageResults collects per-page OCR results into the final output.
+func mergePageResults(results []pageResult, boxes []pdf.TextBox, pageImages map[int]image.Image,
+	pageChars map[int][]pdf.TextChar, ocrUsedAny bool,
+	medianHeights, medianWidths map[int]float64,
+) ([]pdf.TextBox, map[int][]pdf.TextChar, bool, error) {
+	var errs []error
+	for _, r := range results {
+		if r.err != nil {
+			slog.Warn("page OCR failed", "page", r.pg, "err", r.err)
+			errs = append(errs, fmt.Errorf("page %d: %w", r.pg, r.err))
+			continue
+		}
+		if r.ocrUsed {
+			boxes = append(boxes, r.ocrBoxes...)
+			ocrUsedAny = true
+		} else if len(r.ocrBoxes) > 0 {
+			boxes = append(boxes, r.ocrBoxes...)
+		}
+		if r.pageImg != nil {
+			pageImages[r.pg] = r.pageImg
+		}
+		pageChars[r.pg] = r.chars
+		if r.ocrUsed {
+			medianHeights[r.pg] = util.MedianCharHeight(r.chars)
+			medianWidths[r.pg] = util.MedianCharWidth(r.chars)
+		}
+	}
+	return boxes, pageChars, ocrUsedAny, errors.Join(errs...)
 }

@@ -123,22 +123,6 @@ type Section struct {
 	Image       string // base64-encoded cropped page image
 }
 
-// SectionsByPage returns a slice of sections on the given page.
-func SectionsByPage(sections []Section, page int) []Section {
-	var out []Section
-	for _, s := range sections {
-		for _, p := range s.Positions {
-			for _, pn := range p.PageNumbers {
-				if pn == page {
-					out = append(out, s)
-					break
-				}
-			}
-		}
-	}
-	return out
-}
-
 // CollectFigures returns all sections with LayoutType "figure".
 func CollectFigures(sections []Section) []Section {
 	if sections == nil {

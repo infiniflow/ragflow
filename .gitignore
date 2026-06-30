@@ -246,3 +246,4 @@ bin/*
 internal/deepdoc/parser/pdf/testdata/
 internal/deepdoc/parser/pdf/tools-py/
 internal/deepdoc/parser/docx/testdata/
+internal/deepdoc/parser/docx/tool/

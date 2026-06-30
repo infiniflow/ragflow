@@ -95,148 +95,117 @@ func (p *Parser) extractTableBoxesFromImage(ctx context.Context, result *pdf.Par
 	tableMatches := tbl.MatchTableRegions(boxes, regions, scale)
 	var items []pdf.TableItem
 	for _, tm := range tableMatches {
-		cropped, cropErr := util.CropImageRegion(pageImg, tm.Region)
-		if cropErr != nil {
-			// DLA returned an invalid region (e.g. x1 < x0).  Python
-			// PIL.Image.crop() raises ValueError here; we skip this
-			// table instead of passing a full-page image to TSR.
-			continue
+		item := p.processOneTable(ctx, result, boxes, pageImg, pageNum, docAnalyzer, tb, tm, scale, tableBaseIdx+len(items))
+		if item.ImageB64 != "" || len(item.Cells) > 0 || len(item.Positions) > 0 {
+			items = append(items, item)
 		}
+	}
+	return items
+}
 
-		// Rotation detection (Python: _evaluate_table_orientation).
-		// If rotated, TSR and OCR use the rotated image; cell coords
-		// are mapped back to original crop space for box matching.
-		autoRotate := p.Config.AutoRotateTables != nil && *p.Config.AutoRotateTables
-		bestAngle := 0
-		origW, origH := cropped.Bounds().Dx(), cropped.Bounds().Dy()
-		tsrImg := cropped
-		if autoRotate {
-			angle, rotated, _ := tbl.EvaluateTableOrientation(ctx, cropped, docAnalyzer)
-			bestAngle = angle
-			tsrImg = rotated
-		}
-
-		imgB64, encErr := util.EncodeImageToBase64PNG(cropped)
-		if encErr != nil {
-			slog.Warn("table PNG encode failed", "page", pageNum, "err", encErr)
-		}
-
-		var cells []pdf.TSRCell
-		var tsrErr error
-		cells, tsrErr = tb.DetectCells(ctx, tsrImg)
-		if tsrErr != nil {
-			slog.Warn("TSR failed", "page", pageNum, "err", tsrErr)
-		}
-		// Collect TSR raw cells for debug comparison.
-		if tsrErr == nil {
-			for _, c := range cells {
-				if result != nil {
-					result.TSRDebug = append(result.TSRDebug, pdf.TSRRawCell{
-						TableIndex: tableBaseIdx + len(items), Page: pageNum,
-						Label: c.Label, X0: c.X0, Y0: c.Y0, X1: c.X1, Y1: c.Y1,
-						Text: c.Text,
-					})
-				}
-			}
-		}
-		// Python margin: w*0.03, h*0.03 (_table_transformer_job:374-376).
-		w := tm.Region.X1 - tm.Region.X0
-		h := tm.Region.Y1 - tm.Region.Y0
-		marginX := w * 0.03
-		marginY := h * 0.03
-		cropOffX := math.Max(0, tm.Region.X0-marginX)
-		cropOffY := math.Max(0, tm.Region.Y0-marginY)
-
-		var boxInCrop []pdf.TextBox
-		if tsrErr == nil && len(cells) > 0 {
-			if bestAngle != 0 {
-				// OCR on rotated image before mapping cells back.
-				// Cells are in rotated-pixel space; OCR works best
-				// on upright text.  After mapping, cells move to
-				// original crop space where boxInCrop lives.
-				if !p.Config.SkipOCR {
-					ocrTableCells(ctx, cells, tsrImg, docAnalyzer)
-				}
-				for i := range cells {
-					cells[i].X0, cells[i].Y0 = util.MapRotatedPointToOriginal(cells[i].X0, cells[i].Y0, bestAngle, origW, origH)
-					cells[i].X1, cells[i].Y1 = util.MapRotatedPointToOriginal(cells[i].X1, cells[i].Y1, bestAngle, origW, origH)
-				}
-			}
-			// Fill cell text from pre-merge boxes, skipping caption boxes
-			// (text entirely above the first TSR cell row).
-			firstCellTop := 1e9
-			for _, c := range cells {
-				if c.Y0 >= 0 && c.Y0 < firstCellTop {
-					firstCellTop = c.Y0
-				}
-			}
-			if firstCellTop == 1e9 {
-				firstCellTop = cells[0].Y0 // fallback if all cells have Y0 < 0
-			}
-			boxInCrop = make([]pdf.TextBox, 0, len(tm.BoxIdx))
-			for _, idx := range tm.BoxIdx {
-				b := boxes[idx]
-				if b.Bottom*scale-cropOffY < firstCellTop {
-					continue // caption box above first TSR cell
-				}
-				boxInCrop = append(boxInCrop, tbl.BoxToCropSpace(b, scale, cropOffX, cropOffY))
-			}
-		}
-		var positions []pdf.Position
-		for _, idx := range tm.BoxIdx {
-			b := boxes[idx]
-			positions = append(positions, pdf.Position{
-				PageNumbers: []int{pageNum},
-				Left:        b.X0, Right: b.X1,
-				Top: b.Top, Bottom: b.Bottom,
+// processOneTable handles DLA+TSR+OCR for a single table region match.
+func (p *Parser) processOneTable(ctx context.Context, result *pdf.ParseResult, boxes []pdf.TextBox, pageImg image.Image, pageNum int, docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder, tm tbl.TableMatch, scale float64, tableIdx int) pdf.TableItem {
+	cropped, cropErr := util.CropImageRegion(pageImg, tm.Region)
+	if cropErr != nil {
+		return pdf.TableItem{}
+	}
+	autoRotate := p.Config.AutoRotateTables != nil && *p.Config.AutoRotateTables
+	bestAngle := 0
+	origW, origH := cropped.Bounds().Dx(), cropped.Bounds().Dy()
+	tsrImg := cropped
+	if autoRotate {
+		angle, rotated, _ := tbl.EvaluateTableOrientation(ctx, cropped, docAnalyzer)
+		bestAngle = angle
+		tsrImg = rotated
+	}
+	imgB64, encErr := util.EncodeImageToBase64PNG(cropped)
+	if encErr != nil {
+		slog.Warn("table PNG encode failed", "page", pageNum, "err", encErr)
+	}
+	cells, tsrErr := tb.DetectCells(ctx, tsrImg)
+	if tsrErr != nil {
+		slog.Warn("TSR failed", "page", pageNum, "err", tsrErr)
+	}
+	if tsrErr == nil && result != nil {
+		for _, c := range cells {
+			result.TSRDebug = append(result.TSRDebug, pdf.TSRRawCell{
+				TableIndex: tableIdx, Page: pageNum,
+				Label: c.Label, X0: c.X0, Y0: c.Y0, X1: c.X1, Y1: c.Y1, Text: c.Text,
 			})
 		}
-		// Pre-compute grid from raw TSR cells (without crop offset).
-		// Stored in pdf.TableItem for constructTable; annotateTableBoxes
-		// recomputes with offset cells for spatial matching precision.
-		var grid [][]pdf.TSRCell
-		if len(cells) > 0 {
-			grid = tb.GroupCells(cells)
-			// Fill cell text from boxes in crop space. Works for both
-			// Label-aware grouping (cells rearranged) vs. cross-product (creates new cells).
-			if len(grid) > 0 {
-				flat := tbl.FlattenGrid(grid)
-				tbl.FillCellTextFromBoxes(flat, boxInCrop)
-				idx := 0
+	}
+	w := tm.Region.X1 - tm.Region.X0
+	h := tm.Region.Y1 - tm.Region.Y0
+	cropOffX := math.Max(0, tm.Region.X0-w*0.03)
+	cropOffY := math.Max(0, tm.Region.Y0-h*0.03)
+	var boxInCrop []pdf.TextBox
+	if tsrErr == nil && len(cells) > 0 {
+		if bestAngle != 0 {
+			if !p.Config.SkipOCR {
+				ocrTableCells(ctx, cells, tsrImg, docAnalyzer)
+			}
+			for i := range cells {
+				cells[i].X0, cells[i].Y0 = util.MapRotatedPointToOriginal(cells[i].X0, cells[i].Y0, bestAngle, origW, origH)
+				cells[i].X1, cells[i].Y1 = util.MapRotatedPointToOriginal(cells[i].X1, cells[i].Y1, bestAngle, origW, origH)
+			}
+		}
+		firstCellTop := 1e9
+		for _, c := range cells {
+			if c.Y0 >= 0 && c.Y0 < firstCellTop {
+				firstCellTop = c.Y0
+			}
+		}
+		if firstCellTop == 1e9 {
+			firstCellTop = cells[0].Y0
+		}
+		boxInCrop = make([]pdf.TextBox, 0, len(tm.BoxIdx))
+		for _, idx := range tm.BoxIdx {
+			b := boxes[idx]
+			if b.Bottom*scale-cropOffY < firstCellTop {
+				continue
+			}
+			boxInCrop = append(boxInCrop, tbl.BoxToCropSpace(b, scale, cropOffX, cropOffY))
+		}
+	}
+	var positions []pdf.Position
+	for _, idx := range tm.BoxIdx {
+		b := boxes[idx]
+		positions = append(positions, pdf.Position{
+			PageNumbers: []int{pageNum},
+			Left: b.X0, Right: b.X1, Top: b.Top, Bottom: b.Bottom,
+		})
+	}
+	var grid [][]pdf.TSRCell
+	if len(cells) > 0 {
+		grid = tb.GroupCells(cells)
+		if len(grid) > 0 {
+			flat := tbl.FlattenGrid(grid)
+			tbl.FillCellTextFromBoxes(flat, boxInCrop)
+			idx := 0
+			for ri := range grid {
+				for ci := range grid[ri] {
+					grid[ri][ci].Text = flat[idx].Text
+					idx++
+				}
+			}
+			if bestAngle == 0 && !p.Config.SkipOCR {
+				ocrTableCells(ctx, flat, tsrImg, docAnalyzer)
+				idx = 0
 				for ri := range grid {
 					for ci := range grid[ri] {
 						grid[ri][ci].Text = flat[idx].Text
 						idx++
 					}
 				}
-				if bestAngle == 0 && !p.Config.SkipOCR {
-					ocrTableCells(ctx, flat, tsrImg, docAnalyzer)
-					idx = 0
-					for ri := range grid {
-						for ci := range grid[ri] {
-							grid[ri][ci].Text = flat[idx].Text
-							idx++
-						}
-					}
-				}
 			}
 		}
-		items = append(items, pdf.TableItem{
-			ImageB64:  imgB64,
-			Cells:     cells,
-			Grid:      grid,
-			Positions: positions,
-			Scale:     scale,
-			CropOffX:  cropOffX,
-			CropOffY:  cropOffY,
-			// DLA region in PDF point space (Python's cropout uses layout region boundaries).
-			RegionLeft:   tm.Region.X0 / scale,
-			RegionRight:  tm.Region.X1 / scale,
-			RegionTop:    tm.Region.Y0 / scale,
-			RegionBottom: tm.Region.Y1 / scale,
-		})
-
-		tbl.WriteTableAnnotations(boxes, tm.BoxIdx, cells, scale, cropOffX, cropOffY, tb)
 	}
-	return items
+	item := pdf.TableItem{
+		ImageB64: imgB64, Cells: cells, Grid: grid, Positions: positions,
+		Scale: scale, CropOffX: cropOffX, CropOffY: cropOffY,
+		RegionLeft: tm.Region.X0 / scale, RegionRight: tm.Region.X1 / scale,
+		RegionTop: tm.Region.Y0 / scale, RegionBottom: tm.Region.Y1 / scale,
+	}
+	tbl.WriteTableAnnotations(boxes, tm.BoxIdx, cells, scale, cropOffX, cropOffY, tb)
+	return item
 }

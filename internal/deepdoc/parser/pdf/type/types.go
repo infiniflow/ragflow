@@ -51,7 +51,6 @@ const (
 
 var (
 	CollectFigures      = doctype.CollectFigures
-	SectionsByPage      = doctype.SectionsByPage
 	DefaultParserConfig = doctype.DefaultParserConfig
 	IsCJK               = doctype.IsCJK
 )
