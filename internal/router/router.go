@@ -53,6 +53,7 @@ type Router struct {
 	fileCommitHandler    *handler.FileCommitHandler
 	adminRuntimeHandler  *handler.AdminRuntimeHandler
 	botHandler           *handler.BotHandler
+	taskHandler          *handler.TaskHandler
 }
 
 // NewRouter create router
@@ -86,6 +87,7 @@ func NewRouter(
 	adminRuntimeHandler *handler.AdminRuntimeHandler,
 	openaiChatHandler *handler.OpenAIChatHandler,
 	botHandler *handler.BotHandler,
+	taskHandler *handler.TaskHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -117,6 +119,7 @@ func NewRouter(
 		fileCommitHandler:    fileCommitHandler,
 		adminRuntimeHandler:  adminRuntimeHandler,
 		botHandler:           botHandler,
+		taskHandler:          taskHandler,
 	}
 }
 
@@ -467,6 +470,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				skills.POST("/index", r.skillSearchHandler.IndexSkills)
 				skills.DELETE("/index", r.skillSearchHandler.DeleteSkillIndex)
 				skills.POST("/reindex", r.skillSearchHandler.Reindex)
+			}
+
+			tasks := v1.Group("/tasks")
+			{
+				tasks.POST("/:task_id/cancel", r.taskHandler.CancelTask)
+				tasks.PATCH("/:task_id", r.taskHandler.PatchTask)
 			}
 
 			// provider pool route group
