@@ -130,6 +130,32 @@ class EmbeddingUtils:
         """
         return np.vstack(vects_batches) if vects_batches else np.array([])
 
+    # Modality values written into chunk["modality_kwd"].
+    # "text" is the default; other parsers set doc_type_kwd which is mapped here.
+    _DOC_TYPE_TO_MODALITY: Dict[str, str] = {
+        "image": "image",
+        "video": "video",
+        "audio": "audio",
+        "table": "table",
+    }
+
+    @classmethod
+    def _infer_modality(cls, doc: Dict[str, Any]) -> str:
+        """Infer chunk modality from existing metadata.
+
+        Priority:
+          1. doc_type_kwd already set by the parser (image/video/audio/table).
+          2. HTML table markup in content_with_weight → "table".
+          3. Fallback: "text".
+        """
+        doc_type = doc.get("doc_type_kwd", "")
+        if doc_type in cls._DOC_TYPE_TO_MODALITY:
+            return cls._DOC_TYPE_TO_MODALITY[doc_type]
+        content = doc.get("content_with_weight", "")
+        if re.search(r"</?(?:table|tr|td|th)\b", content):
+            return "table"
+        return "text"
+
     @classmethod
     def attach_vectors(
         cls,
@@ -137,7 +163,7 @@ class EmbeddingUtils:
         vectors: np.ndarray,
         vector_key_template: str = "q_%d_vec",
     ) -> int:
-        """Attach vectors to chunk dictionaries.
+        """Attach vectors to chunk dictionaries and stamp modality_kwd.
 
         Args:
             docs: List of chunk dictionaries to modify in-place.
@@ -155,6 +181,8 @@ class EmbeddingUtils:
             vector_size = len(vector)
             key = vector_key_template % vector_size
             doc[key] = vector
+            if "modality_kwd" not in doc:
+                doc["modality_kwd"] = cls._infer_modality(doc)
         return vector_size
 
     @classmethod
