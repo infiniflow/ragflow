@@ -1009,8 +1009,16 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
-            "rank": "988",
-            "llm": []
+            "rank": "830",
+            "llm": [
+                {
+                    "llm_name": "agnuxo/cajal-4b-p2pclaw",
+                    "tags": "LLM,CHAT,32K,SCIENTIFIC_WRITING",
+                    "max_tokens": 32768,
+                    "model_type": "chat",
+                    "is_tools": false
+                }
+            ]
         },
         {
             "name": "ModelScope",
