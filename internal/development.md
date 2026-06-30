@@ -27,12 +27,23 @@ docker compose -f docker/docker-compose-base.yml up -d
 ./build.sh -s --go
 ```
 
-> **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, you must set the following two CGO environment variables in your run configuration or shell:
+> **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, run `./build.sh --go` first to download native dependencies. Then set the following CGO environment variables in your run configuration or shell:
 >
 > ```bash
-> export CGO_CFLAGS="-I${HOME}/.office_oxide/include/office_oxide_c"
-> export CGO_LDFLAGS="-L${HOME}/.office_oxide/lib -loffice_oxide -Wl,-rpath,${HOME}/.office_oxide/lib"
+> RAGFLOW_DEPS="${HOME}/ragflow-deps"
+> PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
+>
+> export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
+> export CGO_LDFLAGS="\
+>     ${RAGFLOW_DEPS}/office_oxide/lib/liboffice_oxide.a \
+>     ${RAGFLOW_DEPS}/pdfium-static/lib/libpdfium.a \
+>     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
+>     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
+>     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
+>     -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 > ```
+>
+> All three native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
 
 ## 3. Run Go Version RAGFlow
 Note: admin_server must be started first; otherwise, ragflow_server will encounter errors when sending heartbeats.
@@ -85,7 +96,7 @@ Type \? for help, \q to quit
 RAGFlow(api/default)> REGISTER USER 'aaa@aaa.com' AS 'aaa' PASSWORD 'aaa';
 Register successfully
 RAGFlow(api/default)> login user 'aaa@aaa.com';
-password for aaa@aaa.com: Password: 
+password for aaa@aaa.com: Password:
 Login user aaa@aaa.com successfully
 RAGFlow(api/default)> logout;
 SUCCESS
