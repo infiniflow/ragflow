@@ -53,5 +53,5 @@ func RegisterAgentbotRoutes(g *gin.RouterGroup, mw gin.HandlerFunc, h *handler.B
 	}
 	g.POST("/:agent_id/completions", h.AgentbotCompletion)
 	g.GET("/:agent_id/inputs", h.AgentbotInputs)
-	g.GET("/:shared_id/logs/:message_id", h.GetAgentbotLogs)
+	g.GET("/:agent_id/logs/:message_id", h.GetAgentbotLogs)
 }
