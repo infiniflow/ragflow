@@ -2341,16 +2341,28 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 
 	// TEI builtin embedding short-circuit
 	if modelType == entity.ModelTypeEmbedding && strings.Contains(os.Getenv("COMPOSE_PROFILES"), "tei-") {
-		// Use the same right-anchored parsing as parseModelName so model names
-		// with embedded '@' characters (e.g. `text-embedding-nomic-embed-text-v1.5@q8_0`)
-		// are preserved verbatim instead of being truncated at the first '@'.
+		teiModel := os.Getenv("TEI_MODEL")
+		teiBaseURL := os.Getenv("TEI_BASE_URL")
+	
+		// First try exact match: handles bare model IDs like "model@q8_0"
+		// where '@' is part of the model name itself.
+		if modelName == teiModel {
+			builtinDriver := modelModule.GetBuiltinEmbeddingModel(modelName)
+			if builtinDriver == nil {
+				return nil, "", nil, 0, fmt.Errorf("builtin (TEI) embedding model %q not found", modelName)
+			}
+			apiConfig := &modelModule.APIConfig{ApiKey: nil, Region: nil, BaseURL: &teiBaseURL}
+			return builtinDriver, modelName, apiConfig, 0, nil
+		}
+		
+		// Then try right-anchored parsing for explicit "model@Builtin" or
+		// "model@instance@Builtin" composite keys.
 		teiPure, _, teiProvider := splitRightAnchoredModelName(modelName)
-		if teiPure == os.Getenv("TEI_MODEL") && (teiProvider == "Builtin" || teiProvider == "") {
+		if teiPure == teiModel && (teiProvider == "Builtin" || teiProvider == "") {
 			builtinDriver := modelModule.GetBuiltinEmbeddingModel(teiPure)
 			if builtinDriver == nil {
 				return nil, "", nil, 0, fmt.Errorf("builtin (TEI) embedding model %q not found", teiPure)
 			}
-			teiBaseURL := os.Getenv("TEI_BASE_URL")
 			apiConfig := &modelModule.APIConfig{ApiKey: nil, Region: nil, BaseURL: &teiBaseURL}
 			return builtinDriver, teiPure, apiConfig, 0, nil
 		}
@@ -2368,10 +2380,21 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 	// branch, which surfaces an accurate "provider not found" instead of
 	// handing back an embedding-only driver.
 	if modelType == entity.ModelTypeEmbedding {
-		// Use the same right-anchored parsing as parseModelName so model names
-		// with embedded '@' characters (e.g. `model@q8_0@Builtin`) are
-		// preserved verbatim instead of being truncated at the first '@'.
-		if pureModelName, _, providerName := splitRightAnchoredModelName(modelName); providerName == "Builtin" {
+		// The Builtin provider is a local service, not a tenant-enrolled
+		// provider. Extract the model name by looking for the @Builtin
+		// suffix explicitly so model names with embedded '@' characters
+		// (e.g. `model@q8_0@Builtin` or bare `model@q8_0` without any
+		// provider suffix) are handled correctly.
+		var pureModelName string
+		switch {
+		case strings.HasSuffix(modelName, "@default@Builtin"):
+			pureModelName = modelName[:len(modelName)-len("@default@Builtin")]
+		case strings.HasSuffix(modelName, "@Builtin"):
+			pureModelName = modelName[:len(modelName)-len("@Builtin")]
+		default:
+			pureModelName = ""
+		}
+		if pureModelName != "" {
 			builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName)
 			if builtinDriver == nil {
 				return nil, "", nil, 0, fmt.Errorf("builtin embedding model %q not found", pureModelName)
