@@ -93,7 +93,7 @@ async def _cancel_task(task_id):
         if doc_id and doc_id not in (CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID):
             _, doc = DocumentService.get_by_id(doc_id)
             if doc and str(doc.run) in (TaskStatus.RUNNING.value, TaskStatus.SCHEDULE.value):
-                DocumentService.update_by_id(doc_id, {"run": TaskStatus.CANCEL.value, "progress": 0})
+                DocumentService.update_by_id(doc_id, {"run": TaskStatus.CANCEL.value, "progress": 0, "progress_msg": ""})
     except Exception as e:
         logging.warning("Failed to update document run status for task %s: %s", task_id, str(e))
 

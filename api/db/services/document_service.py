@@ -16,6 +16,7 @@
 import logging
 import random
 from datetime import datetime
+from time import monotonic
 
 import xxhash
 from peewee import fn, Case, JOIN
@@ -1102,8 +1103,65 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
     return task["id"]
 
 
+# Short-lived cache for the genuine queued-task backlog so the per-document
+# progress sync does not issue a COUNT query for every document each cycle.
+_PENDING_TASK_COUNT_CACHE = {"value": 0, "expire_at": 0.0}
+_PENDING_TASK_COUNT_TTL_SECONDS = 3.0
+
+
+def get_pending_task_count():
+    """Count tasks that are genuinely still waiting to be processed.
+
+    A task counts as "waiting" when it has not started yet (progress == 0) and
+    its document is still actively running (run == RUNNING and progress in
+    [0, 1)). Cancelled, failed and finished documents are excluded, so the
+    figure drops back to reality as soon as the user stops parsing.
+
+    Returns None when the count cannot be determined, so callers can fall back
+    to the raw Redis stream lag.
+    """
+    now = monotonic()
+    if _PENDING_TASK_COUNT_CACHE.get("expire_at", 0.0) > now:
+        return _PENDING_TASK_COUNT_CACHE["value"]
+    try:
+        count = int(
+            Task.select(fn.COUNT(Task.id))
+            .join(Document, on=(Task.doc_id == Document.id))
+            .where(
+                (Task.progress == 0)
+                & (Document.run == TaskStatus.RUNNING.value)
+                & (Document.progress >= 0)
+                & (Document.progress < 1)
+            )
+            .scalar()
+            or 0
+        )
+    except Exception:
+        logging.exception("get_pending_task_count failed")
+        return None
+    _PENDING_TASK_COUNT_CACHE["value"] = count
+    _PENDING_TASK_COUNT_CACHE["expire_at"] = now + _PENDING_TASK_COUNT_TTL_SECONDS
+    return count
+
+
 def get_queue_length(priority, suffix="common"):
+    """Return how many tasks are ahead in the processing queue.
+
+    The Redis stream consumer-group ``lag`` counts every message that has not
+    yet been delivered to a task executor, including messages whose tasks were
+    already cancelled/stopped. Those messages only stop counting once an
+    executor happens to read them, so after a user stops parsing the lag can
+    stay inflated indefinitely and parsing appears to hang forever
+    ("N tasks are ahead in the queue...").
+
+    To keep the figure honest, the raw lag is capped by the number of tasks
+    that are genuinely still waiting in the database, which self-heals the
+    moment work is cancelled or completes.
+    """
     group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority, suffix), SVR_CONSUMER_GROUP_NAME)
-    if not group_info:
-        return 0
-    return int(group_info.get("lag", 0) or 0)
+    lag = int(group_info.get("lag", 0) or 0) if group_info else 0
+
+    pending = get_pending_task_count()
+    if pending is None:
+        return lag
+    return min(lag, pending)
