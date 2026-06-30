@@ -1183,14 +1183,13 @@ func buildBoxAuthorizationURL(clientID string, redirectURI string, state string)
 }
 
 func exchangeBoxAuthorizationCode(clientID string, clientSecret string, redirectURI string, code string) (*boxOAuthTokenResponse, error) {
+	_ = redirectURI
+
 	form := url.Values{}
 	form.Set("grant_type", "authorization_code")
 	form.Set("code", code)
 	form.Set("client_id", clientID)
 	form.Set("client_secret", clientSecret)
-	if strings.TrimSpace(redirectURI) != "" {
-		form.Set("redirect_uri", redirectURI)
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), googleOAuthHTTPTimeout)
 	defer cancel()
