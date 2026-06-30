@@ -111,6 +111,9 @@ def _install_paging_model(monkeypatch, sample_docs):
     paging_queries = []
 
     class _RecordingPagingQuery(_PagingFakeQuery):
+        def order_by(self, *args, **kwargs):
+            return _RecordingPagingQuery(self._all, ordered=True)
+
         def offset(self, offset):
             paging_queries.append(self)
             return super().offset(offset)
