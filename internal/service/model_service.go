@@ -63,6 +63,29 @@ func parseModelName(compositeName string) (modelName, instanceName, providerName
 	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
 }
 
+// splitRightAnchoredModelName is a bare-name-tolerant variant of
+// parseModelName used by the Builtin / TEI short-circuit branches in
+// GetModelConfigFromProviderInstance.
+//
+// Those branches must accept a bare model name (no provider suffix) where
+// parseModelName would return an error, while still preserving any '@'
+// characters embedded in the modelName portion of a multi-segment key.
+// Returns the modelName, instanceName ("default" for the 2-segment form),
+// and providerName ("" for the 1-segment form).
+func splitRightAnchoredModelName(compositeName string) (modelName, instanceName, providerName string) {
+	parts := strings.Split(compositeName, "@")
+	switch len(parts) {
+	case 3:
+		return parts[0], parts[1], parts[2]
+	case 2:
+		return parts[0], "default", parts[1]
+	case 1:
+		return parts[0], "", ""
+	}
+	n := len(parts)
+	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1]
+}
+
 func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {
 	if driver == nil {
 		return nil, fmt.Errorf("provider %s driver not found", providerName)
@@ -2310,15 +2333,10 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 
 	// TEI builtin embedding short-circuit
 	if modelType == entity.ModelTypeEmbedding && strings.Contains(os.Getenv("COMPOSE_PROFILES"), "tei-") {
-		parts := strings.Split(modelName, "@")
-		teiPure := parts[0]
-		teiProvider := ""
-		switch len(parts) {
-		case 2:
-			teiProvider = parts[1]
-		case 3:
-			teiProvider = parts[2]
-		}
+		// Use the same right-anchored parsing as parseModelName so model names
+		// with embedded '@' characters (e.g. `text-embedding-nomic-embed-text-v1.5@q8_0`)
+		// are preserved verbatim instead of being truncated at the first '@'.
+		teiPure, _, teiProvider := splitRightAnchoredModelName(modelName)
 		if teiPure == os.Getenv("TEI_MODEL") && (teiProvider == "Builtin" || teiProvider == "") {
 			builtinDriver := modelModule.GetBuiltinEmbeddingModel(teiPure)
 			if builtinDriver == nil {
@@ -2341,25 +2359,28 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 	// request that names a Builtin provider must fall through to the standard
 	// branch, which surfaces an accurate "provider not found" instead of
 	// handing back an embedding-only driver.
-	parts := strings.Split(modelName, "@")
-	if modelType == entity.ModelTypeEmbedding && len(parts) >= 2 && parts[len(parts)-1] == "Builtin" {
-		pureModelName := parts[0]
-		builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName)
-		if builtinDriver == nil {
-			return nil, "", nil, 0, fmt.Errorf("builtin embedding model %q not found", pureModelName)
-		}
-		apiKey := ""
-		region := ""
-		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
-		maxTokens := 0
-		if mi, _ := dao.GetModelProviderManager().GetModelByName("Builtin", pureModelName); mi != nil {
-			if mi.MaxTokens == nil {
-				maxTokens = 0
-			} else {
-				maxTokens = *mi.MaxTokens
+	if modelType == entity.ModelTypeEmbedding {
+		// Use the same right-anchored parsing as parseModelName so model names
+		// with embedded '@' characters (e.g. `model@q8_0@Builtin`) are
+		// preserved verbatim instead of being truncated at the first '@'.
+		if pureModelName, _, providerName := splitRightAnchoredModelName(modelName); providerName == "Builtin" {
+			builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName)
+			if builtinDriver == nil {
+				return nil, "", nil, 0, fmt.Errorf("builtin embedding model %q not found", pureModelName)
 			}
+			apiKey := ""
+			region := ""
+			apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
+			maxTokens := 0
+			if mi, _ := dao.GetModelProviderManager().GetModelByName("Builtin", pureModelName); mi != nil {
+				if mi.MaxTokens == nil {
+					maxTokens = 0
+				} else {
+					maxTokens = *mi.MaxTokens
+				}
+			}
+			return builtinDriver, pureModelName, apiConfig, maxTokens, nil
 		}
-		return builtinDriver, pureModelName, apiConfig, maxTokens, nil
 	}
 
 	pureModelName, instanceName, providerName, err := parseModelName(modelName)
