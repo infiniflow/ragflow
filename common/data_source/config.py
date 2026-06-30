@@ -68,9 +68,11 @@ class DocumentSource(str, Enum):
     SEAFILE = "seafile"
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"
+    BIGQUERY = "bigquery"
     DINGTALK_AI_TABLE = "dingtalk_ai_table"
     ONEDRIVE = "onedrive"
     OUTLOOK = "outlook"
+    SALESFORCE = "salesforce"
     AZURE_BLOB = "azure_blob"
 
 

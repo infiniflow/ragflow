@@ -166,7 +166,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
           <PromptEditor></PromptEditor>
         </RAGFlowFormItem>
         <MemoryDatasetForm></MemoryDatasetForm>
-        <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
+        <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
           <section className="space-y-5">
             <SimilaritySliderFormField
               similarityWeightName="keywords_similarity_weight"

@@ -118,4 +118,50 @@ func TestDocumentGetByIDs_NoMatch(t *testing.T) {
 	}
 }
 
+func TestDocumentGetByKBIDOrdersByCreateTime(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	pushDocDB(t, db)
+
+	createTime10 := int64(10)
+	createTime20 := int64(20)
+	createTime30 := int64(30)
+	db.Create(&entity.Document{ID: "doc-later", KbID: "kb1", Name: sp("Doc Later"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}, BaseModel: entity.BaseModel{CreateTime: &createTime30}})
+	db.Create(&entity.Document{ID: "doc-other", KbID: "kb2", Name: sp("Doc Other"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}, BaseModel: entity.BaseModel{CreateTime: &createTime10}})
+	db.Create(&entity.Document{ID: "doc-earlier", KbID: "kb1", Name: sp("Doc Earlier"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}, BaseModel: entity.BaseModel{CreateTime: &createTime20}})
+
+	docs, total, err := NewDocumentDAO().GetByKBID("kb1")
+	if err != nil {
+		t.Fatalf("GetByKBID failed: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("expected total=2, got %d", total)
+	}
+	if len(docs) != 2 {
+		t.Fatalf("expected 2 docs, got %d", len(docs))
+	}
+	if docs[0].ID != "doc-earlier" || docs[1].ID != "doc-later" {
+		t.Fatalf("unexpected order: %s, %s", docs[0].ID, docs[1].ID)
+	}
+}
+
+func TestDocumentGetByDocumentIDAndDatasetIDUsesKBID(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	pushDocDB(t, db)
+
+	db.Create(&entity.Document{ID: "doc1", KbID: "kb1", Name: sp("Doc 1"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
+	db.Create(&entity.Document{ID: "doc1-other", KbID: "kb2", Name: sp("Doc 2"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
+
+	doc, err := NewDocumentDAO().GetByDocumentIDAndDatasetID("doc1", "kb1")
+	if err != nil {
+		t.Fatalf("GetByDocumentIDAndDatasetID failed: %v", err)
+	}
+	if doc.ID != "doc1" || doc.KbID != "kb1" {
+		t.Fatalf("unexpected document: id=%s kb_id=%s", doc.ID, doc.KbID)
+	}
+
+	if _, err := NewDocumentDAO().GetByDocumentIDAndDatasetID("doc1", "kb2"); err == nil {
+		t.Fatal("expected no match when document does not belong to dataset")
+	}
+}
+
 func sp(s string) *string { return &s }

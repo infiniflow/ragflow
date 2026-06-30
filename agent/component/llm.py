@@ -288,15 +288,18 @@ class LLM(ComponentBase):
             "[LLM] imgs rebuilt: total=%d sys_files_added=%d unique_dropped=%d",
             len(self.imgs), len(sys_file_imgs), max(0, prev_img_count + len(sys_file_imgs) - len(self.imgs)),
         )
-        llm_type = TenantLLMService.llm_id2llm_type(self._param.llm_id)
-        if self.imgs and llm_type == LLMType.CHAT.value:
-            logging.info("[LLM] images present with chat-typed llm_id=%s; switching to IMAGE2TEXT", self._param.llm_id)
-            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT.value,
-                                      self._param.llm_id, max_retries=self._param.max_retries,
+        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
+        if self.imgs and LLMType.IMAGE2TEXT.value in model_types:
+            model_type = LLMType.IMAGE2TEXT.value
+        elif LLMType.CHAT.value in model_types:
+            model_type = LLMType.CHAT.value
+        else:
+            model_type = model_types[0]
+        model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
+        if self.imgs:
+            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), model_config, max_retries=self._param.max_retries,
                                       retry_interval=self._param.delay_after_error
                                       )
-        else:
-            logging.debug("[LLM] no model switch: imgs=%d llm_type=%s", len(self.imgs), llm_type)
 
         msg, sys_prompt = self._sys_prompt_and_msg(self._canvas.get_history(self._param.message_history_window_size)[:-1], args)
 

@@ -45,6 +45,7 @@ const (
 	defaultBedrockChatSuffix       = "converse"
 	defaultBedrockStreamSuffix     = "converse-stream"
 	defaultBedrockListModelsSuffix = "foundation-models"
+	defaultBedrockEmbeddingSuffix  = "invoke"
 	bedrockStreamSuffixSuffix      = "-stream"
 )
 
@@ -97,32 +98,12 @@ type BedrockModel struct {
 }
 
 // NewBedrockModel creates a new Bedrock model instance.
-//
-// We clone http.DefaultTransport to keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the connection-pool fields we care about.
-//
-// The Client itself has no overall Timeout because Bedrock
-// Converse-Stream is long-lived. http.Client.Timeout would also cap
-// time spent reading the response body, cutting off mid-stream.
-// Non-streaming callers wrap each request in context.WithTimeout
-// instead, and ResponseHeaderTimeout still caps connection setup.
 func NewBedrockModel(baseURL map[string]string, urlSuffix URLSuffix) *BedrockModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &BedrockModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: transport,
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -307,6 +288,14 @@ func (b *BedrockModel) modelsSuffix() string {
 		return b.baseModel.URLSuffix.Models
 	}
 	return defaultBedrockListModelsSuffix
+}
+
+// embeddingSuffix returns the runtime InvokeModel operation path.
+func (b *BedrockModel) embeddingSuffix() string {
+	if b.baseModel.URLSuffix.Embedding != "" {
+		return b.baseModel.URLSuffix.Embedding
+	}
+	return defaultBedrockEmbeddingSuffix
 }
 
 // bedrockRuntimeURL builds the per-region runtime endpoint URL for a
@@ -559,6 +548,10 @@ func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, err
 	}
 
+	// codeql[go/request-forgery] False positive: AWS Bedrock endpoint is
+	// derived from the AWS region (operator config, see AWSConfig above),
+	// not from user input. The signed request enforces the destination
+	// via sigv4 — a tampered URL would fail signature verification.
 	resp, err := b.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("bedrock: send request: %w", err)
@@ -647,6 +640,10 @@ func (b *BedrockModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return err
 	}
 
+	// codeql[go/request-forgery] False positive: AWS Bedrock endpoint is
+	// derived from the AWS region (operator config, see AWSConfig above),
+	// not from user input. The signed request enforces the destination
+	// via sigv4 — a tampered URL would fail signature verification.
 	resp, err := b.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("bedrock: send request: %w", err)
@@ -768,7 +765,7 @@ type bedrockListModelsResponse struct {
 // configured credentials. The control plane lives at
 // bedrock.{region}.amazonaws.com (not bedrock-runtime), signs against
 // the "bedrock" service, and is GET-only.
-func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -796,10 +793,14 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("bedrock: build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	if err := signBedrockRequest(ctx, req, nil, creds, bedrockControlService, region); err != nil {
+	if err = signBedrockRequest(ctx, req, nil, creds, bedrockControlService, region); err != nil {
 		return nil, err
 	}
 
+	// derived from the AWS region (operator config, see AWSConfig above),
+	// not from user input. The signed request enforces the destination
+	// via sigv4 — a tampered URL would fail signature verification.
+	// codeql[go/request-forgery] False positive: AWS Bedrock endpoint is
 	resp, err := b.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("bedrock: send request: %w", err)
@@ -815,15 +816,17 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	var parsed bedrockListModelsResponse
-	if err := json.Unmarshal(respBody, &parsed); err != nil {
+	if err = json.Unmarshal(respBody, &parsed); err != nil {
 		return nil, fmt.Errorf("bedrock: parse ListModels response: %w", err)
 	}
-	models := make([]string, 0, len(parsed.ModelSummaries))
+	models := make([]ListModelResponse, 0, len(parsed.ModelSummaries))
 	for _, m := range parsed.ModelSummaries {
 		if m.ModelID == "" {
 			continue
 		}
-		models = append(models, m.ModelID)
+		models = append(models, ListModelResponse{
+			Name: m.ModelID,
+		})
 	}
 	return models, nil
 }
@@ -836,11 +839,188 @@ func (b *BedrockModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-// Embed is not exposed by Bedrock through the Converse API; the
-// embeddings surface is per-model (Titan, Cohere) and ships in a
-// follow-on PR alongside conf/models/bedrock.json embedding entries.
+type bedrockTitanEmbeddingRequest struct {
+	InputText  string `json:"inputText"`
+	Dimensions *int   `json:"dimensions,omitempty"`
+}
+
+type bedrockTitanEmbeddingResponse struct {
+	Embedding []float64 `json:"embedding"`
+}
+
+type bedrockCohereEmbeddingRequest struct {
+	Texts           []string `json:"texts"`
+	InputType       string   `json:"input_type"`
+	OutputDimension *int     `json:"output_dimension,omitempty"`
+}
+
+type bedrockCohereEmbeddingResponse struct {
+	Embeddings json.RawMessage `json:"embeddings"`
+}
+
+// Embed sends text embedding requests through Bedrock Runtime
+// InvokeModel. Titan's embedding API accepts one inputText per call,
+// while Cohere accepts a texts batch and returns vectors in input
+// order.
 func (b *BedrockModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	modelID := strings.TrimSpace(*modelName)
+	key, err := parseBedrockKey(*apiConfig.ApiKey)
+	if err != nil {
+		return nil, err
+	}
+	region, err := resolveBedrockRegion(apiConfig, key)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	creds, err := resolveBedrockCredentials(ctx, key, region)
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.HasPrefix(modelID, "amazon.titan-embed-text-") {
+		return b.embedTitan(ctx, modelID, texts, region, creds, embeddingConfig)
+	}
+	if strings.HasPrefix(modelID, "cohere.embed-") {
+		return b.embedCohere(ctx, modelID, texts, region, creds, embeddingConfig)
+	}
+	return nil, fmt.Errorf("bedrock: unsupported embedding model %q", modelID)
+}
+
+func (b *BedrockModel) invokeEmbeddingModel(ctx context.Context, modelID string, body interface{}, region string, creds awssdk.Credentials) ([]byte, error) {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("bedrock: marshal embedding request: %w", err)
+	}
+	url := b.bedrockRuntimeURL(region, modelID, b.embeddingSuffix())
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("bedrock: build embedding request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if err := signBedrockRequest(ctx, req, raw, creds, bedrockRuntimeService, region); err != nil {
+		return nil, err
+	}
+
+	// codeql[go/request-forgery] False positive: AWS Bedrock endpoint is
+	// derived from the AWS region (operator config, see AWSConfig above),
+	// not from user input. The signed request enforces the destination
+	// via sigv4 — a tampered URL would fail signature verification.
+	resp, err := b.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("bedrock: send embedding request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("bedrock: read embedding response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("bedrock: embedding request failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+	return respBody, nil
+}
+
+func (b *BedrockModel) embedTitan(ctx context.Context, modelID string, texts []string, region string, creds awssdk.Credentials, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	embeddings := make([]EmbeddingData, 0, len(texts))
+	for i, text := range texts {
+		req := bedrockTitanEmbeddingRequest{
+			InputText: text,
+		}
+		if embeddingConfig != nil && embeddingConfig.Dimension > 0 && strings.HasPrefix(modelID, "amazon.titan-embed-text-v2") {
+			req.Dimensions = &embeddingConfig.Dimension
+		}
+		respBody, err := b.invokeEmbeddingModel(ctx, modelID, req, region, creds)
+		if err != nil {
+			return nil, err
+		}
+		var parsed bedrockTitanEmbeddingResponse
+		if err := json.Unmarshal(respBody, &parsed); err != nil {
+			return nil, fmt.Errorf("bedrock: parse Titan embedding response: %w", err)
+		}
+		if len(parsed.Embedding) == 0 {
+			return nil, fmt.Errorf("bedrock: Titan embedding response missing embedding for input index %d", i)
+		}
+		embeddings = append(embeddings, EmbeddingData{
+			Embedding: parsed.Embedding,
+			Index:     i,
+		})
+	}
+	return embeddings, nil
+}
+
+func (b *BedrockModel) embedCohere(ctx context.Context, modelID string, texts []string, region string, creds awssdk.Credentials, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	req := bedrockCohereEmbeddingRequest{
+		Texts:     texts,
+		InputType: "search_document",
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 && strings.HasPrefix(modelID, "cohere.embed-v4") {
+		req.OutputDimension = &embeddingConfig.Dimension
+	}
+	respBody, err := b.invokeEmbeddingModel(ctx, modelID, req, region, creds)
+	if err != nil {
+		return nil, err
+	}
+
+	var parsed bedrockCohereEmbeddingResponse
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return nil, fmt.Errorf("bedrock: parse Cohere embedding response: %w", err)
+	}
+	vectors, err := decodeCohereEmbeddingVectors(parsed.Embeddings)
+	if err != nil {
+		return nil, err
+	}
+	if len(vectors) != len(texts) {
+		return nil, fmt.Errorf("bedrock: Cohere returned %d embeddings for %d inputs", len(vectors), len(texts))
+	}
+
+	embeddings := make([]EmbeddingData, len(vectors))
+	for i, vector := range vectors {
+		if len(vector) == 0 {
+			return nil, fmt.Errorf("bedrock: Cohere embedding response missing embedding for input index %d", i)
+		}
+		embeddings[i] = EmbeddingData{
+			Embedding: vector,
+			Index:     i,
+		}
+	}
+	return embeddings, nil
+}
+
+func decodeCohereEmbeddingVectors(raw json.RawMessage) ([][]float64, error) {
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("bedrock: Cohere embedding response missing embeddings")
+	}
+
+	var vectors [][]float64
+	if err := json.Unmarshal(raw, &vectors); err == nil {
+		return vectors, nil
+	}
+
+	var byType map[string][][]float64
+	if err := json.Unmarshal(raw, &byType); err != nil {
+		return nil, fmt.Errorf("bedrock: parse Cohere embeddings: %w", err)
+	}
+	vectors, ok := byType["float"]
+	if !ok {
+		return nil, fmt.Errorf("bedrock: Cohere embedding response missing float embeddings")
+	}
+	return vectors, nil
 }
 
 // Rerank is not exposed by Bedrock.

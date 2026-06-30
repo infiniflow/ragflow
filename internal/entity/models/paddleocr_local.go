@@ -25,7 +25,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 type PaddleOCRLocalModel struct {
@@ -35,16 +34,9 @@ type PaddleOCRLocalModel struct {
 func NewPaddleOCRLocalModel(baseURL map[string]string, urlSuffix URLSuffix) *PaddleOCRLocalModel {
 	return &PaddleOCRLocalModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: &http.Transport{
-					MaxIdleConns:        10,
-					MaxIdleConnsPerHost: 100,
-					IdleConnTimeout:     time.Second * 90,
-					DisableCompression:  false,
-				},
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -190,7 +182,7 @@ func (p *PaddleOCRLocalModel) ParseFile(modelName *string, content []byte, url *
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
 
-func (p *PaddleOCRLocalModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (p *PaddleOCRLocalModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
 

@@ -26,12 +26,12 @@ import (
 )
 
 type googleModelPage struct {
-	items         []string
+	items         []DSModel
 	nextPageToken string
 }
 
-func collectGoogleModelNames(ctx context.Context, listPage func(context.Context, string) (googleModelPage, error)) ([]string, error) {
-	var modelNames []string
+func collectGoogleModelNames(ctx context.Context, listPage func(context.Context, string) (googleModelPage, error)) ([]ListModelResponse, error) {
+	var models []DSModel
 	pageToken := ""
 
 	for {
@@ -40,15 +40,15 @@ func collectGoogleModelNames(ctx context.Context, listPage func(context.Context,
 			return nil, err
 		}
 
-		modelNames = append(modelNames, page.items...)
+		models = append(models, page.items...)
 		if page.nextPageToken == "" {
-			return modelNames, nil
+			return ParseListModel(ModelList{Models: models}), nil
 		}
 		pageToken = page.nextPageToken
 	}
 }
 
-var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]string, error) {
+var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]ListModelResponse, error) {
 	client, err := genai.NewClient(ctx, config)
 	if err != nil {
 		return nil, err
@@ -60,9 +60,18 @@ var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]
 			return googleModelPage{}, err
 		}
 
-		var modelNames []string
+		var modelNames []DSModel
 		for _, m := range models.Items {
-			modelNames = append(modelNames, m.Name)
+			modelName := strings.TrimSpace(m.DisplayName)
+			if modelName == "" {
+				modelName = strings.TrimSpace(m.Name)
+			}
+			if modelName != "" {
+				modelNames = append(modelNames, DSModel{
+					ID:      modelName,
+					OwnedBy: "Google",
+				})
+			}
 		}
 		return googleModelPage{items: modelNames, nextPageToken: models.NextPageToken}, nil
 	})
@@ -262,7 +271,11 @@ func (g *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Messag
 
 		var responseContent string
 		if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-			responseContent = response.Candidates[0].Content.Parts[0].Text
+			if len(response.Candidates) > 0 &&
+				response.Candidates[0].Content != nil &&
+				len(response.Candidates[0].Content.Parts) > 0 {
+				responseContent = response.Candidates[0].Content.Parts[0].Text
+			}
 		}
 
 		if responseContent != "" {
@@ -339,7 +352,7 @@ func (g *GoogleModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	return result, nil
 }
 
-func (g *GoogleModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (g *GoogleModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

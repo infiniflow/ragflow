@@ -98,6 +98,7 @@ func TestConvertOperator(t *testing.T) {
 		{"<=", "≤"},
 		{"!=", "≠"},
 		{"contains", "contains"},
+		{"==", "="},
 		{"start with", "start with"},
 	}
 	for _, tt := range tests {
@@ -334,5 +335,195 @@ func TestMetaFilter_EmptyInput(t *testing.T) {
 	result := MetaFilter(metas, &MetaFilterInput{})
 	if result != nil {
 		t.Errorf("expected nil, got %v", result)
+	}
+}
+
+// --- filterSet unit tests ---
+
+func TestFilterSet_In_Basic(t *testing.T) {
+	v2docs := MetaValueDocs{"A": {"doc1"}, "B": {"doc2"}, "C": {"doc3"}}
+	value := []interface{}{"A", "B"}
+	result := filterSet(v2docs, "in", value)
+	if len(result) != 2 {
+		t.Errorf("expected 2 docs, got %d: %v", len(result), result)
+	}
+}
+
+func TestFilterSet_In_NoMatch(t *testing.T) {
+	v2docs := MetaValueDocs{"A": {"doc1"}, "B": {"doc2"}}
+	value := []interface{}{"X"}
+	result := filterSet(v2docs, "in", value)
+	if len(result) != 0 {
+		t.Errorf("expected 0 docs, got %d: %v", len(result), result)
+	}
+}
+
+func TestFilterSet_In_CaseSensitive(t *testing.T) {
+	v2docs := MetaValueDocs{"ABC": {"doc1"}, "abc": {"doc2"}}
+	value := []interface{}{"abc"}
+	result := filterSet(v2docs, "in", value)
+	if len(result) != 1 || result[0] != "doc2" {
+		t.Errorf("expected only [doc2] (case-sensitive), got %v", result)
+	}
+}
+
+func TestFilterSet_In_NonListValue(t *testing.T) {
+	v2docs := MetaValueDocs{"A": {"doc1"}}
+	result := filterSet(v2docs, "in", "not a list")
+	if result != nil {
+		t.Errorf("expected nil for non-list value, got %v", result)
+	}
+}
+
+func TestFilterSet_In_EmptyList(t *testing.T) {
+	v2docs := MetaValueDocs{"A": {"doc1"}}
+	result := filterSet(v2docs, "in", []interface{}{})
+	if len(result) != 0 {
+		t.Errorf("expected 0 docs for empty list, got %d", len(result))
+	}
+}
+
+func TestFilterSet_NotIn_Basic(t *testing.T) {
+	v2docs := MetaValueDocs{"A": {"doc1"}, "B": {"doc2"}, "C": {"doc3"}}
+	value := []interface{}{"A"}
+	result := filterSet(v2docs, "not in", value)
+	if len(result) != 2 {
+		t.Errorf("expected 2 docs, got %d: %v", len(result), result)
+	}
+}
+
+func TestFilterSet_NotIn_CaseInsensitive(t *testing.T) {
+	v2docs := MetaValueDocs{"ABC": {"doc1"}, "xyz": {"doc2"}}
+	value := []interface{}{"abc"}
+	result := filterSet(v2docs, "not in", value)
+	if len(result) != 1 || result[0] != "doc2" {
+		t.Errorf("expected only [doc2] (case-insensitive), got %v", result)
+	}
+}
+
+func TestFilterSet_NotIn_ExcludeAll(t *testing.T) {
+	v2docs := MetaValueDocs{"A": {"doc1"}, "B": {"doc2"}}
+	value := []interface{}{"A", "B"}
+	result := filterSet(v2docs, "not in", value)
+	if len(result) != 0 {
+		t.Errorf("expected 0 docs when all excluded, got %d", len(result))
+	}
+}
+
+func TestFilterSet_NotIn_NonListValue(t *testing.T) {
+	v2docs := MetaValueDocs{"A": {"doc1"}}
+	result := filterSet(v2docs, "not in", "not a list")
+	if result != nil {
+		t.Errorf("expected nil for non-list value, got %v", result)
+	}
+}
+
+func TestFilterSet_NotIn_MultipleExcludes(t *testing.T) {
+	v2docs := MetaValueDocs{"A": {"doc1"}, "B": {"doc2"}, "C": {"doc3"}}
+	value := []interface{}{"A", "B"}
+	result := filterSet(v2docs, "not in", value)
+	if len(result) != 1 || result[0] != "doc3" {
+		t.Errorf("expected only [doc3], got %v", result)
+	}
+}
+
+// --- MetaFilter integration tests for "in" / "not in" ---
+
+func TestMetaFilter_In(t *testing.T) {
+	metas := MetaData{
+		"category": {"A": {"doc1"}, "B": {"doc2"}, "C": {"doc3"}},
+	}
+	input := &MetaFilterInput{
+		Conditions: []MetaCondition{{Operator: "in", Key: "category", Value: []interface{}{"A", "B"}}},
+	}
+	result := MetaFilter(metas, input)
+	if len(result) != 2 {
+		t.Errorf("expected 2 docs, got %d: %v", len(result), result)
+	}
+}
+
+func TestMetaFilter_NotIn(t *testing.T) {
+	metas := MetaData{
+		"category": {"A": {"doc1"}, "B": {"doc2"}, "C": {"doc3"}},
+	}
+	input := &MetaFilterInput{
+		Conditions: []MetaCondition{{Operator: "not in", Key: "category", Value: []interface{}{"A"}}},
+	}
+	result := MetaFilter(metas, input)
+	if len(result) != 2 {
+		t.Errorf("expected 2 docs (B,C), got %d: %v", len(result), result)
+	}
+}
+
+func TestMetaFilter_NotIn_CaseInsensitive(t *testing.T) {
+	metas := MetaData{
+		"code": {"ABC": {"doc1"}, "xyz": {"doc2"}},
+	}
+	input := &MetaFilterInput{
+		Conditions: []MetaCondition{{Operator: "not in", Key: "code", Value: []interface{}{"abc"}}},
+	}
+	result := MetaFilter(metas, input)
+	if len(result) != 1 || result[0] != "doc2" {
+		t.Errorf("expected only [doc2] (case-insensitive), got %v", result)
+	}
+}
+
+func TestMetaFilter_In_CaseSensitive(t *testing.T) {
+	metas := MetaData{
+		"code": {"ABC": {"doc1"}, "abc": {"doc2"}},
+	}
+	input := &MetaFilterInput{
+		Conditions: []MetaCondition{{Operator: "in", Key: "code", Value: []interface{}{"abc"}}},
+	}
+	result := MetaFilter(metas, input)
+	if len(result) != 1 || result[0] != "doc2" {
+		t.Errorf("expected only [doc2] (case-sensitive), got %v", result)
+	}
+}
+
+func TestFilterSet_NotIn_EmptyList(t *testing.T) {
+	v2docs := MetaValueDocs{"A": {"doc1"}, "B": {"doc2"}}
+	result := filterSet(v2docs, "not in", []interface{}{})
+	if len(result) != 2 {
+		t.Errorf("expected all 2 docs for not in empty list, got %d: %v", len(result), result)
+	}
+}
+
+func TestMetaFilter_LessThan(t *testing.T) {
+	metas := MetaData{
+		"score": {"85": {"doc1"}, "70": {"doc2"}, "80": {"doc3"}},
+	}
+	input := &MetaFilterInput{
+		Conditions: []MetaCondition{{Operator: "<", Key: "score", Value: "80"}},
+	}
+	result := MetaFilter(metas, input)
+	if len(result) != 1 || result[0] != "doc2" {
+		t.Errorf("expected [doc2] for <80, got %v", result)
+	}
+}
+
+func TestMetaFilter_LessThanOrEqual(t *testing.T) {
+	metas := MetaData{
+		"score": {"85": {"doc1"}, "70": {"doc2"}, "80": {"doc3"}},
+	}
+	input := &MetaFilterInput{
+		Conditions: []MetaCondition{{Operator: "≤", Key: "score", Value: "80"}},
+	}
+	result := MetaFilter(metas, input)
+	if len(result) != 2 {
+		t.Errorf("expected 2 docs for ≤80, got %d: %v", len(result), result)
+	}
+}
+
+func TestMetaFilter_NotEquals(t *testing.T) {
+	metas := MetaData{
+		"author": {"Zhang San": {"doc1"}, "Li Si": {"doc2"}},
+	}
+	input := &MetaFilterInput{
+		Conditions: []MetaCondition{{Operator: "≠", Key: "author", Value: "Zhang San"}},
+	}
+	result := MetaFilter(metas, input)
+	if len(result) != 1 || result[0] != "doc2" {
+		t.Errorf("expected [doc2] for ≠, got %v", result)
 	}
 }

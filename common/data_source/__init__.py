@@ -36,6 +36,7 @@ from .jira.connector import JiraConnector
 from .sharepoint_connector import SharePointConnector
 from .onedrive_connector import OneDriveConnector
 from .outlook_connector import OutlookConnector
+from .salesforce_connector import SalesforceConnector
 from .azure_blob_connector import AzureBlobConnector
 from .teams_connector import TeamsConnector
 from .moodle_connector import MoodleConnector
@@ -46,6 +47,7 @@ from .imap_connector import ImapConnector
 from .zendesk_connector import ZendeskConnector
 from .seafile_connector import SeaFileConnector
 from .rdbms_connector import RDBMSConnector
+from .bigquery_connector import BigQueryConnector
 from .webdav_connector import WebDAVConnector
 from .rest_api_connector import RestAPIConnector
 from .config import BlobType, DocumentSource
@@ -72,6 +74,7 @@ __all__ = [
     "SharePointConnector",
     "OneDriveConnector",
     "OutlookConnector",
+    "SalesforceConnector",
     "AzureBlobConnector",
     "TeamsConnector",
     "MoodleConnector",
@@ -92,6 +95,7 @@ __all__ = [
     "ZendeskConnector",
     "SeaFileConnector",
     "RDBMSConnector",
+    "BigQueryConnector",
     "WebDAVConnector",
     "DingTalkAITableConnector",
     "RestAPIConnector",

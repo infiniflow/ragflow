@@ -62,6 +62,7 @@ class Extractor(ProcessBase, LLM):
         if toc:
             d = deepcopy(docs[-1])
             d["doc_id"] = self._canvas._doc_id
+            d["toc"] = json.dumps(toc, ensure_ascii=False)
             d["content_with_weight"] = json.dumps(toc, ensure_ascii=False)
             d["toc_kwd"] = "toc"
             d["available_int"] = 0
@@ -107,5 +108,4 @@ class Extractor(ProcessBase, LLM):
             msg, sys_prompt = self._sys_prompt_and_msg([], args)
             msg.insert(0, {"role": "system", "content": sys_prompt})
             self.set_output("chunks", [{self._param.field_name: await self._generate_async(msg)}])
-
 

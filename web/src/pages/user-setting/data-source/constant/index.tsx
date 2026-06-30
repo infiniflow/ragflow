@@ -41,10 +41,12 @@ export enum DataSourceKey {
   SEAFILE = 'seafile',
   MYSQL = 'mysql',
   POSTGRESQL = 'postgresql',
+  BIGQUERY = 'bigquery',
   REST_API = 'rest_api',
   RSS = 'rss',
   ONEDRIVE = 'onedrive',
   OUTLOOK = 'outlook',
+  SALESFORCE = 'salesforce',
   AZURE_BLOB = 'azure_blob',
   TEAMS = 'teams',
   SLACK = 'slack',
@@ -138,6 +140,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.OUTLOOK]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.SALESFORCE]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.AZURE_BLOB]: {
     syncDeletedFiles: true,
   },
@@ -154,6 +159,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.POSTGRESQL]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.BIGQUERY]: {
     syncDeletedFiles: true,
   },
 };
@@ -329,6 +337,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.POSTGRESQL}Description`),
       icon: <SvgIcon name={'data-source/postgresql'} width={38} />,
     },
+    [DataSourceKey.BIGQUERY]: {
+      name: 'BigQuery',
+      description: t(`setting.${DataSourceKey.BIGQUERY}Description`),
+      icon: <SvgIcon name={'data-source/bigquery'} width={38} />,
+    },
     [DataSourceKey.ONEDRIVE]: {
       name: 'OneDrive',
       description: t(`setting.${DataSourceKey.ONEDRIVE}Description`),
@@ -338,6 +351,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Outlook',
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
       icon: <Mail className="text-text-primary" size={22} />,
+    },
+    [DataSourceKey.SALESFORCE]: {
+      name: 'Salesforce',
+      description: t(`setting.${DataSourceKey.SALESFORCE}Description`),
+      icon: <SvgIcon name={'data-source/salesforce'} width={38} />,
     },
     [DataSourceKey.AZURE_BLOB]: {
       name: 'Azure Blob Storage',
@@ -512,6 +530,65 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'support@example.com, sales@example.com',
       tooltip: t('setting.outlookUserIdsTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
+      },
+    },
+  ],
+  [DataSourceKey.SALESFORCE]: [
+    {
+      label: 'Instance URL',
+      name: 'config.credentials.instance_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://your-domain.my.salesforce.com',
+      tooltip: t('setting.salesforceInstanceUrlTip'),
+      validation: {
+        pattern: /^https:\/\/[a-zA-Z0-9.-]+\.salesforce\.com$/,
+        message:
+          'Must be a valid Salesforce domain (https://...salesforce.com)',
+      },
+    },
+    {
+      label: 'Client ID',
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+      tooltip: t('setting.salesforceClientIdTip'),
+    },
+    {
+      label: 'Client Secret',
+      name: 'config.credentials.client_secret',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.salesforceClientSecretTip'),
+    },
+    {
+      label: 'Objects',
+      name: 'config.objects',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'Account,Contact,Opportunity,Case,Knowledge__kav',
+      tooltip: t('setting.salesforceObjectsTip'),
+    },
+    {
+      label: 'API Version',
+      name: 'config.api_version',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'v59.0',
+      tooltip: t('setting.salesforceApiVersionTip'),
+      validation: {
+        pattern: /^v\d+\.\d+$/,
+        message: 'API version must match format like v59.0',
+      },
     },
     {
       label: 'Batch Size',
@@ -1029,7 +1106,7 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.BOX]: [
     {
-      label: 'Box OAuth JSON',
+      label: 'Box OAuth Configuration',
       name: 'config.credentials.box_tokens',
       type: FormFieldType.Textarea,
       required: true,
@@ -1413,6 +1490,166 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'updated_at',
       tooltip: t('setting.postgresqlTimestampColumnTip'),
+    },
+  ],
+  [DataSourceKey.BIGQUERY]: [
+    {
+      label: 'Project ID',
+      name: 'config.project_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'my-gcp-project',
+      tooltip: t('setting.bigqueryProjectIdTip'),
+    },
+    {
+      label: 'Location',
+      name: 'config.location',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'US',
+      tooltip: t('setting.bigqueryLocationTip'),
+    },
+    {
+      label: 'Service Account JSON',
+      name: 'config.credentials.service_account_json',
+      type: FormFieldType.Password,
+      required: true,
+      placeholder: '{ "type": "service_account", "project_id": "...", ... }',
+      tooltip: t('setting.bigqueryServiceAccountJsonTip'),
+    },
+    {
+      label: 'Dataset ID',
+      name: 'config.dataset_id',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'analytics',
+      tooltip: t('setting.bigqueryDatasetIdTip'),
+      customValidate: (val: string, values: any) => {
+        const hasQuery = !!(values?.config?.query ?? '').trim();
+        const hasTable = !!(values?.config?.table_id ?? '').trim();
+        if (!hasQuery && !((val ?? '').trim() && hasTable)) {
+          return 'Dataset ID is required when not using a custom SQL Query';
+        }
+        return true;
+      },
+    },
+    {
+      label: 'Table ID',
+      name: 'config.table_id',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'customers',
+      tooltip: t('setting.bigqueryTableIdTip'),
+      customValidate: (val: string, values: any) => {
+        const hasQuery = !!(values?.config?.query ?? '').trim();
+        const hasDataset = !!(values?.config?.dataset_id ?? '').trim();
+        if (!hasQuery && !(hasDataset && (val ?? '').trim())) {
+          return 'Table ID is required when not using a custom SQL Query';
+        }
+        return true;
+      },
+    },
+    {
+      label: 'SQL Query',
+      name: 'config.query',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: 'Leave empty to use Dataset ID + Table ID',
+      tooltip: t('setting.bigqueryQueryTip'),
+      customValidate: (val: string, values: any) => {
+        const hasQuery = !!(val ?? '').trim();
+        const hasDataset = !!(values?.config?.dataset_id ?? '').trim();
+        const hasTable = !!(values?.config?.table_id ?? '').trim();
+        if (!hasQuery && !(hasDataset && hasTable)) {
+          return 'Provide a SQL Query, or both Dataset ID and Table ID';
+        }
+        return true;
+      },
+    },
+    {
+      label: 'Content Columns',
+      name: 'config.content_columns',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'name,description,notes',
+      tooltip: t('setting.bigqueryContentColumnsTip'),
+    },
+    {
+      label: 'Metadata Columns',
+      name: 'config.metadata_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'customer_id,status,region',
+      tooltip: t('setting.bigqueryMetadataColumnsTip'),
+    },
+    {
+      label: 'ID Column',
+      name: 'config.id_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'customer_id',
+      tooltip: t('setting.bigqueryIdColumnTip'),
+    },
+    {
+      label: 'Timestamp Column',
+      name: 'config.timestamp_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at',
+      tooltip: t('setting.bigqueryTimestampColumnTip'),
+    },
+    {
+      label: 'Max Bytes Billed',
+      name: 'config.maximum_bytes_billed',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '1073741824',
+      tooltip: t('setting.bigqueryMaximumBytesBilledTip'),
+      validation: {
+        min: 1,
+        message: 'Max Bytes Billed must be at least 1',
+      },
+    },
+    {
+      label: 'Job Timeout (ms)',
+      name: 'config.job_timeout_ms',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '300000',
+      tooltip: t('setting.bigqueryJobTimeoutMsTip'),
+      validation: {
+        min: 1,
+        message: 'Job Timeout must be at least 1',
+      },
+    },
+    {
+      label: 'Page Size',
+      name: 'config.page_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '1000',
+      validation: {
+        min: 1,
+        message: 'Page Size must be at least 1',
+      },
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '100',
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
+      },
+    },
+    {
+      label: 'Use Query Cache',
+      name: 'config.use_query_cache',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
     },
   ],
   [DataSourceKey.REST_API]: [
@@ -2082,6 +2319,29 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  [DataSourceKey.BIGQUERY]: {
+    name: '',
+    source: DataSourceKey.BIGQUERY,
+    config: {
+      project_id: '',
+      dataset_id: '',
+      table_id: '',
+      location: '',
+      query: '',
+      content_columns: '',
+      metadata_columns: '',
+      id_column: '',
+      timestamp_column: '',
+      batch_size: 100,
+      page_size: 1000,
+      maximum_bytes_billed: 1073741824,
+      job_timeout_ms: 300000,
+      use_query_cache: true,
+      credentials: {
+        service_account_json: '',
+      },
+    },
+  },
   [DataSourceKey.ONEDRIVE]: {
     name: '',
     source: DataSourceKey.ONEDRIVE,
@@ -2104,6 +2364,20 @@ export const DataSourceFormDefaultValues = {
       batch_size: 2,
       credentials: {
         tenant_id: '',
+        client_id: '',
+        client_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.SALESFORCE]: {
+    name: '',
+    source: DataSourceKey.SALESFORCE,
+    config: {
+      objects: '',
+      api_version: 'v59.0',
+      batch_size: 2,
+      credentials: {
+        instance_url: '',
         client_id: '',
         client_secret: '',
       },

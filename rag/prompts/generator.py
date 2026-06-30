@@ -97,13 +97,20 @@ def message_fit_in(msg, max_length=4000):
     ll2 = num_tokens_from_string(msg_[-1]["content"])
     total = ll + ll2
     if total <= 0:
+        # Don't include the per-message role list in cleartext: CodeQL
+        # flags this as clear-text-logging-sensitive-data because msg
+        # carries user-controlled conversation content. The token
+        # counts already capture what this debug line needs to convey.
+        # codeql[py/clear-text-logging-sensitive-data] False positive:
+        # only token counts and limits are logged; the message contents
+        # were intentionally dropped from this debug call (see prior
+        # commit) because they carried user content.
         logging.debug(
-            "message_fit_in degenerate token counts total=%s max_length=%s ll=%s ll2=%s preserved_roles=%s",
+            "message_fit_in degenerate token counts total=%s max_length=%s ll=%s ll2=%s",
             total,
             max_length,
             ll,
             ll2,
-            [m.get("role") for m in msg],
         )
         return 0, msg
 
@@ -204,7 +211,7 @@ PROMPT_JINJA_ENV = SandboxedEnvironment(
 
 def citation_prompt(user_defined_prompts: dict = {}) -> str:
     template = PROMPT_JINJA_ENV.from_string(user_defined_prompts.get("citation_guidelines", CITATION_PROMPT_TEMPLATE))
-    return template.render()
+    return template.render() + "\n\nIMPORTANT: The example IDs above (45, 46, 78, etc.) are illustrative only. Use the actual chunk IDs from the provided knowledge blocks."
 
 
 def citation_plus(sources: str) -> str:
@@ -297,10 +304,12 @@ async def cross_languages(tenant_id, llm_id, query, languages=[]):
 
     ans = await chat_mdl.async_chat(rendered_sys_prompt, [{"role": "user", "content": rendered_user_prompt}],
                                     {"temperature": 0.2})
-    ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     if ans.find("**ERROR**") >= 0:
+        logging.info("[cross_languages] LLM returned error, falling back to original query")
         return query
-    return "\n".join([a for a in re.sub(r"(^Output:|\n+)", "", ans, flags=re.DOTALL).split("===") if a.strip()])
+    ans = re.sub(r"^.*\*\*ERROR\*\*", "", ans, flags=re.DOTALL)
+    result = "\n".join([a for a in re.sub(r"(^Output:|\n+)", "", ans, flags=re.DOTALL).split("===") if a.strip()])
+    return result
 
 
 async def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
@@ -953,6 +962,11 @@ async def relevant_chunks_with_toc(query: str, toc: list[dict], chat_mdl, topn: 
 
 META_DATA = load_prompt("meta_data")
 async def gen_metadata(chat_mdl, schema: dict, content: str):
+    if not schema:
+        return ""
+    if "properties" not in schema:
+        logging.warning("gen_metadata: schema has no 'properties' key: %s", schema)
+        return ""
     template = PROMPT_JINJA_ENV.from_string(META_DATA)
     for k, desc in schema["properties"].items():
         if "enum" in desc and not desc.get("enum"):

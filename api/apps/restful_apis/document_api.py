@@ -30,6 +30,7 @@ from api.apps.services.document_api_service import validate_document_update_fiel
     map_doc_keys_with_run_status, update_document_name_only, update_chunk_method, update_document_status_only, \
     reset_document_for_reparse
 from api.db import VALID_FILE_TYPES, FileType
+from api.db.db_models import API4Conversation, DB
 from api.db.services import duplicate_name
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.db_models import Task
@@ -37,8 +38,9 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.canvas_service import UserCanvasService
 from api.common.check_team_permission import check_kb_team_permission
-from api.db.services.task_service import TaskService, cancel_all_task_of, has_canceled
+from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.utils.api_utils import construct_json_result, get_data_error_result, get_error_data_result, get_result, get_json_result, \
     server_error_response, add_tenant_id_to_kwargs, get_request_json, get_error_argument_result, check_duplicate_ids
 from api.utils.pagination_utils import validate_rest_api_page_size
@@ -606,7 +608,11 @@ async def _upload_local_documents(kb, tenant_id):
         parent_path=form.get("parent_path"),
         parser_config_override=parser_config_override,
     )
-    if err:
+
+    # Handle partial success: some files uploaded successfully, some had errors
+    is_partial_success = err and files
+
+    if err and not is_partial_success:
         msg = "\n".join(err)
         logging.error(msg)
         return get_error_data_result(message=msg, code=RetCode.SERVER_ERROR)
@@ -620,10 +626,17 @@ async def _upload_local_documents(kb, tenant_id):
     return_raw_files = request.args.get("return_raw_files", "false").lower() == "true"
 
     if return_raw_files:
-        return get_result(data=files)
+        doc_data = files
+    else:
+        doc_data = [map_doc_keys_with_run_status(doc, run_status="0") for doc in files]
 
-    renamed_doc_list = [map_doc_keys_with_run_status(doc, run_status="0") for doc in files]
-    return get_result(data=renamed_doc_list)
+    # For partial success, include error message along with successful uploads
+    if is_partial_success:
+        msg = "\n".join(err)
+        logging.warning(f"Partial upload success: {len(files)} succeeded, {len(err)} failed - {msg}")
+        return construct_json_result(code=RetCode.SERVER_ERROR, message=msg, data=doc_data)
+
+    return get_result(data=doc_data)
 
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["GET"])  # noqa: F821
@@ -1397,30 +1410,17 @@ def _run_sync(user_id:str, req):
         if not e:
             return RetCode.DATA_ERROR, "Document not found!"
 
-        if str(req["run"]) == TaskStatus.RUNNING.value:
-            tasks = list(TaskService.query(doc_id=doc_id))
-            has_active_task = any((task.progress or 0) < 1 and not has_canceled(task.id) for task in tasks)
-            if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.SCHEDULE.value] or has_active_task:
-                return RetCode.DATA_ERROR, "Document is already running"
-
-        should_cancel = False
         if str(req["run"]) == TaskStatus.CANCEL.value:
             tasks = list(TaskService.query(doc_id=doc_id))
             has_unfinished_task = any((task.progress or 0) < 1 for task in tasks)
             if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.CANCEL.value] or has_unfinished_task:
-                should_cancel = True
+                cancel_all_task_of(doc_id)
             else:
                 return RetCode.DATA_ERROR, "Cannot cancel a task that is not in RUNNING status"
         if all([rerun_with_delete, str(doc.run) == TaskStatus.DONE.value]):
             DocumentService.clear_chunk_num_when_rerun(doc_id)
 
-        affected_rows = DocumentService.update_by_id_if_update_time(doc_id, doc.update_time, info)
-        if not affected_rows:
-            return RetCode.DATA_ERROR, "Document is already running"
-
-        if str(req["run"]) == TaskStatus.CANCEL.value and should_cancel:
-            cancel_all_task_of(doc_id)
-
+        DocumentService.update_by_id(doc_id, info)
         if req.get("delete", False):
             TaskService.filter_delete([Task.doc_id == doc_id])
             if settings.docStoreConn.index_exist(search.index_name(doc_tenant_id), doc.kb_id):
@@ -1638,7 +1638,17 @@ async def stop_parse_documents(tenant_id, dataset_id):
                     continue
 
                 cancel_all_task_of(doc_id)
-                DocumentService.update_by_id(doc_id, {"run": str(TaskStatus.CANCEL.value)})
+                DocumentService.update_by_id(
+                    doc_id,
+                    {
+                        "run": str(TaskStatus.CANCEL.value),
+                        "progress": 0,
+                        "chunk_num": 0,
+                    },
+                )
+                index_name = search.index_name(tenant_id)
+                if settings.docStoreConn.index_exist(index_name, doc.kb_id):
+                    settings.docStoreConn.delete({"doc_id": doc.id}, index_name, doc.kb_id)
                 success_count += 1
 
             result = {"success_count": success_count}
@@ -1752,6 +1762,31 @@ ARTIFACT_CONTENT_TYPES = {
 }
 
 
+@DB.connection_context()
+def _sandbox_artifact_dialog_ids_for_user(filename: str, user_id: str) -> list[str]:
+    """Return agent dialog IDs for sessions owned by *user_id* that reference *filename*."""
+    if not filename:
+        return []
+    artifact_ref = f"documents/artifact/{filename}"
+    rows = (
+        API4Conversation.select(API4Conversation.dialog_id)
+        .where(
+            ((API4Conversation.user_id == user_id) | (API4Conversation.exp_user_id == user_id)),
+            (API4Conversation.message.contains(filename) | API4Conversation.message.contains(artifact_ref)),
+        )
+        .distinct()
+    )
+    return [row.dialog_id for row in rows if row.dialog_id]
+
+
+def _sandbox_artifact_accessible(filename: str, user_id: str) -> bool:
+    """True when a CodeExec sandbox artifact belongs to an agent session the user may access."""
+    for dialog_id in _sandbox_artifact_dialog_ids_for_user(filename, user_id):
+        if UserCanvasService.accessible(dialog_id, user_id):
+            return True
+    return False
+
+
 @manager.route("/documents/artifact/<filename>", methods=["GET"])  # noqa: F821
 @login_required
 async def get_artifact(filename):
@@ -1788,6 +1823,8 @@ async def get_artifact(filename):
         ext = os.path.splitext(basename)[1].lower()
         if ext not in ARTIFACT_CONTENT_TYPES:
             return get_data_error_result(message="Invalid file type.")
+        if not await thread_pool_exec(_sandbox_artifact_accessible, basename, current_user.id):
+            return get_data_error_result(message="Artifact not found.")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, basename)
         if not data:
             return get_data_error_result(message="Artifact not found.")
@@ -1956,6 +1993,16 @@ async def get(doc_id):
     except Exception as e:
         return server_error_response(e)
 
+
+def _mimetype_for_document(doc) -> str:
+    match = re.search(r"\.([^.]+)$", (doc.name or "").lower())
+    if not match:
+        return "application/octet-stream"
+    ext = match.group(1)
+    fallback_prefix = "image" if doc.type == FileType.VISUAL.value else "application"
+    return CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
+
+
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @login_required
 async def download(dataset_id, document_id):
@@ -1996,6 +2043,10 @@ async def download(dataset_id, document_id):
     """
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=current_user.id):
+        return get_data_error_result(message="Document not found!")
+    if not DocumentService.accessible(document_id, current_user.id):
+        return get_data_error_result(message="Document not found!")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
@@ -2010,7 +2061,7 @@ async def download(dataset_id, document_id):
         file,
         as_attachment=True,
         attachment_filename=doc[0].name,
-        mimetype="application/octet-stream",  # Set a default MIME type
+        mimetype=_mimetype_for_document(doc[0]),
     )
 
 @manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
@@ -2053,6 +2104,8 @@ async def download_document(document_id):
     """
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
+    if not DocumentService.accessible(document_id, current_user.id):
+        return get_data_error_result(message="Document not found!")
     doc = DocumentService.query(id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
@@ -2067,5 +2120,5 @@ async def download_document(document_id):
         file,
         as_attachment=True,
         attachment_filename=doc[0].name,
-        mimetype="application/octet-stream",  # Set a default MIME type
+        mimetype=_mimetype_for_document(doc[0]),
     )

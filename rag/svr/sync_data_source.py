@@ -59,11 +59,13 @@ from common.data_source import (
     ZendeskConnector,
     SeaFileConnector,
     RDBMSConnector,
+    BigQueryConnector,
     DingTalkAITableConnector,
     RestAPIConnector,
     OneDriveConnector,
     OutlookConnector,
     AzureBlobConnector,
+    SalesforceConnector,
     TeamsConnector,
     SlackConnector,
     SharePointConnector,
@@ -207,6 +209,7 @@ class SyncBase:
         document_batch_generator = await self._generate(task)
 
         failed_docs = 0
+        had_parse_errors = False
         added_docs = 0
         updated_docs = 0
         next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -231,8 +234,10 @@ class SyncBase:
 
             docs = []
             for doc in document_batch:
+                legacy_doc_id = hash128(f"{task['connector_id']}:{doc.id}")
+                new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{doc.id}")
                 d = {
-                    "id": hash128(f"{task['connector_id']}:{doc.id}"),
+                    "id": legacy_doc_id if legacy_doc_id in existing_doc_ids else new_doc_id,
                     "connector_id": task["connector_id"],
                     "source": self.SOURCE_NAME,
                     "semantic_identifier": doc.semantic_identifier,
@@ -254,6 +259,8 @@ class SyncBase:
                     f"{self.SOURCE_NAME}/{task['connector_id']}",
                     task["auto_parse"]
                 )
+                if err:
+                    had_parse_errors = True
                 SyncLogsService.increase_docs(
                     task["id"], max_update,
                     len(docs), "\n".join(err), len(err)
@@ -292,8 +299,9 @@ class SyncBase:
         logging.info(summary)
 
         if (
-            isinstance(self, _RDBMSBase)
+            isinstance(self, _CursorPersistingSyncBase)
             and failed_docs == 0
+            and not had_parse_errors
         ):
             self.connector.persist_sync_state()
         SyncLogsService.done(task["id"], task["connector_id"])
@@ -400,8 +408,9 @@ class _BlobLikeBase(SyncBase):
             if key_record.deleted:
                 continue
 
-            doc_id = hash128(key_record.key)
-            stored = existing_fingerprints.get(doc_id, "")
+            legacy_doc_id = hash128(f"{task['connector_id']}:{key_record.key}")
+            new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{key_record.key}")
+            stored = existing_fingerprints.get(legacy_doc_id, "") or existing_fingerprints.get(new_doc_id, "")
             if key_record.fingerprint and stored and key_record.fingerprint == stored:
                 bypass_count += 1
                 continue
@@ -640,14 +649,61 @@ class Notion(SyncBase):
 class Discord(SyncBase):
     SOURCE_NAME: str = FileSource.DISCORD
 
+    @staticmethod
+    def _coerce_str_list(raw):
+        """Normalise a config field that may arrive as a list (Tag input from
+        the new web form), a comma-separated string (legacy/SDK callers), or
+        None into a clean ``list[str]`` with empty entries dropped.
+
+        Fixes #15790 — the previous ``.split(',')`` call assumed a string and
+        raised ``'list' object has no attribute 'split'`` for any config saved
+        through the current UI.
+        """
+        if not raw:
+            return []
+        if isinstance(raw, str):
+            items = raw.split(",")
+        elif isinstance(raw, (list, tuple, set)):
+            items = list(raw)
+        else:
+            items = [raw]
+        # Drop None explicitly so it doesn't survive as the literal string
+        # "None" (str(None) == "None") — only stringify real values.
+        cleaned: list[str] = []
+        for item in items:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if text:
+                cleaned.append(text)
+        return cleaned
+
     async def _generate(self, task: dict):
-        server_ids: str | None = self.conf.get("server_ids", None)
-        # "channel1,channel2"
-        channel_names: str | None = self.conf.get("channel_names", None)
+        server_ids_raw = self.conf.get("server_ids", None)
+        # Web form stores channels under "channels"; older configs / SDK use
+        # "channel_names" — accept either so existing sources keep working.
+        channels_raw = self.conf.get("channels", None)
+        if channels_raw in (None, "", []):
+            channels_raw = self.conf.get("channel_names", None)
+
+        server_id_strs = self._coerce_str_list(server_ids_raw)
+        # DiscordConnector.__init__ takes server_ids as list[str] and converts
+        # to list[int] internally (common/data_source/discord_connector.py:247).
+        # Validate up-front so a malformed entry warns + drops here rather than
+        # crashing the connector's int() cast — but keep the strings.
+        server_ids: list[str] = []
+        for sid in server_id_strs:
+            try:
+                int(sid)
+            except ValueError:
+                logging.warning("Discord connector: ignoring non-integer server_id %r", sid)
+                continue
+            server_ids.append(sid)
+        channel_names = self._coerce_str_list(channels_raw)
 
         self.connector = DiscordConnector(
-            server_ids=server_ids.split(",") if server_ids else [],
-            channel_names=channel_names.split(",") if channel_names else [],
+            server_ids=server_ids,
+            channel_names=channel_names,
             start_date=datetime(1970, 1, 1, tzinfo=timezone.utc).strftime("%Y-%m-%d"),
             batch_size=self.conf.get("batch_size", 1024),
         )
@@ -1121,6 +1177,67 @@ class Outlook(SyncBase):
         else:
             details = "{}@<all-users>".format(self.conf.get("folder", "inbox"))
         self.log_connection("Outlook", details, task)
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
+
+
+class Salesforce(SyncBase):
+    SOURCE_NAME: str = FileSource.SALESFORCE
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        raw_objects = self.conf.get("objects")
+        if isinstance(raw_objects, str):
+            objects = [o.strip() for o in raw_objects.split(",") if o.strip()]
+        elif isinstance(raw_objects, list):
+            objects = [str(o).strip() for o in raw_objects if str(o).strip()]
+        else:
+            objects = None
+
+        self.connector = SalesforceConnector(
+            batch_size=batch_size,
+            objects=objects,
+            api_version=self.conf.get("api_version") or "v59.0",
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+        # Fail fast on invalid/inaccessible objects (typos, missing object
+        # permissions) before iterating, so a bad `objects` config surfaces
+        # as a clear error instead of silently skipping data at sync time.
+        # This guards configs that reach runtime without going through the
+        # UI (direct API callers, scripts, previously-persisted configs).
+        self.connector.validate_connector_settings()
+
+        # Always route through load_from_checkpoint so the per-object
+        # SystemModstamp cursor owns incrementality; poll_source would
+        # re-query every object from the caller's window each run and
+        # ignore the persisted per-object cursors entirely.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
+
+        instance_url = (self.conf.get("credentials") or {}).get("instance_url", "")
+        self.log_connection(
+            "Salesforce",
+            f"{instance_url} objects({','.join(self.connector.objects)})",
+            task,
+        )
 
         def wrapper():
             for document_batch in document_batch_generator:
@@ -1941,7 +2058,17 @@ class DingTalkAITable(SyncBase):
         return document_generator
 
 
-class _RDBMSBase(SyncBase):
+class _CursorPersistingSyncBase(SyncBase):
+    """Base for connectors that persist a sync cursor only after a fully successful sync.
+
+    ``_run_sync_task_logic`` calls ``self.connector.persist_sync_state()`` for any
+    subclass of this base when no document batch failed. Sources whose connector
+    exposes ``prepare_sync_state``/``persist_sync_state`` (RDBMS, BigQuery) extend
+    this instead of being matched by an ``isinstance(self, _RDBMSBase)`` check.
+    """
+
+
+class _RDBMSBase(_CursorPersistingSyncBase):
     DB_TYPE: str = ""
     LOG_NAME: str = ""
     DEFAULT_PORT: int = 0
@@ -1977,9 +2104,11 @@ class _RDBMSBase(SyncBase):
         else:
             poll_start = task["poll_range_start"]
             start_cursor_value = self.connector.get_saved_sync_cursor_value()
+            start_cursor_id = self.connector.get_saved_sync_cursor_id() if hasattr(self.connector, "get_saved_sync_cursor_id") else None
             document_generator = self.connector.load_from_cursor_range(
                 start_cursor_value,
                 self.connector._pending_sync_cursor_value,
+                start_cursor_id,
             )
             _begin_info = f"from {poll_start}"
 
@@ -1999,6 +2128,73 @@ class PostgreSQL(_RDBMSBase):
     DB_TYPE: str = "postgresql"
     LOG_NAME: str = "PostgreSQL"
     DEFAULT_PORT: int = 5432
+
+
+class BigQuery(_CursorPersistingSyncBase):
+    SOURCE_NAME: str = FileSource.BIGQUERY
+
+    def _get_source_prefix(self):
+        return "[BigQuery]"
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        connector_kwargs = {
+            "project_id": self.conf.get("project_id", ""),
+            "dataset_id": self.conf.get("dataset_id") or None,
+            "table_id": self.conf.get("table_id") or None,
+            "location": self.conf.get("location") or None,
+            "query": self.conf.get("query", ""),
+            "content_columns": self.conf.get("content_columns", ""),
+            "metadata_columns": self.conf.get("metadata_columns", ""),
+            "id_column": self.conf.get("id_column") or None,
+            "timestamp_column": self.conf.get("timestamp_column") or None,
+            "batch_size": batch_size,
+            "use_query_cache": self.conf.get("use_query_cache", True),
+        }
+        if self.conf.get("page_size") is not None:
+            connector_kwargs["page_size"] = int(self.conf["page_size"])
+        if self.conf.get("maximum_bytes_billed") is not None:
+            connector_kwargs["maximum_bytes_billed"] = int(self.conf["maximum_bytes_billed"])
+        if self.conf.get("job_timeout_ms") is not None:
+            connector_kwargs["job_timeout_ms"] = int(self.conf["job_timeout_ms"])
+
+        self.connector = BigQueryConnector(**connector_kwargs)
+
+        credentials = self.conf.get("credentials")
+        if not credentials:
+            raise ValueError("BigQuery connector is missing credentials.")
+
+        self.connector.load_credentials(credentials)
+        self.connector.validate_connector_settings()
+        self.connector.prepare_sync_state(task["connector_id"], self.conf)
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+        elif not self.connector.timestamp_column:
+            document_generator = self.connector.load_from_state()
+        else:
+            start_cursor_value = self.connector.get_saved_sync_cursor_value()
+            start_cursor_id = self.connector.get_saved_sync_cursor_id() if hasattr(self.connector, "get_saved_sync_cursor_id") else None
+            document_generator = self.connector.load_from_cursor_range(
+                start_cursor_value,
+                self.connector._pending_sync_cursor_value,
+                start_cursor_id,
+            )
+
+        target = (
+            f"{self.conf.get('dataset_id')}.{self.conf.get('table_id')}"
+            if not self.conf.get("query")
+            else "custom query"
+        )
+        self.log_connection("BigQuery", f"{self.conf.get('project_id')}:{target}", task)
+        return document_generator
 
 
 class REST_API(SyncBase):
@@ -2044,6 +2240,7 @@ func_factory = {
     FileSource.ONEDRIVE: OneDrive,
     FileSource.OUTLOOK: Outlook,
     FileSource.AZURE_BLOB: AzureBlob,
+    FileSource.SALESFORCE: Salesforce,
     FileSource.SLACK: Slack,
     FileSource.TEAMS: Teams,
     FileSource.MOODLE: Moodle,
@@ -2060,6 +2257,7 @@ func_factory = {
     FileSource.SEAFILE: SeaFile,
     FileSource.MYSQL: MySQL,
     FileSource.POSTGRESQL: PostgreSQL,
+    FileSource.BIGQUERY: BigQuery,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
     FileSource.REST_API: REST_API,
 }

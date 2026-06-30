@@ -51,15 +51,21 @@ def _stub(monkeypatch, name, **attrs):
 
 def _load_openai_api(monkeypatch):
     """Load api/apps/restful_apis/openai_api.py with the heavy deps stubbed."""
+    repo_root = Path(__file__).resolve().parents[5]
+    apps_mod = ModuleType("api.apps")
+    apps_mod.__path__ = [str(repo_root / "api" / "apps")]
+    apps_mod.current_user = SimpleNamespace(id="tenant-1")
+    apps_mod.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
+
     _stub(monkeypatch, "quart", Response=object, jsonify=lambda *a, **k: None)
-    _stub(monkeypatch, "api.apps", current_user=SimpleNamespace(id="tenant-1"), login_required=lambda func: func)
     # Pre-register nested modules so importlib finds them directly in
     # sys.modules without trying to traverse the stubbed parent package.
     _stub(
         monkeypatch,
         "api.apps.restful_apis._generation_params",
-        extract_generation_config=lambda *a, **k: ({}, {}),
-        merge_generation_config=lambda *a, **k: None,
+        extract_generation_config=lambda req: {},
+        merge_generation_config=lambda *_a, **_k: None,
     )
     _stub(monkeypatch, "api.db.services.dialog_service", DialogService=SimpleNamespace(), async_chat=lambda *_a, **_k: None)
     _stub(monkeypatch, "api.db.services.doc_metadata_service", DocMetadataService=SimpleNamespace())
@@ -84,7 +90,6 @@ def _load_openai_api(monkeypatch):
     _stub(monkeypatch, "rag.prompts.generator", chunks_format=lambda reference: list(reference) if isinstance(reference, list) else [])
     _stub(monkeypatch, "api.utils.reference_metadata_utils", enrich_chunks_with_document_metadata=lambda *_a, **_k: None)
 
-    repo_root = Path(__file__).resolve().parents[5]
     module_path = repo_root / "api" / "apps" / "restful_apis" / "openai_api.py"
     spec = importlib.util.spec_from_file_location("test_openai_stream_openai_api", module_path)
     module = importlib.util.module_from_spec(spec)

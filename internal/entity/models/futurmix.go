@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -25,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // FuturMixModel implements ModelDriver for FuturMix
@@ -35,20 +33,11 @@ type FuturMixModel struct {
 
 // NewFuturMixModel creates a new FuturMix model instance.
 func NewFuturMixModel(baseURL map[string]string, urlSuffix URLSuffix) *FuturMixModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &FuturMixModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: transport,
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -261,90 +250,38 @@ func (f *FuturMixModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("futurmix chat stream API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-
-	var dataLines []string
-	dispatchEvent := func() (bool, error) {
-		if len(dataLines) == 0 {
-			return false, nil
-		}
-		payload := strings.Join(dataLines, "\n")
-		dataLines = dataLines[:0]
-		if payload == "[DONE]" {
-			sawTerminal = true
-			return true, nil
-		}
-
-		var event futurmixChatResponse
-		if err := json.Unmarshal([]byte(payload), &event); err != nil {
-			return false, fmt.Errorf("futurmix: invalid SSE event: %w", err)
-		}
+	done, err := ParseSSEStream[futurmixChatResponse](resp.Body, func(event futurmixChatResponse) error {
 		if len(event.Choices) == 0 {
-			return false, nil
+			return nil
 		}
 		choice := event.Choices[0]
 		if choice.Delta.ReasoningContent != "" {
 			r := choice.Delta.ReasoningContent
 			if err := sender(nil, &r); err != nil {
-				return false, err
+				return err
 			}
 		}
 		if choice.Delta.Content != "" {
 			c := choice.Delta.Content
 			if err := sender(&c, nil); err != nil {
-				return false, err
+				return err
 			}
 		}
 		if choice.FinishReason != "" {
 			sawTerminal = true
-			return true, nil
 		}
-		return false, nil
-	}
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			// Blank line == event terminator. Flush accumulated `data:`
-			// lines as a single JSON payload.
-			stop, err := dispatchEvent()
-			if err != nil {
-				return err
-			}
-			if stop {
-				break
-			}
-			continue
-		}
-		if strings.HasPrefix(line, "data:") {
-
-			value := line[5:]
-			if strings.HasPrefix(value, " ") {
-				value = value[1:]
-			}
-			dataLines = append(dataLines, value)
-		}
-	}
-	if !sawTerminal {
-		if _, err := dispatchEvent(); err != nil {
-			return err
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !done && !sawTerminal {
 		return fmt.Errorf("futurmix: stream ended before [DONE] or finish_reason")
 	}
 
 	endOfStream := "[DONE]"
-	if err := sender(&endOfStream, nil); err != nil {
-		return err
-	}
-	return nil
+	return sender(&endOfStream, nil)
 }
 
 // Embed is not exposed by the FuturMix API per the public docs.
@@ -358,7 +295,7 @@ func (f *FuturMixModel) Rerank(modelName *string, query string, documents []stri
 }
 
 // ListModels is not documented as a public endpoint by FuturMix.
-func (f *FuturMixModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (f *FuturMixModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 

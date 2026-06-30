@@ -1251,7 +1251,7 @@ def test_chat_create_uses_direct_chat_fields_unit(monkeypatch):
 
 
 @pytest.mark.p2
-def test_list_chats_defaults_to_authorized_owner_ids_when_omitted_unit(monkeypatch):
+def test_list_chats_passes_empty_owner_ids_when_omitted_unit(monkeypatch):
     module = _load_chat_routes_unit_module(monkeypatch)
     captured = {}
     monkeypatch.setattr(
@@ -1280,12 +1280,13 @@ def test_list_chats_defaults_to_authorized_owner_ids_when_omitted_unit(monkeypat
     monkeypatch.setattr(module.DialogService, "get_by_tenant_ids", _get_by_tenant_ids)
     res = _run(module.list_chats.__wrapped__())
     assert res["code"] == 0
-    assert set(captured["owner_ids"]) == {"tenant-1", "team-tenant-2"}
+    assert captured["owner_ids"] == []
 
 
 @pytest.mark.p2
-def test_list_chats_rejects_unauthorized_owner_ids_unit(monkeypatch):
+def test_list_chats_filters_by_requested_owner_ids_unit(monkeypatch):
     module = _load_chat_routes_unit_module(monkeypatch)
+    captured = {}
     monkeypatch.setattr(
         module,
         "request",
@@ -1293,20 +1294,30 @@ def test_list_chats_rejects_unauthorized_owner_ids_unit(monkeypatch):
             args=SimpleNamespace(
                 get=lambda key, default=None: {
                     "keywords": "",
-                    "page": "0",
-                    "page_size": "0",
+                    "page": "1",
+                    "page_size": "10",
                     "orderby": "create_time",
                     "desc": "true",
                     "id": None,
                     "name": None,
                 }.get(key, default),
-                getlist=lambda key: ["foreign-tenant-id"] if key == "owner_ids" else [],
+                getlist=lambda key: ["team-tenant-2"] if key == "owner_ids" else [],
             )
         ),
     )
+
+    def _get_by_tenant_ids(owner_ids, *_args, **_kwargs):
+        captured["owner_ids"] = owner_ids
+        team_chat = _DummyDialogRecord({"id": "team-chat", "tenant_id": "team-tenant-2", "name": "team"}).to_dict()
+        own_chat = _DummyDialogRecord({"id": "own-chat", "tenant_id": "tenant-1", "name": "own"}).to_dict()
+        return ([team_chat, own_chat], 2)
+
+    monkeypatch.setattr(module.DialogService, "get_by_tenant_ids", _get_by_tenant_ids)
     res = _run(module.list_chats.__wrapped__())
-    assert res["code"] == module.RetCode.OPERATING_ERROR
-    assert "authorized owner_ids" in res["message"]
+    assert res["code"] == 0
+    assert captured["owner_ids"] == ["team-tenant-2"]
+    assert [chat["id"] for chat in res["data"]["chats"]] == ["team-chat"]
+    assert res["data"]["total"] == 1
 
 
 @pytest.mark.p2

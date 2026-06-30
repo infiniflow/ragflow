@@ -49,6 +49,7 @@ var operatorMapping = map[string]string{
 	">=":     "≥",
 	"<=":     "≤",
 	"!=":     "≠",
+	"==":     "=",
 }
 
 // ParseAndConvert converts raw API conditions into MetaFilterInput.
@@ -76,9 +77,15 @@ func ParseAndConvert(metadataCondition map[string]interface{}) *MetaFilterInput 
 		}
 		name, _ := cond["name"].(string)
 		if name == "" {
+			name, _ = cond["key"].(string) // OpenAI API metadata_condition uses "key"
+		}
+		if name == "" {
 			continue
 		}
 		op, _ := cond["comparison_operator"].(string)
+		if op == "" {
+			op, _ = cond["operator"].(string) // OpenAI API uses "operator"
+		}
 		op = convertOperator(op)
 		conditions = append(conditions, MetaCondition{
 			Operator: op,
@@ -97,13 +104,17 @@ func ParseAndConvert(metadataCondition map[string]interface{}) *MetaFilterInput 
 	}
 }
 
-// convertOperator translates Python-style operator to internal symbol.
+// convertOperator translates operator aliases to their canonical form.
+
 func convertOperator(op string) string {
 	if mapped, exists := operatorMapping[op]; exists {
 		return mapped
 	}
 	return op
 }
+
+// NormalizeOperator is the exported equivalent of convertOperator.
+func NormalizeOperator(op string) string { return convertOperator(op) }
 
 // MetaFilter applies filter conditions against metadata and returns matching doc IDs.
 // Python equivalent: common/metadata_utils.py::meta_filter()
@@ -167,10 +178,65 @@ func MetaFilter(metas MetaData, input *MetaFilterInput) []string {
 }
 
 // filterOut returns matching doc IDs for a single (value → matchedDocs) map and operator.
+// For "in" and "not in", it delegates to filterSet for O(n+m) hash-map-based filtering;
+// all other operators use matchValue for per-element predicate evaluation.
 func filterOut(v2docs MetaValueDocs, operator string, value interface{}) []string {
+	if operator == "in" || operator == "not in" {
+		return filterSet(v2docs, operator, value)
+	}
 	var ids []string
 	for input, docids := range v2docs {
 		if matchValue(input, operator, value) {
+			ids = append(ids, docids...)
+		}
+	}
+	return ids
+}
+
+// filterSet handles "in" and "not in" operators using O(1) hash map lookups.
+//
+// Instead of the O(n×m) linear scan that matchValue performs for these operators
+// (n = distinct metadata values, m = filter list size), filterSet builds a lookup
+// map from the filter value list once (O(m)) then tests each metadata entry in
+// O(1) time (O(n)), yielding O(n+m) overall.
+//
+// Case sensitivity follows the same contract as matchValue:
+//   - "in":      case-sensitive  (exact match via toString(item) == input)
+//   - "not in":  case-insensitive (strings.ToLower on both sides)
+//
+// When value is not a []interface{} (should not happen in normal call paths),
+// filterSet returns nil — no metadata values match "in", and for "not in" it
+// defensively returns nil as well (rather than returning all entries, which could
+// silently bypass a misconfigured filter).
+func filterSet(v2docs MetaValueDocs, operator string, value interface{}) []string {
+	list, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+
+	if operator == "not in" {
+		// Build case-insensitive exclusion set.
+		lookup := make(map[string]bool, len(list))
+		for _, item := range list {
+			lookup[strings.ToLower(toString(item))] = true
+		}
+		var ids []string
+		for input, docids := range v2docs {
+			if !lookup[strings.ToLower(input)] {
+				ids = append(ids, docids...)
+			}
+		}
+		return ids
+	}
+
+	// "in": build case-sensitive inclusion set.
+	lookup := make(map[string]bool, len(list))
+	for _, item := range list {
+		lookup[toString(item)] = true
+	}
+	var ids []string
+	for input, docids := range v2docs {
+		if lookup[input] {
 			ids = append(ids, docids...)
 		}
 	}
@@ -190,31 +256,18 @@ func matchValue(input string, operator string, value interface{}) bool {
 
 	switch operator {
 	case "contains":
-		return strings.Contains(input, valStr)
+		return strings.Contains(strings.ToLower(input), strings.ToLower(valStr))
 	case "not contains":
-		return !strings.Contains(input, valStr)
+		return !strings.Contains(strings.ToLower(input), strings.ToLower(valStr))
 	case "start with":
 		return strings.HasPrefix(strings.ToLower(input), strings.ToLower(valStr))
 	case "end with":
 		return strings.HasSuffix(strings.ToLower(input), strings.ToLower(valStr))
-	case "in":
-		if list, ok := value.([]interface{}); ok {
-			for _, item := range list {
-				if toString(item) == input {
-					return true
-				}
-			}
-		}
-		return false
-	case "not in":
-		if list, ok := value.([]interface{}); ok {
-			for _, item := range list {
-				if toString(item) == input {
-					return false
-				}
-			}
-		}
-		return true
+
+		// "in" and "not in" are intentionally omitted from matchValue.
+		// filterOut (line 177) intercepts these operators and delegates
+		// them to filterSet for O(n+m) hash-map-based filtering, so they
+		// never reach this function through normal call paths.
 	}
 
 	// Comparison operators: =, ≠, >, <, ≥, ≤
@@ -227,7 +280,7 @@ func compareValues(a, b, operator string) bool {
 	// Non-date values should not be compared against date filters (matching Python behavior).
 	if isDate(b) {
 		if !isDate(a) {
-			return false
+			return operator == "≠"
 		}
 		return compareString(a, b, operator)
 	}
