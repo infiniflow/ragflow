@@ -356,7 +356,7 @@ class DocumentService(CommonService):
     def get_all_doc_ids_by_kb_ids(cls, kb_ids):
         fields = [cls.model.id, cls.model.kb_id]
         docs = cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids))
-        docs.order_by(cls.model.create_time.asc())
+        docs = docs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later
         offset, limit = 0, 100
         res = []
@@ -422,7 +422,7 @@ class DocumentService(CommonService):
     def get_all_docs_by_creator_id(cls, creator_id):
         fields = [cls.model.id, cls.model.kb_id, cls.model.token_num, cls.model.chunk_num, Knowledgebase.tenant_id]
         docs = cls.model.select(*fields).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(cls.model.created_by == creator_id)
-        docs.order_by(cls.model.create_time.asc())
+        docs = docs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later
         offset, limit = 0, 100
         res = []
