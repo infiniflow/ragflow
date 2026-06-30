@@ -546,7 +546,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     d["important_kwd"] = req.get("important_keywords", [])
     d["important_tks"] = rag_tokenizer.tokenize(" ".join(req.get("important_keywords", [])))
     d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
-    d["question_tks"] = rag_tokenizer.tokenize("\n".join(req.get("questions", [])))
+    d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
     d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
     d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
     d["kb_id"] = dataset_id
@@ -689,7 +689,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         if not isinstance(req["questions"], list):
             return get_error_data_result("`questions` should be a list")
         d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
-        d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["questions"]))
+        d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
     if "available" in req:
         d["available_int"] = int(req["available"])
     if "positions" in req:
