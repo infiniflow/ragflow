@@ -160,7 +160,7 @@ func NextThinkDelta(state *ThinkStreamState, chunk string, minTokens int) []Thin
 	var deltas []ThinkDelta
 
 	// Phase 1: handle deferred </think> from a previous chunk.
-	if state.closePending && !strings.Contains(pending, thinkClose) {
+	if state.closePending {
 		state.closePending = false
 		if piece := flushThinkBufferInternal(state); piece.Value != "" {
 			deltas = append(deltas, piece)
@@ -168,18 +168,9 @@ func NextThinkDelta(state *ThinkStreamState, chunk string, minTokens int) []Thin
 		state.inThink = false
 		deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaMarker, Value: thinkClose})
 		if state.pendingAfterClose != "" {
-			answerPiece := state.pendingAfterClose
+			pending = state.pendingAfterClose + pending
 			state.pendingAfterClose = ""
-			if out, kind := emitText(state, "answer", answerPiece, minTokens); out != "" {
-				deltas = append(deltas, ThinkDelta{Kind: kind, Value: out})
-			}
 		}
-		if answerPiece := stripThinkTags(pending); answerPiece != "" {
-			if out, kind := emitText(state, "answer", answerPiece, minTokens); out != "" {
-				deltas = append(deltas, ThinkDelta{Kind: kind, Value: out})
-			}
-		}
-		return deltas
 	}
 
 	// Phase 2: process pending text for think tags.
@@ -241,20 +232,19 @@ func NextThinkDelta(state *ThinkStreamState, chunk string, minTokens int) []Thin
 				deltas = append(deltas, ThinkDelta{Kind: kind, Value: out})
 			}
 		}
-		afterVisible := stripThinkTags(after)
-		if strings.TrimSpace(afterVisible) != "" {
+		if strings.TrimSpace(after) != "" {
 			if thinkPiece := flushThinkBufferInternal(state); thinkPiece.Value != "" {
 				deltas = append(deltas, thinkPiece)
 			}
 			state.inThink = false
 			deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaMarker, Value: thinkClose})
-			pending = afterVisible
+			pending = after
 			continue
 		}
 		// No visible text after close — defer the marker.
 		state.closePending = true
-		if afterVisible != "" {
-			state.pendingAfterClose += afterVisible
+		if after != "" {
+			state.pendingAfterClose += after
 		}
 		pending = ""
 		break
@@ -342,7 +332,8 @@ func StreamThinkTagDelta(ctx context.Context, chunks <-chan string, minTokens in
 	return out
 }
 
-// ExtractVisibleAnswer normalizes think tags in raw model output
+// ExtractVisibleAnswer returns the visible answer text after the last </think>.
+// Stray <think>/</think> tags are stripped. If there is no </think>, all tags are stripped.
 func ExtractVisibleAnswer(raw string) string {
 	if raw == "" {
 		return ""
@@ -352,15 +343,8 @@ func ExtractVisibleAnswer(raw string) string {
 	}
 
 	lastClose := strings.LastIndex(raw, thinkClose)
-	thought := raw[:lastClose]
 	answer := raw[lastClose+len(thinkClose):]
-
-	thought = strings.TrimSpace(stripThinkTags(thought))
-	answer = stripThinkTags(answer)
-	if thought == "" {
-		return answer
-	}
-	return thinkOpen + thought + thinkClose + answer
+	return stripThinkTags(answer)
 }
 
 // BufferAnswerDelta accumulates answer text in state.answerBuffer.

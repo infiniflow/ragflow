@@ -165,28 +165,28 @@ func TestExtractVisibleAnswer_Empty(t *testing.T) {
 
 func TestExtractVisibleAnswer_WithThink(t *testing.T) {
 	raw := "<think>some reasoning</think>the visible answer"
-	if got := ExtractVisibleAnswer(raw); got != "<think>some reasoning</think>the visible answer" {
+	if got := ExtractVisibleAnswer(raw); got != "the visible answer" {
 		t.Errorf("got %q", got)
 	}
 }
 
 func TestExtractVisibleAnswer_ThinkOnly(t *testing.T) {
 	raw := "<think>only reasoning here</think>"
-	if got := ExtractVisibleAnswer(raw); got != "<think>only reasoning here</think>" {
+	if got := ExtractVisibleAnswer(raw); got != "" {
 		t.Errorf("got %q", got)
 	}
 }
 
 func TestExtractVisibleAnswer_MultipleThinks(t *testing.T) {
 	raw := "<think>first</think>visible1<think>second</think>visible2"
-	if got := ExtractVisibleAnswer(raw); got != "<think>firstvisible1second</think>visible2" {
+	if got := ExtractVisibleAnswer(raw); got != "visible2" {
 		t.Errorf("got %q", got)
 	}
 }
 
 func TestExtractVisibleAnswer_NestedTags(t *testing.T) {
 	raw := "<think><think>nested</think></think>answer"
-	if got := ExtractVisibleAnswer(raw); got != "<think>nested</think>answer" {
+	if got := ExtractVisibleAnswer(raw); got != "answer" {
 		t.Errorf("got %q", got)
 	}
 }

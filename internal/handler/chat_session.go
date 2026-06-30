@@ -117,12 +117,14 @@ type ChatCompletionsRequest struct {
 
 // ChatCompletions chat completion
 // @Summary Chat Completion
-// @Description Send messages to the chat model and get a response. Supports streaming and non-streaming modes.
+// @Description Send messages to the chat model and get a response.
+// @Description Default is streaming (text/event-stream); set stream:false for JSON.
 // @Tags chat_session
 // @Accept json
-// @Produce json
+// @Produce json, text/event-stream
 // @Param request body ChatCompletionsRequest true "chat completion request"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} map[string]interface{} "Non-streaming JSON response"
+// @Success 200 {string} text/event-stream "Streaming SSE response"
 // @Router /api/v1/chat/completions [post]
 func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
@@ -209,7 +211,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		c.Header("Connection", "keep-alive")
 		c.Header("X-Accel-Buffering", "no")
 
-		streamChan := make(chan string)
+		streamChan := make(chan string, 32)
 		reqCtx := c.Request.Context()
 		go func() {
 			defer close(streamChan)

@@ -874,6 +874,15 @@ func (s *ChatSessionService) ChatCompletions(
 		return nil, err
 	}
 
+	sendOrCancel := func(data string) bool {
+		select {
+		case streamChan <- data:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+
 	common.Info("ChatCompletions started")
 
 	// --- 1. Normalize messages ---
@@ -988,7 +997,7 @@ func (s *ChatSessionService) ChatCompletions(
 						if chatID != "" {
 							ans["chat_id"] = chatID
 						}
-						streamChan <- fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))
+						sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
 					}
 					finalLegacyAnswer = s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
 					continue
@@ -1011,7 +1020,7 @@ func (s *ChatSessionService) ChatCompletions(
 				if chatID != "" {
 					ans["chat_id"] = chatID
 				}
-				streamChan <- fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))
+				sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
 			} else {
 				if result.Final {
 					if strings.Contains(result.Answer, "**ERROR**") {
@@ -1019,7 +1028,7 @@ func (s *ChatSessionService) ChatCompletions(
 						if chatID != "" {
 							ans["chat_id"] = chatID
 						}
-						streamChan <- fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))
+						sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
 					}
 					continue
 				}
@@ -1037,7 +1046,7 @@ func (s *ChatSessionService) ChatCompletions(
 				if chatID != "" {
 					ans["chat_id"] = chatID
 				}
-				streamChan <- fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))
+				sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
 			}
 		}
 		if legacy && finalLegacyAnswer != nil {
@@ -1045,11 +1054,11 @@ func (s *ChatSessionService) ChatCompletions(
 			delete(finalLegacyAnswer, "start_to_think")
 			delete(finalLegacyAnswer, "end_to_think")
 			finalChunk := sseWrapper{Code: 0, Message: "", Data: sanitizeJSONFloats(finalLegacyAnswer)}
-			streamChan <- fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(finalChunk))
+			sendOrCancel(fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(finalChunk)))
 		}
 
 		wrapper := sseWrapper{Code: 0, Message: "", Data: true}
-		streamChan <- fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(wrapper))
+		sendOrCancel(fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(wrapper)))
 
 		// Persist session state (matches Python's update_by_id after loop)
 		if session != nil {
