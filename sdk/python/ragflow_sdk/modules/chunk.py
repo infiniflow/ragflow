@@ -37,6 +37,7 @@ class Chunk(Base):
         self.document_keyword = ""
         self.document_id = ""
         self.available = True
+        self.chunk_metadata = {}
         # Additional fields for retrieval results
         self.similarity = 0.0
         self.vector_similarity = 0.0

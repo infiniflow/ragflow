@@ -16,6 +16,7 @@
 import base64
 import binascii
 import datetime
+import json
 import logging
 import re
 
@@ -104,6 +105,7 @@ class Chunk(BaseModel):
     image_id: str = ""
     available: bool = True
     positions: list[list[int]] = Field(default_factory=list)
+    chunk_metadata: dict = Field(default_factory=dict)
 
     @validator("positions")
     def validate_positions(cls, value):
@@ -138,7 +140,23 @@ def _map_doc(doc):
 def _strip_chunk_runtime_fields(chunk):
     for name in [name for name in chunk.keys() if re.search(r"(_vec$|_sm_|_tks|_ltks)", name)]:
         del chunk[name]
+    _deserialize_chunk_metadata(chunk)
     return chunk
+
+
+def _deserialize_chunk_metadata(chunk):
+    raw = chunk.get("chunk_metadata_kwd")
+    if isinstance(raw, str) and raw:
+        try:
+            chunk["chunk_metadata"] = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            logging.warning("chunk_metadata_kwd contains invalid JSON for chunk %s; defaulting to {}", chunk.get("id", "unknown"))
+            chunk["chunk_metadata"] = {}
+    elif isinstance(raw, dict):
+        chunk["chunk_metadata"] = raw
+    else:
+        chunk["chunk_metadata"] = {}
+    chunk.pop("chunk_metadata_kwd", None)
 
 
 def _get_dataset_tenant_id(dataset_id):
@@ -453,6 +471,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
             "positions": chunk.get("position_int", []),
             "tag_kwd": chunk.get("tag_kwd", []),
             "tag_feas": chunk.get("tag_feas", {}),
+            "chunk_metadata": chunk.get("chunk_metadata", {}),
         }
         res["chunks"].append(final_chunk)
         _ = Chunk(**final_chunk)
@@ -466,6 +485,17 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         )
         res["total"] = sres.total
         for chunk_id in sres.ids:
+            raw_meta = sres.field[chunk_id].get("chunk_metadata_kwd", "")
+            if isinstance(raw_meta, str) and raw_meta:
+                try:
+                    chunk_metadata = json.loads(raw_meta)
+                except (json.JSONDecodeError, ValueError):
+                    logging.warning("chunk_metadata_kwd contains invalid JSON for chunk %s; defaulting to {}", chunk_id)
+                    chunk_metadata = {}
+            elif isinstance(raw_meta, dict):
+                chunk_metadata = raw_meta
+            else:
+                chunk_metadata = {}
             d = {
                 "id": chunk_id,
                 "content": (
@@ -482,6 +512,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                 "image_id": sres.field[chunk_id].get("img_id", ""),
                 "available": bool(int(sres.field[chunk_id].get("available_int", "1"))),
                 "positions": sres.field[chunk_id].get("position_int", []),
+                "chunk_metadata": chunk_metadata,
             }
             res["chunks"].append(d)
             _ = Chunk(**d)
@@ -564,6 +595,10 @@ async def add_chunk(tenant_id, dataset_id, document_id):
             d["tag_feas"] = validate_tag_features(req["tag_feas"])
         except ValueError as exc:
             return get_error_data_result(f"`tag_feas` {exc}")
+    if "chunk_metadata" in req:
+        if not isinstance(req["chunk_metadata"], dict):
+            return get_error_data_result("`chunk_metadata` is required to be a dict")
+        d["chunk_metadata_kwd"] = json.dumps(req["chunk_metadata"], ensure_ascii=False)
 
     if "image_base64" in req:
         image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
@@ -598,6 +633,13 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         "img_id": "image_id",
     }
     renamed_chunk = {new_key: d[key] for key, new_key in key_mapping.items() if key in d}
+    if "chunk_metadata_kwd" in d:
+        try:
+            renamed_chunk["chunk_metadata"] = json.loads(d["chunk_metadata_kwd"])
+        except (json.JSONDecodeError, ValueError):
+            renamed_chunk["chunk_metadata"] = {}
+    else:
+        renamed_chunk["chunk_metadata"] = {}
     _ = Chunk(**renamed_chunk)
     return get_result(data={"chunk": renamed_chunk})
 
@@ -707,6 +749,10 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
             d["tag_feas"] = validate_tag_features(req["tag_feas"])
         except ValueError as exc:
             return get_error_data_result(f"`tag_feas` {exc}")
+    if "chunk_metadata" in req:
+        if not isinstance(req["chunk_metadata"], dict):
+            return get_error_data_result("`chunk_metadata` should be a dict")
+        d["chunk_metadata_kwd"] = json.dumps(req["chunk_metadata"], ensure_ascii=False)
     if "image_base64" in req:
         image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
         if image_err:
