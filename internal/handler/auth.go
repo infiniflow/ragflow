@@ -40,6 +40,7 @@ type userTokenResolver interface {
 	GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error)
 	GetUserByAPIToken(token string) (*entity.User, common.ErrorCode, error)
 	GetUserByBetaAPIToken(token string) (*entity.User, common.ErrorCode, error)
+	GetAPITokenByBeta(authorization string) (*entity.APIToken, error)
 }
 
 // NewAuthHandler create auth handler
@@ -81,15 +82,33 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		// Then try a regular API token (non-beta public bot flow).
 		if u, code, err := h.userService.GetUserByAPIToken(auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
 			c.Set("auth_via_api_token", true)
 			c.Next()
 			return
 		}
-		// Fall back to beta API token (public bot access).
+		// Fall back to beta API token (public bot access). The
+		// middleware also looks up the APIToken directly so the
+		// downstream handler can read its DialogID (the real
+		// agent_id) without re-parsing the Authorization header.
+		// Mirrors the python
+		// `APIToken.query(beta=token).dialog_id` lookup in
+		// bot_api.py:agent_bot_logs.
 		if u, code, err := h.userService.GetUserByBetaAPIToken(auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
+			if tok, terr := h.userService.GetAPITokenByBeta(auth); terr == nil && tok != nil && tok.DialogID != nil {
+				// tok.DialogID is *string (nullable in the schema), but
+				// downstream handlers (GetAgentbotLogs, GetAgentLogs)
+				// read "agent_id" with agentID.(string) — they cannot
+				// type-assert a *string. Dereference and gate on nil so a
+				// row with a NULL dialog_id still surfaces the
+				// "not bound" sentinel rather than silently leaking the
+				// pointer (which would later fail the string assertion).
+				c.Set("agent_id", *tok.DialogID)
+				c.Set("api_token", tok)
+			}
 			c.Next()
 			return
 		}

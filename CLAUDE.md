@@ -72,7 +72,9 @@ Key consequence: task executors import a different code surface than the API ser
 # Install Python dependencies
 uv sync --python 3.13 --all-extras
 uv run python3 ragflow_deps/download_deps.py
-pre-commit install
+
+# Run once after the first clone to enable local Git hooks
+lefthook install
 
 # Start dependent services
 docker compose -f docker/docker-compose-base.yml up -d
