@@ -247,41 +247,20 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 	return entities, nil
 }
 
-// findModelDir locates the spaCy model directory.
-// Searches standard locations.
+// findModelDir locates the spaCy model directory under /usr/share/infinity/resource/spacy.
 func (e *Extractor) findModelDir() string {
 	modelName := langModel[e.Lang]
 	if modelName == "" {
 		modelName = "en_core_web_sm"
 	}
-	// Standard spaCy data paths (with exported model.ckpt+model.bin)
-	candidates := []string{
-		"./models/" + modelName,
-		"models/" + modelName,
-		"/usr/share/infinity/resource/spacy/" + modelName,
-		"/usr/local/lib/python3.10/site-packages/" + modelName + "/" + modelName + "-3.8.0",
-		"/usr/lib/python3.10/site-packages/" + modelName + "/" + modelName + "-3.8.0",
-		"/opt/conda/lib/python3.10/site-packages/" + modelName + "/" + modelName + "-3.8.0",
+	base := "/usr/share/infinity/resource/spacy/" + modelName
+	if dirExists(base) {
+		return base
 	}
-	// Also search .venv paths
-	venvCandidates := []string{
-		".venv/lib/python3.13/site-packages/" + modelName + "/" + modelName + "-3.8.0",
-		".venv/lib/python3.12/site-packages/" + modelName + "/" + modelName + "-3.8.0",
-		".venv/lib/python3.11/site-packages/" + modelName + "/" + modelName + "-3.8.0",
-		".venv/lib/python3.10/site-packages/" + modelName + "/" + modelName + "-3.8.0",
-	}
-	candidates = append(candidates, venvCandidates...)
-
-	for _, c := range candidates {
-		if dirExists(c) {
-			return c
-		}
-	}
-	// Fallback: try `python -m spacy info` or environment variable
 	if p := getenv("SPACY_MODEL_DIR"); p != "" {
 		return p
 	}
-	return "./models/" + modelName
+	return base
 }
 
 func dirExists(path string) bool {
