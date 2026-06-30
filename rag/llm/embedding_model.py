@@ -32,6 +32,7 @@ from common import settings
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from rag.llm.key_utils import _normalize_replicate_key
+from rag.utils.url_utils import ensure_v1
 import logging
 import base64
 
@@ -259,7 +260,8 @@ class OpenAIEmbed(Base):
     def __init__(self, key, model_name="text-embedding-ada-002", base_url="https://api.openai.com/v1"):
         if not base_url:
             base_url = "https://api.openai.com/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
 
     def _call(self, batch):
@@ -281,7 +283,7 @@ class LocalAIEmbed(Base):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local embedding model url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
 
@@ -322,7 +324,8 @@ class AzureEmbed(OpenAIEmbed):
         from openai.lib.azure import AzureOpenAI
 
         api_key, api_version = _resolve_azure_credentials(key)
-        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
+        self.base_url = ensure_v1(kwargs["base_url"])
+        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=self.base_url, api_version=api_version)
         self.model_name = model_name
 
 
@@ -467,7 +470,8 @@ class OllamaEmbed(Base):
     _special_tokens = ["<|endoftext|>"]
 
     def __init__(self, key, model_name, **kwargs):
-        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bearer {key}"})
+        self.base_url = ensure_v1(kwargs["base_url"])
+        self.client = Client(host=self.base_url) if not key or key == "x" else Client(host=self.base_url, headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
         self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
 
@@ -504,7 +508,7 @@ class XinferenceEmbed(Base):
     _FACTORY_NAME = "Xinference"
 
     def __init__(self, key, model_name="", base_url=""):
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
@@ -807,7 +811,7 @@ class NvidiaEmbed(Base):
         if not base_url:
             base_url = "https://integrate.api.nvidia.com/v1/embeddings"
         self.api_key = key
-        self.base_url = base_url
+        self.base_url = ensure_v1(base_url)
         self.headers = {
             "accept": "application/json",
             "Content-Type": "application/json",
@@ -846,7 +850,7 @@ class LmStudioEmbed(LocalAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key="lm-studio", base_url=base_url)
         self.model_name = model_name
 
@@ -857,7 +861,7 @@ class OpenAI_APIEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
 
@@ -1149,7 +1153,7 @@ class GPUStackEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
 
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name

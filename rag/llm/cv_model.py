@@ -34,6 +34,7 @@ from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
+from rag.utils.url_utils import ensure_v1
 
 
 
@@ -268,9 +269,10 @@ class GptV4(Base):
     def __init__(self, key, model_name="gpt-4-vision-preview", lang="Chinese", base_url="https://api.openai.com/v1", **kwargs):
         if not base_url:
             base_url = "https://api.openai.com/v1"
+        self.base_url = ensure_v1(base_url)
         self.api_key = key
-        self.client = OpenAI(api_key=key, base_url=base_url)
-        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
         self.lang = lang
         super().__init__(**kwargs)
@@ -316,8 +318,9 @@ class AzureGptV4(GptV4):
 
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
         api_key, api_version = _resolve_azure_credentials(key)
-        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
-        self.async_client = AsyncAzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
+        self.base_url = ensure_v1(kwargs["base_url"])
+        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=self.base_url, api_version=api_version)
+        self.async_client = AsyncAzureOpenAI(api_key=api_key, azure_endpoint=self.base_url, api_version=api_version)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -558,8 +561,9 @@ class StepFunCV(GptV4):
     def __init__(self, key, model_name="step-1v-8k", lang="Chinese", base_url="https://api.stepfun.com/v1", **kwargs):
         if not base_url:
             base_url = "https://api.stepfun.com/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
-        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -579,9 +583,9 @@ class VolcEngineCV(GptV4):
         except JSONDecodeError:
             api_key = key
             llm_name = model_name
-
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
-        self.async_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=api_key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=api_key, base_url=self.base_url)
         self.model_name = llm_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -592,9 +596,9 @@ class LmStudioCV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
-        self.client = OpenAI(api_key="lm-studio", base_url=base_url)
-        self.async_client = AsyncOpenAI(api_key="lm-studio", base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key="lm-studio", base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key="lm-studio", base_url=self.base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -606,9 +610,9 @@ class OpenAI_APICV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
         if not base_url:
             raise ValueError("url cannot be None")
-        base_url = urljoin(base_url, "v1")
-        self.client = OpenAI(api_key=key, base_url=base_url)
-        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name.split("___")[0]
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -653,8 +657,9 @@ class OpenRouterCV(GptV4):
         except JSONDecodeError:
             api_key = key
             provider_order = ""
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
-        self.async_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=api_key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=api_key, base_url=self.base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -683,7 +688,7 @@ class LocalAICV(GptV4):
     def __init__(self, key, model_name, base_url, lang="Chinese", **kwargs):
         if not base_url:
             raise ValueError("Local cv model url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key="empty", base_url=base_url)
         self.async_client = AsyncOpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
@@ -695,7 +700,7 @@ class XinferenceCV(GptV4):
     _FACTORY_NAME = "Xinference"
 
     def __init__(self, key, model_name="", lang="Chinese", base_url="", **kwargs):
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
@@ -709,7 +714,7 @@ class GPUStackCV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
@@ -733,7 +738,8 @@ class OllamaCV(Base):
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
         from ollama import Client
 
-        self.client = Client(host=kwargs["base_url"])
+        self.base_url = ensure_v1(kwargs["base_url"])
+        self.client = Client(host=self.base_url)
         self.model_name = model_name
         self.lang = lang
         self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
@@ -1359,8 +1365,9 @@ class RAGconCV(GptV4):
             base_url = "https://connect.ragcon.com/v1"
 
         # Initialize client
-        self.client = OpenAI(api_key=key, base_url=base_url)
-        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
         self.lang = lang
 
