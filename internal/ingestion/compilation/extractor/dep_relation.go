@@ -311,6 +311,9 @@ func DepExtractRelations(text string, tokens []DepToken, entities []Entity, lang
 		}
 	}
 
+	// Co-occurrence (always, matching Python DepRelationExtractor.extract())
+	relations = append(relations, extractCooccurrence(text, entities, 100)...)
+
 	relations = inferMultiHop(relations)
 	relations = dedupRelations(relations)
 	return relations
@@ -362,12 +365,17 @@ func inferMultiHop(rels []Relation) []Relation {
 							conf = r2.Confidence
 						}
 						conf *= 0.9
-						inferred = append(inferred, Relation{
+						r := Relation{
 							Subject:    r.Subject,
 							Predicate:  inferredPred,
 							Object:     r2.Object,
 							Confidence: conf,
-						})
+							Metadata: map[string]interface{}{
+								"method": "multi_hop",
+								"via":    r.Predicate + "→" + r2.Predicate,
+							},
+						}
+						inferred = append(inferred, r)
 					}
 				}
 			}
@@ -535,7 +543,9 @@ func extractFromRoot(text string, rootIdx int, tokens []DepToken, entityMap map[
 				} else {
 					subj, obj = *agentEntity, *effectiveNsubjpass
 				}
-				relations = append(relations, makeRelation(subj, relType, obj, 0.90))
+				r := makeRelation(subj, relType, obj, 0.90)
+				r.Metadata = map[string]interface{}{"method": "passive", "verb": verbLemma}
+				relations = append(relations, r)
 				break
 			}
 		}
@@ -545,12 +555,16 @@ func extractFromRoot(text string, rootIdx int, tokens []DepToken, entityMap map[
 	if effectiveNsubj != nil {
 		if dobj != nil {
 			if relType := lookupVerb(verbLemma, ""); relType != "" {
-				relations = append(relations, makeRelation(*effectiveNsubj, relType, *dobj, 0.85))
+				r := makeRelation(*effectiveNsubj, relType, *dobj, 0.85)
+				r.Metadata = map[string]interface{}{"method": "active", "verb": verbLemma}
+				relations = append(relations, r)
 			}
 		}
 		for _, pe := range prepList {
 			if relType := lookupVerb(verbLemma, pe.prep); relType != "" {
-				relations = append(relations, makeRelation(*effectiveNsubj, relType, pe.entity, 0.85))
+				r := makeRelation(*effectiveNsubj, relType, pe.entity, 0.85)
+				r.Metadata = map[string]interface{}{"method": "active_prep", "verb": verbLemma, "prep": pe.prep}
+				relations = append(relations, r)
 			}
 		}
 	}
@@ -563,7 +577,9 @@ func extractFromRoot(text string, rootIdx int, tokens []DepToken, entityMap map[
 				relType = lookupVerb("be+"+verbLemma, pe.prep)
 			}
 			if relType != "" {
-				relations = append(relations, makeRelation(*effectiveNsubjpass, relType, pe.entity, 0.85))
+				r := makeRelation(*effectiveNsubjpass, relType, pe.entity, 0.85)
+				r.Metadata = map[string]interface{}{"method": "passive_prep", "verb": verbLemma, "prep": pe.prep}
+				relations = append(relations, r)
 			}
 		}
 	}
@@ -618,7 +634,9 @@ func extractCopula(text string, rootIdx int, tokens []DepToken, entityMap map[st
 	for keyword, relTypes := range depCopulaTitles {
 		if strings.Contains(titleLemma, keyword) {
 			for _, rt := range relTypes {
-				relations = append(relations, makeRelation(subj, rt, *prepObj, 0.88))
+				r := makeRelation(subj, rt, *prepObj, 0.88)
+				r.Metadata = map[string]interface{}{"method": "copula", "title": titleLemma}
+				relations = append(relations, r)
 			}
 			break
 		}
@@ -630,9 +648,14 @@ func extractCopula(text string, rootIdx int, tokens []DepToken, entityMap map[st
 // Helpers
 // ---------------------------------------------------------------------------
 
-type prepEntry struct {
-	prep   string
-	entity Entity
+func makeRelation(subj Entity, pred string, obj Entity, conf float64) Relation {
+	return Relation{
+		Subject:    subj,
+		Predicate:  pred,
+		Object:     obj,
+		Confidence: conf,
+		Metadata:   map[string]interface{}{},
+	}
 }
 
 func lookupVerb(verb, prep string) string {
@@ -673,6 +696,13 @@ func findEntityInSubtree(idx int, tokens []DepToken, emap map[string][]Entity) *
 	key := strings.ToLower(strings.TrimSpace(text))
 	if ent := findBestEntity(key, emap); ent != nil {
 		return ent
+	}
+	// For CJK (no spaces), also try joining without spaces
+	noSpace := strings.ToLower(strings.TrimSpace(strings.Join(words, "")))
+	if noSpace != key {
+		if ent := findBestEntity(noSpace, emap); ent != nil {
+			return ent
+		}
 	}
 	for _, sep := range []string{" and ", " or ", ", "} {
 		if strings.Contains(key, sep) {
@@ -729,15 +759,6 @@ func sortByIndex(ts []DepToken) {
 				ts[i], ts[j] = ts[j], ts[i]
 			}
 		}
-	}
-}
-
-func makeRelation(subj Entity, pred string, obj Entity, conf float64) Relation {
-	return Relation{
-		Subject:    subj,
-		Predicate:  pred,
-		Object:     obj,
-		Confidence: conf,
 	}
 }
 

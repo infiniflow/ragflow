@@ -41,34 +41,44 @@ import (
 
 // Entity represents an extracted named entity.
 type Entity struct {
-	Text       string  `json:"text"`
-	Label      string  `json:"label"`
-	StartChar  int     `json:"start_char"`
-	EndChar    int     `json:"end_char"`
-	Confidence float64 `json:"confidence"`
-	AppType    string  `json:"app_type,omitempty"`
+	Text       string                 `json:"text"`
+	Label      string                 `json:"label"`
+	StartChar  int                    `json:"start_char"`
+	EndChar    int                    `json:"end_char"`
+	Confidence float64                `json:"confidence"`
+	AppType    string                 `json:"app_type,omitempty"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // Relation represents a typed relation between two entities.
 type Relation struct {
-	Subject    Entity  `json:"subject"`
-	Predicate  string  `json:"predicate"`
-	Object     Entity  `json:"object"`
-	Confidence float64 `json:"confidence"`
-	Context    string  `json:"context,omitempty"`
+	Subject    Entity                 `json:"subject"`
+	Predicate  string                 `json:"predicate"`
+	Object     Entity                 `json:"object"`
+	Confidence float64                `json:"confidence"`
+	Context    string                 `json:"context,omitempty"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // ExtractionResult holds the output of a full extraction pass.
 type ExtractionResult struct {
-	Entities  []Entity   `json:"entities"`
-	Relations []Relation `json:"relations"`
+	Entities  []Entity               `json:"entities"`
+	Relations []Relation             `json:"relations"`
+	Language  string                 `json:"language,omitempty"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // Extractor provides NER + relation extraction
 type Extractor struct {
 	mu sync.Mutex
-	// List of supported languages
+	// Language code (en/zh/de/fr/es/pt/ja)
 	Lang string
+	// Minimum confidence to include an entity (default 0.0 = all)
+	ConfidenceThreshold float64
+	// Include token-level info (POS, dep) in ExtractionResult metadata
+	IncludeTokens bool
+	// Max character distance for co-occurrence relations (default 100)
+	MaxDistance int
 }
 
 // spaCy NER label → application entity type mapping
@@ -95,6 +105,15 @@ var skipLabels = map[string]bool{
 	"ORDINAL":  true,
 	"CARDINAL": true,
 }
+
+// ModelPredictor is a cached predict function for a model path.
+// Closure captures the C handle to avoid unsafe.Pointer type issues.
+type ModelPredictor func(tokensJSON string) (string, error)
+
+var (
+	modelCacheMu sync.Mutex
+	modelCache   = map[string]ModelPredictor{}
+)
 
 // langModel maps language codes to spaCy model names.
 var langModel = map[string]string{
@@ -125,7 +144,11 @@ func NewExtractor(lang string) *Extractor {
 	if _, ok := langModel[lang]; !ok {
 		lang = "en"
 	}
-	return &Extractor{Lang: lang}
+	return &Extractor{
+		Lang:                lang,
+		ConfidenceThreshold: 0.0, // include all by default
+		MaxDistance:         100,
+	}
 }
 
 // Extract runs NER and optionally relation extraction (dep-based via C++ parser, or regex fallback).
@@ -134,10 +157,47 @@ func (e *Extractor) Extract(text string, extractRelations bool) (*ExtractionResu
 	if err != nil {
 		return nil, err
 	}
-	result := &ExtractionResult{Entities: entities}
+
+	// Collect token info if requested (before entity dedup changes offsets)
+	var tokensMeta []map[string]interface{}
+	if e.IncludeTokens {
+		tokensJSON := tokenizeText(text, e.Lang)
+		if tokensJSON != "" {
+			var rawTokens []string
+			if err := json.Unmarshal([]byte(tokensJSON), &rawTokens); err == nil {
+				for i, t := range rawTokens {
+					tokensMeta = append(tokensMeta, map[string]interface{}{
+						"text":  t,
+						"index": i,
+					})
+				}
+			}
+		}
+	}
+
+	result := &ExtractionResult{
+		Entities: entities,
+		Language: e.Lang,
+		Metadata: map[string]interface{}{
+			"n_entities": len(entities),
+			"model":      langModel[e.Lang],
+		},
+	}
+	if len(tokensMeta) > 0 {
+		result.Metadata["n_tokens"] = len(tokensMeta)
+		result.Metadata["tokens"] = tokensMeta
+	}
+
 	if extractRelations && len(entities) >= 2 {
 		relations := e.extractRelations(text, entities)
 		result.Relations = relations
+		nTyped := 0
+		for _, r := range relations {
+			if r.Predicate != "related_to" {
+				nTyped++
+			}
+		}
+		result.Metadata["n_relations"] = nTyped
 	}
 	return result, nil
 }
@@ -151,11 +211,11 @@ func (e *Extractor) extractRelations(text string, entities []Entity) []Relation 
 	// Try dep-based extraction via C++ parser
 	tokensJSON := tokenizeText(text, e.Lang)
 	if tokensJSON == "" {
-		return ExtractRelations(text, entities, relLang)
+		return extractRelationsWithOpts(text, entities, relLang, e.MaxDistance)
 	}
 	var tokens []string
 	if err := json.Unmarshal([]byte(tokensJSON), &tokens); err != nil || len(tokens) == 0 {
-		return ExtractRelations(text, entities, relLang)
+		return extractRelationsWithOpts(text, entities, relLang, e.MaxDistance)
 	}
 	modelDir := e.findModelDir()
 	nerDir := modelDir + "/ner"
@@ -170,7 +230,37 @@ func (e *Extractor) extractRelations(text string, entities []Entity) []Relation 
 		}
 	}
 	// Fallback: regex-based extraction
-	return ExtractRelations(text, entities, relLang)
+	return extractRelationsWithOpts(text, entities, relLang, e.MaxDistance)
+}
+
+func (e *Extractor) getPredictor(modelDir string) ModelPredictor {
+	modelCacheMu.Lock()
+	defer modelCacheMu.Unlock()
+	if p, ok := modelCache[modelDir]; ok {
+		return p
+	}
+	cModelDir := C.CString(modelDir + "/ner")
+	cModelVocab := C.CString(modelDir + "/vocab")
+	handle := C.ThincNER_Create(cModelDir, cModelVocab)
+	C.free(unsafe.Pointer(cModelDir))
+	C.free(unsafe.Pointer(cModelVocab))
+	p := func(tokensJSON string) (string, error) {
+		if handle == nil {
+			return "", fmt.Errorf("ThincNER handle is nil")
+		}
+		e.mu.Lock()
+		cTokensJSON := C.CString(tokensJSON)
+		cResult := C.ThincNER_Predict(handle, cTokensJSON)
+		e.mu.Unlock()
+		C.free(unsafe.Pointer(cTokensJSON))
+		if cResult == nil {
+			return "", fmt.Errorf("NER prediction failed")
+		}
+		defer C.ThincNER_FreeString(cResult)
+		return C.GoString(cResult), nil
+	}
+	modelCache[modelDir] = p
+	return p
 }
 
 // ExtractEntities extracts named entities from text using C++ ThincNER.
@@ -188,32 +278,13 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 
 	tokensJSON := C.GoString(cTokens)
 
-	e.mu.Lock()
-	// For now, use a static handle approach: each ExtractEntities call
-	// creates and destroys the handle (simplified; production should cache).
 	modelDir := e.findModelDir()
-	cModelDir := C.CString(modelDir + "/ner")
-	cModelVocab := C.CString(modelDir + "/vocab")
-	handle := C.ThincNER_Create(cModelDir, cModelVocab)
-	C.free(unsafe.Pointer(cModelDir))
-	C.free(unsafe.Pointer(cModelVocab))
-	e.mu.Unlock()
+	predict := e.getPredictor(modelDir)
 
-	if handle == nil {
-		return nil, fmt.Errorf("failed to create ThincNER handle for model dir: %s", modelDir+"/ner")
+	resultJSON, err := predict(tokensJSON)
+	if err != nil {
+		return nil, err
 	}
-	defer C.ThincNER_Destroy(handle)
-
-	cTokensJSON := C.CString(tokensJSON)
-	defer C.free(unsafe.Pointer(cTokensJSON))
-
-	cResult := C.ThincNER_Predict(handle, cTokensJSON)
-	if cResult == nil {
-		return nil, fmt.Errorf("NER prediction failed")
-	}
-	defer C.ThincNER_FreeString(cResult)
-
-	resultJSON := C.GoString(cResult)
 
 	var rawEntities []struct {
 		Text       string  `json:"text"`
@@ -226,11 +297,21 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 		return nil, fmt.Errorf("failed to parse NER result: %w", err)
 	}
 
+	// Dedup by (text.lower(), start_char) — matching Python NERExtractor
+	seen := make(map[string]bool)
 	entities := make([]Entity, 0, len(rawEntities))
 	for _, re := range rawEntities {
 		if skipLabels[re.Label] {
 			continue
 		}
+		if re.Confidence < e.ConfidenceThreshold {
+			continue
+		}
+		key := strings.ToLower(re.Text) + "|" + string(rune(re.Start))
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		appType := spacyToAppType[re.Label]
 		if appType == "" {
 			appType = strings.ToLower(re.Label)
@@ -242,6 +323,7 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 			EndChar:    re.End,
 			Confidence: re.Confidence,
 			AppType:    appType,
+			Metadata:   map[string]interface{}{"source": "thincner"},
 		})
 	}
 	return entities, nil

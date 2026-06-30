@@ -66,6 +66,11 @@ type relPatternEntry struct {
 // Matches the Python RelationExtractor pattern-based approach,
 // including cross-sentence filtering via sentence boundary checks.
 func ExtractRelations(text string, entities []Entity, lang string) []Relation {
+	return extractRelationsWithOpts(text, entities, lang, 100)
+}
+
+// extractRelationsWithOpts is the internal version with configurable max distance.
+func extractRelationsWithOpts(text string, entities []Entity, lang string, maxDistance int) []Relation {
 	patterns, ok := relationPatterns[lang]
 	if !ok {
 		patterns = relationPatterns["en"]
@@ -150,31 +155,71 @@ func ExtractRelations(text string, entities []Entity, lang string) []Relation {
 		}
 	}
 
-	// Phase 2: Co-occurrence fallback
-	if len(entities) >= 2 {
-		for i := 0; i < len(entities); i++ {
-			for j := i + 1; j < len(entities); j++ {
-				e1, e2 := entities[i], entities[j]
-				dist := abs(e2.StartChar - e1.EndChar)
-				if dist > 100 {
-					continue
-				}
-				key := e1.Text + "|related_to|" + e2.Text
-				if seen[key] {
-					continue
-				}
-				seen[key] = true
-				relations = append(relations, Relation{
-					Subject:    e1,
-					Predicate:  "related_to",
-					Object:     e2,
-					Confidence: 0.4,
-					Context:    extractContextSimple(text, e1, e2),
-				})
-			}
+	// Phase 2: Co-occurrence (standalone, with sentence boundary check)
+	for _, r := range extractCooccurrence(text, entities, maxDistance) {
+		key := r.Subject.Text + "|related_to|" + r.Object.Text
+		if !seen[key] {
+			seen[key] = true
+			relations = append(relations, r)
 		}
 	}
 
+	// Multi-hop inference + dedup (matching Python always applies these)
+	relations = inferMultiHop(relations)
+	relations = dedupRelations(relations)
+
+	return relations
+}
+
+// extractCooccurrence generates related_to relations for entity pairs
+// within maxDistance characters in the same sentence.
+func extractCooccurrence(text string, entities []Entity, maxDistance int) []Relation {
+	if len(entities) < 2 {
+		return nil
+	}
+	hasOffsets := false
+	for _, e := range entities {
+		if e.StartChar != 0 || e.EndChar != 0 {
+			hasOffsets = true
+			break
+		}
+	}
+	var sentenceSpans [][2]int
+	if hasOffsets {
+		sentenceSpans = splitSentences(text)
+	}
+	sameSentence := func(c1, c2 int) bool {
+		if !hasOffsets || len(sentenceSpans) == 0 {
+			return true
+		}
+		for _, sp := range sentenceSpans {
+			if sp[0] <= c1 && c1 < sp[1] && sp[0] <= c2 && c2 < sp[1] {
+				return true
+			}
+		}
+		return false
+	}
+	var relations []Relation
+	for i := 0; i < len(entities); i++ {
+		for j := i + 1; j < len(entities); j++ {
+			e1, e2 := entities[i], entities[j]
+			if !sameSentence(e1.StartChar, e2.StartChar) {
+				continue
+			}
+			dist := abs(e2.StartChar - e1.EndChar)
+			if dist > maxDistance {
+				continue
+			}
+			relations = append(relations, Relation{
+				Subject:    e1,
+				Predicate:  "related_to",
+				Object:     e2,
+				Confidence: 0.4,
+				Context:    extractContextSimple(text, e1, e2),
+				Metadata:   map[string]interface{}{"method": "cooccurrence"},
+			})
+		}
+	}
 	return relations
 }
 
@@ -254,26 +299,12 @@ func max(a, b int) int {
 // splitSentences splits text into sentence spans [start, end),
 // matching Python's: re.finditer(r'[^.!?]+(?:[.!?](?=\s|$))+', text)
 func splitSentences(text string) [][2]int {
+	re := regexp.MustCompile(`[^.!?]+(?:[.!?](?=\s|$))+`)
+	matches := re.FindAllStringIndex(text, -1)
 	var spans [][2]int
-	i := 0
-	for i < len(text) {
-		start := i
-		// consume non-sentence-end characters
-		for i < len(text) && text[i] != '.' && text[i] != '!' && text[i] != '?' {
-			i++
-		}
-		// consume sentence-ending punctuation
-		for i < len(text) && (text[i] == '.' || text[i] == '!' || text[i] == '?') {
-			i++
-		}
-		// require punctuation followed by space or end-of-string
-		if i > start && i <= len(text) {
-			if i == len(text) || (i < len(text) && text[i] == ' ') {
-				spans = append(spans, [2]int{start, i})
-			}
-		}
+	for _, m := range matches {
+		spans = append(spans, [2]int{m[0], m[1]})
 	}
-	// If no sentences found, use the whole text as one sentence
 	if len(spans) == 0 && len(text) > 0 {
 		spans = append(spans, [2]int{0, len(text)})
 	}
