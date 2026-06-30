@@ -324,5 +324,9 @@ class ExeSQL(ToolBase, ABC):
         self.set_output("formalized_content", "\n\n".join(formalized_content))
         return self.output("formalized_content")
 
+    def set_exception_default_value(self):
+        self.set_output("formalized_content", self.get_exception_default_value())
+        self.set_output("json", [])
+
     def thoughts(self) -> str:
         return "Query sent—waiting for the data."

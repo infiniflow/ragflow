@@ -1,4 +1,5 @@
 import { useTestDbConnect } from '@/hooks/use-agent-request';
+import { omit } from 'lodash';
 import { useCallback } from 'react';
 import { z } from 'zod';
 
@@ -16,6 +17,9 @@ export const FormSchema = z
   .object({
     sql: z.string().optional(),
     ...ExeSQLFormSchema,
+    exception_method: z.string().optional(),
+    exception_goto: z.array(z.string()).optional(),
+    exception_default_value: z.string().optional(),
   })
   .superRefine((v, ctx) => {
     if (
@@ -35,7 +39,13 @@ export function useSubmitForm() {
 
   const onSubmit = useCallback(
     async (data: z.infer<typeof FormSchema>) => {
-      testDbConnect(data);
+      testDbConnect(
+        omit(data, [
+          'exception_method',
+          'exception_goto',
+          'exception_default_value',
+        ]),
+      );
     },
     [testDbConnect],
   );
