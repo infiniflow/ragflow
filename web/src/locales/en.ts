@@ -1445,6 +1445,8 @@ Example: Virtual Hosted Style`,
         'Optional sub-folder path to limit indexing (e.g. /Documents/Reports). Leave blank to index the entire drive.',
       outlookDescription:
         'Connect Outlook / Microsoft 365 mailboxes and index messages via Microsoft Graph delta queries.',
+      databricksDescription:
+        'Ingest Databricks SQL-warehouse table rows and Unity Catalog volume files into your knowledge base.',
       outlookTenantIdTip:
         'Azure Active Directory tenant ID (Directory ID) of the Microsoft 365 organisation.',
       outlookClientIdTip:

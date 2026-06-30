@@ -2,7 +2,7 @@ import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
-import { Mail, Rss } from 'lucide-react';
+import { Database, Mail, Rss } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -11,6 +11,7 @@ import GoogleDriveTokenField from '../component/google-drive-token-field';
 import { IDataSourceInfoMap } from '../interface';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
+import { databricksConstant } from './databricks-constant';
 import { jiraConstant } from './jira-constant';
 import { S3Constant } from './s3-constant';
 import { seafileConstant } from './seafile-constant';
@@ -51,6 +52,7 @@ export enum DataSourceKey {
   TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
+  DATABRICKS = 'databricks',
 }
 
 type DataSourceFeatureVisibility = {
@@ -351,6 +353,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Outlook',
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
       icon: <Mail className="text-text-primary" size={22} />,
+    },
+    [DataSourceKey.DATABRICKS]: {
+      name: 'Databricks',
+      description: t(`setting.${DataSourceKey.DATABRICKS}Description`),
+      icon: <Database className="text-text-primary" size={22} />,
     },
     [DataSourceKey.SALESFORCE]: {
       name: 'Salesforce',
@@ -1932,6 +1939,7 @@ export const DataSourceFormFields = {
         !!values?.config?.show_advanced && values?.config?.method === 'POST',
     },
   ],
+  [DataSourceKey.DATABRICKS]: databricksConstant(),
 };
 
 export const DataSourceFormDefaultValues = {
@@ -2426,6 +2434,26 @@ export const DataSourceFormDefaultValues = {
         token: '',
         username: '',
         password: '',
+      },
+    },
+  },
+  [DataSourceKey.DATABRICKS]: {
+    name: '',
+    source: DataSourceKey.DATABRICKS,
+    config: {
+      server_hostname: '',
+      http_path: '',
+      auth_mode: 'pat',
+      tables: '',
+      content_columns: '',
+      metadata_columns: '',
+      id_column: '',
+      timestamp_column: '',
+      volume_paths: '',
+      credentials: {
+        access_token: '',
+        client_id: '',
+        client_secret: '',
       },
     },
   },
