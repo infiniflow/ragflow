@@ -130,7 +130,7 @@ func (dao *DocumentDAO) GetChunkingConfig(docID string) (map[string]interface{},
 		ID           string         `gorm:"column:id"`
 		KbID         string         `gorm:"column:kb_id"`
 		ParserID     string         `gorm:"column:parser_id"`
-		ParserConfig entity.JSONMap `gorm:"column:parser_config"`
+		ParserConfig entity.JSONMap `gorm:"column:parser_config;type:longtext"`
 		Size         int64          `gorm:"column:size"`
 		ContentHash  *string        `gorm:"column:content_hash"`
 		Language     *string        `gorm:"column:language"`
