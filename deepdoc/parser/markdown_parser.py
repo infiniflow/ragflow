@@ -124,6 +124,8 @@ class RAGFlowMarkdownParser:
 
 
 class MarkdownElementExtractor:
+    """Extract structural Markdown elements while preserving protected ranges."""
+
     def __init__(self, markdown_content):
         self.markdown_content = markdown_content
         self.lines = markdown_content.split("\n")
