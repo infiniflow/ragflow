@@ -38,6 +38,7 @@ def audio_module():
         "api.db.joint_services",
         "api.db.joint_services.tenant_model_service",
         "rag.nlp",
+        "rag.app.audio",
     ]
     original_modules = {name: sys.modules.get(name) for name in stub_names}
 
