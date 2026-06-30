@@ -1061,18 +1061,24 @@ async def transcription():
     os.close(fd)
     await uploaded.save(temp_audio_path)
 
-    try:
-        default_asr_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.SPEECH2TEXT)
-    except Exception as e:
-        return get_data_error_result(message=str(e))
-
-    asr_mdl = LLMBundle(current_user.id, default_asr_model_config)
-    if not stream_mode:
-        text = asr_mdl.transcription(temp_audio_path)
+    def cleanup_temp_audio_file():
         try:
             os.remove(temp_audio_path)
         except Exception as e:
             logging.error(f"Failed to remove temp audio file: {str(e)}")
+
+    try:
+        default_asr_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.SPEECH2TEXT)
+    except Exception as e:
+        cleanup_temp_audio_file()
+        return get_data_error_result(message=str(e))
+
+    asr_mdl = LLMBundle(current_user.id, default_asr_model_config)
+    if not stream_mode:
+        try:
+            text = asr_mdl.transcription(temp_audio_path)
+        finally:
+            cleanup_temp_audio_file()
         return get_json_result(data={"text": text})
 
     async def event_stream():
@@ -1083,10 +1089,7 @@ async def transcription():
             err = {"event": "error", "text": str(e)}
             yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
         finally:
-            try:
-                os.remove(temp_audio_path)
-            except Exception as e:
-                logging.error(f"Failed to remove temp audio file: {str(e)}")
+            cleanup_temp_audio_file()
 
     return Response(event_stream(), content_type="text/event-stream")
 

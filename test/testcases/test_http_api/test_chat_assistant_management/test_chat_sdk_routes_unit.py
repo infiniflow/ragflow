@@ -214,6 +214,7 @@ def _load_chat_module(monkeypatch):
     from common.constants import MAXIMUM_PAGE_NUMBER as _MPN, MAXIMUM_TASK_PAGE_NUMBER as _MTPN
     common_constants_mod.MAXIMUM_PAGE_NUMBER = _MPN
     common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = _MTPN
+    common_constants_mod.RAG_FLOW_SERVICE_NAME = "ragflow"
     monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
 
     misc_utils_mod = ModuleType("common.misc_utils")
@@ -224,6 +225,10 @@ def _load_chat_module(monkeypatch):
 
     misc_utils_mod.thread_pool_exec = _thread_pool_exec
     monkeypatch.setitem(sys.modules, "common.misc_utils", misc_utils_mod)
+
+    settings_mod = ModuleType("common.settings")
+    settings_mod.STORAGE_IMPL = type("_StorageImpl", (), {"rm": staticmethod(lambda *_args, **_kwargs: None)})()
+    monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
 
     dialog_service_mod = ModuleType("api.db.services.dialog_service")
 
@@ -367,6 +372,8 @@ def _load_chat_module(monkeypatch):
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
+    tenant_model_service_mod.get_api_key = lambda *_args, **_kwargs: SimpleNamespace(id=1)
+    tenant_model_service_mod.split_model_name = lambda model: (model.split("@")[0], "default", "factory")
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
     user_service_mod = ModuleType("api.db.services.user_service")
@@ -1051,6 +1058,8 @@ def test_chat_audio_transcription_routes_unit(monkeypatch):
     assert "Unsupported audio format: .txt" in res["message"]
 
     _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
+    removed_paths = []
+    monkeypatch.setattr(module.os, "remove", lambda path: removed_paths.append(path))
     monkeypatch.setattr(
         module,
         "get_tenant_default_model_by_type",
@@ -1058,8 +1067,10 @@ def test_chat_audio_transcription_routes_unit(monkeypatch):
     )
     res = _run(module.transcription.__wrapped__())
     assert res["message"] == "Tenant not found!"
+    assert removed_paths == ["/tmp/audio.wav"]
 
     _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
+    removed_paths.clear()
     monkeypatch.setattr(
         module,
         "get_tenant_default_model_by_type",
@@ -1067,6 +1078,7 @@ def test_chat_audio_transcription_routes_unit(monkeypatch):
     )
     res = _run(module.transcription.__wrapped__())
     assert res["message"] == "No default ASR model is set"
+    assert removed_paths == ["/tmp/audio.wav"]
 
     class _SyncASR:
         def transcription(self, _path):
@@ -1082,6 +1094,21 @@ def test_chat_audio_transcription_routes_unit(monkeypatch):
     res = _run(module.transcription.__wrapped__())
     assert res["code"] == 0
     assert res["data"]["text"] == "transcribed text"
+
+    class _FailingSyncASR:
+        def transcription(self, _path):
+            raise RuntimeError("sync asr boom")
+
+        def stream_transcription(self, _path):
+            return []
+
+    _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
+    removed_paths = []
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _FailingSyncASR())
+    monkeypatch.setattr(module.os, "remove", lambda path: removed_paths.append(path))
+    with pytest.raises(RuntimeError, match="sync asr boom"):
+        _run(module.transcription.__wrapped__())
+    assert removed_paths == ["/tmp/audio.wav"]
 
     class _StreamASR:
         def transcription(self, _path):
