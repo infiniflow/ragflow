@@ -12,18 +12,19 @@ import { useCallback, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { LogTabs } from './dataset-common';
 import { IFileLogList, IOverviewTotal } from './interface';
+import { mapOverviewTotal } from './utils';
 
 const useFetchOverviewTotal = () => {
   const [searchParams] = useSearchParams();
   const { id } = useParams();
   const knowledgeBaseId = searchParams.get('id') || id;
   const { data } = useQuery<IOverviewTotal>({
-    queryKey: ['overviewTotal'],
+    queryKey: ['overviewTotal', knowledgeBaseId],
     queryFn: async () => {
       const { data: res = {} } = await getKnowledgeBasicInfo(
         knowledgeBaseId || '',
       );
-      return res.data || [];
+      return mapOverviewTotal(res.data);
     },
   });
   return { data };
