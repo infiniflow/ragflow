@@ -1,4 +1,3 @@
-// src/components/ui/modal.tsx
 import { cn } from '@/lib/utils';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { AlertCircle, CheckCircle, Info, Loader, X } from 'lucide-react';

@@ -43,6 +43,7 @@ import (
 	"ragflow/internal/agent/canvas"
 	_ "ragflow/internal/agent/component" // blank import: registers every Component factory (Begin / Agent / LLM / Message / Retrieval / ...) into the shared runtime at package init
 	"ragflow/internal/agent/runtime"
+	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/handler"
@@ -90,9 +91,8 @@ func main() {
 		return
 	}
 
-	// Initialize logger with default level
-	// logger.Init("info"); // set debug log level
-	if err := common.Init("info", common.FileOutput{Path: "server_main.log"}); err != nil {
+	// Temporarily default to debug while investigating the Go chat/SSE path.
+	if err := common.Init("debug", common.FileOutput{Path: "server_main.log"}); err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
@@ -115,7 +115,7 @@ func main() {
 	// Reinitialize logger with configured level if different
 	level := config.Log.Level
 	if level == "" {
-		level = "info"
+		level = "debug"
 	}
 
 	if debugFlag {
@@ -229,6 +229,7 @@ func startServer(config *server.Config) {
 	systemService := service.NewSystemService()
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
+	searchService.SetTenantService(tenantService)
 	fileService := service.NewFileService()
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
@@ -236,6 +237,9 @@ func startServer(config *server.Config) {
 
 	// Initialize doc engine for skill search
 	docEngine := engine.Get()
+	documentDAO := dao.NewDocumentDAO()
+	agenttool.SetRetrievalService(agenttool.NewNLPRetrievalAdapterFromDeps(docEngine, documentDAO))
+	common.Info("agent: retrieval service adapter installed")
 
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
@@ -268,11 +272,22 @@ func startServer(config *server.Config) {
 	// is a 1-line if-not-nil pass-through — no separate "boot" mode
 	// required.
 	agentOpts := buildAgentRunOptions()
-	agentHandler := handler.NewAgentHandler(service.NewAgentServiceWithOptions(
+	agentService := service.NewAgentServiceWithOptions(
 		agentOpts.checkpointStore,
 		agentOpts.stateSerializer,
 		agentOpts.runTracker,
-	), fileService)
+	)
+	agentHandler := handler.NewAgentHandler(agentService, fileService).
+		WithDocumentService(documentService)
+
+	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
+	// api/v1/agentbots/...) and the agent attachment download.
+	// BotService delegates the agentbot completion to agentService so
+	// both paths share the same canvas runner. Reuse the llmService
+	// already constructed above (line 222) — do NOT redeclare with
+	// `:=` since the variable is in scope.
+	botService := service.NewBotService(agentService, llmService)
+	botHandler := handler.NewBotHandler(botService)
 
 	// Wire the TTS synthesizer to the per-tenant model-provider
 	// dispatch. SynthesizeRequest is routed through
@@ -282,21 +297,24 @@ func startServer(config *server.Config) {
 	// no-op echo (the audio package contract), so this is always
 	// safe to call.
 	configureTTSSynthesizer(modelProviderService)
-	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
+	modelProviderLLM := &handler.ModelProviderLLM{Svc: modelProviderService}
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
-		searchBotLLM,
+		modelProviderLLM,
 		chunkService,
 	)
-	searchBotHandler.SetStreamLLM(searchBotLLM)
-	searchBotHandler.SetAskService(service.NewAskService(chunkService, nil, 0, 0))
+	searchBotHandler.SetStreamLLM(modelProviderLLM)
+	askService := service.NewAskService(chunkService, nil, 0, 0)
+	searchBotHandler.SetAskService(askService)
+	chatHandler.SetMindMapDependencies(searchService, tenantService, modelProviderLLM, chunkService)
+	searchHandler.SetCompletionDependencies(modelProviderLLM, askService)
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
 	fileCommitHandler := handler.NewFileCommitHandler(service.NewFileCommitService())
 
 	// Dify retrieval handler
-	docDAO := dao.NewDocumentDAO()
+	docDAO := documentDAO
 	retrievalService := nlp.NewRetrievalService(docEngine, docDAO)
 	difyRetrievalHandler := handler.NewDifyRetrievalHandler(
 		knowledgebaseService,
@@ -323,7 +341,7 @@ func startServer(config *server.Config) {
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatChannelHandler, langfuseHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatChannelHandler, langfuseHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler, botHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

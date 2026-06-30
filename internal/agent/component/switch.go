@@ -170,8 +170,15 @@ func evaluateGroup(group map[string]any, state *runtime.CanvasState) (bool, erro
 		op = "and"
 	}
 	if len(clauses) == 0 {
-		// An empty group is vacuously true (matches).
-		return true, nil
+		// An empty group must NOT match — otherwise a Switch with
+		// no clauses (or all skipped `cpn_id`s) routes to the empty
+		// group's `to` target before reaching the else / end_cpn_ids
+		// branch. Mirrors PR #15644: the Python `if all(res):` form
+		// was buggy for the same reason (all([]) is True) and was
+		// tightened to `if res and all(res):`. The Go fix is the
+		// empty-clauses short-circuit: an un-matchable group falls
+		// through to the next condition or the end targets.
+		return false, nil
 	}
 	for i, raw := range clauses {
 		c, ok := raw.(map[string]any)
@@ -352,6 +359,22 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 
 	right := clause["right"]
 	lv := leftValue(left, state)
+
+	// Port of python PR #16320: for the four string operators,
+	// coerce nil on either side to "". In Python this avoids
+	// AttributeError on `.lower()`; in Go there's no crash (fmt
+	// renders nil as "<nil>"), but the Python post-fix semantic —
+	// where "foo" contains None is True — diverges from Go's
+	// "<nil>" rendering. Coercing to "" aligns the Go port with
+	// the Python workflow.
+	if op == "contains" || op == "not contains" || op == "start with" || op == "end with" {
+		if lv == nil {
+			lv = ""
+		}
+		if right == nil {
+			right = ""
+		}
+	}
 
 	switch op {
 	case "==":

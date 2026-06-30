@@ -45,7 +45,7 @@ def test_document_download_by_id_invalid_id_contract(rest_client):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 102, payload
-    assert payload["message"] == "The dataset not own the document invalid_document_id.", payload
+    assert payload["message"] == "Document not found!", payload
 
 
 @pytest.mark.p2

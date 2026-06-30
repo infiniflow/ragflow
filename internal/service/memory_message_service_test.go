@@ -142,8 +142,8 @@ func TestBuildTaskRow_Shape(t *testing.T) {
 	if row["digest"] != "99" {
 		t.Errorf("digest = %v, want \"99\"", row["digest"])
 	}
-	if id, _ := row["id"].(string); !strings.HasPrefix(id, "mem-") {
-		t.Errorf("id = %q, want mem- prefix", id)
+	if id, _ := row["id"].(string); len(id) != 32 {
+		t.Errorf("id = %q, want 32-char uuid", id)
 	}
 }
 

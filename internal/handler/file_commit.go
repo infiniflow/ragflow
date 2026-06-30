@@ -300,14 +300,14 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": common.CodeSuccess,
 		"data": gin.H{
-			"id":         commit.ID,
-			"folder_id":  commit.FolderID,
-			"parent_id":  commit.ParentID,
-			"message":    commit.Message,
-			"author_id":  commit.AuthorID,
-			"file_count": commit.FileCount,
+			"id":          commit.ID,
+			"folder_id":   commit.FolderID,
+			"parent_id":   commit.ParentID,
+			"message":     commit.Message,
+			"author_id":   commit.AuthorID,
+			"file_count":  commit.FileCount,
 			"create_time": ct,
-			"files": items,
+			"files":       items,
 		},
 		"message": common.CodeSuccess.Message(),
 	})

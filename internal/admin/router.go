@@ -80,6 +80,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Variables/Settings
 			protected.GET("/variables", r.handler.ListVariables)
 			protected.PUT("/variables", r.handler.SetVariable)
+			protected.GET("/variables/:var_name", r.handler.ShowVariable)
 
 			// Configs
 			protected.GET("/configs", r.handler.ListConfigs)
@@ -137,6 +138,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/users/documents", r.handler.ListUsersDocuments)
 			protected.GET("/users/index", r.handler.ListUsersIndex)
 			protected.GET("/users/quota", r.handler.ListUsersQuota)
+			protected.GET("/users/plan/summary", r.handler.ShowUsersPlanSummary)
 			protected.GET("/users/quota/summary", r.handler.ShowUsersQuotaSummary)
 			protected.GET("/ingestion/tasks/summary", r.handler.ShowIngestionTasksSummary)
 			protected.GET("/data/summary", r.handler.ShowDataSummary)

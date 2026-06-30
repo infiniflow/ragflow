@@ -456,6 +456,14 @@ function transformBeginParams(params: BeginFormSchemaType) {
         required_claims: security?.jwt?.required_claims.map((x) => x.value),
       };
     }
+    if (
+      params.security?.auth_type === WebhookSecurityAuthType.None &&
+      params.security?.allow_anonymous
+    ) {
+      nextSecurity.allow_anonymous = true;
+    } else {
+      delete nextSecurity.allow_anonymous;
+    }
     return {
       ...params,
       schema: transformRequestSchemaToJsonschema(params.schema),

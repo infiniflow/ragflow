@@ -364,4 +364,3 @@ func (a *AvianModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 func (a *AvianModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
-
