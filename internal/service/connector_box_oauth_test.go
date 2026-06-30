@@ -8,12 +8,22 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
+	redisengine "ragflow/internal/engine/redis"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func forceNilConnectorRedis(t *testing.T) {
+	t.Helper()
+	previous := connectorRedisGet
+	connectorRedisGet = func() *redisengine.RedisClient { return nil }
+	t.Cleanup(func() {
+		connectorRedisGet = previous
+	})
 }
 
 func TestBuildBoxAuthorizationURL(t *testing.T) {
@@ -144,6 +154,8 @@ func TestStartBoxWebOAuthRequiresClientCredentials(t *testing.T) {
 }
 
 func TestPollBoxWebOAuthResultPendingWithoutRedis(t *testing.T) {
+	forceNilConnectorRedis(t)
+
 	svc := NewConnectorService()
 
 	_, code, err := svc.PollBoxWebOAuthResult("user-1", &PollBoxWebOAuthResultRequest{FlowID: "flow-1"})

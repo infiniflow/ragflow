@@ -66,6 +66,7 @@ var (
 		"https://www.googleapis.com/auth/admin.directory.user.readonly",
 		"https://www.googleapis.com/auth/admin.directory.group.readonly",
 	}
+	connectorRedisGet = redis.Get
 )
 
 // Sentinel errors so handlers can map to the proper response codes,
@@ -1055,7 +1056,7 @@ func (s *ConnectorService) StartBoxWebOAuth(userID string, req *StartBoxWebOAuth
 		return nil, common.CodeServerError, err
 	}
 
-	redisClient := redis.Get()
+	redisClient := connectorRedisGet()
 	if redisClient == nil {
 		return nil, common.CodeServerError, fmt.Errorf("Redis is not configured on the server.")
 	}
@@ -1085,7 +1086,7 @@ func (s *ConnectorService) BoxWebOAuthCallback(flowID string, oauthError string,
 		return renderWebOAuthPopup("", false, "Missing OAuth parameters.", "box")
 	}
 
-	redisClient := redis.Get()
+	redisClient := connectorRedisGet()
 	if redisClient == nil {
 		return renderWebOAuthPopup(flowID, false, "Box OAuth session expired or invalid.", "box")
 	}
@@ -1140,7 +1141,7 @@ func (s *ConnectorService) PollBoxWebOAuthResult(userID string, req *PollBoxWebO
 		return nil, common.CodeArgumentError, fmt.Errorf("required argument is missing: flow_id")
 	}
 
-	redisClient := redis.Get()
+	redisClient := connectorRedisGet()
 	if redisClient == nil {
 		return nil, common.CodeRunning, fmt.Errorf("Authorization is still pending.")
 	}
