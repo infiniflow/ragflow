@@ -28,7 +28,7 @@ dependencies = [
     "chardet>=5.2.0,<6.0.0",
     "cn2an==0.5.22",
     "cohere==5.6.2",
-    "crawl4ai>=0.8.0,<0.8.6",
+    "crawl4ai>=0.9.0,<0.9.1",
     "dashscope==1.25.11",
     "deepl==1.18.0",
     "debugpy>=1.8.13",
