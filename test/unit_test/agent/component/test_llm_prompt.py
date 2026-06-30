@@ -67,4 +67,3 @@ def test_gen_conf_includes_zero_temperature_when_enabled():
     param.temperatureEnabled = True
 
     assert param.gen_conf()["temperature"] == 0
->>>>>>> f5cd5ba23 (fix(agent): prevent empty LLM user message after prompt fitting)

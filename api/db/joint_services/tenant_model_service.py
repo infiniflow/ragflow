@@ -49,7 +49,6 @@ def _factory_model_types(llm: dict) -> list[str]:
     return [model_type] if model_type else []
 
 
->>>>>>> 498564f35 (chore: sync modal with main and ruff-format PR files)
 def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | None]:
     if not raw_api_key:
         return raw_api_key, None, None
