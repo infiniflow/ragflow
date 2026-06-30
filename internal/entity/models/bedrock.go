@@ -819,16 +819,18 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 	if err = json.Unmarshal(respBody, &parsed); err != nil {
 		return nil, fmt.Errorf("bedrock: parse ListModels response: %w", err)
 	}
-	models := make([]ListModelResponse, 0, len(parsed.ModelSummaries))
+	// Map the AWS foundation-model catalog into ModelList — still skipping empty
+	// ids so a malformed response never leaks a blank entry to the UI — and
+	// enrich through the shared ParseListModel helper (issue #15853) instead of
+	// hand-building bare names.
+	modelList := ModelList{Object: "list"}
 	for _, m := range parsed.ModelSummaries {
 		if m.ModelID == "" {
 			continue
 		}
-		models = append(models, ListModelResponse{
-			Name: m.ModelID,
-		})
+		modelList.Models = append(modelList.Models, DSModel{ID: m.ModelID})
 	}
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 // CheckConnection delegates to ListModels: a successful catalog query
