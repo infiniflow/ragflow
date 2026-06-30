@@ -404,11 +404,14 @@ setup_cgo_env() {
     export CGO_LDFLAGS="$CGO_LDFLAGS ${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
     # Linux: Chromium-built objects use Clang's .eh_frame format which GNU ld
     # cannot merge. Use lld (LLVM linker) which handles them correctly.
+    # --allow-multiple-definition: pdf_oxide and office_oxide are both Rust
+    # staticlibs that embed the Rust runtime; linking them together produces
+    # duplicate rust_eh_personality symbols.
     if [ "$(uname -s)" = "Linux" ]; then
         export CGO_LDFLAGS="$CGO_LDFLAGS \
             ${PDFIUM_STATIC_PREFIX}/lib/libc++.a \
             ${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a \
-            -fuse-ld=lld"
+            -fuse-ld=lld -Wl,--allow-multiple-definition"
     fi
 
     # ── pdf_oxide ─────────────────────────────────────────────────────
