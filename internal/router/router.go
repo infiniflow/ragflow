@@ -194,7 +194,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		searchbotGroup.POST("/related_questions", r.searchBotHandler.Handle)
 		searchbotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
 		searchbotGroup.POST("/ask", r.searchBotHandler.Ask)
-		searchbotGroup.POST("/searchbots/mindmap", r.searchBotHandler.MindMap)
+		searchbotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
 
 		if r.botHandler != nil {
 			chatbotGroup := apiBetaAuth.Group("/chatbots")

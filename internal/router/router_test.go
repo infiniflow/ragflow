@@ -93,3 +93,25 @@ func TestRouterSetupRegistersUpdateDatasetRoute(t *testing.T) {
 		t.Fatalf("status=%d body=%s; want auth middleware to handle registered UpdateDataset route", resp.Code, resp.Body.String())
 	}
 }
+
+func TestRouterSetupRegistersSearchbotMindMapRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	r := &Router{
+		authHandler:      handler.NewAuthHandler(),
+		searchBotHandler: handler.NewSearchBotHandler(nil, nil, nil, nil),
+	}
+	r.Setup(engine)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/searchbots/mindmap", nil)
+	engine.ServeHTTP(resp, req)
+
+	if resp.Code == http.StatusNotFound {
+		t.Fatalf("POST /api/v1/searchbots/mindmap returned 404; MindMap route is not registered")
+	}
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s; want beta auth middleware to handle registered MindMap route", resp.Code, resp.Body.String())
+	}
+}
