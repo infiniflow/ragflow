@@ -55,9 +55,9 @@ func NewAuthHandler() *AuthHandler {
 // A beta token can also be a regular user JWT or API token. Order of
 // precedence:
 //
-//  1. JWT (regular session) → existing UserService.GetUserByToken
-//  2. API token              → GetUserByAPIToken
-//  3. Beta API token         → GetUserByBetaAPIToken
+//  1. Beta API token         → GetUserByBetaAPIToken
+//  2. JWT (regular session) → existing UserService.GetUserByToken
+//  3. API token              → GetUserByAPIToken
 //  4. Fall through           → 401
 //
 // IMPORTANT: the regular-user branch is NOT gated on a "Bearer "
@@ -70,40 +70,6 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
 		if auth == "" {
-			jsonError(c, common.CodeUnauthorized, "Authorization required")
-			c.Abort()
-			return
-		}
-		// Try regular user session first (handles JWT, Bearer, or
-		// raw access_token — same dispatch as AuthMiddleware()).
-		if u, code, err := h.userService.GetUserByToken(auth); err == nil && code == common.CodeSuccess {
-			c.Set("user", u)
-			c.Next()
-			return
-		}
-		if u, code, err := h.userService.GetUserByAPIToken(auth); err == nil && code == common.CodeSuccess {
-			c.Set("user", u)
-			c.Set("auth_via_api_token", true)
-			c.Next()
-			return
-		}
-		// Fall back to beta API token (public bot access).
-		if u, code, err := h.userService.GetUserByBetaAPIToken(auth); err == nil && code == common.CodeSuccess {
-			c.Set("user", u)
-			c.Next()
-			return
-		}
-		jsonError(c, common.CodeUnauthorized, "Invalid auth credentials")
-		c.Abort()
-	}
-}
-
-func (h *AuthHandler) AuthJWTAPIBetaMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		auth := c.GetHeader("Authorization")
-
-		// no Authorization -> try session fallback if AUTH_JWT allowed.
-		if auth == "" {
 			if cookie, err := c.Cookie(oauthAuthCookie); err == nil {
 				auth = cookie
 			}
@@ -114,21 +80,12 @@ func (h *AuthHandler) AuthJWTAPIBetaMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-
-		// AUTH_BETA
-		if u, code, err := h.userService.GetUserByBetaAPIToken(auth); err == nil && code == common.CodeSuccess {
-			c.Set("user", u)
-			c.Next()
-			return
-		}
-
 		// AUTH_JWT
 		if u, code, err := h.userService.GetUserByToken(auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
 			c.Next()
 			return
 		}
-
 		// AUTH_API
 		if u, code, err := h.userService.GetUserByAPIToken(auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
@@ -136,7 +93,12 @@ func (h *AuthHandler) AuthJWTAPIBetaMiddleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-
+		// AUTH_BETA
+		if u, code, err := h.userService.GetUserByBetaAPIToken(auth); err == nil && code == common.CodeSuccess {
+			c.Set("user", u)
+			c.Next()
+			return
+		}
 		jsonError(c, common.CodeUnauthorized, "Invalid auth credentials")
 		c.Abort()
 	}

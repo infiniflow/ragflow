@@ -343,6 +343,16 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/logout [post]
 func (h *UserHandler) Logout(c *gin.Context) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     oauthAuthCookie,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: false,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   c.Request.TLS != nil,
+	})
+
 	// Same as AuthMiddleware@auth.go
 	token := c.GetHeader("Authorization")
 	if token == "" {
