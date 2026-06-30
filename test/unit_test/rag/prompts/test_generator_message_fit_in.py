@@ -71,9 +71,7 @@ def _load_generator_module(monkeypatch):
     template_mod.load_prompt = lambda *_args, **_kwargs: ""
     monkeypatch.setitem(sys.modules, "rag.prompts.template", template_mod)
 
-    spec = importlib.util.spec_from_file_location(
-        "rag.prompts.generator", repo_root / "rag" / "prompts" / "generator.py"
-    )
+    spec = importlib.util.spec_from_file_location("rag.prompts.generator", repo_root / "rag" / "prompts" / "generator.py")
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "rag.prompts.generator", module)
     spec.loader.exec_module(module)

@@ -543,7 +543,7 @@ class LLM4Tenant:
         if self.langfuse:
             try:
                 self.langfuse.flush()
-                if hasattr(self.langfuse, 'shutdown'):
+                if hasattr(self.langfuse, "shutdown"):
                     self.langfuse.shutdown()
             except Exception:
                 # Ignore errors during cleanup
@@ -552,7 +552,7 @@ class LLM4Tenant:
                 self.langfuse = None
 
         # Release underlying model instance if it has a close method
-        if self.mdl and hasattr(self.mdl, 'close') and callable(getattr(self.mdl, 'close')):
+        if self.mdl and hasattr(self.mdl, "close") and callable(getattr(self.mdl, "close")):
             try:
                 self.mdl.close()
             except Exception:

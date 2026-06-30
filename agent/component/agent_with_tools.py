@@ -218,8 +218,7 @@ class Agent(LLM, ToolBase):
             else:
                 usr_pmt = str(kwargs["user_prompt"])
             self._param.prompts = [{"role": "user", "content": usr_pmt}]
-            _logger.debug("[Agent] Built user prompt with length=%d, reasoning=%s, context=%s",
-                          len(usr_pmt), bool(kwargs.get("reasoning")), bool(kwargs.get("context")))
+            _logger.debug("[Agent] Built user prompt with length=%d, reasoning=%s, context=%s", len(usr_pmt), bool(kwargs.get("reasoning")), bool(kwargs.get("context")))
 
         if not self.tools:
             if self.check_if_canceled("Agent processing"):
