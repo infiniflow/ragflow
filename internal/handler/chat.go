@@ -35,7 +35,7 @@ type ChatHandler struct {
 	userService *service.UserService
 	searchSvc   *service.SearchService
 	tenantSvc   *service.TenantService
-	llm         searchbotLLM
+	llm         chatLLM
 	chunkSvc    ChunkRetriever
 }
 
@@ -48,7 +48,7 @@ func NewChatHandler(chatService *service.ChatService, userService *service.UserS
 }
 
 // SetMindMapDependencies sets dependencies used by POST /api/v1/chat/mindmap.
-func (h *ChatHandler) SetMindMapDependencies(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm searchbotLLM, chunkSvc ChunkRetriever) {
+func (h *ChatHandler) SetMindMapDependencies(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm chatLLM, chunkSvc ChunkRetriever) {
 	h.searchSvc = searchSvc
 	h.tenantSvc = tenantSvc
 	h.llm = llm

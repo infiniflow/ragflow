@@ -35,8 +35,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// searchbotLLM is the interface for LLM calls used by SearchBotHandler.
-type searchbotLLM interface {
+// chatLLM is the interface for LLM calls used by chat-style handlers.
+type chatLLM interface {
 	Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error)
 }
 
@@ -66,12 +66,12 @@ type SearchBotMindMapRequest struct {
 	SearchID string             `json:"search_id,omitempty"`
 }
 
-// SearchBotRealLLM wraps ModelProviderService to implement searchbotLLM.
-type SearchBotRealLLM struct {
+// ModelProviderLLM wraps ModelProviderService to implement chatLLM.
+type ModelProviderLLM struct {
 	Svc *service.ModelProviderService
 }
 
-func (r *SearchBotRealLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
+func (r *ModelProviderLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
 	chatModel, err := r.Svc.GetChatModel(tenantID, modelID)
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func (r *SearchBotRealLLM) Chat(tenantID, modelID string, messages []modelModule
 }
 
 // ChatStream implements streamingLLM.
-func (r *SearchBotRealLLM) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
+func (r *ModelProviderLLM) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
 	chatModel, err := r.Svc.GetChatModel(tenantID, modelID)
 	if err != nil {
 		return nil, err
@@ -172,7 +172,7 @@ type SearchBotRequest struct {
 type SearchBotHandler struct {
 	searchSvc *service.SearchService
 	tenantSvc *service.TenantService
-	llm       searchbotLLM
+	llm       chatLLM
 	streamLLM streamingLLM
 	chunkSvc  ChunkRetriever
 	askSvc    *service.AskService
@@ -180,7 +180,7 @@ type SearchBotHandler struct {
 }
 
 // NewSearchBotHandler creates a new SearchBotHandler.
-func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm searchbotLLM, chunkSvc ChunkRetriever) *SearchBotHandler {
+func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm chatLLM, chunkSvc ChunkRetriever) *SearchBotHandler {
 	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc, sseWriter: &ginSSEWriter{}}
 }
 

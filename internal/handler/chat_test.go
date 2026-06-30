@@ -73,7 +73,7 @@ func createChatHandlerTestChat(t *testing.T, db *gorm.DB, id, tenantID string) {
 }
 
 func TestChatMindMapHandlerSuccess(t *testing.T) {
-	llm := &fakeSearchbotLLM{response: "# Product\n## Features\n### Search"}
+	llm := &fakeChatLLM{response: "# Product\n## Features\n### Search"}
 	chunks := &mockChunkService{retrievalTestFn: func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
 		return &service.RetrievalTestResponse{
 			Chunks: []map[string]interface{}{{"content_with_weight": "Hybrid search combines vector and keyword retrieval."}},

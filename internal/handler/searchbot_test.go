@@ -411,8 +411,8 @@ func TestSearchBotsRetrieval_EmptyQuestion(t *testing.T) {
 	}
 }
 
-// fakeSearchbotLLM implements searchbotLLM for testing.
-type fakeSearchbotLLM struct {
+// fakeChatLLM implements chatLLM for testing.
+type fakeChatLLM struct {
 	response     string
 	err          error
 	lastTenantID string
@@ -420,7 +420,7 @@ type fakeSearchbotLLM struct {
 	lastMessages []modelModule.Message
 }
 
-func (f *fakeSearchbotLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
+func (f *fakeChatLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
 	f.lastTenantID = tenantID
 	f.lastModelID = modelID
 	f.lastMessages = messages
@@ -444,7 +444,7 @@ func setupSearchBotRequest(body string) (*gin.Context, *httptest.ResponseRecorde
 
 // TestSearchBotHandler_Success verifies the happy path.
 func TestSearchBotHandler_Success(t *testing.T) {
-	llm := &fakeSearchbotLLM{
+	llm := &fakeChatLLM{
 		response: `Here are some related questions:
 1. How do EV impact environment?
 2. What are advantages of EV?
@@ -478,7 +478,7 @@ func TestSearchBotHandler_Success(t *testing.T) {
 
 // TestSearchBotHandler_EmptyResponse verifies empty LLM response returns empty list.
 func TestSearchBotHandler_EmptyResponse(t *testing.T) {
-	llm := &fakeSearchbotLLM{
+	llm := &fakeChatLLM{
 		response: "No related questions found.",
 	}
 	h := NewSearchBotHandler(nil, nil, llm, nil)
@@ -502,7 +502,7 @@ func TestSearchBotHandler_EmptyResponse(t *testing.T) {
 
 // TestSearchBotHandler_LLMFailure verifies error handling on LLM failure.
 func TestSearchBotHandler_LLMFailure(t *testing.T) {
-	llm := &fakeSearchbotLLM{
+	llm := &fakeChatLLM{
 		err: errFake{msg: "LLM unavailable"},
 	}
 	h := NewSearchBotHandler(nil, nil, llm, nil)
@@ -520,7 +520,7 @@ func TestSearchBotHandler_LLMFailure(t *testing.T) {
 
 // TestSearchBotHandler_MissingQuestion verifies validation.
 func TestSearchBotHandler_MissingQuestion(t *testing.T) {
-	llm := &fakeSearchbotLLM{response: "dummy"}
+	llm := &fakeChatLLM{response: "dummy"}
 	h := NewSearchBotHandler(nil, nil, llm, nil)
 
 	c, w := setupSearchBotRequest(`{}`)
@@ -913,7 +913,7 @@ func TestAskHandler_WhitespaceKbIDFiltered(t *testing.T) {
 }
 
 func TestMindMapHandlerSuccess(t *testing.T) {
-	llm := &fakeSearchbotLLM{response: "# Product\n## Features\n### Search\n#### Hybrid retrieval"}
+	llm := &fakeChatLLM{response: "# Product\n## Features\n### Search\n#### Hybrid retrieval"}
 	chunks := &mockChunkService{retrievalTestFn: func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
 		return &service.RetrievalTestResponse{
 			Chunks: []map[string]interface{}{{"content_with_weight": "Hybrid search combines vector and keyword retrieval."}},
