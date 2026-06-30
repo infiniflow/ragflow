@@ -158,6 +158,7 @@ class FileSource(StrEnum):
     DINGTALK_AI_TABLE = "dingtalk_ai_table"
     ONEDRIVE = "onedrive"
     OUTLOOK = "outlook"
+    LOOKER = "looker"
     SALESFORCE = "salesforce"
     AZURE_BLOB = "azure_blob"
 
