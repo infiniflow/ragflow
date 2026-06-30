@@ -20,6 +20,9 @@ func TestConnectorRoutesDoNotConflictWithOAuthCallbacks(t *testing.T) {
 	engine.GET("/api/v1/connectors/google-drive/oauth/web/callback", func(c *gin.Context) {
 		c.String(http.StatusOK, "google-drive")
 	})
+	engine.GET("/api/v1/connectors/box/oauth/web/callback", func(c *gin.Context) {
+		c.String(http.StatusOK, "box")
+	})
 
 	connectors := engine.Group("/api/v1/connectors")
 	connectors.GET("/:connector_id", func(c *gin.Context) {
@@ -43,6 +46,11 @@ func TestConnectorRoutesDoNotConflictWithOAuthCallbacks(t *testing.T) {
 			name: "google drive callback",
 			path: "/api/v1/connectors/google-drive/oauth/web/callback",
 			want: "google-drive",
+		},
+		{
+			name: "box callback",
+			path: "/api/v1/connectors/box/oauth/web/callback",
+			want: "box",
 		},
 		{
 			name: "connector detail",
