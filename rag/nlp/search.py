@@ -559,16 +559,24 @@ class Dealer:
         ``page_size``; otherwise blocks and pages drift apart and deep
         pagination silently drops results and returns short pages.
 
-        The window targets a provider-friendly pool of ~64 candidates, bounded
-        by ``top`` when given (i.e. when an external reranker is active), and is
-        always rounded UP to a whole number of pages to preserve the invariant.
+        The window targets a provider-friendly pool of ~64 candidates. When
+        ``top`` is given (i.e. when an external reranker is active), it also caps
+        the window at 64 candidates and keeps page alignment where possible.
         """
         if page_size <= 1:
             return min(30, top) if top > 0 else 30
+        if top > 0 and page_size > 64:
+            raise ValueError(
+                f"_rerank_window requires page_size <= 64 when reranking; got page_size={page_size}, top={top}"
+            )
         window = math.ceil(64 / page_size) * page_size
-        if top > 0:
-            window = min(window, math.ceil(top / page_size) * page_size)
-        return window
+        if top <= 0:
+            return max(30, window)
+
+        window = min(window, top, 64)
+        if top > 64 and page_size < window:
+            window = (window // page_size) * page_size
+        return max(1, window)
 
     async def retrieval(
             self,
