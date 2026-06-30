@@ -1098,6 +1098,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       rssDescription:
         '连接公开的 RSS 或 Atom feed，并将 feed 条目同步到知识库。',
       confluenceDescription: '连接你的 Confluence 工作区以搜索文档内容。',
+      alfrescoDescription:
+        '抓取 Hyland Alfresco 仓库中的文档库，并将文件同步到知识库。',
       s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
       google_cloud_storageDescription:
         '连接你的 Google Cloud Storage 存储桶以导入和同步文件。',

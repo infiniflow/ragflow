@@ -2,13 +2,14 @@ import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
-import { Mail, Rss } from 'lucide-react';
+import { FolderTree, Mail, Rss } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
 import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
 import { IDataSourceInfoMap } from '../interface';
+import { alfrescoConstant } from './alfresco-constant';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
 import { jiraConstant } from './jira-constant';
@@ -51,6 +52,7 @@ export enum DataSourceKey {
   TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
+  ALFRESCO = 'alfresco',
 }
 
 type DataSourceFeatureVisibility = {
@@ -351,6 +353,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Outlook',
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
       icon: <Mail className="text-text-primary" size={22} />,
+    },
+    [DataSourceKey.ALFRESCO]: {
+      name: 'Alfresco',
+      description: t(`setting.${DataSourceKey.ALFRESCO}Description`),
+      icon: <FolderTree className="text-text-primary" size={22} />,
     },
     [DataSourceKey.SALESFORCE]: {
       name: 'Salesforce',
@@ -1932,6 +1939,7 @@ export const DataSourceFormFields = {
         !!values?.config?.show_advanced && values?.config?.method === 'POST',
     },
   ],
+  [DataSourceKey.ALFRESCO]: alfrescoConstant(),
 };
 
 export const DataSourceFormDefaultValues = {
@@ -2426,6 +2434,22 @@ export const DataSourceFormDefaultValues = {
         token: '',
         username: '',
         password: '',
+      },
+    },
+  },
+  [DataSourceKey.ALFRESCO]: {
+    name: '',
+    source: DataSourceKey.ALFRESCO,
+    config: {
+      base_url: '',
+      auth_mode: 'basic',
+      site_ids: '',
+      root_node_ids: '',
+      include_version_history: false,
+      credentials: {
+        username: '',
+        password: '',
+        access_token: '',
       },
     },
   },
