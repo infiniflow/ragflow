@@ -199,7 +199,8 @@ def delete_provider(tenant_id: str = None, provider_id_or_name: str = None):
 
 @manager.route("/providers/<provider_id_or_name>/models", methods=["GET"])  # noqa: F821
 @login_required
-async def list_provider_models(provider_id_or_name: str):
+@add_tenant_id_to_kwargs
+async def list_provider_models(provider_id_or_name: str, tenant_id: str = None):
     """
     List models for a provider.
     ---
@@ -218,6 +219,21 @@ async def list_provider_models(provider_id_or_name: str):
         type: string
         required: true
         description: Bearer token for authentication.
+      - in: query
+        name: api_key
+        type: string
+        required: false
+        description: API key (used when creating a new instance).
+      - in: query
+        name: base_url
+        type: string
+        required: false
+        description: Base URL (used when creating a new instance).
+      - in: query
+        name: instance_name
+        type: string
+        required: false
+        description: Instance name for server-side credential lookup (alternative to api_key/base_url).
     responses:
       200:
         description: List of models for the provider.
@@ -232,7 +248,10 @@ async def list_provider_models(provider_id_or_name: str):
     try:
         api_key = request.args.get("api_key")
         base_url = request.args.get("base_url")
-        success, result = await provider_api_service.list_provider_models(provider_id_or_name, api_key, base_url)
+        instance_name = request.args.get("instance_name")
+        success, result = await provider_api_service.list_provider_models(
+            provider_id_or_name, api_key, base_url,
+            tenant_id=tenant_id, instance_name=instance_name)
         if success:
             return get_result(data=result)
         else:
