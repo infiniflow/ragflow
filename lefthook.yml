@@ -1,0 +1,47 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: check-yaml
+      run: python3 tools/hooks/check_files.py yaml
+      stage_fixed: true
+    - name: check-json
+      run: python3 tools/hooks/check_files.py json
+      stage_fixed: true
+    - name: end-of-file-fixer
+      run: python3 tools/hooks/check_files.py eof --fix
+      stage_fixed: true
+    - name: trailing-whitespace
+      run: python3 tools/hooks/check_files.py trailing-whitespace --fix
+      stage_fixed: true
+    - name: check-case-conflict
+      run: python3 tools/hooks/check_files.py case-conflict
+      stage_fixed: true
+    - name: check-merge-conflict
+      run: python3 tools/hooks/check_files.py merge-conflict
+      stage_fixed: true
+    - name: mixed-line-ending
+      run: python3 tools/hooks/check_files.py mixed-line-ending --fix
+      stage_fixed: true
+    - name: check-symlinks
+      run: python3 tools/hooks/check_files.py symlinks
+      stage_fixed: true
+    - name: ruff
+      glob: "*.py"
+      run: ruff check --fix {staged_files}
+      stage_fixed: true
+    - name: ruff-format
+      glob: "*.py"
+      run: ruff format {staged_files}
+      stage_fixed: true
+    - name: gofmt
+      glob: "*.go"
+      run: gofmt -w {staged_files}
+      stage_fixed: true
+    - name: web-prettier
+      glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
+      run: npx --prefix web prettier --write --ignore-unknown {staged_files}
+      stage_fixed: true
+    - name: web-eslint
+      glob: "web/**/*.{js,jsx,ts,tsx}"
+      run: npx --prefix web eslint --fix {staged_files}
+      stage_fixed: true

@@ -68,12 +68,38 @@ type chatAgentService interface {
 	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error)
 }
 
+// documentAccessChecker is the minimal surface RerunAgent needs
+// from DocumentService. Defined as an interface (instead of taking
+// the concrete *service.DocumentService) so handler tests can
+// inject a deny-all stub without spinning up the full service
+// (DB DAOs, storage clients, …). The production *service.DocumentService
+// satisfies this interface because its Accessible signature
+// matches.
+type documentAccessChecker interface {
+	Accessible(docID, userID string) bool
+}
+
 // AgentHandler agent handler
 type AgentHandler struct {
 	agentService *service.AgentService
 	chatRunner   chatAgentService
 	fileService  agentFileService
 	loader       canvasLoader
+	// documentService is optional. Wired in cmd/server_main.go after
+	// NewAgentHandler (which doesn't take it to preserve the existing
+	// test-friendly signature). When nil, RerunAgent falls back to
+	// tenant-only authorization (i.e. cannot verify the doc, so the
+	// check is skipped — same shape as the pre-port behaviour).
+	documentService documentAccessChecker
+}
+
+// WithDocumentService injects the document service used by
+// RerunAgent to enforce DocumentService.accessible(docID, tenantID)
+// before re-running. Returns the receiver for chaining in
+// server_main wiring.
+func (h *AgentHandler) WithDocumentService(s documentAccessChecker) *AgentHandler {
+	h.documentService = s
+	return h
 }
 
 // NewAgentHandler create agent handler
@@ -1089,8 +1115,19 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 // yet; we keep the validation envelope (101 with the "required
 // argument are missing" message) so the test contract is satisfied,
 // and accept the request when all three fields are present.
+//
+// Tenant / document ownership gate (PR #15145, review round 6):
+// body.id is treated as a document ID and
+// `DocumentService.accessible(docID, user.ID)` is enforced BEFORE
+// the rerun. The gate is REQUIRED: a nil documentService turns a
+// wiring miss into an auth bypass (any caller could rerun an
+// arbitrary doc id without an ownership check), so we fail closed
+// with 500 instead of accepting the request. On denial we return
+// "Document not found." so a caller cannot probe whether a
+// document exists in another tenant.
 func (h *AgentHandler) RerunAgent(c *gin.Context) {
-	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
 		jsonError(c, code, msg)
 		return
 	}
@@ -1116,6 +1153,20 @@ func (h *AgentHandler) RerunAgent(c *gin.Context) {
 	if len(missing) > 0 {
 		jsonError(c, common.CodeArgumentError,
 			"required argument are missing: "+strings.Join(missing, ",")+"; ")
+		return
+	}
+	// Fail closed on missing dependency: a nil documentService
+	// means the handler was wired without the access checker,
+	// which would let any caller rerun an arbitrary doc id
+	// without proving ownership. Surface as a 500 so a missing
+	// dependency is loud, not silent.
+	if h.documentService == nil {
+		zap.L().Error("RerunAgent: documentService is nil; refusing request to prevent auth bypass")
+		jsonError(c, common.CodeServerError, "server misconfiguration: document service not wired")
+		return
+	}
+	if !h.documentService.Accessible(body.ID, user.ID) {
+		jsonError(c, common.CodeDataError, "Document not found.")
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

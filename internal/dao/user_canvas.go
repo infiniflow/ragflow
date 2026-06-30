@@ -128,6 +128,51 @@ func (dao *UserCanvasDAO) Update(userCanvas *entity.UserCanvas) error {
 	return DB.Save(userCanvas).Error
 }
 
+// Accessible reports whether canvasID is reachable by userID under
+// the same owner-or-team rule used by GetByIDForUser. Used by
+// downstream authorization gates (e.g. the sandbox-artifact
+// download endpoint introduced by PR #16169) to confirm a caller
+// may reach a given canvas before exposing its runtime artifacts.
+// Returns false on any error (not found, DB failure, or empty
+// inputs) so callers can treat a denial as a 404-equivalent and
+// avoid leaking whether the canvas exists at all.
+//
+// Tenant scoping (PR review round 5, security review #1): unlike
+// the previous form, a `permission = "team"` canvas is only
+// reachable when userID is a member of one of the owner's tenants.
+// Passing a nil/empty tenantIDs list effectively disables the
+// team-canvas branch (no team canvas can match), which is the
+// safe default — a caller that forgot to plumb the tenant list
+// cannot accidentally bypass team-membership scoping.
+//
+// Callers that don't have a tenant list handy (rare; most
+// handlers derive it from the user context) should call
+// GetTenantIDsByUserID first and pass the result.
+func (dao *UserCanvasDAO) Accessible(canvasID, userID string, tenantIDs []string) bool {
+	if canvasID == "" || userID == "" {
+		return false
+	}
+	// Owner can always access their own canvas regardless of permission.
+	// Team-permission canvases are reachable only when the caller is a
+	// member of one of the owner's tenants — mirrors the predicate in
+	// GetByIDForUser / ListByTenantIDs.
+	ownerOrTeam := DB.Where("user_id = ?", userID)
+	if len(tenantIDs) > 0 {
+		ownerOrTeam = ownerOrTeam.Or(
+			"user_id IN ? AND permission = ?", tenantIDs, "team",
+		)
+	}
+	var canvas entity.UserCanvas
+	err := DB.Select("id").
+		Where("id = ?", canvasID).
+		Where(ownerOrTeam).
+		First(&canvas).Error
+	if err != nil {
+		return false
+	}
+	return canvas.ID == canvasID
+}
+
 // Delete delete user canvas
 func (dao *UserCanvasDAO) Delete(id string) error {
 	// gorm v2 treats the first non-int inline arg as a column name, not a
