@@ -102,9 +102,8 @@ docker compose -f docker-compose.yml up -d
   cd web
   npm run lint
   ```
-- **Pre-commit**: Ensure pre-commit hooks are installed.
+- **Git Hooks**: Run this once after the first clone to enable local Git hooks.
   ```bash
-  pre-commit install
-  pre-commit run --all-files
+  lefthook install
+  lefthook run pre-commit --all-files
   ```
-

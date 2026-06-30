@@ -76,6 +76,15 @@ type LLMParam struct {
 	// Doubles on each retry, capped at 1 minute. Zero = default
 	// (2 seconds). Matches Python `delay_after_error` param.
 	DelayAfterError time.Duration
+
+	// Thinking mirrors the python `thinking` Agent LLM setting
+	// (PR #15446). When set to "enabled" or "disabled", the LLM
+	// driver is told to turn its reasoning mode on/off
+	// (provider-specific; see chat_model.py for Qwen/Kimi/GLM
+	// policy). Empty string means "system default" — the LLM
+	// driver decides, which today means Qwen3 is sent
+	// `enable_thinking=false` unless overridden.
+	Thinking string
 }
 
 // LLMInput is the resolved input map the factory / Invoke expects.
@@ -93,6 +102,7 @@ type LLMInput struct {
 	OutputStructure          map[string]any
 	Driver                   string
 	APIKey                   string
+	Thinking                 string // "enabled" | "disabled" | ""
 }
 
 // LLMOutput mirrors the outputs map (per plan §2.11.3 row 5):
@@ -136,19 +146,24 @@ func ProgressChFromCtx(ctx context.Context) chan<- string {
 // dispatch a chat call. Driver / APIKey / ModelName are kept here so the
 // invoker can wire the right provider without the component caring.
 type ChatInvokeRequest struct {
-	Driver      string
-	ModelName   string
-	APIKey      string
-	BaseURL     string
-	Messages    []ComponentMessage
-	Temperature *float64
-	TopP        *float64
-	MaxTokens   *int
+	Driver           string
+	ModelName        string
+	APIKey           string
+	BaseURL          string
+	Messages         []ComponentMessage
+	Temperature      *float64
+	TopP             *float64
+	PresencePenalty  *float64
+	FrequencyPenalty *float64
+	MaxTokens        *int
 	// Tools carries function-calling tool definitions for the ReAct loop.
 	// When non-empty, the invoker builds the request directly (bypassing
 	// the model driver's ChatWithMessages) so the model driver layer
 	// (deepseek.go etc.) does NOT need modification for tool support.
 	Tools []map[string]any
+	// Thinking mirrors the agent-level `thinking` setting
+	// ("enabled" | "disabled" | "").
+	Thinking string
 }
 
 // ChatInvokeResponse mirrors what the LLM component writes to its outputs.
@@ -746,6 +761,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		Temperature: p.Temperature,
 		TopP:        p.TopP,
 		MaxTokens:   p.MaxTokens,
+		Thinking:    p.Thinking,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
@@ -783,6 +799,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 				Temperature: p.Temperature,
 				TopP:        p.TopP,
 				MaxTokens:   p.MaxTokens,
+				Thinking:    p.Thinking,
 			})
 			if err == nil {
 				parsed, ok = matchOutputStructure(retryResp.Content, p.OutputStructure)
@@ -1124,6 +1141,15 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 	if v, ok := intFrom(inputs, "max_tokens"); ok {
 		i := v
 		p.MaxTokens = &i
+	}
+	if v, ok := stringFrom(inputs, "thinking"); ok {
+		// Only allow the two known sentinels through; an arbitrary
+		// string from the DSL is dropped to avoid surprising the LLM
+		// driver. Mirrors python llm.py:78-79 which gates on the
+		// same {"enabled","disabled"} set.
+		if v == "enabled" || v == "disabled" {
+			p.Thinking = v
+		}
 	}
 	return p
 }

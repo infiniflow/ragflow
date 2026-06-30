@@ -197,7 +197,7 @@ func TestExeSQL_Trino_HappyPath(t *testing.T) {
 
 	tool := NewExeSQLTool(exesqlConnParams{
 		DBType:     "trino",
-		Host:       "h",
+		Host:       "1.1.1.1",
 		Port:       8080,
 		Username:   "u",
 		Database:   "catalog.tiny",

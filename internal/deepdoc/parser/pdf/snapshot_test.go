@@ -8,6 +8,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,12 +44,12 @@ func TestSnapshotStageComparison(t *testing.T) {
 			t.Logf("  Sample boxes (page 0): %d", len(s1.SampleBoxesPage0))
 			t.Logf("  Text merge: %d -> %d boxes", s4.BoxesBefore, s4.BoxesAfter)
 
-			// Convert sample boxes to Go TextBox format
+			// Convert sample boxes to Go pdf.TextBox format
 			goBoxes := snapshotBoxesToGo(s1.SampleBoxesPage0)
 
 			// Run Go TextMerge with default params
 			meanH := map[int]float64{0: avg(s1.MeanHeight)}
-			merged := TextMerge(goBoxes, meanH, 3)
+			merged := lyt.TextMerge(goBoxes, meanH, 3)
 
 			// Compare counts
 			if len(merged) > 0 {
@@ -59,7 +61,7 @@ func TestSnapshotStageComparison(t *testing.T) {
 
 			// Run Go NaiveVerticalMerge
 			meanW := map[int]float64{0: avg(s1.MeanWidth)}
-			vm := NaiveVerticalMerge(merged, meanH, meanW, s1.IsEnglish)
+			vm := lyt.NaiveVerticalMerge(merged, meanH, meanW, s1.IsEnglish)
 			if s6, ok := snap.Stages["_naive_vertical_merge"]; ok {
 				t.Logf("  Go VerticalMerge: %d -> %d boxes (Python: %d->%d)",
 					len(merged), len(vm), s6.BoxesBefore, s6.BoxesAfter)
@@ -73,7 +75,7 @@ func TestSnapshotStageComparison(t *testing.T) {
 			}
 
 			// Run Go boxesToSections
-			sections := boxesToSections(vm, nil)
+			sections := lyt.BoxesToSections(vm, nil)
 			if len(vm) > 0 && len(sections) == 0 {
 				t.Error("boxesToSections produced 0 sections from non-empty boxes")
 			}
@@ -146,10 +148,10 @@ func loadSnapshot(t *testing.T, path string) snapshot {
 	return s
 }
 
-func snapshotBoxesToGo(sbs []snapshotBox) []TextBox {
-	boxes := make([]TextBox, len(sbs))
+func snapshotBoxesToGo(sbs []snapshotBox) []pdf.TextBox {
+	boxes := make([]pdf.TextBox, len(sbs))
 	for i, sb := range sbs {
-		boxes[i] = TextBox{
+		boxes[i] = pdf.TextBox{
 			X0: sb.X0, X1: sb.X1, Top: sb.Top, Bottom: sb.Bottom,
 			Text: sb.Text, PageNumber: sb.PageNumber - 1, // pdfplumber uses 1-based
 			LayoutType: sb.LayoutType, LayoutNo: sb.LayoutNo,
@@ -242,13 +244,6 @@ func toInt(v interface{}) int {
 	default:
 		return 0
 	}
-}
-
-func toString(v interface{}) string {
-	if v == nil {
-		return ""
-	}
-	return fmt.Sprint(v)
 }
 
 func formatBytes(n int) string {

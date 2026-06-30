@@ -40,6 +40,7 @@ class VariableAssignerParam(ComponentParamBase):
 
 class VariableAssigner(ComponentBase,ABC):
     component_name = "VariableAssigner"
+    _NO_PARAMETER_OPERATORS = {"clear", "remove_first", "remove_last"}
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
@@ -47,11 +48,14 @@ class VariableAssigner(ComponentBase,ABC):
             return
         else:
             for item in self._param.variables:
-                if any([not item.get("variable"), not item.get("operator"), not item.get("parameter")]):
+                variable = item.get("variable")
+                operator = item.get("operator")
+                parameter = item.get("parameter")
+
+                if any([not variable, not operator]):
                     raise ValueError("Variable is not complete.")
-                variable=item["variable"]
-                operator=item["operator"]
-                parameter=item["parameter"]
+                if operator not in self._NO_PARAMETER_OPERATORS and parameter is None:
+                    raise ValueError("Variable is not complete.")
                 variable_value=self._canvas.get_variable_value(variable)
                 new_variable=self._operate(variable_value,operator,parameter)
                 self._canvas.set_variable_value(variable, new_variable)

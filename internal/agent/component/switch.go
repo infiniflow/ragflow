@@ -170,8 +170,15 @@ func evaluateGroup(group map[string]any, state *runtime.CanvasState) (bool, erro
 		op = "and"
 	}
 	if len(clauses) == 0 {
-		// An empty group is vacuously true (matches).
-		return true, nil
+		// An empty group must NOT match — otherwise a Switch with
+		// no clauses (or all skipped `cpn_id`s) routes to the empty
+		// group's `to` target before reaching the else / end_cpn_ids
+		// branch. Mirrors PR #15644: the Python `if all(res):` form
+		// was buggy for the same reason (all([]) is True) and was
+		// tightened to `if res and all(res):`. The Go fix is the
+		// empty-clauses short-circuit: an un-matchable group falls
+		// through to the next condition or the end targets.
+		return false, nil
 	}
 	for i, raw := range clauses {
 		c, ok := raw.(map[string]any)

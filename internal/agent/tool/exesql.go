@@ -46,7 +46,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -268,6 +270,18 @@ func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string) (
 		return exesqlErrorResult(err), err
 	}
 
+	// The DB host/port are node-author-controlled and are connected to
+	// server-side, so guard against SSRF (internal hosts, loopback, cloud
+	// metadata) before any driver dispatch — mirroring the
+	// `test_db_connection` endpoint guard. Connect to the validated,
+	// resolved public IP so a later DNS change cannot rebind the host
+	// to an internal address (mirrors agent/tools/exesql.py PR #15609).
+	safeHost, ssrfErr := ValidateDBHost(conn.Host)
+	if ssrfErr != nil {
+		return exesqlErrorResult(ssrfErr), ssrfErr
+	}
+	conn.Host = safeHost
+
 	driver, dsn, err := exesqlDriverAndDSN(conn)
 	if err != nil {
 		return exesqlErrorResult(err), err
@@ -448,28 +462,57 @@ func exesqlMarshalResult(r *exesqlResult) (string, error) {
 // driver name and DSN. OceanBase reuses the MySQL driver with a
 // utf8mb4 charset — same trick the Python tool pulls in
 // `pymysql.connect(..., charset='utf8mb4')`.
+//
+// IPv6 safety: `ValidateDBHost` (PR #15609) can return a public IPv6
+// literal (e.g. "2001:db8::1"). The MySQL driver requires bracketed
+// host:port for IPv6 — we route the MySQL/OceanBase paths through
+// net.JoinHostPort so an IPv6 host produces `tcp([2001:db8::1]:3306)`.
+//
+// Driver-specific format rules (PR review round 6, Major #4):
+//   - mysql / oceanbase: `tcp(<host:port>)` URL form — host:port is
+//     a single bracketed value (JoinHostPort handles IPv6).
+//   - lib/pq: keyword=value DSN — `host=` and `port=` are DISTINCT
+//     fields. Combining them as `host=h:p` is rejected by the driver.
+//   - go-mssqldb (denisenkom): ADO-style DSN — `server=` and `port=`
+//     are DISTINCT fields. `server=h:p;port=p` is also rejected.
 func exesqlDriverAndDSN(c exesqlConnParams) (driver, dsn string, err error) {
+	mysqlHostPort := net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 	switch strings.ToLower(c.DBType) {
 	case "mysql", "mariadb":
 		return "mysql", fmt.Sprintf(
-			"%s:%s@tcp(%s:%d)/%s?parseTime=true&charset=utf8mb4",
-			c.Username, c.Password, c.Host, c.Port, c.Database,
+			"%s:%s@tcp(%s)/%s?parseTime=true&charset=utf8mb4",
+			c.Username, c.Password, mysqlHostPort, c.Database,
 		), nil
 	case "oceanbase":
 		// OceanBase MySQL-compat mode: same driver, MySQL wire protocol.
 		return "mysql", fmt.Sprintf(
-			"%s:%s@tcp(%s:%d)/%s?parseTime=true&charset=utf8mb4",
-			c.Username, c.Password, c.Host, c.Port, c.Database,
+			"%s:%s@tcp(%s)/%s?parseTime=true&charset=utf8mb4",
+			c.Username, c.Password, mysqlHostPort, c.Database,
 		), nil
 	case "postgres", "postgresql":
+		// lib/pq: keyword DSN — host and port are separate fields.
+		// For IPv6, lib/pq accepts `host=[2001:db8::1]` (the bracketed
+		// form is the documented IPv6 representation).
+		pgHost := c.Host
+		if strings.Contains(pgHost, ":") {
+			pgHost = "[" + pgHost + "]"
+		}
 		return "postgres", fmt.Sprintf(
 			"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-			c.Host, c.Port, c.Username, c.Password, c.Database,
+			pgHost, c.Port, c.Username, c.Password, c.Database,
 		), nil
 	case "mssql", "sqlserver":
+		// denisenkom/go-mssqldb: ADO-style DSN — server and port are
+		// separate fields. For IPv6, the ADO form requires the
+		// bracketed host. We use the bracketed form whenever the host
+		// contains a colon (the unambiguous IPv6 marker).
+		msHost := c.Host
+		if strings.Contains(msHost, ":") {
+			msHost = "[" + msHost + "]"
+		}
 		return "sqlserver", fmt.Sprintf(
 			"server=%s;port=%d;user id=%s;password=%s;database=%s",
-			c.Host, c.Port, c.Username, c.Password, c.Database,
+			msHost, c.Port, c.Username, c.Password, c.Database,
 		), nil
 	case "trino":
 		return "trino", trinoDSN(c), nil

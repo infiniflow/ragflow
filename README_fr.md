@@ -310,10 +310,10 @@ docker build --platform linux/amd64 \
 
 ## 🔨 Lancer le service depuis les sources pour le développement
 
-1. Installez `uv` et `pre-commit`, ou ignorez cette étape s'ils sont déjà installés :
+1. Installez `uv`, ou ignorez cette étape s'il est déjà installé :
 
    ```bash
-   pipx install uv pre-commit
+   pipx install uv
    ```
 2. Clonez le code source et installez les dépendances Python :
 
@@ -322,7 +322,7 @@ docker build --platform linux/amd64 \
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
    uv run python3 ragflow_deps/download_deps.py
-   pre-commit install
+   lefthook install
    ```
 3. Lancez les services dépendants (MinIO, Elasticsearch, Redis et MySQL) avec Docker Compose :
 

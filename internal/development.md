@@ -19,6 +19,14 @@ docker compose -f docker/docker-compose-base.yml up -d
 ./build.sh --go
 ```
 
+- Production builds (strip debug symbols for smaller binaries):
+
+```bash
+./build.sh --strip --all
+# or
+./build.sh -s --go
+```
+
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, you must set the following two CGO environment variables in your run configuration or shell:
 >
 > ```bash

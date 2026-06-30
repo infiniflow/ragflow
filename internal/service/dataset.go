@@ -2488,7 +2488,7 @@ func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		kb.Language = language
 	}
 
-	if err := s.kbDAO.Create(kb); err != nil {
+	if err = s.kbDAO.Create(kb); err != nil {
 		return nil, common.CodeServerError, errors.New("Failed to save dataset")
 	}
 
