@@ -110,6 +110,19 @@ func (dao *MCPServerDAO) ListMCPServers(tenantID string, ids []string, keywords 
 	return servers, total, nil
 }
 
+// GetMCPServerByIDAndTenantID returns one MCP server scoped to a tenant.
+func (dao *MCPServerDAO) GetMCPServerByIDAndTenantID(id, tenantID string) (*entity.MCPServer, error) {
+	var server entity.MCPServer
+	err := DB.Where("id = ? AND tenant_id = ?", id, tenantID).First(&server).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &server, nil
+}
+
 // GetByIDAndTenant returns an MCP server owned by a tenant.
 func (dao *MCPServerDAO) GetByIDAndTenant(id, tenantID string) (*entity.MCPServer, error) {
 	var server entity.MCPServer

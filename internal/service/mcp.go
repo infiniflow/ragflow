@@ -80,7 +80,7 @@ type CreateMCPServerResponse struct {
 // UpdateMCPServerRequest is the raw request payload for updating an MCP server.
 type UpdateMCPServerRequest map[string]json.RawMessage
 
-// MCPServerListItem is an MCP server item in the list response.
+// MCPServerListItem is the list projection returned by Python MCPServerService.get_servers.
 type MCPServerListItem struct {
 	ID          string         `json:"id"`
 	Name        string         `json:"name"`
@@ -108,6 +108,36 @@ type ExportMCPServerResponse struct {
 type ListMCPServersResponse struct {
 	MCPServers []*MCPServerListItem `json:"mcp_servers"`
 	Total      int64                `json:"total"`
+}
+
+// MCPServerDetail is the detail payload returned by Python MCPServer.to_dict.
+type MCPServerDetail struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	TenantID    string         `json:"tenant_id"`
+	URL         string         `json:"url"`
+	ServerType  string         `json:"server_type"`
+	Description *string        `json:"description"`
+	Variables   entity.JSONMap `json:"variables"`
+	Headers     entity.JSONMap `json:"headers"`
+	CreateTime  *int64         `json:"create_time"`
+	CreateDate  *string        `json:"create_date"`
+	UpdateTime  *int64         `json:"update_time"`
+	UpdateDate  *string        `json:"update_date"`
+}
+
+// ExportedMCPServers is the download response payload for MCP server export.
+type ExportedMCPServers struct {
+	MCPServers map[string]ExportedMCPServer `json:"mcpServers"`
+}
+
+// ExportedMCPServer is one MCP server in export format.
+type ExportedMCPServer struct {
+	Type               string      `json:"type"`
+	URL                string      `json:"url"`
+	Name               string      `json:"name"`
+	AuthorizationToken string      `json:"authorization_token"`
+	Tools              interface{} `json:"tools"`
 }
 
 // CreateMCPServer creates an MCP server owned by a tenant.
@@ -346,28 +376,106 @@ func (s *MCPService) ListMCPServers(tenantID string, ids []string, keywords stri
 	}
 	servers = paginateMCPServers(servers, page, pageSize)
 
+	return &ListMCPServersResponse{
+		MCPServers: buildMCPServerListItems(servers),
+		Total:      total,
+	}, common.CodeSuccess, nil
+}
+
+// GetMCPServer returns one MCP server owned by a tenant.
+func (s *MCPService) GetMCPServer(tenantID, mcpID string) (*MCPServerDetail, bool, error) {
+	server, err := s.mcpServerDAO.GetMCPServerByIDAndTenantID(mcpID, tenantID)
+	if err != nil {
+		return nil, false, err
+	}
+	if server == nil {
+		return nil, false, nil
+	}
+	return buildMCPServerDetail(server), true, nil
+}
+
+// ExportMCPServer returns one MCP server in download format.
+func (s *MCPService) ExportMCPServer(tenantID, mcpID string) (*ExportedMCPServers, bool, error) {
+	server, err := s.mcpServerDAO.GetMCPServerByIDAndTenantID(mcpID, tenantID)
+	if err != nil {
+		return nil, false, err
+	}
+	if server == nil {
+		return nil, false, nil
+	}
+	return buildExportedMCPServer(server), true, nil
+}
+
+func buildMCPServerListItems(servers []*entity.MCPServer) []*MCPServerListItem {
 	items := make([]*MCPServerListItem, 0, len(servers))
 	for _, server := range servers {
-		variables := server.Variables
-		if variables == nil {
-			variables = entity.JSONMap{}
-		}
+		normalizeMCPServer(server)
 		items = append(items, &MCPServerListItem{
 			ID:          server.ID,
 			Name:        server.Name,
 			ServerType:  server.ServerType,
 			URL:         server.URL,
 			Description: server.Description,
-			Variables:   variables,
+			Variables:   server.Variables,
 			CreateDate:  formatMCPServerDate(server.CreateDate),
 			UpdateDate:  formatMCPServerDate(server.UpdateDate),
 		})
 	}
+	return items
+}
 
-	return &ListMCPServersResponse{
-		MCPServers: items,
-		Total:      total,
-	}, common.CodeSuccess, nil
+func buildMCPServerDetail(server *entity.MCPServer) *MCPServerDetail {
+	normalizeMCPServer(server)
+	return &MCPServerDetail{
+		ID:          server.ID,
+		Name:        server.Name,
+		TenantID:    server.TenantID,
+		URL:         server.URL,
+		ServerType:  server.ServerType,
+		Description: server.Description,
+		Variables:   server.Variables,
+		Headers:     server.Headers,
+		CreateTime:  server.CreateTime,
+		CreateDate:  formatMCPServerDate(server.CreateDate),
+		UpdateTime:  server.UpdateTime,
+		UpdateDate:  formatMCPServerDate(server.UpdateDate),
+	}
+}
+
+func buildExportedMCPServer(server *entity.MCPServer) *ExportedMCPServers {
+	normalizeMCPServer(server)
+	authorizationToken, _ := server.Variables["authorization_token"].(string)
+	tools, ok := server.Variables["tools"]
+	if !ok || tools == nil {
+		tools = map[string]interface{}{}
+	}
+
+	return &ExportedMCPServers{
+		MCPServers: map[string]ExportedMCPServer{
+			server.Name: {
+				Type:               server.ServerType,
+				URL:                server.URL,
+				Name:               server.Name,
+				AuthorizationToken: authorizationToken,
+				Tools:              tools,
+			},
+		},
+	}
+}
+
+func normalizeMCPServer(server *entity.MCPServer) {
+	if server == nil {
+		return
+	}
+	if server.Variables == nil {
+		server.Variables = entity.JSONMap{}
+	}
+	if server.Headers == nil {
+		server.Headers = entity.JSONMap{}
+	}
+	if tools, ok := server.Variables["tools"]; !ok || tools == nil {
+		server.Variables["tools"] = map[string]interface{}{}
+	}
 }
 
 // DeleteMCPServer deletes an MCP server owned by a tenant.

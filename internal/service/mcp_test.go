@@ -182,6 +182,26 @@ func TestPaginateMCPServersPositiveValues(t *testing.T) {
 	}
 }
 
+func TestNormalizeMCPServerInitializesLegacyNilMaps(t *testing.T) {
+	server := &entity.MCPServer{}
+
+	normalizeMCPServer(server)
+
+	if server.Variables == nil {
+		t.Fatal("expected variables to be initialized")
+	}
+	if server.Headers == nil {
+		t.Fatal("expected headers to be initialized")
+	}
+	tools, ok := server.Variables["tools"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected tools to be a map, got %T", server.Variables["tools"])
+	}
+	if len(tools) != 0 {
+		t.Fatalf("expected empty tools map, got %+v", tools)
+	}
+}
+
 func makeMCPServers(count int) []*entity.MCPServer {
 	servers := make([]*entity.MCPServer, 0, count)
 	for i := 1; i <= count; i++ {

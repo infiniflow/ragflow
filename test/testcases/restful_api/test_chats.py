@@ -618,6 +618,7 @@ def _load_chat_routes_unit_module(monkeypatch):
 
     class _StubRetCode(int, Enum):
         SUCCESS = 0
+        EXCEPTION_ERROR = 100
         DATA_ERROR = 102
         OPERATING_ERROR = 103
         AUTHENTICATION_ERROR = 109
@@ -707,6 +708,23 @@ def _load_chat_routes_unit_module(monkeypatch):
     conversation_service_mod = ModuleType("api.db.services.conversation_service")
 
     class _StubConversationService:
+        model = SimpleNamespace(
+            _meta=SimpleNamespace(
+                fields={
+                    "id": None,
+                    "dialog_id": None,
+                    "user_id": None,
+                    "name": None,
+                    "message": None,
+                    "reference": None,
+                    "create_time": None,
+                    "create_date": None,
+                    "update_time": None,
+                    "update_date": None,
+                }
+            )
+        )
+
         @staticmethod
         def query(**_kwargs):
             return []
@@ -881,6 +899,11 @@ def test_chat_session_create_and_update_guard_matrix_unit(monkeypatch):
     _set_route_unit_request_json(monkeypatch, module, {"name": ""})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
     assert "`name` can not be empty." in res["message"]
+
+    _set_route_unit_request_json(monkeypatch, module, {"unknown_key": "unknown_value"})
+    res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR
+    assert 'Unrecognized field name: "unknown_key"' in res["message"]
 
     _set_route_unit_request_json(monkeypatch, module, {"name": "renamed"})
     monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_args, **_kwargs: False)
