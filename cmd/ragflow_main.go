@@ -198,24 +198,8 @@ func runCommon(args *serverArgs) error {
 	}
 
 	var logFile string
-	var serverName string
-	switch *args.mode {
-	case "api":
-		serverName = fmt.Sprintf("api_server_%d", args.port)
-		server.SetServerName(serverName)
-		logFile = fmt.Sprintf("%s.log", serverName)
-	case "admin":
-		serverName = fmt.Sprintf("admin_server_%d", args.port)
-		server.SetServerName(serverName)
-		logFile = fmt.Sprintf("%s.log", serverName)
-	case "ingestor":
-		uuid := common.GenerateUUID()
-		serverName = fmt.Sprintf("ingestor_server_%s", uuid)
-		server.SetServerName(serverName)
-		logFile = fmt.Sprintf("%s.log", serverName)
-	default:
-		return fmt.Errorf("invalid server mode: %s", *args.mode)
-	}
+	serverName := fmt.Sprintf("%s_server", *args.mode)
+	logFile = fmt.Sprintf("%s.log", serverName)
 
 	logLevel := "info"
 	if args.debugLog {
@@ -238,6 +222,31 @@ func runCommon(args *serverArgs) error {
 
 	config := server.GetConfig()
 
+	switch *args.mode {
+	case "api":
+		port := config.Server.Port
+		if args.port != nil {
+			port = *args.port
+			config.Server.Port = port
+		}
+		serverName = fmt.Sprintf("api_server_%d", port)
+
+	case "admin":
+		port := config.Admin.Port
+		if args.port != nil {
+			port = *args.port
+			config.Server.Port = port
+		}
+		serverName = fmt.Sprintf("admin_server_%d", port)
+	case "ingestor":
+		uuid := common.GenerateUUID()
+		serverName = fmt.Sprintf("ingestor_server_%s", uuid)
+	default:
+		return fmt.Errorf("invalid server mode: %s", *args.mode)
+	}
+	server.SetServerName(serverName)
+	logFile = fmt.Sprintf("%s.log", serverName)
+
 	// Reinitialize logger with configured level if different
 	logLevel = config.Log.Level
 	if logLevel == "" {
@@ -247,6 +256,8 @@ func runCommon(args *serverArgs) error {
 	if args.debugLog {
 		logLevel = "debug"
 	}
+
+	config.Log.Level = logLevel
 
 	fileOut := common.FileOutput{
 		Path:       logFile,
@@ -264,7 +275,39 @@ func runCommon(args *serverArgs) error {
 
 	server.SetLogger(common.Logger)
 
-	common.Info(fmt.Sprintf("Starting %s server name %s, mode: %s", *args.mode, serverName, config.Server.Mode))
+	server.PrintAll()
+	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *args.mode, serverName, config.Server.Mode))
+
+	// Initialize database
+	if err = dao.InitDB(); err != nil {
+		common.Fatal("Failed to initialize database", zap.Error(err))
+	}
+
+	// Initialize doc engine
+	if err = engine.Init(&config.DocEngine); err != nil {
+		common.Fatal("Failed to initialize doc engine", zap.Error(err))
+	}
+	defer engine.Close()
+
+	// Initialize Redis cache
+	if err = redis.Init(&config.Redis); err != nil {
+		common.Fatal("Failed to initialize Redis", zap.Error(err))
+	}
+	defer redis.Close()
+
+	if err = storage.InitStorageFactory(); err != nil {
+		common.Fatal("Failed to initialize storage factory", zap.Error(err))
+	}
+
+	if err = engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
+		common.Error("Failed to initialize message queue engine", err)
+	}
+
+	// Initialize server variables (runtime variables that can change during operation)
+	// This must be done after Cache is initialized
+	if err = server.InitVariables(redis.Get()); err != nil {
+		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
+	}
 
 	return nil
 }
