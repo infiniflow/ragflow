@@ -161,32 +161,26 @@ type pyToken struct {
 	Index int    `json:"index"`
 }
 
-// runPythonExtractor runs the Python full pipeline (spaCy NER + dep relations)
+// runPythonExtractor runs the Python full pipeline (SemanticExtractor = NER + parser + tagger + dep relations)
 // via the venv's Python. Returns structured result.
 func runPythonExtractor(text, lang string) (*pyResult, error) {
 	script := `
-import json, sys, logging, warnings, spacy
+import json, sys, logging, warnings
 logging.disable(logging.CRITICAL)
 warnings.filterwarnings("ignore")
-from rag.graphrag.ner.extractor import Extractor
+from rag.graphrag.ner.ner_extractor import NERExtractor
 data = json.loads(sys.stdin.read())
-ext = Extractor(language=data["lang"])
-result = ext.extract(data["text"])
-# Also get dependency tree from spaCy and apply dep-based relation extraction
-nlp = spacy.load(ext._model_name)
-doc = nlp(data["text"])
-tokens = [{"text": t.text, "head": t.head.i, "dep": t.dep_, "index": i} for i, t in enumerate(doc)]
-# Dep-based relations (for verification)
-from rag.graphrag.ner.dep_relation_extractor import DepRelationExtractor
-dep_ext = DepRelationExtractor(language=data["lang"])
-dep_rels = dep_ext.extract(data["text"], result.entities, doc=doc)
+ext = NERExtractor(language=data["lang"])
+result = ext.extract(data["text"], include_tokens=True)
+tokens = [{"text": t["text"], "head": t["head"], "dep": t["dep"], "index": t["index"]}
+          for t in result.metadata.get("tokens", [])]
 out = {
     "entities": [{"text": e.text, "label": e.label, "start_char": e.start_char, "end_char": e.end_char}
                   for e in result.entities],
     "relations": [{"subject": {"text": r.subject.text, "label": r.subject.label},
                     "predicate": r.predicate,
                     "object": {"text": r.obj.text, "label": r.obj.label}}
-                   for r in dep_rels if r.predicate != "related_to"],
+                   for r in result.relations if r.predicate != "related_to"],
     "tokens": tokens,
 }
 print(json.dumps(out))

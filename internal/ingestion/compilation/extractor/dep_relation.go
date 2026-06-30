@@ -1,15 +1,14 @@
 // Go implementation of dependency-based relation extraction.
-// Direct port of Python DepRelationExtractor._extract_from_root logic.
-// Operates on a dependency tree (heads + labels) independent of how it was parsed.
+// Direct port of Python DepRelationExtractor — semantica-aligned.
+// Operates on a dependency tree (heads + labels) independent of parser.
 
 package extractor
 
-import (
-	"strings"
-)
+import "strings"
 
-// Verb lemmatization (spaCy lemma → base form, since Go doesn't have spaCy)
+// Verb lemmatization — multi-language
 var verbLemma = map[string]string{
+	// English
 	"founded": "found", "founding": "found",
 	"works": "work", "working": "work",
 	"based": "base", "basing": "base",
@@ -25,8 +24,46 @@ var verbLemma = map[string]string{
 	"created": "create", "creating": "create",
 	"established": "establish", "establishing": "establish",
 	"started": "start", "starting": "start",
-	"headedquartered": "headquarter",
+	"led": "lead", "leading": "lead",
+	"managed": "manage", "managing": "manage",
+	"headed": "head", "heading": "head",
+	"ran": "run", "running": "run",
+	"owned": "own", "owning": "own",
+	"developed": "develop", "developing": "develop",
+	"wrote": "write", "written": "write", "writing": "write",
+	"published": "publish", "publishing": "publish",
+	"invested": "invest", "investing": "invest",
+	"partnered": "partner", "partnering": "partner",
+	"collaborated": "collaborate", "collaborating": "collaborate",
 	"sets": "set",
+	// German
+	"gegründet": "gründen", "gründete": "gründen",
+	"arbeitet": "arbeiten", "arbeitete": "arbeiten",
+	"befindet": "befinden",
+	"liegt": "liegen", "lag": "liegen",
+	"geboren": "gebären",
+	"erworben": "erwerben", "erwarb": "erwerben",
+	"gekauft": "kaufen", "kaufte": "kaufen",
+	"übernommen": "übernehmen", "übernahm": "übernehmen",
+	// French
+	"fondé": "fonder", "fondée": "fonder",
+	"créé": "créer", "créée": "créer",
+	"travaille": "travailler",
+	"employé": "employer", "employée": "employer",
+	"situé": "situer", "située": "situer",
+	"né": "naître", "née": "naître",
+	"acquis": "acquérir",
+	// Spanish + Portuguese (shared forms)
+	"fundado": "fundar", "fundada": "fundar",
+	"creado": "crear", "creada": "crear",
+	"criado": "criar", "criada": "criar",
+	"trabaja": "trabajar", "trabalha": "trabalhar",
+	"ubicado": "ubicar", "ubicada": "ubicar",
+	"situado": "situar", "situada": "situar",
+	"localizado": "localizar", "localizada": "localizar",
+	"sediado": "sediar", "sediada": "sediar",
+	"nacido": "nacer", "nacida": "nacer",
+	"nascido": "nascer", "nascida": "nascer",
 }
 
 func lemma(w string) string {
@@ -36,77 +73,105 @@ func lemma(w string) string {
 	return w
 }
 
-// Verb+prep → relation type mapping (same as Python _VERB_RELATIONS)
+// Verb+prep → relation type (multi-language)
 var depVerbRelations = map[string]string{
-	"found+by":        "founded_by",
-	"co-found+by":     "founded_by",
-	"establish+by":    "founded_by",
-	"create+by":       "founded_by",
-	"set+up":          "founded_by",
-	"start+by":        "founded_by",
-	"work+for":        "works_for",
-	"employ+by":       "works_for",
-	"hire+by":         "works_for",
-	"join":            "works_for",
-	"base+in":         "located_in",
-	"locate+in":       "located_in",
-	"situate+in":      "located_in",
-	"bear+in":         "born_in",
-	"bear+on":         "born_in",
-	"acquire+by":      "acquired",
-	"merge+with":      "acquired",
-	"buy+by":          "acquired",
+	// English
+	"found+by": "founded_by", "co-found+by": "founded_by",
+	"establish+by": "founded_by", "create+by": "founded_by",
+	"set+up": "founded_by", "start+by": "founded_by",
+	"work+for": "works_for", "employ+by": "works_for",
+	"hire+by": "works_for", "join": "works_for",
+	"lead+by": "works_for", "manage+by": "works_for",
+	"head+by": "works_for", "run+by": "works_for",
+	"own+by": "owns", "develop+by": "develops",
+	"write+by": "wrote", "publish+by": "published",
+	"invest+in": "invests_in", "partner+with": "partners_with",
+	"collaborate+with": "collaborates_with",
+	"merge+with": "merged_with", "base+in": "located_in",
+	"locate+in": "located_in", "situate+in": "located_in",
+	"headquarter+in": "located_in", "bear+in": "born_in",
+	"bear+on": "born_in", "acquire+by": "acquired", "buy+by": "acquired",
+	// German
+	"gründen+von": "founded_by",
+	"arbeiten+für": "works_for", "beschäftigen+durch": "works_for",
+	"sich+befinden": "located_in", "liegen+in": "located_in",
+	"sitzen+in": "located_in", "gebären+in": "born_in",
+	"erwerben+durch": "acquired", "übernehmen+durch": "acquired",
+	// French
+	"fonder+par": "founded_by", "créer+par": "founded_by",
+	"travailler+pour": "works_for", "situer+à": "located_in",
+	"baser+à": "located_in", "naître+à": "born_in",
+	"acquérir+par": "acquired",
+	// Spanish + Portuguese (shared lemmas)
+	"fundar+por": "founded_by", "crear+por": "founded_by",
+	"criar+por": "founded_by", "trabajar+para": "works_for",
+	"trabalhar+para": "works_for", "ubicar+en": "located_in",
+	"situar+en": "located_in", "localizar+em": "located_in",
+	"situar+em": "located_in", "sediar+em": "located_in",
+	"nacer+en": "born_in", "nascer+em": "born_in",
+	"adquirir+por": "acquired",
 }
 
-// Copula title patterns (same as Python _COPULA_TITLE_MAP)
+// Copula title patterns
 var depCopulaTitles = map[string][]string{
-	"ceo":       {"ceo_of", "works_for"},
-	"cto":       {"works_for"},
-	"cfo":       {"works_for"},
-	"coo":       {"works_for"},
-	"vp":        {"works_for"},
-	"director":  {"works_for"},
-	"manager":   {"works_for"},
-	"engineer":  {"works_for"},
-	"employee":  {"works_for"},
-	"founder":   {"founded_by"},
-	"co-founder": {"founded_by"},
+	"ceo": {"ceo_of", "works_for"}, "cto": {"works_for"},
+	"cfo": {"works_for"}, "coo": {"works_for"},
+	"vp": {"works_for"}, "director": {"works_for"},
+	"manager": {"works_for"}, "engineer": {"works_for"},
+	"employee": {"works_for"},
+	"founder": {"founded_by"}, "co-founder": {"founded_by"},
 }
 
-// DepToken holds a single token's dependency info
+// Multi-hop inference rules
+var multiHopRules = map[string]map[string]string{
+	"ceo_of":     {"is_subsidiary_of": "works_for", "located_in": "works_for"},
+	"works_for":  {"is_subsidiary_of": "works_for"},
+	"founded_by": {"is_subsidiary_of": "founded_by"},
+}
+
+// DepToken holds token dependency info
 type DepToken struct {
-	Text     string `json:"text"`
-	Head     int    `json:"head"` // index of head token (-1 = root)
-	Dep      string `json:"dep"`  // dependency relation label
-	Index    int    `json:"index"`
-	POS      string `json:"pos,omitempty"`
+	Text  string `json:"text"`
+	Head  int    `json:"head"`
+	Dep   string `json:"dep"`
+	Index int    `json:"index"`
+	POS   string `json:"pos,omitempty"`
 }
 
 // DepExtractRelations extracts typed relations from a dependency parse tree.
-// tokens: list of tokens with head and dep fields (from spaCy/C++ parser).
-// entities: NER entities with character offsets.
-// Returns typed relations (excludes "related_to").
 func DepExtractRelations(text string, tokens []DepToken, entities []Entity, lang string) []Relation {
-	entityMap := buildEntityMap(entities)
+	entityMap := buildEntityMapMulti(entities)
 	var relations []Relation
 
-	// Find root tokens and extract (spaCy: root head = self index)
 	for _, tok := range tokens {
-		if tok.Head == tok.Index { // ROOT (self-loop in spaCy convention)
-			rels := extractFromRoot(text, tok.Index, tokens, entityMap)
+		if tok.Head != tok.Index {
+			continue
+		}
+		// Check negation
+		if hasNegation(tok.Index, tokens) {
+			continue
+		}
+		rels := extractFromRoot(text, tok.Index, tokens, entityMap)
+		relations = append(relations, rels...)
+		if isCopulaVerb(tok) || lemma(strings.ToLower(tok.Text)) == "be" {
+			rels := extractCopula(text, tok.Index, tokens, entityMap)
 			relations = append(relations, rels...)
-
-			// Copula ("X is [title] of Y") — only for "be" verbs
-			if isCopulaVerb(tok) || lemma(strings.ToLower(tok.Text)) == "be" {
-				rels := extractCopula(text, tok.Index, tokens, entityMap)
-				relations = append(relations, rels...)
-			}
 		}
 	}
 
-	// Deduplicate
+	// Multi-hop inference
+	relations = inferMultiHop(relations)
 	relations = dedupRelations(relations)
 	return relations
+}
+
+func hasNegation(idx int, tokens []DepToken) bool {
+	for _, t := range tokens {
+		if t.Head == idx && t.Dep == "neg" {
+			return true
+		}
+	}
+	return false
 }
 
 func isCopulaVerb(tok DepToken) bool {
@@ -114,12 +179,76 @@ func isCopulaVerb(tok DepToken) bool {
 	return lower == "is" || lower == "are" || lower == "was" || lower == "were" || lower == "be"
 }
 
-func extractFromRoot(text string, rootIdx int, tokens []DepToken, entityMap map[string]Entity) []Relation {
+// Multi-hop inference
+func inferMultiHop(rels []Relation) []Relation {
+	bySubj := make(map[string][]Relation)
+	for _, r := range rels {
+		if r.Predicate == "related_to" {
+			continue
+		}
+		key := strings.ToLower(r.Subject.Text)
+		bySubj[key] = append(bySubj[key], r)
+	}
+
+	var inferred []Relation
+	for _, r := range rels {
+		if r.Predicate == "related_to" {
+			continue
+		}
+		objKey := strings.ToLower(r.Object.Text)
+		if chain, ok := bySubj[objKey]; ok {
+			for _, r2 := range chain {
+				if hopRules, ok := multiHopRules[r.Predicate]; ok {
+					if inferredPred, ok := hopRules[r2.Predicate]; ok {
+						conf := r.Confidence
+						if r2.Confidence < conf {
+							conf = r2.Confidence
+						}
+						conf *= 0.9
+						inferred = append(inferred, Relation{
+							Subject:    r.Subject,
+							Predicate:  inferredPred,
+							Object:     r2.Object,
+							Confidence: conf,
+						})
+					}
+				}
+			}
+		}
+	}
+	return append(rels, inferred...)
+}
+
+// Entity map: multi-occurrence aware
+func buildEntityMapMulti(entities []Entity) map[string][]Entity {
+	m := make(map[string][]Entity)
+	for _, e := range entities {
+		key := strings.ToLower(e.Text)
+		m[key] = append(m[key], e)
+		cleaned := strings.TrimRight(e.Text, ".,;:!?")
+		cleaned = strings.TrimSpace(cleaned)
+		if cleaned != e.Text {
+			ckey := strings.ToLower(cleaned)
+			m[ckey] = append(m[ckey], e)
+		}
+	}
+	return m
+}
+
+func findBestEntity(key string, entityMap map[string][]Entity) *Entity {
+	entries := entityMap[strings.ToLower(strings.TrimSpace(key))]
+	if len(entries) == 0 {
+		return nil
+	}
+	return &entries[0]
+}
+
+// extractFromRoot — passive/active/preposition patterns
+func extractFromRoot(text string, rootIdx int, tokens []DepToken, entityMap map[string][]Entity) []Relation {
 	var relations []Relation
 	root := tokens[rootIdx]
 	verbLemma := lemma(strings.ToLower(root.Text))
 
-	// Collect arguments
 	nsubj := getChildEntity(rootIdx, tokens, "nsubj", entityMap)
 	nsubjpass := getChildEntity(rootIdx, tokens, "nsubjpass", entityMap)
 	dobj := getChildEntity(rootIdx, tokens, "dobj", entityMap)
@@ -127,27 +256,18 @@ func extractFromRoot(text string, rootIdx int, tokens []DepToken, entityMap map[
 	prepList := getPrepObjs(rootIdx, tokens, entityMap)
 	haveAgent := hasChildDep(rootIdx, tokens, "agent")
 
-	// Passive: "X was founded/acquired by Y"
+	// Passive
 	if nsubjpass != nil && agentObj != nil && haveAgent {
 		if relType := lookupVerb(verbLemma, "by"); relType != "" {
 			subj, obj := *nsubjpass, *agentObj
-			if relType == "founded_by" {
-				subj, obj = *nsubjpass, *agentObj  // ORG→PERSON
-			} else if relType == "acquired" {
-				subj, obj = *agentObj, *nsubjpass  // buyer→target
-			} else {
+			if relType != "founded_by" && relType != "acquired" {
 				subj, obj = *agentObj, *nsubjpass
 			}
-			relations = append(relations, Relation{
-				Subject: Entity{Text: subj.Text, Label: subj.Label, StartChar: subj.StartChar, EndChar: subj.EndChar},
-				Predicate: relType,
-				Object:   Entity{Text: obj.Text, Label: obj.Label, StartChar: obj.StartChar, EndChar: obj.EndChar},
-				Confidence: 0.85,
-			})
+			relations = append(relations, makeRelation(subj, relType, obj, 0.90))
 		}
 	}
 
-	// Active: "X VERB Y" or "X VERB prep Y"
+	// Active
 	if nsubj != nil {
 		if dobj != nil {
 			if relType := lookupVerb(verbLemma, ""); relType != "" {
@@ -161,7 +281,7 @@ func extractFromRoot(text string, rootIdx int, tokens []DepToken, entityMap map[
 		}
 	}
 
-	// Passive with prep: "X is based/located in Y"
+	// Passive with prep
 	if nsubjpass != nil {
 		for _, pe := range prepList {
 			relType := lookupVerb(verbLemma, pe.prep)
@@ -177,14 +297,12 @@ func extractFromRoot(text string, rootIdx int, tokens []DepToken, entityMap map[
 	return relations
 }
 
-func extractCopula(text string, rootIdx int, tokens []DepToken, entityMap map[string]Entity) []Relation {
+func extractCopula(text string, rootIdx int, tokens []DepToken, entityMap map[string][]Entity) []Relation {
 	var relations []Relation
 	subj := getChildEntity(rootIdx, tokens, "nsubj", entityMap)
 	if subj == nil {
 		return nil
 	}
-
-	// Find attr child that has "of Y"
 	var titleLemma string
 	var prepObj *Entity
 	for _, c := range childrenOf(rootIdx, tokens) {
@@ -203,15 +321,13 @@ func extractCopula(text string, rootIdx int, tokens []DepToken, entityMap map[st
 			}
 		}
 	}
-
 	if titleLemma == "" || prepObj == nil {
 		return nil
 	}
-
 	for keyword, relTypes := range depCopulaTitles {
 		if strings.Contains(titleLemma, keyword) {
 			for _, rt := range relTypes {
-				relations = append(relations, makeRelation(*subj, rt, *prepObj, 0.85))
+				relations = append(relations, makeRelation(*subj, rt, *prepObj, 0.88))
 			}
 			break
 		}
@@ -238,7 +354,7 @@ func lookupVerb(verb, prep string) string {
 	return depVerbRelations[verb]
 }
 
-func getChildEntity(idx int, tokens []DepToken, dep string, emap map[string]Entity) *Entity {
+func getChildEntity(idx int, tokens []DepToken, dep string, emap map[string][]Entity) *Entity {
 	for _, c := range childrenOf(idx, tokens) {
 		if c.Dep == dep {
 			return findEntityInSubtree(c.Index, tokens, emap)
@@ -247,7 +363,7 @@ func getChildEntity(idx int, tokens []DepToken, dep string, emap map[string]Enti
 	return nil
 }
 
-func getAgentPobj(idx int, tokens []DepToken, emap map[string]Entity) *Entity {
+func getAgentPobj(idx int, tokens []DepToken, emap map[string][]Entity) *Entity {
 	for _, c := range childrenOf(idx, tokens) {
 		if c.Dep == "agent" {
 			for _, gc := range childrenOf(c.Index, tokens) {
@@ -260,7 +376,7 @@ func getAgentPobj(idx int, tokens []DepToken, emap map[string]Entity) *Entity {
 	return nil
 }
 
-func getPrepObjs(idx int, tokens []DepToken, emap map[string]Entity) []prepEntry {
+func getPrepObjs(idx int, tokens []DepToken, emap map[string][]Entity) []prepEntry {
 	var result []prepEntry
 	for _, c := range childrenOf(idx, tokens) {
 		if c.Dep == "prep" {
@@ -289,31 +405,36 @@ func hasChildDep(idx int, tokens []DepToken, dep string) bool {
 func childrenOf(idx int, tokens []DepToken) []DepToken {
 	var kids []DepToken
 	for _, t := range tokens {
-		if t.Head == idx && t.Index != idx { // exclude self-loop (root)
+		if t.Head == idx && t.Index != idx {
 			kids = append(kids, t)
 		}
 	}
 	return kids
 }
 
-func findEntityInSubtree(idx int, tokens []DepToken, emap map[string]Entity) *Entity {
-	// Collect subtree words excluding structure tokens
+func findEntityInSubtree(idx int, tokens []DepToken, emap map[string][]Entity) *Entity {
 	words := collectWords(idx, tokens, map[int]bool{})
 	if len(words) == 0 {
 		return nil
 	}
 	text := strings.Join(words, " ")
 	key := strings.ToLower(strings.TrimSpace(text))
-	if ent, ok := emap[key]; ok {
-		return &ent
+	if ent := findBestEntity(key, emap); ent != nil {
+		return ent
 	}
-	// Try splitting on conjunctions
 	for _, sep := range []string{" and ", " or ", ", "} {
 		if strings.Contains(key, sep) {
 			candidate := strings.TrimSpace(strings.SplitN(key, sep, 2)[0])
-			if ent, ok := emap[candidate]; ok {
-				return &ent
+			if ent := findBestEntity(candidate, emap); ent != nil {
+				return ent
 			}
+		}
+	}
+	// Fuzzy: try substring match
+	for ek, ev := range emap {
+		if strings.Contains(ek, key) || strings.Contains(key, ek) {
+			e := ev[0]
+			return &e
 		}
 	}
 	return nil
@@ -325,20 +446,17 @@ func collectWords(idx int, tokens []DepToken, visited map[int]bool) []string {
 	}
 	visited[idx] = true
 	tok := tokens[idx]
-	// Skip structure words
 	if tok.Dep == "prep" || tok.Dep == "punct" || tok.Dep == "det" ||
 		tok.Dep == "aux" || tok.Dep == "auxpass" || tok.Dep == "cc" ||
-		tok.Dep == "conj" {
+		tok.Dep == "conj" || tok.Dep == "neg" {
 		return nil
 	}
-	// Collect children first, sorted by token index to preserve word order
 	var childWords []string
 	kids := childrenOf(idx, tokens)
 	sortByIndex(kids)
 	for _, c := range kids {
 		childWords = append(childWords, collectWords(c.Index, tokens, visited)...)
 	}
-	// Determine position: children before parent if they have lower index
 	hasChildBefore := false
 	for _, k := range kids {
 		if k.Index < idx {
@@ -384,17 +502,4 @@ func dedupRelations(rels []Relation) []Relation {
 		result = append(result, r)
 	}
 	return result
-}
-
-func buildEntityMap(entities []Entity) map[string]Entity {
-	m := make(map[string]Entity, len(entities)*2)
-	for _, e := range entities {
-		m[strings.ToLower(e.Text)] = e
-		cleaned := strings.TrimRight(e.Text, ".,;:!?")
-		cleaned = strings.TrimSpace(cleaned)
-		if cleaned != e.Text {
-			m[strings.ToLower(cleaned)] = e
-		}
-	}
-	return m
 }

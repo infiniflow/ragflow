@@ -128,7 +128,7 @@ func NewExtractor(lang string) *Extractor {
 	return &Extractor{Lang: lang}
 }
 
-// Extract runs NER and optionally relation extraction on text.
+// Extract runs NER and optionally relation extraction (dep-based via C++ parser, or regex fallback).
 func (e *Extractor) Extract(text string, extractRelations bool) (*ExtractionResult, error) {
 	entities, err := e.ExtractEntities(text)
 	if err != nil {
@@ -136,15 +136,41 @@ func (e *Extractor) Extract(text string, extractRelations bool) (*ExtractionResu
 	}
 	result := &ExtractionResult{Entities: entities}
 	if extractRelations && len(entities) >= 2 {
-		// Use fallback language for relation patterns if no dedicated patterns
-		relLang := e.Lang
-		if fb, ok := langFallback[e.Lang]; ok {
-			relLang = fb
-		}
-		relations := ExtractRelations(text, entities, relLang)
+		relations := e.extractRelations(text, entities)
 		result.Relations = relations
 	}
 	return result, nil
+}
+
+// extractRelations attempts dep-based extraction via C++ parser; falls back to regex.
+func (e *Extractor) extractRelations(text string, entities []Entity) []Relation {
+	relLang := e.Lang
+	if fb, ok := langFallback[e.Lang]; ok {
+		relLang = fb
+	}
+	// Try dep-based extraction via C++ parser
+	tokensJSON := tokenizeText(text, e.Lang)
+	if tokensJSON == "" {
+		return ExtractRelations(text, entities, relLang)
+	}
+	var tokens []string
+	if err := json.Unmarshal([]byte(tokensJSON), &tokens); err != nil || len(tokens) == 0 {
+		return ExtractRelations(text, entities, relLang)
+	}
+	modelDir := e.findModelDir()
+	nerDir := modelDir + "/ner"
+	parserDir := modelDir + "/parser"
+	if deps, err := ParseTokensWithParser(nerDir, parserDir, tokens); err == nil && len(deps) > 0 {
+		depTokens := make([]DepToken, len(deps))
+		for i, d := range deps {
+			depTokens[i] = DepToken{Text: d.Text, Head: d.Head, Dep: d.Dep, Index: d.Index}
+		}
+		if rels := DepExtractRelations(text, depTokens, entities, relLang); len(rels) > 0 {
+			return rels
+		}
+	}
+	// Fallback: regex-based extraction
+	return ExtractRelations(text, entities, relLang)
 }
 
 // ExtractEntities extracts named entities from text using C++ ThincNER.
@@ -261,6 +287,21 @@ func (e *Extractor) findModelDir() string {
 func dirExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+// tokenizeText tokenizes text via C++ tokenizer, returns JSON array of token strings.
+func tokenizeText(text, lang string) string {
+	cText := C.CString(text)
+	cLang := C.CString(lang)
+	defer C.free(unsafe.Pointer(cText))
+	defer C.free(unsafe.Pointer(cLang))
+
+	cTokens := C.ThincNER_Tokenize(cText, cLang)
+	if cTokens == nil {
+		return ""
+	}
+	defer C.ThincNER_FreeString(cTokens)
+	return C.GoString(cTokens)
 }
 
 func getenv(key string) string {
