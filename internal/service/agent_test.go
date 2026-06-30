@@ -1186,6 +1186,92 @@ func TestResetAgentServiceNotFound(t *testing.T) {
 	}
 }
 
+func TestUpdateAgentSettingsPreservesDSL(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	originalDSL := entity.JSONMap{
+		"graph": map[string]any{
+			"nodes": []any{map[string]any{"id": "begin"}},
+			"edges": []any{},
+		},
+		"components": map[string]any{
+			"begin": map[string]any{
+				"obj": map[string]any{"component_name": "Begin"},
+			},
+		},
+	}
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-settings",
+		UserID:         "user-1",
+		Title:          sptr("Settings Agent"),
+		Description:    sptr("old description"),
+		CanvasCategory: "agent_canvas",
+		DSL:            originalDSL,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-settings", map[string]interface{}{
+		"description": "new description",
+	})
+	if err != nil {
+		t.Fatalf("UpdateAgent failed: %v", err)
+	}
+
+	persisted, err := dao.NewUserCanvasDAO().GetByID("canvas-settings")
+	if err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if persisted.Description == nil || *persisted.Description != "new description" {
+		t.Fatalf("Description = %v, want new description", persisted.Description)
+	}
+	if _, ok := persisted.DSL["graph"]; !ok {
+		t.Fatalf("DSL graph was removed: %#v", persisted.DSL)
+	}
+	if _, ok := persisted.DSL["components"]; !ok {
+		t.Fatalf("DSL components were removed: %#v", persisted.DSL)
+	}
+}
+
+func TestUpdateAgentPersistsDSLAsJSONMap(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-dsl-update",
+		UserID:         "user-1",
+		Title:          sptr("DSL Agent"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-dsl-update", map[string]interface{}{
+		"dsl": map[string]interface{}{
+			"graph": map[string]interface{}{
+				"nodes": []interface{}{map[string]interface{}{"id": "begin"}},
+				"edges": []interface{}{},
+			},
+			"components": map[string]interface{}{
+				"begin": map[string]interface{}{
+					"obj": map[string]interface{}{"component_name": "Begin"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateAgent failed: %v", err)
+	}
+
+	persisted, err := dao.NewUserCanvasDAO().GetByID("canvas-dsl-update")
+	if err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if _, ok := persisted.DSL["graph"]; !ok {
+		t.Fatalf("DSL graph was not persisted: %#v", persisted.DSL)
+	}
+}
+
 // TestResetAgentServiceOtherTenant asserts the access-denied path:
 // a canvas owned by user-2 is not visible to user-1, so the same
 // not-found error type is returned. The service layer does not

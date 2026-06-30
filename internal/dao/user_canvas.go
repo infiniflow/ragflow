@@ -312,6 +312,12 @@ func (dao *UserCanvasDAO) UpdateDSL(canvasID string, dsl entity.JSONMap) (int64,
 	return result.RowsAffected, result.Error
 }
 
+// UpdateFields updates only the supplied user_canvas columns.
+func (dao *UserCanvasDAO) UpdateFields(canvasID string, fields map[string]interface{}) (int64, error) {
+	result := DB.Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Updates(fields)
+	return result.RowsAffected, result.Error
+}
+
 // UpdateTags updates a canvas's comma-separated tags by canvas ID.
 func (dao *UserCanvasDAO) UpdateTags(canvasID, tags string) (int64, error) {
 	result := DB.Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Update("tags", tags)
