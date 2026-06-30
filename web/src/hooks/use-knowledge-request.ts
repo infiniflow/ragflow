@@ -1,7 +1,6 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { ParseType } from '@/constants/knowledge';
-import { ResponsePostType } from '@/interfaces/database/base';
 import {
   IDataset,
   IDatasetListResult,
@@ -38,7 +37,6 @@ import {
   useHandleSearchChange,
 } from './logic-hooks';
 import { extractParserConfigExt } from './parser-config-utils';
-import { useSetPaginationParams } from './route-hook';
 
 export const enum KnowledgeApiAction {
   FetchKnowledgeListByPage = 'fetchKnowledgeListByPage',
@@ -551,95 +549,6 @@ export const useDeleteTag = () => {
 // #endregion
 
 //#region Retrieval testing
-
-export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
-  testChunk: (...params: any[]) => void;
-} => {
-  const knowledgeBaseId = useKnowledgeBaseId();
-  const { page, size: pageSize } = useSetPaginationParams();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: ['testChunk'], // This method is invalid
-    gcTime: 0,
-    mutationFn: async (values: any) => {
-      const { data } = await kbService.retrievalTest({
-        ...values,
-        kb_id: values.kb_id ?? knowledgeBaseId,
-        page,
-        size: pageSize,
-      });
-      if (data.code === 0) {
-        const res = data.data;
-        return {
-          ...res,
-          documents: res.doc_aggs,
-        };
-      }
-      return (
-        data?.data ?? {
-          chunks: [],
-          documents: [],
-          total: 0,
-        }
-      );
-    },
-  });
-
-  return {
-    data: data ?? { chunks: [], documents: [], total: 0 },
-    loading,
-    testChunk: mutateAsync,
-  };
-};
-
-export const useTestChunkAllRetrieval = (): ResponsePostType<ITestingResult> & {
-  testChunkAll: (...params: any[]) => void;
-} => {
-  const knowledgeBaseId = useKnowledgeBaseId();
-  const { page, size: pageSize } = useSetPaginationParams();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: ['testChunkAll'], // This method is invalid
-    gcTime: 0,
-    mutationFn: async (values: any) => {
-      const { data } = await kbService.retrievalTest({
-        ...values,
-        kb_id: values.kb_id ?? knowledgeBaseId,
-        doc_ids: [],
-        page,
-        size: pageSize,
-      });
-      if (data.code === 0) {
-        const res = data.data;
-        return {
-          ...res,
-          documents: res.doc_aggs,
-        };
-      }
-      return (
-        data?.data ?? {
-          chunks: [],
-          documents: [],
-          total: 0,
-        }
-      );
-    },
-  });
-
-  return {
-    data: data ?? { chunks: [], documents: [], total: 0 },
-    loading,
-    testChunkAll: mutateAsync,
-  };
-};
 
 export const useChunkIsTesting = () => {
   return useIsMutating({ mutationKey: ['testChunk'] }) > 0;
