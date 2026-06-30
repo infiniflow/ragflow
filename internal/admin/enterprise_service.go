@@ -904,6 +904,17 @@ func (s *Service) ListUsersQuota(pageIndex, pageSize, top int, quotaThreshold *i
 	return result, nil
 }
 
+// ShowUsersPlanSummary show users plan summary for enterprise edition
+func (s *Service) ShowUsersPlanSummary() (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"command": "show_users_plan_summary",
+		"error":   "'Show users plan summary' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
 // ShowUsersQuotaSummary show users quota summary for enterprise edition
 func (s *Service) ShowUsersQuotaSummary() (map[string]interface{}, error) {
 

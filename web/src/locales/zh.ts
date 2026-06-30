@@ -1469,6 +1469,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       updateDate: '日期',
       role: '状态',
       invite: '邀请成员',
+      inviteTip: '仅支持邀请已注册用户，请先完成注册。',
       agree: '同意',
       refuse: '拒绝',
       teamMembers: '团队成员',

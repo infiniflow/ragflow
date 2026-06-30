@@ -320,9 +320,9 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
     if api_key:
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
 
-    # For SoMark, embed OCR config from model_info into the api_key JSON so
-    # SoMarkOcrModel.__init__ can read it via the existing key → api_key_payload
-    # path.  This avoids changing the deprecated LLMBundle in tenant_llm_service.py.
+    # Only verify when there are models to probe. Generic providers such as
+    # "OpenAI-API-Compatible" may start empty and receive custom models later.
+    # For SoMark, embed OCR config from model_info into the api_key JSON
     if provider_name == "SoMark" and model_info:
         cfg = {}
         if api_key_str:
@@ -338,10 +338,12 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
         if base_url:
             cfg["SOMARK_BASE_URL"] = base_url
         api_key_str = json.dumps(cfg)
-
-    success, msg = await verify_api_key(provider_name, api_key, base_url, region, model_info)
-    if not success:
-        return False, msg
+          
+    factory_entry = next((f for f in FACTORY_LLM_INFOS if f["name"] == provider_name), None)
+    if (factory_entry and factory_entry.get("llm")) or model_info:
+        success, msg = await verify_api_key(provider_name, api_key, base_url, region, model_info)
+        if not success:
+            return False, msg
 
     extra_fields = {}
     if base_url:
