@@ -88,6 +88,26 @@ def list_searches():
             tenants = []
             search_apps, total = SearchService.get_by_tenant_ids(tenants, current_user.id, page_number, items_per_page, orderby, desc, keywords)
         else:
+            # Authorize: every requested owner_id must be a tenant the user
+            # actually belongs to. Without this the SQL ORs ``tenant_id IN
+            # owner_ids`` with the user's id and the Python filter keeps the
+            # requested tenants, so a client can list any tenant's search
+            # apps by guessing its id. Restores #14775's check that was
+            # reverted in #15698 — see #15741.
+            joined = TenantService.get_joined_tenants_by_user_id(current_user.id)
+            authorized_owner_ids = {member["tenant_id"] for member in joined}
+            authorized_owner_ids.add(current_user.id)
+            unauthorized = set(owner_ids) - authorized_owner_ids
+            if unauthorized:
+                logging.warning(
+                    "Rejected list_searches: user=%s unauthorized owner_ids=%s",
+                    current_user.id, sorted(unauthorized),
+                )
+                return get_json_result(
+                    data=False,
+                    message="Only authorized owner_ids can be queried.",
+                    code=RetCode.OPERATING_ERROR,
+                )
             search_apps, total = SearchService.get_by_tenant_ids(owner_ids, current_user.id, 0, 0, orderby, desc, keywords)
             search_apps = [s for s in search_apps if s["tenant_id"] in owner_ids]
             total = len(search_apps)
