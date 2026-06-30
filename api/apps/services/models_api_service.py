@@ -70,19 +70,23 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     if not default_model:
         return None
 
-    parts = default_model.split("@")
+    # The composite key is right-anchored: provider_name is always the *last*
+    # '@'-separated field. Use rsplit so a model_name that itself contains '@'
+    # (e.g. LM Studio IDs like `text-embedding-nomic-embed-text-v1.5@q8_0`)
+    # remains intact in the leftmost field instead of being truncated.
+    parts = default_model.rsplit("@", 2)
     if len(parts) == 3:
         model_name, instance_name, provider_name = parts
     elif len(parts) == 2:
         model_name, provider_name = parts
         instance_name = "default"
-    elif len(parts) == 1:
+    else:
+        # Bare model name with no provider — fall through with provider_name
+        # empty so downstream validation can decide (it may still match a
+        # tenant's default provider).
         model_name = parts[0]
         provider_name = ""
         instance_name = "default"
-    else:
-        logging.warning(f"Invalid model string: {default_model}")
-        return None
 
     model_type = MODEL_TAG_TO_TYPE.get(model_type, model_type)
     # Special case: OCR with infiniflow@default@deepdoc is always enabled
