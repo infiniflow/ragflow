@@ -408,23 +408,14 @@ func (a *AnthropicModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 		return nil, fmt.Errorf("Anthropic models API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var result struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Anthropic's GET /v1/models returns the OpenAI-style {"data":[{"id":...}]}
+	// shape, so decode straight into ModelList and enrich through the shared
+	// ParseListModel helper (issue #15853) instead of hand-mapping bare names.
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	models := make([]ListModelResponse, 0, len(result.Data))
-	for _, item := range result.Data {
-		if item.ID != "" {
-			models = append(models, ListModelResponse{
-				Name: item.ID,
-			})
-		}
-	}
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (a *AnthropicModel) CheckConnection(apiConfig *APIConfig) error {
