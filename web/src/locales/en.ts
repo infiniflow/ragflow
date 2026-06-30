@@ -1445,6 +1445,8 @@ Example: Virtual Hosted Style`,
         'Optional sub-folder path to limit indexing (e.g. /Documents/Reports). Leave blank to index the entire drive.',
       outlookDescription:
         'Connect Outlook / Microsoft 365 mailboxes and index messages via Microsoft Graph delta queries.',
+      axeroDescription:
+        'Sync spaces and content (articles, wiki, blogs, forums) from an Axero / Communifire intranet into your knowledge base.',
       outlookTenantIdTip:
         'Azure Active Directory tenant ID (Directory ID) of the Microsoft 365 organisation.',
       outlookClientIdTip:

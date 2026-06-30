@@ -78,6 +78,7 @@ from common.data_source.box_connector import BoxConnector
 from common.data_source.github.connector import GithubConnector
 from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
+from common.data_source.axero_connector import AxeroConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
@@ -2224,6 +2225,54 @@ class REST_API(SyncBase):
         return document_generator
 
 
+class Axero(SyncBase):
+    SOURCE_NAME: str = FileSource.AXERO
+
+    async def _generate(self, task: dict):
+        base_url = (self.conf.get("base_url") or "").strip()
+        if not base_url:
+            raise ValueError("Axero base URL is required.")
+
+        def _as_list(value):
+            if value is None:
+                return []
+            if isinstance(value, str):
+                return [s.strip() for s in value.split(",") if s.strip()]
+            if isinstance(value, (list, tuple)):
+                return [str(s).strip() for s in value if str(s).strip()]
+            return []
+
+        raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        self.connector = AxeroConnector(
+            base_url=base_url,
+            space_ids=_as_list(self.conf.get("space_ids")),
+            content_types=_as_list(self.conf.get("content_types")),
+            batch_size=batch_size,
+            include_attachments=bool(self.conf.get("include_attachments", False)),
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+        # Fail fast on an invalid base URL / API key or empty content-type
+        # selection before crawling, regardless of how the config was persisted.
+        self.connector.validate_connector_settings()
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = 0.0
+        else:
+            start_time = task["poll_range_start"].timestamp()
+        end_time = datetime.now(timezone.utc).timestamp()
+
+        document_generator = self.connector.poll_source(start_time, end_time)
+        self.log_connection("Axero", base_url, task)
+        return document_generator
+
+
 func_factory = {
     FileSource.RSS: RSS,
     FileSource.S3: S3,
@@ -2260,6 +2309,7 @@ func_factory = {
     FileSource.BIGQUERY: BigQuery,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
     FileSource.REST_API: REST_API,
+    FileSource.AXERO: Axero,
 }
 
 
