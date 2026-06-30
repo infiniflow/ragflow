@@ -207,6 +207,33 @@ def set_embed_cache(llmnm, txt, arr):
     REDIS_CONN.set(k, arr.encode("utf-8"), 24 * 3600)
 
 
+def _batch_embed_cache_misses(llmnm: str, keys: list) -> "list[bool]":
+    """Return a boolean miss-mask for *keys* using a single MGET round-trip.
+
+    Avoids per-item REDIS_CONN.get() calls (which would block the event loop
+    when called from an async context) by issuing one batched MGET instead.
+    """
+    if not keys:
+        return []
+    hashes = []
+    for key in keys:
+        h = xxhash.xxh64()
+        h.update(str(llmnm).encode("utf-8"))
+        h.update(str(key).encode("utf-8"))
+        hashes.append(h.hexdigest())
+    return [v is None for v in REDIS_CONN.mget(hashes)]
+
+
+def _write_embed_cache_batch(llmnm: str, keys: list, embeddings) -> None:
+    """Write a batch of embeddings to the Redis embed cache synchronously.
+
+    Intended for use with thread_pool_exec so that the synchronous Redis SET
+    calls do not block the event loop.
+    """
+    for key, ebd in zip(keys, embeddings):
+        set_embed_cache(llmnm, key, ebd)
+
+
 def get_tags_from_cache(kb_ids):
     hasher = xxhash.xxh64()
     hasher.update(str(kb_ids).encode("utf-8"))
@@ -515,6 +542,12 @@ async def get_graph(tenant_id, kb_id, exclude_rebuild=None):
 
 
 async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, change: GraphChange, callback):
+    """Persist a knowledge-graph snapshot to the document store.
+
+    Converts *graph* nodes and edges to embedding chunks, pre-warms the Redis
+    embed cache for all cache-miss entities/relations in bulk before spawning
+    per-item tasks, then atomically replaces the old graph chunks in the store.
+    """
     global chat_limiter
     start = asyncio.get_running_loop().time()
 
@@ -556,10 +589,15 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     # Without this, set_graph spawns one asyncio task per entity, each calling
     # embd_mdl.encode([single_name]).  For 17 k+ nodes that is 17 k round-trips.
     # Pre-warming the cache here collapses N calls to ceil(N/_INSERT_BULK_SIZE).
-    _uncached_node_names = [
-        n for n in change.added_updated_nodes
-        if get_embed_cache(embd_mdl.llm_name, n) is None
-    ]
+    _node_list = list(change.added_updated_nodes)
+    _node_misses = await thread_pool_exec(
+        _batch_embed_cache_misses, embd_mdl.llm_name, _node_list
+    )
+    _uncached_node_names = [n for n, miss in zip(_node_list, _node_misses) if miss]
+    logging.debug(
+        "set_graph node pre-warm: %d nodes, %d cache misses",
+        len(_node_list), len(_uncached_node_names),
+    )
     if _uncached_node_names:
         _enable_ta = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
         _timeout = 3 if _enable_ta else 30000000
@@ -570,8 +608,13 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
                     thread_pool_exec(embd_mdl.encode, _batch),
                     timeout=_timeout,
                 )
-            for _n, _ebd in zip(_batch, _ebds):
-                set_embed_cache(embd_mdl.llm_name, _n, _ebd)
+            await thread_pool_exec(_write_embed_cache_batch, embd_mdl.llm_name, _batch, _ebds)
+            logging.debug(
+                "set_graph node pre-warm: wrote batch %d/%d (%d items)",
+                _i // _INSERT_BULK_SIZE + 1,
+                (len(_uncached_node_names) + _INSERT_BULK_SIZE - 1) // _INSERT_BULK_SIZE,
+                len(_batch),
+            )
         if callback:
             callback(msg=f"Batch-embedded {len(_uncached_node_names)} entity names "
                          f"({(len(_uncached_node_names) + _INSERT_BULK_SIZE - 1) // _INSERT_BULK_SIZE} "
@@ -600,11 +643,20 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     # Mirror of the node pre-warm above for relation chunks.
     # Cache key  = "A->B"  (matches graph_edge_to_chunk lookup key)
     # Encoded text = "A->B: <description>"  (matches graph_edge_to_chunk encode text)
-    _uncached_edge_items = []
-    for _fn, _tn in change.added_updated_edges:
-        _eattrs = graph.get_edge_data(_fn, _tn)
-        if _eattrs and get_embed_cache(embd_mdl.llm_name, f"{_fn}->{_tn}") is None:
-            _uncached_edge_items.append((_fn, _tn, _eattrs))
+    _all_edge_data = [
+        (_fn, _tn, graph.get_edge_data(_fn, _tn))
+        for _fn, _tn in change.added_updated_edges
+    ]
+    _all_edge_data = [(f, t, a) for f, t, a in _all_edge_data if a]
+    _edge_lookup_keys = [f"{f}->{t}" for f, t, _ in _all_edge_data]
+    _edge_misses = await thread_pool_exec(
+        _batch_embed_cache_misses, embd_mdl.llm_name, _edge_lookup_keys
+    ) if _all_edge_data else []
+    _uncached_edge_items = [item for item, miss in zip(_all_edge_data, _edge_misses) if miss]
+    logging.debug(
+        "set_graph edge pre-warm: %d edges, %d cache misses",
+        len(_all_edge_data), len(_uncached_edge_items),
+    )
     if _uncached_edge_items:
         _edge_keys  = [f"{f}->{t}" for f, t, _ in _uncached_edge_items]
         _edge_texts = [f"{f}->{t}: {a['description']}" for f, t, a in _uncached_edge_items]
@@ -618,8 +670,13 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
                     thread_pool_exec(embd_mdl.encode, _btexts),
                     timeout=_timeout,
                 )
-            for _key, _ebd in zip(_bkeys, _ebds):
-                set_embed_cache(embd_mdl.llm_name, _key, _ebd)
+            await thread_pool_exec(_write_embed_cache_batch, embd_mdl.llm_name, _bkeys, _ebds)
+            logging.debug(
+                "set_graph edge pre-warm: wrote batch %d/%d (%d items)",
+                _i // _INSERT_BULK_SIZE + 1,
+                (len(_uncached_edge_items) + _INSERT_BULK_SIZE - 1) // _INSERT_BULK_SIZE,
+                len(_btexts),
+            )
         if callback:
             callback(msg=f"Batch-embedded {len(_uncached_edge_items)} edge descriptions "
                          f"({(len(_uncached_edge_items) + _INSERT_BULK_SIZE - 1) // _INSERT_BULK_SIZE} "
