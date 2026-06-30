@@ -65,7 +65,7 @@ type TenantInfoResponse struct {
 	RerankID  string  `json:"rerank_id"`
 	ASRID     string  `json:"asr_id"`
 	Img2TxtID string  `json:"img2txt_id"`
-	TTSID     *string `json:"tts_id,omitempty"`
+	TTSID     string  `json:"tts_id"`
 	ParserIDs string  `json:"parser_ids"`
 	Role      string  `json:"role"`
 }
@@ -597,11 +597,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 		})
 	}
 
-	if ownedTenant.TTSID == nil {
-		return result, nil
-	}
-
-	defaultTTSModelProvider, defaultTTSModelInstance, defaultTTSModelName, defaultTTSModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, *ownedTenant.TTSID, "tts")
+	defaultTTSModelProvider, defaultTTSModelInstance, defaultTTSModelName, defaultTTSModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.TTSID, "tts")
 	if err == nil {
 		result = append(result, ModelItem{
 			ModelProvider: defaultTTSModelProvider,

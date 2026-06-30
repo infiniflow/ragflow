@@ -61,7 +61,7 @@ type TenantInfo struct {
 	RerankID  string  `gorm:"column:rerank_id" json:"rerank_id"`
 	ASRID     string  `gorm:"column:asr_id" json:"asr_id"`
 	Img2TxtID string  `gorm:"column:img2txt_id" json:"img2txt_id"`
-	TTSID     *string `gorm:"column:tts_id" json:"tts_id,omitempty"`
+	TTSID     string `gorm:"column:tts_id" json:"tts_id"`
 	OCRID     *string `gorm:"column:ocr_id" json:"ocr_id,omitempty"`
 	ParserIDs string  `gorm:"column:parser_ids" json:"parser_ids"`
 	Role      string  `gorm:"column:role" json:"role"`

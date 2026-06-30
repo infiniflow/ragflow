@@ -150,8 +150,8 @@ export const IconMap = {
 export const ModelTypeToField: Record<string, string> = {
   chat: 'llm_id',
   embedding: 'embd_id',
-  image2text: 'img2txt_id',
-  speech2text: 'asr_id',
+  vision: 'img2txt_id',
+  asr: 'asr_id',
   rerank: 'rerank_id',
   tts: 'tts_id',
 };
