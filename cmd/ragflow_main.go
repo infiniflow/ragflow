@@ -24,13 +24,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"ragflow/internal/common"
-	"ragflow/internal/engine"
-	"ragflow/internal/engine/redis"
-	"ragflow/internal/server"
-	"ragflow/internal/server/local"
+	"ragflow/internal/admin"
+	"ragflow/internal/ingestion"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
+	"ragflow/internal/tokenizer"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -43,22 +41,89 @@ import (
 	_ "ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
-	"ragflow/internal/admin"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/handler"
-	"ragflow/internal/ingestion"
 	"ragflow/internal/router"
+	"ragflow/internal/server"
+	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 	"ragflow/internal/service/chunk"
 	"ragflow/internal/service/nlp"
-	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
-func printHelp() {
-	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
+type serverArgs struct {
+	mode          *string // admin | api | ingestor
+	helpFlag      bool
+	versionFlag   bool
+	debugLog      bool
+	configPath    *string // Used by admin, api; user defined config path
+	initSuperUser bool    // Used by admin;
+	port          *int    // Used by admin, api
+	adminHost     *string // Used by api and ingestor for heartbeat
+	adminPort     *int    // Used by api and ingestor for heartbeat, "ip:port"
+}
+
+func parseArgs() (*serverArgs, error) {
+	args := &serverArgs{}
+
+	var serverMode string
+	var configPath string
+	for i := 1; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		switch arg {
+		case "--admin":
+			serverMode = "admin"
+			args.mode = &serverMode
+		case "--ingestor":
+			serverMode = "ingestor"
+			args.mode = &serverMode
+		case "--api":
+			serverMode = "api"
+			args.mode = &serverMode
+		case "-h", "--help":
+			args.helpFlag = true
+		case "-v", "--version":
+			args.versionFlag = true
+		case "--debug":
+			args.debugLog = true
+		case "--config":
+			configPath = arg
+			args.configPath = &configPath
+		case "--init-superuser":
+			args.initSuperUser = true
+		case "--port":
+			port, convErr := strconv.Atoi(arg)
+			if convErr != nil {
+				return nil, fmt.Errorf("invalid port: %w", convErr)
+			}
+			args.port = &port
+		case "--admin-host":
+			adminHost := arg
+			// split ip:port into ip and port
+			ip, portStr := strings.SplitN(adminHost, ":", 2)[0], strings.SplitN(adminHost, ":", 2)[1]
+			if len(portStr) == 0 {
+				return nil, errors.New("--admin-host must be in the form 'ip:port'")
+			}
+			port, convErr := strconv.Atoi(portStr)
+			if convErr != nil {
+				return nil, fmt.Errorf("invalid admin port: %w", convErr)
+			}
+			args.adminHost = &ip
+			args.adminPort = &port
+		}
+	}
+	return args, nil
+}
+
+func printGeneralHelp() {
+	fmt.Fprintf(os.Stderr, "Usage: %s (--api|--admin|--ingestor) [OPTIONS]\n\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
-	fmt.Fprintf(os.Stderr, "Mode selection:\n")
-	fmt.Fprintf(os.Stderr, "  --api          \tRun as API server (default)\n")
+	fmt.Fprintf(os.Stderr, "Mode selection (default: --api):\n")
+	fmt.Fprintf(os.Stderr, "  --api          \tRun as API server\n")
 	fmt.Fprintf(os.Stderr, "  --admin        \tRun as admin server\n")
 	fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n\n")
 	fmt.Fprintf(os.Stderr, "Common options:\n")
@@ -66,18 +131,94 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
 	fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
 	fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n\n")
-	fmt.Fprintf(os.Stderr, "API server options:\n")
-	fmt.Fprintf(os.Stderr, "  -p, --port int\t\tServer port (overrides config file)\n\n")
-	fmt.Fprintf(os.Stderr, "Admin server options:\n")
-	fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account\n\n")
-	fmt.Fprintf(os.Stderr, "Ingestion worker options:\n")
-	fmt.Fprintf(os.Stderr, "  --name string\t\tIngestion server name (default: \"default_ingestion\")\n")
-	fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host (overrides config file)\n")
-	fmt.Fprintf(os.Stderr, "  --admin-port int\tAdmin server port (overrides config file)\n")
+	fmt.Fprintf(os.Stderr, "Run '%s --api --help' for API server options.\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Run '%s --admin --help' for admin server options.\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Run '%s --ingestor --help' for ingester options.\n", os.Args[0])
+}
+
+func printAPIHelp() {
+	fmt.Fprintf(os.Stderr, "Usage: %s --api [OPTIONS]\n\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "RAGFlow API Server\n\n")
+	fmt.Fprintf(os.Stderr, "Options:\n")
+	fmt.Fprintf(os.Stderr, "  -p, --port int\t\tServer port (overrides config file)\n")
+	fmt.Fprintf(os.Stderr, "  --config string\t\tPath to configuration file\n")
+	fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
+	fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
+	fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
+}
+
+func printAdminHelp() {
+	fmt.Fprintf(os.Stderr, "Usage: %s --admin [OPTIONS]\n\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "RAGFlow Admin Server\n\n")
+	fmt.Fprintf(os.Stderr, "Options:\n")
+	fmt.Fprintf(os.Stderr, "  --config string\t\tPath to configuration file\n")
+	fmt.Fprintf(os.Stderr, "  --init-superuser\t\tInitialize superuser account\n")
+	fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
+	fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
+	fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
+}
+
+func printIngestorHelp() {
+	fmt.Fprintf(os.Stderr, "Usage: %s --ingestor [OPTIONS]\n\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "RAGFlow Ingestion Worker - Document ingestion processing\n\n")
+	fmt.Fprintf(os.Stderr, "Options:\n")
+	fmt.Fprintf(os.Stderr, "  -f, --config string\t\tPath to config file\n")
+	fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
+	fmt.Fprintf(os.Stderr, "  --admin-host string\t\tAdmin server host (overrides config file)\n")
+	fmt.Fprintf(os.Stderr, "  --admin-port int\t\tAdmin server port (overrides config file)\n")
+	fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
+	fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
+	fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
 }
 
 func main() {
-	// Mode flags
+	// Scan args for mode and help BEFORE flag registration,
+	// so we can show mode-specific help without parsing all flags.
+	arguments, err := parseArgs()
+	if err != nil {
+		fmt.Printf("Failed to parse arguments: %v\n", err)
+		return
+	}
+
+	if arguments.versionFlag {
+		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
+		return
+	}
+	return
+}
+
+func main1() {
+	// Scan args for mode and help BEFORE flag registration,
+	// so we can show mode-specific help without parsing all flags.
+	arguments, err := parseArgs()
+	if err != nil {
+		fmt.Printf("Failed to parse arguments: %v\n", err)
+		return
+	}
+
+	if arguments.versionFlag {
+		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
+		return
+	}
+
+	//if wantVersion {
+	//	fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
+	//	return
+	//}
+	//
+	//if wantHelp {
+	//	switch mode {
+	//	case "admin":
+	//		printAdminHelp()
+	//	case "ingestor":
+	//		printIngestorHelp()
+	//	default:
+	//		printAPIHelp()
+	//	}
+	//	return
+	//}
+
+	// Register mode flags (for mode detection during normal run)
 	var adminMode bool
 	var ingestorMode bool
 	var apiMode bool
@@ -112,34 +253,34 @@ func main() {
 	flag.IntVar(&portFlag, "port", 0, "Server port (overrides config file)")
 	flag.IntVar(&portFlag, "p", 0, "Server port (shorthand)")
 
-	// Custom help message
-	flag.Usage = printHelp
+	// When flag.Parse() encounters an error (unknown flag), show general help
+	flag.Usage = printGeneralHelp
 
 	flag.Parse()
 
-	// Handle --version flag: print version and exit immediately
+	// Handle --version flag (from parsed flags, defensive)
 	if versionFlag {
 		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
 		return
 	}
 
-	// Determine mode: default to API if no explicit mode flag
-	switch {
-	case adminMode:
-		runAdmin(configPath, debugFlag, initSuperuser)
-	case ingestorMode:
-		runIngestor(configPath, debugFlag, ingestorName, adminHost, adminPort)
-	default:
-		// --api or no flag: default API server
-		runAPI(configPath, debugFlag, portFlag)
-	}
+	// Determine mode from parsed flags; default to the pre-scan result
+	//switch {
+	//case adminMode:
+	//	runAdmin(configPath, debugFlag, initSuperuser)
+	//case ingestorMode:
+	//	runIngestor(configPath, debugFlag, ingestorName, adminHost, adminPort)
+	//default:
+	//	runAPI(configPath, debugFlag, portFlag)
+	//}
 }
 
 // ---------------------------------------------------------------------------
 // Admin server
 // ---------------------------------------------------------------------------
 
-func runAdmin(configPath string, debugFlag bool, initSuperuserFlag bool) {
+func runAdmin(configPath string, debugFlag,
+	bool, initSuperuserFlag bool) {
 	// Initialize logger
 	if err := common.Init("info", common.FileOutput{Path: "admin_server.log"}); err != nil {
 		panic("failed to initialize logger: " + err.Error())
@@ -631,16 +772,16 @@ func startAPIServer(config *server.Config) {
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	// Install the agent service's Redis-backed run infrastructure
-	agentOpts := buildAgentRunOptions()
-	agentService := service.NewAgentServiceWithOptions(
-		agentOpts.checkpointStore,
-		agentOpts.stateSerializer,
-		agentOpts.runTracker,
-	)
-	agentHandler := handler.NewAgentHandler(agentService, fileService)
-
-	botService := service.NewBotService(agentService, llmService)
-	botHandler := handler.NewBotHandler(botService)
+	//agentOpts := buildAgentRunOptions()
+	//agentService := service.NewAgentServiceWithOptions(
+	//	agentOpts.checkpointStore,
+	//	agentOpts.stateSerializer,
+	//	agentOpts.runTracker,
+	//)
+	//agentHandler := handler.NewAgentHandler(agentService, fileService)
+	//
+	//botService := service.NewBotService(agentService, llmService)
+	//botHandler := handler.NewBotHandler(botService)
 
 	configureTTSSynthesizer(modelProviderService)
 	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
@@ -676,7 +817,7 @@ func startAPIServer(config *server.Config) {
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatChannelHandler, langfuseHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler, botHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatChannelHandler, langfuseHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, nil, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler, nil)
 
 	// Create Gin engine
 	ginEngine := gin.New()
