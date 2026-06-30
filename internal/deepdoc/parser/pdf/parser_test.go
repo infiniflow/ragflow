@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"math"
 
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
@@ -574,4 +575,46 @@ func TestParser_ConcurrentSafety(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestParseRaw_ClampsFromPage(t *testing.T) {
+	// A negative FromPage should be treated as page 0.
+	eng := &MockEngine{NumPages: 3, Chars: map[int][]pdf.TextChar{
+		0: {{Text: "page0", X0: 100, X1: 200, Top: 100, Bottom: 120}},
+		1: {{Text: "page1", X0: 100, X1: 200, Top: 100, Bottom: 120}},
+		2: {{Text: "page2", X0: 100, X1: 200, Top: 100, Bottom: 120}},
+	}}
+	mockDLA := &MockDocAnalyzer{Healthy: true}
+	cfg := pdf.DefaultParserConfig()
+	cfg.FromPage = -1
+	p := NewParser(cfg)
+	result, err := p.ParseRaw(context.Background(), eng, mockDLA)
+	if err != nil {
+		t.Fatalf("ParseRaw: %v", err)
+	}
+	if len(result.Sections) == 0 {
+		t.Error("expected sections from page 0")
+	}
+}
+
+func TestParseRaw_ZeroZoom_NoNaN(t *testing.T) {
+	// Zoom=0 should not produce NaN coordinates.
+	eng := &MockEngine{NumPages: 1, Chars: map[int][]pdf.TextChar{
+		0: {{Text: "test", X0: 100, X1: 200, Top: 100, Bottom: 120}},
+	}}
+	mockDLA := &MockDocAnalyzer{Healthy: true}
+	cfg := pdf.DefaultParserConfig()
+	cfg.Zoom = 0
+	p := NewParser(cfg)
+	result, err := p.ParseRaw(context.Background(), eng, mockDLA)
+	if err != nil {
+		t.Fatalf("ParseRaw: %v", err)
+	}
+	for _, s := range result.Sections {
+		for _, pos := range s.Positions {
+			if math.IsNaN(pos.Left) || math.IsNaN(pos.Top) {
+				t.Error("Zoom=0 produced NaN coordinates")
+			}
+		}
+	}
 }
