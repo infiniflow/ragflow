@@ -298,12 +298,17 @@ func max(a, b int) int {
 
 // splitSentences splits text into sentence spans [start, end),
 // matching Python's: re.finditer(r'[^.!?]+(?:[.!?](?=\s|$))+', text)
+// Uses Go-compatible regex (no lookahead) with manual space check.
 func splitSentences(text string) [][2]int {
-	re := regexp.MustCompile(`[^.!?]+(?:[.!?](?=\s|$))+`)
+	re := regexp.MustCompile(`[^.!?]+[.!?]+`)
 	matches := re.FindAllStringIndex(text, -1)
 	var spans [][2]int
 	for _, m := range matches {
-		spans = append(spans, [2]int{m[0], m[1]})
+		end := m[1]
+		// Punctuation must be followed by space or end-of-string
+		if end == len(text) || text[end] == ' ' {
+			spans = append(spans, [2]int{m[0], end})
+		}
 	}
 	if len(spans) == 0 && len(text) > 0 {
 		spans = append(spans, [2]int{0, len(text)})
