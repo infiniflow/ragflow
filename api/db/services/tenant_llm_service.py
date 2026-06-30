@@ -534,27 +534,34 @@ class LLM4Tenant:
     def close(self):
         """Release resources held by this LLM4Tenant instance.
 
-        This method should be called when the instance is no longer needed
-        to properly release resources such as:
-        - Langfuse tracing client (flush and shutdown)
-        - Underlying model instance resources (HTTP sessions, etc.)
+        IMPORTANT: do NOT call ``langfuse.flush()`` or ``langfuse.shutdown()``
+        here. ``close()`` runs once per task, synchronously, on the asyncio
+        event-loop thread of the task executor. Two problems follow:
+
+        - ``flush()`` blocks on an unbounded ``queue.join()`` in the underlying
+          OpenTelemetry span processor. If the exporter cannot drain (slow or
+          unreachable Langfuse, or an already-shutdown processor) it never
+          returns.
+        - ``shutdown()`` permanently tears down the process-wide Langfuse /
+          OpenTelemetry tracer provider that every ``LLMBundle`` shares. After
+          the first task shuts it down, every subsequent ``flush()`` blocks
+          forever.
+
+        Because this runs on the event loop, a single stuck ``flush()`` freezes
+        the entire task executor: all in-flight parse tasks stop making
+        progress and no new tasks are ever picked up (observed as document
+        parsing being stuck with every executor thread parked on a lock).
+
+        Langfuse already exports spans from its own background processor and
+        flushes at process exit, so releasing the reference is sufficient here.
         """
-        # Flush and shutdown Langfuse client if it was initialized
-        if self.langfuse:
-            try:
-                self.langfuse.flush()
-                if hasattr(self.langfuse, "shutdown"):
-                    self.langfuse.shutdown()
-            except Exception:
-                # Ignore errors during cleanup
-                pass
-            finally:
-                self.langfuse = None
+        # Drop the Langfuse reference WITHOUT flushing/shutting down the shared
+        # client (see the docstring above for why this would deadlock).
+        self.langfuse = None
 
         # Release underlying model instance if it has a close method
         if self.mdl and hasattr(self.mdl, "close") and callable(getattr(self.mdl, "close")):
             try:
                 self.mdl.close()
             except Exception:
-                # Ignore errors during cleanup
-                pass
+                logging.warning("LLM4Tenant.close: error while closing model instance", exc_info=True)
