@@ -50,6 +50,12 @@ class _FakeField:
     def not_in(self, other):
         return self
 
+    def asc(self):
+        return self
+
+    def desc(self):
+        return self
+
 
 class _FakeQuery:
     def __init__(self, docs):
@@ -80,11 +86,12 @@ class _FakeQuery:
 
 
 class _PagingFakeQuery:
-    def __init__(self, docs, ordered=False):
+    def __init__(self, docs, ordered=False, order_by_args=()):
         self._all = list(docs)
         self._offset = 0
         self._limit = len(docs)
         self.ordered = ordered
+        self.order_by_args = order_by_args
 
     def join(self, *args, **kwargs):
         return self
@@ -93,7 +100,7 @@ class _PagingFakeQuery:
         return self
 
     def order_by(self, *args, **kwargs):
-        return _PagingFakeQuery(self._all, ordered=True)
+        return _PagingFakeQuery(self._all, ordered=True, order_by_args=args)
 
     def offset(self, offset):
         self._offset = offset
@@ -112,7 +119,7 @@ def _install_paging_model(monkeypatch, sample_docs):
 
     class _RecordingPagingQuery(_PagingFakeQuery):
         def order_by(self, *args, **kwargs):
-            return _RecordingPagingQuery(self._all, ordered=True)
+            return _RecordingPagingQuery(self._all, ordered=True, order_by_args=args)
 
         def offset(self, offset):
             paging_queries.append(self)
@@ -263,7 +270,9 @@ def test_get_all_doc_ids_by_kb_ids_applies_create_time_order(monkeypatch):
 
     assert result == sample_docs
     assert paging_queries
-    assert all(query.ordered for query in paging_queries)
+    model = document_service.DocumentService.model
+    expected_order = (model.create_time.asc(), model.id.asc())
+    assert all(query.order_by_args == expected_order for query in paging_queries)
 
 
 @pytest.mark.p2
@@ -283,4 +292,6 @@ def test_get_all_docs_by_creator_id_applies_create_time_order(monkeypatch):
 
     assert result == sample_docs
     assert paging_queries
-    assert all(query.ordered for query in paging_queries)
+    model = document_service.DocumentService.model
+    expected_order = (model.create_time.asc(), model.id.asc())
+    assert all(query.order_by_args == expected_order for query in paging_queries)
