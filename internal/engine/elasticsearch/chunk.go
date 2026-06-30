@@ -285,7 +285,16 @@ func (e *elasticsearchEngine) AdjustChunkPagerank(ctx context.Context, indexName
 		} else {
 			double current = 0.0;
 			if (ctx._source.containsKey(params.field) && ctx._source[params.field] != null) {
-				current = ((Number)ctx._source[params.field]).doubleValue();
+				Object currentValue = ctx._source[params.field];
+				if (currentValue instanceof Number) {
+					current = ((Number)currentValue).doubleValue();
+				} else {
+					try {
+						current = Double.parseDouble(currentValue.toString());
+					} catch (Exception e) {
+						current = 0.0;
+					}
+				}
 			}
 			double next = current + params.delta;
 			if (next < params.min_weight) {
@@ -294,7 +303,11 @@ func (e *elasticsearchEngine) AdjustChunkPagerank(ctx context.Context, indexName
 			if (next > params.max_weight) {
 				next = params.max_weight;
 			}
-			ctx._source[params.field] = next;
+			if (next <= 0.0) {
+				ctx._source.remove(params.field);
+			} else {
+				ctx._source[params.field] = next;
+			}
 		}
 	`
 	body, err := json.Marshal(map[string]interface{}{

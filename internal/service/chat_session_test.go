@@ -1157,7 +1157,7 @@ func TestUpdateMessageFeedback_ChangedFeedbackTriggersChunkFeedback(t *testing.T
 	}
 }
 
-func TestUpdateMessageFeedback_UsesOwningTenantForChunkFeedback(t *testing.T) {
+func TestUpdateMessageFeedback_UsesCurrentUserForChunkFeedback(t *testing.T) {
 	store := newFakeSessionStore()
 	store.sessions["session-1"] = &entity.ChatSession{
 		ID:       "session-1",
@@ -1189,7 +1189,7 @@ func TestUpdateMessageFeedback_UsesOwningTenantForChunkFeedback(t *testing.T) {
 	if len(feedback.calls) != 1 {
 		t.Fatalf("feedback calls=%#v", feedback.calls)
 	}
-	if feedback.calls[0].tenantID != "tenant-1" {
+	if feedback.calls[0].tenantID != "user-1" {
 		t.Fatalf("tenantID=%q", feedback.calls[0].tenantID)
 	}
 }
@@ -1260,6 +1260,18 @@ func TestUpdateMessageFeedback_UnchangedFeedbackDoesNotTriggerChunkFeedback(t *t
 	}
 	if len(feedback.calls) != 0 {
 		t.Fatalf("feedback should not be called: %#v", feedback.calls)
+	}
+}
+
+func TestAllocateFeedbackDeltasRelevance_TreatsMissingScoresAsOne(t *testing.T) {
+	rows := []chunkFeedbackRow{
+		{chunkID: "scored", kbID: "kb1", chunk: map[string]interface{}{"similarity": 0.9}},
+		{chunkID: "missing-score", kbID: "kb1", chunk: map[string]interface{}{}},
+	}
+
+	deltas := allocateFeedbackDeltasRelevance(rows, 1)
+	if !reflect.DeepEqual(deltas, []int{0, 1}) {
+		t.Fatalf("deltas=%#v", deltas)
 	}
 }
 

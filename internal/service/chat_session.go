@@ -678,31 +678,10 @@ func (s *ChatSessionService) DeleteSessionMessage(userID, chatID, sessionID, msg
 }
 
 func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, msgID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
-	ownerTenantID := ""
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	ok, err := s.ensureOwnedChat(userID, chatID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	for _, tenantID := range tenantIDs {
-		exists, err := s.chatSessionDAO.CheckDialogExists(tenantID, chatID)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-		if exists {
-			ownerTenantID = tenantID
-			break
-		}
-	}
-	if ownerTenantID == "" {
-		exists, err := s.chatSessionDAO.CheckDialogExists(userID, chatID)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-		if exists {
-			ownerTenantID = userID
-		}
-	}
-	ok := ownerTenantID != ""
 	if !ok {
 		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
 	}
@@ -782,7 +761,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 			applier = s
 		}
 		if priorThumbBool, ok := priorThumb.(bool); ok && priorThumbBool != thumbup {
-			result, _ := applier.applyChunkFeedback(ownerTenantID, feedbackReference, !priorThumbBool)
+			result, _ := applier.applyChunkFeedback(userID, feedbackReference, !priorThumbBool)
 			if result != nil {
 				common.Debug("Chunk feedback undo applied",
 					zap.Any("success_count", result["success_count"]),
@@ -790,7 +769,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 				)
 			}
 		}
-		result, _ := applier.applyChunkFeedback(ownerTenantID, feedbackReference, thumbup)
+		result, _ := applier.applyChunkFeedback(userID, feedbackReference, thumbup)
 		if result != nil {
 			common.Debug("Chunk feedback applied",
 				zap.Any("success_count", result["success_count"]),
@@ -993,7 +972,11 @@ func allocateFeedbackDeltasUniform(rows []chunkFeedbackRow, signedBudget int) []
 func allocateFeedbackDeltasRelevance(rows []chunkFeedbackRow, signedBudget int) []int {
 	magnitudes := make([]float64, len(rows))
 	for i, row := range rows {
-		magnitudes[i] = feedbackRetrievalSignal(row.chunk)
+		signal := feedbackRetrievalSignal(row.chunk)
+		if signal <= 0 {
+			signal = 1
+		}
+		magnitudes[i] = signal
 	}
 	total := 0.0
 	for _, magnitude := range magnitudes {
