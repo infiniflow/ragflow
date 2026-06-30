@@ -131,7 +131,7 @@ function SystemSetting() {
   //   3. empty string (fallback)
   const getValue = useCallback(
     (field: string) =>
-      persistedValues[field] || defaultModelDictionary[field] || '',
+      persistedValues[field] ?? defaultModelDictionary[field] ?? '',
     [persistedValues, defaultModelDictionary],
   );
 
