@@ -429,9 +429,9 @@ func (c *CLI) CommonShowProviderInstanceBalanceCommand(cmd *Command) (ResponseIf
 	return &result, nil
 }
 
-// CommonListProviderInstances lists all instances of a provider
+// CommonListProviderInstancesCommand lists all instances of a provider
 // LIST INSTANCES FROM PROVIDER <name>
-func (c *CLI) CommonListProviderInstances(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonListProviderInstancesCommand(cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
@@ -647,7 +647,7 @@ func (c *CLI) CommonShowProviderModelCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) CommonCheckProviderWithKey(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonCheckProviderWithKeyCommand(cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok || providerName == "" {
@@ -725,7 +725,7 @@ func (c *CLI) CommonCheckProviderWithKey(cmd *Command) (ResponseIf, error) {
 	}
 }
 
-func (c *CLI) CommonCheckProviderConnection(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonCheckProviderConnectionCommand(cmd *Command) (ResponseIf, error) {
 
 	instanceName, ok := cmd.Params["instance_name"].(string)
 	if !ok {
@@ -857,7 +857,7 @@ func (c *CLI) CommonAlterProviderInstanceCommand(cmd *Command) (ResponseIf, erro
 	}
 }
 
-func (c *CLI) CommonEnableOrDisableModel(cmd *Command, status string) (ResponseIf, error) {
+func (c *CLI) CommonEnableOrDisableModelCommand(cmd *Command, status string) (ResponseIf, error) {
 
 	modelName, ok := cmd.Params["model_name"].(string)
 	if !ok {
@@ -925,7 +925,7 @@ func (c *CLI) CommonEnableOrDisableModel(cmd *Command, status string) (ResponseI
 	}
 }
 
-func (c *CLI) SetDefaultModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APISetDefaultModelCommand(cmd *Command) (ResponseIf, error) {
 
 	modelType, ok := cmd.Params["model_type"].(string)
 	if !ok {
@@ -981,7 +981,7 @@ func (c *CLI) SetDefaultModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ResetDefaultModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIResetDefaultModelCommand(cmd *Command) (ResponseIf, error) {
 
 	modelType, ok := cmd.Params["model_type"].(string)
 	if !ok {
@@ -1023,7 +1023,7 @@ func (c *CLI) ResetDefaultModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ListDefaultModels(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIListDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
 
 	var resp *Response
 	var err error
@@ -1117,7 +1117,7 @@ func (c *CLI) CommonShowAPIServerCommand(cmd *Command) (ResponseIf, error) {
 	return result, nil
 }
 
-func (c *CLI) CommonListAPIServers(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonListAPIServersCommand(cmd *Command) (ResponseIf, error) {
 
 	var result CommonResponse
 	result.Data = make([]map[string]interface{}, 0)
@@ -1147,7 +1147,7 @@ func (c *CLI) CommonListAPIServers(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AddAPIServer(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AddAPIServerCommand(cmd *Command) (ResponseIf, error) {
 	apiServerName, ok := cmd.Params["server_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("server name not provided")
@@ -1213,7 +1213,7 @@ func (c *CLI) AddAPIServer(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) DeleteAPIServer(cmd *Command) (ResponseIf, error) {
+func (c *CLI) DeleteAPIServerCommand(cmd *Command) (ResponseIf, error) {
 	apiServerName, ok := cmd.Params["server_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("server name not provided")
@@ -1235,7 +1235,7 @@ func (c *CLI) DeleteAPIServer(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AddAdminServer(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AddAdminServerCommand(cmd *Command) (ResponseIf, error) {
 
 	if c.AdminServerClient != nil && c.AdminServerClient.LoginToken != nil {
 		return nil, fmt.Errorf("admin server already login, please logout")
@@ -1289,7 +1289,7 @@ func (c *CLI) AddAdminServer(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) DeleteAdminServer(cmd *Command) (ResponseIf, error) {
+func (c *CLI) DeleteAdminServerCommand(cmd *Command) (ResponseIf, error) {
 
 	if c.AdminServerClient == nil && c.Config.AdminClientConfig == nil {
 		return nil, fmt.Errorf("admin server not exists")
