@@ -1275,11 +1275,10 @@ func documentParseTaskRanges(doc *entity.Document, bucket, objectName string) ([
 		}
 		if len(ranges) == 0 {
 			// pages == 0 means page count detection failed (e.g. compressed
-			// PDF). Instead of creating a 100000000-page task that crashes
-			// the Python task_executor, create a single whole-document task
-			// with from=0, to=0 so the parser processes the entire file
-			// without page-range splitting.
-			ranges = append(ranges, documentParsePageRange{from: 0, to: 0})
+			// PDF where both regex and pdfoxide fallbacks failed). Fall back
+			// to maximumTaskPageNumber so the Python parser processes all
+			// pages via slicing (Python gracefully caps at actual page count).
+			ranges = append(ranges, documentParsePageRange{from: 0, to: maximumTaskPageNumber})
 		}
 		return ranges, nil
 	}
