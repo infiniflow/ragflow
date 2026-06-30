@@ -236,24 +236,26 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
     extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
 
     if model_obj:
-        model_extra_fields = json.loads(model_obj.extra) if model_obj.extra else {}
         if model_obj.status == ActiveStatusEnum.INACTIVE.value:
             raise LookupError(f"Model {model_name} is disabled.")
         if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value:
             raise LookupError(f"Model {model_name} cannot be used as {model_type_val} model.")
 
+        model_extra = json.loads(model_obj.extra) if model_obj.extra else {}
         model_config = {
             "llm_factory": provider_obj.provider_name,
             "api_key": api_key,
             "llm_name": model_obj.model_name,
             "api_base": extra_fields.get("base_url", ""),
             "model_type": model_obj.model_type,
-            "is_tools": model_extra_fields.get("is_tools", is_tool),
-            "max_tokens": model_extra_fields.get("max_tokens", 8192),
+            "is_tools": model_extra.get("is_tools", is_tool),
+            "max_tokens": model_extra.get("max_tokens", 8192),
+        }
+        if provider_name.lower() == "somark":
             # SoMark/OCR factories read parser config (somark_*, parse_method, ...)
             # from model_config["extra"]; see tenant_llm_service.LLMBundle OCR path.
-            "extra": model_extra_fields.get("ocr_config", model_extra_fields),
-        }
+            model_config["extra"] = model_extra.get("ocr_config", model_extra)
+
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload
 

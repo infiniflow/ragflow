@@ -484,12 +484,12 @@ def show_provider_instance(tenant_id: str = None, provider_id_or_name: str = Non
         name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: path
         name: instance_id_or_name
         type: string
         required: true
-        description: Instance ID or name.
+        description: Instance IDs or name.
       - in: header
         name: Authorization
         type: string
@@ -618,7 +618,9 @@ def list_instance_models(tenant_id: str = None, provider_id_or_name: str = None,
     """
     supported_only = request.args.get("supported", "").lower() == "true"
     try:
-        success, result = provider_api_service.list_instance_models(tenant_id, provider_id_or_name, instance_id_or_name, supported_only)
+        success, result = provider_api_service.list_instance_models(
+            tenant_id, provider_id_or_name, instance_id_or_name, supported_only
+        )
         if success:
             return get_result(data=result)
         else:
@@ -678,7 +680,9 @@ async def update_instance_models(tenant_id: str, provider_id_or_name: str, insta
     model_name = data["model_name"]
     model_type = data["model_type"]
     try:
-        success, msg = provider_api_service.update_instance_models(tenant_id, provider_id_or_name, instance_id_or_name, model_name, model_type)
+        success, msg = provider_api_service.update_instance_models(
+            tenant_id, provider_id_or_name, instance_id_or_name, model_name, model_type
+        )
         if success:
             return get_result(message=msg)
         else:
@@ -821,7 +825,9 @@ async def enable_or_disable_model(tenant_id: str = None, provider_id_or_name: st
         return get_error_argument_result(message="status must be 'active' or 'inactive'")
 
     try:
-        success, msg = provider_api_service.update_model_status(tenant_id, provider_id_or_name, instance_id_or_name, model_name, status)
+        success, msg = provider_api_service.update_model_status(
+            tenant_id, provider_id_or_name, instance_id_or_name, model_name, status
+        )
         if success:
             return get_result(message=msg)
         else:
@@ -896,7 +902,9 @@ async def chat_to_model(tenant_id: str = None, provider_id_or_name: str = None, 
     thinking = data.get("thinking", False)
 
     try:
-        success, result = await provider_api_service.chat_to_model(tenant_id, provider_id_or_name, instance_id_or_name, model_name, message, stream, thinking)
+        success, result = await provider_api_service.chat_to_model(
+            tenant_id, provider_id_or_name, instance_id_or_name, model_name, message, stream, thinking
+        )
         if not success:
             return get_error_data_result(message=result)
 
