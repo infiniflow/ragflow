@@ -319,10 +319,13 @@ docker build --platform linux/amd64 \
 
 ## 🔨 Launch service from source for development
 
-1. Install `uv` and `pre-commit`, or skip this step if they are already installed:
+> [!IMPORTANT]
+> After cloning the repository for the first time, run `lefthook install` once from the repo root to enable local Git hooks.
+
+1. Install `uv`, or skip this step if it is already installed:
 
    ```bash
-   pipx install uv pre-commit
+   pipx install uv
    ```
 2. Clone the source code and install Python dependencies:
 
@@ -331,7 +334,7 @@ docker build --platform linux/amd64 \
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
    uv run python3 ragflow_deps/download_deps.py
-   pre-commit install
+   lefthook install
    ```
 3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
 
