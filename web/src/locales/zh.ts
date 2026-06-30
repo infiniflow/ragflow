@@ -108,6 +108,9 @@ export default {
       welcome: '欢迎来到',
       dataset: '知识库',
       memories: '记忆',
+      discord: 'Discord',
+      github: 'GitHub',
+      help: '帮助',
     },
     skills: {
       title: '技能',
@@ -961,7 +964,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       thinkingDefault: '系统默认',
       thinkingEnabled: '开启',
       thinkingDisabled: '关闭',
-      thinkingTip: '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
+      thinkingTip:
+        '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
       quoteTip: '是否应该显示原文出处？',
       selfRag: 'Self-RAG',
@@ -1465,6 +1469,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       updateDate: '日期',
       role: '状态',
       invite: '邀请成员',
+      inviteTip: '仅支持邀请已注册用户，请先完成注册。',
       agree: '同意',
       refuse: '拒绝',
       teamMembers: '团队成员',

@@ -86,6 +86,15 @@ type LLMParam struct {
 	// Doubles on each retry, capped at 1 minute. Zero = default
 	// (2 seconds). Matches Python's `delay_after_error` param.
 	DelayAfterError time.Duration
+
+	// Thinking mirrors the python `thinking` Agent LLM setting
+	// (PR #15446). When set to "enabled" or "disabled", the LLM
+	// driver is told to turn its reasoning mode on/off
+	// (provider-specific; see chat_model.py for Qwen/Kimi/GLM
+	// policy). Empty string means "system default" — the LLM
+	// driver decides, which today means Qwen3 is sent
+	// `enable_thinking=false` unless overridden.
+	Thinking string
 }
 
 // LLMInput is the resolved input map the factory / Invoke expects.
@@ -103,6 +112,7 @@ type LLMInput struct {
 	OutputStructure          map[string]any
 	Driver                   string
 	APIKey                   string
+	Thinking                 string // "enabled" | "disabled" | ""
 }
 
 // LLMOutput mirrors the outputs map (per plan §2.11.3 row 5):
@@ -139,6 +149,14 @@ type ChatInvokeRequest struct {
 	PresencePenalty  *float64
 	FrequencyPenalty *float64
 	MaxTokens        *int
+	// Thinking mirrors the agent-level `thinking` setting
+	// ("enabled" | "disabled" | ""). The default invoker is
+	// responsible for translating this into the provider-specific
+	// request body (e.g. Qwen `enable_thinking`, Kimi/GLM
+	// `thinking.type`). Empty string means "use provider default"
+	// and the invoker should leave the provider's reasoning mode
+	// untouched.
+	Thinking string
 }
 
 // ChatInvokeResponse mirrors what the LLM component writes to its outputs.
@@ -418,6 +436,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		PresencePenalty:  p.PresencePenalty,
 		FrequencyPenalty: p.FrequencyPenalty,
 		MaxTokens:        p.MaxTokens,
+		Thinking:         p.Thinking,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
@@ -457,6 +476,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 				PresencePenalty:  p.PresencePenalty,
 				FrequencyPenalty: p.FrequencyPenalty,
 				MaxTokens:        p.MaxTokens,
+				Thinking:         p.Thinking,
 			})
 			if err == nil {
 				parsed, ok = matchOutputStructure(retryResp.Content, p.OutputStructure)
@@ -838,6 +858,15 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 	if v, ok := intFrom(inputs, "max_tokens"); ok {
 		i := v
 		p.MaxTokens = &i
+	}
+	if v, ok := stringFrom(inputs, "thinking"); ok {
+		// Only allow the two known sentinels through; an arbitrary
+		// string from the DSL is dropped to avoid surprising the LLM
+		// driver. Mirrors python llm.py:78-79 which gates on the
+		// same {"enabled","disabled"} set.
+		if v == "enabled" || v == "disabled" {
+			p.Thinking = v
+		}
 	}
 	return p
 }

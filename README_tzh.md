@@ -318,10 +318,10 @@ docker build --platform linux/amd64 \
 
 ## 🔨 以原始碼啟動服務
 
-1. 安裝 `uv` 和 `pre-commit`。如已安裝，可跳過此步驟：
+1. 安裝 `uv`。如已安裝，可跳過此步驟：
 
    ```bash
-   pipx install uv pre-commit
+   pipx install uv
    export UV_INDEX=https://mirrors.aliyun.com/pypi/simple
    ```
 2. 下載原始碼並安裝 Python 依賴：
@@ -331,7 +331,7 @@ docker build --platform linux/amd64 \
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
    uv run python3 ragflow_deps/download_deps.py
-   pre-commit install
+   lefthook install
    ```
 3. 透過 Docker Compose 啟動依賴的服務（MinIO, Elasticsearch, Redis, and MySQL）：
 

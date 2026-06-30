@@ -1,6 +1,7 @@
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -63,6 +64,9 @@ const AddingUserModal = ({
                 <FormControl>
                   <Input placeholder={t('setting.email')} {...field} />
                 </FormControl>
+                <FormDescription className="text-xs">
+                  {t('setting.inviteTip')}
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}

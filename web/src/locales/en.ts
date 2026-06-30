@@ -124,6 +124,9 @@ export default {
       welcome: 'Welcome to',
       dataset: 'Dataset',
       memories: 'Memory',
+      discord: 'Discord',
+      github: 'GitHub',
+      help: 'Help',
     },
     skills: {
       title: 'Skills',
@@ -1402,6 +1405,32 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       postgresqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      bigqueryDescription:
+        'Connect to Google BigQuery to sync rows from a table or a custom GoogleSQL query.',
+      bigqueryProjectIdTip:
+        'GCP project that owns the query jobs (e.g. my-gcp-project).',
+      bigqueryLocationTip:
+        'Default location for the client and query jobs, such as US or EU. Leave empty to let BigQuery infer it.',
+      bigqueryServiceAccountJsonTip:
+        'Service account key JSON with BigQuery access. Paste the full key file contents.',
+      bigqueryDatasetIdTip:
+        'Dataset id for table mode. Required together with Table ID when no SQL query is provided.',
+      bigqueryTableIdTip:
+        'Table id for table mode. Required together with Dataset ID when no SQL query is provided.',
+      bigqueryQueryTip:
+        'Custom GoogleSQL query. Takes precedence over Dataset ID and Table ID. Standard SQL only.',
+      bigqueryContentColumnsTip:
+        'Comma-separated column names whose values will be combined as document content for vectorization.',
+      bigqueryMetadataColumnsTip:
+        'Comma-separated column names to store as document metadata (not vectorized, but searchable).',
+      bigqueryIdColumnTip:
+        'Column to use as unique document ID. If not specified, a hash of the content will be used.',
+      bigqueryTimestampColumnTip:
+        'Timestamp, datetime, date, or numeric column for incremental sync. Only rows newer than the last sync will be fetched.',
+      bigqueryMaximumBytesBilledTip:
+        'Hard cost guard applied to every query job, in bytes. Defaults to 1 GiB.',
+      bigqueryJobTimeoutMsTip:
+        'Optional per-query job timeout in milliseconds.',
       rest_apiDescription:
         'Connect any REST API endpoint as a data source using a flexible, configuration-driven connector.',
       onedriveDescription:
@@ -1779,6 +1808,8 @@ Example: Virtual Hosted Style`,
       updateDate: 'Date',
       role: 'State',
       invite: 'Invite member',
+      inviteTip:
+        'Only registered users can be invited. Please register the account before sending an invitation.',
       agree: 'Accept',
       refuse: 'Decline',
       teamMembers: 'Team members',
