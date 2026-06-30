@@ -455,7 +455,7 @@ func startServer(config *server.Config) {
 	userService := service.NewUserService()
 	documentService := service.NewDocumentService()
 	datasetsService := service.NewDatasetService()
-	knowledgebaseService := service.NewKnowledgebaseService()
+	datasetService := service.NewKnowledgebaseService()
 	metadataService := service.NewMetadataService()
 	chunkService := chunk.NewChunkService()
 	llmService := service.NewLLMService()
@@ -483,11 +483,11 @@ func startServer(config *server.Config) {
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
 	userHandler := handler.NewUserHandler(userService)
-	tenantHandler := handler.NewTenantHandler(tenantService, userService, knowledgebaseService)
+	tenantHandler := handler.NewTenantHandler(tenantService, userService, datasetService)
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
 	systemHandler := handler.NewSystemHandler(systemService)
-	knowledgebaseHandler := handler.NewKnowledgebaseHandler(knowledgebaseService, userService, documentService)
+	datasethandler := handler.NewKnowledgebaseHandler(datasetService, userService, documentService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
@@ -505,7 +505,7 @@ func startServer(config *server.Config) {
 	// Install the agent service's Redis-backed run infrastructure
 	// (CheckPointStore / StateSerializer / RunTracker). When Redis
 	// is unreachable (degraded boot, stand-alone mode, no-redis CI)
-	// the constructors return errors and we fall through to the
+	// the constructors return errors, and we fall through to the
 	// in-memory / no-tracking path: the agent service treats nil
 	// options as the in-memory test path, so graceful degradation
 	// is a 1-line if-not-nil pass-through — no separate "boot" mode
@@ -554,7 +554,7 @@ func startServer(config *server.Config) {
 	docDAO := documentDAO
 	retrievalService := nlp.NewRetrievalService(docEngine, docDAO)
 	difyRetrievalHandler := handler.NewDifyRetrievalHandler(
-		knowledgebaseService,
+		datasetService,
 		modelProviderService,
 		metadataService,
 		retrievalService,
@@ -578,7 +578,35 @@ func startServer(config *server.Config) {
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatChannelHandler, langfuseHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler, botHandler)
+	r := router.NewRouter(authHandler,
+		userHandler,
+		tenantHandler,
+		documentHandler,
+		datasetsHandler,
+		systemHandler,
+		datasethandler,
+		chunkHandler,
+		llmHandler,
+		chatHandler,
+		chatChannelHandler,
+		langfuseHandler,
+		chatSessionHandler,
+		connectorHandler,
+		searchHandler,
+		fileHandler,
+		memoryHandler,
+		mcpHandler,
+		skillSearchHandler,
+		providerHandler,
+		agentHandler,
+		searchBotHandler,
+		difyRetrievalHandler,
+		pluginHandler,
+		modelHandler,
+		fileCommitHandler,
+		adminRuntimeHandler,
+		openaiChatHandler,
+		botHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
@@ -683,7 +711,7 @@ type agentRunOptions struct {
 
 // buildAgentRunOptions installs the Redis-backed run infrastructure
 // when Redis is available. The Redis client is the one already
-// initialised at the top of main; the TTL is a conservative 24h for
+// initialized at the top of main; the TTL is a conservative 24h for
 // both the checkpoint store and the run tracker. On any error
 // (Redis down at boot, constructor panic, nil-Redis fallback) we
 // log and return a zero-value struct — the agent service falls back
