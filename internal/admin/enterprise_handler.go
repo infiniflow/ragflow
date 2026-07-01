@@ -1706,6 +1706,21 @@ func (h *Handler) ListUsersQuota(c *gin.Context) {
 	success(c, usersQuota, "")
 }
 
+// ShowUsersPlanSummary handle show users plan summary
+func (h *Handler) ShowUsersPlanSummary(c *gin.Context) {
+	usersPlanSummary, err := h.service.ShowUsersPlanSummary()
+	if err != nil {
+		if errors.Is(err, common.ErrUserNotFound) {
+			errorResponse(c, "User not found", 404)
+			return
+		}
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, usersPlanSummary, "")
+}
+
 // ShowUsersQuotaSummary handle show users quota summary
 func (h *Handler) ShowUsersQuotaSummary(c *gin.Context) {
 	usersQuotaSummary, err := h.service.ShowUsersQuotaSummary()
