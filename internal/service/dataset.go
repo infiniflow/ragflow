@@ -1980,7 +1980,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	// Apply meta_data_filter to get filtered doc_ids
 	docIDs := make([]string, len(req.DocIDs))
 	copy(docIDs, req.DocIDs)
-	if metadataFilter != nil {
+	if len(metadataFilter) > 0 {
 		metadataSvc := NewMetadataService()
 		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(datasetIDs)
 		if err != nil {
