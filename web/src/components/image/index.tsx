@@ -1,7 +1,6 @@
 import { Authorization } from '@/constants/authorization';
 import { restAPIv1 } from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
-import { getSearchValue } from '@/utils/common-util';
 import classNames from 'classnames';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';

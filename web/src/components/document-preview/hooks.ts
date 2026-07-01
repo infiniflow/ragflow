@@ -129,10 +129,10 @@ export const useFetchExcel = (filePath: string) => {
     myExcelPreviewer
       ?.preview(jsonFile.data)
       .then(() => {
-        console.log('succeed');
         setStatus(true);
       })
       .catch((e) => {
+        // eslint-disable-next-line no-console
         console.warn('failed', e);
         myExcelPreviewer.destroy();
         setStatus(false);
