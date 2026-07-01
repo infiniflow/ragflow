@@ -229,6 +229,7 @@ func startServer(config *server.Config) {
 	systemService := service.NewSystemService()
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
+	searchService.SetTenantService(tenantService)
 	fileService := service.NewFileService()
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
@@ -276,7 +277,8 @@ func startServer(config *server.Config) {
 		agentOpts.stateSerializer,
 		agentOpts.runTracker,
 	)
-	agentHandler := handler.NewAgentHandler(agentService, fileService)
+	agentHandler := handler.NewAgentHandler(agentService, fileService).
+		WithDocumentService(documentService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
@@ -295,15 +297,18 @@ func startServer(config *server.Config) {
 	// no-op echo (the audio package contract), so this is always
 	// safe to call.
 	configureTTSSynthesizer(modelProviderService)
-	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
+	modelProviderLLM := &handler.ModelProviderLLM{Svc: modelProviderService}
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
-		searchBotLLM,
+		modelProviderLLM,
 		chunkService,
 	)
-	searchBotHandler.SetStreamLLM(searchBotLLM)
-	searchBotHandler.SetAskService(service.NewAskService(chunkService, nil, 0, 0))
+	searchBotHandler.SetStreamLLM(modelProviderLLM)
+	askService := service.NewAskService(chunkService, nil, 0, 0)
+	searchBotHandler.SetAskService(askService)
+	chatHandler.SetMindMapDependencies(searchService, tenantService, modelProviderLLM, chunkService)
+	searchHandler.SetCompletionDependencies(modelProviderLLM, askService)
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
 	fileCommitHandler := handler.NewFileCommitHandler(service.NewFileCommitService())

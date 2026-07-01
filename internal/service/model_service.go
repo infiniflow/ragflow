@@ -32,39 +32,6 @@ import (
 	"gorm.io/gorm"
 )
 
-var providerCatalogNameByCanonical = map[string]string{
-	"SILICONFLOW": "SiliconFlow",
-}
-
-func canonicalProviderName(name string) (string, error) {
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
-		return "", fmt.Errorf("provider name is required")
-	}
-	factoryDAO := dao.NewLLMFactoryDAO()
-	if _, err := factoryDAO.GetByName(trimmed); err == nil {
-		return trimmed, nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return "", err
-	}
-	for canonical, catalog := range providerCatalogNameByCanonical {
-		if trimmed == catalog {
-			if _, err := factoryDAO.GetByName(canonical); err != nil {
-				return "", err
-			}
-			return canonical, nil
-		}
-	}
-	return "", fmt.Errorf("provider '%s' not found", name)
-}
-
-func catalogProviderName(name string) string {
-	if mapped, ok := providerCatalogNameByCanonical[name]; ok {
-		return mapped
-	}
-	return name
-}
-
 // parseModelName parses a composite model name in format "model@instance@provider" or "model@provider"
 // Returns modelName, instanceName, providerName separately
 func parseModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
@@ -135,10 +102,8 @@ type CheckConnectionRequest struct {
 }
 
 func (m *ModelProviderService) AddModelProvider(providerName, userID string) (common.ErrorCode, error) {
-	canonicalName, err := canonicalProviderName(providerName)
-	if err != nil {
-		return common.CodeNotFound, err
-	}
+	providerName = strings.TrimSpace(providerName)
+	providerName = strings.ToLower(providerName)
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -155,7 +120,7 @@ func (m *ModelProviderService) AddModelProvider(providerName, userID string) (co
 
 	tenantModelProvider := &entity.TenantModelProvider{
 		ID:           providerID,
-		ProviderName: canonicalName,
+		ProviderName: providerName,
 		TenantID:     tenantID,
 	}
 	err = m.modelProviderDAO.Create(tenantModelProvider)
@@ -220,7 +185,7 @@ func isExcludedTenantProvider(name string) bool {
 	return false
 }
 
-func (m *ModelProviderService) DeleteModelProvider(providerName, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) DeleteModelProvider(userID, providerName string) (common.ErrorCode, error) {
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
@@ -239,10 +204,8 @@ func (m *ModelProviderService) DeleteModelProvider(providerName, userID string) 
 }
 
 func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, userID string) ([]map[string]interface{}, error) {
-	providerName, err := canonicalProviderName(providerName)
-	if err != nil {
-		return nil, err
-	}
+	providerName = strings.TrimSpace(providerName)
+	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -267,7 +230,7 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 		return nil, err
 	}
 
-	providerInfo := dao.GetModelProviderManager().FindProvider(catalogProviderName(providerName))
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 	if providerInfo == nil {
 		return nil, fmt.Errorf("provider %s not found", providerName)
 	}
@@ -317,10 +280,9 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 }
 
 func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, baseURL, region, userID string) (common.ErrorCode, error) {
-	providerName, err := canonicalProviderName(providerName)
-	if err != nil {
-		return common.CodeNotFound, err
-	}
+	providerName = strings.TrimSpace(providerName)
+	providerName = strings.ToLower(providerName)
+
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -368,10 +330,8 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 }
 
 func (m *ModelProviderService) ListProviderInstances(providerName, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
-	providerName, err := canonicalProviderName(providerName)
-	if err != nil {
-		return nil, common.CodeNotFound, err
-	}
+	providerName = strings.TrimSpace(providerName)
+	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")

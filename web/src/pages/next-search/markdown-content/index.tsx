@@ -1,5 +1,6 @@
 import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
 import DOMPurify from 'dompurify';
@@ -8,7 +9,6 @@ import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -75,7 +75,11 @@ const MarkdownContent = ({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
-    return pipe(replaceThinkToSection, replaceRetrievingToSection, preprocessLaTeX)(nextText);
+    return pipe(
+      replaceThinkToSection,
+      replaceRetrievingToSection,
+      preprocessLaTeX,
+    )(nextText);
   }, [content, t]);
 
   useEffect(() => {

@@ -42,6 +42,9 @@ type connectorServiceIface interface {
 	StartGoogleWebOAuth(userID, source string, req *service.StartGoogleWebOAuthRequest) (*service.StartGoogleWebOAuthResponse, common.ErrorCode, error)
 	GoogleWebOAuthCallback(source, stateID, oauthError, errorDescription, code string) string
 	PollGoogleWebOAuthResult(userID, source string, req *service.PollGoogleWebOAuthResultRequest) (*service.PollGoogleWebOAuthResultResponse, common.ErrorCode, error)
+	StartBoxWebOAuth(userID string, req *service.StartBoxWebOAuthRequest) (*service.StartBoxWebOAuthResponse, common.ErrorCode, error)
+	BoxWebOAuthCallback(flowID string, oauthError string, errorDescription string, code string) string
+	PollBoxWebOAuthResult(userID string, req *service.PollBoxWebOAuthResultRequest) (*service.PollBoxWebOAuthResultResponse, common.ErrorCode, error)
 }
 
 // ConnectorHandler connector handler
@@ -503,4 +506,53 @@ func (h *ConnectorHandler) googleWebOAuthCallback(c *gin.Context, source string)
 		c.Query("code"),
 	)
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
+}
+
+func (h *ConnectorHandler) StartBoxWebOAuth(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	var req service.StartBoxWebOAuthRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeBadRequest, err.Error())
+		return
+	}
+	resp, code, err := h.connectorService.StartBoxWebOAuth(user.ID, &req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+	jsonResponse(c, code, resp, "success")
+}
+
+func (h *ConnectorHandler) BoxWebOAuthCallback(c *gin.Context) {
+	flowID := c.Query("state")
+	oauthError := c.Query("error")
+	errorDescription := c.Query("error_description")
+	code := c.Query("code")
+
+	html := h.connectorService.BoxWebOAuthCallback(flowID, oauthError, errorDescription, code)
+
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
+}
+
+func (h *ConnectorHandler) PollBoxWebOAuthResult(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	var req service.PollBoxWebOAuthResultRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeBadRequest, err.Error())
+		return
+	}
+	resp, code, err := h.connectorService.PollBoxWebOAuthResult(user.ID, &req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+	jsonResponse(c, code, resp, "success")
 }
