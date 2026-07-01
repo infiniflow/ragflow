@@ -411,13 +411,19 @@ func TestSearchBotsRetrieval_EmptyQuestion(t *testing.T) {
 	}
 }
 
-// fakeSearchbotLLM implements searchbotLLM for testing.
-type fakeSearchbotLLM struct {
-	response string
-	err      error
+// fakeChatLLM implements chatLLM for testing.
+type fakeChatLLM struct {
+	response     string
+	err          error
+	lastTenantID string
+	lastModelID  string
+	lastMessages []modelModule.Message
 }
 
-func (f *fakeSearchbotLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
+func (f *fakeChatLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
+	f.lastTenantID = tenantID
+	f.lastModelID = modelID
+	f.lastMessages = messages
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -438,7 +444,7 @@ func setupSearchBotRequest(body string) (*gin.Context, *httptest.ResponseRecorde
 
 // TestSearchBotHandler_Success verifies the happy path.
 func TestSearchBotHandler_Success(t *testing.T) {
-	llm := &fakeSearchbotLLM{
+	llm := &fakeChatLLM{
 		response: `Here are some related questions:
 1. How do EV impact environment?
 2. What are advantages of EV?
@@ -472,7 +478,7 @@ func TestSearchBotHandler_Success(t *testing.T) {
 
 // TestSearchBotHandler_EmptyResponse verifies empty LLM response returns empty list.
 func TestSearchBotHandler_EmptyResponse(t *testing.T) {
-	llm := &fakeSearchbotLLM{
+	llm := &fakeChatLLM{
 		response: "No related questions found.",
 	}
 	h := NewSearchBotHandler(nil, nil, llm, nil)
@@ -496,7 +502,7 @@ func TestSearchBotHandler_EmptyResponse(t *testing.T) {
 
 // TestSearchBotHandler_LLMFailure verifies error handling on LLM failure.
 func TestSearchBotHandler_LLMFailure(t *testing.T) {
-	llm := &fakeSearchbotLLM{
+	llm := &fakeChatLLM{
 		err: errFake{msg: "LLM unavailable"},
 	}
 	h := NewSearchBotHandler(nil, nil, llm, nil)
@@ -514,7 +520,7 @@ func TestSearchBotHandler_LLMFailure(t *testing.T) {
 
 // TestSearchBotHandler_MissingQuestion verifies validation.
 func TestSearchBotHandler_MissingQuestion(t *testing.T) {
-	llm := &fakeSearchbotLLM{response: "dummy"}
+	llm := &fakeChatLLM{response: "dummy"}
 	h := NewSearchBotHandler(nil, nil, llm, nil)
 
 	c, w := setupSearchBotRequest(`{}`)
@@ -903,6 +909,64 @@ func TestAskHandler_WhitespaceKbIDFiltered(t *testing.T) {
 	h.Ask(c)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for all-whitespace kb_ids, got %d", w.Code)
+	}
+}
+
+func TestMindMapHandlerSuccess(t *testing.T) {
+	llm := &fakeChatLLM{response: "# Product\n## Features\n### Search\n#### Hybrid retrieval"}
+	chunks := &mockChunkService{retrievalTestFn: func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
+		return &service.RetrievalTestResponse{
+			Chunks: []map[string]interface{}{{"content_with_weight": "Hybrid search combines vector and keyword retrieval."}},
+		}, nil
+	}}
+	h := NewSearchBotHandler(nil, nil, llm, chunks)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "user-1"})
+	})
+	r.POST("/api/v1/searchbots/mindmap", h.MindMap)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/searchbots/mindmap", strings.NewReader(`{"question":"What is search?","kb_ids":["kb-1"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp["message"])
+	}
+	data := resp["data"].(map[string]interface{})
+	if data["id"] != "Product" {
+		t.Fatalf("mindmap root = %v, want Product", data["id"])
+	}
+	if chunks.LastReq == nil {
+		t.Fatal("RetrievalTest was not called")
+	}
+	if *chunks.LastReq.Page != 1 || *chunks.LastReq.Size != 12 || *chunks.LastReq.TopK != 1024 {
+		t.Fatalf("retrieval defaults = page %d size %d topK %d", *chunks.LastReq.Page, *chunks.LastReq.Size, *chunks.LastReq.TopK)
+	}
+	if llm.lastTenantID != "user-1" || len(llm.lastMessages) != 2 || !strings.Contains(llm.lastMessages[0].Content, "Hybrid search combines") {
+		t.Fatalf("unexpected LLM call: tenant=%q messages=%v", llm.lastTenantID, llm.lastMessages)
+	}
+}
+
+func TestParseMindMapMarkdown_ListUnderHeading(t *testing.T) {
+	got := parseMindMapMarkdown("# Product\n- Features\n  - Search")
+	if got.ID != "Product" {
+		t.Fatalf("root = %q, want Product", got.ID)
+	}
+	if len(got.Children) != 1 || got.Children[0].ID != "Features" {
+		t.Fatalf("children = %+v, want Features under Product", got.Children)
+	}
+	if len(got.Children[0].Children) != 1 || got.Children[0].Children[0].ID != "Search" {
+		t.Fatalf("nested children = %+v, want Search under Features", got.Children[0].Children)
 	}
 }
 

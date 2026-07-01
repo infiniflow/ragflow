@@ -2525,6 +2525,8 @@ func (p *Parser) parseAdminShowUsersCommands() (*Command, error) {
 		return cmd, nil
 	case TokenActivity:
 		return p.parseAdminShowUsersActivity()
+	case TokenPlan:
+		return p.parseAdminShowUsersPlan()
 	default:
 		return nil, fmt.Errorf("invalid command")
 	}
@@ -2578,6 +2580,21 @@ commandLoop:
 	cmd := NewCommand("admin_show_users_activity_command")
 	cmd.Params["days"] = days
 	cmd.Params["window"] = windowSize
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminShowUsersPlan() (*Command, error) {
+	p.nextToken() // consume PLAN
+
+	if p.curToken.Type != TokenSummary {
+		return nil, fmt.Errorf("expected SUMMARY")
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_show_users_plan_command")
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 	return cmd, nil
 }
 

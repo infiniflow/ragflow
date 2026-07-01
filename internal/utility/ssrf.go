@@ -33,6 +33,28 @@ var AllowedURLSchemes = []string{"http", "https"}
 // LookupHost is the indirection used to resolve hostnames. Tests override it.
 var LookupHost = net.LookupHost
 
+// AllowAnyHostForTest is a test-only override that bypasses the
+// SSRF guard (no public-IP check, no DNS resolution, no DNS
+// pinning). Production code MUST leave this at its zero value
+// (false). Tests that need to talk to a local httptest server
+// flip it on and reset it in t.Cleanup.
+//
+// The previous form (env-var ALLOW_ANY_HOST) was a live runtime
+// toggle that any operator could flip to disable the SSRF guard
+// globally — including the DNS pinning that the Invoke component
+// relies on. PR review round 6, Major #3: this variable lives in
+// process memory only, so it cannot be enabled by an env var or
+// a deployment mistake. The explicit "_ForTest" suffix is the
+// signal that production code must never touch it.
+var AllowAnyHostForTest = false
+
+// allowAnyHost reads the test-only override. Kept as a private
+// helper so the call sites don't all have to know about the
+// exported variable name.
+func allowAnyHost() bool {
+	return AllowAnyHostForTest
+}
+
 // AssertURLSafe parses rawURL and rejects it if the scheme is disallowed,
 // the host is missing, or any resolved IP is not globally routable
 // (private, loopback, link-local, multicast, reserved). Returns the hostname
@@ -58,6 +80,7 @@ func AssertURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
 		return "", "", fmt.Errorf("URL is missing a host.")
 	}
 
+	allowAny := allowAnyHost()
 	addrs, err := LookupHost(hostname)
 	if err != nil {
 		return "", "", fmt.Errorf("Could not resolve hostname '%s': %v", hostname, err)
@@ -71,7 +94,7 @@ func AssertURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
 		if ip == nil {
 			return "", "", fmt.Errorf("Could not parse resolved address '%s' for hostname '%s'.", addr, hostname)
 		}
-		if !isGlobalIP(effectiveIP(ip)) {
+		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
 			return "", "", fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed.", ip.String())
 		}
 		if resolvedIP == "" {
