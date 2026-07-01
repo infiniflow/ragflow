@@ -103,20 +103,20 @@ type SearchBotRequest struct {
 type SearchBotHandler struct {
 	searchSvc *service.SearchService
 	tenantSvc *service.TenantService
-	llm       service.ChatLLM
-	streamLLM service.TenantStreamingLLM
+	llm       *service.ModelProviderService
+	streamLLM *service.ModelProviderService
 	chunkSvc  service.Retriever
 	askSvc    *service.AskService
 	sseWriter SSEWriter
 }
 
 // NewSearchBotHandler creates a new SearchBotHandler.
-func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm service.ChatLLM, chunkSvc service.Retriever) *SearchBotHandler {
+func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm *service.ModelProviderService, chunkSvc service.Retriever) *SearchBotHandler {
 	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc, sseWriter: &ginSSEWriter{}}
 }
 
 // SetStreamLLM sets the streaming LLM for the Ask endpoint.
-func (h *SearchBotHandler) SetStreamLLM(llm service.TenantStreamingLLM) { h.streamLLM = llm }
+func (h *SearchBotHandler) SetStreamLLM(llm *service.ModelProviderService) { h.streamLLM = llm }
 
 // SetAskService sets the AskService used by the Ask endpoint.
 func (h *SearchBotHandler) SetAskService(svc *service.AskService) { h.askSvc = svc }

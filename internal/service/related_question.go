@@ -27,9 +27,9 @@ import (
 )
 
 // GenerateRelatedQuestions generates related search questions for chat/searchbot endpoints.
-func GenerateRelatedQuestions(tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, llm ChatLLM) ([]string, error) {
-	if llm == nil {
-		return nil, fmt.Errorf("LLM not configured")
+func GenerateRelatedQuestions(tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, modelProviderSvc *ModelProviderService) ([]string, error) {
+	if modelProviderSvc == nil {
+		return nil, fmt.Errorf("model provider service not configured")
 	}
 	searchConfig := relatedQuestionsSearchConfig(searchID, searchSvc)
 	modelID := relatedQuestionsModelID(tenantID, searchConfig, tenantSvc)
@@ -41,7 +41,7 @@ func GenerateRelatedQuestions(tenantID, question, searchID string, searchSvc *Se
 		{Role: "system", Content: prompt},
 		{Role: "user", Content: "\nKeywords: " + question + "\nRelated search terms:\n    "},
 	}
-	response, err := llm.Chat(tenantID, modelID, messages, relatedQuestionsConfig(searchConfig))
+	response, err := modelProviderSvc.Chat(tenantID, modelID, messages, relatedQuestionsConfig(searchConfig))
 	if err != nil {
 		return nil, err
 	}

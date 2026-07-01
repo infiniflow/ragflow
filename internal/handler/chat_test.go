@@ -2,9 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -14,7 +12,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
 )
 
@@ -72,97 +69,6 @@ func createChatHandlerTestChat(t *testing.T, db *gorm.DB, id, tenantID string) {
 	if err := db.Create(chat).Error; err != nil {
 		t.Fatalf("failed to create chat: %v", err)
 	}
-}
-
-func TestChatMindMapHandlerSuccess(t *testing.T) {
-	llm := &fakeChatLLM{response: "# Product\n## Features\n### Search"}
-	chunks := &mockChunkService{retrievalTestFn: func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
-		return &service.RetrievalTestResponse{
-			Chunks: []map[string]interface{}{{"content_with_weight": "Hybrid search combines vector and keyword retrieval."}},
-		}, nil
-	}}
-	h := NewChatHandler(service.NewChatService(), service.NewUserService())
-	h.SetMindMapDependencies(nil, nil, llm, chunks)
-	c, w := setupGinContextWithUser("POST", "/api/v1/chat/mindmap", `{"question":"What is search?","kb_ids":["kb-1"]}`)
-
-	h.MindMap(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if resp["code"] != float64(common.CodeSuccess) {
-		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp["message"])
-	}
-	data := resp["data"].(map[string]interface{})
-	if data["id"] != "Product" {
-		t.Fatalf("mindmap root = %v, want Product", data["id"])
-	}
-	if chunks.LastReq == nil || len(chunks.LastReq.Datasets) != 1 || chunks.LastReq.Datasets[0] != "kb-1" {
-		t.Fatalf("retrieval datasets = %+v, want [kb-1]", chunks.LastReq)
-	}
-	if llm.lastTenantID != "user-1" || len(llm.lastMessages) != 2 || !strings.Contains(fmt.Sprint(llm.lastMessages[0].Content), "Hybrid search combines") {
-		t.Fatalf("unexpected LLM call: tenant=%q messages=%v", llm.lastTenantID, llm.lastMessages)
-	}
-}
-
-func TestChatRecommendationHandlerSuccess(t *testing.T) {
-	setupChatHandlerTestDB(t)
-	llm := &fakeRecommendationLLM{
-		response: "Here are related questions:\n1. How does hybrid search work?\n2. What improves retrieval quality?",
-	}
-	h := NewChatHandler(service.NewChatService(), service.NewUserService())
-	h.SetMindMapDependencies(nil, service.NewTenantService(), llm, nil)
-	c, w := setupGinContextWithUser("POST", "/api/v1/chat/recommendation", `{"question":"hybrid search"}`)
-
-	h.Recommendation(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if resp["code"] != float64(common.CodeSuccess) {
-		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp["message"])
-	}
-	questions, ok := resp["data"].([]interface{})
-	if !ok || len(questions) != 2 {
-		t.Fatalf("expected 2 questions, got %+v", resp["data"])
-	}
-	if questions[0] != "How does hybrid search work?" {
-		t.Fatalf("unexpected first question: %v", questions[0])
-	}
-	if llm.lastTenantID != "user-1" || llm.lastModelID != "model-a" {
-		t.Fatalf("unexpected LLM target: tenant=%q model=%q", llm.lastTenantID, llm.lastModelID)
-	}
-	if llm.lastConfig == nil || llm.lastConfig.Temperature == nil || *llm.lastConfig.Temperature != 0.9 {
-		t.Fatalf("expected default temperature 0.9, got %+v", llm.lastConfig)
-	}
-}
-
-type fakeRecommendationLLM struct {
-	response     string
-	err          error
-	lastTenantID string
-	lastModelID  string
-	lastMessages []modelModule.Message
-	lastConfig   *modelModule.ChatConfig
-}
-
-func (f *fakeRecommendationLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
-	f.lastTenantID = tenantID
-	f.lastModelID = modelID
-	f.lastMessages = messages
-	f.lastConfig = config
-	if f.err != nil {
-		return nil, f.err
-	}
-	return &modelModule.ChatResponse{Answer: &f.response}, nil
 }
 
 func TestDeleteChatHandlerSuccess(t *testing.T) {

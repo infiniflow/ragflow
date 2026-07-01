@@ -30,7 +30,7 @@ import (
 type SearchHandler struct {
 	searchService *service.SearchService
 	userService   *service.UserService
-	streamLLM     service.TenantStreamingLLM
+	streamLLM     *service.ModelProviderService
 	askService    *service.AskService
 	sseWriter     SSEWriter
 }
@@ -45,7 +45,7 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 }
 
 // SetCompletionDependencies wires the streaming search completion runtime.
-func (h *SearchHandler) SetCompletionDependencies(streamLLM service.TenantStreamingLLM, askService *service.AskService) {
+func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.ModelProviderService, askService *service.AskService) {
 	h.streamLLM = streamLLM
 	h.askService = askService
 }

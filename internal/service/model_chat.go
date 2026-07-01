@@ -26,16 +26,6 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-// ChatLLM resolves tenant/model IDs and performs a non-streaming chat call.
-type ChatLLM interface {
-	Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error)
-}
-
-// TenantStreamingLLM resolves tenant/model IDs and streams chat deltas.
-type TenantStreamingLLM interface {
-	ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error)
-}
-
 func (m *ModelProviderService) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
 	chatModel, err := m.GetChatModel(tenantID, modelID)
 	if err != nil {
@@ -79,7 +69,7 @@ func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel
 
 // TenantStreamAdapter adapts tenant/model-aware chat streaming to AskService.
 type TenantStreamAdapter struct {
-	LLM      TenantStreamingLLM
+	LLM      *ModelProviderService
 	TenantID string
 	ModelID  string
 }
