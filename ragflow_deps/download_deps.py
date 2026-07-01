@@ -156,7 +156,7 @@ if __name__ == "__main__":
 
     # Extract native static libraries to ~/ragflow-native-libs for Go build.
     # Ensures build.sh can find them without network access.
-    native_deps_dir = os.path.expanduser("    native_deps_dir = os.path.expanduser("~/ragflow-native-libs")")
+    native_deps_dir = os.path.expanduser("~/ragflow-native-libs")
     extractions = [
         ("pdfium-linux-x64-static.tgz", "pdfium-static"),
         ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide"),
