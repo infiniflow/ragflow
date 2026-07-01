@@ -7489,6 +7489,14 @@
             "llm": []
         },
         {
+            "name": "SoMark",
+            "logo": "",
+            "tags": "OCR",
+            "status": "1",
+            "rank": "930",
+            "llm": []
+        },
+        {
             "name": "n1n",
             "logo": "",
             "tags": "LLM",
