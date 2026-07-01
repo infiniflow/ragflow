@@ -138,13 +138,6 @@ jobs:
           echo "ARTIFACTS_DIR=${ARTIFACTS_DIR}" >> ${GITHUB_ENV}
           rm -rf ${ARTIFACTS_DIR} && mkdir -p ${ARTIFACTS_DIR}
 
-      # https://github.com/astral-sh/ruff-action
-      - name: Static check with Ruff
-        uses: astral-sh/ruff-action@v3
-        with:
-          version: ">=0.11.x"
-          args: "check"
-
 #      - name: Check comments of changed Python files
 #        if: ${{ false }}
 #        run: |
@@ -201,8 +194,7 @@ jobs:
             if [ $HAS_ERROR -ne 0 ]; then
               exit 1
             fi
-          else
-            echo "No Go files changed"
+            lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
           fi
 
       - name: Run Lefthook on changed files

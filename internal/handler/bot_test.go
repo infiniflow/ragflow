@@ -800,6 +800,7 @@ type stubUserTokenResolver struct {
 	getUserByTokenFn        func(authorization string) (*entity.User, common.ErrorCode, error)
 	getUserByAPITokenFn     func(token string) (*entity.User, common.ErrorCode, error)
 	getUserByBetaAPITokenFn func(token string) (*entity.User, common.ErrorCode, error)
+	getAPITokenByBetaFn     func(authorization string) (*entity.APIToken, error)
 }
 
 func (s *stubUserTokenResolver) GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error) {
@@ -821,6 +822,13 @@ func (s *stubUserTokenResolver) GetUserByBetaAPIToken(token string) (*entity.Use
 		return s.getUserByBetaAPITokenFn(token)
 	}
 	return nil, common.CodeUnauthorized, errors.New("not stubbed")
+}
+
+func (s *stubUserTokenResolver) GetAPITokenByBeta(authorization string) (*entity.APIToken, error) {
+	if s.getAPITokenByBetaFn != nil {
+		return s.getAPITokenByBetaFn(authorization)
+	}
+	return nil, errors.New("not stubbed")
 }
 
 // TestBotRoutes_NoRegularAuthRequired covers criterion 25. The
@@ -1078,4 +1086,66 @@ func TestDownloadAttachment_MissingID(t *testing.T) {
 // router.RegisterAgentRoutes directly.
 func inlineRegisterAgentRoutes(g *gin.RouterGroup, h *AgentHandler) {
 	g.GET("/attachments/:attachment_id/download", h.DownloadAttachment)
+}
+
+// TestGetAgentbotLogs_RequiresAgentIDInContext guards PR #15238:
+// the shared/embedded "Thinking" endpoint requires the beta
+// middleware to have stashed the APIToken.DialogID as "agent_id"
+// in the gin context. Without it, the handler cannot build the
+// Redis key and must return the "API token is not bound to an
+// agent." error — never read the URL's <shared_id> for the lookup.
+func TestGetAgentbotLogs_RequiresAgentIDInContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET",
+		"/api/v1/agentbots/shared-x/logs/msg-1", nil)
+	c.Set("user", &entity.User{ID: "u1"})
+
+	h := NewBotHandler(nil)
+	h.GetAgentbotLogs(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != int(common.CodeDataError) {
+		t.Errorf("code = %d, want %d (CodeDataError)", resp.Code, common.CodeDataError)
+	}
+	if !strings.Contains(resp.Message, "not bound") {
+		t.Errorf("message = %q, want it to mention 'not bound'", resp.Message)
+	}
+}
+
+// TestGetAgentbotLogs_MissingMessageID asserts the param contract:
+// message_id is required (used to build the Redis key).
+func TestGetAgentbotLogs_MissingMessageID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET",
+		"/api/v1/agentbots/shared-x/logs/", nil)
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("agent_id", "agent-real")
+	// Gin's path param extraction returns "" for a missing
+	// segment so the handler must reject with CodeArgumentError.
+
+	h := NewBotHandler(nil)
+	h.GetAgentbotLogs(c)
+
+	var resp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != int(common.CodeArgumentError) {
+		t.Errorf("code = %d, want %d", resp.Code, common.CodeArgumentError)
+	}
+	if !strings.Contains(resp.Message, "message_id") {
+		t.Errorf("message = %q, want it to mention 'message_id'", resp.Message)
+	}
 }

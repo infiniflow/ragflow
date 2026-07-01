@@ -21,6 +21,8 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -108,11 +110,19 @@ func TestValidateIPWhitelist_RejectForeign(t *testing.T) {
 	}
 }
 
-// TestValidateAuth_NoneIsAllow covers the auth_type=="none" no-op.
-func TestValidateAuth_NoneIsAllow(t *testing.T) {
+// TestValidateAuth_NoneRequiresOptIn covers the auth_type=="none"
+// opt-in: the old "fail open" default was closed by PR #14890.
+// An anonymous webhook must explicitly set allow_anonymous=true
+// to pass; the bare {"auth_type":"none"} block now rejects.
+func TestValidateAuth_NoneRequiresOptIn(t *testing.T) {
 	c := securityCtx(t, "1.2.3.4:0", nil)
-	if err := validateAuth(c, map[string]any{"auth_type": "none"}); err != nil {
-		t.Errorf("auth_type=none: err = %v, want nil", err)
+	// Bare auth_type=none → must reject (no opt-in).
+	if err := validateAuth(c, map[string]any{"auth_type": "none"}); err == nil {
+		t.Errorf("bare auth_type=none: want error (no opt-in), got nil")
+	}
+	// With explicit allow_anonymous=true → must pass.
+	if err := validateAuth(c, map[string]any{"auth_type": "none", "allow_anonymous": true}); err != nil {
+		t.Errorf("opt-in auth_type=none + allow_anonymous=true: err = %v, want nil", err)
 	}
 }
 
@@ -377,4 +387,90 @@ func TestValidateTokenAuth_EmptyValueRejected(t *testing.T) {
 	if err := validateTokenAuth(c, cfg); err == nil {
 		t.Errorf("empty token_value: err = nil, want error")
 	}
+}
+
+// TestValidateWebhookSecurity_RejectsEmptyConfig guards PR
+// #14890: empty / nil security config used to be allowed by
+// default (fail-open), letting unauthenticated webhooks fire on
+// any canvas. The fix requires an explicit opt-in via
+// allow_anonymous=true. The handler must return the same generic
+// error the python fix uses, so a probe cannot distinguish
+// "missing config" from "exists but no allow_anonymous".
+func TestValidateWebhookSecurity_RejectsEmptyConfig(t *testing.T) {
+	if err := validateWebhookSecurity(map[string]any{}, newSecurityCtx("c1"), "c1"); err == nil {
+		t.Fatal("empty config: want error, got nil")
+	}
+	if err := validateWebhookSecurity(nil, newSecurityCtx("c1"), "c1"); err == nil {
+		t.Fatal("nil config: want error, got nil")
+	}
+}
+
+// TestValidateWebhookSecurity_RejectsAnonymousWithoutOptIn covers
+// the auth_type=none case without allow_anonymous — used to be
+// allowed silently. Must be rejected.
+func TestValidateWebhookSecurity_RejectsAnonymousWithoutOptIn(t *testing.T) {
+	cases := []map[string]any{
+		{"auth_type": "none"},
+		{"auth_type": "none", "allow_anonymous": false},
+		{"auth_type": "none", "allow_anonymous": "false"},
+		{"auth_type": ""},
+		{"auth_type": "", "allow_anonymous": "yes please"},
+	}
+	for _, cfg := range cases {
+		if err := validateWebhookSecurity(cfg, newSecurityCtx("c1"), "c1"); err == nil {
+			t.Errorf("cfg %v: want error, got nil", cfg)
+		}
+	}
+}
+
+// TestValidateWebhookSecurity_FailClosedSameError pins PR review
+// round 5 (#2): the two fail-closed branches (empty security block
+// vs. anonymous-without-opt-in) MUST return the same error so a
+// probe cannot distinguish them. Using errors.Is lets the test
+// survive cosmetic wording tweaks; the assertion is on identity.
+func TestValidateWebhookSecurity_FailClosedSameError(t *testing.T) {
+	missing := validateWebhookSecurity(map[string]any{}, newSecurityCtx("c1"), "c1")
+	if missing == nil {
+		t.Fatal("empty cfg: want errWebhookFailClosed, got nil")
+	}
+	anon := validateWebhookSecurity(map[string]any{"auth_type": "none"}, newSecurityCtx("c1"), "c1")
+	if anon == nil {
+		t.Fatal("auth_type=none: want errWebhookFailClosed, got nil")
+	}
+	if missing.Error() != anon.Error() {
+		t.Errorf("fail-closed branches must share one error string\n"+
+			"  missing-config: %q\n"+
+			"  anonymous:      %q", missing.Error(), anon.Error())
+	}
+	if !errors.Is(missing, errWebhookFailClosed) || !errors.Is(anon, errWebhookFailClosed) {
+		t.Errorf("both branches must be errors.Is(errWebhookFailClosed); missing=%v anon=%v", missing, anon)
+	}
+}
+
+// TestValidateWebhookSecurity_AllowsAnonymousWithOptIn is the
+// positive control: auth_type=none with an explicit
+// allow_anonymous=true must pass. The python frontend now
+// serialises this when the user picks "None" auth.
+func TestValidateWebhookSecurity_AllowsAnonymousWithOptIn(t *testing.T) {
+	cases := []map[string]any{
+		{"auth_type": "none", "allow_anonymous": true},
+		{"auth_type": "none", "allow_anonymous": "true"},
+		{"auth_type": "none", "allow_anonymous": "1"},
+		{"auth_type": "none", "allow_anonymous": "yes"},
+		{"auth_type": "none", "allow_anonymous": "on"},
+	}
+	for _, cfg := range cases {
+		if err := validateWebhookSecurity(cfg, newSecurityCtx("c1"), "c1"); err != nil {
+			t.Errorf("cfg %v: want nil, got %v", cfg, err)
+		}
+	}
+}
+
+// newSecurityCtx is a tiny helper that builds a *gin.Context with
+// just enough request surface for validateWebhookSecurity to run
+// without panicking on a nil receiver.
+func newSecurityCtx(canvasID string) *gin.Context {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+canvasID+"/webhook", nil)
+	return c
 }
