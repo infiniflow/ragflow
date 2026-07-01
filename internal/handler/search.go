@@ -30,7 +30,7 @@ import (
 type SearchHandler struct {
 	searchService *service.SearchService
 	userService   *service.UserService
-	streamLLM     streamingLLM
+	streamLLM     *service.ModelProviderService
 	askService    *service.AskService
 	sseWriter     SSEWriter
 }
@@ -45,7 +45,7 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 }
 
 // SetCompletionDependencies wires the streaming search completion runtime.
-func (h *SearchHandler) SetCompletionDependencies(streamLLM streamingLLM, askService *service.AskService) {
+func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.ModelProviderService, askService *service.AskService) {
 	h.streamLLM = streamLLM
 	h.askService = askService
 }
@@ -495,7 +495,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		return
 	}
 
-	adapter := &askStreamAdapter{llm: h.streamLLM, tenantID: plan.UserID, modelID: plan.ModelID}
+	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: plan.UserID, ModelID: plan.ModelID}
 
 	hadError := false
 	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.KBIDs, plan.Options) {
