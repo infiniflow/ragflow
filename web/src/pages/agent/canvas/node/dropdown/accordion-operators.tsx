@@ -118,6 +118,7 @@ export function AccordionOperators({
               Operator.GoogleScholar,
               Operator.ArXiv,
               Operator.PubMed,
+              Operator.BGPT,
               Operator.GitHub,
               Operator.Invoke,
               Operator.WenCai,
