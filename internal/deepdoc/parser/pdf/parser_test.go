@@ -561,14 +561,12 @@ func TestParser_ConcurrentSafety(t *testing.T) {
 	var wg sync.WaitGroup
 	n := 8
 	for range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 5 {
 				eng := &mockEngine{pageCount: 2}
 				_, _ = p.Parse(context.Background(), eng)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
