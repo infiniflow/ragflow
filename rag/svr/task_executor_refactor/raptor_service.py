@@ -416,7 +416,7 @@ class RaptorService:
         of the leaf ids underneath it.
         """
         ctx = self._task_context
-        from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
+        from rag.advanced_rag.knowlege_compile.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 
         raptor_ext_config = raptor_config.get("ext") or {}
         assert chunks, "_generate_raptor must not be called with empty chunks"
@@ -539,7 +539,7 @@ class RaptorService:
         """
         if not chunks:
             return None
-        from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
+        from rag.advanced_rag.knowlege_compile.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 
         raptor_ext_config = raptor_config.get("ext") or {}
         raptor = Raptor(

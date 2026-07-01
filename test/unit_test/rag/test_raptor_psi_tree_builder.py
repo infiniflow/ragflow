@@ -113,10 +113,10 @@ def raptor_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.token_utils", token_utils_module)
     monkeypatch.setitem(sys.modules, "rag.graphrag.utils", graphrag_utils_module)
     monkeypatch.setitem(sys.modules, "common.misc_utils", misc_utils_module)
-    monkeypatch.delitem(sys.modules, "rag.raptor", raising=False)
-    module = importlib.import_module("rag.raptor")
+    monkeypatch.delitem(sys.modules, "rag.advanced_rag.knowlege_compile.raptor", raising=False)
+    module = importlib.import_module("rag.advanced_rag.knowlege_compile.raptor")
     yield module
-    monkeypatch.delitem(sys.modules, "rag.raptor", raising=False)
+    monkeypatch.delitem(sys.modules, "rag.advanced_rag.knowlege_compile.raptor", raising=False)
 
 
 class FakeChatModel:

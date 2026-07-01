@@ -2113,7 +2113,7 @@ class TaskHandler:
         chat_model_config = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
         chat_mdl = LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language)
 
-        from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
+        from rag.advanced_rag.knowlege_compile.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
         raptor = Raptor(
             max_cluster=128,
             llm_model=chat_mdl,
