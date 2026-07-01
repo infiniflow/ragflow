@@ -295,8 +295,8 @@ func (s *Server) callRagflowRetrieval(id json.RawMessage, args map[string]interf
 	req := RetrievalRequest{
 		Page:                   getBoundedIntArg(args, "page", 1, 1, 1_000_000),
 		PageSize:               getBoundedIntArg(args, "page_size", 10, 1, 100),
-		SimilarityThreshold:    getFloat64Arg(args, "similarity_threshold", 0.2),
-		VectorSimilarityWeight: getFloat64Arg(args, "vector_similarity_weight", 0.3),
+		SimilarityThreshold:    getBoundedFloat64Arg(args, "similarity_threshold", 0.2, 0, 1),
+		VectorSimilarityWeight: getBoundedFloat64Arg(args, "vector_similarity_weight", 0.3, 0, 1),
 		Keyword:                getBoolArg(args, "keyword", false),
 		TopK:                   getBoundedIntArg(args, "top_k", 1024, 1, 1024),
 		ForceRefresh:           getBoolArg(args, "force_refresh", false),
@@ -400,6 +400,17 @@ func getFloat64Arg(args map[string]interface{}, key string, defaultVal float64) 
 		}
 	}
 	return defaultVal
+}
+
+func getBoundedFloat64Arg(args map[string]interface{}, key string, defaultVal, minVal, maxVal float64) float64 {
+	v := getFloat64Arg(args, key, defaultVal)
+	if v < minVal {
+		return minVal
+	}
+	if v > maxVal {
+		return maxVal
+	}
+	return v
 }
 
 func getBoolArg(args map[string]interface{}, key string, defaultVal bool) bool {
