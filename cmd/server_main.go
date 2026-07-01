@@ -297,18 +297,17 @@ func startServer(config *server.Config) {
 	// no-op echo (the audio package contract), so this is always
 	// safe to call.
 	configureTTSSynthesizer(modelProviderService)
-	modelProviderLLM := &handler.ModelProviderLLM{Svc: modelProviderService}
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
-		modelProviderLLM,
+		modelProviderService,
 		chunkService,
 	)
-	searchBotHandler.SetStreamLLM(modelProviderLLM)
+	searchBotHandler.SetStreamLLM(modelProviderService)
 	askService := service.NewAskService(chunkService, nil, 0, 0)
 	searchBotHandler.SetAskService(askService)
-	chatHandler.SetMindMapDependencies(searchService, tenantService, modelProviderLLM, chunkService)
-	searchHandler.SetCompletionDependencies(modelProviderLLM, askService)
+	chatHandler.SetMindMapDependencies(searchService, tenantService, modelProviderService, chunkService)
+	searchHandler.SetCompletionDependencies(modelProviderService, askService)
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
 	fileCommitHandler := handler.NewFileCommitHandler(service.NewFileCommitService())
