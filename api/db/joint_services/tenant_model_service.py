@@ -18,7 +18,18 @@ import os
 import enum
 import json
 from common import settings
-from common.constants import ActiveStatusEnum, LLMType, MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS
+from common.constants import (
+    ActiveStatusEnum,
+    LLMType,
+    MINERU_DEFAULT_CONFIG,
+    MINERU_ENV_KEYS,
+    OPENDATALOADER_DEFAULT_CONFIG,
+    OPENDATALOADER_ENV_KEYS,
+    PADDLEOCR_DEFAULT_CONFIG,
+    PADDLEOCR_ENV_KEYS,
+    SOMARK_DEFAULT_CONFIG,
+    SOMARK_ENV_KEYS,
+)
 from api.db.services.tenant_llm_service import TenantService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
@@ -247,6 +258,11 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
             "is_tools": model_extra.get("is_tools", is_tool),
             "max_tokens": model_extra.get("max_tokens") or 8192,
         }
+        if provider_name.lower() == "somark":
+            # SoMark/OCR factories read parser config (somark_*, parse_method, ...)
+            # from model_config["extra"]; see tenant_llm_service.LLMBundle OCR path.
+            model_config["extra"] = model_extra.get("ocr_config", model_extra)
+
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload
 
@@ -334,6 +350,15 @@ def ensure_opendataloader_from_env(tenant_id: str) -> str | None:
         "OpenDataLoader",
         "opendataloader-from-env",
         _collect_env_config(OPENDATALOADER_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG),
+    )
+
+
+def ensure_somark_from_env(tenant_id: str) -> str | None:
+    return _ensure_ocr_provider_from_env(
+        tenant_id,
+        "SoMark",
+        "somark-from-env",
+        _collect_env_config(SOMARK_ENV_KEYS, SOMARK_DEFAULT_CONFIG),
     )
 
 
