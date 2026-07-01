@@ -46,8 +46,9 @@ def timestamp_to_date(timestamp, format_string="%Y-%m-%d %H:%M:%S"):
         >>> timestamp_to_date(1704067200000)
         '2024-01-01 08:00:00'
     """
-    if not timestamp:
-        timestamp = time.time()
+    if timestamp is None or timestamp == "":
+        timestamp = current_timestamp()
+        logging.debug("timestamp_to_date received empty timestamp; using current_timestamp() fallback")
     timestamp = int(timestamp) / 1000
     time_array = time.localtime(timestamp)
     str_date = time.strftime(format_string, time_array)
@@ -144,11 +145,8 @@ def format_iso_8601_to_ymd_hms(time_str: str) -> str:
     from dateutil import parser
 
     try:
-        if parser.isoparse(time_str):
-            dt = datetime.datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-            return dt.strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            return time_str
+        dt = parser.isoparse(time_str)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:
         logging.error(str(e))
         return time_str

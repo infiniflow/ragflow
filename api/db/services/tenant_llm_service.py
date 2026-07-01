@@ -512,7 +512,7 @@ class LLM4Tenant:
         self.model_config = model_config
         self.mdl = TenantLLMService.model_instance(model_config, lang=lang, **kwargs)
         assert self.mdl, "Can't find model for {}/{}/{}".format(tenant_id, model_config["model_type"], model_config["llm_name"])
-        self.max_length = model_config.get("max_tokens", 8192)
+        self.max_length = model_config.get("max_tokens") or 8192
 
         self.is_tools = model_config.get("is_tools", False)
         self.verbose_tool_use = kwargs.get("verbose_tool_use")
@@ -543,7 +543,7 @@ class LLM4Tenant:
         if self.langfuse:
             try:
                 self.langfuse.flush()
-                if hasattr(self.langfuse, 'shutdown'):
+                if hasattr(self.langfuse, "shutdown"):
                     self.langfuse.shutdown()
             except Exception:
                 # Ignore errors during cleanup
@@ -552,7 +552,7 @@ class LLM4Tenant:
                 self.langfuse = None
 
         # Release underlying model instance if it has a close method
-        if self.mdl and hasattr(self.mdl, 'close') and callable(getattr(self.mdl, 'close')):
+        if self.mdl and hasattr(self.mdl, "close") and callable(getattr(self.mdl, "close")):
             try:
                 self.mdl.close()
             except Exception:
