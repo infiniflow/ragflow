@@ -692,11 +692,6 @@ class TaskHandler:
         logging.info(progress_message)
         ctx.progress_cb(msg=progress_message)
 
-        # Build TOC if needed (TOC continues to run in parallel during ingest;
-        # artifact_compilation has been moved to AFTER the chunk insert below
-        # because REFINE needs to look the source chunks up in ES by id).
-        toc_thread = None
-
         # Insert chunks
         chunk_count = len(set([chunk["id"] for chunk in chunks]))
         start_ts = timer()
@@ -1490,8 +1485,6 @@ class TaskHandler:
             # metadata so we don't have to enumerate every ES field.
             base = dict(cluster_chunks[0])
             new_id = get_uuid()
-            new_id = xxhash.xxh64(
-            f"skill:{kb_id_str}:{node.folder_name}".encode("utf-8", "surrogatepass")).hexdigest()
             cluster_new_id[node_id_int] = new_id
 
             base.update({

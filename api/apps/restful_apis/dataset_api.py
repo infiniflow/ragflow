@@ -657,10 +657,7 @@ async def clear_artifacts(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route(
-    "/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>",
-    methods=["GET"],
-)  # noqa: F821
+@manager.route("/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def get_artifact_page(tenant_id, dataset_id, page_type, slug):
@@ -724,10 +721,7 @@ async def get_skill_tree(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route(
-    "/datasets/<dataset_id>/skills/<path:skill_kwd>",
-    methods=["GET"],
-)  # noqa: F821
+@manager.route("/datasets/<dataset_id>/skills/<path:skill_kwd>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def get_skill_page(tenant_id, dataset_id, skill_kwd):
@@ -748,10 +742,7 @@ async def get_skill_page(tenant_id, dataset_id, skill_kwd):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route(
-    "/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>/commits",
-    methods=["GET"],
-)  # noqa: F821
+@manager.route("/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>/commits", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def list_artifact_commits(tenant_id, dataset_id, page_type, slug):
@@ -780,10 +771,7 @@ async def list_artifact_commits(tenant_id, dataset_id, page_type, slug):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route(
-    "/datasets/<dataset_id>/artifacts/commits/<commit_id>",
-    methods=["GET"],
-)  # noqa: F821
+@manager.route("/datasets/<dataset_id>/artifacts/commits/<commit_id>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def get_artifact_commit(tenant_id, dataset_id, commit_id):
@@ -800,10 +788,7 @@ async def get_artifact_commit(tenant_id, dataset_id, commit_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route(
-    "/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>",
-    methods=["PUT"],
-)  # noqa: F821
+@manager.route("/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>", methods=["PUT"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def update_artifact_page(tenant_id, dataset_id, page_type, slug):

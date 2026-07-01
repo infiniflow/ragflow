@@ -634,7 +634,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 embedding=np.asarray(embd),
                 source_chunk_ids=list(src or []),
             )
-            for i, (text, embd, src) in enumerate(chunks)
+            for i, (text, embd, src, _) in enumerate(chunks)
         ]
         if len(leaves) == 1:
             return leaves[0], leaves

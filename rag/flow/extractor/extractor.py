@@ -92,7 +92,7 @@ class Extractor(ProcessBase, LLM):
                     self._param.knowledge_compilation, 
                     self.chat_mdl, embedding_model, 
                     self._canvas._doc_id)
-        info = merge_compiled_structures(docs, self.chat_mdl, 
+        info = await merge_compiled_structures(docs, self.chat_mdl, 
                                   embedding_model, 
                                   self._canvas.get_tenant_id(), 
                                   DocumentService.get_knowledgebase_id(self._canvas._doc_id))

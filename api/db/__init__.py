@@ -61,16 +61,6 @@ class CanvasCategory(StrEnum):
     DataFlow = "dataflow_canvas"
 
 
-class PipelineTaskType(StrEnum):
-    PARSE = "Parse"
-    DOWNLOAD = "Download"
-    RAPTOR = "RAPTOR"
-    GRAPH_RAG = "GraphRAG"
-    MINDMAP = "Mindmap"
-    ARTIFACT = "Artifact"
-    SKILL = "Skill"
-
-
 VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP, PipelineTaskType.ARTIFACT, PipelineTaskType.SKILL}
 
 

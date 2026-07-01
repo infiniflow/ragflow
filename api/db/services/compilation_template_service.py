@@ -124,7 +124,7 @@ class CompilationTemplateService(CommonService):
     def list_saved(cls, tenant_id: str, keywords: str = "", kind: str = "", orderby: str = "create_time", desc: bool = True) -> list[dict]:
         query = cls.model.select().where(
             cls.model.tenant_id == tenant_id,
-            cls.model.is_builtin == False,
+            not cls.model.is_builtin,
             cls.model.status == StatusEnum.VALID.value,
         )
         if keywords:
@@ -143,7 +143,7 @@ class CompilationTemplateService(CommonService):
         cls.ensure_table()
         query = (
             cls.model.select()
-            .where(cls.model.is_builtin == True, cls.model.status == StatusEnum.VALID.value)
+            .where(cls.model.is_builtin, cls.model.status == StatusEnum.VALID.value)
             .order_by(cls.model.create_time.asc(), cls.model.name.asc())
         )
         return cls._sort_builtins([cls._to_builtin_dict(template) for template in query])
@@ -154,7 +154,7 @@ class CompilationTemplateService(CommonService):
         template = cls.model.get_or_none(
             cls.model.id == template_id,
             cls.model.tenant_id == tenant_id,
-            cls.model.is_builtin == False,
+            not cls.model.is_builtin,
             cls.model.status == StatusEnum.VALID.value,
         )
         return cls._to_saved_dict(template) if template else None
@@ -165,7 +165,7 @@ class CompilationTemplateService(CommonService):
         query = cls.model.select(fn.COUNT(cls.model.id)).where(
             cls.model.tenant_id == tenant_id,
             cls.model.name == name,
-            cls.model.is_builtin == False,
+            not cls.model.is_builtin,
             cls.model.status == StatusEnum.VALID.value,
         )
         if exclude_id:
