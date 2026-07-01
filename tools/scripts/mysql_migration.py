@@ -1090,18 +1090,47 @@ class TenantModelSeedingStage(MigrationStage):
             if not llm_list:
                 continue
             factory_name = factory["name"]
+            # Determine the provider_name to query and optional instance extra filter
+            if factory_name == "siliconflow_intl":
+                provider_name_filter = "SILICONFLOW"
+                instance_extra_include = '%"region": "intl"%'
+                instance_extra_exclude = None
+            elif factory_name == "SILICONFLOW":
+                provider_name_filter = "SILICONFLOW"
+                instance_extra_include = None
+                instance_extra_exclude = '%"region": "intl"%'
+            else:
+                provider_name_filter = factory_name
+                instance_extra_include = None
+                instance_extra_exclude = None
             # Query provider for this factory
             cursor = self.db.execute_sql(
                 "SELECT id FROM tenant_model_provider WHERE provider_name = %s",
-                (factory_name,)
+                (provider_name_filter,)
             )
             providers = cursor.fetchall()
             for provider_id, in providers:
-                # Query instances for this provider
-                cursor = self.db.execute_sql(
-                    "SELECT id FROM tenant_model_instance WHERE provider_id = %s",
-                    (provider_id,)
-                )
+                # Query instances for this provider, with optional extra include/exclude filter
+                if instance_extra_include and instance_extra_exclude:
+                    cursor = self.db.execute_sql(
+                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra LIKE %s AND extra NOT LIKE %s",
+                        (provider_id, instance_extra_include, instance_extra_exclude)
+                    )
+                elif instance_extra_include:
+                    cursor = self.db.execute_sql(
+                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra LIKE %s",
+                        (provider_id, instance_extra_include)
+                    )
+                elif instance_extra_exclude:
+                    cursor = self.db.execute_sql(
+                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra NOT LIKE %s",
+                        (provider_id, instance_extra_exclude)
+                    )
+                else:
+                    cursor = self.db.execute_sql(
+                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s",
+                        (provider_id,)
+                    )
                 instances = cursor.fetchall()
                 for instance_id, in instances:
                     for llm in llm_list:
@@ -1179,22 +1208,52 @@ class TenantModelSeedingStage(MigrationStage):
                 continue
             factory_name = factory["name"]
 
+            # Determine the provider_name to query and optional instance extra filter
+            if factory_name == "siliconflow_intl":
+                provider_name_filter = "SILICONFLOW"
+                instance_extra_include = '%"region": "intl"%'
+                instance_extra_exclude = None
+            elif factory_name == "SILICONFLOW":
+                provider_name_filter = "SILICONFLOW"
+                instance_extra_include = None
+                instance_extra_exclude = '%"region": "intl"%'
+            else:
+                provider_name_filter = factory_name
+                instance_extra_include = None
+                instance_extra_exclude = None
+
             # Query provider for this factory
             cursor = self.db.execute_sql(
                 "SELECT id FROM tenant_model_provider WHERE provider_name = %s",
-                (factory_name,)
+                (provider_name_filter,)
             )
             providers = cursor.fetchall()
 
             for provider_id, in providers:
-                # Query instances for this provider
-                cursor = self.db.execute_sql(
-                    "SELECT id FROM tenant_model_instance WHERE provider_id = %s",
-                    (provider_id,)
-                )
+                # Query instances for this provider, with optional extra include/exclude filter
+                if instance_extra_include and instance_extra_exclude:
+                    cursor = self.db.execute_sql(
+                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra LIKE %s AND extra NOT LIKE %s",
+                        (provider_id, instance_extra_include, instance_extra_exclude)
+                    )
+                elif instance_extra_include:
+                    cursor = self.db.execute_sql(
+                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra LIKE %s",
+                        (provider_id, instance_extra_include)
+                    )
+                elif instance_extra_exclude:
+                    cursor = self.db.execute_sql(
+                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra NOT LIKE %s",
+                        (provider_id, instance_extra_exclude)
+                    )
+                else:
+                    cursor = self.db.execute_sql(
+                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s",
+                        (provider_id,)
+                    )
                 instances = cursor.fetchall()
                 if not instances:
-                    logger.warning(f"No instances found for provider '{factory_name}' (id={provider_id}), skipping")
+                    logger.warning(f"No instances found for provider '{provider_name_filter}' (id={provider_id}), skipping")
                     continue
 
                 for instance_id, in instances:

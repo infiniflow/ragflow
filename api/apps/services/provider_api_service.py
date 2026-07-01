@@ -532,7 +532,8 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
         if msg:
             return False, msg
     else:
-        factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
+        target_factory_name = "siliconflow_intl" if provider_name.lower() == "siliconflow" and region == "intl" else provider_name
+        factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == target_factory_name]
         factory_llms = factory_info[0]["llm"]
         for llm in factory_llms:
             llm_name = _factory_llm_name(llm)
@@ -658,19 +659,6 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
     if not factory_info:
         return False, f"Provider '{provider_id_or_name}' not found"
 
-    factory_llms = factory_info[0]["llm"]
-    if not factory_llms:
-        if not model_info:
-            return False, f"No models found for provider '{provider_id_or_name}'"
-        factory_llms = [
-            {
-                "model_type": _type,
-                "llm_name": model.get("model_name", ""),
-            }
-            for model in model_info
-            if model
-            for _type in model.get("model_type", [])
-        ]
     if model_info:
         factory_llms = [{
             "model_type": _type,

@@ -125,6 +125,10 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
         return None
 
     model_record = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, model_name)
+    if not model_record:
+        logging.warning(f"Model '{model_name}' not found for provider '{provider_name}' and instance '{instance_name}'")
+        return None
+
     if not model_record.status == ActiveStatusEnum.ACTIVE.value:
         logging.warning(f"Model '{model_name}' is disabled")
         return None
