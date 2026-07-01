@@ -46,6 +46,7 @@ from rag.graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.advanced_rag import DeepResearcher
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
+from common.sql_guard import ReadOnlySqlViolation, ensure_read_only_sql
 from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, PROMPT_JINJA_ENV, ASK_SUMMARY
 from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
@@ -1140,6 +1141,11 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
             sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": prompt}], {"temperature": 0.06})
         sql = normalize_sql(sql)
         sql = add_kb_filter(sql)
+        try:
+            ensure_read_only_sql(sql, doc_engine=doc_engine)
+        except ReadOnlySqlViolation as e:
+            logging.warning("use_sql: rejected non-read-only SQL: %s", e)
+            raise
 
         logging.debug(f"{question} get SQL(refined): {sql}")
         tried_times += 1
@@ -1188,6 +1194,8 @@ Return ONLY SQL.""".format(table_name, "\n".join([f"  - {k} ({v})" for k, v in f
         tbl, sql = await get_table()
         logging.debug(f"use_sql: Initial SQL execution SUCCESS. SQL: {sql}")
         logging.debug(f"use_sql: Retrieved {len(tbl.get('rows', []))} rows, columns: {[c['name'] for c in tbl.get('columns', [])]}")
+    except ReadOnlySqlViolation:
+        return
     except Exception as e:
         logging.warning(f"use_sql: Initial SQL execution FAILED with error: {e}")
         # Build retry prompt with error information
@@ -1229,6 +1237,8 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
             tbl, sql = await get_table()
             logging.debug(f"use_sql: Retry SQL execution SUCCESS. SQL: {sql}")
             logging.debug(f"use_sql: Retrieved {len(tbl.get('rows', []))} rows on retry")
+        except ReadOnlySqlViolation:
+            return
         except Exception:
             logging.error("use_sql: Retry SQL execution also FAILED, returning None")
             return
