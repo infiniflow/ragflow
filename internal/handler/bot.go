@@ -18,11 +18,14 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/service"
 )
 
@@ -257,4 +260,62 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 			return
 		}
 	}
+}
+
+// GetAgentbotLogs GET /api/v1/agentbots/<shared_id>/logs/<message_id>
+//
+// Beta-token sibling of GetAgentLogs. The shared/embedded chat
+// page's "Thinking" button hits this endpoint because the share
+// flow authenticates with a beta APIToken (no session JWT) and
+// the regular /api/v1/agents/<id>/logs/<msg> requires @login_required.
+// Mirrors python bot_api.py:agent_bot_logs (PR #15238).
+//
+// The <shared_id> path segment is the value the client passed in
+// the URL (typically the beta token in the share flow); the real
+// agent_id used to build the Redis key
+// (`<agent_id>-<message_id>-logs`) is read from the APIToken
+// looked up by the beta middleware and stashed in the gin
+// context as "agent_id". The endpoint never trusts the URL
+// segment for the data lookup — using the middleware-resolved
+// agent_id prevents a probe that swaps a victim's shared_id to
+// read another agent's logs.
+func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
+	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+		jsonError(c, code, msg)
+		return
+	}
+	agentID, _ := c.Get("agent_id")
+	agentIDStr, _ := agentID.(string)
+	if agentIDStr == "" {
+		jsonError(c, common.CodeDataError, "API token is not bound to an agent.")
+		return
+	}
+	messageID := c.Param("message_id")
+	if messageID == "" {
+		jsonError(c, common.CodeArgumentError, "message_id is required")
+		return
+	}
+	key := fmt.Sprintf("%s-%s-logs", agentIDStr, messageID)
+	payload, rerr := redis.Get().Get(key)
+	// Surface Redis / decode failures instead of silently returning
+	// `{code: 0, data: {}}` — the previous form made the endpoint
+	// indistinguishable from "logs not yet written", which masked
+	// real outages and corrupted payloads from operators (PR review
+	// round 5, Major #6).
+	if rerr != nil {
+		jsonError(c, common.CodeServerError, "failed to read agent logs")
+		return
+	}
+	data := map[string]interface{}{}
+	if payload != "" {
+		if uerr := json.Unmarshal([]byte(payload), &data); uerr != nil {
+			jsonError(c, common.CodeServerError, "failed to decode agent logs")
+			return
+		}
+	}
+	c.JSON(200, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    data,
+		"message": "success",
+	})
 }
