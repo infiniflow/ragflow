@@ -1201,3 +1201,95 @@ func TestResetAgentServiceOtherTenant(t *testing.T) {
 		t.Errorf("expected ErrUserCanvasNotFound for cross-tenant access, got %v", err)
 	}
 }
+
+// TestGetAgentSession_RejectsIDOR mirrors the Python regression
+// test for PR #15374: a session that exists for agent-A must NOT
+// be returned when the URL path asks for agent-B. The Go
+// protection is enforced inside the DAO query
+// (`WHERE id = ? AND dialog_id = ?`), so the service sees nil and
+// returns CodeNotFound. This is a stronger guarantee than the
+// Python "post-fetch dialog_id check" — the SQL simply cannot
+// return a row whose dialog_id does not match the URL.
+//
+// The test exercises the full service path: it constructs a
+// session under agent-1, then asks the service for that session
+// ID under agent-2. The service must respond with CodeNotFound
+// and a nil data pointer.
+func TestGetAgentSession_RejectsIDOR(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	createAgentSessionTestCanvas(t, "agent-1", "user-1")
+	createAgentSessionTestCanvas(t, "agent-2", "user-1")
+	createAgentSessionTestConversation(t, "session-1", "agent-1", "user-1", 1000)
+
+	data, code, err := NewAgentService().GetAgentSession("user-1", "agent-2", "session-1")
+	if err == nil {
+		t.Fatal("expected non-nil error for cross-agent session access")
+	}
+	if code != common.CodeNotFound {
+		t.Fatalf("expected code %d (CodeNotFound), got %d", common.CodeNotFound, code)
+	}
+	if data != nil {
+		t.Errorf("expected nil data, got %+v", data)
+	}
+}
+
+// TestGetAgentSession_SuccessWhenAgentMatches is the negative
+// control: the same session ID IS returned when the URL path's
+// agent_id matches the row's dialog_id. Without this, the IDOR
+// test could pass trivially if the protection were too broad.
+func TestGetAgentSession_SuccessWhenAgentMatches(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	createAgentSessionTestCanvas(t, "agent-1", "user-1")
+	createAgentSessionTestConversation(t, "session-1", "agent-1", "user-1", 1000)
+
+	data, code, err := NewAgentService().GetAgentSession("user-1", "agent-1", "session-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
+	}
+	if data == nil {
+		t.Fatal("expected non-nil data")
+	}
+	if data.ID != "session-1" {
+		t.Errorf("expected ID=session-1, got %s", data.ID)
+	}
+}
+
+// TestDeleteAgentSessionItem_RejectsIDOR mirrors the IDOR test for
+// DELETE: a session under agent-A must NOT be deleted when the URL
+// path asks for agent-B. The DAO's `WHERE id = ? AND dialog_id = ?`
+// is a no-op in this case (rows affected = 0), and the service
+// returns (false, CodeSuccess, nil) so the API replies with an
+// "empty" success rather than 404 — same trade-off the Python
+// fix chose by returning the generic "Session not found!".
+func TestDeleteAgentSessionItem_RejectsIDOR(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	createAgentSessionTestCanvas(t, "agent-1", "user-1")
+	createAgentSessionTestCanvas(t, "agent-2", "user-1")
+	createAgentSessionTestConversation(t, "session-1", "agent-1", "user-1", 1000)
+
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem("user-1", "agent-2", "session-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
+	}
+	if deleted {
+		t.Fatal("expected deleted=false for cross-agent delete")
+	}
+
+	// The session must still exist — the cross-agent delete was a no-op.
+	verify, _, err := NewAgentService().GetAgentSession("user-1", "agent-1", "session-1")
+	if err != nil {
+		t.Fatalf("session should still exist for the legitimate owner: %v", err)
+	}
+	if verify == nil || verify.ID != "session-1" {
+		t.Fatalf("session was deleted despite IDOR rejection: %+v", verify)
+	}
+}
