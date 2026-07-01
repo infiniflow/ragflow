@@ -165,7 +165,6 @@ check_office_oxide_deps() {
     _seed_from_system "office_oxide"
 
     local lib_file="liboffice_oxide.a"
-
     local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
     local header_path="${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
 
@@ -174,43 +173,14 @@ check_office_oxide_deps() {
         return 0
     fi
 
-    echo "office_oxide native library not found. Installing..."
-
-    # Map platform to the release asset name. Note: the GitHub release archives
-    # omit the version number from the native-* asset filenames.
-    local asset_name
-    case "$(uname -s)" in
-        Linux)
-            case "$(uname -m)" in
-                x86_64)  asset_name="native-linux-x86_64" ;;
-                aarch64|arm64) asset_name="native-linux-aarch64" ;;
-                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; exit 1 ;;
-            esac
-            ;;
-        Darwin)
-            case "$(uname -m)" in
-                x86_64)  asset_name="native-macos-x86_64" ;;
-                aarch64|arm64) asset_name="native-macos-aarch64" ;;
-                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; exit 1 ;;
-            esac
-            ;;
-    esac
-
-    local release_url="https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/${asset_name}.tar.gz"
-
-    mkdir -p "${OFFICE_OXIDE_PREFIX}"
-    _download_and_extract "$release_url" "${OFFICE_OXIDE_PREFIX}"
-
-    if [ ! -f "$lib_path" ]; then
-        echo -e "${RED}Error: Failed to install office_oxide native library (missing ${lib_path})${NC}"
-        echo "  Try: curl -fsSL ${release_url} | tar xzf - -C ${OFFICE_OXIDE_PREFIX}"
-        exit 1
-    fi
-
-    echo -e "${GREEN}✓ office_oxide native library installed${NC}"
+    echo -e "${RED}Error: office_oxide native library not found${NC}"
+    echo "  Expected: ${lib_path}"
+    echo "  Run: uv run download_deps.py"
+    echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
+    exit 1
 }
 
-# Check / install pdfium static library (from kognitos/pdfium-static).
+# Check pdfium static library (must be pre-installed via download_deps.py or CI image).
 check_pdfium_deps() {
     _seed_from_system "pdfium-static"
     local lib_path="${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
@@ -220,58 +190,30 @@ check_pdfium_deps() {
         return 0
     fi
 
-    echo "  pdfium (static) not found, installing..."
-
-    # Map platform to kognitos/pdfium-static release asset name.
-    local asset_name
-    case "$(uname -s)" in
-        Linux)
-            case "$(uname -m)" in
-                x86_64)  asset_name="pdfium-linux-x64-static.tgz" ;;
-                aarch64|arm64) asset_name="pdfium-linux-arm64-static.tgz" ;;
-                *) echo "  pdfium (static) → unsupported arch"; return 1 ;;
-            esac
-            ;;
-        Darwin)
-            case "$(uname -m)" in
-                x86_64)  asset_name="pdfium-mac-x64-static.tgz" ;;
-                arm64)   asset_name="pdfium-mac-arm64-static.tgz" ;;
-                *) echo "  pdfium (static) → unsupported arch"; return 1 ;;
-            esac
-            ;;
-        *) echo "  pdfium (static) → unsupported OS"; return 1 ;;
-    esac
-
-    local release_url="https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/${asset_name}"
-
-    mkdir -p "${PDFIUM_STATIC_PREFIX}"
-    _download_and_extract "$release_url" "${PDFIUM_STATIC_PREFIX}"
-
-    if [ -f "$lib_path" ]; then
-        echo -e "${GREEN}✓ pdfium (static) installed to ${PDFIUM_STATIC_PREFIX}${NC}"
-    else
-        echo "  pdfium (static) → install failed"
-        return 1
-    fi
+    echo "  pdfium (static) not found"
+    echo "  Expected: ${lib_path}"
+    echo "  Run: uv run download_deps.py"
+    echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/pdfium-linux-x64-static.tgz | tar xz -C ${PDFIUM_STATIC_PREFIX}"
+    return 1
 }
 
 # Check / install pdf_oxide static library (go-ffi tarball from GitHub Release).
 check_pdf_oxide_deps() {
     _seed_from_system "pdf_oxide"
-    # Map platform to release asset name and tarball-internal subdirectory.
-    local asset_name platform_subdir
+    # Map platform to tarball-internal subdirectory.
+    local platform_subdir
     case "$(uname -s)" in
         Linux)
             case "$(uname -m)" in
-                x86_64)  asset_name="pdf_oxide-go-ffi-linux-amd64";   platform_subdir="linux_amd64" ;;
-                aarch64|arm64) asset_name="pdf_oxide-go-ffi-linux-arm64"; platform_subdir="linux_arm64" ;;
+                x86_64)  platform_subdir="linux_amd64" ;;
+                aarch64|arm64) platform_subdir="linux_arm64" ;;
                 *) echo "  pdf_oxide (static) → unsupported arch"; return 1 ;;
             esac
             ;;
         Darwin)
             case "$(uname -m)" in
-                x86_64)  asset_name="pdf_oxide-go-ffi-darwin-amd64";  platform_subdir="darwin_amd64" ;;
-                arm64)   asset_name="pdf_oxide-go-ffi-darwin-arm64";  platform_subdir="darwin_arm64" ;;
+                x86_64)  platform_subdir="darwin_amd64" ;;
+                arm64)   platform_subdir="darwin_arm64" ;;
                 *) echo "  pdf_oxide (static) → unsupported arch"; return 1 ;;
             esac
             ;;
@@ -285,19 +227,11 @@ check_pdf_oxide_deps() {
         return 0
     fi
 
-    echo "  pdf_oxide (static) not found, installing..."
-
-    local release_url="https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/${asset_name}.tar.gz"
-
-    mkdir -p "${PDF_OXIDE_PREFIX}"
-    _download_and_extract "$release_url" "${PDF_OXIDE_PREFIX}"
-
-    if [ -f "$lib_path" ]; then
-        echo -e "${GREEN}✓ pdf_oxide (static) installed to ${PDF_OXIDE_PREFIX}${NC}"
-    else
-        echo "  pdf_oxide (static) → install failed"
-        return 1
-    fi
+    echo "  pdf_oxide (static) not found"
+    echo "  Expected: ${lib_path}"
+    echo "  Run: uv run download_deps.py"
+    echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz | tar xz -C ${PDF_OXIDE_PREFIX}"
+    return 1
 }
 
 # Build C++ static library
