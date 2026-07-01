@@ -67,9 +67,13 @@ async def delete_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str, keep_met
             "delete_raptor_chunks: removing all RAPTOR summaries (doc=%s tenant=%s kb=%s)",
             doc_id, tenant_id, kb_id,
         )
+        # Sweep both row types — legacy per-summary (``raptor``, still
+        # used by the PSI builder) and the new single tree blob
+        # (``raptor_tree``) — so re-runs always start from a clean
+        # slate regardless of which path produced the prior state.
         await thread_pool_exec(
             settings.docStoreConn.delete,
-            {"doc_id": doc_id, "raptor_kwd": ["raptor"]},
+            {"doc_id": doc_id, "raptor_kwd": ["raptor", "raptor_tree"]},
             nlp_search.index_name(tenant_id),
             kb_id,
         )

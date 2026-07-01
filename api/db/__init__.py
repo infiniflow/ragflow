@@ -61,10 +61,26 @@ class CanvasCategory(StrEnum):
     DataFlow = "dataflow_canvas"
 
 
-VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP}
+class PipelineTaskType(StrEnum):
+    PARSE = "Parse"
+    DOWNLOAD = "Download"
+    RAPTOR = "RAPTOR"
+    GRAPH_RAG = "GraphRAG"
+    MINDMAP = "Mindmap"
+    ARTIFACT = "Artifact"
+    SKILL = "Skill"
 
 
-PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES = {PipelineTaskType.RAPTOR.lower(), PipelineTaskType.GRAPH_RAG.lower(), PipelineTaskType.MINDMAP.lower()}
+VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP, PipelineTaskType.ARTIFACT, PipelineTaskType.SKILL}
+
+
+# KB-level fan-out task types: their Task row uses GRAPH_RAPTOR_FAKE_DOC_ID as a
+# sentinel doc_id, and ``task_executor.collect_task`` substitutes the first real
+# doc_id from ``msg["doc_ids"]`` before re-running ``TaskService.get_task`` so
+# the join through Document → Knowledgebase → Tenant resolves and tenant_id /
+# kb_id / language are hydrated onto the task dict. Add new fan-out task types
+# here or TaskContext will raise "Task must contain 'tenant_id'".
+PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES = {PipelineTaskType.RAPTOR.lower(), PipelineTaskType.GRAPH_RAG.lower(), PipelineTaskType.MINDMAP.lower(), PipelineTaskType.ARTIFACT.lower(), PipelineTaskType.SKILL.lower()}
 
 
 KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"

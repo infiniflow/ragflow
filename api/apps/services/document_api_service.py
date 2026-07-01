@@ -165,7 +165,12 @@ def update_document_status_only(status:int, doc, kb):
         try:
             if not DocumentService.update_by_id(doc.id, {"status": str(status)}):
                 return get_error_data_result(message="Database error (Document update)!")
-            settings.docStoreConn.update({"doc_id": doc.id}, {"available_int": status}, search.index_name(kb.tenant_id), doc.kb_id)
+            settings.docStoreConn.update(
+                {"doc_id": doc.id, "must_not": {"exists": "compile_kwd"}},
+                {"available_int": status},
+                search.index_name(kb.tenant_id),
+                doc.kb_id,
+            )
         except Exception as e:
             return server_error_response(e)
     return None

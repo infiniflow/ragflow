@@ -423,6 +423,7 @@ class ParserConfig(Base):
     filename_embd_weight: Annotated[float | None, Field(default=0.1, ge=0.0, le=1.0)]
     task_page_size: Annotated[int | None, Field(default=None, ge=1)]
     pages: Annotated[list[list[int]] | None, Field(default=None)]
+    compilation_template_group_id: Annotated[list[str], Field(default_factory=list)]
     ext: Annotated[dict, Field(default={})]
     # Table parser: column name -> "indexing" | "metadata" | "both". Absence => all columns "both".
     # Table parser: "auto" = all columns both (default), "manual" = use table_column_roles. None → treated as "auto".
@@ -443,6 +444,25 @@ class ParserConfig(Base):
             k = key if isinstance(key, str) else str(key)
             out[k] = "indexing" if val == "vectorize" else val
         return out
+
+    @field_validator("compilation_template_group_id", mode="before")
+    @classmethod
+    def normalize_compilation_template_group_ids(cls, v: Any) -> Any:
+        if v is None:
+            return []
+        raw = [v] if isinstance(v, str) else v
+        if not isinstance(raw, list):
+            return []
+        ids: list[str] = []
+        seen: set[str] = set()
+        for group_id in raw:
+            if not isinstance(group_id, str):
+                continue
+            group_id = group_id.strip()
+            if group_id and group_id not in seen:
+                seen.add(group_id)
+                ids.append(group_id)
+        return ids
 
 
 class UpdateDocumentReq(Base):

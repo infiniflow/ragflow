@@ -31,25 +31,32 @@ from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from common.constants import FileSource, StatusEnum
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
+from common.misc_utils import thread_pool_exec
 
-_VALID_INDEX_TYPES = {"graph", "raptor", "mindmap"}
+_VALID_INDEX_TYPES = {"graph", "raptor", "mindmap", "artifact", "skill"}
 
 _INDEX_TYPE_TO_TASK_TYPE = {
     "graph": "graphrag",
     "raptor": "raptor",
     "mindmap": "mindmap",
+    "artifact": "artifact",
+    "skill": "skill",
 }
 
 _INDEX_TYPE_TO_TASK_ID_FIELD = {
     "graph": "graphrag_task_id",
     "raptor": "raptor_task_id",
     "mindmap": "mindmap_task_id",
+    "artifact": "artifact_task_id",
+    "skill": "skill_task_id",
 }
 
 _INDEX_TYPE_TO_DISPLAY_NAME = {
     "graph": "Graph",
     "raptor": "RAPTOR",
     "mindmap": "Mindmap",
+    "artifact": "Artifact",
+    "skill": "Skill",
 }
 
 
@@ -852,6 +859,10 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = 
         from rag.nlp import search
 
         settings.docStoreConn.delete({"raptor_kwd": ["raptor"]}, search.index_name(kb.tenant_id), dataset_id)
+    elif wipe and index_type == "skill":
+        from rag.nlp import search
+
+        settings.docStoreConn.delete({"compile_kwd": ["skill", "skill_all"]}, search.index_name(kb.tenant_id), dataset_id)
 
     KnowledgebaseService.update_by_id(kb.id, {task_id_field: "", task_finish_at_field: None})
     return True, {}
@@ -1457,3 +1468,952 @@ async def search_datasets(tenant_id: str, req: dict):
     ranks["labels"] = labels
 
     return True, ranks
+
+
+# ---------------------------------------------------------------------------
+# Artifact (knowledge compilation) page surface
+#
+# These three helpers power the dataset-level "Artifact" tab. They query rows
+# with ``compile_kwd="artifact_page"`` written by TaskHandler's
+# ``_persist_artifact_pages_to_es``. The schema fields they rely on are:
+#   slug_kwd, title_kwd, page_type_kwd, content_with_weight,
+#   entity_names_kwd, outlinks_kwd, related_kb_pages_kwd,
+#   source_chunk_ids, source_doc_ids
+# ---------------------------------------------------------------------------
+
+_ARTIFACT_COMPILE_KWD = "artifact_page"
+_SKILL_COMPILE_KWD = "skill"
+_SKILL_ALL_COMPILE_KWD = "skill_all"
+
+
+def _compiled_index_or_none(tenant_id: str, kb_id: str):
+    """Return (index_name, search_module) when the tenant index exists,
+    else ``None``. Avoids 500s on brand-new tenants whose ES index hasn't
+    been created yet."""
+    from rag.nlp import search as _rag_search
+
+    index_nm = _rag_search.index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index_nm, kb_id):
+        return None
+    return index_nm, _rag_search
+
+
+def _artifact_index_or_none(tenant_id: str, kb_id: str):
+    return _compiled_index_or_none(tenant_id, kb_id)
+
+
+def _skill_index_or_none(tenant_id: str, kb_id: str):
+    return _compiled_index_or_none(tenant_id, kb_id)
+
+
+async def has_any_artifact(dataset_id: str, tenant_id: str):
+    """Fast existence probe for the sidebar tab visibility check.
+
+    Returns ``(True, {"has": bool})`` on success or ``(False, str)`` on
+    auth failure. Runs a ``limit=1`` search and reads only the total.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _artifact_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"has": False}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=["id"], highlight_fields=[],
+            condition={"compile_kwd": [_ARTIFACT_COMPILE_KWD]},
+            match_expressions=[], order_by=OrderByExpr(),
+            offset=0, limit=1,
+            index_names=index_nm, knowledgebase_ids=[dataset_id],
+        )
+    except Exception:
+        logging.exception("has_any_artifact: docStore search failed for kb=%s", dataset_id)
+        return True, {"has": False}
+
+    total = settings.docStoreConn.get_total(res)
+    return True, {"has": bool(total)}
+
+
+async def list_artifacts(
+    dataset_id: str, tenant_id: str,
+    page: int = 1, page_size: int = 200, page_type: str | None = None,
+):
+    """List artifact pages for the left-hand 2-column list.
+
+    Returns ``(True, {"total", "items": [{slug, title, page_type}, ...]})``.
+    Ordering: ``page_type`` ascending, then ``title`` ascending — keeps
+    pages of the same type grouped together visually.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _artifact_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"total": 0, "items": []}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 200), 1000))
+    offset = (page - 1) * page_size
+
+    condition: dict = {"compile_kwd": [_ARTIFACT_COMPILE_KWD]}
+    if page_type:
+        condition["page_type_kwd"] = [page_type]
+
+    order_by = OrderByExpr()
+    try:
+        # Most-connected pages first: outlinks_int = len(outlinks_kwd) is
+        # written by the persistence layer for exactly this query.
+        order_by.desc("outlinks_int").asc("title_kwd")
+    except Exception:
+        # OrderByExpr API differs across doc-store backends; degrade to
+        # default order rather than 500.
+        order_by = OrderByExpr()
+
+    select_fields = [
+        "id", "slug_kwd", "title_kwd", "page_type_kwd", "outlinks_int",
+        "summary_with_weight",
+    ]
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=select_fields, highlight_fields=[],
+            condition=condition,
+            match_expressions=[], order_by=order_by,
+            offset=offset, limit=page_size,
+            index_names=index_nm, knowledgebase_ids=[dataset_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, select_fields)
+    except Exception:
+        logging.exception("list_artifacts: docStore search failed for kb=%s", dataset_id)
+        return True, {"total": 0, "items": []}
+
+    total = settings.docStoreConn.get_total(res)
+    items = []
+    for row in (field_map or {}).values():
+        slug = row.get("slug_kwd")
+        if not isinstance(slug, str) or not slug:
+            continue
+        items.append({
+            "slug": slug,
+            "title": row.get("title_kwd") or slug,
+            "page_type": row.get("page_type_kwd") or "concept",
+            "summary": row.get("summary_with_weight") or "",
+        })
+
+    return True, {"total": int(total or 0), "items": items}
+
+
+async def get_artifact_page(
+    dataset_id: str, tenant_id: str, page_type: str, slug: str,
+):
+    """Fetch a single artifact page for the right-hand markdown viewer.
+
+    ``slug`` is the tail after ``<page_type>/`` — i.e. the URL component
+    that came from the markdown link ``artifact/<kb_id>/<page_type>/<slug>``.
+    The stored ``slug_kwd`` is the full ``<page_type>/<slug>`` form, so we
+    reconstruct it before the lookup.
+
+    Returns ``(True, page_dict)`` or ``(True, None)`` when no row matches.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _artifact_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, None
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    full_slug = f"{page_type}/{slug}" if "/" not in slug else slug
+    select_fields = [
+        "id", "slug_kwd", "title_kwd", "page_type_kwd",
+        "content_with_weight", "summary_with_weight",
+        "entity_names_kwd", "outlinks_kwd", "related_kb_pages_kwd",
+        "source_chunk_ids", "source_doc_ids",
+    ]
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=select_fields, highlight_fields=[],
+            condition={
+                "compile_kwd": [_ARTIFACT_COMPILE_KWD],
+                "page_type_kwd": [page_type],
+                "slug_kwd": [full_slug],
+            },
+            match_expressions=[], order_by=OrderByExpr(),
+            offset=0, limit=1,
+            index_names=index_nm, knowledgebase_ids=[dataset_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, select_fields)
+    except Exception:
+        logging.exception(
+            "get_artifact_page: search failed for kb=%s slug=%s",
+            dataset_id, full_slug,
+        )
+        return True, None
+
+    if not field_map:
+        return True, None
+
+    _, row = next(iter(field_map.items()))
+    content_md = row.get("content_with_weight") or ""
+    summary = row.get("summary_with_weight") or ""
+    return True, {
+        "slug": row.get("slug_kwd") or full_slug,
+        "title": row.get("title_kwd") or full_slug,
+        "page_type": row.get("page_type_kwd") or page_type,
+        "content_md_rendered": content_md,
+        "summary": summary,
+        "entity_names": row.get("entity_names_kwd") or [],
+        "outlinks": row.get("outlinks_kwd") or [],
+        "related_kb_pages": row.get("related_kb_pages_kwd") or [],
+        "source_chunk_ids": row.get("source_chunk_ids") or [],
+        "source_doc_ids": row.get("source_doc_ids") or [],
+    }
+
+
+async def has_any_skill(dataset_id: str, tenant_id: str):
+    """Fast existence probe for the dataset Skills sidebar entry."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _skill_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"has": False}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=["id"], highlight_fields=[],
+            condition={"compile_kwd": [_SKILL_ALL_COMPILE_KWD]},
+            match_expressions=[], order_by=OrderByExpr(),
+            offset=0, limit=1,
+            index_names=index_nm, knowledgebase_ids=[dataset_id],
+        )
+    except Exception:
+        logging.exception("has_any_skill: docStore search failed for kb=%s", dataset_id)
+        return True, {"has": False}
+
+    total = settings.docStoreConn.get_total(res)
+    return True, {"has": bool(total)}
+
+
+async def get_skill_tree(dataset_id: str, tenant_id: str):
+    """Fetch the one-shot recursive skill tree for this dataset."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _skill_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, None
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    select_fields = ["id", "kb_id", "doc_id", "compile_kwd", "skill_with_weight"]
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=select_fields, highlight_fields=[],
+            condition={"compile_kwd": [_SKILL_ALL_COMPILE_KWD]},
+            match_expressions=[], order_by=OrderByExpr(),
+            offset=0, limit=1,
+            index_names=index_nm, knowledgebase_ids=[dataset_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, select_fields)
+    except Exception:
+        logging.exception("get_skill_tree: docStore search failed for kb=%s", dataset_id)
+        return True, None
+
+    if not field_map:
+        return True, None
+
+    _, row = next(iter(field_map.items()))
+    return True, {
+        "id": row.get("id"),
+        "kb_id": row.get("kb_id") or dataset_id,
+        "doc_id": row.get("doc_id") or dataset_id,
+        "compile_kwd": row.get("compile_kwd") or _SKILL_ALL_COMPILE_KWD,
+        "skill_with_weight": json.loads(row.get("skill_with_weight")) or [],
+    }
+
+
+async def get_skill_page(dataset_id: str, tenant_id: str, skill_kwd: str):
+    """Fetch the full markdown body for a single skill node."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _skill_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, None
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    select_fields = [
+        "id", "kb_id", "doc_id", "compile_kwd", "skill_kwd",
+        "depth_int", "children_kwd", "source_doc_ids", "md_with_weight",
+    ]
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=select_fields, highlight_fields=[],
+            condition={
+                "compile_kwd": [_SKILL_COMPILE_KWD],
+                "skill_kwd": [skill_kwd],
+            },
+            match_expressions=[], order_by=OrderByExpr(),
+            offset=0, limit=1,
+            index_names=index_nm, knowledgebase_ids=[dataset_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, select_fields)
+    except Exception:
+        logging.exception(
+            "get_skill_page: docStore search failed for kb=%s skill=%s",
+            dataset_id, skill_kwd,
+        )
+        return True, None
+
+    if not field_map:
+        return True, None
+
+    _, row = next(iter(field_map.items()))
+    return True, {
+        "id": row.get("id"),
+        "kb_id": row.get("kb_id") or dataset_id,
+        "doc_id": row.get("doc_id") or dataset_id,
+        "compile_kwd": row.get("compile_kwd") or _SKILL_COMPILE_KWD,
+        "skill_kwd": row.get("skill_kwd") or skill_kwd,
+        "depth_int": row.get("depth_int") or 0,
+        "children_kwd": row.get("children_kwd") or [],
+        "source_doc_ids": row.get("source_doc_ids") or [],
+        "md_with_weight": row.get("md_with_weight") or "",
+    }
+
+
+async def update_artifact_page(
+    dataset_id: str, tenant_id: str, page_type: str, slug: str, content_md: str,
+    *,
+    user_id: str | None = None,
+    title: str | None = None,
+    comments: str | None = None,
+):
+    """Edit an artifact page in place from the canvas double-click dialog.
+
+    Body must contain ``content_md`` — the (possibly edited) page markdown.
+    We run it through ``_artifact_transform_links`` so any newly typed
+    ``[[slug]]`` references upgrade to clickable artifact URLs (and pre-rendered
+    links pass through unchanged — the transform is idempotent on already-
+    rendered markdown). ``summary`` is re-derived from the new rendered text.
+    ``outlinks_kwd`` is rebuilt from the link-transform pass.
+
+    Per the v1 contract, only the page row is updated. The canvas
+    ``artifact_page_graph`` / ``artifact_entity`` / ``artifact_relation``
+    rows stay stale until the next full artifact compile.
+
+    Side effect: when the rendered post-save markdown differs from the
+    prior stored content, one ``artifact_commit`` row is recorded
+    (git-style audit). No-op saves are silently skipped — empty diff,
+    no row.
+
+    Returns ``(True, page_dict)`` mirroring ``get_artifact_page``, or
+    ``(True, None)`` when the row is missing, or
+    ``(False, message)`` on authorization failure.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _artifact_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, None
+    index_nm, _ = pack
+
+    from rag.advanced_rag.knowlege_compile.artifact import (
+        _artifact_transform_links,
+        _artifact_extract_summary,
+    )
+    from api.db.services.artifact_commit_service import ArtifactCommitService
+
+    full_slug = f"{page_type}/{slug}" if "/" not in slug else slug
+
+    # Capture the pre-edit rendered content + the row id. Both come from
+    # the same search: the row id is the dict key returned by
+    # docStoreConn.get_fields. We need the id specifically because the
+    # generic non-id update path (ESConnection.update slow branch) routes
+    # through a Painless script that scrubs newlines / single quotes /
+    # backslash escapes from string values — which would collapse every
+    # paragraph in the saved markdown to one line. Passing the row id in
+    # ``condition`` selects the fast partial-update branch which preserves
+    # the JSON value verbatim.
+    from common.doc_store.doc_store_base import OrderByExpr
+    row_id: str | None = None
+    content_before = ""
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=["id", "content_with_weight"],
+            highlight_fields=[],
+            condition={
+                "compile_kwd": [_ARTIFACT_COMPILE_KWD],
+                "page_type_kwd": [page_type],
+                "slug_kwd": [full_slug],
+            },
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0, limit=1,
+            index_names=index_nm, knowledgebase_ids=[dataset_id],
+        )
+        field_map = settings.docStoreConn.get_fields(
+            res, ["id", "content_with_weight"],
+        )
+        if field_map:
+            row_id, row = next(iter(field_map.items()))
+            content_before = row.get("content_with_weight") or ""
+    except Exception:
+        logging.exception(
+            "update_artifact_page: lookup failed for kb=%s slug=%s",
+            dataset_id, full_slug,
+        )
+    if not row_id:
+        return True, None
+
+    content_md = content_md or ""
+    rendered, outlinks = _artifact_transform_links(content_md, dataset_id)
+    summary = _artifact_extract_summary(rendered) or ""
+
+    try:
+        # id-keyed condition forces the partial-update fast path — no
+        # newline scrubbing. See the comment above the lookup for the
+        # full reasoning.
+        ok = settings.docStoreConn.update(
+            {"id": row_id},
+            {
+                "content_with_weight": rendered,
+                "summary_with_weight": summary,
+                "outlinks_kwd": list(outlinks),
+            },
+            index_nm, dataset_id,
+        )
+    except Exception:
+        logging.exception(
+            "update_artifact_page: docStore update failed for kb=%s slug=%s",
+            dataset_id, full_slug,
+        )
+        return True, None
+
+    if not ok:
+        return True, None
+
+    # Record an artifact_commit row on every real change. ``record_edit``
+    # returns None for empty-diff saves, which we silently swallow.
+    try:
+        ArtifactCommitService.record_edit(
+            tenant_id=tenant_id,
+            kb_id=dataset_id,
+            page_type=page_type,
+            slug=full_slug,
+            content_before=content_before,
+            content_after=rendered,
+            title=title,
+            comments=comments,
+            user_id=user_id,
+        )
+    except Exception:
+        logging.exception(
+            "update_artifact_page: artifact_commit record failed for kb=%s slug=%s",
+            dataset_id, full_slug,
+        )
+
+    # Re-read the row so the dialog gets the canonical post-update state.
+    return await get_artifact_page(dataset_id, tenant_id, page_type, slug)
+
+
+async def list_artifact_commits(
+    dataset_id: str, tenant_id: str, page_type: str, slug: str,
+    page: int = 1, page_size: int = 50,
+):
+    """List the commit history for one artifact page (newest first).
+
+    Returns ``(True, {"total": N, "items": [...]})`` on success;
+    ``(False, message)`` on authorization failure.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    from api.db.services.artifact_commit_service import ArtifactCommitService
+
+    full_slug = f"{page_type}/{slug}" if "/" not in slug else slug
+    total, items = ArtifactCommitService.list_for_page(
+        tenant_id=tenant_id,
+        kb_id=dataset_id,
+        slug=full_slug,
+        page=page,
+        page_size=page_size,
+    )
+    return True, {"total": total, "items": items}
+
+
+async def get_artifact_commit(
+    dataset_id: str, tenant_id: str, commit_id: str,
+):
+    """Fetch one commit, including the (heavy) diff + content_after fields.
+
+    Returns ``(True, commit_dict | None)`` or ``(False, message)``.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    from api.db.services.artifact_commit_service import ArtifactCommitService
+    detail = ArtifactCommitService.get_detail(
+        tenant_id=tenant_id, kb_id=dataset_id, commit_id=commit_id,
+    )
+    return True, detail
+
+
+# All six row types the artifact pipeline writes. Listed in dependency
+# order so partial failures of earlier deletes don't leave behind state
+# that downstream phases would silently reuse. ``artifact_page_graph``
+# is the materialized canvas graph derived from the refined pages —
+# the dataset Artifact tab's graph view reads exactly this row.
+_ARTIFACT_COMPILE_KWDS = (
+    "artifact_map_extract",
+    "artifact_reduce_result",
+    "artifact_compilation_plan",
+    "artifact_page_draft",
+    "artifact_page",
+    "artifact_entity",
+    "artifact_relation",
+)
+
+# Tunables for the incremental graph loader. See ``get_artifact_graph``.
+_ARTIFACT_GRAPH_ENTITY_KWD = "artifact_entity"
+_ARTIFACT_GRAPH_RELATION_KWD = "artifact_relation"
+_ARTIFACT_GRAPH_ENTITY_PAGE_SIZE = 32
+_ARTIFACT_GRAPH_MAX_LOADING_ENTITY = 128
+
+
+def _artifact_entity_payload(row: dict) -> dict | None:
+    """Project one ``artifact_entity`` ES row onto the canvas entity shape.
+
+    The row stores the canvas payload pre-built as JSON in
+    ``content_with_weight``; we parse it back and overlay the columns
+    the writer set independently (weight_int, source_chunk_ids) so the
+    frontend gets the authoritative numbers regardless of any
+    JSON-vs-column drift.
+    """
+    raw = row.get("content_with_weight") or ""
+    payload: dict = {}
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                payload = parsed
+        except Exception:
+            pass
+    slug = payload.get("slug") or row.get("slug_kwd")
+    if not isinstance(slug, str) or not slug:
+        return None
+    out = {
+        "slug": slug,
+        "name": payload.get("name") or slug,
+        "aliases": list(payload.get("aliases") or []),
+        "description": payload.get("description") or "",
+        "type": payload.get("type") or "concept",
+        "weight": int(row.get("weight_int") or payload.get("weight") or 0),
+    }
+    source_chunk_ids = row.get("source_chunk_ids") or []
+    if isinstance(source_chunk_ids, list):
+        out["source_chunk_ids"] = [c for c in source_chunk_ids if isinstance(c, str) and c]
+    return out
+
+
+def _artifact_relation_payload(row: dict) -> dict | None:
+    raw = row.get("content_with_weight") or ""
+    payload: dict = {}
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                payload = parsed
+        except Exception:
+            pass
+    src = payload.get("from") or row.get("from_kwd")
+    tgt = payload.get("to") or row.get("to_kwd")
+    if not isinstance(src, str) or not src or not isinstance(tgt, str) or not tgt:
+        return None
+    return {"from": src, "to": tgt}
+
+
+async def _artifact_search_entity_page(
+    index_nm, dataset_id: str, offset: int, limit: int,
+):
+    """One page of artifact_entity rows, ordered by weight_int DESC."""
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    order_by = OrderByExpr()
+    try:
+        order_by.desc("weight_int")
+    except Exception:
+        order_by = OrderByExpr()
+
+    select_fields = [
+        "id", "slug_kwd", "weight_int", "source_chunk_ids",
+        "content_with_weight",
+    ]
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        select_fields, [],
+        {"compile_kwd": [_ARTIFACT_GRAPH_ENTITY_KWD]},
+        [], order_by,
+        offset, limit,
+        index_nm, [dataset_id],
+    )
+    return settings.docStoreConn.get_fields(res, select_fields)
+
+
+async def _artifact_search_entities_by_slugs(
+    index_nm, dataset_id: str, slugs: list[str],
+):
+    """Fetch entity rows whose ``slug_kwd`` is in ``slugs``. Unordered."""
+    if not slugs:
+        return {}
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    select_fields = [
+        "id", "slug_kwd", "weight_int", "source_chunk_ids",
+        "content_with_weight",
+    ]
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        select_fields, [],
+        {
+            "compile_kwd": [_ARTIFACT_GRAPH_ENTITY_KWD],
+            "slug_kwd": list(slugs),
+        },
+        [], OrderByExpr(),
+        0, max(len(slugs), 1),
+        index_nm, [dataset_id],
+    )
+    return settings.docStoreConn.get_fields(res, select_fields)
+
+
+async def _artifact_search_relations_from(
+    index_nm, dataset_id: str, from_slugs: list[str],
+):
+    """Fetch all relation rows with ``from_kwd`` in ``from_slugs``."""
+    if not from_slugs:
+        return {}
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    select_fields = ["id", "from_kwd", "to_kwd", "content_with_weight"]
+    # Generous upper bound: relations are short; bulk-pull all matching at
+    # once rather than paging.
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        select_fields, [],
+        {
+            "compile_kwd": [_ARTIFACT_GRAPH_RELATION_KWD],
+            "from_kwd": list(from_slugs),
+        },
+        [], OrderByExpr(),
+        0, 10000,
+        index_nm, [dataset_id],
+    )
+    return settings.docStoreConn.get_fields(res, select_fields)
+
+
+async def get_artifact_graph(
+    dataset_id: str, tenant_id: str, node: str | None = None,
+):
+    """Load the canvas graph payload incrementally from per-row data.
+
+    Two modes:
+
+    * **Overview** (``node`` is None) — paginate ``artifact_entity`` rows
+      ordered by ``weight_int DESC`` in pages of
+      ``_ARTIFACT_GRAPH_ENTITY_PAGE_SIZE``. For each page, append entities
+      to a running set while the **cumulative** weight stays within
+      ``_ARTIFACT_GRAPH_MAX_LOADING_ENTITY``. Pull ``artifact_relation``
+      rows whose ``from_kwd`` is in the just-added entities; pull the
+      ``to`` targets that we haven't seen yet (they count toward the same
+      cap). Stop once the cap is hit, or the page is empty, or no entry
+      from the page fit under the budget.
+
+    * **Click** (``node`` is a slug) — load the centre entity (always
+      included), pull every ``artifact_relation`` with ``from_kwd=node``,
+      then pull the ``to`` entities. Capped at
+      ``_ARTIFACT_GRAPH_MAX_LOADING_ENTITY`` for hub-node safety.
+
+    Returns ``(True, {"entities": [...], "relations": [...]})`` shaped
+    exactly as the frontend ``ForceGraph`` adapter consumes, or
+    ``(False, message)`` on authorization failure.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    empty = {"entities": [], "relations": []}
+
+    pack = _artifact_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, empty
+    index_nm, _ = pack
+
+    cap = _ARTIFACT_GRAPH_MAX_LOADING_ENTITY
+    page_size = _ARTIFACT_GRAPH_ENTITY_PAGE_SIZE
+
+    # ``entities`` preserves first-seen order so the canvas paints the
+    # heaviest-weighted nodes first (or, in click mode, the centre node
+    # first). The dict-keyed-by-slug structure also deduplicates the
+    # "B is a to-target AND later a high-weight entity in its own right"
+    # case cheaply.
+    entities: dict[str, dict] = {}
+    relations: list[dict] = []
+    relation_keys: set[tuple[str, str]] = set()
+
+    def _add_entity(payload: dict) -> bool:
+        slug = payload.get("slug")
+        if not isinstance(slug, str) or not slug or slug in entities:
+            return False
+        entities[slug] = payload
+        return True
+
+    def _add_relation(payload: dict) -> None:
+        key = (payload["from"], payload["to"])
+        if key in relation_keys:
+            return
+        relation_keys.add(key)
+        relations.append(payload)
+
+    # ---- Flow B — click expansion centred on ``node``. ----------------
+    if isinstance(node, str) and node.strip():
+        center_slug = node.strip()
+        try:
+            field_map = await _artifact_search_entities_by_slugs(
+                index_nm, dataset_id, [center_slug],
+            )
+        except Exception:
+            logging.exception(
+                "get_artifact_graph: centre lookup failed kb=%s node=%s",
+                dataset_id, center_slug,
+            )
+            return True, empty
+
+        for row in (field_map or {}).values():
+            payload = _artifact_entity_payload(row)
+            if payload:
+                _add_entity(payload)
+                break
+
+        if center_slug not in entities:
+            # Caller pointed at a slug that doesn't exist; return empty
+            # rather than a confusing partial graph.
+            return True, empty
+
+        # Outgoing edges from the centre, capped by MAX_LOADING_ENTITY.
+        try:
+            rel_map = await _artifact_search_relations_from(
+                index_nm, dataset_id, [center_slug],
+            )
+        except Exception:
+            logging.exception(
+                "get_artifact_graph: relation lookup failed kb=%s node=%s",
+                dataset_id, center_slug,
+            )
+            return True, {"entities": list(entities.values()), "relations": []}
+
+        to_slugs: list[str] = []
+        for row in (rel_map or {}).values():
+            payload = _artifact_relation_payload(row)
+            if payload is None:
+                continue
+            if payload["from"] != center_slug:
+                continue
+            # Hub-node cap: stop accepting more relations once the
+            # to-target set would push us over the entity budget.
+            if (
+                payload["to"] not in entities
+                and len(entities) + len(to_slugs) >= cap
+            ):
+                continue
+            _add_relation(payload)
+            if payload["to"] != center_slug and payload["to"] not in entities:
+                if payload["to"] not in to_slugs:
+                    to_slugs.append(payload["to"])
+
+        if to_slugs:
+            try:
+                to_map = await _artifact_search_entities_by_slugs(
+                    index_nm, dataset_id, to_slugs,
+                )
+            except Exception:
+                logging.exception(
+                    "get_artifact_graph: neighbour lookup failed kb=%s node=%s",
+                    dataset_id, center_slug,
+                )
+                to_map = {}
+            for row in (to_map or {}).values():
+                payload = _artifact_entity_payload(row)
+                if payload and len(entities) < cap:
+                    _add_entity(payload)
+
+        return True, {
+            "entities": list(entities.values()),
+            "relations": relations,
+        }
+
+    # ---- Flow A — overview, top-weight paged with cumulative budget. ---
+    cumulative_weight = 0
+    page = 1
+    while len(entities) < cap:
+        offset = (page - 1) * page_size
+        try:
+            field_map = await _artifact_search_entity_page(
+                index_nm, dataset_id, offset, page_size,
+            )
+        except Exception:
+            logging.exception(
+                "get_artifact_graph: entity page fetch failed kb=%s page=%d",
+                dataset_id, page,
+            )
+            break
+        if not field_map:
+            break
+
+        # Preserve weight_int DESC order from ES. Iteration over a dict
+        # produced by get_fields keeps insertion order; ES returned them
+        # sorted, so we can rely on that.
+        page_rows = list(field_map.values())
+
+        e_sub: list[dict] = []
+        for row in page_rows:
+            payload = _artifact_entity_payload(row)
+            if payload is None:
+                continue
+            if payload["slug"] in entities:
+                continue
+            w = max(0, int(payload.get("weight") or 0))
+            # Step 2: cumulative across the whole flow (per the spec).
+            # Stop when adding this entry would push the budget over.
+            # If even the first entity on a page can't fit, we exit the
+            # outer loop below; this preserves the "least-weight first
+            # excluded" semantics.
+            #if cumulative_weight + w > cap and len(entities) + len(e_sub) > 0:
+            #    break
+            cumulative_weight += w
+            e_sub.append(payload)
+            if len(entities) + len(e_sub) >= cap:
+                break
+
+        if not e_sub:
+            break
+
+        for payload in e_sub:
+            _add_entity(payload)
+
+        # Step 3: relations originating in E_sub.
+        sub_slugs = [p["slug"] for p in e_sub]
+        try:
+            rel_map = await _artifact_search_relations_from(
+                index_nm, dataset_id, sub_slugs,
+            )
+        except Exception:
+            logging.exception(
+                "get_artifact_graph: relation page fetch failed kb=%s",
+                dataset_id,
+            )
+            rel_map = {}
+
+        missing_to: list[str] = []
+        for row in (rel_map or {}).values():
+            payload = _artifact_relation_payload(row)
+            if payload is None:
+                continue
+            _add_relation(payload)
+            if (
+                payload["to"] not in entities
+                and payload["to"] not in missing_to
+            ):
+                missing_to.append(payload["to"])
+
+        # Step 4: hydrate the to-targets (they count toward the cap).
+        if missing_to:
+            try:
+                to_map = await _artifact_search_entities_by_slugs(
+                    index_nm, dataset_id, missing_to,
+                )
+            except Exception:
+                logging.exception(
+                    "get_artifact_graph: to-target hydrate failed kb=%s",
+                    dataset_id,
+                )
+                to_map = {}
+            for row in (to_map or {}).values():
+                if len(entities) >= cap:
+                    break
+                payload = _artifact_entity_payload(row)
+                if payload:
+                    _add_entity(payload)
+
+        # Step 5: page forward only if the cap allows another iteration.
+        if len(entities) >= cap or len(page_rows) < page_size:
+            break
+        page += 1
+
+    return True, {
+        "entities": list(entities.values()),
+        "relations": relations,
+    }
+
+
+async def clear_artifacts(dataset_id: str, tenant_id: str):
+    """Wipe every artifact-related row from ES for this KB.
+
+    Touches all five ``compile_kwd`` row types the artifact pipeline writes
+    (MAP extracts, REDUCE results, PLAN output, page drafts, and the
+    searchable artifact_page rows). After this completes the next "Artifact"
+    run starts from a clean slate — no resume cache to short-circuit MAP, no
+    prior pages to reconcile against in PLAN.
+
+    Returns ``(True, {"deleted": {kwd: count_or_True}})`` on success or
+    ``(False, str)`` on auth failure.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _artifact_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"deleted": {}}
+    index_nm, _ = pack
+
+    deleted: dict[str, object] = {}
+    for kwd in _ARTIFACT_COMPILE_KWDS:
+        try:
+            res = settings.docStoreConn.delete(
+                {"compile_kwd": kwd}, index_nm, dataset_id,
+            )
+            # Different backends return different shapes (int count, dict,
+            # bool). Surface whatever we got so the caller can log it.
+            deleted[kwd] = res if res is not None else True
+        except Exception:
+            logging.exception(
+                "clear_artifacts: delete failed for kwd=%s kb=%s", kwd, dataset_id,
+            )
+            deleted[kwd] = False
+
+    return True, {"deleted": deleted}

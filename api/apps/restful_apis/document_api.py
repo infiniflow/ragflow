@@ -58,6 +58,60 @@ from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
 
 
+def _parser_config_compilation_template_group_ids(parser_config) -> list[str]:
+    """Read template-group ids from a doc's parser_config.
+
+    The doc now references compilation template groups via a list. A
+    legacy single string id is still accepted. Old
+    ``compilation_template_ids`` data is
+    intentionally ignored per the migration spec.
+    """
+    def _normalize(raw) -> list[str]:
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, list):
+            return []
+        ids: list[str] = []
+        seen: set[str] = set()
+        for gid in raw:
+            if not isinstance(gid, str):
+                continue
+            gid = gid.strip()
+            if gid and gid not in seen:
+                seen.add(gid)
+                ids.append(gid)
+        return ids
+
+    if not isinstance(parser_config, dict):
+        return []
+    if "compilation_template_group_id" in parser_config:
+        return _normalize(parser_config.get("compilation_template_group_id"))
+    ext = parser_config.get("ext")
+    if isinstance(ext, dict):
+        return _normalize(ext.get("compilation_template_group_id"))
+    return []
+
+
+def _compilation_template_group_id_changed(old_config, new_config) -> bool:
+    return _parser_config_compilation_template_group_ids(old_config) != _parser_config_compilation_template_group_ids(new_config)
+
+
+def _normalize_parser_config_compilation_template_group_ids(parser_config) -> bool:
+    if not isinstance(parser_config, dict):
+        return False
+    if "compilation_template_group_id" not in parser_config and not (
+        isinstance(parser_config.get("ext"), dict)
+        and "compilation_template_group_id" in parser_config["ext"]
+    ):
+        return False
+    group_ids = _parser_config_compilation_template_group_ids(parser_config)
+    parser_config["compilation_template_group_id"] = group_ids
+    ext = parser_config.get("ext")
+    if isinstance(ext, dict) and "compilation_template_group_id" in ext:
+        ext["compilation_template_group_id"] = group_ids
+    return True
+
+
 @manager.route("/documents/upload", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -215,9 +269,16 @@ async def update_document(tenant_id, dataset_id, document_id):
             or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation")):
         return get_data_error_result(message="Not supported yet!")
 
-    # parser config provided (already validated in UpdateDocumentReq), update it
+    parser_config_template_group_changed = False
+    # parser config provided (already validated in UpdateDocumentReq), update it.
+    # Changing the document-scoped knowledge compilation template group
+    # affects parse output, so the document must be parsed again for it to
+    # execute.
     if update_doc_req.parser_config:
+        old_parser_config = dict(doc.parser_config or {})
         req["parser_config"].update(update_doc_req.parser_config.ext)
+        parser_config_template_group_touched = _normalize_parser_config_compilation_template_group_ids(req["parser_config"])
+        parser_config_template_group_changed = parser_config_template_group_touched and _compilation_template_group_id_changed(old_parser_config, req["parser_config"])
         DocumentService.update_parser_config(doc.id, req["parser_config"])
 
     # pipeline_id provided - reset document for reparse
@@ -227,6 +288,12 @@ async def update_document(tenant_id, dataset_id, document_id):
     # chunk method provided - the update method will check if it's different with existing one
     elif update_doc_req.chunk_method:
         if error := update_chunk_method(req, doc, tenant_id):
+            return error
+        if parser_config_template_group_changed and doc.parser_id.lower() == req["chunk_method"].lower():
+            if error := reset_document_for_reparse(doc, tenant_id):
+                return error
+    elif parser_config_template_group_changed:
+        if error := reset_document_for_reparse(doc, tenant_id):
             return error
 
     if "enabled" in req: # already checked in UpdateDocumentReq - it's int if present

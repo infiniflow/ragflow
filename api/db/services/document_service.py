@@ -489,6 +489,19 @@ class DocumentService(CommonService):
         except Exception as e:
             logging.error(f"Failed to delete chunks from doc store for document {doc.id}: {e}")
 
+        # Prune this doc's line from the KB's tree-kind navigation
+        # markdown (best-effort — the markdown is a downstream artifact,
+        # and failure here must not block the document delete).
+        try:
+            from rag.advanced_rag.knowlege_compile.dataset_nav import (
+                remove_dataset_nav_doc_sync,
+            )
+            remove_dataset_nav_doc_sync(tenant_id, doc.kb_id, doc.id)
+        except Exception as e:
+            logging.warning(
+                f"Failed to prune dataset_nav for document {doc.id}: {e}",
+            )
+
         # Delete document metadata (non-critical, log and continue)
         try:
             DocMetadataService.delete_document_metadata(doc.id, doc.kb_id, tenant_id)
@@ -1071,7 +1084,7 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
     """
     if doc_ids is None:
         doc_ids = []
-    assert ty in ["graphrag", "raptor", "mindmap"], "type should be graphrag, raptor or mindmap"
+    assert ty in ["graphrag", "raptor", "mindmap", "artifact", "skill"], "type should be graphrag, raptor, mindmap, artifact or skill"
 
     chunking_config = DocumentService.get_chunking_config(sample_doc["id"])
     hasher = xxhash.xxh64()
@@ -1099,6 +1112,50 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
     task["doc_ids"] = doc_ids
     DocumentService.begin2parse(task["doc_id"], keep_progress=True)
     assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, ty), message=task), "Can't access Redis. Please check the Redis' status."
+    return task["id"]
+
+
+def queue_per_doc_raptor_task(doc, priority):
+    """Queue a doc-scoped RAPTOR task.
+
+    Distinct from :func:`queue_raptor_o_graphrag_tasks` (which is KB-scoped
+    and uses ``GRAPH_RAPTOR_FAKE_DOC_ID`` as the task's ``doc_id`` so it
+    fans out across the dataset). Here the task's ``doc_id`` is the real
+    document id, so ``TaskHandler._run_raptor`` runs only on this doc's
+    chunks and the RAPTOR summaries it produces are scoped to this doc.
+
+    Triggered automatically at the tail of standard chunking when the
+    doc's ``parser_config["raptor"]["use_raptor"]`` is true. No
+    cross-task dedup — within one chunking-task execution this helper is
+    called at most once, which is the only invariant the caller needs.
+    """
+    chunking_config = DocumentService.get_chunking_config(doc["id"])
+    hasher = xxhash.xxh64()
+    for field in sorted(chunking_config.keys()):
+        hasher.update(str(chunking_config[field]).encode("utf-8"))
+
+    task = {
+        "id": get_uuid(),
+        "doc_id": doc["id"],
+        "from_page": MAXIMUM_TASK_PAGE_NUMBER,
+        "to_page": MAXIMUM_TASK_PAGE_NUMBER,
+        "task_type": "raptor",
+        "progress_msg": datetime.now().strftime("%H:%M:%S") + " created task raptor",
+        "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    for field in ["doc_id", "from_page", "to_page"]:
+        hasher.update(str(task[field]).encode("utf-8"))
+    hasher.update(b"raptor")
+    task["digest"] = hasher.hexdigest()
+    bulk_insert_into_db(Task, [task], True)
+
+    # Redis message carries ``doc_ids`` for downstream consumers
+    # (TaskHandler._run_raptor reads it). Identical to the fake-doc
+    # path's convention so we don't have to special-case the executor.
+    task["doc_ids"] = [doc["id"]]
+    assert REDIS_CONN.queue_product(
+        settings.get_svr_queue_name(priority, "raptor"), message=task,
+    ), "Can't access Redis. Please check the Redis' status."
     return task["id"]
 
 

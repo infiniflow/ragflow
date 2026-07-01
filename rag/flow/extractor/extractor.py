@@ -17,9 +17,16 @@ import logging
 import random
 from copy import deepcopy
 
+from api.db.services.document_service import DocumentService
+from api.db.services.llm_service import LLMBundle
+from common.constants import LLMType
 import xxhash
 
 from agent.component.llm import LLMParam, LLM
+from rag.advanced_rag.knowlege_compile.structure import (
+    compile_structure_from_text,
+    merge_compiled_structures,
+)
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.prompts.generator import run_toc_from_text
 
@@ -28,6 +35,7 @@ class ExtractorParam(ProcessParamBase, LLMParam):
     def __init__(self):
         super().__init__()
         self.field_name = ""
+        self.knowledge_compilation = {}
 
     def check(self):
         super().check()
@@ -70,6 +78,25 @@ class Extractor(ProcessBase, LLM):
             d["id"] = xxhash.xxh64((d["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
             return d
         return None
+    
+    async def _knowledge_compile(self, docs):
+        embedding_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.EMBEDDING,
+                            max_retries=self._param.max_retries,
+                            retry_interval=self._param.delay_after_error)
+        self.callback(0.2,message="Start to generate table of content ...")
+        docs = sorted(docs, key=lambda d:(
+            d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
+            d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
+        ))
+        docs = await compile_structure_from_text(docs, 
+                    self._param.knowledge_compilation, 
+                    self.chat_mdl, embedding_model, 
+                    self._canvas._doc_id)
+        info = merge_compiled_structures(docs, self.chat_mdl, 
+                                  embedding_model, 
+                                  self._canvas.get_tenant_id(), 
+                                  DocumentService.get_knowledgebase_id(self._canvas._doc_id))
+        return info
 
     async def _invoke(self, **kwargs):
         self.set_output("output_format", "chunks")
@@ -91,6 +118,13 @@ class Extractor(ProcessBase, LLM):
                     ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
                 toc =await self._build_TOC(chunks)
                 chunks.append(toc)
+                self.set_output("chunks", chunks)
+                return
+            if self._param.field_name in ["set", "list", "graph"]:
+                for ck in chunks:
+                    ck["doc_id"] = self._canvas._doc_id
+                    ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
+                await self._knowledge_compile(chunks)
                 self.set_output("chunks", chunks)
                 return
 

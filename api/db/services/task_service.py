@@ -38,6 +38,48 @@ from rag.nlp import search
 CANVAS_DEBUG_DOC_ID = "dataflow_x"
 GRAPH_RAPTOR_FAKE_DOC_ID = "graph_raptor_x"
 TASK_MAX_LOG_LENGTH = int(os.environ.get("TASK_MAX_LOG_LENGTH", 3000)) # TEXT MAX is 64 KiB bytes!
+DOC_CHUNKING_COUNTER_TTL_SECONDS = 7 * 24 * 3600
+
+
+def _doc_chunking_pending_key(doc_id: str) -> str:
+    return f"doc:chunking_pending:{doc_id}"
+
+
+def _doc_chunking_done_key(task_id: str) -> str:
+    return f"doc:chunking_done:{task_id}"
+
+
+def clear_doc_chunking_counter(doc_id: str) -> None:
+    if not doc_id:
+        return
+    try:
+        REDIS_CONN.delete(_doc_chunking_pending_key(doc_id))
+    except Exception:
+        logging.exception("Failed to clear chunking counter for doc %s", doc_id)
+
+
+def credit_doc_chunking_task(doc_id: str, task_id: str) -> int | None:
+    """Credit one completed standard chunking task.
+
+    Returns the post-decrement pending count when this task was credited for
+    the first time. Returns a positive value when this task was already
+    credited, so callers treat retries as not-last.
+    """
+    if not doc_id or not task_id:
+        return None
+    try:
+        first_credit = REDIS_CONN.set_if_absent(
+            _doc_chunking_done_key(task_id),
+            "1",
+            exp=DOC_CHUNKING_COUNTER_TTL_SECONDS,
+        )
+        if not first_credit:
+            return 1
+        return REDIS_CONN.decrby(_doc_chunking_pending_key(doc_id), 1)
+    except Exception:
+        logging.exception("Failed to credit chunking task %s for doc %s", task_id, doc_id)
+        return None
+
 
 def trim_header_by_lines(text: str, max_length) -> str:
     # Trim header text to maximum length while preserving line breaks
@@ -96,6 +138,7 @@ class TaskService(CommonService):
             cls.model.doc_id,
             cls.model.from_page,
             cls.model.to_page,
+            cls.model.task_type,
             cls.model.retry_count,
             Document.kb_id,
             Document.parser_id,
@@ -124,24 +167,25 @@ class TaskService(CommonService):
         docs = list(docs.dicts())
         if not docs:
             return None
+        doc = docs[0]
 
         msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task has been received."
         prog = random.random() / 10.0
-        if docs[0]["retry_count"] >= 3:
+        if doc["retry_count"] >= 3:
             msg = "\nERROR: Task is abandoned after 3 times attempts."
             prog = -1
 
         cls.model.update(
             progress_msg=cls.model.progress_msg + msg,
             progress=prog,
-            retry_count=docs[0]["retry_count"] + 1,
-        ).where(cls.model.id == docs[0]["id"]).execute()
+            retry_count=doc["retry_count"] + 1,
+        ).where(cls.model.id == doc["id"]).execute()
 
         if docs[0]["retry_count"] >= 3:
             DocumentService.update_by_id(docs[0]["doc_id"], {"progress": -1, "run": TaskStatus.FAIL.value, "update_time": current_timestamp(), "update_date": get_format_time()})
             return None
 
-        return docs[0]
+        return doc
 
     @classmethod
     @DB.connection_context()
@@ -464,10 +508,21 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     DocumentService.begin2parse(doc["id"])
 
     unfinished_task_array = [task for task in parse_task_array if task["progress"] < 1.0]
-    for unfinished_task in unfinished_task_array:
-        assert REDIS_CONN.queue_product(
-            settings.get_svr_queue_name(priority, suffix), message=unfinished_task
+    chunking_n = sum(1 for task in unfinished_task_array if not task.get("task_type"))
+    if chunking_n > 0:
+        assert REDIS_CONN.set(
+            _doc_chunking_pending_key(doc["id"]),
+            str(chunking_n),
+            exp=DOC_CHUNKING_COUNTER_TTL_SECONDS,
         ), "Can't access Redis. Please check the Redis' status."
+    try:
+        for unfinished_task in unfinished_task_array:
+            assert REDIS_CONN.queue_product(
+                settings.get_svr_queue_name(priority, suffix), message=unfinished_task
+            ), "Can't access Redis. Please check the Redis' status."
+    except Exception:
+        clear_doc_chunking_counter(doc["id"])
+        raise
 
 
 def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: dict):
@@ -518,6 +573,7 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
 
 
 def cancel_all_task_of(doc_id):
+    clear_doc_chunking_counter(doc_id)
     for t in TaskService.query(doc_id=doc_id):
         try:
             REDIS_CONN.set(f"{t.id}-cancel", "x")

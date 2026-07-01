@@ -48,8 +48,6 @@ class MindMapExtractor(Extractor):
             input_text_key: str | None = None,
             on_error: ErrorHandlerFn | None = None,
     ):
-        """Init method definition."""
-        # TODO: streamline construction
         self._llm = llm_invoker
         self._input_text_key = input_text_key or "input_text"
         self._mind_map_prompt = prompt or MIND_MAP_EXTRACTION_PROMPT

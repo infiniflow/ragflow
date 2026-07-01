@@ -892,6 +892,10 @@ class Knowledgebase(DataBaseModel):
     raptor_task_finish_at = DateTimeField(null=True)
     mindmap_task_id = CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True)
     mindmap_task_finish_at = DateTimeField(null=True)
+    artifact_task_id = CharField(max_length=32, null=True, help_text="Artifact compilation task ID", index=True)
+    artifact_task_finish_at = DateTimeField(null=True)
+    skill_task_id = CharField(max_length=32, null=True, help_text="Skill generation task ID", index=True)
+    skill_task_finish_at = DateTimeField(null=True)
 
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
@@ -985,6 +989,37 @@ class FileCommitItem(DataBaseModel):
         db_table = "file_commit_item"
         indexes = (
             (("commit_id", "file_id"), True),  # unique composite index
+        )
+
+
+class ArtifactCommit(DataBaseModel):
+    """One row per user-saved edit of an artifact page.
+
+    A 'commit' is created from the dataset Artifact tab when the user saves
+    the markdown editor dialog. Per the v1 contract, no-op saves (the edit
+    produced an empty unified diff) are skipped at the service layer and do
+    not appear here. Each row is self-contained: ``content_after`` snapshots
+    the full post-save markdown so history rendering / restore does not have
+    to walk a parent chain.
+    """
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    kb_id = CharField(max_length=32, null=False, index=True)
+    page_type_kwd = CharField(max_length=32, null=False, index=True, help_text="artifact page type (entity / concept / ...)")
+    slug = CharField(max_length=512, null=False, index=True, help_text="full <page_type>/<name> slug")
+
+    user_id = CharField(max_length=32, null=True, index=True, help_text="who saved the edit; null for system / LLM commits")
+    title = CharField(max_length=255, null=False, help_text="commit title; server defaults to 'Edit <slug>' when omitted")
+    comments = TextField(null=True, default="", help_text="optional commit body / description")
+
+    diff = LongTextField(null=True, help_text="unified diff (difflib.unified_diff) between prior content and content_after")
+    content_after = LongTextField(null=True, help_text="full post-save markdown snapshot; self-contained per row")
+
+    class Meta:
+        db_table = "artifact_commit"
+        indexes = (
+            # Primary access pattern: list commits for one page newest-first.
+            (("tenant_id", "kb_id", "slug", "create_time"), False),
         )
 
 
@@ -1144,6 +1179,39 @@ class MCPServer(DataBaseModel):
 
     class Meta:
         db_table = "mcp_server"
+
+
+class CompilationTemplate(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=True, index=True)
+    group_id = CharField(max_length=32, null=True, index=True)
+    name = CharField(max_length=128, null=False, index=True)
+    description = TextField(null=True, default="")
+    kind = CharField(max_length=64, null=False, index=True)
+    config = JSONField(null=False, default={})
+    is_builtin = BooleanField(null=False, default=False, index=True)
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "compilation_template"
+        indexes = (
+            (("tenant_id", "name", "is_builtin", "status"), True),
+        )
+
+
+class CompilationTemplateGroup(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, index=True)
+    description = TextField(null=True, default="")
+    scope = CharField(max_length=16, null=False, index=True, help_text="file | dataset")
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "compilation_template_group"
+        indexes = (
+            (("tenant_id", "name", "status"), True),
+        )
 
 
 class Search(DataBaseModel):
@@ -1749,6 +1817,10 @@ def migrate_db():
     alter_db_add_column(migrator, "knowledgebase", "raptor_task_finish_at", CharField(null=True))
     alter_db_add_column(migrator, "knowledgebase", "mindmap_task_id", CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "mindmap_task_finish_at", CharField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "artifact_task_id", CharField(max_length=32, null=True, help_text="Artifact compilation task ID", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "artifact_task_finish_at", DateTimeField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "skill_task_id", CharField(max_length=32, null=True, help_text="Skill generation task ID", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "skill_task_finish_at", DateTimeField(null=True))
     alter_db_column_type(migrator, "tenant_llm", "api_key", TextField(null=True, help_text="API KEY"))
     alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
     alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))
