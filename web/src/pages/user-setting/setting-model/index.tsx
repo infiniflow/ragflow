@@ -16,13 +16,14 @@ import { isLocalLlmFactory } from '../utils';
 import SystemSetting from './components/system-setting';
 import { AvailableModels } from './components/un-add-model';
 import { UsedModel } from './components/used-model';
-import { useSubmitBedrock } from './hooks';
+import { useSubmitBedrock, useSubmitSoMark, useVerifySettings } from './hooks';
 import BedrockModal from './modal/bedrock-modal';
 import ProviderModal, { IViewModeOkPayload } from './modal/provider-modal';
+import SoMarkModal from './modal/somark-modal';
 import { splitProviderPayload } from './payload-utils';
 
 const ModelProviders = () => {
-  // 4 retained special modals
+  // Retained special modals
   const {
     bedrockAddingLoading,
     onBedrockAddingOk,
@@ -170,6 +171,14 @@ const ModelProviders = () => {
     [verifyProviderConnection, currentLlmFactory],
   );
 
+  const {
+    somarkVisible,
+    hideSoMarkModal,
+    showSoMarkModal,
+    onSoMarkOk,
+    somarkLoading,
+  } = useSubmitSoMark();
+
   const ModalMap = useMemo(
     () => ({
       [LLMFactory.Bedrock]: showBedrockAddingModal,
@@ -213,8 +222,9 @@ const ModelProviders = () => {
         setCurrentLlmFactory(LLMFactory.OpenDataLoader);
         setProviderVisible(true);
       },
+      [LLMFactory.SoMark]: showSoMarkModal,
     }),
-    [showBedrockAddingModal],
+    [showBedrockAddingModal, showSoMarkModal],
   );
 
   const handleAddModel = useCallback(
@@ -347,6 +357,10 @@ const ModelProviders = () => {
     setViewMode(false);
   }, []);
 
+  const { onApiKeyVerifying: onSoMarkVerifying } = useVerifySettings({
+    onVerify: onSoMarkOk,
+  });
+
   return (
     <div className="flex w-full border-[0.5px] border-border-button rounded-lg relative ">
       <Spotlight />
@@ -381,6 +395,13 @@ const ModelProviders = () => {
         llmFactory={LLMFactory.Bedrock}
         onVerify={(payload) => onBedrockAddingOk(payload, true)}
       ></BedrockModal>
+      <SoMarkModal
+        visible={somarkVisible}
+        hideModal={hideSoMarkModal}
+        onOk={onSoMarkOk}
+        loading={somarkLoading}
+        onVerify={onSoMarkVerifying}
+      ></SoMarkModal>
     </div>
   );
 };

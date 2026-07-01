@@ -336,8 +336,8 @@ async def create_provider_instance(tenant_id: str = None, provider_id_or_name: s
           type: object
     """
     data = await request.get_json()
-    if not data or "instance_name" not in data or ("api_key" not in data and provider_id_or_name != "VLLM"):
-        return get_error_argument_result(message="instance_name and api_key are required")
+    if not data or "instance_name" not in data:
+        return get_error_argument_result(message="instance_name is required")
 
     instance_name = data["instance_name"]
     api_key = data.get("api_key", "")
