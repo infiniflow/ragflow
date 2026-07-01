@@ -9,7 +9,7 @@ import { exportDsl } from '../utils/dsl-bridge';
 /**
  * Recursively clear sensitive fields (api_key) from the DSL object
  */
-const clearSensitiveFields = <T>(obj: T): T =>
+const clearSensitiveFields = <T,>(obj: T): T =>
   cloneDeepWith(obj, (value) => {
     if (
       isPlainObject(value) &&
