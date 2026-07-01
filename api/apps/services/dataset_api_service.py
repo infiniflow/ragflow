@@ -1475,13 +1475,13 @@ async def search_datasets(tenant_id: str, req: dict):
 #
 # These three helpers power the dataset-level "Artifact" tab. They query rows
 # with ``compile_kwd="artifact_page"`` written by TaskHandler's
-# ``_persist_artifact_pages_to_es``. The schema fields they rely on are:
+# ``_persist_wiki_pages_to_es``. The schema fields they rely on are:
 #   slug_kwd, title_kwd, page_type_kwd, content_with_weight,
 #   entity_names_kwd, outlinks_kwd, related_kb_pages_kwd,
 #   source_chunk_ids, source_doc_ids
 # ---------------------------------------------------------------------------
 
-_ARTIFACT_COMPILE_KWD = "artifact_page"
+_WIKI_COMPILE_KWD = "artifact_page"
 _SKILL_COMPILE_KWD = "skill"
 _SKILL_ALL_COMPILE_KWD = "skill_all"
 
@@ -1498,7 +1498,7 @@ def _compiled_index_or_none(tenant_id: str, kb_id: str):
     return index_nm, _rag_search
 
 
-def _artifact_index_or_none(tenant_id: str, kb_id: str):
+def _wiki_index_or_none(tenant_id: str, kb_id: str):
     return _compiled_index_or_none(tenant_id, kb_id)
 
 
@@ -1506,7 +1506,7 @@ def _skill_index_or_none(tenant_id: str, kb_id: str):
     return _compiled_index_or_none(tenant_id, kb_id)
 
 
-async def has_any_artifact(dataset_id: str, tenant_id: str):
+async def has_any_wiki(dataset_id: str, tenant_id: str):
     """Fast existence probe for the sidebar tab visibility check.
 
     Returns ``(True, {"has": bool})`` on success or ``(False, str)`` on
@@ -1516,7 +1516,7 @@ async def has_any_artifact(dataset_id: str, tenant_id: str):
         return False, "No authorization."
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
-    pack = _artifact_index_or_none(kb.tenant_id, dataset_id)
+    pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
         return True, {"has": False}
     index_nm, _ = pack
@@ -1526,20 +1526,20 @@ async def has_any_artifact(dataset_id: str, tenant_id: str):
     try:
         res = settings.docStoreConn.search(
             select_fields=["id"], highlight_fields=[],
-            condition={"compile_kwd": [_ARTIFACT_COMPILE_KWD]},
+            condition={"compile_kwd": [_WIKI_COMPILE_KWD]},
             match_expressions=[], order_by=OrderByExpr(),
             offset=0, limit=1,
             index_names=index_nm, knowledgebase_ids=[dataset_id],
         )
     except Exception:
-        logging.exception("has_any_artifact: docStore search failed for kb=%s", dataset_id)
+        logging.exception("has_any_wiki: docStore search failed for kb=%s", dataset_id)
         return True, {"has": False}
 
     total = settings.docStoreConn.get_total(res)
     return True, {"has": bool(total)}
 
 
-async def list_artifacts(
+async def list_wiki_pages(
     dataset_id: str, tenant_id: str,
     page: int = 1, page_size: int = 200, page_type: str | None = None,
 ):
@@ -1553,7 +1553,7 @@ async def list_artifacts(
         return False, "No authorization."
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
-    pack = _artifact_index_or_none(kb.tenant_id, dataset_id)
+    pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
         return True, {"total": 0, "items": []}
     index_nm, _ = pack
@@ -1564,7 +1564,7 @@ async def list_artifacts(
     page_size = max(1, min(int(page_size or 200), 1000))
     offset = (page - 1) * page_size
 
-    condition: dict = {"compile_kwd": [_ARTIFACT_COMPILE_KWD]}
+    condition: dict = {"compile_kwd": [_WIKI_COMPILE_KWD]}
     if page_type:
         condition["page_type_kwd"] = [page_type]
 
@@ -1592,7 +1592,7 @@ async def list_artifacts(
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
-        logging.exception("list_artifacts: docStore search failed for kb=%s", dataset_id)
+        logging.exception("list_wiki_pages: docStore search failed for kb=%s", dataset_id)
         return True, {"total": 0, "items": []}
 
     total = settings.docStoreConn.get_total(res)
@@ -1611,7 +1611,7 @@ async def list_artifacts(
     return True, {"total": int(total or 0), "items": items}
 
 
-async def get_artifact_page(
+async def get_wiki_page(
     dataset_id: str, tenant_id: str, page_type: str, slug: str,
 ):
     """Fetch a single artifact page for the right-hand markdown viewer.
@@ -1627,7 +1627,7 @@ async def get_artifact_page(
         return False, "No authorization."
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
-    pack = _artifact_index_or_none(kb.tenant_id, dataset_id)
+    pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
         return True, None
     index_nm, _ = pack
@@ -1645,7 +1645,7 @@ async def get_artifact_page(
         res = settings.docStoreConn.search(
             select_fields=select_fields, highlight_fields=[],
             condition={
-                "compile_kwd": [_ARTIFACT_COMPILE_KWD],
+                "compile_kwd": [_WIKI_COMPILE_KWD],
                 "page_type_kwd": [page_type],
                 "slug_kwd": [full_slug],
             },
@@ -1656,7 +1656,7 @@ async def get_artifact_page(
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
         logging.exception(
-            "get_artifact_page: search failed for kb=%s slug=%s",
+            "get_wiki_page: search failed for kb=%s slug=%s",
             dataset_id, full_slug,
         )
         return True, None
@@ -1803,7 +1803,7 @@ async def get_skill_page(dataset_id: str, tenant_id: str, skill_kwd: str):
     }
 
 
-async def update_artifact_page(
+async def update_wiki_page(
     dataset_id: str, tenant_id: str, page_type: str, slug: str, content_md: str,
     *,
     user_id: str | None = None,
@@ -1813,7 +1813,7 @@ async def update_artifact_page(
     """Edit an artifact page in place from the canvas double-click dialog.
 
     Body must contain ``content_md`` — the (possibly edited) page markdown.
-    We run it through ``_artifact_transform_links`` so any newly typed
+    We run it through ``_wiki_transform_links`` so any newly typed
     ``[[slug]]`` references upgrade to clickable artifact URLs (and pre-rendered
     links pass through unchanged — the transform is idempotent on already-
     rendered markdown). ``summary`` is re-derived from the new rendered text.
@@ -1828,7 +1828,7 @@ async def update_artifact_page(
     (git-style audit). No-op saves are silently skipped — empty diff,
     no row.
 
-    Returns ``(True, page_dict)`` mirroring ``get_artifact_page``, or
+    Returns ``(True, page_dict)`` mirroring ``get_wiki_page``, or
     ``(True, None)`` when the row is missing, or
     ``(False, message)`` on authorization failure.
     """
@@ -1836,14 +1836,14 @@ async def update_artifact_page(
         return False, "No authorization."
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
-    pack = _artifact_index_or_none(kb.tenant_id, dataset_id)
+    pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
         return True, None
     index_nm, _ = pack
 
-    from rag.advanced_rag.knowlege_compile.artifact import (
-        _artifact_transform_links,
-        _artifact_extract_summary,
+    from rag.advanced_rag.knowlege_compile.wiki import (
+        _wiki_transform_links,
+        _wiki_extract_summary,
     )
     from api.db.services.artifact_commit_service import ArtifactCommitService
 
@@ -1866,7 +1866,7 @@ async def update_artifact_page(
             select_fields=["id", "content_with_weight"],
             highlight_fields=[],
             condition={
-                "compile_kwd": [_ARTIFACT_COMPILE_KWD],
+                "compile_kwd": [_WIKI_COMPILE_KWD],
                 "page_type_kwd": [page_type],
                 "slug_kwd": [full_slug],
             },
@@ -1883,15 +1883,15 @@ async def update_artifact_page(
             content_before = row.get("content_with_weight") or ""
     except Exception:
         logging.exception(
-            "update_artifact_page: lookup failed for kb=%s slug=%s",
+            "update_wiki_page: lookup failed for kb=%s slug=%s",
             dataset_id, full_slug,
         )
     if not row_id:
         return True, None
 
     content_md = content_md or ""
-    rendered, outlinks = _artifact_transform_links(content_md, dataset_id)
-    summary = _artifact_extract_summary(rendered) or ""
+    rendered, outlinks = _wiki_transform_links(content_md, dataset_id)
+    summary = _wiki_extract_summary(rendered) or ""
 
     try:
         # id-keyed condition forces the partial-update fast path — no
@@ -1908,7 +1908,7 @@ async def update_artifact_page(
         )
     except Exception:
         logging.exception(
-            "update_artifact_page: docStore update failed for kb=%s slug=%s",
+            "update_wiki_page: docStore update failed for kb=%s slug=%s",
             dataset_id, full_slug,
         )
         return True, None
@@ -1932,15 +1932,15 @@ async def update_artifact_page(
         )
     except Exception:
         logging.exception(
-            "update_artifact_page: artifact_commit record failed for kb=%s slug=%s",
+            "update_wiki_page: artifact_commit record failed for kb=%s slug=%s",
             dataset_id, full_slug,
         )
 
     # Re-read the row so the dialog gets the canonical post-update state.
-    return await get_artifact_page(dataset_id, tenant_id, page_type, slug)
+    return await get_wiki_page(dataset_id, tenant_id, page_type, slug)
 
 
-async def list_artifact_commits(
+async def list_wiki_commits(
     dataset_id: str, tenant_id: str, page_type: str, slug: str,
     page: int = 1, page_size: int = 50,
 ):
@@ -1965,7 +1965,7 @@ async def list_artifact_commits(
     return True, {"total": total, "items": items}
 
 
-async def get_artifact_commit(
+async def get_wiki_commit(
     dataset_id: str, tenant_id: str, commit_id: str,
 ):
     """Fetch one commit, including the (heavy) diff + content_after fields.
@@ -1987,7 +1987,7 @@ async def get_artifact_commit(
 # that downstream phases would silently reuse. ``artifact_page_graph``
 # is the materialized canvas graph derived from the refined pages —
 # the dataset Artifact tab's graph view reads exactly this row.
-_ARTIFACT_COMPILE_KWDS = (
+_WIKI_COMPILE_KWDS = (
     "artifact_map_extract",
     "artifact_reduce_result",
     "artifact_compilation_plan",
@@ -1997,14 +1997,14 @@ _ARTIFACT_COMPILE_KWDS = (
     "artifact_relation",
 )
 
-# Tunables for the incremental graph loader. See ``get_artifact_graph``.
-_ARTIFACT_GRAPH_ENTITY_KWD = "artifact_entity"
-_ARTIFACT_GRAPH_RELATION_KWD = "artifact_relation"
-_ARTIFACT_GRAPH_ENTITY_PAGE_SIZE = 32
-_ARTIFACT_GRAPH_MAX_LOADING_ENTITY = 128
+# Tunables for the incremental graph loader. See ``get_wiki_graph``.
+_WIKI_GRAPH_ENTITY_KWD = "artifact_entity"
+_WIKI_GRAPH_RELATION_KWD = "artifact_relation"
+_WIKI_GRAPH_ENTITY_PAGE_SIZE = 32
+_WIKI_GRAPH_MAX_LOADING_ENTITY = 128
 
 
-def _artifact_entity_payload(row: dict) -> dict | None:
+def _wiki_entity_payload(row: dict) -> dict | None:
     """Project one ``artifact_entity`` ES row onto the canvas entity shape.
 
     The row stores the canvas payload pre-built as JSON in
@@ -2039,7 +2039,7 @@ def _artifact_entity_payload(row: dict) -> dict | None:
     return out
 
 
-def _artifact_relation_payload(row: dict) -> dict | None:
+def _wiki_relation_payload(row: dict) -> dict | None:
     raw = row.get("content_with_weight") or ""
     payload: dict = {}
     if isinstance(raw, str) and raw.strip():
@@ -2056,7 +2056,7 @@ def _artifact_relation_payload(row: dict) -> dict | None:
     return {"from": src, "to": tgt}
 
 
-async def _artifact_search_entity_page(
+async def _wiki_search_entity_page(
     index_nm, dataset_id: str, offset: int, limit: int,
 ):
     """One page of artifact_entity rows, ordered by weight_int DESC."""
@@ -2075,7 +2075,7 @@ async def _artifact_search_entity_page(
     res = await thread_pool_exec(
         settings.docStoreConn.search,
         select_fields, [],
-        {"compile_kwd": [_ARTIFACT_GRAPH_ENTITY_KWD]},
+        {"compile_kwd": [_WIKI_GRAPH_ENTITY_KWD]},
         [], order_by,
         offset, limit,
         index_nm, [dataset_id],
@@ -2083,7 +2083,7 @@ async def _artifact_search_entity_page(
     return settings.docStoreConn.get_fields(res, select_fields)
 
 
-async def _artifact_search_entities_by_slugs(
+async def _wiki_search_entities_by_slugs(
     index_nm, dataset_id: str, slugs: list[str],
 ):
     """Fetch entity rows whose ``slug_kwd`` is in ``slugs``. Unordered."""
@@ -2100,7 +2100,7 @@ async def _artifact_search_entities_by_slugs(
         settings.docStoreConn.search,
         select_fields, [],
         {
-            "compile_kwd": [_ARTIFACT_GRAPH_ENTITY_KWD],
+            "compile_kwd": [_WIKI_GRAPH_ENTITY_KWD],
             "slug_kwd": list(slugs),
         },
         [], OrderByExpr(),
@@ -2110,7 +2110,7 @@ async def _artifact_search_entities_by_slugs(
     return settings.docStoreConn.get_fields(res, select_fields)
 
 
-async def _artifact_search_relations_from(
+async def _wiki_search_relations_from(
     index_nm, dataset_id: str, from_slugs: list[str],
 ):
     """Fetch all relation rows with ``from_kwd`` in ``from_slugs``."""
@@ -2126,7 +2126,7 @@ async def _artifact_search_relations_from(
         settings.docStoreConn.search,
         select_fields, [],
         {
-            "compile_kwd": [_ARTIFACT_GRAPH_RELATION_KWD],
+            "compile_kwd": [_WIKI_GRAPH_RELATION_KWD],
             "from_kwd": list(from_slugs),
         },
         [], OrderByExpr(),
@@ -2136,7 +2136,7 @@ async def _artifact_search_relations_from(
     return settings.docStoreConn.get_fields(res, select_fields)
 
 
-async def get_artifact_graph(
+async def get_wiki_graph(
     dataset_id: str, tenant_id: str, node: str | None = None,
 ):
     """Load the canvas graph payload incrementally from per-row data.
@@ -2145,9 +2145,9 @@ async def get_artifact_graph(
 
     * **Overview** (``node`` is None) — paginate ``artifact_entity`` rows
       ordered by ``weight_int DESC`` in pages of
-      ``_ARTIFACT_GRAPH_ENTITY_PAGE_SIZE``. For each page, append entities
+      ``_WIKI_GRAPH_ENTITY_PAGE_SIZE``. For each page, append entities
       to a running set while the **cumulative** weight stays within
-      ``_ARTIFACT_GRAPH_MAX_LOADING_ENTITY``. Pull ``artifact_relation``
+      ``_WIKI_GRAPH_MAX_LOADING_ENTITY``. Pull ``artifact_relation``
       rows whose ``from_kwd`` is in the just-added entities; pull the
       ``to`` targets that we haven't seen yet (they count toward the same
       cap). Stop once the cap is hit, or the page is empty, or no entry
@@ -2156,7 +2156,7 @@ async def get_artifact_graph(
     * **Click** (``node`` is a slug) — load the centre entity (always
       included), pull every ``artifact_relation`` with ``from_kwd=node``,
       then pull the ``to`` entities. Capped at
-      ``_ARTIFACT_GRAPH_MAX_LOADING_ENTITY`` for hub-node safety.
+      ``_WIKI_GRAPH_MAX_LOADING_ENTITY`` for hub-node safety.
 
     Returns ``(True, {"entities": [...], "relations": [...]})`` shaped
     exactly as the frontend ``ForceGraph`` adapter consumes, or
@@ -2168,13 +2168,13 @@ async def get_artifact_graph(
 
     empty = {"entities": [], "relations": []}
 
-    pack = _artifact_index_or_none(kb.tenant_id, dataset_id)
+    pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
         return True, empty
     index_nm, _ = pack
 
-    cap = _ARTIFACT_GRAPH_MAX_LOADING_ENTITY
-    page_size = _ARTIFACT_GRAPH_ENTITY_PAGE_SIZE
+    cap = _WIKI_GRAPH_MAX_LOADING_ENTITY
+    page_size = _WIKI_GRAPH_ENTITY_PAGE_SIZE
 
     # ``entities`` preserves first-seen order so the canvas paints the
     # heaviest-weighted nodes first (or, in click mode, the centre node
@@ -2203,18 +2203,18 @@ async def get_artifact_graph(
     if isinstance(node, str) and node.strip():
         center_slug = node.strip()
         try:
-            field_map = await _artifact_search_entities_by_slugs(
+            field_map = await _wiki_search_entities_by_slugs(
                 index_nm, dataset_id, [center_slug],
             )
         except Exception:
             logging.exception(
-                "get_artifact_graph: centre lookup failed kb=%s node=%s",
+                "get_wiki_graph: centre lookup failed kb=%s node=%s",
                 dataset_id, center_slug,
             )
             return True, empty
 
         for row in (field_map or {}).values():
-            payload = _artifact_entity_payload(row)
+            payload = _wiki_entity_payload(row)
             if payload:
                 _add_entity(payload)
                 break
@@ -2226,19 +2226,19 @@ async def get_artifact_graph(
 
         # Outgoing edges from the centre, capped by MAX_LOADING_ENTITY.
         try:
-            rel_map = await _artifact_search_relations_from(
+            rel_map = await _wiki_search_relations_from(
                 index_nm, dataset_id, [center_slug],
             )
         except Exception:
             logging.exception(
-                "get_artifact_graph: relation lookup failed kb=%s node=%s",
+                "get_wiki_graph: relation lookup failed kb=%s node=%s",
                 dataset_id, center_slug,
             )
             return True, {"entities": list(entities.values()), "relations": []}
 
         to_slugs: list[str] = []
         for row in (rel_map or {}).values():
-            payload = _artifact_relation_payload(row)
+            payload = _wiki_relation_payload(row)
             if payload is None:
                 continue
             if payload["from"] != center_slug:
@@ -2257,17 +2257,17 @@ async def get_artifact_graph(
 
         if to_slugs:
             try:
-                to_map = await _artifact_search_entities_by_slugs(
+                to_map = await _wiki_search_entities_by_slugs(
                     index_nm, dataset_id, to_slugs,
                 )
             except Exception:
                 logging.exception(
-                    "get_artifact_graph: neighbour lookup failed kb=%s node=%s",
+                    "get_wiki_graph: neighbour lookup failed kb=%s node=%s",
                     dataset_id, center_slug,
                 )
                 to_map = {}
             for row in (to_map or {}).values():
-                payload = _artifact_entity_payload(row)
+                payload = _wiki_entity_payload(row)
                 if payload and len(entities) < cap:
                     _add_entity(payload)
 
@@ -2282,12 +2282,12 @@ async def get_artifact_graph(
     while len(entities) < cap:
         offset = (page - 1) * page_size
         try:
-            field_map = await _artifact_search_entity_page(
+            field_map = await _wiki_search_entity_page(
                 index_nm, dataset_id, offset, page_size,
             )
         except Exception:
             logging.exception(
-                "get_artifact_graph: entity page fetch failed kb=%s page=%d",
+                "get_wiki_graph: entity page fetch failed kb=%s page=%d",
                 dataset_id, page,
             )
             break
@@ -2301,7 +2301,7 @@ async def get_artifact_graph(
 
         e_sub: list[dict] = []
         for row in page_rows:
-            payload = _artifact_entity_payload(row)
+            payload = _wiki_entity_payload(row)
             if payload is None:
                 continue
             if payload["slug"] in entities:
@@ -2328,19 +2328,19 @@ async def get_artifact_graph(
         # Step 3: relations originating in E_sub.
         sub_slugs = [p["slug"] for p in e_sub]
         try:
-            rel_map = await _artifact_search_relations_from(
+            rel_map = await _wiki_search_relations_from(
                 index_nm, dataset_id, sub_slugs,
             )
         except Exception:
             logging.exception(
-                "get_artifact_graph: relation page fetch failed kb=%s",
+                "get_wiki_graph: relation page fetch failed kb=%s",
                 dataset_id,
             )
             rel_map = {}
 
         missing_to: list[str] = []
         for row in (rel_map or {}).values():
-            payload = _artifact_relation_payload(row)
+            payload = _wiki_relation_payload(row)
             if payload is None:
                 continue
             _add_relation(payload)
@@ -2353,19 +2353,19 @@ async def get_artifact_graph(
         # Step 4: hydrate the to-targets (they count toward the cap).
         if missing_to:
             try:
-                to_map = await _artifact_search_entities_by_slugs(
+                to_map = await _wiki_search_entities_by_slugs(
                     index_nm, dataset_id, missing_to,
                 )
             except Exception:
                 logging.exception(
-                    "get_artifact_graph: to-target hydrate failed kb=%s",
+                    "get_wiki_graph: to-target hydrate failed kb=%s",
                     dataset_id,
                 )
                 to_map = {}
             for row in (to_map or {}).values():
                 if len(entities) >= cap:
                     break
-                payload = _artifact_entity_payload(row)
+                payload = _wiki_entity_payload(row)
                 if payload:
                     _add_entity(payload)
 
@@ -2380,7 +2380,7 @@ async def get_artifact_graph(
     }
 
 
-async def clear_artifacts(dataset_id: str, tenant_id: str):
+async def clear_wiki(dataset_id: str, tenant_id: str):
     """Wipe every artifact-related row from ES for this KB.
 
     Touches all five ``compile_kwd`` row types the artifact pipeline writes
@@ -2396,13 +2396,13 @@ async def clear_artifacts(dataset_id: str, tenant_id: str):
         return False, "No authorization."
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
-    pack = _artifact_index_or_none(kb.tenant_id, dataset_id)
+    pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
         return True, {"deleted": {}}
     index_nm, _ = pack
 
     deleted: dict[str, object] = {}
-    for kwd in _ARTIFACT_COMPILE_KWDS:
+    for kwd in _WIKI_COMPILE_KWDS:
         try:
             res = settings.docStoreConn.delete(
                 {"compile_kwd": kwd}, index_nm, dataset_id,
@@ -2412,7 +2412,7 @@ async def clear_artifacts(dataset_id: str, tenant_id: str):
             deleted[kwd] = res if res is not None else True
         except Exception:
             logging.exception(
-                "clear_artifacts: delete failed for kwd=%s kb=%s", kwd, dataset_id,
+                "clear_wiki: delete failed for kwd=%s kb=%s", kwd, dataset_id,
             )
             deleted[kwd] = False
 

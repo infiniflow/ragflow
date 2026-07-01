@@ -15,29 +15,29 @@
 #
 
 from .structure import compile_structure_from_text, merge_compiled_structures
-from .artifact import (
-    ARTIFACT_DRAFT_COMPILE_KWD,
-    ARTIFACT_MAP_COMPILE_KWD,
-    ARTIFACT_PAGE_COMPILE_KWD,
-    ARTIFACT_PLAN_COMPILE_KWD,
-    ARTIFACT_REDUCE_COMPILE_KWD,
-    artifact_map_from_chunks,
-    artifact_plan_from_reduction,
-    artifact_reduce_from_extracts,
-    artifact_refine_from_plan,
+from .wiki import (
+    WIKI_DRAFT_COMPILE_KWD,
+    WIKI_MAP_COMPILE_KWD,
+    WIKI_PAGE_COMPILE_KWD,
+    WIKI_PLAN_COMPILE_KWD,
+    WIKI_REDUCE_COMPILE_KWD,
+    wiki_map_from_chunks,
+    wiki_plan_from_reduction,
+    wiki_reduce_from_extracts,
+    wiki_refine_from_plan,
 )
 
 
 __all__ = [
     "compile_structure_from_text",
     "merge_compiled_structures",
-    "artifact_map_from_chunks",
-    "artifact_reduce_from_extracts",
-    "artifact_plan_from_reduction",
-    "artifact_refine_from_plan",
-    "ARTIFACT_MAP_COMPILE_KWD",
-    "ARTIFACT_REDUCE_COMPILE_KWD",
-    "ARTIFACT_PLAN_COMPILE_KWD",
-    "ARTIFACT_PAGE_COMPILE_KWD",
-    "ARTIFACT_DRAFT_COMPILE_KWD",
+    "wiki_map_from_chunks",
+    "wiki_reduce_from_extracts",
+    "wiki_plan_from_reduction",
+    "wiki_refine_from_plan",
+    "WIKI_MAP_COMPILE_KWD",
+    "WIKI_REDUCE_COMPILE_KWD",
+    "WIKI_PLAN_COMPILE_KWD",
+    "WIKI_PAGE_COMPILE_KWD",
+    "WIKI_DRAFT_COMPILE_KWD",
 ]

@@ -559,7 +559,7 @@ async def get_knowledge_graph(tenant_id, dataset_id):
 @manager.route("/datasets/<dataset_id>/any_artifact", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def has_any_artifact(tenant_id, dataset_id):
+async def has_any_wiki(tenant_id, dataset_id):
     """Probe whether this dataset has any compiled artifact pages.
 
     GET /api/v1/datasets/<dataset_id>/any_artifact
@@ -568,7 +568,7 @@ async def has_any_artifact(tenant_id, dataset_id):
     in the dataset sidebar.
     """
     try:
-        success, result = await dataset_api_service.has_any_artifact(dataset_id, tenant_id)
+        success, result = await dataset_api_service.has_any_wiki(dataset_id, tenant_id)
         if success:
             return get_result(data=result)
         return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
@@ -580,7 +580,7 @@ async def has_any_artifact(tenant_id, dataset_id):
 @manager.route("/datasets/<dataset_id>/artifacts", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def list_artifacts(tenant_id, dataset_id):
+async def list_wiki_pages(tenant_id, dataset_id):
     """List artifact pages for the dataset Artifact tab.
 
     GET /api/v1/datasets/<dataset_id>/artifacts?page=1&page_size=200&page_type=entity
@@ -594,7 +594,7 @@ async def list_artifacts(tenant_id, dataset_id):
     page_type = request.args.get("page_type") or None
 
     try:
-        success, result = await dataset_api_service.list_artifacts(
+        success, result = await dataset_api_service.list_wiki_pages(
             dataset_id, tenant_id, page=page, page_size=page_size, page_type=page_type,
         )
         if success:
@@ -608,7 +608,7 @@ async def list_artifacts(tenant_id, dataset_id):
 @manager.route("/datasets/<dataset_id>/artifacts/graph", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def get_artifact_graph(tenant_id, dataset_id):
+async def get_wiki_graph(tenant_id, dataset_id):
     """Return an incremental slice of the canvas graph for this dataset.
 
     GET /api/v1/datasets/<dataset_id>/artifacts/graph[?node=<slug>]
@@ -623,7 +623,7 @@ async def get_artifact_graph(tenant_id, dataset_id):
         node = request.args.get("node", None)
         if isinstance(node, str):
             node = node.strip() or None
-        success, result = await dataset_api_service.get_artifact_graph(
+        success, result = await dataset_api_service.get_wiki_graph(
             dataset_id, tenant_id, node=node,
         )
         if success:
@@ -637,7 +637,7 @@ async def get_artifact_graph(tenant_id, dataset_id):
 @manager.route("/datasets/<dataset_id>/artifacts", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def clear_artifacts(tenant_id, dataset_id):
+async def clear_wiki(tenant_id, dataset_id):
     """Wipe every artifact-related row from ES for this KB.
 
     DELETE /api/v1/datasets/<dataset_id>/artifacts
@@ -646,7 +646,7 @@ async def clear_artifacts(tenant_id, dataset_id):
     Success: {"code": 0, "data": {"deleted": {kwd: result}}}
     """
     try:
-        success, result = await dataset_api_service.clear_artifacts(
+        success, result = await dataset_api_service.clear_wiki(
             dataset_id, tenant_id,
         )
         if success:
@@ -660,7 +660,7 @@ async def clear_artifacts(tenant_id, dataset_id):
 @manager.route("/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def get_artifact_page(tenant_id, dataset_id, page_type, slug):
+async def get_wiki_page(tenant_id, dataset_id, page_type, slug):
     """Fetch one artifact page by (page_type, slug).
 
     GET /api/v1/datasets/<dataset_id>/artifacts/<page_type>/<slug>
@@ -670,7 +670,7 @@ async def get_artifact_page(tenant_id, dataset_id, page_type, slug):
     Success: {"code": 0, "data": page_dict | null}
     """
     try:
-        success, result = await dataset_api_service.get_artifact_page(
+        success, result = await dataset_api_service.get_wiki_page(
             dataset_id, tenant_id, page_type, slug,
         )
         if success:
@@ -745,7 +745,7 @@ async def get_skill_page(tenant_id, dataset_id, skill_kwd):
 @manager.route("/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>/commits", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def list_artifact_commits(tenant_id, dataset_id, page_type, slug):
+async def list_wiki_commits(tenant_id, dataset_id, page_type, slug):
     """List commit history for one artifact page (newest first).
 
     GET /api/v1/datasets/<dataset_id>/artifacts/<page_type>/<slug>/commits
@@ -757,7 +757,7 @@ async def list_artifact_commits(tenant_id, dataset_id, page_type, slug):
     try:
         page = int(request.args.get("page") or 1)
         page_size = int(request.args.get("page_size") or 50)
-        success, result = await dataset_api_service.list_artifact_commits(
+        success, result = await dataset_api_service.list_wiki_commits(
             dataset_id, tenant_id, page_type, slug,
             page=page, page_size=page_size,
         )
@@ -774,10 +774,10 @@ async def list_artifact_commits(tenant_id, dataset_id, page_type, slug):
 @manager.route("/datasets/<dataset_id>/artifacts/commits/<commit_id>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def get_artifact_commit(tenant_id, dataset_id, commit_id):
+async def get_wiki_commit(tenant_id, dataset_id, commit_id):
     """Fetch one artifact commit including its diff + content_after."""
     try:
-        success, result = await dataset_api_service.get_artifact_commit(
+        success, result = await dataset_api_service.get_wiki_commit(
             dataset_id, tenant_id, commit_id,
         )
         if success:
@@ -791,7 +791,7 @@ async def get_artifact_commit(tenant_id, dataset_id, commit_id):
 @manager.route("/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>", methods=["PUT"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def update_artifact_page(tenant_id, dataset_id, page_type, slug):
+async def update_wiki_page(tenant_id, dataset_id, page_type, slug):
     """Edit one artifact page in place.
 
     PUT /api/v1/datasets/<dataset_id>/artifacts/<page_type>/<slug>
@@ -816,7 +816,7 @@ async def update_artifact_page(tenant_id, dataset_id, page_type, slug):
             return get_error_argument_result("'title' must be a string.")
         if comments is not None and not isinstance(comments, str):
             return get_error_argument_result("'comments' must be a string.")
-        success, result = await dataset_api_service.update_artifact_page(
+        success, result = await dataset_api_service.update_wiki_page(
             dataset_id, tenant_id, page_type, slug, content_md,
             user_id=getattr(current_user, "id", None),
             title=title,

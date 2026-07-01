@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Artifact compilation pipeline — MAP phase.
+"""WIKI compilation pipeline — MAP phase.
 
   - Chunks come from ES (or any pre-chunked list passed in by the caller).
     No outline-driven chunking; per-chunk byte offsets are not tracked.
@@ -30,7 +30,7 @@
     fetch them by ``doc_id`` + ``source_chunk_ids``. Re-running MAP for the same
     ``doc_id`` skips chunks that already have an extract row.
 
-Public entry: ``artifact_map_from_chunks``.
+Public entry: ``wiki_map_from_chunks``.
 """
 import asyncio
 import json
@@ -39,15 +39,13 @@ import re
 from typing import Callable, Optional
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
-from rag.nlp import rag_tokenizer
-from rag.prompts.generator import INPUT_UTILIZATION, gen_json, message_fit_in, split_chunks
+from rag.prompts.generator import gen_json, message_fit_in, split_chunks
 
 import xxhash as _xxhash
 
 from ._common import (
     build_chunk_batches as _build_chunk_batches,
     bulk_dedup_items as _bulk_dedup_items,
-    encode as _common_encode,
     ensure_llm_bundle as _ensure_llm_bundle,
     run_chunked_pipeline as _run_chunked_pipeline,
     stable_row_id as _stable_row_id
@@ -59,7 +57,7 @@ from ._common import (
 # / artifact_page_draft / artifact_page row on the next re-run. Use it
 # when a prompt or extraction schema changes in a way that should
 # invalidate prior caches.
-_ARTIFACT_PIPELINE_REV = "v1"
+_WIKI_PIPELINE_REV = "v1"
 
 
 def _chunk_hash(content: str) -> str:
@@ -67,7 +65,7 @@ def _chunk_hash(content: str) -> str:
     pipeline rev. The mix-in means a prompt / schema bump invalidates
     every cached row without us having to touch each row individually.
     """
-    body = (content or "") + "|" + _ARTIFACT_PIPELINE_REV
+    body = (content or "") + "|" + _WIKI_PIPELINE_REV
     return _xxhash.xxh64(body.encode("utf-8", "surrogatepass")).hexdigest()
 # Tiny parser_config helpers shared with the structure pipeline. Pulled in
 # here so the MAP entity/relation schemas and rules can be driven from the
@@ -82,12 +80,12 @@ from .structure import (
 # Constants
 # ---------------------------------------------------------------------------
 
-ARTIFACT_MAP_COMPILE_KWD = "artifact_map_extract"
-DEFAULT_ARTIFACT_MAP_WORKERS = 6
-DEFAULT_ARTIFACT_MAP_TIMEOUT = 600
+WIKI_MAP_COMPILE_KWD = "artifact_map_extract"
+DEFAULT_WIKI_MAP_WORKERS = 6
+DEFAULT_WIKI_MAP_TIMEOUT = 600
 
 
-ARTIFACT_MAP_SYSTEM = (
+WIKI_MAP_SYSTEM = (
     "You are a knowledge extraction engine. Extract structured knowledge from the "
     "provided document section. Return ONLY valid JSON matching the schema exactly. "
     "Never include any text outside the JSON object. If a category has no items, use []."
@@ -110,7 +108,7 @@ _DEFAULT_RELATION_SCHEMA_BODY = (
 )
 
 
-ARTIFACT_MAP_USER_TEMPLATE = """\
+WIKI_MAP_USER_TEMPLATE = """\
 ## Document context
 Document id: {doc_id}
 Batch contains {chunk_count} packed chunk(s). Each chunk is introduced by a
@@ -186,7 +184,7 @@ Rules:
   by the text).
 - Be exhaustive — include all named entities, defined terms, and factual claims.
 - For ``concepts``, extract BOTH (a) named terms with definitions AND (b)
-  coherent thematic sub-topics that could become their own artifacts page.
+  coherent thematic sub-topics that could become their own wiki page.
 - Extract ``claims`` LIBERALLY: every factual sentence about an entity is a
   claim. Definitions, attributes, ownership, locations, dates, actions,
   events, financial figures, regulations cited — all qualify. If you
@@ -208,7 +206,7 @@ Rules:
 _EXTRACT_LIST_KEYS = ("entities", "concepts", "claims", "relations")
 
 
-def _artifact_empty_extract() -> dict:
+def _wiki_empty_extract() -> dict:
     return {
         "entities": [],
         "concepts": [],
@@ -229,7 +227,7 @@ def _artifact_empty_extract() -> dict:
 # defaults so existing call sites keep working.
 
 
-def _artifact_render_schema_body(fields, language: str, default_body: str, *, indent: int = 6) -> str:
+def _wiki_render_schema_body(fields, language: str, default_body: str, *, indent: int = 6) -> str:
     """Render the JSON body for one item in the entity/relation schema.
 
     Produces one line per field of the form::
@@ -290,7 +288,7 @@ def _artifact_render_schema_body(fields, language: str, default_body: str, *, in
     return ",\n".join(lines)
 
 
-def _artifact_build_custom_rules(parser_config, language: str) -> str:
+def _wiki_build_custom_rules(parser_config, language: str) -> str:
     """Concatenate user-provided entity/relation rules into bullet-style
     sections appended to the prompt's Rules section.
 
@@ -320,7 +318,7 @@ def _artifact_build_custom_rules(parser_config, language: str) -> str:
     return "\n" + "\n\n".join(sections) + "\n"
 
 
-def _artifact_template_fields(parser_config, section: str) -> list:
+def _wiki_template_fields(parser_config, section: str) -> list:
     if not isinstance(parser_config, dict):
         return []
     cfg = _struct_get(parser_config, section, default={}) or {}
@@ -328,7 +326,7 @@ def _artifact_template_fields(parser_config, section: str) -> list:
     return fields if isinstance(fields, list) else []
 
 
-def _artifact_type_rules(fields: list) -> str:
+def _wiki_type_rules(fields: list) -> str:
     lines: list[str] = []
     for field in fields:
         if not isinstance(field, dict):
@@ -349,7 +347,7 @@ def _artifact_type_rules(fields: list) -> str:
     return "\n".join(lines)
 
 
-def _artifact_pipe_join(fields: list, key: str) -> str:
+def _wiki_pipe_join(fields: list, key: str) -> str:
     values: list[str] = []
     for field in fields:
         if not isinstance(field, dict):
@@ -361,7 +359,7 @@ def _artifact_pipe_join(fields: list, key: str) -> str:
     return "|".join(values)
 
 
-def _artifact_colon_join(fields: list, left_key: str, right_key: str) -> str:
+def _wiki_colon_join(fields: list, left_key: str, right_key: str) -> str:
     values: list[str] = []
     for field in fields:
         if not isinstance(field, dict):
@@ -375,14 +373,14 @@ def _artifact_colon_join(fields: list, left_key: str, right_key: str) -> str:
     return "\n".join(values)
 
 
-def _artifact_template_custom_rules(parser_config) -> str:
+def _wiki_template_custom_rules(parser_config) -> str:
     if not isinstance(parser_config, dict):
         return ""
     rules = parser_config.get("global_rules")
     return rules.strip() if isinstance(rules, str) else ""
 
 
-def _artifact_build_user_prompt(
+def _wiki_build_user_prompt(
     *,
     parser_config,
     language: str,
@@ -391,19 +389,19 @@ def _artifact_build_user_prompt(
     chunk_id_list: str,
     packed_chunks: str,
 ) -> str:
-    """Fill ``ARTIFACT_MAP_USER_TEMPLATE`` with the dynamic entity / relation
+    """Fill ``WIKI_MAP_USER_TEMPLATE`` with the dynamic entity / relation
     schema bodies plus optional rules drawn from ``parser_config``."""
-    ent_fields = _artifact_template_fields(parser_config, "entity")
-    rel_fields = _artifact_template_fields(parser_config, "relation")
-    concept_fields = _artifact_template_fields(parser_config, "concept")
-    claim_fields = _artifact_template_fields(parser_config, "claim")
-    entity_type_rules = _artifact_type_rules(ent_fields)
-    relation_type_rules = _artifact_type_rules(rel_fields)
-    concept_term = _artifact_pipe_join(concept_fields, "term")
-    concept_definition_excerpt = _artifact_colon_join(concept_fields, "term", "definition_excerpt")
-    claim_statement = _artifact_pipe_join(claim_fields, "subject")
-    claim_subject = _artifact_colon_join(claim_fields, "subject", "subject")
-    custom_rules = _artifact_template_custom_rules(parser_config)
+    ent_fields = _wiki_template_fields(parser_config, "entity")
+    rel_fields = _wiki_template_fields(parser_config, "relation")
+    concept_fields = _wiki_template_fields(parser_config, "concept")
+    claim_fields = _wiki_template_fields(parser_config, "claim")
+    entity_type_rules = _wiki_type_rules(ent_fields)
+    relation_type_rules = _wiki_type_rules(rel_fields)
+    concept_term = _wiki_pipe_join(concept_fields, "term")
+    concept_definition_excerpt = _wiki_colon_join(concept_fields, "term", "definition_excerpt")
+    claim_statement = _wiki_pipe_join(claim_fields, "subject")
+    claim_subject = _wiki_colon_join(claim_fields, "subject", "subject")
+    custom_rules = _wiki_template_custom_rules(parser_config)
 
     if isinstance(parser_config, dict):
         output = _struct_get(parser_config, "output", default={}) or {}
@@ -412,11 +410,11 @@ def _artifact_build_user_prompt(
         legacy_ent_fields = _struct_get(entities_cfg, "fields", default=[]) or []
         legacy_rel_fields = _struct_get(relations_cfg, "fields", default=[]) or []
         if not entity_type_rules and legacy_ent_fields:
-            entity_type_rules = _artifact_render_schema_body(
+            entity_type_rules = _wiki_render_schema_body(
                 legacy_ent_fields, language, _DEFAULT_ENTITY_SCHEMA_BODY,
             )
         if not relation_type_rules and legacy_rel_fields:
-            relation_type_rules = _artifact_render_schema_body(
+            relation_type_rules = _wiki_render_schema_body(
                 legacy_rel_fields, language, _DEFAULT_RELATION_SCHEMA_BODY,
             )
 
@@ -433,9 +431,9 @@ def _artifact_build_user_prompt(
     if not claim_subject:
         claim_subject = "entity or concept that the claim is about"
     if not custom_rules:
-        custom_rules = _artifact_build_custom_rules(parser_config, language)
+        custom_rules = _wiki_build_custom_rules(parser_config, language)
 
-    return ARTIFACT_MAP_USER_TEMPLATE.format(
+    return WIKI_MAP_USER_TEMPLATE.format(
         doc_id=doc_id,
         chunk_count=chunk_count,
         chunk_id_list=chunk_id_list,
@@ -450,7 +448,7 @@ def _artifact_build_user_prompt(
     )
 
 
-def _artifact_pick_chunk_text(chunk: dict) -> str:
+def _wiki_pick_chunk_text(chunk: dict) -> str:
     text = chunk.get("text") or chunk.get("content_with_weight") or chunk.get("content") or ""
     return text if isinstance(text, str) else ""
 
@@ -462,7 +460,7 @@ _HEX16_TOKEN_RE = re.compile(r"(?<![0-9a-zA-Z])[0-9a-f]{16}(?![0-9a-zA-Z])")
 _HEX32_TOKEN_RE = re.compile(r"(?<![0-9a-zA-Z])[0-9a-f]{32}(?![0-9a-zA-Z])")
 
 
-def _artifact_scrub_known_ids(text: str, ids_to_remove) -> str:
+def _wiki_scrub_known_ids(text: str, ids_to_remove) -> str:
     """Defensive scrub: strip any literal occurrence of known ES ids from
     chunk text before sending to the extraction LLM.
 
@@ -486,19 +484,7 @@ def _artifact_scrub_known_ids(text: str, ids_to_remove) -> str:
     return out
 
 
-def _artifact_safe_chunk_label(position_in_batch: int) -> str:
-    """Per-batch positional chunk tag (``C1``, ``C2``, …).
-
-    We deliberately do NOT use the real ES chunk id as the label here.
-    xxhash-based ids look like ``cff1a46bcba3f0e1`` which the extraction
-    LLM tends to mistakenly extract as entity names (commonly mis-typed as
-    "location"). Short synthetic tags remove that failure mode entirely;
-    we map them back to real chunk ids via ``label_to_id`` after extraction.
-    """
-    return f"C{position_in_batch + 1}"
-
-
-def _artifact_format_batch_prompt(packed: list[dict]) -> tuple[str, list[str]]:
+def _wiki_format_batch_prompt(packed: list[dict]) -> tuple[str, list[str]]:
     """Render the [CHUNK_ID …]-labelled body and return (body_text, label_order)."""
     parts: list[str] = []
     labels: list[str] = []
@@ -508,9 +494,9 @@ def _artifact_format_batch_prompt(packed: list[dict]) -> tuple[str, list[str]]:
     return "\n\n".join(parts), labels
 
 
-def _artifact_unwrap_extract(res) -> dict:
+def _wiki_unwrap_extract(res) -> dict:
     """Coerce LLM JSON to the canonical 5-key shape with defaulted lists."""
-    out = _artifact_empty_extract()
+    out = _wiki_empty_extract()
     if not isinstance(res, dict):
         return out
     for k in _EXTRACT_LIST_KEYS:
@@ -528,7 +514,7 @@ def _artifact_unwrap_extract(res) -> dict:
 #   - bare hexadecimal hashes (xxh64 16-char, doc-id 32-char)
 #   - UUIDs with or without dashes
 # Anything matching is dropped post-extraction as defensive filtering.
-_ARTIFACT_IDENTIFIER_LIKE_RE = re.compile(
+_WIKI_IDENTIFIER_LIKE_RE = re.compile(
     r"""^\s*(
         [Cc]\d{1,5}                       # chunk tag like C1, c0001
         | [0-9a-fA-F]{16}                 # xxh64 hexdigest
@@ -539,14 +525,14 @@ _ARTIFACT_IDENTIFIER_LIKE_RE = re.compile(
 )
 
 
-def _artifact_looks_like_identifier(s) -> bool:
+def _wiki_looks_like_identifier(s) -> bool:
     """True when ``s`` looks like a chunk tag, hash, or UUID rather than a name."""
     if not isinstance(s, str):
         return False
-    return bool(_ARTIFACT_IDENTIFIER_LIKE_RE.match(s))
+    return bool(_WIKI_IDENTIFIER_LIKE_RE.match(s))
 
 
-def _artifact_item_has_identifier_name(key: str, item: dict) -> bool:
+def _wiki_item_has_identifier_name(key: str, item: dict) -> bool:
     """Return True when an extracted item's display name is identifier-shaped.
 
     Different list keys carry the name field under different keys:
@@ -556,20 +542,20 @@ def _artifact_item_has_identifier_name(key: str, item: dict) -> bool:
       - relations → ``from`` and ``to`` (drop if either is identifier-shaped)
     """
     if key == "entities":
-        return _artifact_looks_like_identifier(item.get("name", ""))
+        return _wiki_looks_like_identifier(item.get("name", ""))
     if key == "concepts":
-        return _artifact_looks_like_identifier(item.get("term", ""))
+        return _wiki_looks_like_identifier(item.get("term", ""))
     if key == "claims":
-        return _artifact_looks_like_identifier(item.get("subject", ""))
+        return _wiki_looks_like_identifier(item.get("subject", ""))
     if key == "relations":
         return (
-            _artifact_looks_like_identifier(item.get("from", ""))
-            or _artifact_looks_like_identifier(item.get("to", ""))
+            _wiki_looks_like_identifier(item.get("from", ""))
+            or _wiki_looks_like_identifier(item.get("to", ""))
         )
     return False
 
 
-def _artifact_resolve_chunk_ids(
+def _wiki_resolve_chunk_ids(
     extract: dict,
     label_to_id: dict[str, str],
 ) -> tuple[dict, dict[str, dict]]:
@@ -585,9 +571,9 @@ def _artifact_resolve_chunk_ids(
                    chunk was processed even when nothing was extracted.
     """
     per_chunk: dict[str, dict] = {
-        real_id: _artifact_empty_extract() for real_id in label_to_id.values()
+        real_id: _wiki_empty_extract() for real_id in label_to_id.values()
     }
-    merged = _artifact_empty_extract()
+    merged = _wiki_empty_extract()
     merged["topics"] = list(extract.get("topics") or [])
 
     dropped = 0
@@ -603,7 +589,7 @@ def _artifact_resolve_chunk_ids(
             # occasionally grabs prompt scaffolding (C1, C2, …) or leftover
             # hash tokens and reports them as entities/concepts/claims. The
             # prompt forbids this but post-filtering is the bulletproof guard.
-            if _artifact_item_has_identifier_name(key, item):
+            if _wiki_item_has_identifier_name(key, item):
                 dropped_identifier += 1
                 continue
             new_item = {k: v for k, v in item.items() if k != "source_chunk_id"}
@@ -612,20 +598,20 @@ def _artifact_resolve_chunk_ids(
             per_chunk[real][key].append(new_item)
 
     if dropped:
-        logging.debug(f"artifact_map: dropped {dropped} item(s) with unrecognized source_chunk_id")
+        logging.debug(f"wiki_map: dropped {dropped} item(s) with unrecognized source_chunk_id")
     if dropped_identifier:
         logging.info(
-            "artifact_map: dropped %d item(s) whose name looked like a prompt-scaffolding tag or hash",
+            "wiki_map: dropped %d item(s) whose name looked like a prompt-scaffolding tag or hash",
             dropped_identifier,
         )
 
     return merged, per_chunk
 
 
-def _artifact_merge_extracts(extracts: list[dict]) -> dict:
+def _wiki_merge_extracts(extracts: list[dict]) -> dict:
     """Concat the 5 lists across multiple batch extracts (no entity-level
     dedup — that is the REDUCE phase's job)."""
-    out = _artifact_empty_extract()
+    out = _wiki_empty_extract()
     seen_topics: set[str] = set()
     for ex in extracts:
         if not isinstance(ex, dict):
@@ -639,7 +625,7 @@ def _artifact_merge_extracts(extracts: list[dict]) -> dict:
     return out
 
 
-def _artifact_build_resume_doc(
+def _wiki_build_resume_doc(
     chunk_id: str,
     doc_id: str,
     per_chunk_extract: dict,
@@ -660,7 +646,7 @@ def _artifact_build_resume_doc(
     return {
         "id": _stable_row_id(content_with_weight, doc_id_str, chunk_id),
         "doc_id": doc_id_str,
-        "compile_kwd": ARTIFACT_MAP_COMPILE_KWD,
+        "compile_kwd": WIKI_MAP_COMPILE_KWD,
         "source_chunk_ids": [chunk_id],
         "chunk_hash_kwd": chunk_hash,
         "content_with_weight": content_with_weight,
@@ -668,7 +654,7 @@ def _artifact_build_resume_doc(
     }
 
 
-async def _artifact_load_resume_map(
+async def _wiki_load_resume_map(
     doc_id: str, tenant_id: str, kb_id: str,
 ) -> dict[str, str]:
     """Query ES for chunks that already have a artifact_map_extract row for
@@ -683,7 +669,7 @@ async def _artifact_load_resume_map(
 
     index = _rag_search.index_name(tenant_id)
     condition = {
-        "compile_kwd": [ARTIFACT_MAP_COMPILE_KWD],
+        "compile_kwd": [WIKI_MAP_COMPILE_KWD],
         "doc_id": [str(doc_id)],
     }
     select_fields = ["id", "source_chunk_ids", "chunk_hash_kwd"]
@@ -695,7 +681,7 @@ async def _artifact_load_resume_map(
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
-        logging.exception("artifact_map: failed to query resume map; will re-extract all chunks")
+        logging.exception("wiki_map: failed to query resume map; will re-extract all chunks")
         return {}
 
     seen: dict[str, str] = {}
@@ -715,7 +701,7 @@ async def _artifact_load_resume_map(
     return seen
 
 
-async def _artifact_delete_map_rows(
+async def _wiki_delete_map_rows(
     doc_id: str, chunk_ids: list[str], tenant_id: str, kb_id: str,
 ) -> int:
     """Delete ``artifact_map_extract`` rows for ``(doc_id, chunk_id)`` pairs.
@@ -735,7 +721,7 @@ async def _artifact_delete_map_rows(
 
     index = _rag_search.index_name(tenant_id)
     condition = {
-        "compile_kwd": [ARTIFACT_MAP_COMPILE_KWD],
+        "compile_kwd": [WIKI_MAP_COMPILE_KWD],
         "doc_id": [str(doc_id)],
         "source_chunk_ids": list(chunk_ids),
     }
@@ -745,14 +731,14 @@ async def _artifact_delete_map_rows(
         )
     except Exception:
         logging.exception(
-            "artifact_map: failed to delete %d stale extract row(s) for doc %s",
+            "wiki_map: failed to delete %d stale extract row(s) for doc %s",
             len(chunk_ids), doc_id,
         )
         return 0
     return len(chunk_ids)
 
 
-async def _artifact_persist_extracts(
+async def _wiki_persist_extracts(
     per_chunk: dict[str, dict],
     doc_id: str,
     tenant_id: str,
@@ -774,7 +760,7 @@ async def _artifact_persist_extracts(
     index = _rag_search.index_name(tenant_id)
     hashes = chunk_hashes or {}
     docs = [
-        _artifact_build_resume_doc(
+        _wiki_build_resume_doc(
             chunk_id, doc_id, extract, chunk_hash=hashes.get(chunk_id, ""),
         )
         for chunk_id, extract in per_chunk.items()
@@ -785,7 +771,7 @@ async def _artifact_persist_extracts(
     try:
         await thread_pool_exec(settings.docStoreConn.insert, docs, index, kb_id)
     except Exception:
-        logging.exception("artifact_map: failed to persist %d resume docs", len(docs))
+        logging.exception("wiki_map: failed to persist %d resume docs", len(docs))
 
 
 # ---------------------------------------------------------------------------
@@ -793,7 +779,7 @@ async def _artifact_persist_extracts(
 # ---------------------------------------------------------------------------
 
 
-async def _artifact_extract_one_batch(
+async def _wiki_extract_one_batch(
     packed: list[dict],
     doc_id: str,
     chat_mdl,
@@ -808,8 +794,8 @@ async def _artifact_extract_one_batch(
     prompt are rendered from ``parser_config`` when supplied (mirroring
     ``compile_structure_from_text``); when omitted, the built-in defaults
     are used."""
-    body, labels = _artifact_format_batch_prompt(packed)
-    user_prompt = _artifact_build_user_prompt(
+    body, labels = _wiki_format_batch_prompt(packed)
+    user_prompt = _wiki_build_user_prompt(
         parser_config=parser_config,
         language=language,
         doc_id=doc_id,
@@ -819,20 +805,20 @@ async def _artifact_extract_one_batch(
     )
     try:
         res = await asyncio.wait_for(
-            gen_json(ARTIFACT_MAP_SYSTEM, user_prompt, chat_mdl, gen_conf={"temperature": 0.1}),
+            gen_json(WIKI_MAP_SYSTEM, user_prompt, chat_mdl, gen_conf={"temperature": 0.1}),
             timeout=timeout,
         )
     except asyncio.TimeoutError:
-        logging.warning("artifact_map: batch extraction timed out after %ds (%d chunks)", timeout, len(packed))
-        return _artifact_empty_extract()
+        logging.warning("wiki_map: batch extraction timed out after %ds (%d chunks)", timeout, len(packed))
+        return _wiki_empty_extract()
     except Exception:
-        logging.exception("artifact_map: batch extraction failed (%d chunks)", len(packed))
-        return _artifact_empty_extract()
+        logging.exception("wiki_map: batch extraction failed (%d chunks)", len(packed))
+        return _wiki_empty_extract()
     _ = language  # reserved for future localization
-    return _artifact_unwrap_extract(res)
+    return _wiki_unwrap_extract(res)
 
 
-async def _artifact_process_batch(
+async def _wiki_process_batch(
     packed: list[dict],
     batch_idx: int,
     total_batches: int,
@@ -851,21 +837,21 @@ async def _artifact_process_batch(
     persist resume docs → return the merged batch extract.
 
     ``chunk_hashes`` is the ``{chunk_id → chunk_hash}`` map captured at
-    the top of ``artifact_map_from_chunks``; threaded through so the
+    the top of ``wiki_map_from_chunks``; threaded through so the
     persisted resume rows record the right hash and the next
     incremental run can compare cleanly.
     """
     if not packed:
-        return _artifact_empty_extract()
+        return _wiki_empty_extract()
 
     label_to_id = {entry["label"]: entry["chunk_id"] for entry in packed}
 
     async def _run() -> dict:
-        raw_extract = await _artifact_extract_one_batch(
+        raw_extract = await _wiki_extract_one_batch(
             packed, doc_id, chat_mdl, language, timeout, parser_config=parser_config,
         )
-        merged, per_chunk = _artifact_resolve_chunk_ids(raw_extract, label_to_id)
-        await _artifact_persist_extracts(
+        merged, per_chunk = _wiki_resolve_chunk_ids(raw_extract, label_to_id)
+        await _wiki_persist_extracts(
             per_chunk, doc_id, tenant_id, kb_id, chunk_hashes=chunk_hashes,
         )
         if callback:
@@ -873,10 +859,10 @@ async def _artifact_process_batch(
                 n_items = sum(len(merged.get(k) or []) for k in _EXTRACT_LIST_KEYS)
                 callback(
                     (batch_idx + 1) / max(1, total_batches),
-                    f"artifact MAP {batch_idx + 1}/{total_batches}: {n_items} items from {len(packed)} chunks",
+                    f"Wiki MAP {batch_idx + 1}/{total_batches}: {n_items} items from {len(packed)} chunks",
                 )
             except Exception:
-                logging.debug("artifact_map: progress callback failed", exc_info=True)
+                logging.debug("wiki_map: progress callback failed", exc_info=True)
         return merged
 
     if semaphore is not None:
@@ -890,7 +876,7 @@ async def _artifact_process_batch(
 # ---------------------------------------------------------------------------
 
 
-async def artifact_map_from_chunks(
+async def wiki_map_from_chunks(
     chunks: list[dict],
     chat_mdl,
     embd_mdl,
@@ -898,8 +884,8 @@ async def artifact_map_from_chunks(
     tenant_id: str,
     kb_id: str,
     language: str = "en",
-    max_workers: int = DEFAULT_ARTIFACT_MAP_WORKERS,
-    timeout: int = DEFAULT_ARTIFACT_MAP_TIMEOUT,
+    max_workers: int = DEFAULT_WIKI_MAP_WORKERS,
+    timeout: int = DEFAULT_WIKI_MAP_TIMEOUT,
     callback: Optional[Callable] = None,
     parser_config: Optional[dict] = None,
     batch_size_cap: Optional[int] = None,
@@ -944,16 +930,16 @@ async def artifact_map_from_chunks(
         # Even with zero chunks we still want to sweep any orphaned MAP
         # rows that point at chunks the doc no longer has — otherwise
         # deletions never propagate.
-        prior_resume_map = await _artifact_load_resume_map(doc_id, tenant_id, kb_id)
+        prior_resume_map = await _wiki_load_resume_map(doc_id, tenant_id, kb_id)
         if prior_resume_map:
-            await _artifact_delete_map_rows(
+            await _wiki_delete_map_rows(
                 doc_id, list(prior_resume_map.keys()), tenant_id, kb_id,
             )
             logging.info(
-                "artifact_map: doc %s now has zero chunks; swept %d stale extract row(s)",
+                "wiki_map: doc %s now has zero chunks; swept %d stale extract row(s)",
                 doc_id, len(prior_resume_map),
             )
-        out = _artifact_empty_extract()
+        out = _wiki_empty_extract()
         out["_meta"] = {
             "doc_id": str(doc_id),
             "new": 0,
@@ -982,10 +968,10 @@ async def artifact_map_from_chunks(
         cid = chunk.get("id") or chunk.get("chunk_id")
         if not isinstance(cid, str) or not cid:
             continue
-        text = _artifact_pick_chunk_text(chunk) or ""
+        text = _wiki_pick_chunk_text(chunk) or ""
         current_chunk_hashes[cid] = _chunk_hash(text)
 
-    prior_resume_map = await _artifact_load_resume_map(doc_id, tenant_id, kb_id)
+    prior_resume_map = await _wiki_load_resume_map(doc_id, tenant_id, kb_id)
     unchanged_ids: set[str] = set()
     changed_ids: list[str] = []
     new_ids: list[str] = []
@@ -1002,13 +988,13 @@ async def artifact_map_from_chunks(
     deleted_ids = [cid for cid in prior_resume_map if cid not in current_chunk_hashes]
 
     if changed_ids or deleted_ids:
-        await _artifact_delete_map_rows(
+        await _wiki_delete_map_rows(
             doc_id, list(set(changed_ids) | set(deleted_ids)), tenant_id, kb_id,
         )
 
     if unchanged_ids or changed_ids or deleted_ids or new_ids:
         logging.info(
-            "artifact_map: doc %s — new=%d changed=%d unchanged=%d deleted=%d",
+            "wiki_map: doc %s — new=%d changed=%d unchanged=%d deleted=%d",
             doc_id, len(new_ids), len(changed_ids), len(unchanged_ids), len(deleted_ids),
         )
 
@@ -1018,7 +1004,7 @@ async def artifact_map_from_chunks(
 
     # Defensive scrub: chunkers sometimes embed the chunk_id / doc_id into
     # the body (e.g. as a header). Without this the extraction LLM tends to
-    # grab the hash as an "entity" — see _artifact_scrub_known_ids.
+    # grab the hash as an "entity" — see _wiki_scrub_known_ids.
     all_known_ids: list[str] = []
     for chunk in chunks:
         cid = chunk.get("id") or chunk.get("chunk_id")
@@ -1027,24 +1013,24 @@ async def artifact_map_from_chunks(
     if doc_id:
         all_known_ids.append(str(doc_id))
 
-    prompt_overhead = num_tokens_from_string(ARTIFACT_MAP_SYSTEM + ARTIFACT_MAP_USER_TEMPLATE)
+    prompt_overhead = num_tokens_from_string(WIKI_MAP_SYSTEM + WIKI_MAP_USER_TEMPLATE)
     packed_batches, _info = _build_chunk_batches(
         chunks,
         chat_mdl,
         prompt_overhead_tokens=prompt_overhead,
         resume_chunk_ids=resume_set,
-        scrub_text=lambda t: _artifact_scrub_known_ids(t, all_known_ids),
-        chunk_text_picker=_artifact_pick_chunk_text,
+        scrub_text=lambda t: _wiki_scrub_known_ids(t, all_known_ids),
+        chunk_text_picker=_wiki_pick_chunk_text,
         batch_size_cap=batch_size_cap,
         window_fraction=window_fraction,
     )
     if not packed_batches:
-        return _artifact_empty_extract()
+        return _wiki_empty_extract()
 
     async def _process_one(batch: list[dict], bi: int, total: int) -> dict:
         # ``_run_chunked_pipeline`` already wraps each task in the engine's
         # semaphore, so pass ``semaphore=None`` here to avoid nesting.
-        return await _artifact_process_batch(
+        return await _wiki_process_batch(
             packed=batch,
             batch_idx=bi,
             total_batches=total,
@@ -1063,13 +1049,13 @@ async def artifact_map_from_chunks(
     merged = await _run_chunked_pipeline(
         packed_batches,
         process_batch=_process_one,
-        aggregate=_artifact_merge_extracts,
+        aggregate=_wiki_merge_extracts,
         max_workers=max_workers,
         callback=callback,
-        log_prefix="artifact_map",
+        log_prefix="wiki_map",
     )
     logging.info(
-        "artifact_map: doc %s — entities=%d concepts=%d claims=%d relations=%d topics=%d",
+        "wiki_map: doc %s — entities=%d concepts=%d claims=%d relations=%d topics=%d",
         doc_id,
         len(merged["entities"]),
         len(merged["concepts"]),
@@ -1104,18 +1090,18 @@ async def artifact_map_from_chunks(
 # entire KB. Inputs come from ES (every artifact_map_extract row in this KB across
 # all docs); the result lives in ES under artifact_reduce_result.
 
-ARTIFACT_REDUCE_COMPILE_KWD = "artifact_reduce_result"
-DEFAULT_ARTIFACT_REDUCE_MERGE_THRESHOLD = 0.95
-DEFAULT_ARTIFACT_REDUCE_AMBIGUOUS_LOW = 0.75
-DEFAULT_ARTIFACT_REDUCE_AMBIGUOUS_BATCH = 50
-DEFAULT_ARTIFACT_REDUCE_TIMEOUT = 60
+WIKI_REDUCE_COMPILE_KWD = "artifact_reduce_result"
+DEFAULT_WIKI_REDUCE_MERGE_THRESHOLD = 0.95
+DEFAULT_WIKI_REDUCE_AMBIGUOUS_LOW = 0.75
+DEFAULT_WIKI_REDUCE_AMBIGUOUS_BATCH = 50
+DEFAULT_WIKI_REDUCE_TIMEOUT = 60
 
 
 # System prompt for the LLM disambiguation batch. The shared engine
 # (``_common.bulk_dedup_items``) defaults to the same wording via
 # ``_common.DEFAULT_DISAMBIGUATE_SYSTEM``; we keep the local alias so the
 # constant name stays usable by call sites and external imports.
-ARTIFACT_REDUCE_DISAMBIGUATE_SYSTEM = (
+WIKI_REDUCE_DISAMBIGUATE_SYSTEM = (
     "You are a named-entity resolution assistant. Return only JSON."
 )
 
@@ -1123,23 +1109,23 @@ ARTIFACT_REDUCE_DISAMBIGUATE_SYSTEM = (
 # --- ES I/O ----------------------------------------------------------------
 
 
-async def _artifact_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
+async def _wiki_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
     """Aggregate every artifact_map_extract row in this KB into one merged dict.
 
     Pages through ES if the KB has more than the per-call cap. Returns a dict
-    in the same shape as artifact_map_from_chunks' return value.
+    in the same shape as wiki_map_from_chunks' return value.
     """
     from common import settings
     from common.doc_store.doc_store_base import OrderByExpr
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
-    condition = {"compile_kwd": [ARTIFACT_MAP_COMPILE_KWD]}
+    condition = {"compile_kwd": [WIKI_MAP_COMPILE_KWD]}
     select_fields = ["id", "content_with_weight"]
 
     PAGE_SIZE = 1000
     offset = 0
-    merged = _artifact_empty_extract()
+    merged = _wiki_empty_extract()
     seen_topics: set[str] = set()
 
     while True:
@@ -1151,7 +1137,7 @@ async def _artifact_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
-            logging.exception("artifact_reduce: failed to page artifact_map_extract rows")
+            logging.exception("wiki_reduce: failed to page wiki_map_extract rows")
             break
 
         if not field_map:
@@ -1164,7 +1150,7 @@ async def _artifact_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
             try:
                 payload = json.loads(content)
             except Exception:
-                logging.debug("artifact_reduce: skipping unparseable extract row")
+                logging.debug("wiki_reduce: skipping unparseable extract row")
                 continue
             if not isinstance(payload, dict):
                 continue
@@ -1186,7 +1172,7 @@ async def _artifact_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
     return merged
 
 
-async def _artifact_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
+async def _wiki_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
     """xxh64 fingerprint of the **current** ``artifact_map_extract`` rows for
     this KB — used by REDUCE / PLAN to cache-bust when MAP changed.
 
@@ -1210,7 +1196,7 @@ async def _artifact_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
-    condition = {"compile_kwd": [ARTIFACT_MAP_COMPILE_KWD]}
+    condition = {"compile_kwd": [WIKI_MAP_COMPILE_KWD]}
     select_fields = ["id", "source_chunk_ids", "chunk_hash_kwd"]
 
     PAGE_SIZE = 128
@@ -1226,7 +1212,7 @@ async def _artifact_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
             logging.exception(
-                "artifact: failed to compute MAP input hash for kb=%s (offset=%d)",
+                "wiki: failed to compute MAP input hash for kb=%s (offset=%d)",
                 kb_id, offset,
             )
             # Partial scan → cannot trust the resulting hash; return ""
@@ -1249,11 +1235,11 @@ async def _artifact_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
         offset += PAGE_SIZE
 
     pairs.sort()
-    body = "|".join(f"{cid}:{hh}" for cid, hh in pairs) + "|" + _ARTIFACT_PIPELINE_REV
+    body = "|".join(f"{cid}:{hh}" for cid, hh in pairs) + "|" + _WIKI_PIPELINE_REV
     return _xxhash.xxh64(body.encode("utf-8", "surrogatepass")).hexdigest()
 
 
-async def _artifact_load_reduce_resume(
+async def _wiki_load_reduce_resume(
     tenant_id: str, kb_id: str,
 ) -> Optional[tuple[dict, str]]:
     """Return ``(cached_result, stored_input_hash)`` or None."""
@@ -1262,7 +1248,7 @@ async def _artifact_load_reduce_resume(
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
-    condition = {"compile_kwd": [ARTIFACT_REDUCE_COMPILE_KWD]}
+    condition = {"compile_kwd": [WIKI_REDUCE_COMPILE_KWD]}
     select_fields = ["id", "content_with_weight", "input_hash_kwd"]
     try:
         res = await thread_pool_exec(
@@ -1272,7 +1258,7 @@ async def _artifact_load_reduce_resume(
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
-        logging.exception("artifact_reduce: failed to load resume cache")
+        logging.exception("wiki_reduce: failed to load resume cache")
         return None
     if not field_map:
         return None
@@ -1283,7 +1269,7 @@ async def _artifact_load_reduce_resume(
     try:
         cached = json.loads(content)
     except Exception:
-        logging.debug("artifact_reduce: cached result unparseable; ignoring")
+        logging.debug("wiki_reduce: cached result unparseable; ignoring")
         return None
     if not isinstance(cached, dict):
         return None
@@ -1293,7 +1279,7 @@ async def _artifact_load_reduce_resume(
     return cached, stored_hash
 
 
-async def _artifact_persist_reduce(
+async def _wiki_persist_reduce(
     reduced: dict, tenant_id: str, kb_id: str, input_hash: str = "",
 ) -> None:
     """Upsert the single non-searchable artifact_reduce_result row for this KB.
@@ -1308,11 +1294,11 @@ async def _artifact_persist_reduce(
     kb_id_str = str(kb_id)
     content_with_weight = json.dumps(reduced, ensure_ascii=False)
     # Stable id per KB so a re-run upserts the same row.
-    row_id = _stable_row_id(ARTIFACT_REDUCE_COMPILE_KWD, kb_id_str)
+    row_id = _stable_row_id(WIKI_REDUCE_COMPILE_KWD, kb_id_str)
     doc = {
         "id": row_id,
         "doc_id": kb_id_str,            # sentinel — KB-scoped row, not a real document
-        "compile_kwd": ARTIFACT_REDUCE_COMPILE_KWD,
+        "compile_kwd": WIKI_REDUCE_COMPILE_KWD,
         "source_id": [kb_id_str],
         "input_hash_kwd": input_hash,
         "content_with_weight": content_with_weight,
@@ -1323,28 +1309,28 @@ async def _artifact_persist_reduce(
         try:
             await thread_pool_exec(
                 settings.docStoreConn.delete,
-                {"compile_kwd": ARTIFACT_REDUCE_COMPILE_KWD},
+                {"compile_kwd": WIKI_REDUCE_COMPILE_KWD},
                 index, kb_id,
             )
         except Exception:
-            logging.debug("artifact_reduce: prior result delete failed; will overwrite by id")
+            logging.debug("wiki_reduce: prior result delete failed; will overwrite by id")
         await thread_pool_exec(settings.docStoreConn.insert, [doc], index, kb_id)
     except Exception:
-        logging.exception("artifact_reduce: failed to persist result row")
+        logging.exception("wiki_reduce: failed to persist result row")
 
 
 # --- public entry ----------------------------------------------------------
 
 
-async def artifact_reduce_from_extracts(
+async def wiki_reduce_from_extracts(
     chat_mdl,
     embd_mdl,
     tenant_id: str,
     kb_id: str,
-    merge_threshold: float = DEFAULT_ARTIFACT_REDUCE_MERGE_THRESHOLD,
-    ambiguous_low: float = DEFAULT_ARTIFACT_REDUCE_AMBIGUOUS_LOW,
-    ambiguous_batch_size: int = DEFAULT_ARTIFACT_REDUCE_AMBIGUOUS_BATCH,
-    timeout: int = DEFAULT_ARTIFACT_REDUCE_TIMEOUT,
+    merge_threshold: float = DEFAULT_WIKI_REDUCE_MERGE_THRESHOLD,
+    ambiguous_low: float = DEFAULT_WIKI_REDUCE_AMBIGUOUS_LOW,
+    ambiguous_batch_size: int = DEFAULT_WIKI_REDUCE_AMBIGUOUS_BATCH,
+    timeout: int = DEFAULT_WIKI_REDUCE_TIMEOUT,
     force_rerun: bool = False,
     callback: Optional[Callable] = None,
 ) -> dict:
@@ -1394,15 +1380,15 @@ async def artifact_reduce_from_extracts(
     # the upstream chunks haven't changed → cached output is still
     # correct. ``force_rerun=True`` bypasses both checks for the
     # legacy / admin "rebuild from scratch" path.
-    current_input_hash = await _artifact_compute_map_input_hash(tenant_id, kb_id)
+    current_input_hash = await _wiki_compute_map_input_hash(tenant_id, kb_id)
     if not force_rerun:
-        cached_pair = await _artifact_load_reduce_resume(tenant_id, kb_id)
+        cached_pair = await _wiki_load_reduce_resume(tenant_id, kb_id)
         if cached_pair is not None:
             cached, stored_hash = cached_pair
             if stored_hash and stored_hash == current_input_hash:
                 if callback:
                     try:
-                        callback(1.0, "artifact REDUCE: cache hit (input unchanged)")
+                        callback(1.0, "wiki REDUCE: cache hit (input unchanged)")
                     except Exception:
                         pass
                 return cached
@@ -1411,15 +1397,15 @@ async def artifact_reduce_from_extracts(
 
     if callback:
         try:
-            callback(0.05, "artifact REDUCE: loading MAP extracts")
+            callback(0.05, "wiki REDUCE: loading MAP extracts")
         except Exception:
             pass
 
-    raw = await _artifact_load_all_map_extracts(tenant_id, kb_id)
+    raw = await _wiki_load_all_map_extracts(tenant_id, kb_id)
     raw_entities = raw.get("entities") or []
     raw_concepts = raw.get("concepts") or []
     logging.info(
-        "artifact_reduce: kb=%s loaded raw entities=%d concepts=%d claims=%d relations=%d",
+        "wiki_reduce: kb=%s loaded raw entities=%d concepts=%d claims=%d relations=%d",
         kb_id,
         len(raw_entities),
         len(raw_concepts),
@@ -1429,13 +1415,13 @@ async def artifact_reduce_from_extracts(
 
     if not raw_entities and not raw_concepts:
         # Nothing to reduce; persist an empty result so resume can short-circuit.
-        empty = _artifact_empty_extract()
-        await _artifact_persist_reduce(empty, tenant_id, kb_id, input_hash=current_input_hash)
+        empty = _wiki_empty_extract()
+        await _wiki_persist_reduce(empty, tenant_id, kb_id, input_hash=current_input_hash)
         return empty
 
     if callback:
         try:
-            callback(0.25, "artifact REDUCE: dedup (exact + embedding + LLM)")
+            callback(0.25, "wiki REDUCE: dedup (exact + embedding + LLM)")
         except Exception:
             pass
 
@@ -1449,7 +1435,7 @@ async def artifact_reduce_from_extracts(
         merge_threshold=merge_threshold,
         ambiguous_low=ambiguous_low,
         ambiguous_batch_size=ambiguous_batch_size,
-        disambiguate_system_prompt=ARTIFACT_REDUCE_DISAMBIGUATE_SYSTEM,
+        disambiguate_system_prompt=WIKI_REDUCE_DISAMBIGUATE_SYSTEM,
         timeout=timeout,
     )
 
@@ -1471,7 +1457,7 @@ async def artifact_reduce_from_extracts(
     )
 
     logging.info(
-        "artifact_reduce: after dedup entities=%d concepts=%d",
+        "wiki_reduce: after dedup entities=%d concepts=%d",
         len(canonical_entities),
         len(canonical_concepts),
     )
@@ -1486,13 +1472,13 @@ async def artifact_reduce_from_extracts(
 
     if callback:
         try:
-            callback(0.9, "artifact REDUCE: persisting result")
+            callback(0.9, "wiki REDUCE: persisting result")
         except Exception:
             pass
-    await _artifact_persist_reduce(reduced, tenant_id, kb_id, input_hash=current_input_hash)
+    await _wiki_persist_reduce(reduced, tenant_id, kb_id, input_hash=current_input_hash)
 
     logging.info(
-        "artifact_reduce: kb=%s done — entities=%d concepts=%d claims=%d relations=%d topics=%d",
+        "wiki_reduce: kb=%s done — entities=%d concepts=%d claims=%d relations=%d topics=%d",
         kb_id,
         len(reduced["entities"]),
         len(reduced["concepts"]),
@@ -1503,7 +1489,7 @@ async def artifact_reduce_from_extracts(
 
     if callback:
         try:
-            callback(1.0, "artifact REDUCE: done")
+            callback(1.0, "wiki REDUCE: done")
         except Exception:
             pass
 
@@ -1532,33 +1518,33 @@ async def artifact_reduce_from_extracts(
 # emitted (chunk_ids attribution is enough); plan status defaults to
 # "approved" so REFINE can consume immediately (review workflow deferred).
 
-ARTIFACT_PLAN_COMPILE_KWD = "artifact_compilation_plan"
-ARTIFACT_PAGE_COMPILE_KWD = "artifact_page"
-DEFAULT_ARTIFACT_PLAN_UPDATE_THRESHOLD = 0.95
-DEFAULT_ARTIFACT_PLAN_MAYBE_THRESHOLD = 0.60
-DEFAULT_ARTIFACT_PLAN_TIMEOUT = 600  # ~10 min — the planning call emits one big
+WIKI_PLAN_COMPILE_KWD = "artifact_compilation_plan"
+WIKI_PAGE_COMPILE_KWD = "artifact_page"
+DEFAULT_WIKI_PLAN_UPDATE_THRESHOLD = 0.95
+DEFAULT_WIKI_PLAN_MAYBE_THRESHOLD = 0.60
+DEFAULT_WIKI_PLAN_TIMEOUT = 600  # ~10 min — the planning call emits one big
                                  # JSON plan and reasoning models can spend a
                                  # long time thinking before emitting tokens.
                                  # Override via the ``timeout`` arg to
-                                 # ``artifact_plan_from_reduction``.
-DEFAULT_ARTIFACT_PLAN_RECONCILE_BATCH = 50
+                                 # ``wiki_plan_from_reduction``.
+DEFAULT_WIKI_PLAN_RECONCILE_BATCH = 50
 
 
-ARTIFACT_PLAN_PLANNING_SYSTEM = (
-    "You are a artifact compilation planner. Given extracted entities and their "
+WIKI_PLAN_PLANNING_SYSTEM = (
+    "You are a knowledge compilation planner. Given extracted entities and their "
     "relationship to an existing knowledge base, produce a compilation plan. "
     "Return ONLY valid JSON."
     "Keep the user's original language (Chinese/English etc.) for generated data."
 )
 
 
-ARTIFACT_PLAN_RECONCILE_SYSTEM = (
+WIKI_PLAN_RECONCILE_SYSTEM = (
     "You are a knowledge base assistant. Return only a JSON boolean array."
     "Keep the user's original language (Chinese/English etc.) for generated data."
 )
 
 
-ARTIFACT_PLAN_USER_TEMPLATE = """\
+WIKI_PLAN_USER_TEMPLATE = """\
 ## Knowledge base context
 Name: {kb_name}
 Description: {kb_description}
@@ -1592,7 +1578,7 @@ Produce a JSON compilation plan:
 
 Rules:
 - action must be "CREATE" or "UPDATE".
-- For UPDATE, slug MUST be an existing artifacts page slug from the KB
+- For UPDATE, slug MUST be an existing wiki page slug from the KB
   reconciliation list above.
 - page_type is one of: entity | concept | topic. Do NOT use "source".
 
@@ -1643,14 +1629,14 @@ Examples of BAD slugs (do NOT produce):
 # --- helpers ---------------------------------------------------------------
 
 
-def _artifact_target_page_count(total_items: int) -> int:
+def _wiki_target_page_count(total_items: int) -> int:
     """Item-count-based heuristic: clamp(8, total // 3, 60)."""
     if total_items <= 0:
         return 8
     return max(8, min(60, total_items // 3))
 
 
-def _artifact_format_entity_for_plan(entity: dict, reconciliation: dict) -> str:
+def _wiki_format_entity_for_plan(entity: dict, reconciliation: dict) -> str:
     aliases = ", ".join((entity.get("aliases") or [])[:3])
     rec = reconciliation.get(entity.get("name", ""), {})
     action = rec.get("action", "CREATE")
@@ -1666,7 +1652,7 @@ def _artifact_format_entity_for_plan(entity: dict, reconciliation: dict) -> str:
     return line
 
 
-def _artifact_format_concept_for_plan(concept: dict, reconciliation: dict) -> str:
+def _wiki_format_concept_for_plan(concept: dict, reconciliation: dict) -> str:
     rec = reconciliation.get(concept.get("term", ""), {})
     action = rec.get("action", "CREATE")
     slug = rec.get("page_slug", "")
@@ -1677,7 +1663,7 @@ def _artifact_format_concept_for_plan(concept: dict, reconciliation: dict) -> st
     )
 
 
-async def _artifact_reconcile_with_kb(
+async def _wiki_reconcile_with_kb(
     canonical_entities: list[dict],
     canonical_concepts: list[dict],
     embd_mdl,
@@ -1724,7 +1710,7 @@ async def _artifact_reconcile_with_kb(
         embeddings, _ = await thread_pool_exec(embd_mdl.encode, query_texts)
         vectors = list(embeddings)
     except Exception:
-        logging.exception("artifact_plan: reconciliation embedding failed — all items will be CREATE")
+        logging.exception("wiki_plan: reconciliation embedding failed — all items will be CREATE")
         for _, key, _ in items:
             reconciliation[key] = {
                 "action": "CREATE", "page_slug": None,
@@ -1734,7 +1720,7 @@ async def _artifact_reconcile_with_kb(
 
     if len(vectors) != len(items):
         logging.error(
-            "artifact_plan: reconciliation embedding count mismatch (%d vs %d); CREATE all",
+            "wiki_plan: reconciliation embedding count mismatch (%d vs %d); CREATE all",
             len(vectors), len(items),
         )
         for _, key, _ in items:
@@ -1745,7 +1731,7 @@ async def _artifact_reconcile_with_kb(
         return reconciliation
 
     index = _rag_search.index_name(tenant_id)
-    condition = {"compile_kwd": [ARTIFACT_PAGE_COMPILE_KWD]}
+    condition = {"compile_kwd": [WIKI_PAGE_COMPILE_KWD]}
 
     select_fields = ["id", "slug_kwd", "title_kwd", "page_type_kwd", "_score"]
     for (_kind, key, _src), vec in zip(items, vectors):
@@ -1772,7 +1758,7 @@ async def _artifact_reconcile_with_kb(
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
-            logging.exception("artifact_plan: KNN failed for %r", key)
+            logging.exception("wiki_plan: KNN failed for %r", key)
             reconciliation[key] = {
                 "action": "CREATE", "page_slug": None,
                 "page_title": None, "page_id": None, "similarity": 0.0,
@@ -1813,7 +1799,7 @@ async def _artifact_reconcile_with_kb(
     return reconciliation
 
 
-async def _artifact_resolve_maybe_items(
+async def _wiki_resolve_maybe_items(
     reconciliation: dict[str, dict],
     chat_mdl,
     batch_size: int,
@@ -1832,13 +1818,13 @@ async def _artifact_resolve_maybe_items(
             slug = rec.get("page_slug") or ""
             sim = rec.get("similarity", 0.0)
             lines.append(
-                f"{k + 1}. Entity: \"{name}\" — existing artifact page: \"{title}\" "
+                f"{k + 1}. Entity: \"{name}\" — existing wiki page: \"{title}\" "
                 f"(slug: {slug}, similarity: {sim:.2f})"
             )
 
         user_prompt = (
             "For each pair below, decide whether the entity refers to the same "
-            "real-world concept as the existing artifact page (true = UPDATE existing "
+            "real-world concept as the existing wiki page (true = UPDATE existing "
             "page, false = CREATE new page).\n"
             f"Return a JSON array of exactly {len(batch)} booleans. "
             "Return ONLY the JSON array.\n\n" + "\n".join(lines)
@@ -1846,17 +1832,17 @@ async def _artifact_resolve_maybe_items(
 
         try:
             res = await asyncio.wait_for(
-                gen_json(ARTIFACT_PLAN_RECONCILE_SYSTEM, user_prompt, chat_mdl,
+                gen_json(WIKI_PLAN_RECONCILE_SYSTEM, user_prompt, chat_mdl,
                          gen_conf={"temperature": 0.0}),
                 timeout=timeout,
             )
         except asyncio.TimeoutError:
-            logging.warning("artifact_plan: MAYBE resolution timed out (%d pairs); defaulting CREATE", len(batch))
+            logging.warning("wiki_plan: MAYBE resolution timed out (%d pairs); defaulting CREATE", len(batch))
             for name, _ in batch:
                 reconciliation[name]["action"] = "CREATE"
             continue
         except Exception:
-            logging.exception("artifact_plan: MAYBE resolution failed (%d pairs); defaulting CREATE", len(batch))
+            logging.exception("wiki_plan: MAYBE resolution failed (%d pairs); defaulting CREATE", len(batch))
             for name, _ in batch:
                 reconciliation[name]["action"] = "CREATE"
             continue
@@ -1871,7 +1857,7 @@ async def _artifact_resolve_maybe_items(
                     break
 
         if not isinstance(decisions, list):
-            logging.warning("artifact_plan: MAYBE LLM returned unexpected shape %r; CREATE all", type(res))
+            logging.warning("wiki_plan: MAYBE LLM returned unexpected shape %r; CREATE all", type(res))
             for name, _ in batch:
                 reconciliation[name]["action"] = "CREATE"
             continue
@@ -1881,7 +1867,7 @@ async def _artifact_resolve_maybe_items(
             reconciliation[name]["action"] = "UPDATE" if verdict else "CREATE"
 
 
-async def _artifact_planning_call(
+async def _wiki_planning_call(
     canonical_entities: list[dict],
     canonical_concepts: list[dict],
     reconciliation: dict[str, dict],
@@ -1902,10 +1888,10 @@ async def _artifact_planning_call(
     )
 
     entities_summary = "\n".join(
-        _artifact_format_entity_for_plan(e, reconciliation) for e in sorted_entities[:200]
+        _wiki_format_entity_for_plan(e, reconciliation) for e in sorted_entities[:200]
     ) or "  (none)"
     concepts_summary = "\n".join(
-        _artifact_format_concept_for_plan(c, reconciliation) for c in sorted_concepts[:200]
+        _wiki_format_concept_for_plan(c, reconciliation) for c in sorted_concepts[:200]
     ) or "  (none)"
 
     kb_lines: list[str] = []
@@ -1917,7 +1903,7 @@ async def _artifact_planning_call(
             )
     kb_reconciliation = "\n".join(kb_lines) if kb_lines else "  (all items are new)"
 
-    user_prompt = ARTIFACT_PLAN_USER_TEMPLATE.format(
+    user_prompt = WIKI_PLAN_USER_TEMPLATE.format(
         kb_name=kb_name or "(unspecified)",
         kb_description=kb_description or "(no description)",
         entities_summary=entities_summary,
@@ -1928,15 +1914,15 @@ async def _artifact_planning_call(
 
     try:
         res = await asyncio.wait_for(
-            gen_json(ARTIFACT_PLAN_PLANNING_SYSTEM, user_prompt, chat_mdl,
+            gen_json(WIKI_PLAN_PLANNING_SYSTEM, user_prompt, chat_mdl,
                      gen_conf={"temperature": 0.1}),
             timeout=timeout,
         )
     except asyncio.TimeoutError:
-        logging.warning("artifact_plan: planning LLM call timed out after %ds", timeout)
+        logging.warning("wiki_plan: planning LLM call timed out after %ds", timeout)
         return {"pages": [], "estimated_page_count": 0, "compilation_notes": "planning timeout"}
     except Exception:
-        logging.exception("artifact_plan: planning LLM call failed")
+        logging.exception("wiki_plan: planning LLM call failed")
         return {"pages": [], "estimated_page_count": 0, "compilation_notes": "planning failed"}
 
     if not isinstance(res, dict):
@@ -1952,14 +1938,14 @@ async def _artifact_planning_call(
 # --- ES I/O ---------------------------------------------------------------
 
 
-async def _artifact_load_reduce_result(tenant_id: str, kb_id: str) -> Optional[dict]:
+async def _wiki_load_reduce_result(tenant_id: str, kb_id: str) -> Optional[dict]:
     """Load the cached REDUCE output for this KB."""
     from common import settings
     from common.doc_store.doc_store_base import OrderByExpr
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
-    condition = {"compile_kwd": [ARTIFACT_REDUCE_COMPILE_KWD]}
+    condition = {"compile_kwd": [WIKI_REDUCE_COMPILE_KWD]}
     select_fields = ["id", "content_with_weight"]
     try:
         res = await thread_pool_exec(
@@ -1969,7 +1955,7 @@ async def _artifact_load_reduce_result(tenant_id: str, kb_id: str) -> Optional[d
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
-        logging.exception("artifact_plan: failed to load artifact_reduce_result")
+        logging.exception("wiki_plan: failed to load wiki_reduce_result")
         return None
     if not field_map:
         return None
@@ -1980,24 +1966,24 @@ async def _artifact_load_reduce_result(tenant_id: str, kb_id: str) -> Optional[d
     try:
         cached = json.loads(content)
     except Exception:
-        logging.debug("artifact_plan: artifact_reduce_result unparseable; ignoring")
+        logging.debug("wiki_plan: wiki_reduce_result unparseable; ignoring")
         return None
     return cached if isinstance(cached, dict) else None
 
 
-async def _artifact_load_reduce_input_hash(tenant_id: str, kb_id: str) -> str:
+async def _wiki_load_reduce_input_hash(tenant_id: str, kb_id: str) -> str:
     """Read just the ``input_hash_kwd`` off the REDUCE row (without
     deserializing the body). Used by PLAN's incremental gate so we can
     short-circuit without re-running the planner.
     """
-    pair = await _artifact_load_reduce_resume(tenant_id, kb_id)
+    pair = await _wiki_load_reduce_resume(tenant_id, kb_id)
     if pair is None:
         return ""
     _cached, stored_hash = pair
     return stored_hash
 
 
-async def _artifact_load_plan_resume(
+async def _wiki_load_plan_resume(
     tenant_id: str, kb_id: str,
 ) -> Optional[tuple[dict, str]]:
     """Return ``(cached_plan, stored_input_hash)`` or None.
@@ -2011,7 +1997,7 @@ async def _artifact_load_plan_resume(
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
-    condition = {"compile_kwd": [ARTIFACT_PLAN_COMPILE_KWD]}
+    condition = {"compile_kwd": [WIKI_PLAN_COMPILE_KWD]}
     select_fields = ["id", "content_with_weight", "input_hash_kwd"]
     try:
         res = await thread_pool_exec(
@@ -2021,7 +2007,7 @@ async def _artifact_load_plan_resume(
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
-        logging.exception("artifact_plan: failed to load cached plan")
+        logging.exception("wiki_plan: failed to load cached plan")
         return None
     if not field_map:
         return None
@@ -2032,7 +2018,7 @@ async def _artifact_load_plan_resume(
     try:
         cached = json.loads(content)
     except Exception:
-        logging.debug("artifact_plan: cached plan unparseable; ignoring")
+        logging.debug("wiki_plan: cached plan unparseable; ignoring")
         return None
     if not isinstance(cached, dict):
         return None
@@ -2042,7 +2028,7 @@ async def _artifact_load_plan_resume(
     return cached, stored_hash
 
 
-async def _artifact_persist_plan(
+async def _wiki_persist_plan(
     plan: dict, tenant_id: str, kb_id: str, input_hash: str = "",
 ) -> None:
     """Upsert the single non-searchable artifact_compilation_plan row for this KB.
@@ -2056,11 +2042,11 @@ async def _artifact_persist_plan(
     index = _rag_search.index_name(tenant_id)
     kb_id_str = str(kb_id)
     content_with_weight = json.dumps(plan, ensure_ascii=False)
-    row_id = _stable_row_id(ARTIFACT_PLAN_COMPILE_KWD, kb_id_str)
+    row_id = _stable_row_id(WIKI_PLAN_COMPILE_KWD, kb_id_str)
     doc = {
         "id": row_id,
         "doc_id": kb_id_str,          # sentinel — KB-scoped row, not a real document
-        "compile_kwd": ARTIFACT_PLAN_COMPILE_KWD,
+        "compile_kwd": WIKI_PLAN_COMPILE_KWD,
         "source_id": [kb_id_str],
         "input_hash_kwd": input_hash,
         "content_with_weight": content_with_weight,
@@ -2070,30 +2056,30 @@ async def _artifact_persist_plan(
         try:
             await thread_pool_exec(
                 settings.docStoreConn.delete,
-                {"compile_kwd": ARTIFACT_PLAN_COMPILE_KWD},
+                {"compile_kwd": WIKI_PLAN_COMPILE_KWD},
                 index, kb_id,
             )
         except Exception:
-            logging.debug("artifact_plan: prior plan delete failed; relying on id-based upsert")
+            logging.debug("wiki_plan: prior plan delete failed; relying on id-based upsert")
         await thread_pool_exec(settings.docStoreConn.insert, [doc], index, kb_id)
     except Exception:
-        logging.exception("artifact_plan: failed to persist plan row")
+        logging.exception("wiki_plan: failed to persist plan row")
 
 
 # --- public entry ---------------------------------------------------------
 
 
-async def artifact_plan_from_reduction(
+async def wiki_plan_from_reduction(
     chat_mdl,
     embd_mdl,
     tenant_id: str,
     kb_id: str,
     kb_name: Optional[str] = None,
     kb_description: Optional[str] = None,
-    update_threshold: float = DEFAULT_ARTIFACT_PLAN_UPDATE_THRESHOLD,
-    maybe_threshold: float = DEFAULT_ARTIFACT_PLAN_MAYBE_THRESHOLD,
-    reconcile_batch_size: int = DEFAULT_ARTIFACT_PLAN_RECONCILE_BATCH,
-    timeout: int = DEFAULT_ARTIFACT_PLAN_TIMEOUT,
+    update_threshold: float = DEFAULT_WIKI_PLAN_UPDATE_THRESHOLD,
+    maybe_threshold: float = DEFAULT_WIKI_PLAN_MAYBE_THRESHOLD,
+    reconcile_batch_size: int = DEFAULT_WIKI_PLAN_RECONCILE_BATCH,
+    timeout: int = DEFAULT_WIKI_PLAN_TIMEOUT,
     force_rerun: bool = False,
     callback: Optional[Callable] = None,
 ) -> dict:
@@ -2137,28 +2123,28 @@ async def artifact_plan_from_reduction(
     # Incremental gate: PLAN keys off REDUCE's input_hash. If the cached
     # plan was stamped with the same hash REDUCE is currently exposing,
     # nothing upstream has changed and the plan is still valid.
-    current_reduce_hash = await _artifact_load_reduce_input_hash(tenant_id, kb_id)
+    current_reduce_hash = await _wiki_load_reduce_input_hash(tenant_id, kb_id)
     if not force_rerun:
-        cached_pair = await _artifact_load_plan_resume(tenant_id, kb_id)
+        cached_pair = await _wiki_load_plan_resume(tenant_id, kb_id)
         if cached_pair is not None:
             cached, stored_hash = cached_pair
             if stored_hash and stored_hash == current_reduce_hash:
                 if callback:
                     try:
-                        callback(1.0, "artifact PLAN: cache hit (REDUCE unchanged)")
+                        callback(1.0, "wiki PLAN: cache hit (REDUCE unchanged)")
                     except Exception:
                         pass
                 return cached
 
     if callback:
         try:
-            callback(0.05, "artifact PLAN: loading REDUCE result")
+            callback(0.05, "wiki PLAN: loading REDUCE result")
         except Exception:
             pass
 
-    reduced = await _artifact_load_reduce_result(tenant_id, kb_id)
+    reduced = await _wiki_load_reduce_result(tenant_id, kb_id)
     if reduced is None:
-        logging.warning("artifact_plan: no artifact_reduce_result found for kb=%s — returning empty plan", kb_id)
+        logging.warning("wiki_plan: no wiki_reduce_result found for kb=%s — returning empty plan", kb_id)
         empty = {
             "pages": [], "estimated_page_count": 0,
             "compilation_notes": "no REDUCE result available",
@@ -2166,7 +2152,7 @@ async def artifact_plan_from_reduction(
             "_entities": [], "_concepts": [], "_claims": [], "_relations": [], "_topics": [],
             "_reconciliation": {},
         }
-        await _artifact_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash)
+        await _wiki_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash)
         return empty
 
     canonical_entities = reduced.get("entities") or []
@@ -2177,7 +2163,7 @@ async def artifact_plan_from_reduction(
 
     total_items = len(canonical_entities) + len(canonical_concepts)
     logging.info(
-        "artifact_plan: kb=%s reducing-input entities=%d concepts=%d (total=%d)",
+        "wiki_plan: kb=%s reducing-input entities=%d concepts=%d (total=%d)",
         kb_id, len(canonical_entities), len(canonical_concepts), total_items,
     )
 
@@ -2190,16 +2176,16 @@ async def artifact_plan_from_reduction(
             "_claims": raw_claims, "_relations": raw_relations, "_topics": raw_topics,
             "_reconciliation": {},
         }
-        await _artifact_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash)
+        await _wiki_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash)
         return empty
 
     if callback:
         try:
-            callback(0.25, "artifact PLAN: KB reconciliation")
+            callback(0.25, "wiki PLAN: KB reconciliation")
         except Exception:
             pass
 
-    reconciliation = await _artifact_reconcile_with_kb(
+    reconciliation = await _wiki_reconcile_with_kb(
         canonical_entities=canonical_entities,
         canonical_concepts=canonical_concepts,
         embd_mdl=embd_mdl,
@@ -2212,11 +2198,11 @@ async def artifact_plan_from_reduction(
     if callback:
         n_maybe = sum(1 for v in reconciliation.values() if v.get("action") == "MAYBE")
         try:
-            callback(0.55, f"artifact PLAN: resolving {n_maybe} MAYBE items")
+            callback(0.55, f"wiki PLAN: resolving {n_maybe} MAYBE items")
         except Exception:
             pass
 
-    await _artifact_resolve_maybe_items(
+    await _wiki_resolve_maybe_items(
         reconciliation, chat_mdl,
         batch_size=reconcile_batch_size,
         timeout=timeout,
@@ -2224,12 +2210,12 @@ async def artifact_plan_from_reduction(
 
     if callback:
         try:
-            callback(0.75, "artifact PLAN: planning LLM call")
+            callback(0.75, "wiki PLAN: planning LLM call")
         except Exception:
             pass
 
-    target = _artifact_target_page_count(total_items)
-    plan = await _artifact_planning_call(
+    target = _wiki_target_page_count(total_items)
+    plan = await _wiki_planning_call(
         canonical_entities=canonical_entities,
         canonical_concepts=canonical_concepts,
         reconciliation=reconciliation,
@@ -2250,13 +2236,13 @@ async def artifact_plan_from_reduction(
 
     if callback:
         try:
-            callback(0.9, "artifact PLAN: persisting plan")
+            callback(0.9, "wiki PLAN: persisting plan")
         except Exception:
             pass
-    await _artifact_persist_plan(plan, tenant_id, kb_id, input_hash=current_reduce_hash)
+    await _wiki_persist_plan(plan, tenant_id, kb_id, input_hash=current_reduce_hash)
 
     logging.info(
-        "artifact_plan: kb=%s done — pages=%d (target=%d) updates=%d creates=%d",
+        "wiki_plan: kb=%s done — pages=%d (target=%d) updates=%d creates=%d",
         kb_id,
         len(plan.get("pages") or []),
         target,
@@ -2266,7 +2252,7 @@ async def artifact_plan_from_reduction(
 
     if callback:
         try:
-            callback(1.0, "artifact PLAN: done")
+            callback(1.0, "wiki PLAN: done")
         except Exception:
             pass
 
@@ -2294,21 +2280,21 @@ async def artifact_plan_from_reduction(
 # evidence chunks fetched from ES by id. Image-marker handling and the
 # complex tool-using writer are deliberately deferred.
 
-ARTIFACT_DRAFT_COMPILE_KWD = "artifact_page_draft"
-DEFAULT_ARTIFACT_REFINE_WORKERS = 4
-DEFAULT_ARTIFACT_REFINE_TIMEOUT = 300
-ARTIFACT_REFINE_SOURCE_BUDGET_CHARS = 60_000
-ARTIFACT_MERGE_BODY_SHRINK_THRESHOLD = 0.7
-ARTIFACT_MERGE_TIMEOUT = 600
+WIKI_DRAFT_COMPILE_KWD = "artifact_page_draft"
+DEFAULT_WIKI_REFINE_WORKERS = 4
+DEFAULT_WIKI_REFINE_TIMEOUT = 300
+WIKI_REFINE_SOURCE_BUDGET_CHARS = 60_000
+WIKI_MERGE_BODY_SHRINK_THRESHOLD = 0.7
+WIKI_MERGE_TIMEOUT = 600
 
 
-ARTIFACT_TEMPLATE_EXAMPLE = (
+WIKI_TEMPLATE_EXAMPLE = (
     "Each page must be a proper encyclopedic article, NOT a flat bullet list:\n"
     "1. Opening paragraph (2-4 sentences defining what this is). No heading.\n"
     "2. Sections with H2 headings, each starting with prose before sub-bullets.\n"
-    "3. Bold key terms on first use; link them with [[ ]] artifactlinks.\n"
+    "3. Bold key terms on first use; link them with [[ ]] wikilinks.\n"
     "4. Examples or implications where the source provides them.\n"
-    "5. ## See also section at the end with artifactlinks to highly related pages(less than 12).\n\n"
+    "5. ## See also section at the end with wikilinks to highly related pages(less than 12).\n\n"
     "Page structure could be as following:\n(Not provided)"
 )
 
@@ -2316,18 +2302,18 @@ ARTIFACT_TEMPLATE_EXAMPLE = (
 # placeholder is filled in at request time so each artifact compilation
 # template can override the page-structure section without touching the
 # rest of the writer's guidance. Use ``_build_refine_writer_system`` to
-# materialize a concrete prompt; ``ARTIFACT_REFINE_WRITER_SYSTEM`` is
+# materialize a concrete prompt; ``WIKI_REFINE_WRITER_SYSTEM`` is
 # kept as the default-filled value for back-compat with any code that
 # still imports it.
-ARTIFACT_REFINE_WRITER_SYSTEM_TEMPLATE = (
-    "You are an enterprise knowledge artifact writer. Your job is to write a single, "
-    "high-quality artifact page by reading the SOURCE TEXT provided and using the "
+WIKI_REFINE_WRITER_SYSTEM_TEMPLATE = (
+    "You are an enterprise knowledge compilation writer. Your job is to write a single, "
+    "high-quality wiki page by reading the SOURCE TEXT provided and using the "
     "evidence checklist as guidance for what to cover.\n\n"
     "# Mindset: COMPILE, do NOT summarize\n"
     "You are not writing an executive summary. You are extracting structured "
-    "knowledge and rewriting it into a reusable artifact page. The output should "
+    "knowledge and rewriting it into a reusable wiki page. The output should "
     "contain MORE information density than a summary — organized differently, "
-    "but not condensed. A summary loses specifics. A artifact page preserves them "
+    "but not condensed. A summary loses specifics. A wiki page preserves them "
     "in a queryable structure.\n\n"
     "# What to KEEP from the source (do not lose these)\n"
     "- Specific numbers: thresholds, dosages, timeframes, dimensions, percentages.\n"
@@ -2353,7 +2339,7 @@ ARTIFACT_REFINE_WRITER_SYSTEM_TEMPLATE = (
     "- Do NOT include Citations / Footnotes sections.\n"
     "- Do NOT use [^N] footnote markers.\n"
     "- Do NOT translate the content language.\n\n"
-    "# Artifactlinks\n"
+    "# Wikilinks\n"
     "- Use [[slug]] or [[slug|display text]] to cross-link.\n"
     "- CRITICAL: You may ONLY link to slugs from the 'Available pages' list.\n"
     "  Do NOT invent or hallucinate slugs.\n\n"
@@ -2365,31 +2351,31 @@ ARTIFACT_REFINE_WRITER_SYSTEM_TEMPLATE = (
 
 def _build_refine_writer_system(example: str | None) -> str:
     """Return the writer system prompt with the configured page-structure
-    example (or ``ARTIFACT_TEMPLATE_EXAMPLE`` when ``example`` is empty /
+    example (or ``WIKI_TEMPLATE_EXAMPLE`` when ``example`` is empty /
     whitespace-only). Used by the REFINE phase to let each compilation
     template override just the page-structure section.
 
     The default-filled form is also exposed as
-    ``ARTIFACT_REFINE_WRITER_SYSTEM`` for callers that don't have an
+    ``WIKI_REFINE_WRITER_SYSTEM`` for callers that don't have an
     override to apply.
     """
-    body = (example or "").strip() or ARTIFACT_TEMPLATE_EXAMPLE
-    return ARTIFACT_REFINE_WRITER_SYSTEM_TEMPLATE.format(template_example=body)
+    body = (example or "").strip() or WIKI_TEMPLATE_EXAMPLE
+    return WIKI_REFINE_WRITER_SYSTEM_TEMPLATE.format(template_example=body)
 
 
-ARTIFACT_REFINE_WRITER_SYSTEM = _build_refine_writer_system(None)
+WIKI_REFINE_WRITER_SYSTEM = _build_refine_writer_system(None)
 
 
-ARTIFACT_REFINE_WRITER_USER_TEMPLATE = """\
+WIKI_REFINE_WRITER_USER_TEMPLATE = """\
 ## Task
-{action} the following artifact page.
+{action} the following wiki page.
 
 ## Page specification
 - Slug: {slug}
 - Title: {title}
 - Type: {page_type}
 
-## Available pages (ONLY use these slugs for [[artifactlinks]])
+## Available pages (ONLY use these slugs for [[wikilinks]])
 {all_plan_slugs}
 
 {existing_section}
@@ -2407,7 +2393,7 @@ But also look for additional relevant information in the source text above.
 {evidence_blocks}
 
 ## Instructions
-Write the complete artifact page in markdown based on the source text above.
+Write the complete wiki page in markdown based on the source text above.
 Cross-link to other pages using [[slug]] or [[slug|display text]] — ONLY
 use slugs from the "Available pages" list. Do NOT invent new slugs.
 Do NOT include Citations or Footnotes sections.
@@ -2417,8 +2403,8 @@ Return ONLY the markdown content, no other text.
 """
 
 
-ARTIFACT_REFINE_MERGE_SYSTEM = (
-    "You are a artifact page merger. You receive two versions of the same artifact page:\n"
+WIKI_REFINE_MERGE_SYSTEM = (
+    "You are a wiki page merger. You receive two versions of the same wiki page:\n"
     "- EXISTING: the current version in the knowledge base.\n"
     "- INCOMING: a new version generated from a different source document.\n\n"
     "Your job is to produce a SINGLE unified page that preserves ALL factual "
@@ -2426,7 +2412,7 @@ ARTIFACT_REFINE_MERGE_SYSTEM = (
     "1. KEEP all facts, numbers, procedures, names from both versions.\n"
     "2. REMOVE exact duplicates — if both versions state the same fact, keep it once.\n"
     "3. ORGANIZE coherently — clear H2 sections, opening paragraph, ## See also.\n"
-    "4. PRESERVE [[artifactlinks]] from both versions.\n"
+    "4. PRESERVE [[wikilinks]] from both versions.\n"
     "5. Write in the SAME LANGUAGE as the existing content.\n"
     "6. Do NOT summarize or condense — the merged page should be AT LEAST as long "
     "as the longer of the two inputs.\n"
@@ -2441,14 +2427,14 @@ ARTIFACT_REFINE_MERGE_SYSTEM = (
 _REFINE_THINK_PREFIX_RE = re.compile(r"^.*</think>", re.DOTALL)
 
 
-def _artifact_strip_think(raw: str) -> str:
+def _wiki_strip_think(raw: str) -> str:
     """Strip a leading ``...</think>`` block that some LLMs emit."""
     if not isinstance(raw, str):
         return ""
     return _REFINE_THINK_PREFIX_RE.sub("", raw).strip()
 
 
-def _artifact_assemble_evidence(
+def _wiki_assemble_evidence(
     plan_item: dict,
     claims: list[dict],
     entity_by_name: dict[str, dict] | None = None,
@@ -2527,7 +2513,7 @@ def _artifact_assemble_evidence(
 
     # Marker ``_synthetic`` keeps this item out of the writer prompt — it
     # exists only to carry chunk_ids forward for provenance and source-context
-    # fetching. _artifact_format_evidence_blocks filters it out.
+    # fetching. _wiki_format_evidence_blocks filters it out.
     return [{
         "statement": "",
         "subject": matched_names[0] if matched_names else raw_names[0],
@@ -2537,7 +2523,7 @@ def _artifact_assemble_evidence(
     }]
 
 
-def _artifact_format_evidence_blocks(evidence: list[dict]) -> str:
+def _wiki_format_evidence_blocks(evidence: list[dict]) -> str:
     # Filter out synthetic stubs (entity-fallback chunk-id carriers) — they
     # don't represent real claims and shouldn't appear in the writer's
     # evidence checklist.
@@ -2554,7 +2540,7 @@ def _artifact_format_evidence_blocks(evidence: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
-def _artifact_collect_evidence_chunk_ids(evidence: list[dict]) -> list[str]:
+def _wiki_collect_evidence_chunk_ids(evidence: list[dict]) -> list[str]:
     seen: list[str] = []
     for ev in evidence:
         for cid in ev.get("chunk_ids") or []:
@@ -2563,7 +2549,7 @@ def _artifact_collect_evidence_chunk_ids(evidence: list[dict]) -> list[str]:
     return seen
 
 
-async def _artifact_load_chunks_by_id(
+async def _wiki_load_chunks_by_id(
     chunk_ids: list[str], tenant_id: str, kb_id: str,
 ) -> dict[str, str]:
     """Fetch chunks from ES by id. Returns ``{chunk_id: content_with_weight}``.
@@ -2603,7 +2589,7 @@ async def _artifact_load_chunks_by_id(
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
-            logging.exception("artifact_refine: batch chunk fetch failed (%d ids)", len(batch_ids))
+            logging.exception("wiki_refine: batch chunk fetch failed (%d ids)", len(batch_ids))
             field_map = {}
         for cid, row in field_map.items():
             content = row.get("content_with_weight")
@@ -2615,7 +2601,7 @@ async def _artifact_load_chunks_by_id(
     missing = [cid for cid in unique_ids if cid not in out]
     if missing:
         logging.warning(
-            "artifact_refine: batch chunk fetch missed %d/%d id(s) in kb=%s; "
+            "wiki_refine: batch chunk fetch missed %d/%d id(s) in kb=%s; "
             "falling back to per-id get() (first missing: %s)",
             len(missing), len(unique_ids), kb_id, missing[0],
         )
@@ -2624,7 +2610,7 @@ async def _artifact_load_chunks_by_id(
             try:
                 return cid, settings.docStoreConn.get(cid, index, [kb_id])
             except Exception:
-                logging.exception("artifact_refine: per-id get failed for %s", cid)
+                logging.exception("wiki_refine: per-id get failed for %s", cid)
                 return cid, None
 
         # Run the per-id gets concurrently to keep latency reasonable.
@@ -2643,14 +2629,14 @@ async def _artifact_load_chunks_by_id(
 
         if recovered:
             logging.info(
-                "artifact_refine: per-id fallback recovered %d/%d missing chunk(s)",
+                "wiki_refine: per-id fallback recovered %d/%d missing chunk(s)",
                 recovered, len(missing),
             )
 
     final_missing = [cid for cid in unique_ids if cid not in out]
     if final_missing:
         logging.warning(
-            "artifact_refine: %d chunk(s) still unresolved after fallback in kb=%s "
+            "wiki_refine: %d chunk(s) still unresolved after fallback in kb=%s "
             "(first: %s) — check that the chunk_ids exist in the doc-store and "
             "that the row's kb_id matches the request.",
             len(final_missing), kb_id, final_missing[0],
@@ -2659,11 +2645,11 @@ async def _artifact_load_chunks_by_id(
     return out
 
 
-async def _artifact_build_source_context(
+async def _wiki_build_source_context(
     evidence: list[dict],
     tenant_id: str,
     kb_id: str,
-    budget: int = ARTIFACT_REFINE_SOURCE_BUDGET_CHARS,
+    budget: int = WIKI_REFINE_SOURCE_BUDGET_CHARS,
 ) -> str:
     """Concatenate evidence chunks into a labelled source-context block.
 
@@ -2671,11 +2657,11 @@ async def _artifact_build_source_context(
     appearance in the evidence list); if total exceeds budget the tail is
     truncated with a marker.
     """
-    chunk_ids = _artifact_collect_evidence_chunk_ids(evidence)
+    chunk_ids = _wiki_collect_evidence_chunk_ids(evidence)
     if not chunk_ids:
         return "(no source chunks available)"
 
-    chunk_map = await _artifact_load_chunks_by_id(chunk_ids, tenant_id, kb_id)
+    chunk_map = await _wiki_load_chunks_by_id(chunk_ids, tenant_id, kb_id)
     if not chunk_map:
         print("chunk_map::::::::::::::", chunk_ids, tenant_id, kb_id, flush=True)
         return "(source chunks could not be loaded)"
@@ -2706,12 +2692,12 @@ async def _artifact_build_source_context(
 
 # --- artifactlink rewriting and doc-id collection ------------------------------
 
-_ARTIFACTLINK_PIPE_RE = re.compile(r"\[\[([^\[\]\|]+?)\|([^\[\]]+?)\]\]")
-_ARTIFACTLINK_SIMPLE_RE = re.compile(r"\[\[([^\[\]\|]+?)\]\]")
+_WIKILINK_PIPE_RE = re.compile(r"\[\[([^\[\]\|]+?)\|([^\[\]]+?)\]\]")
+_WIKILINK_SIMPLE_RE = re.compile(r"\[\[([^\[\]\|]+?)\]\]")
 
 
-def _artifact_transform_links(content_md: str, kb_id: str) -> tuple[str, list[str]]:
-    """Rewrite ``[[slug]]`` / ``[[slug|display]]`` artifactlinks to standard
+def _wiki_transform_links(content_md: str, kb_id: str) -> tuple[str, list[str]]:
+    """Rewrite ``[[slug]]`` / ``[[slug|display]]`` wikilinks to standard
     markdown links whose href encodes ``(kb_id, slug)`` so a renderer can
     fetch the target page from ES.
 
@@ -2741,12 +2727,12 @@ def _artifact_transform_links(content_md: str, kb_id: str) -> tuple[str, list[st
         _track(slug)
         return f"[{slug}](artifact/{kb_id_str}/{slug})"
 
-    rewritten = _ARTIFACTLINK_PIPE_RE.sub(_piped, content_md or "")
-    rewritten = _ARTIFACTLINK_SIMPLE_RE.sub(_simple, rewritten)
+    rewritten = _WIKILINK_PIPE_RE.sub(_piped, content_md or "")
+    rewritten = _WIKILINK_SIMPLE_RE.sub(_simple, rewritten)
     return rewritten, outlinks
 
 
-async def _artifact_collect_doc_ids(
+async def _wiki_collect_doc_ids(
     chunk_ids: list[str], tenant_id: str, kb_id: str,
 ) -> list[str]:
     """Look up ``doc_id`` for each chunk by id. Returns the unique list in
@@ -2792,7 +2778,7 @@ async def _artifact_collect_doc_ids(
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
-            logging.exception("artifact_refine: failed to fetch doc_ids for %d chunks", len(batch_ids))
+            logging.exception("wiki_refine: failed to fetch doc_ids for %d chunks", len(batch_ids))
             continue
         total_rows_seen += len(field_map)
         for row in field_map.values():
@@ -2800,17 +2786,17 @@ async def _artifact_collect_doc_ids(
 
     if chunk_ids and not out:
         logging.warning(
-            "artifact_refine: doc_id resolution returned 0 for %d chunk(s) (rows_found=%d, kb=%s); "
+            "wiki_refine: doc_id resolution returned 0 for %d chunk(s) (rows_found=%d, kb=%s); "
             "first chunk_id=%s",
             len(chunk_ids), total_rows_seen, kb_id, chunk_ids[0],
         )
     return out
 
 
-async def _artifact_get_existing_page(
+async def _wiki_get_existing_page(
     slug: str, tenant_id: str, kb_id: str,
 ) -> Optional[dict]:
-    """Fetch a artifact_page row by slug from this KB. Returns ``{id, content_md,
+    """Fetch a wiki_page row by slug from this KB. Returns ``{id, content_md,
     content_md_raw, title, page_type}`` or None. ``content_md_raw`` is the
     pre-link-transform markdown — what the merger should consume."""
     from common import settings
@@ -2819,7 +2805,7 @@ async def _artifact_get_existing_page(
 
     index = _rag_search.index_name(tenant_id)
     condition = {
-        "compile_kwd": [ARTIFACT_PAGE_COMPILE_KWD],
+        "compile_kwd": [WIKI_PAGE_COMPILE_KWD],
         "slug_kwd": [slug],
     }
     select_fields = [
@@ -2834,7 +2820,7 @@ async def _artifact_get_existing_page(
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
-        logging.exception("artifact_refine: failed to fetch existing page for slug=%s", slug)
+        logging.exception("wiki_refine: failed to fetch existing page for slug=%s", slug)
         return None
     if not field_map:
         return None
@@ -2849,7 +2835,7 @@ async def _artifact_get_existing_page(
     }
 
 
-async def _artifact_chat_text(
+async def _wiki_chat_text(
     chat_mdl, system_prompt: str, user_prompt: str,
     temperature: float, timeout: int,
 ) -> str:
@@ -2862,24 +2848,24 @@ async def _artifact_chat_text(
     try:
         _, msg = message_fit_in(msg, chat_mdl.max_length)
     except Exception:
-        logging.exception("artifact_refine: message_fit_in failed; sending untrimmed")
+        logging.exception("wiki_refine: message_fit_in failed; sending untrimmed")
     try:
         raw = await asyncio.wait_for(
             chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": temperature}),
             timeout=timeout,
         )
     except asyncio.TimeoutError:
-        logging.warning("artifact_refine: chat call timed out after %ds", timeout)
+        logging.warning("wiki_refine: chat call timed out after %ds", timeout)
         return ""
     except Exception:
-        logging.exception("artifact_refine: chat call failed")
+        logging.exception("wiki_refine: chat call failed")
         return ""
     if isinstance(raw, tuple):
         raw = raw[0]
-    return _artifact_strip_think(raw or "")
+    return _wiki_strip_think(raw or "")
 
 
-async def _artifact_write_page_simple(
+async def _wiki_write_page_simple(
     plan_item: dict,
     evidence: list[dict],
     existing_md: Optional[str],
@@ -2893,7 +2879,7 @@ async def _artifact_write_page_simple(
 
     ``example`` is the per-template ``parser_config.example`` override
     for the writer's page-structure section. Falsy / whitespace-only
-    values fall through to ``ARTIFACT_TEMPLATE_EXAMPLE``.
+    values fall through to ``WIKI_TEMPLATE_EXAMPLE``.
     """
     own_slug = plan_item.get("slug") or ""
     available = [s for s in all_plan_slugs if s and s != own_slug]
@@ -2910,7 +2896,7 @@ async def _artifact_write_page_simple(
     else:
         existing_section = ""
 
-    user_prompt = ARTIFACT_REFINE_WRITER_USER_TEMPLATE.format(
+    user_prompt = WIKI_REFINE_WRITER_USER_TEMPLATE.format(
         action=plan_item.get("action", "CREATE"),
         slug=own_slug,
         title=plan_item.get("title", own_slug),
@@ -2919,19 +2905,19 @@ async def _artifact_write_page_simple(
         existing_section=existing_section,
         source_context=source_context,
         evidence_count=len(evidence),
-        evidence_blocks=_artifact_format_evidence_blocks(evidence),
+        evidence_blocks=_wiki_format_evidence_blocks(evidence),
     )
 
-    return await _artifact_chat_text(
+    return await _wiki_chat_text(
         chat_mdl, _build_refine_writer_system(example), user_prompt,
         temperature=0.15, timeout=timeout,
     )
 
 
-async def _artifact_merge_page_content(
+async def _wiki_merge_page_content(
     existing_md: str, new_md: str, slug: str, chat_mdl,
-    shrink_threshold: float = ARTIFACT_MERGE_BODY_SHRINK_THRESHOLD,
-    timeout: int = ARTIFACT_MERGE_TIMEOUT,
+    shrink_threshold: float = WIKI_MERGE_BODY_SHRINK_THRESHOLD,
+    timeout: int = WIKI_MERGE_TIMEOUT,
 ) -> str:
     """LLM-merge existing vs new. Falls back to ``new_md`` on shrink-check
     failure or LLM error."""
@@ -2943,15 +2929,15 @@ async def _artifact_merge_page_content(
         return existing_md
 
     user_prompt = (
-        f"Merge these two versions of artifact page `{slug}`:\n\n"
+        f"Merge these two versions of wiki page `{slug}`:\n\n"
         f"## EXISTING VERSION\n\n{existing_md}\n\n"
         "---\n\n"
         f"## INCOMING VERSION\n\n{new_md}\n\n"
         "---\n\n"
         "Produce the merged page now. Return ONLY the markdown content."
     )
-    merged = await _artifact_chat_text(
-        chat_mdl, ARTIFACT_REFINE_MERGE_SYSTEM, user_prompt,
+    merged = await _wiki_chat_text(
+        chat_mdl, WIKI_REFINE_MERGE_SYSTEM, user_prompt,
         temperature=0.1, timeout=timeout,
     )
     if not merged:
@@ -2961,7 +2947,7 @@ async def _artifact_merge_page_content(
     min_acceptable = int(max_input_len * shrink_threshold)
     if len(merged) < min_acceptable:
         logging.warning(
-            "artifact_refine: merge rejected for slug=%s (merged=%d chars < %d threshold; "
+            "wiki_refine: merge rejected for slug=%s (merged=%d chars < %d threshold; "
             "max input=%d). Falling back to new content.",
             slug, len(merged), min_acceptable, max_input_len,
         )
@@ -2969,7 +2955,7 @@ async def _artifact_merge_page_content(
     return merged
 
 
-def _artifact_extract_summary(content_md: str, max_chars: int = 300) -> str:
+def _wiki_extract_summary(content_md: str, max_chars: int = 300) -> str:
     """First non-heading paragraph of the markdown, capped at ``max_chars``."""
     if not isinstance(content_md, str) or not content_md.strip():
         return ""
@@ -2986,14 +2972,14 @@ def _artifact_extract_summary(content_md: str, max_chars: int = 300) -> str:
     return " ".join(buf)[:max_chars]
 
 
-def _artifact_draft_row_id(kb_id: str, slug: str) -> str:
-    return _stable_row_id(ARTIFACT_DRAFT_COMPILE_KWD, kb_id, slug)
+def _wiki_draft_row_id(kb_id: str, slug: str) -> str:
+    return _stable_row_id(WIKI_DRAFT_COMPILE_KWD, kb_id, slug)
 
 
-async def _artifact_persist_draft(
+async def _wiki_persist_draft(
     page: dict, tenant_id: str, kb_id: str, plan_input_hash: str = "",
 ) -> None:
-    """Upsert one non-searchable artifact_page_draft row (resume cache).
+    """Upsert one non-searchable wiki_page_draft row (resume cache).
 
     ``plan_input_hash`` is the PLAN's ``input_hash_kwd`` at the time this
     draft was produced. The next REFINE re-entry compares it against the
@@ -3009,9 +2995,9 @@ async def _artifact_persist_draft(
     index = _rag_search.index_name(tenant_id)
     content_with_weight = json.dumps(page, ensure_ascii=False)
     row = {
-        "id": _artifact_draft_row_id(kb_id, slug),
+        "id": _wiki_draft_row_id(kb_id, slug),
         "doc_id": str(kb_id),
-        "compile_kwd": ARTIFACT_DRAFT_COMPILE_KWD,
+        "compile_kwd": WIKI_DRAFT_COMPILE_KWD,
         "artifact_slug_kwd": slug,
         "source_id": [str(kb_id)],
         "input_hash_kwd": plan_input_hash,
@@ -3022,20 +3008,20 @@ async def _artifact_persist_draft(
         try:
             await thread_pool_exec(
                 settings.docStoreConn.delete,
-                {"compile_kwd": ARTIFACT_DRAFT_COMPILE_KWD, "artifact_slug_kwd": slug},
+                {"compile_kwd": WIKI_DRAFT_COMPILE_KWD, "artifact_slug_kwd": slug},
                 index, kb_id,
             )
         except Exception:
-            logging.debug("artifact_refine: prior draft delete failed; relying on id upsert")
+            logging.debug("wiki_refine: prior draft delete failed; relying on id upsert")
         await thread_pool_exec(settings.docStoreConn.insert, [row], index, kb_id)
     except Exception:
-        logging.exception("artifact_refine: failed to persist draft slug=%s", slug)
+        logging.exception("wiki_refine: failed to persist draft slug=%s", slug)
 
 
-async def _artifact_load_refine_resume(
+async def _wiki_load_refine_resume(
     tenant_id: str, kb_id: str,
 ) -> dict[str, tuple[dict, str]]:
-    """Load all cached artifact_page_draft rows for this KB.
+    """Load all cached wiki_page_draft rows for this KB.
 
     Returns ``{slug: (page, stored_plan_input_hash)}``. The hash lets
     REFINE invalidate drafts whose upstream plan has shifted on a
@@ -3047,7 +3033,7 @@ async def _artifact_load_refine_resume(
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
-    condition = {"compile_kwd": [ARTIFACT_DRAFT_COMPILE_KWD]}
+    condition = {"compile_kwd": [WIKI_DRAFT_COMPILE_KWD]}
     select_fields = ["id", "artifact_slug_kwd", "content_with_weight", "input_hash_kwd"]
 
     PAGE_SIZE = 500
@@ -3062,7 +3048,7 @@ async def _artifact_load_refine_resume(
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
-            logging.exception("artifact_refine: failed to page draft cache")
+            logging.exception("wiki_refine: failed to page draft cache")
             break
         if not field_map:
             break
@@ -3089,27 +3075,27 @@ async def _artifact_load_refine_resume(
 # --- public entry ---------------------------------------------------------
 
 
-async def artifact_refine_from_plan(
+async def wiki_refine_from_plan(
     chat_mdl,
     embd_mdl,
     tenant_id: str,
     kb_id: str,
-    max_workers: int = DEFAULT_ARTIFACT_REFINE_WORKERS,
-    timeout: int = DEFAULT_ARTIFACT_REFINE_TIMEOUT,
-    source_budget_chars: int = ARTIFACT_REFINE_SOURCE_BUDGET_CHARS,
-    merge_shrink_threshold: float = ARTIFACT_MERGE_BODY_SHRINK_THRESHOLD,
+    max_workers: int = DEFAULT_WIKI_REFINE_WORKERS,
+    timeout: int = DEFAULT_WIKI_REFINE_TIMEOUT,
+    source_budget_chars: int = WIKI_REFINE_SOURCE_BUDGET_CHARS,
+    merge_shrink_threshold: float = WIKI_MERGE_BODY_SHRINK_THRESHOLD,
     force_rerun: bool = False,
     callback: Optional[Callable] = None,
     example: Optional[str] = None,
 ) -> list[dict]:
     """Phase 4 (REFINE) — KB-scoped.
 
-    Reads the cached ``artifact_compilation_plan`` for this KB and writes one
-    artifact page per planned entry. Writers run in parallel under
+    Reads the cached ``wiki_compilation_plan`` for this KB and writes one
+    wiki page per planned entry. Writers run in parallel under
     ``asyncio.Semaphore(max_workers)``. UPDATE pages are LLM-merged against
     their existing content (sanity-checked at ``merge_shrink_threshold``).
-    Each finished page is persisted as a searchable ``artifact_page`` row in ES,
-    plus a non-searchable ``artifact_page_draft`` row for resume.
+    Each finished page is persisted as a searchable ``wiki_page`` row in ES,
+    plus a non-searchable ``wiki_page_draft`` row for resume.
 
     Args:
         chat_mdl, embd_mdl: ragflow LLMBundle instances.
@@ -3119,7 +3105,7 @@ async def artifact_refine_from_plan(
         source_budget_chars: max chars of source-chunk context per writer call.
         merge_shrink_threshold: a merged body shorter than this fraction of
             the longest input falls back to the new content.
-        force_rerun: ignore the artifact_page_draft cache and re-write everything.
+        force_rerun: ignore the wiki_page_draft cache and re-write everything.
         callback: optional ``(progress: float, msg: str)`` callback.
 
     Returns the list of page dicts (one per planned entry). Each page dict
@@ -3131,31 +3117,31 @@ async def artifact_refine_from_plan(
     # phases often hit a resume cache so this surfaces here for the first
     # time. ``_ensure_llm_bundle`` unwraps the tuple if possible, otherwise
     # logs and returns ``None`` so we bail cleanly.
-    embd_mdl = _ensure_llm_bundle(embd_mdl, "encode", label="artifact_refine: embd_mdl")
+    embd_mdl = _ensure_llm_bundle(embd_mdl, "encode", label="wiki_refine: embd_mdl")
     if embd_mdl is None:
         return []
-    chat_mdl = _ensure_llm_bundle(chat_mdl, "async_chat", label="artifact_refine: chat_mdl")
+    chat_mdl = _ensure_llm_bundle(chat_mdl, "async_chat", label="wiki_refine: chat_mdl")
     if chat_mdl is None:
         return []
 
     if callback:
         try:
-            callback(0.02, "artifact REFINE: loading plan")
+            callback(0.02, "wiki REFINE: loading plan")
         except Exception:
             pass
 
-    plan_pair = await _artifact_load_plan_resume(tenant_id, kb_id)
+    plan_pair = await _wiki_load_plan_resume(tenant_id, kb_id)
     if plan_pair is None:
-        logging.warning("artifact_refine: no artifact_compilation_plan found for kb=%s", kb_id)
+        logging.warning("wiki_refine: no wiki_compilation_plan found for kb=%s", kb_id)
         return []
     plan, plan_input_hash = plan_pair
     if not isinstance(plan, dict):
-        logging.warning("artifact_refine: cached plan is not a dict for kb=%s", kb_id)
+        logging.warning("wiki_refine: cached plan is not a dict for kb=%s", kb_id)
         return []
 
     pages_spec = plan.get("pages") or []
     if not pages_spec:
-        logging.info("artifact_refine: plan has no pages for kb=%s", kb_id)
+        logging.info("wiki_refine: plan has no pages for kb=%s", kb_id)
         return []
     # Sort by priority then dedupe by slug, keeping the first (highest-priority)
     # entry. The planning LLM sometimes emits the same slug multiple times,
@@ -3179,7 +3165,7 @@ async def artifact_refine_from_plan(
         pages_spec.append(p)
     if duplicates_dropped:
         logging.info(
-            "artifact_refine: dropped %d duplicate slug entr(ies) from plan for kb=%s",
+            "wiki_refine: dropped %d duplicate slug entr(ies) from plan for kb=%s",
             duplicates_dropped, kb_id,
         )
 
@@ -3224,7 +3210,7 @@ async def artifact_refine_from_plan(
     cached: dict[str, dict] = {}
     stale_drafts = 0
     if not force_rerun:
-        all_drafts = await _artifact_load_refine_resume(tenant_id, kb_id)
+        all_drafts = await _wiki_load_refine_resume(tenant_id, kb_id)
         for slug, (page, stored_hash) in all_drafts.items():
             if plan_input_hash and stored_hash and stored_hash == plan_input_hash:
                 cached[slug] = page
@@ -3232,7 +3218,7 @@ async def artifact_refine_from_plan(
                 stale_drafts += 1
         if cached or stale_drafts:
             logging.info(
-                "artifact_refine: resume — %d fresh, %d stale draft(s) for kb=%s",
+                "wiki_refine: resume — %d fresh, %d stale draft(s) for kb=%s",
                 len(cached), stale_drafts, kb_id,
             )
 
@@ -3241,7 +3227,7 @@ async def artifact_refine_from_plan(
 
     if callback:
         try:
-            callback(0.1, f"artifact REFINE: writing {len(pending)} page(s) (cached={len(cached)})")
+            callback(0.1, f"wiki REFINE: writing {len(pending)} page(s) (cached={len(cached)})")
         except Exception:
             pass
 
@@ -3259,13 +3245,13 @@ async def artifact_refine_from_plan(
         async def _run() -> Optional[dict]:
             nonlocal completed
             try:
-                evidence = _artifact_assemble_evidence(
+                evidence = _wiki_assemble_evidence(
                     plan_item, all_claims,
                     entity_by_name=entity_by_name,
                     concept_by_term=concept_by_term,
                 )
-                source_chunk_ids = _artifact_collect_evidence_chunk_ids(evidence)
-                source_context = await _artifact_build_source_context(
+                source_chunk_ids = _wiki_collect_evidence_chunk_ids(evidence)
+                source_context = await _wiki_build_source_context(
                     evidence, tenant_id, kb_id, budget=source_budget_chars,
                 )
 
@@ -3274,11 +3260,11 @@ async def artifact_refine_from_plan(
                 # to clickable links once at persist time.
                 existing_md_raw: Optional[str] = None
                 if action == "UPDATE":
-                    existing = await _artifact_get_existing_page(slug, tenant_id, kb_id)
+                    existing = await _wiki_get_existing_page(slug, tenant_id, kb_id)
                     if existing:
                         existing_md_raw = existing.get("content_md_raw") or existing.get("content_md")
 
-                content_md_raw = await _artifact_write_page_simple(
+                content_md_raw = await _wiki_write_page_simple(
                     plan_item, evidence, existing_md_raw, source_context,
                     all_plan_slugs, chat_mdl, timeout,
                     example=example,
@@ -3287,15 +3273,15 @@ async def artifact_refine_from_plan(
                     content_md_raw = f"# {title}\n\n(Page generation produced no content.)"
 
                 if existing_md_raw:
-                    content_md_raw = await _artifact_merge_page_content(
+                    content_md_raw = await _wiki_merge_page_content(
                         existing_md_raw, content_md_raw, slug, chat_mdl,
                         shrink_threshold=merge_shrink_threshold,
                     )
 
                 # Render artifactlinks once, here, after all LLM transforms.
-                content_md_rendered, outlinks = _artifact_transform_links(content_md_raw, kb_id)
-                source_doc_ids = await _artifact_collect_doc_ids(source_chunk_ids, tenant_id, kb_id)
-                summary = _artifact_extract_summary(content_md_rendered) or title
+                content_md_rendered, outlinks = _wiki_transform_links(content_md_raw, kb_id)
+                source_doc_ids = await _wiki_collect_doc_ids(source_chunk_ids, tenant_id, kb_id)
+                summary = _wiki_extract_summary(content_md_rendered) or title
 
                 page = {
                     "slug": slug,
@@ -3317,19 +3303,19 @@ async def artifact_refine_from_plan(
                     "kb_id": str(kb_id),
                 }
             except Exception:
-                logging.exception("artifact_refine: writer failed for slug=%s", slug)
+                logging.exception("wiki_refine: writer failed for slug=%s", slug)
                 return None
 
             # Searchable artifact_page persistence has moved to the task
-            # handler (TaskHandler._persist_artifact_pages_to_es) so the ES
+            # handler (TaskHandler._persist_wiki_pages_to_es) so the ES
             # schema can be controlled in one place at the ingest layer.
             # REFINE now just builds the page dict and resume cache.
             try:
-                await _artifact_persist_draft(
+                await _wiki_persist_draft(
                     page, tenant_id, kb_id, plan_input_hash=plan_input_hash,
                 )
             except Exception:
-                logging.exception("artifact_refine: persist_draft failed for slug=%s", slug)
+                logging.exception("wiki_refine: persist_draft failed for slug=%s", slug)
 
             if callback:
                 async with completed_lock:
@@ -3337,7 +3323,7 @@ async def artifact_refine_from_plan(
                     done = completed
                 progress = 0.1 + 0.85 * (done / total)
                 try:
-                    callback(progress, f"artifact REFINE: {done}/{total} pages written ({slug})")
+                    callback(progress, f"wiki REFINE: {done}/{total} pages written ({slug})")
                 except Exception:
                     pass
             return page
@@ -3375,14 +3361,14 @@ async def artifact_refine_from_plan(
                     break
 
     logging.info(
-        "artifact_refine: kb=%s done — pages written=%d (cached=%d new=%d)",
+        "wiki_refine: kb=%s done — pages written=%d (cached=%d new=%d)",
         kb_id, len(results), len(cached),
         sum(1 for p in new_pages if p),
     )
 
     if callback:
         try:
-            callback(1.0, "artifact REFINE: done")
+            callback(1.0, "wiki REFINE: done")
         except Exception:
             pass
 
@@ -3390,13 +3376,13 @@ async def artifact_refine_from_plan(
 
 
 __all__ = [
-    "ARTIFACT_MAP_COMPILE_KWD",
-    "ARTIFACT_REDUCE_COMPILE_KWD",
-    "ARTIFACT_PLAN_COMPILE_KWD",
-    "ARTIFACT_PAGE_COMPILE_KWD",
-    "ARTIFACT_DRAFT_COMPILE_KWD",
-    "artifact_map_from_chunks",
-    "artifact_reduce_from_extracts",
-    "artifact_plan_from_reduction",
-    "artifact_refine_from_plan",
+    "WIKI_MAP_COMPILE_KWD",
+    "WIKI_REDUCE_COMPILE_KWD",
+    "WIKI_PLAN_COMPILE_KWD",
+    "WIKI_PAGE_COMPILE_KWD",
+    "WIKI_DRAFT_COMPILE_KWD",
+    "wiki_map_from_chunks",
+    "wiki_reduce_from_extracts",
+    "wiki_plan_from_reduction",
+    "wiki_refine_from_plan",
 ]

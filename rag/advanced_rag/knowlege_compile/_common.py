@@ -13,10 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Shared helpers for the knowlege_compile pipelines (structure + artifact).
+"""Shared helpers for the knowlege_compile pipelines (structure + wiki).
 
 Both ``structure.py`` (compile_structure_from_text / merge_compiled_structures)
-and ``artifact.py`` (the MAP→REDUCE→PLAN→REFINE artifact pipeline) need the same set
+and ``wiki.py`` (the MAP→REDUCE→PLAN→REFINE artifact pipeline) need the same set
 of plumbing: encode-through-LLMBundle, stable id minting, search-tokenizer
 pairs, order-preserving chunk-id unions, defensive LLMBundle validation, the
 ``chat_mdl.max_length * INPUT_UTILIZATION - prompt_overhead`` token-budget
@@ -139,7 +139,7 @@ def make_input_budget(
     floored at ``floor``.
 
     Mirrors the budget idiom used by ``compile_structure_from_text`` and
-    ``artifact_map_from_chunks``: caller passes the constant prompt scaffolding
+    ``wiki_map_from_chunks``: caller passes the constant prompt scaffolding
     (system prompt + user template) — ``split_chunks`` then sizes batches
     to leave that much room.
     """
@@ -513,9 +513,9 @@ async def run_chunked_pipeline(
 # Bulk dedup engine — exact + embedding + LLM disambiguation
 # ---------------------------------------------------------------------------
 #
-# Replaces artifact's _artifact_exact_dedup_entities / _artifact_exact_dedup_concepts /
-# _artifact_embedding_dedup_entities / _artifact_resolve_ambiguous_entities /
-# _artifact_apply_merges with one parameterised engine. structure.py's
+# Replaces wiki's _wiki_exact_dedup_entities / _wiki_exact_dedup_concepts /
+# _wiki_embedding_dedup_entities / _wiki_resolve_ambiguous_entities /
+# _wiki_apply_merges with one parameterised engine. structure.py's
 # merge_compiled_structures uses a different algorithm (incremental
 # kept-set + per-pair LLM judgement) and stays as-is.
 
