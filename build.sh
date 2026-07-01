@@ -22,6 +22,11 @@ RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 # Strip symbols from Go binaries (set via --strip / -s)
 STRIP_SYMBOLS=""
 
+# Native static library settings. These are the user-cache paths (~/ragflow-deps/).
+# If /opt/ragflow-deps/ exists (pre-seeded in CI runner image), it takes priority
+# and skips the network download.
+SYSTEM_DEPS="/opt/ragflow-deps"
+
 # office_oxide native library settings — static linking
 OFFICE_OXIDE_PREFIX="${HOME}/ragflow-deps/office_oxide"
 OFFICE_OXIDE_VERSION="0.1.2"
@@ -33,6 +38,25 @@ PDFIUM_STATIC_VERSION="7809"
 # pdf_oxide native library settings — static linking (go-ffi tarball)
 PDF_OXIDE_PREFIX="${HOME}/ragflow-deps/pdf_oxide"
 PDF_OXIDE_VERSION="0.3.67"
+
+# Copy a dependency from the system pre-seed directory to the user cache.
+# Returns 0 if the dep was copied or already exists in cache, 1 otherwise.
+_seed_from_system() {
+    local dep_name="$1"  # e.g. "pdfium-static", "pdf_oxide", "office_oxide"
+    local dep_dir="${HOME}/ragflow-deps/${dep_name}"
+    local sys_dir="${SYSTEM_DEPS}/${dep_name}"
+
+    if [ -d "$dep_dir" ]; then
+        return 0  # already cached
+    fi
+    if [ -d "$sys_dir" ]; then
+        echo "  ${dep_name} → ${sys_dir} (system)"
+        mkdir -p "$(dirname "$dep_dir")"
+        cp -r "$sys_dir" "$dep_dir"
+        return 0
+    fi
+    return 1
+}
 
 echo -e "${GREEN}=== RAGFlow Go Server Build Script ===${NC}"
 
@@ -138,6 +162,7 @@ _download_and_extract() {
 # Check / install office_oxide native library (Rust → C FFI library)
 check_office_oxide_deps() {
     print_section "Checking office_oxide native library"
+    _seed_from_system "office_oxide"
 
     local lib_file="liboffice_oxide.a"
 
@@ -187,6 +212,7 @@ check_office_oxide_deps() {
 
 # Check / install pdfium static library (from kognitos/pdfium-static).
 check_pdfium_deps() {
+    _seed_from_system "pdfium-static"
     local lib_path="${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
 
     if [ -f "$lib_path" ]; then
@@ -231,6 +257,7 @@ check_pdfium_deps() {
 
 # Check / install pdf_oxide static library (go-ffi tarball from GitHub Release).
 check_pdf_oxide_deps() {
+    _seed_from_system "pdf_oxide"
     # Map platform to release asset name and tarball-internal subdirectory.
     local asset_name platform_subdir
     case "$(uname -s)" in
