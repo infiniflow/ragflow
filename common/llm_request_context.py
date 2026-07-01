@@ -54,7 +54,7 @@ def reset_llm_request_context(token) -> None:
     except ValueError:
         # The context may be reset from a different context (e.g. an async generator
         # closed on client disconnect); fall back to clearing the value.
-        logging.warning("LLM request context reset failed; clearing active context", exc_info=True)
+        logging.debug("LLM request context reset failed; clearing active context", exc_info=True)
         llm_request_context.set(None)
 
 
