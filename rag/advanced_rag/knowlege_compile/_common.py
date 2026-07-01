@@ -691,7 +691,7 @@ async def _resolve_ambiguous_pairs(
     name_key: str,
     type_key: Optional[str] = None,
     batch_size: int = 50,
-    timeout: int = 60,
+    llm_timeout: int = 60,
     system_prompt: str = DEFAULT_DISAMBIGUATE_SYSTEM,
 ) -> dict[int, int]:
     """LLM-judged disambiguation in batches; returns updated ``merged_into``."""
@@ -728,7 +728,7 @@ async def _resolve_ambiguous_pairs(
         try:
             res = await asyncio.wait_for(
                 gen_json(system_prompt, user_prompt, chat_mdl, gen_conf={"temperature": 0.0}),
-                timeout=timeout,
+                timeout=llm_timeout,
             )
         except asyncio.TimeoutError:
             logging.warning("bulk_dedup: disambiguation timed out (%d pairs)", len(batch))
@@ -812,7 +812,7 @@ async def bulk_dedup_items(
     ambiguous_low: float = 0.75,
     ambiguous_batch_size: int = 50,
     disambiguate_system_prompt: str = DEFAULT_DISAMBIGUATE_SYSTEM,
-    timeout: int = 60,
+    llm_timeout: int = 60,
     aggregate_extra: Optional[Callable[[list[dict]], dict]] = None,
     strip_norm_key: bool = True,
 ) -> list[dict]:
@@ -864,7 +864,7 @@ async def bulk_dedup_items(
                     name_key=name_key,
                     type_key=type_key,
                     batch_size=ambiguous_batch_size,
-                    timeout=timeout,
+                    llm_timeout=llm_timeout,
                     system_prompt=disambiguate_system_prompt,
                 )
             canonical = _apply_dedup_merges(canonical, merged_into, name_key=name_key)

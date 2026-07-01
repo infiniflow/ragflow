@@ -784,7 +784,7 @@ async def _wiki_extract_one_batch(
     doc_id: str,
     chat_mdl,
     language: str,
-    timeout: int,
+    llm_timeout: int,
     parser_config: Optional[dict] = None,
 ) -> dict:
     """Single LLM call for one packed batch. Returns the raw (label-tagged)
@@ -806,10 +806,10 @@ async def _wiki_extract_one_batch(
     try:
         res = await asyncio.wait_for(
             gen_json(WIKI_MAP_SYSTEM, user_prompt, chat_mdl, gen_conf={"temperature": 0.1}),
-            timeout=timeout,
+            timeout=llm_timeout,
         )
     except asyncio.TimeoutError:
-        logging.warning("wiki_map: batch extraction timed out after %ds (%d chunks)", timeout, len(packed))
+        logging.warning("wiki_map: batch extraction timed out after %ds (%d chunks)", llm_timeout, len(packed))
         return _wiki_empty_extract()
     except Exception:
         logging.exception("wiki_map: batch extraction failed (%d chunks)", len(packed))
@@ -827,7 +827,7 @@ async def _wiki_process_batch(
     kb_id: str,
     chat_mdl,
     language: str,
-    timeout: int,
+    llm_timeout: int,
     semaphore: Optional[asyncio.Semaphore],
     callback: Optional[Callable],
     parser_config: Optional[dict] = None,
@@ -848,7 +848,7 @@ async def _wiki_process_batch(
 
     async def _run() -> dict:
         raw_extract = await _wiki_extract_one_batch(
-            packed, doc_id, chat_mdl, language, timeout, parser_config=parser_config,
+            packed, doc_id, chat_mdl, language, llm_timeout, parser_config=parser_config,
         )
         merged, per_chunk = _wiki_resolve_chunk_ids(raw_extract, label_to_id)
         await _wiki_persist_extracts(
@@ -885,7 +885,7 @@ async def wiki_map_from_chunks(
     kb_id: str,
     language: str = "en",
     max_workers: int = DEFAULT_WIKI_MAP_WORKERS,
-    timeout: int = DEFAULT_WIKI_MAP_TIMEOUT,
+    llm_timeout: int = DEFAULT_WIKI_MAP_TIMEOUT,
     callback: Optional[Callable] = None,
     parser_config: Optional[dict] = None,
     batch_size_cap: Optional[int] = None,
@@ -910,7 +910,7 @@ async def wiki_map_from_chunks(
         tenant_id, kb_id: address the doc-store index for resume reads + writes.
         language: reserved for future prompt localization.
         max_workers: maximum concurrent batches. Defaults to 6.
-        timeout: seconds per batch extraction call.
+        llm_timeout: seconds per batch extraction call.
         callback: optional ``(progress: float, msg: str)`` progress callback.
         parser_config: optional YAML-style config (same shape that
             ``compile_structure_from_text`` accepts).
@@ -1039,7 +1039,7 @@ async def wiki_map_from_chunks(
             kb_id=kb_id,
             chat_mdl=chat_mdl,
             language=language,
-            timeout=timeout,
+            llm_timeout=llm_timeout,
             semaphore=None,
             callback=callback,
             parser_config=parser_config,
@@ -1330,7 +1330,7 @@ async def wiki_reduce_from_extracts(
     merge_threshold: float = DEFAULT_WIKI_REDUCE_MERGE_THRESHOLD,
     ambiguous_low: float = DEFAULT_WIKI_REDUCE_AMBIGUOUS_LOW,
     ambiguous_batch_size: int = DEFAULT_WIKI_REDUCE_AMBIGUOUS_BATCH,
-    timeout: int = DEFAULT_WIKI_REDUCE_TIMEOUT,
+    llm_timeout: int = DEFAULT_WIKI_REDUCE_TIMEOUT,
     force_rerun: bool = False,
     callback: Optional[Callable] = None,
 ) -> dict:
@@ -1360,7 +1360,7 @@ async def wiki_reduce_from_extracts(
         merge_threshold: cosine ≥ this auto-merges. Default 0.90.
         ambiguous_low: cosine in [ambiguous_low, merge_threshold) goes to LLM.
         ambiguous_batch_size: max pairs per LLM disambiguation call.
-        timeout: seconds per LLM disambiguation batch.
+        llm_timeout: seconds per LLM disambiguation batch.
         force_rerun: bypass the cached artifact_reduce_result.
         callback: optional ``(progress: float, msg: str)`` callback.
 
@@ -1436,7 +1436,7 @@ async def wiki_reduce_from_extracts(
         ambiguous_low=ambiguous_low,
         ambiguous_batch_size=ambiguous_batch_size,
         disambiguate_system_prompt=WIKI_REDUCE_DISAMBIGUATE_SYSTEM,
-        timeout=timeout,
+        llm_timeout=llm_timeout,
     )
 
     # Concepts: exact-dedup only (current behaviour); keep the longest
@@ -1525,7 +1525,7 @@ DEFAULT_WIKI_PLAN_MAYBE_THRESHOLD = 0.60
 DEFAULT_WIKI_PLAN_TIMEOUT = 600  # ~10 min — the planning call emits one big
                                  # JSON plan and reasoning models can spend a
                                  # long time thinking before emitting tokens.
-                                 # Override via the ``timeout`` arg to
+                                 # Override via the ``llm_timeout`` arg to
                                  # ``wiki_plan_from_reduction``.
 DEFAULT_WIKI_PLAN_RECONCILE_BATCH = 50
 
@@ -1803,7 +1803,7 @@ async def _wiki_resolve_maybe_items(
     reconciliation: dict[str, dict],
     chat_mdl,
     batch_size: int,
-    timeout: int,
+    llm_timeout: int,
 ) -> None:
     """Flip MAYBE → UPDATE | CREATE via batched LLM calls. Mutates in place."""
     maybe_items = [(k, v) for k, v in reconciliation.items() if v.get("action") == "MAYBE"]
@@ -1834,7 +1834,7 @@ async def _wiki_resolve_maybe_items(
             res = await asyncio.wait_for(
                 gen_json(WIKI_PLAN_RECONCILE_SYSTEM, user_prompt, chat_mdl,
                          gen_conf={"temperature": 0.0}),
-                timeout=timeout,
+                timeout=llm_timeout,
             )
         except asyncio.TimeoutError:
             logging.warning("wiki_plan: MAYBE resolution timed out (%d pairs); defaulting CREATE", len(batch))
@@ -1875,7 +1875,7 @@ async def _wiki_planning_call(
     kb_name: str | None,
     kb_description: str | None,
     target_page_count: int,
-    timeout: int,
+    llm_timeout: int,
 ) -> dict:
     """Single LLM call → Compilation Plan JSON."""
     # Sort by mention count descending so the planner sees the most important
@@ -1916,10 +1916,10 @@ async def _wiki_planning_call(
         res = await asyncio.wait_for(
             gen_json(WIKI_PLAN_PLANNING_SYSTEM, user_prompt, chat_mdl,
                      gen_conf={"temperature": 0.1}),
-            timeout=timeout,
+            timeout=llm_timeout,
         )
     except asyncio.TimeoutError:
-        logging.warning("wiki_plan: planning LLM call timed out after %ds", timeout)
+        logging.warning("wiki_plan: planning LLM call timed out after %ds", llm_timeout)
         return {"pages": [], "estimated_page_count": 0, "compilation_notes": "planning timeout"}
     except Exception:
         logging.exception("wiki_plan: planning LLM call failed")
@@ -2079,7 +2079,7 @@ async def wiki_plan_from_reduction(
     update_threshold: float = DEFAULT_WIKI_PLAN_UPDATE_THRESHOLD,
     maybe_threshold: float = DEFAULT_WIKI_PLAN_MAYBE_THRESHOLD,
     reconcile_batch_size: int = DEFAULT_WIKI_PLAN_RECONCILE_BATCH,
-    timeout: int = DEFAULT_WIKI_PLAN_TIMEOUT,
+    llm_timeout: int = DEFAULT_WIKI_PLAN_TIMEOUT,
     force_rerun: bool = False,
     callback: Optional[Callable] = None,
 ) -> dict:
@@ -2100,7 +2100,7 @@ async def wiki_plan_from_reduction(
         update_threshold: cosine ≥ this → UPDATE the existing page outright.
         maybe_threshold: cosine in [maybe_threshold, update_threshold) → ask LLM.
         reconcile_batch_size: max pairs per LLM MAYBE-resolution call.
-        timeout: seconds per LLM call (both MAYBE resolution and planning).
+        llm_timeout: seconds per LLM call (both MAYBE resolution and planning).
         force_rerun: bypass the cached artifact_compilation_plan.
         callback: optional ``(progress: float, msg: str)`` callback.
 
@@ -2205,7 +2205,7 @@ async def wiki_plan_from_reduction(
     await _wiki_resolve_maybe_items(
         reconciliation, chat_mdl,
         batch_size=reconcile_batch_size,
-        timeout=timeout,
+        llm_timeout=llm_timeout,
     )
 
     if callback:
@@ -2223,7 +2223,7 @@ async def wiki_plan_from_reduction(
         kb_name=kb_name,
         kb_description=kb_description,
         target_page_count=target,
-        timeout=timeout,
+        llm_timeout=llm_timeout,
     )
 
     plan["_status"] = "approved"
@@ -2837,7 +2837,7 @@ async def _wiki_get_existing_page(
 
 async def _wiki_chat_text(
     chat_mdl, system_prompt: str, user_prompt: str,
-    temperature: float, timeout: int,
+    temperature: float, llm_timeout: int,
 ) -> str:
     """Single chat call returning the raw text. Trims to chat_mdl.max_length
     via message_fit_in and strips a leading </think> block."""
@@ -2852,10 +2852,10 @@ async def _wiki_chat_text(
     try:
         raw = await asyncio.wait_for(
             chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": temperature}),
-            timeout=timeout,
+            timeout=llm_timeout,
         )
     except asyncio.TimeoutError:
-        logging.warning("wiki_refine: chat call timed out after %ds", timeout)
+        logging.warning("wiki_refine: chat call timed out after %ds", llm_timeout)
         return ""
     except Exception:
         logging.exception("wiki_refine: chat call failed")
@@ -2872,7 +2872,7 @@ async def _wiki_write_page_simple(
     source_context: str,
     all_plan_slugs: list[str],
     chat_mdl,
-    timeout: int,
+    llm_timeout: int,
     example: Optional[str] = None,
 ) -> str:
     """Single LLM call → markdown content.
@@ -2910,14 +2910,14 @@ async def _wiki_write_page_simple(
 
     return await _wiki_chat_text(
         chat_mdl, _build_refine_writer_system(example), user_prompt,
-        temperature=0.15, timeout=timeout,
+        temperature=0.15, llm_timeout=llm_timeout,
     )
 
 
 async def _wiki_merge_page_content(
     existing_md: str, new_md: str, slug: str, chat_mdl,
     shrink_threshold: float = WIKI_MERGE_BODY_SHRINK_THRESHOLD,
-    timeout: int = WIKI_MERGE_TIMEOUT,
+    llm_timeout: int = WIKI_MERGE_TIMEOUT,
 ) -> str:
     """LLM-merge existing vs new. Falls back to ``new_md`` on shrink-check
     failure or LLM error."""
@@ -2938,7 +2938,7 @@ async def _wiki_merge_page_content(
     )
     merged = await _wiki_chat_text(
         chat_mdl, WIKI_REFINE_MERGE_SYSTEM, user_prompt,
-        temperature=0.1, timeout=timeout,
+        temperature=0.1, llm_timeout=llm_timeout,
     )
     if not merged:
         return new_md
@@ -3081,7 +3081,7 @@ async def wiki_refine_from_plan(
     tenant_id: str,
     kb_id: str,
     max_workers: int = DEFAULT_WIKI_REFINE_WORKERS,
-    timeout: int = DEFAULT_WIKI_REFINE_TIMEOUT,
+    llm_timeout: int = DEFAULT_WIKI_REFINE_TIMEOUT,
     source_budget_chars: int = WIKI_REFINE_SOURCE_BUDGET_CHARS,
     merge_shrink_threshold: float = WIKI_MERGE_BODY_SHRINK_THRESHOLD,
     force_rerun: bool = False,
@@ -3101,7 +3101,7 @@ async def wiki_refine_from_plan(
         chat_mdl, embd_mdl: ragflow LLMBundle instances.
         tenant_id, kb_id: address the doc-store index.
         max_workers: max concurrent writers (default 4).
-        timeout: seconds per writer LLM call (default 300).
+        llm_timeout: seconds per writer LLM call (default 300).
         source_budget_chars: max chars of source-chunk context per writer call.
         merge_shrink_threshold: a merged body shorter than this fraction of
             the longest input falls back to the new content.
@@ -3266,7 +3266,7 @@ async def wiki_refine_from_plan(
 
                 content_md_raw = await _wiki_write_page_simple(
                     plan_item, evidence, existing_md_raw, source_context,
-                    all_plan_slugs, chat_mdl, timeout,
+                    all_plan_slugs, chat_mdl, llm_timeout,
                     example=example,
                 )
                 if not content_md_raw:
