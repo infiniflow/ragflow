@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 from abc import ABC
 import pandas as pd
 import time
@@ -73,7 +74,18 @@ class TuShare(ComponentBase, ABC):
             df.columns = response['data']['fields']
             if self.check_if_canceled("TuShare processing"):
                 return
-            tus_res.append({"content": (df[df['content'].str.contains(self._param.keyword, case=False)]).to_markdown()})
+            keyword = self._param.keyword or ans
+            logging.info(
+                "TuShare news filter keyword source=%s",
+                "param.keyword" if self._param.keyword else "upstream_input",
+            )
+            tus_res.append(
+                {
+                    "content": (
+                        df[df["content"].str.contains(keyword, case=False, na=False, regex=False)]
+                    ).to_markdown()
+                }
+            )
         except Exception as e:
             if self.check_if_canceled("TuShare processing"):
                 return

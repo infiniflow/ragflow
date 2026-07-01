@@ -1,3 +1,4 @@
+import { LLMFactory } from '@/constants/llm';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useAddInstanceModel,
@@ -127,8 +128,8 @@ export const useVerifyConnection = () => {
   );
 };
 
-// ============ Hooks for the 4 retained special modals ============
-// Bedrock / MinerU / PaddleOCR / OpenDataLoader are not yet merged into ProviderModal
+// ============ Hooks for retained special modals ============
+// Bedrock and SoMark still use custom modal components.
 
 export const useSubmitBedrock = () => {
   const [saveLoading, setSaveLoading] = useState(false);
@@ -182,6 +183,85 @@ export const useSubmitBedrock = () => {
     bedrockAddingVisible,
     hideBedrockAddingModal,
     showBedrockAddingModal,
+  };
+};
+
+export const useSubmitSoMark = () => {
+  const [saveLoading, setSaveLoading] = useState(false);
+  const submitProviderInstance = useSubmitProviderInstance();
+  const {
+    visible: somarkVisible,
+    hideModal: hideSoMarkModal,
+    showModal: showSoMarkModal,
+  } = useSetModalState();
+
+  const onSoMarkOk = useCallback(
+    async (payload: any, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
+      const req = {
+        instance_name: payload.instance_name,
+        llm_factory: LLMFactory.SoMark,
+        api_key: payload.somark_api_key || '',
+        api_base: payload.somark_base_url,
+        max_tokens: 0,
+        model_info: [
+          {
+            model_name: payload.llm_name,
+            model_type: ['ocr'],
+            max_tokens: 0,
+            extra: {
+              somark_image_format: payload.somark_image_format,
+              somark_formula_format: payload.somark_formula_format,
+              somark_table_format: payload.somark_table_format,
+              somark_cs_format: payload.somark_cs_format,
+              somark_enable_text_cross_page:
+                payload.somark_enable_text_cross_page,
+              somark_enable_table_cross_page:
+                payload.somark_enable_table_cross_page,
+              somark_enable_title_level_recognition:
+                payload.somark_enable_title_level_recognition,
+              somark_enable_inline_image: payload.somark_enable_inline_image,
+              somark_enable_table_image: payload.somark_enable_table_image,
+              somark_enable_image_understanding:
+                payload.somark_enable_image_understanding,
+              somark_keep_header_footer: payload.somark_keep_header_footer,
+            },
+          },
+        ],
+      };
+      try {
+        const ret = await submitProviderInstance(
+          req as IAddProviderInstanceRequestBody,
+          isVerify,
+        );
+        if (isVerify) {
+          return {
+            isValid: !!ret.data?.success,
+            logs: ret.data?.message,
+          } as VerifyResult;
+        }
+        if (ret.code === 0) {
+          hideSoMarkModal();
+          return true;
+        }
+        return false;
+      } finally {
+        if (!isVerify) {
+          setSaveLoading(false);
+        }
+      }
+    },
+    [submitProviderInstance, hideSoMarkModal, setSaveLoading],
+  );
+
+  return {
+    somarkVisible,
+    hideSoMarkModal,
+    showSoMarkModal,
+    onSoMarkOk,
+    somarkLoading: saveLoading,
   };
 };
 
