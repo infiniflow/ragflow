@@ -190,6 +190,26 @@ type failingDeleteMetadataEngine struct {
 	updateCalled bool
 }
 
+type rerunDeleteDocEngine struct {
+	fakeChatDocEngine
+	deleteCalls int
+	condition   map[string]interface{}
+	indexName   string
+	datasetID   string
+}
+
+func (e *rerunDeleteDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+
+func (e *rerunDeleteDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
+	e.deleteCalls++
+	e.condition = condition
+	e.indexName = indexName
+	e.datasetID = datasetID
+	return 3, nil
+}
+
 type metadataDocEngine struct {
 	fakeChatDocEngine
 	records map[string]map[string]interface{}
@@ -1580,6 +1600,78 @@ func TestResetDocumentForReparseSkipsSecondCounterDecrement(t *testing.T) {
 	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
 	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
 		t.Fatalf("kb counters = token:%d chunk:%d, want zero after duplicate reset", kb.TokenNum, kb.ChunkNum)
+	}
+}
+
+func TestPrepareDocumentRerunWithDeleteClearsCountersTasksAndChunks(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestTask(t, "task-1", "doc-1")
+
+	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	if err != nil {
+		t.Fatalf("get doc: %v", err)
+	}
+
+	engine := &rerunDeleteDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+
+	if err := svc.prepareDocumentRerunWithDelete(doc, "tenant-1"); err != nil {
+		t.Fatalf("prepareDocumentRerunWithDelete failed: %v", err)
+	}
+
+	updatedDoc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	if updatedDoc.TokenNum != 0 || updatedDoc.ChunkNum != 0 {
+		t.Fatalf("doc counters = token:%d chunk:%d, want zero", updatedDoc.TokenNum, updatedDoc.ChunkNum)
+	}
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
+		t.Fatalf("kb counters = token:%d chunk:%d, want zero", kb.TokenNum, kb.ChunkNum)
+	}
+	var taskCount int64
+	if err := dao.DB.Model(&entity.Task{}).Where("doc_id = ?", "doc-1").Count(&taskCount).Error; err != nil {
+		t.Fatalf("count tasks: %v", err)
+	}
+	if taskCount != 0 {
+		t.Fatalf("task count = %d, want zero", taskCount)
+	}
+	if engine.deleteCalls != 1 {
+		t.Fatalf("deleteCalls = %d, want 1", engine.deleteCalls)
+	}
+	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || engine.condition["doc_id"] != "doc-1" {
+		t.Fatalf("unexpected delete call: index=%s dataset=%s condition=%v", engine.indexName, engine.datasetID, engine.condition)
+	}
+}
+
+func TestPrepareDocumentRerunWithDeleteIsIdempotentForStaleDocSnapshot(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+
+	staleDoc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	if err != nil {
+		t.Fatalf("get doc: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	if err := svc.prepareDocumentRerunWithDelete(staleDoc, "tenant-1"); err != nil {
+		t.Fatalf("first prepareDocumentRerunWithDelete failed: %v", err)
+	}
+	if err := svc.prepareDocumentRerunWithDelete(staleDoc, "tenant-1"); err != nil {
+		t.Fatalf("second prepareDocumentRerunWithDelete failed: %v", err)
+	}
+
+	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	if doc.TokenNum != 0 || doc.ChunkNum != 0 {
+		t.Fatalf("doc counters = token:%d chunk:%d, want zero", doc.TokenNum, doc.ChunkNum)
+	}
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
+		t.Fatalf("kb counters = token:%d chunk:%d, want zero after duplicate prepare", kb.TokenNum, kb.ChunkNum)
 	}
 }
 
