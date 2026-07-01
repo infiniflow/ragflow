@@ -191,6 +191,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowUsersSummaryCommand(cmd)
 	case "admin_show_users_activity_command":
 		return c.AdminShowUsersActivityCommand(cmd)
+	case "admin_show_users_plan_command":
+		return c.AdminShowUsersPlanCommand(cmd)
 	case "admin_list_users_command":
 		return c.AdminListUsersCommand(cmd)
 	case "admin_list_users_condition_command":
@@ -442,7 +444,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "api_list_default_models":
 		return c.APIListDefaultModelsCommand(cmd)
 	case "api_parse_documents":
-		return c.APIParseDocumentsUserCommand(cmd)
+		return c.APIParseDocumentsCommand(cmd)
 	case "api_start_ingestion":
 		return c.APIStartIngestionCommand(cmd)
 	case "api_stop_ingestion":
