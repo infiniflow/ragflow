@@ -960,6 +960,9 @@ func TestGraph_ParallelGraph_ConcurrentTenants(t *testing.T) {
 func TestGraph_DAG_SlowBranchMerge(t *testing.T) {
 	var mu sync.Mutex
 	var order []string
+	slowStarted := make(chan struct{})
+	releaseSlow := make(chan struct{})
+	mergeRan := make(chan struct{}, 1)
 	record := func(name string) {
 		mu.Lock()
 		order = append(order, name)
@@ -983,13 +986,18 @@ func TestGraph_DAG_SlowBranchMerge(t *testing.T) {
 	})
 	sg.AddNode("slow", func(ctx context.Context, state interface{}) (interface{}, error) {
 		s := state.(*dagState)
-		time.Sleep(50 * time.Millisecond)
+		close(slowStarted)
+		<-releaseSlow
 		record("slow")
 		s.Messages = append(s.Messages, "slow done")
 		return s, nil
 	})
 	sg.AddNode("merge", func(ctx context.Context, state interface{}) (interface{}, error) {
 		s := state.(*dagState)
+		select {
+		case mergeRan <- struct{}{}:
+		default:
+		}
 		record("merge")
 		s.Messages = append(s.Messages, "merge done")
 		return s, nil
@@ -1010,23 +1018,42 @@ func TestGraph_DAG_SlowBranchMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	start := time.Now()
-	_, err = compiled.Invoke(context.Background(), &dagState{
-		Messages: []string{"start"},
-	})
-	elapsed := time.Since(start)
+	done := make(chan error, 1)
+	go func() {
+		_, err := compiled.Invoke(context.Background(), &dagState{
+			Messages: []string{"start"},
+		})
+		done <- err
+	}()
+
+	select {
+	case <-slowStarted:
+	case <-time.After(time.Second):
+		t.Fatal("slow branch never started")
+	}
+
+	select {
+	case <-mergeRan:
+		t.Fatal("BUG: merge ran before slow branch completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(releaseSlow)
+
+	select {
+	case err = <-done:
+	case <-time.After(time.Second):
+		t.Fatal("compiled graph did not finish after slow branch release")
+	}
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	t.Logf("Slow branch merge: elapsed=%v, order=%v", elapsed, order)
+	t.Logf("Slow branch merge order=%v", order)
 
 	if len(order) != 4 {
 		t.Errorf("expected 4 nodes (dispatch+fast+slow+merge), got %d: %v", len(order), order)
-	}
-	if elapsed < 50*time.Millisecond {
-		t.Errorf("BUG: merge completed before slow branch (elapsed=%v, expected >=50ms)", elapsed)
 	}
 	slowIdx, mergeIdx := -1, -1
 	for i, name := range order {

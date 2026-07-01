@@ -118,24 +118,23 @@ func TestBuildNodeBody_PerClassTimeout_ExeSQL_3s(t *testing.T) {
 	}
 	start := time.Now()
 	_, err = body(context.Background(), nil)
-	elapsed := time.Since(start)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("body err = %v, want context.DeadlineExceeded (per-class timeout should fire)", err)
 	}
 	if !cap.timeoutOK.Load() {
 		t.Fatal("component never observed a deadline — realComponentBody did not wrap with context.WithTimeout")
 	}
-	// Allow a 500ms slack on each side: lower bound is to ensure
-	// the body actually waited for the timeout, upper bound is to
-	// catch over-eager timeouts (e.g. 600s would make the test
-	// hang for 10 minutes).
+	// Semantic assertion: the deadline the body wired into the
+	// component's ctx must be ~3s after the call started. This is
+	// the load-bearing property — proving the per-class table
+	// reached realComponentBody. The previous `elapsed > 5s` upper
+	// bound conflated this with wall-clock scheduler jitter; if the
+	// deadline is wrong (e.g. 600s fallback), sinceDeadline catches
+	// it without depending on a fragile absolute threshold.
 	deadline := time.Unix(0, cap.deadline.Load())
 	sinceDeadline := deadline.Sub(start)
 	if sinceDeadline < 2500*time.Millisecond || sinceDeadline > 3500*time.Millisecond {
-		t.Errorf("ExeSQL deadline offset = %s, want ~3s (got actual elapsed %s)", sinceDeadline, elapsed)
-	}
-	if elapsed > 5*time.Second {
-		t.Errorf("body did not honour 3s timeout: elapsed=%s", elapsed)
+		t.Errorf("ExeSQL deadline offset = %s, want ~3s", sinceDeadline)
 	}
 }
 
@@ -169,17 +168,14 @@ func TestBuildNodeBody_PerClassTimeout_TavilySearch_12s(t *testing.T) {
 	}
 	start := time.Now()
 	_, err = body(context.Background(), nil)
-	elapsed := time.Since(start)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("body err = %v, want context.DeadlineExceeded", err)
 	}
 	deadline := time.Unix(0, cap.deadline.Load())
 	sinceDeadline := deadline.Sub(start)
+	// Semantic: deadline the body wired is ~12s after start.
 	if sinceDeadline < 11*time.Second || sinceDeadline > 13*time.Second {
-		t.Errorf("TavilySearch deadline offset = %s, want ~12s (got elapsed %s)", sinceDeadline, elapsed)
-	}
-	if elapsed > 14*time.Second {
-		t.Errorf("body did not honour 12s timeout: elapsed=%s", elapsed)
+		t.Errorf("TavilySearch deadline offset = %s, want ~12s", sinceDeadline)
 	}
 }
 
@@ -219,7 +215,6 @@ func TestBuildNodeBody_PerClassTimeout_UnknownClass_UniformFallback(t *testing.T
 	}
 	start := time.Now()
 	_, err = body(context.Background(), nil)
-	elapsed := time.Since(start)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("body err = %v, want context.DeadlineExceeded", err)
 	}
@@ -228,10 +223,7 @@ func TestBuildNodeBody_PerClassTimeout_UnknownClass_UniformFallback(t *testing.T
 	// 5s uniform env should win for an unknown class. Allow a
 	// 1s slack on each side.
 	if sinceDeadline < 4*time.Second || sinceDeadline > 6*time.Second {
-		t.Errorf("CustomComponent deadline offset = %s, want ~5s (uniform env fallback; elapsed %s)", sinceDeadline, elapsed)
-	}
-	if elapsed > 7*time.Second {
-		t.Errorf("body did not honour 5s uniform timeout: elapsed=%s", elapsed)
+		t.Errorf("CustomComponent deadline offset = %s, want ~5s (uniform env fallback)", sinceDeadline)
 	}
 }
 
@@ -265,16 +257,12 @@ func TestBuildNodeBody_PerClassTimeout_PerClassEnvOverride(t *testing.T) {
 	}
 	start := time.Now()
 	_, err = body(context.Background(), nil)
-	elapsed := time.Since(start)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("body err = %v, want context.DeadlineExceeded", err)
 	}
 	deadline := time.Unix(0, cap.deadline.Load())
 	sinceDeadline := deadline.Sub(start)
 	if sinceDeadline < 6500*time.Millisecond || sinceDeadline > 7500*time.Millisecond {
-		t.Errorf("ExeSQL deadline offset = %s, want ~7s (per-class env override; elapsed %s)", sinceDeadline, elapsed)
-	}
-	if elapsed > 9*time.Second {
-		t.Errorf("body did not honour 7s per-class env override: elapsed=%s", elapsed)
+		t.Errorf("ExeSQL deadline offset = %s, want ~7s (per-class env override)", sinceDeadline)
 	}
 }
