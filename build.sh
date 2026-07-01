@@ -25,7 +25,7 @@ STRIP_SYMBOLS=""
 # Native static library settings. These are the user-cache paths (~/ragflow-deps/).
 # If /opt/ragflow-deps/ exists (pre-seeded in CI runner image), it takes priority
 # and skips the network download.
-SYSTEM_DEPS="/opt/ragflow-deps"
+SYSTEM_DEPS="/opt/ragflow-native-libs"
 
 # office_oxide native library settings — static linking
 OFFICE_OXIDE_PREFIX="${HOME}/ragflow-deps/office_oxide"
