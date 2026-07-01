@@ -612,6 +612,9 @@ async def update_provider_instance(tenant_id: str = None, provider_id_or_name: s
                   extra:
                     type: object
                     description: Extra model info (e.g. is_tools).
+            verify:
+              type: boolean
+              description: Verify api_key and base_url, default true
     responses:
       200:
         description: Instance updated successfully.
@@ -625,7 +628,7 @@ async def update_provider_instance(tenant_id: str = None, provider_id_or_name: s
         return get_error_argument_result(message="instance_id_or_name is required")
     if not data:
         return get_error_argument_result(message="Request body is required")
-    required_keys = ["instance_name", "api_key", "base_url", "region", "model_info"]
+    required_keys = ["instance_name", "api_key", "base_url", "model_info"]
     missing = [k for k in required_keys if k not in data]
     if missing:
         return get_error_argument_result(message=f"Missing required fields: {', '.join(missing)}")
@@ -633,12 +636,13 @@ async def update_provider_instance(tenant_id: str = None, provider_id_or_name: s
     instance_name = data["instance_name"]
     api_key = data["api_key"]
     base_url = data["base_url"]
-    region = data["region"]
+    region = data.get("region", "default")
     model_info = data["model_info"]
+    verify = data.get("verify", True)
 
     try:
         success, msg = await provider_api_service.update_provider_instance(
-            tenant_id, provider_id_or_name, instance_id_or_name, instance_name, api_key, base_url, region, model_info
+            tenant_id, provider_id_or_name, instance_id_or_name, instance_name, api_key, base_url, region, model_info, verify
         )
         if success:
             return get_result(message=msg)

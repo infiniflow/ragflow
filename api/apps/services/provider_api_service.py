@@ -290,7 +290,7 @@ def show_provider_model(provider_id_or_name: str, model_name: str):
     }
 
 
-async def update_provider_instance(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str, instance_name: str, api_key: str|dict, base_url: str, region: str, model_info: list[dict]=None):
+async def update_provider_instance(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str, instance_name: str, api_key: str|dict, base_url: str, region: str, model_info: list[dict]=None, verify: bool=True):
     """
     Update a provider instance.
 
@@ -312,6 +312,7 @@ async def update_provider_instance(tenant_id: str, provider_id_or_name: str, ins
             "is_tools": True
         }
     }]
+    :param verify: verify api_key
     :return: (success, result_or_error_message)
     """
     if not provider_id_or_name:
@@ -344,9 +345,11 @@ async def update_provider_instance(tenant_id: str, provider_id_or_name: str, ins
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
 
     # Verify api_key
-    success, msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
-    if not success:
-        return False, msg
+    model_verify_result = {}
+    if verify:
+        success, msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
+        if not success:
+            return False, msg
 
     # Update instance record
     update_dict = {
@@ -390,11 +393,12 @@ async def update_provider_instance(tenant_id: str, provider_id_or_name: str, ins
             model_name = model.get("model_name")
             if not model_name:
                 continue
-            verify_status = model_verify_result.get(model_name, ModelVerifyStatusEnum.UNKNOWN.value)
-            if model.get("extra"):
-                model["extra"].update({"verify": verify_status})
-            else:
-                model["extra"] = {"verify": verify_status}
+            if verify:
+                verify_status = model_verify_result.get(model_name, ModelVerifyStatusEnum.UNKNOWN.value)
+                if model.get("extra"):
+                    model["extra"].update({"verify": verify_status})
+                else:
+                    model["extra"] = {"verify": verify_status}
 
             if model_name in existing_model_names:
                 # Update existing model
@@ -403,16 +407,11 @@ async def update_provider_instance(tenant_id: str, provider_id_or_name: str, ins
                     target_model_type = calculate_model_type(model["model_type"])
                     if target_model_type != existing_model_names[model_name].model_type:
                         update_dict["model_type"] = target_model_type
-                if model.get("max_tokens"):
-                    db_extra = json.loads(existing_model_names[model_name].extra) if existing_model_names[model_name].extra else {}
-                    db_extra.update({"max_tokens": model["max_tokens"]})
-                    if model.get("extra"):
-                        db_extra.update(model["extra"])
-                    update_dict["extra"] = json.dumps(db_extra)
-                elif model.get("extra"):
-                    db_extra = json.loads(existing_model_names[model_name].extra) if existing_model_names[model_name].extra else {}
-                    db_extra.update(model["extra"])
-                    update_dict["extra"] = json.dumps(db_extra)
+                merged_extra = json.loads(existing_model_names[model_name].extra) if existing_model_names[model_name].extra else {}
+                merged_extra.update(model["extra"])
+                if "max_tokens" in model:
+                    merged_extra.update({"max_tokens": model["max_tokens"]})
+                update_dict["extra"] = json.dumps(merged_extra)
                 if update_dict:
                     TenantModelService.update_model(existing_model_names[model_name].id, update_dict)
             else:
@@ -427,7 +426,6 @@ async def update_provider_instance(tenant_id: str, provider_id_or_name: str, ins
             factory_llms = factory_info[0]["llm"]
             for llm in factory_llms:
                 llm_name = _factory_llm_name(llm)
-                verify_status = model_verify_result.get(llm_name, ModelVerifyStatusEnum.UNKNOWN.value)
                 if llm_name in existing_model_names:
                     # Update existing
                     update_dict = {}
@@ -435,25 +433,31 @@ async def update_provider_instance(tenant_id: str, provider_id_or_name: str, ins
                     if target_model_type != existing_model_names[llm_name].model_type:
                         update_dict["model_type"] = target_model_type
                     db_extra = json.loads(existing_model_names[llm_name].extra) if existing_model_names[llm_name].extra else {}
-                    db_extra.update({
+                    db_extra_fields = {
                         "max_tokens": llm["max_tokens"],
                         "is_tools": llm.get("is_tools", False),
                         "thinking": "thinking" in llm.get("features", []),
-                        "verify": verify_status,
-                    })
+                    }
+                    if verify:
+                        verify_status = model_verify_result.get(llm_name, ModelVerifyStatusEnum.UNKNOWN.value)
+                        db_extra_fields["verify"] = verify_status
+                    db_extra.update(db_extra_fields)
                     update_dict["extra"] = json.dumps(db_extra)
                     if update_dict:
                         TenantModelService.update_model(existing_model_names[llm_name].id, update_dict)
                 else:
+                    extra_fields = {
+                        "is_tools": llm.get("is_tools", False),
+                        "thinking": "thinking" in llm.get("features", []),
+                    }
+                    if verify:
+                        verify_status = model_verify_result.get(llm_name, ModelVerifyStatusEnum.UNKNOWN.value)
+                        extra_fields["verify"] = verify_status
                     success, _msg = add_model_to_instance(tenant_id, provider_name, effective_instance_name, **{
                         "model_type": _factory_model_types(llm),
                         "model_name": llm_name,
                         "max_tokens": llm["max_tokens"],
-                        "extra": {
-                            "is_tools": llm.get("is_tools", False),
-                            "thinking": "thinking" in llm.get("features", []),
-                            "verify": verify_status,
-                        }
+                        "extra": extra_fields
                     })
                     if not success:
                         msg += _msg
