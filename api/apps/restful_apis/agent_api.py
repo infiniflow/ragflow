@@ -605,8 +605,8 @@ async def _iter_session_completion_events(tenant_id, agent_id, req, return_trace
             yield ans
             continue
 
-        if event in ["message", "message_end", "user_inputs", "workflow_finished"]:
-            if event in ["user_inputs", "workflow_finished"]:
+        if event in ["message", "message_end", "user_inputs"]:
+            if event == "user_inputs":
                 logging.debug(
                     "Forwarding session completion event: tenant_id=%s agent_id=%s event=%s",
                     tenant_id,
@@ -620,9 +620,16 @@ async def _iter_session_completion_events(tenant_id, agent_id, req, return_trace
             # Forward only the run-level aggregated token usage, not the whole terminal
             # payload (inputs/outputs), so the session completion stream surface stays
             # limited to what the usage contract needs.
+            logging.debug(
+                "Forwarding session completion event: tenant_id=%s agent_id=%s event=%s",
+                tenant_id,
+                agent_id,
+                event,
+            )
             usage = ans.get("data", {}).get("usage")
             if usage is not None:
                 yield {**ans, "data": {"usage": usage}}
+            continue
 
 
 @manager.route("/agents/templates", methods=["GET"])  # noqa: F821
