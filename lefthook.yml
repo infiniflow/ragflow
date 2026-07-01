@@ -1,44 +1,71 @@
+# There are 8 fix-capable jobs and 5 pure-check jobs.
+# Dual-mode pre-commit: by default (local dev) jobs fix and stage changes
+# (`stage_fixed: true` batches the `git add` per job to avoid the index lock
+# that parallel `git add` calls would hit). In CI, set LEFTHOOK_CHECK_ONLY=1
+# to skip --fix on every fix-capable job. With no files modified, `stage_fixed`
+# becomes a no-op, so CI only verifies and exits non-zero on issues.
 pre-commit:
   parallel: true
   jobs:
-    - name: check-yaml
-      run: python3 tools/hooks/check_files.py yaml
-      stage_fixed: true
-    - name: check-json
-      run: python3 tools/hooks/check_files.py json
-      stage_fixed: true
     - name: end-of-file-fixer
-      run: python3 tools/hooks/check_files.py eof --fix
       stage_fixed: true
+      run: |
+        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+          python3 tools/hooks/check_files.py eof
+        else
+          python3 tools/hooks/check_files.py eof --fix
+        fi
     - name: trailing-whitespace
-      run: python3 tools/hooks/check_files.py trailing-whitespace --fix
       stage_fixed: true
-    - name: check-case-conflict
-      run: python3 tools/hooks/check_files.py case-conflict
-      stage_fixed: true
-    - name: check-merge-conflict
-      run: python3 tools/hooks/check_files.py merge-conflict
-      stage_fixed: true
+      run: |
+        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+          python3 tools/hooks/check_files.py trailing-whitespace
+        else
+          python3 tools/hooks/check_files.py trailing-whitespace --fix
+        fi
     - name: mixed-line-ending
-      run: python3 tools/hooks/check_files.py mixed-line-ending --fix
       stage_fixed: true
-    - name: check-symlinks
-      run: python3 tools/hooks/check_files.py symlinks
-      stage_fixed: true
+      run: |
+        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+          python3 tools/hooks/check_files.py mixed-line-ending
+        else
+          python3 tools/hooks/check_files.py mixed-line-ending --fix
+        fi
     - name: ruff
       glob: "*.py"
-      run: ruff check --fix {staged_files}
       stage_fixed: true
+      run: |
+        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+          ruff check {staged_files}
+        else
+          ruff check --fix {staged_files}
+        fi
     - name: ruff-format
       glob: "*.py"
-      run: ruff format {staged_files}
       stage_fixed: true
+      run: |
+        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+          ruff format --check {staged_files}
+        else
+          ruff format {staged_files}
+        fi
     - name: gofmt
       glob: "*.go"
-      run: gofmt -w {staged_files}
       stage_fixed: true
+      run: |
+        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+          unformatted=$(gofmt -l {staged_files})
+          if [[ -n "$unformatted" ]]; then
+            echo "The following Go files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+        else
+          gofmt -w {staged_files}
+        fi
     - name: web-prettier
       glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
+      stage_fixed: true
       run: |
         # Ensure web/node_modules is populated. CI runners don't run `npm install`
         # before lefthook, and `npx` without local node_modules fetches the
@@ -56,10 +83,14 @@ pre-commit:
           npm ci --prefix web --no-audit --no-fund || { rm -rf "$LOCKDIR"; exit 1; }
         fi
         rm -rf "$LOCKDIR"
-        cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --write --ignore-unknown
-      stage_fixed: true
+        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+          cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --check --ignore-unknown
+        else
+          cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --write --ignore-unknown
+        fi
     - name: web-eslint
       glob: "web/**/*.{js,jsx,ts,tsx}"
+      stage_fixed: true
       run: |
         # Same npm ci guard as web-prettier; mkdir mutex serialises concurrent installs.
         LOCKDIR=/tmp/ragflow-web-npm-lock
@@ -70,5 +101,18 @@ pre-commit:
           npm ci --prefix web --no-audit --no-fund || { rm -rf "$LOCKDIR"; exit 1; }
         fi
         rm -rf "$LOCKDIR"
-        cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint --fix
-      stage_fixed: true
+        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+          cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint
+        else
+          cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint --fix
+        fi
+    - name: check-yaml
+      run: python3 tools/hooks/check_files.py yaml
+    - name: check-json
+      run: python3 tools/hooks/check_files.py json
+    - name: check-case-conflict
+      run: python3 tools/hooks/check_files.py case-conflict
+    - name: check-merge-conflict
+      run: python3 tools/hooks/check_files.py merge-conflict
+    - name: check-symlinks
+      run: python3 tools/hooks/check_files.py symlinks

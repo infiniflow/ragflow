@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import ast
 import json
 import re
 import subprocess
 import sys
+import tokenize
 from pathlib import Path
 
 import yaml
 
 
 MERGE_PATTERNS = ("<<<<<<< ", "=======\n", ">>>>>>> ")
+
+# Printable ASCII (0x20-0x7E) plus newline — matches the regex used by the
+# historical check_comment_ascii.py.
+_PRINTABLE_ASCII = re.compile(r"^[\n -~]*\Z")
 
 
 def _read_bytes(path: Path) -> bytes:
@@ -158,6 +164,48 @@ def check_case_conflicts(_: list[Path], fix: bool = False) -> int:
     return _report(errors)
 
 
+def check_comment_ascii(paths: list[Path], fix: bool = False) -> int:
+    """Ensure Python comments and docstrings contain only ASCII characters.
+
+    Ported from the legacy check_comment_ascii.py. The fix flag is accepted
+    for signature consistency but no auto-fix exists — non-ASCII comments
+    must be rewritten by hand.
+    """
+    errors: list[str] = []
+    for path in paths:
+        if path.suffix != ".py" or not path.is_file():
+            continue
+        # A common comment begins with `#`
+        try:
+            with tokenize.open(path) as fp:
+                for tk in tokenize.generate_tokens(fp.readline):
+                    if tk.type == tokenize.COMMENT and not _PRINTABLE_ASCII.fullmatch(tk.string):
+                        errors.append(f"non-ASCII comment: {path}:{tk.start[0]}: {tk.string}")
+        except (OSError, SyntaxError, UnicodeDecodeError, tokenize.TokenError):
+            # Skip files that can't be tokenised (binary, bad encoding decl,
+            # syntax errors). Other tools (e.g. ruff) handle those separately.
+            pass
+
+        # A docstring begins and ends with `'''` (or `"""`)
+        try:
+            source = path.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.Module)):
+                continue
+            doc = ast.get_docstring(node)
+            if not doc or _PRINTABLE_ASCII.fullmatch(doc):
+                continue
+            first_line = doc.splitlines()[0] if doc.splitlines() else doc
+            errors.append(f"non-ASCII docstring: {path}:{node.lineno}: {first_line}")
+    return _report(errors)
+
+
 CHECKS = {
     "json": check_json,
     "yaml": check_yaml,
@@ -167,6 +215,7 @@ CHECKS = {
     "merge-conflict": check_merge_conflicts,
     "symlinks": check_symlinks,
     "case-conflict": check_case_conflicts,
+    "comment-ascii": check_comment_ascii,
 }
 
 
