@@ -25,6 +25,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/pkoukk/tiktoken-go"
 	"go.uber.org/zap"
@@ -537,14 +538,25 @@ func NumTokensFromString(s string) int {
 // TrimContentToTokenLimit truncates s to at most limit tokens using the
 // cl100k_base encoder. Mirrors Python's trim_content helper in
 // rag/prompts/generator.py: encoder.decode(encoder.encode(content)[:limit]).
-// Returns the original string if it already fits, or the encoder is unavailable.
+// Returns the original string if it already fits.
 func TrimContentToTokenLimit(s string, limit int) string {
 	if limit < 0 {
 		limit = 0
 	}
 	enc, err := getCL100KEncoder()
 	if err != nil {
-		return s
+		// Fail closed: fall back to byte-length trimming with UTF-8 safety.
+		if limit <= 0 {
+			return ""
+		}
+		b := []byte(s)
+		if len(b) <= limit {
+			return s
+		}
+		for limit > 0 && !utf8.Valid(b[:limit]) {
+			limit--
+		}
+		return string(b[:limit])
 	}
 	tokens := enc.Encode(s, nil, nil)
 	if len(tokens) <= limit {

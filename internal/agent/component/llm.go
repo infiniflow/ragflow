@@ -380,11 +380,21 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 	// _prepare_prompt_variables (llm.py:225-281).
 	var sysFileTexts []string
 	var sysFileImgs []string
+	hasSysFilesPlaceholder := strings.Contains(p.SystemPrompt, "{sys.files}") || strings.Contains(p.UserPrompt, "{sys.files}")
 	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
-		sysFileTexts, sysFileImgs = collectSysFiles(state, p.SystemPrompt, p.UserPrompt)
+		sysFileTexts, sysFileImgs = collectSysFiles(state)
 		if len(sysFileImgs) > 0 {
 			p.VisualFiles = dedupStrings(append(p.VisualFiles, sysFileImgs...))
 		}
+	}
+	// When the prompt contains an explicit {sys.files} placeholder,
+	// replace it with the collected file text and clear sysFileTexts
+	// so it is not injected again below.
+	if hasSysFilesPlaceholder {
+		joined := strings.Join(sysFileTexts, "\n\n")
+		p.SystemPrompt = strings.ReplaceAll(p.SystemPrompt, "{sys.files}", joined)
+		p.UserPrompt = strings.ReplaceAll(p.UserPrompt, "{sys.files}", joined)
+		sysFileTexts = nil
 	}
 
 	msgs := buildMessagesWithImages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite)
@@ -763,20 +773,15 @@ func extractDataImages(values []string) []string {
 }
 
 // collectSysFiles splits sys.files from canvas globals into text parts
-// and image data URIs. When the system prompt or user prompt contains
-// {sys.files}, the caller should handle injection explicitly and this
-// function returns empty (matching Python's explicit template check in
-// _collect_sys_files).
-func collectSysFiles(state *runtime.CanvasState, sysPrompt, userPrompt string) (textParts, imageURIs []string) {
+// and image data URIs. The caller is responsible for handling any
+// {sys.files} placeholder replacement in the prompts.
+func collectSysFiles(state *runtime.CanvasState) (textParts, imageURIs []string) {
 	files, ok := state.Globals["sys.files"]
 	if !ok {
 		return nil, nil
 	}
 	fileList, ok := files.([]any)
 	if !ok || len(fileList) == 0 {
-		return nil, nil
-	}
-	if strings.Contains(sysPrompt, "{sys.files}") || strings.Contains(userPrompt, "{sys.files}") {
 		return nil, nil
 	}
 	for _, f := range fileList {
@@ -1108,15 +1113,21 @@ func messageFitInRaw(messages []map[string]interface{}, maxTokens int) (int, []m
 		return totalTokens, messages
 	}
 
-	// Step 2: keep all system messages + the last message.
+	// Step 2: keep all system messages + the last non-system message.
 	result := make([]map[string]interface{}, 0)
 	for _, m := range messages {
 		if role, _ := m["role"].(string); role == "system" {
 			result = append(result, m)
 		}
 	}
-	if len(messages) > 1 {
-		result = append(result, messages[len(messages)-1])
+	if len(messages) > 0 {
+		last := messages[len(messages)-1]
+		if role, _ := last["role"].(string); role != "system" {
+			result = append(result, last)
+		}
+	}
+	if len(result) == 0 {
+		return 0, result
 	}
 
 	totalTokens = countAllTokens(result)
@@ -1133,20 +1144,20 @@ func messageFitInRaw(messages []map[string]interface{}, maxTokens int) (int, []m
 	}
 
 	if len(result) == 1 {
-		result[0]["content"] = tokenizer.TrimContentToTokenLimit(stringContent(result[0]), maxTokens)
+		setContent(result[0], tokenizer.TrimContentToTokenLimit(stringContent(result[0]), maxTokens))
 		return countAllTokens(result), result
 	}
 
 	if float64(ll)/float64(total) > 0.8 {
 		preservedLast := min(ll2, maxTokens)
-		result[len(result)-1]["content"] = tokenizer.TrimContentToTokenLimit(stringContent(result[len(result)-1]), preservedLast)
+		setContent(result[len(result)-1], tokenizer.TrimContentToTokenLimit(stringContent(result[len(result)-1]), preservedLast))
 		remaining := max(0, maxTokens-preservedLast)
-		result[0]["content"] = tokenizer.TrimContentToTokenLimit(stringContent(result[0]), remaining)
+		setContent(result[0], tokenizer.TrimContentToTokenLimit(stringContent(result[0]), remaining))
 	} else {
 		preservedSystem := min(ll, maxTokens)
-		result[0]["content"] = tokenizer.TrimContentToTokenLimit(stringContent(result[0]), preservedSystem)
+		setContent(result[0], tokenizer.TrimContentToTokenLimit(stringContent(result[0]), preservedSystem))
 		remaining := max(0, maxTokens-preservedSystem)
-		result[len(result)-1]["content"] = tokenizer.TrimContentToTokenLimit(stringContent(result[len(result)-1]), remaining)
+		setContent(result[len(result)-1], tokenizer.TrimContentToTokenLimit(stringContent(result[len(result)-1]), remaining))
 	}
 
 	return countAllTokens(result), result
@@ -1161,10 +1172,43 @@ func countAllTokens(messages []map[string]interface{}) int {
 	return total
 }
 
-// stringContent extracts the "content" string from a message map, or "".
+// stringContent extracts the display text from a message map, or "".
+// For plain messages the text lives in "content"; for multimodal messages
+// (with images) it lives in a text part of "user_input_multi_content".
 func stringContent(m map[string]interface{}) string {
 	s, _ := m["content"].(string)
-	return s
+	if s != "" {
+		return s
+	}
+	if multi, ok := m["user_input_multi_content"].([]schema.MessageInputPart); ok {
+		for _, part := range multi {
+			if part.Type == schema.ChatMessagePartTypeText && part.Text != "" {
+				return part.Text
+			}
+		}
+	}
+	return ""
+}
+
+// setContent writes text into a message map's display field. When the
+// message has user_input_multi_content parts, the first text part is
+// updated; otherwise the plain "content" field is set.
+func setContent(m map[string]interface{}, text string) {
+	if multi, ok := m["user_input_multi_content"].([]schema.MessageInputPart); ok {
+		for i, part := range multi {
+			if part.Type == schema.ChatMessagePartTypeText {
+				multi[i].Text = text
+				return
+			}
+		}
+		// No existing text part – prepend one.
+		m["user_input_multi_content"] = append(
+			[]schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: text}},
+			multi...,
+		)
+		return
+	}
+	m["content"] = text
 }
 
 // stringFrom extracts a string from inputs[name], accepting both string and

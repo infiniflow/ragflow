@@ -293,12 +293,12 @@ func (s *Server) handleCallTool(id json.RawMessage, rawParams json.RawMessage) J
 
 func (s *Server) callRagflowRetrieval(id json.RawMessage, args map[string]interface{}) JSONRPCResponse {
 	req := RetrievalRequest{
-		Page:                   getIntArg(args, "page", 1),
-		PageSize:               getIntArg(args, "page_size", 10),
+		Page:                   getBoundedIntArg(args, "page", 1, 1, 1_000_000),
+		PageSize:               getBoundedIntArg(args, "page_size", 10, 1, 100),
 		SimilarityThreshold:    getFloat64Arg(args, "similarity_threshold", 0.2),
 		VectorSimilarityWeight: getFloat64Arg(args, "vector_similarity_weight", 0.3),
 		Keyword:                getBoolArg(args, "keyword", false),
-		TopK:                   getIntArg(args, "top_k", 1024),
+		TopK:                   getBoundedIntArg(args, "top_k", 1024, 1, 1024),
 		ForceRefresh:           getBoolArg(args, "force_refresh", false),
 		Question:               getStringArg(args, "question", ""),
 		RerankID:               getStringArg(args, "rerank_id", ""),
@@ -311,6 +311,10 @@ func (s *Server) callRagflowRetrieval(id json.RawMessage, args map[string]interf
 		req.DocumentIDs = toStringSlice(v)
 	}
 
+	if strings.TrimSpace(req.Question) == "" {
+		return NewSuccessResponse(id, NewErrorResult("question is required"))
+	}
+
 	result, err := s.connector.Retrieval(req)
 	if err != nil {
 		return NewSuccessResponse(id, NewErrorResult(err.Error()))
@@ -319,8 +323,8 @@ func (s *Server) callRagflowRetrieval(id json.RawMessage, args map[string]interf
 }
 
 func (s *Server) callListDatasets(id json.RawMessage, args map[string]interface{}) JSONRPCResponse {
-	page := getIntArg(args, "page", 1)
-	pageSize := getIntArg(args, "page_size", 100)
+	page := getBoundedIntArg(args, "page", 1, 1, 1_000_000)
+	pageSize := getBoundedIntArg(args, "page_size", 100, 1, 1000)
 
 	result, err := s.connector.ListDatasets(page, pageSize, "create_time", true)
 	if err != nil {
@@ -330,8 +334,8 @@ func (s *Server) callListDatasets(id json.RawMessage, args map[string]interface{
 }
 
 func (s *Server) callListChats(id json.RawMessage, args map[string]interface{}) JSONRPCResponse {
-	page := getIntArg(args, "page", 1)
-	pageSize := getIntArg(args, "page_size", 30)
+	page := getBoundedIntArg(args, "page", 1, 1, 1_000_000)
+	pageSize := getBoundedIntArg(args, "page_size", 30, 1, 100)
 
 	result, err := s.connector.ListChats(page, pageSize, "create_time", true)
 	if err != nil {
@@ -367,6 +371,17 @@ func getIntArg(args map[string]interface{}, key string, defaultVal int) int {
 		}
 	}
 	return defaultVal
+}
+
+func getBoundedIntArg(args map[string]interface{}, key string, defaultVal, minVal, maxVal int) int {
+	v := getIntArg(args, key, defaultVal)
+	if v < minVal {
+		return minVal
+	}
+	if v > maxVal {
+		return maxVal
+	}
+	return v
 }
 
 func getFloat64Arg(args map[string]interface{}, key string, defaultVal float64) float64 {
