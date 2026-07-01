@@ -57,7 +57,10 @@ type chatPipelineRunner interface {
 	AsyncChat(ctx context.Context, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error)
 }
 
-<<<<<<< HEAD
+// chunkFeedbackApplier is the dispatch point for chunk-level feedback
+// persistence. It mirrors Python's ChunkFeedbackService.apply_feedback
+// side effect while keeping the session-level thumbup update independent
+// from the storage implementation.
 type chunkFeedbackApplier interface {
 	applyChunkFeedback(ctx context.Context, tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error)
 }
@@ -66,24 +69,6 @@ type atomicChunkPagerankAdjuster interface {
 	AdjustChunkPagerank(ctx context.Context, indexName, chunkID, kbID string, delta, minWeight, maxWeight float64) error
 }
 
-||||||| 2018eec0d
-=======
-// chunkFeedbackApplier is the dispatch seam for chunk-level feedback
-// persistence. Mirrors the Python ChunkFeedbackService.apply_feedback
-// (api/db/services/chunk_feedback_service.py) call site at
-// api/apps/restful_apis/chat_api.py — that handler records the thumb
-// vote against every chunk that produced the assistant message, in
-// addition to the session-level thumbup field. The Go stack does not
-// yet have a chunk-feedback DAO, so this interface is the seam where
-// one will plug in. Production uses *ChatSessionService itself via
-// applyChunkFeedback (which currently no-ops with a debug log) so the
-// handler can still update the session-level thumbup without crashing;
-// tests can swap in a fake by setting ChatSessionService.chunkFeedbackApplier.
-type chunkFeedbackApplier interface {
-	applyChunkFeedback(tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error)
-}
-
->>>>>>> upstream/main
 // ChatSessionService chat session (conversation) service.
 // The RAG pipeline is delegated to ChatPipelineService.
 type ChatSessionService struct {
@@ -633,7 +618,6 @@ func (s *ChatSessionService) UpdateSession(userID, chatID, sessionID string, req
 	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }
 
-<<<<<<< HEAD
 func (s *ChatSessionService) DeleteSessionMessage(userID, chatID, sessionID, msgID string) (*ChatSessionPayload, common.ErrorCode, error) {
 	ok, err := s.ensureOwnedChat(userID, chatID)
 	if err != nil {
@@ -727,6 +711,12 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 	if len(session.Message) > 0 && messages == nil {
 		return nil, common.CodeDataError, errors.New("Invalid session messages")
 	}
+	// References are only used for chunk feedback, but malformed data must
+	// fail immediately instead of being treated as an empty list.
+	references := parseReferenceList(session.Reference)
+	if len(session.Reference) > 0 && references == nil {
+		return nil, common.CodeDataError, errors.New("Invalid session reference")
+	}
 	messageIndex := -1
 	var priorThumb interface{}
 	applyChunkFeedback := false
@@ -754,10 +744,6 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 	}
 
 	if messageIndex != -1 && applyChunkFeedback {
-		references := parseReferenceList(session.Reference)
-		if len(session.Reference) > 0 && references == nil {
-			return nil, common.CodeDataError, errors.New("Invalid session reference")
-		}
 		refIndex := (messageIndex - 1) / 2
 		if refIndex >= 0 && refIndex < len(references) {
 			if reference, ok := references[refIndex].(map[string]interface{}); ok && len(reference) > 0 {
@@ -801,233 +787,6 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }
 
-||||||| 2018eec0d
-=======
-func (s *ChatSessionService) DeleteSessionMessage(userID, chatID, sessionID, msgID string) (*ChatSessionPayload, common.ErrorCode, error) {
-	ok, err := s.ensureOwnedChat(userID, chatID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
-	}
-
-	session, err := s.chatSessionDAO.GetByID(sessionID)
-	if err != nil || session.DialogID != chatID {
-		if err != nil && !isChatSessionNotFound(err) {
-			return nil, common.CodeServerError, err
-		}
-		return nil, common.CodeDataError, errors.New("Session not found!")
-	}
-
-	// parseMessages / parseReferenceList return nil for
-	// malformed input, so the existing `nil` guards below are
-	// the single source of truth for "this blob is corrupt".
-	messages := parseMessages(session.Message)
-	if len(session.Message) > 0 && messages == nil {
-		return nil, common.CodeDataError, errors.New("Invalid session messages")
-	}
-	references := parseReferenceList(session.Reference)
-	if len(session.Reference) > 0 && references == nil {
-		return nil, common.CodeDataError, errors.New("Invalid session reference")
-	}
-	for i, msg := range messages {
-		if msgID != stringValue(msg["id"]) {
-			continue
-		}
-		if i+1 >= len(messages) || stringValue(messages[i+1]["id"]) != msgID {
-			return nil, common.CodeServerError, errors.New("message pair assertion failed")
-		}
-		messages = append(messages[:i], messages[i+2:]...)
-		refIndex := (i - 1) / 2
-		if refIndex < 0 {
-			refIndex = 0
-		}
-		if refIndex < len(references) {
-			references = append(references[:refIndex], references[refIndex+1:]...)
-		}
-		break
-	}
-
-	messageRaw, err := json.Marshal(messages)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	referenceRaw, err := json.Marshal(references)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if err := s.chatSessionDAO.UpdateByID(session.ID, map[string]interface{}{
-		"message":   messageRaw,
-		"reference": referenceRaw,
-	}); err != nil {
-		return nil, common.CodeServerError, err
-	}
-	session.Message = messageRaw
-	session.Reference = referenceRaw
-
-	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
-}
-
-func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, msgID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
-	ownerTenantID := ""
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	for _, tenantID := range tenantIDs {
-		exists, err := s.chatSessionDAO.CheckDialogExists(tenantID, chatID)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-		if exists {
-			ownerTenantID = tenantID
-			break
-		}
-	}
-	if ownerTenantID == "" {
-		exists, err := s.chatSessionDAO.CheckDialogExists(userID, chatID)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-		if exists {
-			ownerTenantID = userID
-		}
-	}
-	ok := ownerTenantID != ""
-	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
-	}
-
-	session, err := s.chatSessionDAO.GetByID(sessionID)
-	if err != nil || session.DialogID != chatID {
-		if err != nil && !isChatSessionNotFound(err) {
-			return nil, common.CodeServerError, err
-		}
-		return nil, common.CodeDataError, errors.New("Session not found!")
-	}
-
-	thumbRaw, ok := req["thumbup"]
-	if !ok {
-		return nil, common.CodeDataError, errors.New("thumbup must be a boolean")
-	}
-	thumbup, ok := thumbRaw.(bool)
-	if !ok {
-		return nil, common.CodeDataError, errors.New("thumbup must be a boolean")
-	}
-
-	messages := parseMessages(session.Message)
-	if len(session.Message) > 0 && messages == nil {
-		return nil, common.CodeDataError, errors.New("Invalid session messages")
-	}
-	// References are only used later in this function but a
-	// malformed blob must surface immediately, not silently
-	// collapse to an empty slice.
-	references := parseReferenceList(session.Reference)
-	if len(session.Reference) > 0 && references == nil {
-		return nil, common.CodeDataError, errors.New("Invalid session reference")
-	}
-	messageIndex := -1
-	var priorThumb interface{}
-	applyChunkFeedback := false
-	var feedbackReference map[string]interface{}
-	for i, msg := range messages {
-		if msgID != stringValue(msg["id"]) || stringValue(msg["role"]) != "assistant" {
-			continue
-		}
-		priorThumb = msg["thumbup"]
-		priorThumbBool, priorThumbIsBool := priorThumb.(bool)
-		if thumbup {
-			msg["thumbup"] = true
-			delete(msg, "feedback")
-			applyChunkFeedback = !priorThumbIsBool || !priorThumbBool
-		} else {
-			msg["thumbup"] = false
-			if feedback, exists := req["feedback"]; exists && isTruthy(feedback) {
-				msg["feedback"] = feedback
-			}
-			applyChunkFeedback = !priorThumbIsBool || priorThumbBool
-		}
-		messages[i] = msg
-		messageIndex = i
-		break
-	}
-
-	if messageIndex != -1 && applyChunkFeedback {
-		references := parseReferenceList(session.Reference)
-		if len(session.Reference) > 0 && references == nil {
-			return nil, common.CodeDataError, errors.New("Invalid session reference")
-		}
-		refIndex := (messageIndex - 1) / 2
-		if refIndex >= 0 && refIndex < len(references) {
-			if reference, ok := references[refIndex].(map[string]interface{}); ok && len(reference) > 0 {
-				feedbackReference = reference
-			}
-		}
-	}
-
-	messageRaw, err := json.Marshal(messages)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if err := s.chatSessionDAO.UpdateByID(session.ID, map[string]interface{}{"message": messageRaw}); err != nil {
-		return nil, common.CodeServerError, err
-	}
-	session.Message = messageRaw
-
-	if feedbackReference != nil {
-		applier := s.chunkFeedbackApplier
-		if applier == nil {
-			applier = s
-		}
-		if priorThumbBool, ok := priorThumb.(bool); ok && priorThumbBool != thumbup {
-			result, _ := applier.applyChunkFeedback(ownerTenantID, feedbackReference, !priorThumbBool)
-			if result != nil {
-				common.Debug("Chunk feedback undo applied",
-					zap.Any("success_count", result["success_count"]),
-					zap.Any("fail_count", result["fail_count"]),
-				)
-			}
-		}
-		result, _ := applier.applyChunkFeedback(ownerTenantID, feedbackReference, thumbup)
-		if result != nil {
-			common.Debug("Chunk feedback applied",
-				zap.Any("success_count", result["success_count"]),
-				zap.Any("fail_count", result["fail_count"]),
-			)
-		}
-	}
-
-	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
-}
-
-// applyChunkFeedback records a thumb vote against the chunks that
-// produced a session message. Mirrors Python's
-// ChunkFeedbackService.apply_feedback side effect (called from
-// api/apps/restful_apis/chat_api.py when a user toggles a thumb on
-// an assistant message). The Go persistence port for chunk feedback
-// is intentionally not yet landed — the call here is a documented
-// no-op so the session-level thumbup flow (the user-visible behavior)
-// keeps working while a future PR ports the Python DAO. The returned
-// counts let the caller log a "Chunk feedback applied: N succeeded,
-// M failed" line consistent with the Python equivalent, so log
-// scrapers don't see a regression in success/fail rates.
-//
-// Production callers should always go through the chunkFeedbackApplier
-// field; this method is the default implementation used when that
-// field is nil.
-func (s *ChatSessionService) applyChunkFeedback(tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error) {
-	common.Debug("chunk feedback persistence not yet ported; dropping vote",
-		zap.String("tenant_id", tenantID),
-		zap.Bool("is_positive", isPositive),
-	)
-	return map[string]interface{}{
-		"success_count": 0,
-		"fail_count":    0,
-	}, nil
-}
-
->>>>>>> upstream/main
 func (s *ChatSessionService) ensureOwnedChat(userID, chatID string) (bool, error) {
 	_, ok, err := s.resolveOwnedChatTenant(userID, chatID)
 	return ok, err
@@ -1094,19 +853,6 @@ func (s *ChatSessionService) buildSessionPayload(session *entity.ChatSession, di
 	}
 }
 
-// parseMessages decodes a session.Message blob. Returns:
-//   - nil                  — input was non-empty but malformed JSON;
-//     callers should reject with "Invalid session messages".
-//   - non-nil empty slice  — input was empty (no messages stored yet).
-//   - non-nil slice        — successful decode.
-//
-// The nil-on-malformed contract is what makes the
-// `if len(raw) > 0 && messages == nil` checks in
-// DeleteSessionMessage / UpdateMessageFeedback fire — without it,
-// a corrupted blob silently parses to an empty slice and the
-// message-repair logic no-ops. PR review round 7 (CI red): the
-// helpers previously returned `make([]T, 0)` on parse failure,
-// so the upstream-introduced guards in a55388698 never matched.
 func parseMessages(raw json.RawMessage) []map[string]interface{} {
 	messages := make([]map[string]interface{}, 0)
 	if len(raw) == 0 {
@@ -1125,19 +871,9 @@ func parseMessages(raw json.RawMessage) []map[string]interface{} {
 	}
 	wrappedMessages, ok := wrapped["messages"]
 	if !ok {
-		// Object without a "messages" key — wrong schema, not empty.
 		return nil
 	}
 	if len(wrappedMessages) == 0 || string(wrappedMessages) == "null" {
-		// Empty / explicit-null wrapped messages is a legitimate
-		// empty form, not a parse failure. Return non-nil empty
-		// so the service layer's `messages == nil` check
-		// correctly distinguishes "no messages yet" from "corrupt
-		// blob". (Upstream fix: the original code returned nil
-		// here too, which made the test
-		// TestParseCollections_ReturnEmptySlicesForMissingOrNull
-		// fail — `{"messages":null}` is a valid empty form, not
-		// a malformed blob.)
 		return make([]map[string]interface{}, 0)
 	}
 	if err := json.Unmarshal(wrappedMessages, &messages); err != nil {
@@ -1149,15 +885,13 @@ func parseMessages(raw json.RawMessage) []map[string]interface{} {
 	return messages
 }
 
-// parseReferenceList decodes a session.Reference blob. Same
-// nil-on-malformed contract as parseMessages — callers gate on
-// `if len(raw) > 0 && references == nil` to reject corruption.
 func parseReferenceList(raw json.RawMessage) []interface{} {
 	references := make([]interface{}, 0)
 	if len(raw) == 0 {
 		return references
 	}
-	if err := json.Unmarshal(raw, &references); err != nil {
+	err := json.Unmarshal(raw, &references)
+	if err != nil {
 		return nil
 	}
 	if references == nil {
