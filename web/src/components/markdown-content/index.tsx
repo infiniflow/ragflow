@@ -1,4 +1,4 @@
-import Image from '@/components/image';
+import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
@@ -203,7 +203,7 @@ const MarkdownContent = ({
             {documentId && (
               <section className="flex gap-1">
                 {fileThumbnail ? (
-                  <img
+                  <AuthenticatedImg
                     src={fileThumbnail}
                     alt=""
                     className={styles.fileThumbnail}
