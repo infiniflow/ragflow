@@ -18,6 +18,7 @@ const clearSensitiveFields = <T,>(obj: T): T =>
         Operator.TavilyExtract,
         Operator.Google,
         Operator.KeenableSearch,
+        Operator.BGPT,
       ].includes(value.component_name) &&
       get(value, 'params.api_key')
     ) {

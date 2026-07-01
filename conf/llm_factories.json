@@ -1759,7 +1759,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
-            "rank": "988",
+            "rank": "830",
             "llm": []
         },
         {
@@ -7486,6 +7486,14 @@
             "logo": "",
             "tags": "OCR",
             "status": "1",
+            "llm": []
+        },
+        {
+            "name": "SoMark",
+            "logo": "",
+            "tags": "OCR",
+            "status": "1",
+            "rank": "930",
             "llm": []
         },
         {
