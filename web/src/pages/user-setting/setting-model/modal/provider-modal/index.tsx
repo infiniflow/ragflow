@@ -13,8 +13,8 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../verify-button';
-import { AddableToggleList } from './components/addable-toggle-list';
 import { AddCustomModelDialog } from './components/add-custom-model-dialog';
+import { AddableToggleList } from './components/addable-toggle-list';
 import { useCustomModelFields } from './components/use-custom-model-fields';
 import {
   useListModelsOptions,
@@ -288,19 +288,17 @@ const ProviderModal = ({
               f.name === 'name'
                 ? editingModel.name
                 : f.name === 'model_types'
-                  ? editingModel.model_types ?? []
+                  ? (editingModel.model_types ?? [])
                   : f.name === 'max_tokens'
-                    ? editingModel.max_tokens ?? 0
+                    ? (editingModel.max_tokens ?? 0)
                     : f.name === 'features'
-                      ? editingModel.features ?? []
+                      ? (editingModel.features ?? [])
                       : f.defaultValue,
           }))}
           onSubmit={handleSaveEditedModel}
           submitText={tc('ok')}
           cancelText={tc('cancel')}
-          existingNames={existingNames.filter(
-            (n) => n !== editingModel.name,
-          )}
+          existingNames={existingNames.filter((n) => n !== editingModel.name)}
         />
       )}
     </Modal>
