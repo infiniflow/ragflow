@@ -50,12 +50,40 @@ jobs:
       contents: read
       statuses: write
     steps:
+      - name: Validate workflow dispatch inputs
+        id: validate_dispatch_inputs
+        env:
+          HEAD_SHA: ${{ inputs.head_sha }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          MERGE_SHA: ${{ inputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${HEAD_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid HEAD_SHA" >&2; exit 1; }
+          [[ "${PR_NUMBER}" =~ ^[0-9]+$ ]] || { echo "Invalid PR_NUMBER" >&2; exit 1; }
+          [[ "${MERGE_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid MERGE_SHA" >&2; exit 1; }
+          echo "head_sha=${HEAD_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
+          echo "merge_sha=${MERGE_SHA}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check out PR merge ref
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ format('refs/pull/{0}/merge', steps.validate_dispatch_inputs.outputs.pr_number) }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
       - name: Set pending status
         env:
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ inputs.head_sha }}
+          HEAD_SHA: ${{ steps.validate_dispatch_inputs.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.validate_dispatch_inputs.outputs.pr_number }}
+          MERGE_SHA: ${{ steps.validate_dispatch_inputs.outputs.merge_sha }}
           STATUS_CONTEXT: tests / heavy
         run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${MERGE_SHA}"
+          test "$(git rev-parse HEAD^2)" = "${HEAD_SHA}"
           gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
             -f state="pending" \
             -f context="${STATUS_CONTEXT}" \
@@ -78,27 +106,54 @@ jobs:
           echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
 
       # https://github.com/actions/checkout/issues/1781
+      - name: Validate workflow dispatch inputs
+        id: validate_dispatch_inputs
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          HEAD_SHA: ${{ inputs.head_sha }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          MERGE_SHA: ${{ inputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${HEAD_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid HEAD_SHA" >&2; exit 1; }
+          [[ "${PR_NUMBER}" =~ ^[0-9]+$ ]] || { echo "Invalid PR_NUMBER" >&2; exit 1; }
+          [[ "${MERGE_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid MERGE_SHA" >&2; exit 1; }
+          echo "head_sha=${HEAD_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
+          echo "merge_sha=${MERGE_SHA}" >> "${GITHUB_OUTPUT}"
+
       - name: Check out code
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', inputs.pr_number) || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', steps.validate_dispatch_inputs.outputs.pr_number) || github.sha }}
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
 
       - name: Verify PR merge checkout
         if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          HEAD_SHA: ${{ steps.validate_dispatch_inputs.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.validate_dispatch_inputs.outputs.pr_number }}
+          MERGE_SHA: ${{ steps.validate_dispatch_inputs.outputs.merge_sha }}
         run: |
           set -euo pipefail
+          [[ "${HEAD_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid HEAD_SHA" >&2; exit 1; }
+          [[ "${PR_NUMBER}" =~ ^[0-9]+$ ]] || { echo "Invalid PR_NUMBER" >&2; exit 1; }
+          [[ "${MERGE_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid MERGE_SHA" >&2; exit 1; }
           git rev-parse HEAD
           git rev-parse HEAD^1
           git rev-parse HEAD^2
-          echo "Expected PR head SHA: ${{ inputs.head_sha }}"
-          echo "Expected PR merge SHA: ${{ inputs.merge_sha }}"
-          test "$(git rev-parse HEAD)" = "${{ inputs.merge_sha }}"
+          echo "Expected PR number: ${PR_NUMBER}"
+          echo "Expected PR head SHA: ${HEAD_SHA}"
+          echo "Expected PR merge SHA: ${MERGE_SHA}"
+          test "$(git rev-parse HEAD)" = "${MERGE_SHA}"
+          test "$(git rev-parse HEAD^2)" = "${HEAD_SHA}"
 
       - name: Check workflow duplication
         if: ${{ !cancelled() && !failure() }}
+        env:
+          DISPATCH_PR_NUMBER: ${{ steps.validate_dispatch_inputs.outputs.pr_number }}
         run: |
           if [[ ${GITHUB_EVENT_NAME} != "workflow_dispatch" && ${GITHUB_EVENT_NAME} != "schedule" ]]; then
             HEAD=$(git rev-parse HEAD)
@@ -126,7 +181,8 @@ jobs:
               fi
             fi
           elif [[ ${GITHUB_EVENT_NAME} == "workflow_dispatch" ]]; then
-            PR_NUMBER=${{ inputs.pr_number }}
+            [[ "${DISPATCH_PR_NUMBER}" =~ ^[0-9]+$ ]] || { echo "Invalid DISPATCH_PR_NUMBER" >&2; exit 1; }
+            PR_NUMBER=${DISPATCH_PR_NUMBER}
             PR_SHA_FP=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/PR_${PR_NUMBER}
             # Calculate the hash of the current workspace content
             PR_SHA=$(git rev-parse HEAD^{tree})
@@ -258,24 +314,49 @@ jobs:
           echo "Workflow triggered by ${{ github.event_name }}"
           echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
 
+      - name: Validate workflow dispatch inputs
+        id: validate_dispatch_inputs
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          HEAD_SHA: ${{ inputs.head_sha }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          MERGE_SHA: ${{ inputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${HEAD_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid HEAD_SHA" >&2; exit 1; }
+          [[ "${PR_NUMBER}" =~ ^[0-9]+$ ]] || { echo "Invalid PR_NUMBER" >&2; exit 1; }
+          [[ "${MERGE_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid MERGE_SHA" >&2; exit 1; }
+          echo "head_sha=${HEAD_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
+          echo "merge_sha=${MERGE_SHA}" >> "${GITHUB_OUTPUT}"
+
       - name: Check out code
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', inputs.pr_number) || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', steps.validate_dispatch_inputs.outputs.pr_number) || github.sha }}
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
 
       - name: Verify PR merge checkout
         if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          HEAD_SHA: ${{ steps.validate_dispatch_inputs.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.validate_dispatch_inputs.outputs.pr_number }}
+          MERGE_SHA: ${{ steps.validate_dispatch_inputs.outputs.merge_sha }}
         run: |
           set -euo pipefail
+          [[ "${HEAD_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid HEAD_SHA" >&2; exit 1; }
+          [[ "${PR_NUMBER}" =~ ^[0-9]+$ ]] || { echo "Invalid PR_NUMBER" >&2; exit 1; }
+          [[ "${MERGE_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid MERGE_SHA" >&2; exit 1; }
           git rev-parse HEAD
           git rev-parse HEAD^1
           git rev-parse HEAD^2
-          echo "Expected PR head SHA: ${{ inputs.head_sha }}"
-          echo "Expected PR merge SHA: ${{ inputs.merge_sha }}"
-          test "$(git rev-parse HEAD)" = "${{ inputs.merge_sha }}"
+          echo "Expected PR number: ${PR_NUMBER}"
+          echo "Expected PR head SHA: ${HEAD_SHA}"
+          echo "Expected PR merge SHA: ${MERGE_SHA}"
+          test "$(git rev-parse HEAD)" = "${MERGE_SHA}"
+          test "$(git rev-parse HEAD^2)" = "${HEAD_SHA}"
 
       - name: Build ragflow go server
         run: |
@@ -717,24 +798,49 @@ jobs:
           echo "Workflow triggered by ${{ github.event_name }}"
           echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
 
+      - name: Validate workflow dispatch inputs
+        id: validate_dispatch_inputs
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          HEAD_SHA: ${{ inputs.head_sha }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          MERGE_SHA: ${{ inputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${HEAD_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid HEAD_SHA" >&2; exit 1; }
+          [[ "${PR_NUMBER}" =~ ^[0-9]+$ ]] || { echo "Invalid PR_NUMBER" >&2; exit 1; }
+          [[ "${MERGE_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid MERGE_SHA" >&2; exit 1; }
+          echo "head_sha=${HEAD_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
+          echo "merge_sha=${MERGE_SHA}" >> "${GITHUB_OUTPUT}"
+
       - name: Check out code
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', inputs.pr_number) || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', steps.validate_dispatch_inputs.outputs.pr_number) || github.sha }}
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
 
       - name: Verify PR merge checkout
         if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          HEAD_SHA: ${{ steps.validate_dispatch_inputs.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.validate_dispatch_inputs.outputs.pr_number }}
+          MERGE_SHA: ${{ steps.validate_dispatch_inputs.outputs.merge_sha }}
         run: |
           set -euo pipefail
+          [[ "${HEAD_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid HEAD_SHA" >&2; exit 1; }
+          [[ "${PR_NUMBER}" =~ ^[0-9]+$ ]] || { echo "Invalid PR_NUMBER" >&2; exit 1; }
+          [[ "${MERGE_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid MERGE_SHA" >&2; exit 1; }
           git rev-parse HEAD
           git rev-parse HEAD^1
           git rev-parse HEAD^2
-          echo "Expected PR head SHA: ${{ inputs.head_sha }}"
-          echo "Expected PR merge SHA: ${{ inputs.merge_sha }}"
-          test "$(git rev-parse HEAD)" = "${{ inputs.merge_sha }}"
+          echo "Expected PR number: ${PR_NUMBER}"
+          echo "Expected PR head SHA: ${HEAD_SHA}"
+          echo "Expected PR merge SHA: ${MERGE_SHA}"
+          test "$(git rev-parse HEAD)" = "${MERGE_SHA}"
+          test "$(git rev-parse HEAD^2)" = "${HEAD_SHA}"
 
       - name: Build ragflow go server
         run: |
@@ -1162,15 +1268,43 @@ jobs:
       contents: read
       statuses: write
     steps:
+      - name: Validate workflow dispatch inputs
+        id: validate_dispatch_inputs
+        env:
+          HEAD_SHA: ${{ inputs.head_sha }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          MERGE_SHA: ${{ inputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${HEAD_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid HEAD_SHA" >&2; exit 1; }
+          [[ "${PR_NUMBER}" =~ ^[0-9]+$ ]] || { echo "Invalid PR_NUMBER" >&2; exit 1; }
+          [[ "${MERGE_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid MERGE_SHA" >&2; exit 1; }
+          echo "head_sha=${HEAD_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
+          echo "merge_sha=${MERGE_SHA}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check out PR merge ref
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ format('refs/pull/{0}/merge', steps.validate_dispatch_inputs.outputs.pr_number) }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
       - name: Publish final status
         env:
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ inputs.head_sha }}
+          HEAD_SHA: ${{ steps.validate_dispatch_inputs.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.validate_dispatch_inputs.outputs.pr_number }}
+          MERGE_SHA: ${{ steps.validate_dispatch_inputs.outputs.merge_sha }}
           STATUS_CONTEXT: tests / heavy
           PREFLIGHT_RESULT: ${{ needs.ragflow_preflight.result }}
           INFINITY_RESULT: ${{ needs.ragflow_tests_infinity.result }}
           ELASTICSEARCH_RESULT: ${{ needs.ragflow_tests_elasticsearch.result }}
         run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${MERGE_SHA}"
+          test "$(git rev-parse HEAD^2)" = "${HEAD_SHA}"
           state="success"
           description="Heavy CI passed"
           if [[ "${PREFLIGHT_RESULT}" == "failure" || "${INFINITY_RESULT}" == "failure" || "${ELASTICSEARCH_RESULT}" == "failure" ]]; then

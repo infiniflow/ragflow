@@ -29,6 +29,8 @@ jobs:
           STATUS_CONTEXT: tests / heavy
         run: |
           set -euo pipefail
+          [[ "${HEAD_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "Invalid HEAD_SHA" >&2; exit 1; }
+          [[ "${PR_NUMBER}" =~ ^[0-9]+$ ]] || { echo "Invalid PR_NUMBER" >&2; exit 1; }
 
           set_status() {
             local state="$1"
