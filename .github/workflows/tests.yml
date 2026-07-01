@@ -205,6 +205,25 @@ jobs:
             echo "No Go files changed"
           fi
 
+      - name: Run Lefthook on changed files
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+          changed_files=$(mktemp)
+          trap 'rm -f "$changed_files"' EXIT
+          git diff --name-only HEAD^1...HEAD^2 \
+            | while read -r file; do
+                [[ -f "$file" ]] && printf '%s\0' "$file"
+              done > "$changed_files"
+
+          echo "Changed files to run lefthook on:"
+          if [[ -s "$changed_files" ]]; then
+            tr '\0' '\n' < "$changed_files" | sed 's/^/  /'
+          else
+            echo "  (none - lefthook will be a no-op)"
+          fi
+          lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
+
       - name: Set test level
         id: test_level
         run: |
