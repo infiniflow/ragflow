@@ -2234,6 +2234,13 @@ Best for: Documents with flowing, contextually connected content — such as boo
       pubMed: 'PubMed',
       pubMedDescription:
         'A component that searches from https://pubmed.ncbi.nlm.nih.gov/, allowing you to specify the number of search results using TopN. It supplements the existing datasets.',
+      bGPT: 'BGPT',
+      bGPTDescription:
+        'Search scientific papers via BGPT and return structured evidence from full-text studies: methods, sample sizes, limitations, conflicts of interest, data availability, blind spots, and falsification prompts. Optional API key after the free tier.',
+      bgptApiKey: 'API key',
+      bgptApiKeyTip: 'Optional. Leave blank for the free tier (first 50 results).',
+      bgptDaysBack: 'Days back',
+      bgptDaysBackTip: 'Optional recency filter (e.g. 365 for the last year).',
       email: 'Email',
       emailTip:
         'E-mail is a required field. You must input an E-mail address here.',
