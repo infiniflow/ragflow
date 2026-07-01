@@ -41,10 +41,7 @@ class BGPTParam(ToolParamBase):
             "parameters": {
                 "query": {
                     "type": "string",
-                    "description": (
-                        "Natural-language scientific search query. Use the most important terms "
-                        "from the user's request."
-                    ),
+                    "description": ("Natural-language scientific search query. Use the most important terms from the user's request."),
                     "default": "{sys.query}",
                     "required": True,
                 }
@@ -174,6 +171,4 @@ class BGPT(ToolBase, ABC):
         return "\n".join(lines)
 
     def thoughts(self) -> str:
-        return "Searching BGPT for structured scientific evidence on `{}`.".format(
-            self.get_input().get("query", "-_-!")
-        )
+        return "Searching BGPT for structured scientific evidence on `{}`.".format(self.get_input().get("query", "-_-!"))
