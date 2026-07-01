@@ -504,9 +504,9 @@ func runIngestor(args *serverArgs) error {
 	select {
 	case sig := <-quit:
 		common.Info("Received signal", zap.String("signal", sig.String()))
-		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", args.name))
+		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *args.name))
 	case <-ingestor.ShutdownCh:
-		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", args.name))
+		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", *args.name))
 	}
 
 	// Create context with timeout for graceful shutdown
@@ -515,7 +515,7 @@ func runIngestor(args *serverArgs) error {
 
 	ingestor.Stop()
 
-	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", args.name))
+	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", *args.name))
 
 	return nil
 }
