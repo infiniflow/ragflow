@@ -165,5 +165,11 @@ func truncateText(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen]
+	// Slice on a rune boundary; [:maxLen] indexes bytes and can split a
+	// multi-byte UTF-8 character, same as TruncateToolResult guards against.
+	runes := []rune(s)
+	if maxLen > len(runes) {
+		return s
+	}
+	return string(runes[:maxLen])
 }

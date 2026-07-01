@@ -23,9 +23,11 @@ const DocumentPreview = function ({
   setWidthAndHeight,
   url,
 }: PreviewProps & Partial<IProps>) {
+  const isPdf = fileType === 'pdf';
+
   return (
     <>
-      {fileType === 'pdf' && highlights && setWidthAndHeight && (
+      {isPdf && (
         <section className="h-full">
           <PdfPreviewer
             className={className}
