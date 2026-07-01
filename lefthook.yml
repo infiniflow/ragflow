@@ -39,9 +39,36 @@ pre-commit:
       stage_fixed: true
     - name: web-prettier
       glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
-      run: npx --prefix web prettier --write --ignore-unknown {staged_files}
+      run: |
+        # Ensure web/node_modules is populated. CI runners don't run `npm install`
+        # before lefthook, and `npx` without local node_modules fetches the
+        # latest packages from the registry — which breaks because the pinned
+        # prettier plugins (prettier-plugin-organize-imports,
+        # prettier-plugin-packagejson) aren't auto-resolved and ESLint 10
+        # requires eslint.config.js.
+        # Use a mkdir-based mutex to prevent parallel npm ci from multiple hooks
+        # racing (ETXTBSY error on esbuild). mkdir is atomic on both Linux and macOS.
+        LOCKDIR=/tmp/ragflow-web-npm-lock
+        while ! mkdir "$LOCKDIR" 2>/dev/null; do sleep 0.5; done
+        if [ ! -f web/node_modules/.package-lock.json ]; then
+          echo "==> web/node_modules missing or incomplete; running npm ci --prefix web"
+          rm -rf web/node_modules
+          npm ci --prefix web --no-audit --no-fund || { rm -rf "$LOCKDIR"; exit 1; }
+        fi
+        rm -rf "$LOCKDIR"
+        cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --write --ignore-unknown
       stage_fixed: true
     - name: web-eslint
       glob: "web/**/*.{js,jsx,ts,tsx}"
-      run: npx --prefix web eslint --fix {staged_files}
+      run: |
+        # Same npm ci guard as web-prettier; mkdir mutex serialises concurrent installs.
+        LOCKDIR=/tmp/ragflow-web-npm-lock
+        while ! mkdir "$LOCKDIR" 2>/dev/null; do sleep 0.5; done
+        if [ ! -f web/node_modules/.package-lock.json ]; then
+          echo "==> web/node_modules missing or incomplete; running npm ci --prefix web"
+          rm -rf web/node_modules
+          npm ci --prefix web --no-audit --no-fund || { rm -rf "$LOCKDIR"; exit 1; }
+        fi
+        rm -rf "$LOCKDIR"
+        cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint --fix
       stage_fixed: true
