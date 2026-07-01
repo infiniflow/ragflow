@@ -42,11 +42,11 @@ type oidcClient struct {
 
 func newOIDCClient(cfg Config) (*oidcClient, error) {
 	if cfg.Issuer == "" {
-		return nil, fmt.Errorf("Missing issuer in configuration.")
+		return nil, fmt.Errorf("missing issuer in configuration")
 	}
 	meta, err := loadOIDCMetadata(cfg.Issuer)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to fetch OIDC metadata: %w", err)
+		return nil, fmt.Errorf("failed to fetch OIDC metadata: %w", err)
 	}
 	if meta.Issuer != "" {
 		cfg.Issuer = meta.Issuer
