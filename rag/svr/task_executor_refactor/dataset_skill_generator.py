@@ -373,6 +373,11 @@ async def run_corpus2skill(
         progress(1.0, "skill: no documents in KB")
         return
 
+    # Phase-1 gate: bail before spinning up N per-doc summarizations.
+    if ctx.has_canceled_func(ctx.id):
+        progress(-1, "skill: task has been canceled")
+        return
+
     n_docs = len(eligible_docs)
     progress(0.05, f"skill: summarizing {n_docs} document(s)")
     doc_sem = asyncio.Semaphore(SKILL_DOC_SUMMARY_CONCURRENCY)
@@ -398,10 +403,20 @@ async def run_corpus2skill(
         progress(1.0, "skill: no doc summaries produced")
         return
 
+    # Post-Phase-1 gate: bail before starting the iterative clustering.
+    if ctx.has_canceled_func(ctx.id):
+        progress(-1, "skill: task has been canceled")
+        return
+
     # ---- Phase 2-4: iterative clustering until ≤ MAX_TOP.
     current_layer = leaves
     level = 0
     for iteration in range(SKILL_MAX_TREE_ITERATIONS):
+        # Per-iteration gate: caps the wasted LLM cost when the task is
+        # canceled mid-way through a many-layer clustering run.
+        if ctx.has_canceled_func(ctx.id):
+            progress(-1, "skill: task has been canceled")
+            return
         if len(current_layer) <= SKILL_MAX_TOP_CLUSTERS:
             break
         progress(
@@ -504,6 +519,14 @@ async def run_corpus2skill(
             _assign_folders(child, ci, is_root=False)
     for ri, root in enumerate(roots):
         _assign_folders(root, ri, is_root=True)
+
+    # Final gate before the destructive delete + bulk insert. This is
+    # the most important check — without it a late cancel would still
+    # wipe the KB's existing ``skill``/``skill_all`` rows AND spend a
+    # full bulk-insert round-trip on data the caller no longer wants.
+    if ctx.has_canceled_func(ctx.id):
+        progress(-1, "skill: task has been canceled")
+        return
 
     # ---- Phase 6: clean + bulk insert.
     index = search.index_name(ctx.tenant_id)
