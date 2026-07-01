@@ -14,6 +14,7 @@ export function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   mapNodeToValue = defaultMapNodeToValue as (
     node: IArtifactGraphEntity,
   ) => TNodeValue,
+  getNodeId = (node) => node.slug,
 }: ArtifactForceGraphProps<TNodeValue>) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraphMethods<IArtifactGraphEntity> | undefined>(
@@ -29,7 +30,7 @@ export function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
 
     const nodes = (data.entities || []).map((entity) => ({
       ...entity,
-      id: entity.slug,
+      id: getNodeId(entity),
     }));
 
     const links = (data.relations || []).map((relation) => ({
@@ -38,7 +39,7 @@ export function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
     }));
 
     return { nodes, links };
-  }, [data]);
+  }, [data, getNodeId]);
 
   useEffect(() => {
     hasFittedRef.current = false;

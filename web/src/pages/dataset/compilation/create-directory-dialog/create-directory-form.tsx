@@ -1,12 +1,6 @@
 'use client';
 
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import {
-  FormControl,
-  FormField,
-  FormItem,
-  FormMessage,
-} from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from 'react-i18next';
@@ -26,27 +20,11 @@ export function CreateDirectoryFormFields() {
         label={t('knowledgeDetails.directoryName')}
         required
       >
-        <Input
-          placeholder={t('knowledgeDetails.directoryNamePlaceholder')}
-          autoComplete="off"
-        />
+        <Input placeholder={t('common.pleaseInput')} autoComplete="off" />
       </RAGFlowFormItem>
-
-      <FormField
-        name="rule"
-        render={({ field }) => (
-          <FormItem>
-            <FormControl>
-              <Textarea
-                placeholder={t('knowledgeDetails.directoryRulePlaceholder')}
-                className="min-h-[120px]"
-                {...field}
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      <RAGFlowFormItem name="rule" label={t('knowledgeDetails.directoryRule')}>
+        <Textarea placeholder={t('common.pleaseInput')} />
+      </RAGFlowFormItem>
     </div>
   );
 }

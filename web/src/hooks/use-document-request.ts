@@ -9,12 +9,14 @@ import {
   IDocumentInfo,
   IDocumentInfoFilter,
 } from '@/interfaces/database/document';
+import { IStructureGraphResponse } from '@/interfaces/database/document-structure';
 import {
   IChangeParserConfigRequestBody,
   IDocumentMetaRequestBody,
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
+import documentStructureService from '@/services/document-structure-service';
 import kbService, {
   changeDocumentParser,
   changeDocumentsStatus,
@@ -59,9 +61,22 @@ export const enum DocumentApiAction {
   ParseDocument = 'parseDocument',
 }
 
+export const enum DocumentStructureApiAction {
+  FetchDocumentStructureGraph = 'fetchDocumentStructureGraph',
+}
+
 const DocumentKeys = {
   byIds: (ids: string[]) =>
     [DocumentApiAction.FetchDocumentList, 'byIds', ids] as const,
+};
+
+export const DocumentStructureKeys = {
+  graph: (datasetId: string, documentId: string) =>
+    [
+      DocumentStructureApiAction.FetchDocumentStructureGraph,
+      datasetId,
+      documentId,
+    ] as const,
 };
 
 export const useUploadDocument = () => {
@@ -602,3 +617,26 @@ export const useFetchDocumentThumbnailsByIds = () => {
 
   return { data, setDocumentIds };
 };
+
+export function useFetchDocumentStructureGraph() {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const enabled = !!datasetId && !!documentId;
+
+  const { data, isFetching: loading } =
+    useQuery<IStructureGraphResponse | null>({
+      queryKey: DocumentStructureKeys.graph(datasetId, documentId),
+      enabled,
+      initialData: null,
+      gcTime: 0,
+      queryFn: async () => {
+        const { data } =
+          await documentStructureService.getDocumentStructureGraph(
+            datasetId,
+            documentId,
+          );
+        return data?.data ?? null;
+      },
+    });
+
+  return { data, loading };
+}

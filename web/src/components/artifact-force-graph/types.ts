@@ -8,4 +8,5 @@ export interface ArtifactForceGraphProps<TNodeValue = IArtifactGraphEntity> {
   show?: boolean;
   onNodeClick?: (node: TNodeValue) => void;
   mapNodeToValue?: (node: IArtifactGraphEntity) => TNodeValue;
+  getNodeId?: (node: IArtifactGraphEntity) => string;
 }

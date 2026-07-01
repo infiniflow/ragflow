@@ -14,11 +14,11 @@ import { cn } from '@/lib/utils';
 import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import ArtifactForceGraph from '@/components/artifact-force-graph';
 import {
   useFetchArtifactGraph,
   useFetchArtifactList,
 } from '@/hooks/use-knowledge-request';
-import ArtifactForceGraph from './artifact-force-graph';
 import { CreateDirectoryDialog } from './create-directory-dialog';
 import { useCreateDirectory } from './use-create-directory';
 
