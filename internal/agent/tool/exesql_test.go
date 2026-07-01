@@ -34,13 +34,15 @@ import (
 
 // testConn is a fully-populated connection params struct used by
 // every test that needs a "valid" tool. Tests that want to exercise
-// the no-credentials path zero it out.
+// the no-credentials path zero it out. The Host is a literal public
+// IP (Cloudflare DNS) so the SSRF guard in InvokableRun accepts it
+// without needing real DNS in the test environment.
 func testConn() exesqlConnParams {
 	return exesqlConnParams{
 		DBType:     "mysql",
 		Database:   "testdb",
 		Username:   "u",
-		Host:       "h",
+		Host:       "1.1.1.1",
 		Port:       3306,
 		Password:   "p",
 		MaxRecords: 100,
@@ -335,7 +337,7 @@ func TestExeSQL_UnsupportedDB(t *testing.T) {
 
 	e := NewExeSQLTool(exesqlConnParams{
 		DBType: "trino",
-		Host:   "h", Port: 8080, Database: "catalog",
+		Host:   "1.1.1.1", Port: 8080, Database: "catalog",
 		Username: "u", Password: "p",
 	})
 	_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
@@ -355,9 +357,16 @@ func TestExeSQL_DSN_MySQL(t *testing.T) {
 		driver string
 		want   string
 	}{
+		// MySQL DSN: URL-style with bracketed host:port for IPv6.
+		// For non-IPv6 hosts (e.g. "h"), JoinHostPort produces the
+		// unchanged `h:port` form.
 		{"mysql", "mysql", `u:p@tcp(h:3306)/d?parseTime=true&charset=utf8mb4`},
 		{"mariadb", "mysql", `u:p@tcp(h:3306)/d?parseTime=true&charset=utf8mb4`},
 		{"oceanbase", "mysql", `u:p@tcp(h:3306)/d?parseTime=true&charset=utf8mb4`},
+		// Postgres / mssql: keyword DSN — host (or server) and port
+		// are DISTINCT fields. Combining them in a single key is
+		// rejected by the driver; the test pins the corrected
+		// shape (PR review round 6, Major #4).
 		{"postgres", "postgres", `host=h port=5432 user=u password=p dbname=d sslmode=disable`},
 		{"mssql", "sqlserver", `server=h;port=1433;user id=u;password=p;database=d`},
 	}
@@ -390,6 +399,53 @@ func pickPort(dbType string) int {
 		return 1433
 	default:
 		return 3306
+	}
+}
+
+// TestExeSQL_DSN_IPv6 pins PR review round 5, Major #5: a public
+// IPv6 host (e.g. 2606:4700:4700::1111) must be wrapped in [ ]
+// by every DSN format so the driver can split host:port correctly.
+// Before the fix, the mysql format produced `tcp(2606:4700:...:3306)`
+// which the MySQL driver rejected because the inner colons
+// confused its host:port split.
+//
+// Round 6, Major #4: postgres and mssql now use DISTINCT host/server
+// and port fields (combined `host=h:p` was rejected by lib/pq and
+// go-mssqldb). For IPv6 the bracketed form goes only into the
+// host/server slot.
+func TestExeSQL_DSN_IPv6(t *testing.T) {
+	t.Parallel()
+	const v6 = "2606:4700:4700::1111"
+
+	cases := []struct {
+		dbType string
+		want   string
+	}{
+		{"mysql", `u:p@tcp([2606:4700:4700::1111]:3306)/d?parseTime=true&charset=utf8mb4`},
+		{"oceanbase", `u:p@tcp([2606:4700:4700::1111]:3306)/d?parseTime=true&charset=utf8mb4`},
+		// Postgres: `host=[ipv6]` (bracketed) `port=` separate.
+		{"postgres", `host=[2606:4700:4700::1111] port=3306 user=u password=p dbname=d sslmode=disable`},
+		// MSSQL: `server=[ipv6]` (bracketed) `port=` separate.
+		{"mssql", `server=[2606:4700:4700::1111];port=3306;user id=u;password=p;database=d`},
+	}
+	for _, c := range cases {
+		t.Run(c.dbType, func(t *testing.T) {
+			t.Parallel()
+			conn := exesqlConnParams{
+				DBType: c.dbType, Host: v6, Port: 3306,
+				Username: "u", Password: "p", Database: "d",
+			}
+			driver, dsn, err := exesqlDriverAndDSN(conn)
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if driver == "" {
+				t.Fatalf("driver empty for %s", c.dbType)
+			}
+			if dsn != c.want {
+				t.Errorf("dsn = %q, want %q", dsn, c.want)
+			}
+		})
 	}
 }
 

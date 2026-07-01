@@ -468,7 +468,6 @@ func (x *XiaomiModel) newXiaomiASRRequest(ctx context.Context, modelName *string
 		return nil, fmt.Errorf("xiaomi chat URL suffix is required")
 	}
 
-
 	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
 	audio, err := os.ReadFile(*file)
 	if err != nil {

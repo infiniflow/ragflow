@@ -292,10 +292,10 @@ docker build --platform linux/amd64 \
 
 ## 🔨 ソースコードからサービスを起動する方法
 
-1. `uv` と `pre-commit` をインストールする。すでにインストールされている場合は、このステップをスキップしてください:
+1. `uv` をインストールする。すでにインストールされている場合は、このステップをスキップしてください:
 
    ```bash
-   pipx install uv pre-commit
+   pipx install uv
    ```
 2. ソースコードをクローンし、Python の依存関係をインストールする:
 
@@ -304,7 +304,7 @@ docker build --platform linux/amd64 \
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
    uv run python3 ragflow_deps/download_deps.py
-   pre-commit install
+   lefthook install
    ```
 3. Docker Compose を使用して依存サービス（MinIO、Elasticsearch、Redis、MySQL）を起動する:
 
