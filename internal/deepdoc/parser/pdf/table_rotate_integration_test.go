@@ -178,7 +178,11 @@ func TestTableRotation_Stability(t *testing.T) {
 				continue
 			}
 			tables++
-			cropped, _ := util.CropImageRegion(pageImg, r)
+			cropped, err := util.CropImageRegion(pageImg, r)
+			if err != nil {
+				t.Errorf("  %s crop table: %v", e.Name(), err)
+				continue
+			}
 			if cropped == nil {
 				continue
 			}

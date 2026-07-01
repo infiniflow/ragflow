@@ -570,7 +570,9 @@ func TestParser_ConcurrentSafety(t *testing.T) {
 			defer wg.Done()
 			for range 5 {
 				eng := &MockEngine{NumPages: 2}
-				_, _ = p.ParseRaw(context.Background(), eng, mockDLA)
+				if _, err := p.ParseRaw(context.Background(), eng, mockDLA); err != nil {
+					t.Errorf("ParseRaw: %v", err)
+				}
 			}
 		}()
 	}

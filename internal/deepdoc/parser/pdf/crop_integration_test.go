@@ -79,8 +79,8 @@ func TestCrop_Regression_SnapshotPDFs(t *testing.T) {
 			}
 			defer eng.Close()
 
-			p := NewParser(pdf.DefaultParserConfig(), &MockDocAnalyzer{Healthy: true})
-			result, err := p.Parse(context.Background(), eng)
+			p := NewParser(pdf.DefaultParserConfig())
+			result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}
