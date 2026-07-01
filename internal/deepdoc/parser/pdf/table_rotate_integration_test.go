@@ -60,7 +60,7 @@ func TestTableRotation_Integration(t *testing.T) {
 	cfg.ToPage = pageCount - 1
 	autoRotate := true
 	cfg.AutoRotateTables = &autoRotate
-	_ = NewParser(cfg, dd) // verify construction does not panic
+	_ = NewParser(cfg) // verify construction does not panic
 
 	for pg := 0; pg < pageCount; pg++ {
 		pageImg, err := RenderPageToImage(eng, pg)

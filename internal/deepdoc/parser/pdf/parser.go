@@ -52,8 +52,14 @@ func NewTableBuilderFor(doc pdf.DocAnalyzer) pdf.TableBuilder {
 		return tableBuilderFactory(doc)
 	}
 	if c, ok := doc.(*inf.Client); ok {
-		c.DLALabels = inf.DefaultDLALabels()
-		c.TSRLabels = inf.DefaultTSRLabels()
+		clone := *c
+		if len(clone.DLALabels) == 0 {
+			clone.DLALabels = inf.DefaultDLALabels()
+		}
+		if len(clone.TSRLabels) == 0 {
+			clone.TSRLabels = inf.DefaultTSRLabels()
+		}
+		doc = &clone
 	}
 	return tbl.NewDeepDocTableBuilder(doc)
 }
@@ -486,6 +492,9 @@ func matchTableImage(sec *pdf.Section, tableImgByRegion map[string]string) (stri
 		return "", false
 	}
 	if sec.TableItem != nil {
+		if len(sec.TableItem.Positions) > 0 && len(sec.TableItem.Positions[0].PageNumbers) > 0 {
+			pg = sec.TableItem.Positions[0].PageNumbers[0]
+		}
 		key := fmt.Sprintf("%d_%.1f_%.1f_%.1f_%.1f", pg,
 			sec.TableItem.RegionLeft, sec.TableItem.RegionRight,
 			sec.TableItem.RegionTop, sec.TableItem.RegionBottom)

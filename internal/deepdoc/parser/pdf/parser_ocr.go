@@ -246,7 +246,8 @@ func buildTextBoxes(ctx context.Context, pageImg image.Image,
 				tb.Text = ""
 			}
 		}
-		if tb.Text == "" {
+		if strings.TrimSpace(tb.Text) == "" {
+			tb.Text = ""
 			needOCR = append(needOCR, i)
 		}
 		result = append(result, tb)
@@ -275,7 +276,7 @@ func buildTextBoxes(ctx context.Context, pageImg image.Image,
 	}
 	filtered := result[:0]
 	for _, tb := range result {
-		if tb.Text != "" {
+		if strings.TrimSpace(tb.Text) != "" {
 			filtered = append(filtered, tb)
 		}
 	}

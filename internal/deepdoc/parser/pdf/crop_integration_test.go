@@ -27,8 +27,8 @@ func TestParse_CropSectionImages(t *testing.T) {
 	defer eng.Close()
 
 	cfg := pdf.DefaultParserConfig()
-	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true})
-	result, err := p.Parse(context.Background(), eng)
+	p := NewParser(cfg)
+	result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

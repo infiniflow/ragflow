@@ -18,14 +18,7 @@ func (m *MockEngine) ExtractChars(pg int) ([]pdf.TextChar, error) {
 	return m.Chars[pg], nil
 }
 func (m *MockEngine) RenderPage(pg int, dpi float64) ([]byte, error) {
-	w, h := m.RenderW, m.RenderH
-	if w <= 0 {
-		w = 595
-	}
-	if h <= 0 {
-		h = 842
-	}
-	return nil, nil
+	return nil, ErrNoPDFData
 }
 func (m *MockEngine) RenderPageImage(pg int, dpi float64) (image.Image, error) {
 	w, h := m.RenderW, m.RenderH

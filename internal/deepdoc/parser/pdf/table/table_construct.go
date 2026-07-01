@@ -2,6 +2,7 @@ package table
 
 import (
 	"fmt"
+	"html"
 	"math"
 	"regexp"
 	"sort"
@@ -727,7 +728,7 @@ func SimpleRowsToHTML(rows [][]string) string {
 			b.WriteString("<")
 			b.WriteString(tag)
 			b.WriteString(" >")
-			b.WriteString(text)
+			b.WriteString(html.EscapeString(text))
 			b.WriteString("</")
 			b.WriteString(tag)
 			b.WriteString(">")

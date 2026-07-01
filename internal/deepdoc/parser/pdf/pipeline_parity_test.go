@@ -55,7 +55,7 @@ func TestPipelineParity(t *testing.T) {
 		cfg := pdf.DefaultParserConfig()
 		cfg.SortByTop = true
 		mockAnalyzer := &MockDocAnalyzer{Healthy: true}
-		p := New(cfg)
+		p := NewParser(cfg)
 		result, err := p.ParseRaw(context.Background(), engine, mockAnalyzer)
 		if err != nil {
 			t.Errorf("%s: Parse: %v", name, err)

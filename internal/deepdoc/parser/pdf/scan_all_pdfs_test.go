@@ -44,7 +44,7 @@ func TestScanAllPDFs(t *testing.T) {
 		eng := mustOpenEngine(t, name)
 		cfg := pdf.DefaultParserConfig()
 		p := NewParser(cfg)
-		result, err := p.Parse(context.Background(), eng)
+		result, err := p.ParseRaw(context.Background(), eng, client)
 		eng.Close()
 		if err != nil {
 			fmt.Printf("  ❌ ERROR: %v\n", err)

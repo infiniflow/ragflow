@@ -66,8 +66,8 @@ func TestDumpTextOutput(t *testing.T) {
 		}
 
 		cfg := pdf.DefaultParserConfig()
-		p := NewParser(cfg, &MockDocAnalyzer{Healthy: true})
-		result, err := p.Parse(context.Background(), eng)
+		p := NewParser(cfg)
+		result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
 		eng.Close()
 		if err != nil {
 			t.Logf("[%d/%d] %s — parse error: %v", i+1, count, name, err)

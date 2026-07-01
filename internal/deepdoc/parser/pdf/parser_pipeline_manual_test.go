@@ -48,7 +48,7 @@ func TestIntegration_NoCrash(t *testing.T) {
 
 			cfg := pdf.DefaultParserConfig()
 			p := NewParser(cfg)
-			result, err := p.Parse(context.Background(), eng)
+			result, err := p.ParseRaw(context.Background(), eng, client)
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}

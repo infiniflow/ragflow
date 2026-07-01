@@ -240,7 +240,7 @@ func parseOne(pdfDir, name string, deepDoc pdf.DocAnalyzer, skipOCR bool) (*pars
 	cfg.SkipOCR = skipOCR
 	p := NewParser(cfg)
 	t0 := time.Now()
-	parsed, err := p.Parse(context.Background(), eng)
+	parsed, err := p.ParseRaw(context.Background(), eng, deepDoc)
 	elapsed := time.Since(t0).Seconds()
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
