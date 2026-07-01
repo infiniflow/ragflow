@@ -2058,3 +2058,57 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 		t.Errorf("user-2 with unrelated session: want ErrArtifactNotFound, got %v", err)
 	}
 }
+
+func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	if err := db.AutoMigrate(&entity.Document{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	base64Thumb := "data:image/png;base64,AAAA"
+	fileThumb := "thumb.png"
+	if err := db.Create(&entity.Document{
+		ID:           "doc-file",
+		KbID:         "kb-1",
+		Thumbnail:    &fileThumb,
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "user-1",
+		Suffix:       "png",
+	}).Error; err != nil {
+		t.Fatalf("seed file thumbnail doc: %v", err)
+	}
+	if err := db.Create(&entity.Document{
+		ID:           "doc-base64",
+		KbID:         "kb-2",
+		Thumbnail:    &base64Thumb,
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "user-1",
+		Suffix:       "png",
+	}).Error; err != nil {
+		t.Fatalf("seed base64 thumbnail doc: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	got, err := svc.GetThumbnails([]string{"doc-file", "doc-base64", "missing-doc"})
+	if err != nil {
+		t.Fatalf("GetThumbnails failed: %v", err)
+	}
+
+	if got["doc-file"] != "/api/v1/documents/images/kb-1-thumb.png" {
+		t.Fatalf("unexpected file thumbnail: %q", got["doc-file"])
+	}
+	if got["doc-base64"] != base64Thumb {
+		t.Fatalf("unexpected base64 thumbnail: %q", got["doc-base64"])
+	}
+	if _, ok := got["missing-doc"]; ok {
+		t.Fatalf("did not expect missing doc in result: %#v", got)
+	}
+}

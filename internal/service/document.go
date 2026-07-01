@@ -141,6 +141,8 @@ type ThumbnailResponse struct {
 	KbID      string  `json:"kb_id"`
 }
 
+const imgBase64Prefix = "data:image/png;base64,"
+
 type ArtifactResponse struct {
 	Data            []byte
 	ContentType     string
@@ -862,17 +864,38 @@ func (s *DocumentService) ListDocuments(page, pageSize int) ([]*DocumentResponse
 	return responses, total, nil
 }
 
-func (s *DocumentService) GetThumbnail(docID string) (*ThumbnailResponse, error) {
-	document, err := s.documentDAO.GetByID(docID)
+func (s *DocumentService) GetThumbnails(docIDs []string) (map[string]string, error) {
+	if len(docIDs) == 0 {
+		return map[string]string{}, nil
+	}
+	documents, err := s.documentDAO.GetByIDs(docIDs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch document thumbnails: %w", err)
 	}
 
-	var result ThumbnailResponse
-	result.ID = document.ID
-	result.Thumbnail = document.Thumbnail
-	result.KbID = document.KbID
-	return &result, nil
+	result := make(map[string]string, len(documents))
+	for _, document := range documents {
+		if document == nil {
+			continue
+		}
+
+		thumbnail := ""
+		if document.Thumbnail != nil && *document.Thumbnail != "" {
+			if strings.HasPrefix(*document.Thumbnail, imgBase64Prefix) {
+				thumbnail = *document.Thumbnail
+			} else {
+				thumbnail = fmt.Sprintf(
+					"/api/v1/documents/images/%s-%s",
+					document.KbID,
+					*document.Thumbnail,
+				)
+			}
+		}
+
+		result[document.ID] = thumbnail
+	}
+
+	return result, nil
 }
 
 func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {

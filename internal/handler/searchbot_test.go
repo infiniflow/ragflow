@@ -952,7 +952,8 @@ func TestMindMapHandlerSuccess(t *testing.T) {
 	if *chunks.LastReq.Page != 1 || *chunks.LastReq.Size != 12 || *chunks.LastReq.TopK != 1024 {
 		t.Fatalf("retrieval defaults = page %d size %d topK %d", *chunks.LastReq.Page, *chunks.LastReq.Size, *chunks.LastReq.TopK)
 	}
-	if llm.lastTenantID != "user-1" || len(llm.lastMessages) != 2 || !strings.Contains(llm.lastMessages[0].Content, "Hybrid search combines") {
+	firstContent, _ := llm.lastMessages[0].Content.(string)
+	if llm.lastTenantID != "user-1" || len(llm.lastMessages) != 2 || !strings.Contains(firstContent, "Hybrid search combines") {
 		t.Fatalf("unexpected LLM call: tenant=%q messages=%v", llm.lastTenantID, llm.lastMessages)
 	}
 }

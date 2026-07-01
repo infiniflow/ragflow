@@ -102,7 +102,8 @@ func TestChatMindMapHandlerSuccess(t *testing.T) {
 	if chunks.LastReq == nil || len(chunks.LastReq.Datasets) != 1 || chunks.LastReq.Datasets[0] != "kb-1" {
 		t.Fatalf("retrieval datasets = %+v, want [kb-1]", chunks.LastReq)
 	}
-	if llm.lastTenantID != "user-1" || len(llm.lastMessages) != 2 || !strings.Contains(llm.lastMessages[0].Content, "Hybrid search combines") {
+	firstContent, _ := llm.lastMessages[0].Content.(string)
+	if llm.lastTenantID != "user-1" || len(llm.lastMessages) != 2 || !strings.Contains(firstContent, "Hybrid search combines") {
 		t.Fatalf("unexpected LLM call: tenant=%q messages=%v", llm.lastTenantID, llm.lastMessages)
 	}
 }
