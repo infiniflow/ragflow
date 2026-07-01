@@ -76,12 +76,26 @@ func (dao *ChatSessionDAO) Create(conv *entity.ChatSession) error {
 
 // UpdateByID updates a chat session by ID
 func (dao *ChatSessionDAO) UpdateByID(id string, updates map[string]interface{}) error {
-	result := DB.Model(&entity.ChatSession{}).Where("id = ?", id).Updates(updates)
+	if updates == nil {
+		updates = make(map[string]interface{})
+	}
+
+	now := time.Now().Local()
+	updates["update_time"] = now.UnixMilli()
+	updates["update_date"] = now.Truncate(time.Second)
+
+	result := DB.Session(&gorm.Session{SkipHooks: true}).Model(&entity.ChatSession{}).Where("id = ?", id).Updates(updates)
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		var count int64
+		if err := DB.Model(&entity.ChatSession{}).Where("id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return gorm.ErrRecordNotFound
+		}
 	}
 	return nil
 }
