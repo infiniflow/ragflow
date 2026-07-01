@@ -275,6 +275,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			// Chat routes
 			v1.POST("/chat/mindmap", r.chatHandler.MindMap)
+			v1.POST("/chat/recommendation", r.chatHandler.Recommendation)
 			chats := v1.Group("/chats")
 			{
 				chats.GET("", r.chatHandler.ListChats)
