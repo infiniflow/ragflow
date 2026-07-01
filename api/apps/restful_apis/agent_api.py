@@ -71,6 +71,20 @@ from peewee import MySQLDatabase, PostgresqlDatabase
 _background_tasks: Set[asyncio.Task] = set()
 
 
+def _canvas_json_default(obj):
+    """Fallback serializer for canvas SSE events.
+
+    Agent components store functools.partial objects as deferred streaming
+    handles (see llm.py, agent_with_tools.py, message.py). These leak into
+    SSE event dicts via component input/output propagation and are not
+    JSON-serializable. This handler converts them to None so that downstream
+    consumers never receive opaque ``str(partial(...))`` representations.
+    """
+    if callable(obj):
+        return None
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 def _require_canvas_access_sync(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -312,7 +326,7 @@ async def _run_workflow_session(
                                 }
                             )
                     final_ans = ans
-                    yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+                    yield "data:" + json.dumps(ans, ensure_ascii=False, default=_canvas_json_default) + "\n\n"
 
                 if final_ans:
                     if "data" not in final_ans or not isinstance(final_ans["data"], dict):
@@ -641,6 +655,7 @@ def prompts():
 def list_agents(tenant_id):
     keywords = request.args.get("keywords", "")
     canvas_category = request.args.get("canvas_category")
+    canvas_type = request.args.get("canvas_type")
     owner_ids = [item for item in request.args.get("owner_ids", "").strip().split(",") if item]
     tags = [item for item in request.args.get("tags", "").strip().split(",") if item]
 
@@ -675,6 +690,7 @@ def list_agents(tenant_id):
         keywords,
         canvas_category,
         tags,
+        canvas_type,
     )
 
     return get_json_result(data={"canvas": canvas, "total": total})
@@ -1574,7 +1590,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             emitted = False
             async for ans in _iter_session_completion_events(tenant_id, agent_id, req, return_trace):
                 emitted = True
-                yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+                yield "data:" + json.dumps(ans, ensure_ascii=False, default=_canvas_json_default) + "\n\n"
             if not emitted:
                 # Parity with the new-session SSE path: if the canvas yields
                 # no events on an existing session (e.g. empty query), still
