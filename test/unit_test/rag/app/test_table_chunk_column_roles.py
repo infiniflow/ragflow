@@ -271,3 +271,18 @@ def test_column_data_type_leading_zero_ids_not_numeric(table_module):
     the int/float buckets."""
     _, ty = table_module.column_data_type(["007", "008", "009"])
     assert ty not in ("int", "float")
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        ["0.0.1", "0.0.2", "0.0.3"],
+        ["1.2.3"],
+    ],
+)
+def test_column_data_type_version_like_strings_not_float(table_module, values):
+    """Version-like strings (more than one '.') match the loose numeric regex
+    but are not valid floats (e.g. float('0.0.1') raises), so they must not be
+    classified as float."""
+    _, ty = table_module.column_data_type(values)
+    assert ty != "float"
