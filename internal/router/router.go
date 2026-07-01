@@ -292,6 +292,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
 			}
 
+			chat := v1.Group("/chat")
+			{
+				// Chat completions route
+				chat.POST("/completions", r.chatSessionHandler.ChatCompletions)
+			}
+
 			// OpenAI-compatible chat completions route
 			openai := v1.Group("/openai")
 			{
@@ -498,7 +504,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.providerHandler.EnableOrDisableModel)
 				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddModel)
 				provider.DELETE("/:provider_name/instances/:instance_name/models", r.providerHandler.DropInstanceModels)
-				v1.POST("/chat/completions", r.providerHandler.ChatToModel)
+				v1.POST("/chat/to_model", r.providerHandler.ChatToModel)
 				v1.POST("/embeddings", r.providerHandler.EmbedText)
 				v1.POST("/rerank", r.providerHandler.RerankDocument)
 				v1.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
@@ -678,14 +684,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chunk.POST("/update", r.chunkHandler.UpdateChunk) // Internal API only for GO
 		}
 
-		// Chat routes
-		chat := authorized.Group("/v1/dialog")
-		{
-			chat.POST("/next", r.chatHandler.ListChatsNext)
-			chat.POST("/set", r.chatHandler.SetDialog)
-			chat.POST("/rm", r.chatHandler.RemoveChats)
-		}
-
 		// Chat Channel
 		chanChannel := v1.Group("/chat-channels")
 		{
@@ -703,15 +701,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			langfuse.PUT("/api-key", r.langfuseHandler.SetAPIKey)
 			langfuse.GET("/api-key", r.langfuseHandler.GetAPIKey)
 			langfuse.DELETE("/api-key", r.langfuseHandler.DeleteAPIKey)
-		}
-
-		// Chat session (conversation) routes
-		session := authorized.Group("/v1/conversation")
-		{
-			session.POST("/set", r.chatSessionHandler.SetChatSession)
-			session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
-			session.GET("/list", r.chatSessionHandler.ListChatSessions)
-			session.POST("/completion", r.chatSessionHandler.Completion)
 		}
 
 		// Connector routes
