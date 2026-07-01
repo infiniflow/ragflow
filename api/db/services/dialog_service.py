@@ -42,7 +42,7 @@ from api.utils.reference_metadata_utils import (
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_model_type_by_name
 from common.time_utils import current_timestamp, datetime_format
 from common.text_utils import normalize_arabic_digits
-from rag.graphrag.general.mind_map_extractor import MindMapExtractor
+from rag.advanced_rag.knowlege_compile.mind_map_extractor import MindMapExtractor
 from rag.advanced_rag import DeepResearcher
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
