@@ -1,0 +1,147 @@
+name: ci-router
+
+on:
+  pull_request_target:
+    types: [labeled, synchronize, reopened, ready_for_review]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+  statuses: write
+
+jobs:
+  route:
+    name: route PR heavy CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Route PR event
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_LABEL: ${{ github.event.label.name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          STATUS_CONTEXT: tests / heavy
+        run: |
+          set -euo pipefail
+
+          set_status() {
+            local state="$1"
+            local description="$2"
+            gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+              -f state="${state}" \
+              -f context="${STATUS_CONTEXT}" \
+              -f description="${description}" \
+              -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          }
+
+          is_docs_only_pr() {
+            local page=1
+            local files tmp names
+            files=$(mktemp)
+            while :; do
+              tmp=$(mktemp)
+              gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100&page=${page}" > "${tmp}"
+              names=$(jq -r '.[].filename' "${tmp}")
+              if [[ -z "${names}" ]]; then
+                rm -f "${tmp}"
+                break
+              fi
+              printf '%s\n' "${names}" >> "${files}"
+              if [[ $(jq 'length' "${tmp}") -lt 100 ]]; then
+                rm -f "${tmp}"
+                break
+              fi
+              rm -f "${tmp}"
+              page=$((page + 1))
+            done
+
+            if [[ ! -s "${files}" ]]; then
+              rm -f "${files}"
+              return 1
+            fi
+
+            while IFS= read -r file; do
+              case "${file}" in
+                docs/*|*.md|*.mdx) ;;
+                *) rm -f "${files}"; return 1 ;;
+              esac
+            done < "${files}"
+            rm -f "${files}"
+            return 0
+          }
+
+          has_ci_label() {
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" --jq '.[].name' | grep -Fxq 'ci'
+          }
+
+          event_is_eligible() {
+            case "${EVENT_ACTION}" in
+              synchronize|reopened|ready_for_review) return 0 ;;
+              labeled) [[ "${EVENT_LABEL}" == "ci" ]] ;;
+              *) return 1 ;;
+            esac
+          }
+
+          wait_for_merge_sha() {
+            local attempt pr mergeable merge_sha
+            for attempt in 1 2 3 4 5; do
+              pr=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")
+              mergeable=$(jq -r '.mergeable' <<< "${pr}")
+              merge_sha=$(jq -r '.merge_commit_sha // empty' <<< "${pr}")
+
+              if [[ "${mergeable}" == "false" ]]; then
+                set_status failure "PR is not mergeable"
+                return 1
+              fi
+
+              if [[ "${mergeable}" == "true" && -n "${merge_sha}" ]]; then
+                MERGE_SHA="${merge_sha}"
+                export MERGE_SHA
+                return 0
+              fi
+
+              sleep 5
+            done
+
+            set_status error "PR merge ref is not ready"
+            return 1
+          }
+
+          if [[ "${IS_DRAFT}" == "true" ]]; then
+            echo "Draft PR; not dispatching heavy CI."
+            exit 0
+          fi
+
+          if is_docs_only_pr; then
+            set_status success "Docs-only changes skipped heavy CI"
+            echo "Docs-only PR; published success status without dispatching heavy CI."
+            exit 0
+          fi
+
+          if ! has_ci_label; then
+            echo "PR does not have ci label; not dispatching heavy CI."
+            exit 0
+          fi
+
+          if ! event_is_eligible; then
+            echo "Event ${EVENT_ACTION} is not eligible to dispatch heavy CI."
+            exit 0
+          fi
+
+          wait_for_merge_sha
+
+          set_status pending "Heavy CI dispatching"
+          gh workflow run tests.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref "${DEFAULT_BRANCH}" \
+            -f pr_number="${PR_NUMBER}" \
+            -f head_sha="${HEAD_SHA}" \
+            -f head_ref="${HEAD_REF}" \
+            -f head_repo="${HEAD_REPO}" \
+            -f merge_sha="${MERGE_SHA}"

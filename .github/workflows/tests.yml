@@ -11,30 +11,64 @@ on:
       - 'docs/**'
       - '*.md'
       - '*.mdx'
-  # The only difference between pull_request and pull_request_target is the context in which the workflow runs:
-  # — pull_request_target workflows use the workflow files from the default branch, and secrets are available.
-  # — pull_request workflows use the workflow files from the pull request branch, and secrets are unavailable.
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '*.mdx'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to test
+        required: true
+        type: string
+      head_sha:
+        description: Pull request head SHA to report status on
+        required: true
+        type: string
+      head_ref:
+        description: Pull request head branch
+        required: true
+        type: string
+      head_repo:
+        description: Pull request head repository full name
+        required: true
+        type: string
+      merge_sha:
+        description: Pull request merge commit SHA to verify
+        required: true
+        type: string
   schedule:
     - cron: '0 16 * * *'  # This schedule runs every 16:00:00Z(00:00:00+08:00)
 
 # https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('pr-{0}', inputs.pr_number) || github.ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
+  mark_pr_ci_pending:
+    name: mark PR heavy CI pending
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Set pending status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          STATUS_CONTEXT: tests / heavy
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="pending" \
+            -f context="${STATUS_CONTEXT}" \
+            -f description="Heavy CI is running" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
   ragflow_preflight:
     name: ragflow_preflight
-    # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
-    # https://github.com/orgs/community/discussions/26261
-    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
+    needs: [mark_pr_ci_pending]
+    if: ${{ always() && (github.event_name != 'workflow_dispatch' || needs.mark_pr_ci_pending.result == 'success') }}
     runs-on: [ "self-hosted", "ragflow-test" ]
+    permissions:
+      contents: read
     outputs:
       http_api_test_level: ${{ steps.test_level.outputs.http_api_test_level }}
     steps:
@@ -47,14 +81,26 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
         with:
-          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', inputs.pr_number) || github.sha }}
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
+
+      - name: Verify PR merge checkout
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          git rev-parse HEAD^1
+          git rev-parse HEAD^2
+          echo "Expected PR head SHA: ${{ inputs.head_sha }}"
+          echo "Expected PR merge SHA: ${{ inputs.merge_sha }}"
+          test "$(git rev-parse HEAD)" = "${{ inputs.merge_sha }}"
 
       - name: Check workflow duplication
         if: ${{ !cancelled() && !failure() }}
         run: |
-          if [[ ${GITHUB_EVENT_NAME} != "pull_request" && ${GITHUB_EVENT_NAME} != "schedule" ]]; then
+          if [[ ${GITHUB_EVENT_NAME} != "workflow_dispatch" && ${GITHUB_EVENT_NAME} != "schedule" ]]; then
             HEAD=$(git rev-parse HEAD)
             # Find a PR that introduced a given commit
             gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
@@ -79,8 +125,8 @@ jobs:
                 fi
               fi
             fi
-          elif [[ ${GITHUB_EVENT_NAME} == "pull_request" ]]; then
-            PR_NUMBER=${{ github.event.pull_request.number }}
+          elif [[ ${GITHUB_EVENT_NAME} == "workflow_dispatch" ]]; then
+            PR_NUMBER=${{ inputs.pr_number }}
             PR_SHA_FP=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/PR_${PR_NUMBER}
             # Calculate the hash of the current workspace content
             PR_SHA=$(git rev-parse HEAD^{tree})
@@ -102,8 +148,8 @@ jobs:
 #      - name: Check comments of changed Python files
 #        if: ${{ false }}
 #        run: |
-#          if [[ ${{ github.event_name }} == 'pull_request' || ${{ github.event_name }} == 'pull_request_target' ]]; then
-#            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
+#          if [[ ${{ github.event_name }} == 'workflow_dispatch' ]]; then
+#            CHANGED_FILES=$(git diff --name-only HEAD^1...HEAD^2 \
 #              | grep -E '\.(py)$' || true)
 #
 #            if [ -n "$CHANGED_FILES" ]; then
@@ -132,9 +178,9 @@ jobs:
 #          fi
 
       - name: Check format of changed Go files
-        if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
+          CHANGED_FILES=$(git diff --name-only HEAD^1...HEAD^2 \
             | grep -E '\.go$' || true)
 
           if [ -n "$CHANGED_FILES" ]; then
@@ -188,8 +234,9 @@ jobs:
   ragflow_tests_infinity:
     name: ragflow_tests_infinity
     needs: ragflow_preflight
-    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
     runs-on: [ "self-hosted", "ragflow-test" ]
+    permissions:
+      contents: read
     env:
       DOC_ENGINE: infinity
       RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-infinity
@@ -203,9 +250,21 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
         with:
-          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', inputs.pr_number) || github.sha }}
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
+
+      - name: Verify PR merge checkout
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          git rev-parse HEAD^1
+          git rev-parse HEAD^2
+          echo "Expected PR head SHA: ${{ inputs.head_sha }}"
+          echo "Expected PR merge SHA: ${{ inputs.merge_sha }}"
+          test "$(git rev-parse HEAD)" = "${{ inputs.merge_sha }}"
 
       - name: Build ragflow go server
         run: |
@@ -634,8 +693,9 @@ jobs:
   ragflow_tests_elasticsearch:
     name: ragflow_tests_elasticsearch
     needs: ragflow_preflight
-    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
     runs-on: [ "self-hosted", "ragflow-test" ]
+    permissions:
+      contents: read
     env:
       DOC_ENGINE: elasticsearch
       RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-elasticsearch
@@ -649,9 +709,21 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
         with:
-          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', inputs.pr_number) || github.sha }}
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
+
+      - name: Verify PR merge checkout
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          git rev-parse HEAD^1
+          git rev-parse HEAD^2
+          echo "Expected PR head SHA: ${{ inputs.head_sha }}"
+          echo "Expected PR merge SHA: ${{ inputs.merge_sha }}"
+          test "$(git rev-parse HEAD)" = "${{ inputs.merge_sha }}"
 
       - name: Build ragflow go server
         run: |
@@ -1069,3 +1141,40 @@ jobs:
           if [[ -n ${PORT_RESERVATION:-} ]]; then
             rm -f "${PORT_RESERVATION}"
           fi
+
+  report_pr_ci_status:
+    name: report PR heavy CI status
+    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
+    needs: [ragflow_preflight, ragflow_tests_infinity, ragflow_tests_elasticsearch]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Publish final status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          STATUS_CONTEXT: tests / heavy
+          PREFLIGHT_RESULT: ${{ needs.ragflow_preflight.result }}
+          INFINITY_RESULT: ${{ needs.ragflow_tests_infinity.result }}
+          ELASTICSEARCH_RESULT: ${{ needs.ragflow_tests_elasticsearch.result }}
+        run: |
+          state="success"
+          description="Heavy CI passed"
+          if [[ "${PREFLIGHT_RESULT}" == "failure" || "${INFINITY_RESULT}" == "failure" || "${ELASTICSEARCH_RESULT}" == "failure" ]]; then
+            state="failure"
+            description="Heavy CI failed"
+          elif [[ "${PREFLIGHT_RESULT}" == "cancelled" || "${INFINITY_RESULT}" == "cancelled" || "${ELASTICSEARCH_RESULT}" == "cancelled" ]]; then
+            state="error"
+            description="Heavy CI was cancelled"
+          elif [[ "${PREFLIGHT_RESULT}" == "skipped" || "${INFINITY_RESULT}" == "skipped" || "${ELASTICSEARCH_RESULT}" == "skipped" ]]; then
+            state="error"
+            description="Heavy CI did not complete"
+          fi
+
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="${state}" \
+            -f context="${STATUS_CONTEXT}" \
+            -f description="${description}" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
