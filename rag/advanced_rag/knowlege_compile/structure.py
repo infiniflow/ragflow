@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,50 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Structured-knowledge compilation: list / set / hypergraph extraction
-followed by local + ES deduplication.
-
-The configuration shape mirrors the YAML templates used by Hyper-Extract
-(see D:/git/Hyper-Extract/hyperextract/templates/presets/general/*.yaml and
-hyperextract/utils/template_engine/parsers/guideline.py). It is delivered
-to us through ``document.parser_config["knowledge_compilation"]`` as a
-JSON-able dict and contains:
-
-  type:        "list" | "set" | "hypergraph"      (optional, can be inferred)
-  output:                                          schema description
-    # for list/set:
-    description: <str | list | {lang: str|list}>
-    fields: [{name, type, description, required?}, ...]
-    # for hypergraph:
-    description: ...
-    entities: {description, fields: [...]}
-    relations: {description, fields: [...]}
-  guideline:
-    # for list/set:
-    target: <localizable>
-    rules:  <localizable>
-    # for hypergraph:
-    target: <localizable>
-    rules_for_entities: <localizable>
-    rules_for_relations: <localizable>
-    rules_for_time: <localizable, optional>
-  identifiers:                                     (optional)
-    entity_id: <field name>                       (used to enumerate known
-                                                   nodes in stage 2)
-    relation_members: <{source: ..., target: ...} | str>
-  options:                                         (optional)
-    observation_time: <str>                       (substituted into rules)
-
-Public entry points:
-  - ``compile_structure_from_text(...)`` — LLM extraction → ES-ready docs.
-  - ``merge_compiled_structures(...)`` — local + ES deduplication via cosine
-    similarity (sklearn) and KNN (``MatchDenseExpr``), with LLM-judged merges
-    that preserve relation src/target and union ``source_chunk_ids`` lists.
-
-Cross-chunk merging at extraction time is intentionally not implemented; it
-is handled separately by ``merge_compiled_structures``.
-"""
-import asyncio
 import datetime
 import json
 import logging
@@ -1552,7 +1508,7 @@ async def merge_compiled_structures(
     embd_mdl,
     tenant_id: str,
     kb_id: str,
-    similarity_threshold: float = 0.98,
+    similarity_threshold: float = 0.99,
     compilation_template_id: str | None = None,
     cancel_check: Callable[[], bool] | None = None,
 ) -> dict:
