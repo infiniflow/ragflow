@@ -53,6 +53,7 @@ from rag.utils.tts_cache import synthesize_with_cache
 from common.string_utils import remove_redundant_spaces
 from common import settings
 
+
 def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
     if len(kb_ids or []) == 1:
         return kb_ids[0]
@@ -105,6 +106,7 @@ async def _hydrate_chunk_vectors(retriever, chunks, tenant_ids, kb_ids):
         if cid and cid in vectors:
             ck["vector"] = vectors[cid]
 
+
 def _normalize_internet_flag(value):
     if isinstance(value, bool):
         return value
@@ -132,7 +134,6 @@ def _resolve_reference_metadata(config, request_payload=None):
 
 def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
     enrich_chunks_with_document_metadata(chunks, metadata_fields)
-
 
 
 class DialogService(CommonService):
@@ -563,7 +564,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         llm_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
     factory = llm_model_config.get("llm_factory", "") if llm_model_config else ""
-    max_tokens = llm_model_config.get("max_tokens", 8192)
+    max_tokens = llm_model_config.get("max_tokens") or 8192
 
     check_llm_ts = timer()
 
@@ -619,8 +620,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             if include_reference_metadata and ans.get("reference", {}).get("chunks"):
                 if len(dialog.kb_ids) != 1 and any(not c.get("kb_id") for c in ans["reference"]["chunks"]):
                     logging.warning(
-                        "Skipping some _enrich_chunks_with_document_metadata results because "
-                        "dialog.kb_ids has %d entries and use_sql returned chunks without kb_id.",
+                        "Skipping some _enrich_chunks_with_document_metadata results because dialog.kb_ids has %d entries and use_sql returned chunks without kb_id.",
                         len(dialog.kb_ids),
                     )
                 _enrich_chunks_with_document_metadata(ans["reference"]["chunks"], metadata_fields)
@@ -741,7 +741,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
             if prompt_config.get("use_kg"):
                 default_chat_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
-                ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, default_chat_model, trace_context=trace_context, langfuse_session_id=session_id))
+                ck = await settings.kg_retriever.retrieval(
+                    " ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, default_chat_model, trace_context=trace_context, langfuse_session_id=session_id)
+                )
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
@@ -1667,8 +1669,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     except TypeError:
         full_text_weight = None
     logger.debug(
-        "Search async_ask retrieval weight: search_id=%s tenant_id=%s kb_count=%s "
-        "vector_similarity_weight=%s full_text_weight=%s",
+        "Search async_ask retrieval weight: search_id=%s tenant_id=%s kb_count=%s vector_similarity_weight=%s full_text_weight=%s",
         search_id,
         tenant_id,
         len(kb_ids),
