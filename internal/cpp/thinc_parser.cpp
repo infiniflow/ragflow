@@ -15,19 +15,34 @@
 // Minimal JSON parser (replicated from thinc_ner.cpp)
 // =========================================================================
 namespace {
+struct JVal; struct JObjMap;
 struct JVal {
     enum Type{NUL,OBJ,ARR,STR,NUM,BOOL}type=NUL;
-    std::string str; std::vector<JVal> arr; std::unordered_map<std::string,JVal> obj; double num=0;
-    const JVal* get(const std::string& k)const{auto it=obj.find(k);return it!=obj.end()?&it->second:nullptr;}
+    std::string str; std::vector<JVal> arr; double num=0;
+    JObjMap* obj=nullptr;
+    JVal()=default;
+    ~JVal();
+    JVal(const JVal& o);
+    JVal& operator=(const JVal& o);
+    JVal(JVal&& o)noexcept;
+    JVal& operator=(JVal&& o)noexcept;
+    const JVal* get(const std::string& k)const;
     int as_int()const{return(int)num;}int64_t as_i64()const{return(int64_t)num;}
 };
+struct JObjMap{std::unordered_map<std::string,JVal>m;};
+inline JVal::~JVal(){delete obj;}
+inline JVal::JVal(const JVal& o):type(o.type),str(o.str),arr(o.arr),num(o.num){if(o.obj)obj=new JObjMap(*o.obj);}
+inline JVal& JVal::operator=(const JVal& o){if(this!=&o){delete obj;type=o.type;str=o.str;arr=o.arr;num=o.num;obj=o.obj?new JObjMap(*o.obj):nullptr;}return*this;}
+inline JVal::JVal(JVal&& o)noexcept:type(o.type),str(std::move(o.str)),arr(std::move(o.arr)),num(o.num),obj(o.obj){o.obj=nullptr;}
+inline JVal& JVal::operator=(JVal&& o)noexcept{if(this!=&o){delete obj;type=o.type;str=std::move(o.str);arr=std::move(o.arr);num=o.num;obj=o.obj;o.obj=nullptr;}return*this;}
+inline const JVal* JVal::get(const std::string& k)const{if(!obj)return nullptr;auto it=obj->m.find(k);return it!=obj->m.end()?&it->second:nullptr;}
 struct JParser {
     const char *p,*e;
     char pk(){while(p<e&&(*p==' '||*p=='\t'||*p=='\n'||*p=='\r'))++p;return p<e?*p:0;}
     char nx(){while(p<e&&(*p==' '||*p=='\t'||*p=='\n'||*p=='\r'))++p;return p<e?*p++:0;}
     JVal pv(){char c=pk();if(c=='{')return po();if(c=='[')return pa();if(c=='"')return ps();if(c=='t'||c=='f')return pb();
         if(c=='n'){nx();nx();nx();nx();return JVal{};}return pn();}
-    JVal po(){JVal v;v.type=JVal::OBJ;nx();while(p<e&&pk()!='}'){auto k=ps();nx();v.obj[k.str]=pv();if(p<e&&pk()==',')nx();else break;}if(p<e)nx();return v;}
+    JVal po(){JVal v;v.type=JVal::OBJ;nx();if(!v.obj)v.obj=new JObjMap();while(p<e&&pk()!='}'){auto k=ps();nx();v.obj->m[k.str]=pv();if(p<e&&pk()==',')nx();else break;}if(p<e)nx();return v;}
     JVal pa(){JVal v;v.type=JVal::ARR;nx();while(p<e&&pk()!=']'){v.arr.push_back(pv());if(p<e&&pk()==',')nx();else break;}if(p<e)nx();return v;}
     JVal ps(){JVal v;v.type=JVal::STR;nx();while(p<e&&*p!='"'){if(*p=='\\'){++p;if(p<e){
         switch(*p){case'"':case'\\':case'/':v.str+=*p++;break;case'n':v.str+='\n';++p;break;case't':v.str+='\t';++p;break;case'r':v.str+='\r';++p;break;case'b':v.str+='\b';++p;break;case'f':v.str+='\f';++p;break;case'u':{if(p+4<e){char tmp[5]={p[1],p[2],p[3],p[4],0};v.str+=(char)strtol(tmp,nullptr,16);p+=5;}else{++p;}}break;default:v.str+=*p++;break;}
