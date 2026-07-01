@@ -203,7 +203,13 @@ type AgentItem struct {
 	ID             string  `json:"id"`
 	Avatar         *string `json:"avatar,omitempty"`
 	Title          *string `json:"title,omitempty"`
+	Description    *string `json:"description,omitempty"`
 	Permission     string  `json:"permission"`
+	UserID         string  `json:"user_id"`
+	TenantID       string  `json:"tenant_id"`
+	Nickname       string  `json:"nickname"`
+	TenantAvatar   *string `json:"tenant_avatar,omitempty"`
+	Tags           string  `json:"tags,omitempty"`
 	CanvasType     *string `json:"canvas_type,omitempty"`
 	CanvasCategory string  `json:"canvas_category"`
 	CreateTime     *int64  `json:"create_time,omitempty"`
@@ -216,14 +222,32 @@ type ListAgentsResponse struct {
 	Total  int64        `json:"total"`
 }
 
-func toAgentItem(c *entity.UserCanvas) *AgentItem {
+type AgentTagCount struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}
+
+func toAgentItem(c *dao.UserCanvasListItem) *AgentItem {
+	nickname := ""
+	if c.Nickname != nil {
+		nickname = *c.Nickname
+	}
+	if nickname == "" {
+		nickname = c.TenantID
+	}
 	return &AgentItem{
 		ID:             c.ID,
 		Avatar:         c.Avatar,
 		Title:          c.Title,
+		Description:    c.Description,
 		Permission:     c.Permission,
+		UserID:         c.UserID,
+		TenantID:       c.TenantID,
+		Nickname:       nickname,
+		TenantAvatar:   c.TenantAvatar,
 		CanvasType:     c.CanvasType,
 		CanvasCategory: c.CanvasCategory,
+		Tags:           c.Tags,
 		CreateTime:     c.CreateTime,
 		UpdateTime:     c.UpdateTime,
 	}
@@ -232,7 +256,7 @@ func toAgentItem(c *entity.UserCanvas) *AgentItem {
 // ListAgents returns agent canvases visible to userID.
 // Mirrors Python agent_api.list_agents — validates owner_ids against joined tenants,
 // then delegates to the DAO.
-func (s *AgentService) ListAgents(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*ListAgentsResponse, common.ErrorCode, error) {
+func (s *AgentService) ListAgents(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*ListAgentsResponse, common.ErrorCode, error) {
 	// Build the set of tenant IDs the user is authorised to query.
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 	if err != nil {
@@ -268,6 +292,7 @@ func (s *AgentService) ListAgents(userID string, keywords string, page, pageSize
 		desc,
 		keywords,
 		canvasCategory,
+		tags,
 	)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to list agents: %w", err)
