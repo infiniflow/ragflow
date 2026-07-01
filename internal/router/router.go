@@ -145,6 +145,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// the RAGFlow auth middleware.
 	engine.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 	engine.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+	engine.GET("/connectors/box/oauth/web/callback", r.connectorHandler.BoxWebOAuthCallback)
 
 	apiNoAuth := engine.Group("/api/v1")
 	{
@@ -175,6 +176,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Google redirects here after Gmail / Google Drive web OAuth completes.
 		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+		apiNoAuth.GET("/connectors/box/oauth/web/callback", r.connectorHandler.BoxWebOAuthCallback)
 		// Forgot-password flow (fixes #15282).
 		// Routes are intentionally registered before any auth middleware:
 		// a user who has forgotten their password is, by definition,
@@ -194,12 +196,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		searchbotGroup.POST("/related_questions", r.searchBotHandler.Handle)
 		searchbotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
 		searchbotGroup.POST("/ask", r.searchBotHandler.Ask)
+		searchbotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
 
 		if r.botHandler != nil {
 			chatbotGroup := apiBetaAuth.Group("/chatbots")
-			RegisterChatbotRoutes(chatbotGroup, r.botHandler)
+			betaMW := r.authHandler.BetaAuthMiddleware()
+			RegisterChatbotRoutes(chatbotGroup, betaMW, r.botHandler)
 			agentbotGroup := apiBetaAuth.Group("/agentbots")
-			RegisterAgentbotRoutes(agentbotGroup, r.botHandler)
+			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
 		}
 		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
@@ -270,6 +274,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 
 			// Chat routes
+			v1.POST("/chat/mindmap", r.chatHandler.MindMap)
+			v1.POST("/chat/recommendation", r.chatHandler.Recommendation)
 			chats := v1.Group("/chats")
 			{
 				chats.GET("", r.chatHandler.ListChats)
@@ -284,6 +290,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.DELETE("/:chat_id/sessions", r.chatSessionHandler.DeleteSessions)
 				chats.GET("/:chat_id/sessions/:session_id", r.chatSessionHandler.GetSession)
 				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
+			}
+
+			chat := v1.Group("/chat")
+			{
+				// Chat completions route
+				chat.POST("/completions", r.chatSessionHandler.ChatCompletions)
 			}
 
 			// OpenAI-compatible chat completions route
@@ -492,7 +504,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.providerHandler.EnableOrDisableModel)
 				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddModel)
 				provider.DELETE("/:provider_name/instances/:instance_name/models", r.providerHandler.DropInstanceModels)
-				v1.POST("/chat/completions", r.providerHandler.ChatToModel)
+				v1.POST("/chat/to_model", r.providerHandler.ChatToModel)
 				v1.POST("/embeddings", r.providerHandler.EmbedText)
 				v1.POST("/rerank", r.providerHandler.RerankDocument)
 				v1.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
@@ -549,6 +561,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.POST("/", r.connectorHandler.CreateConnector)
 				connector.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connector.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
+				connector.POST("/box/oauth/web/start", r.connectorHandler.StartBoxWebOAuth)
+				connector.POST("/box/oauth/web/result", r.connectorHandler.PollBoxWebOAuthResult)
 				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
 				connector.PATCH("/:connector_id", r.connectorHandler.UpdateConnector)
 				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
@@ -670,14 +684,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chunk.POST("/update", r.chunkHandler.UpdateChunk) // Internal API only for GO
 		}
 
-		// Chat routes
-		chat := authorized.Group("/v1/dialog")
-		{
-			chat.POST("/next", r.chatHandler.ListChatsNext)
-			chat.POST("/set", r.chatHandler.SetDialog)
-			chat.POST("/rm", r.chatHandler.RemoveChats)
-		}
-
 		// Chat Channel
 		chanChannel := v1.Group("/chat-channels")
 		{
@@ -695,15 +701,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			langfuse.PUT("/api-key", r.langfuseHandler.SetAPIKey)
 			langfuse.GET("/api-key", r.langfuseHandler.GetAPIKey)
 			langfuse.DELETE("/api-key", r.langfuseHandler.DeleteAPIKey)
-		}
-
-		// Chat session (conversation) routes
-		session := authorized.Group("/v1/conversation")
-		{
-			session.POST("/set", r.chatSessionHandler.SetChatSession)
-			session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
-			session.GET("/list", r.chatSessionHandler.ListChatSessions)
-			session.POST("/completion", r.chatSessionHandler.Completion)
 		}
 
 		// Connector routes

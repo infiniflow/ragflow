@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import itertools
 import logging
 import os
 import time
@@ -70,6 +71,9 @@ class GoogleScholar(ToolBase, ABC):
 
         if not kwargs.get("query"):
             self.set_output("formalized_content", "")
+            # Reset json too, otherwise a reused instance keeps stale results
+            # from a previous successful call.
+            self.set_output("json", [])
             return ""
 
         last_e = ""
@@ -84,12 +88,18 @@ class GoogleScholar(ToolBase, ABC):
                 if self.check_if_canceled("GoogleScholar processing"):
                     return
 
-                self._retrieve_chunks(scholar_client,
+                # search_pubs returns a lazy generator: materialize at most top_n
+                # results once so the bound is respected and the same list feeds
+                # both _retrieve_chunks and the json output (iterating it twice
+                # would otherwise leave json empty).
+                results = list(itertools.islice(scholar_client, self._param.top_n))
+
+                self._retrieve_chunks(results,
                                       get_title=lambda r: r['bib']['title'],
                                       get_url=lambda r: r["pub_url"],
                                       get_content=lambda r: "\n author: " + ",".join(r['bib']['author']) + '\n Abstract: ' + r['bib'].get('abstract', 'no abstract')
                                       )
-                self.set_output("json", list(scholar_client))
+                self.set_output("json", results)
                 return self.output("formalized_content")
             except Exception as e:
                 if self.check_if_canceled("GoogleScholar processing"):
