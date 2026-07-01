@@ -152,6 +152,7 @@ class UserCanvasService(CommonService):
         keywords,
         canvas_category=None,
         tags=None,
+        canvas_type=None,
     ):
         fields = [
             cls.model.id,
@@ -163,6 +164,7 @@ class UserCanvasService(CommonService):
             User.nickname,
             User.avatar.alias('tenant_avatar'),
             cls.model.update_time,
+            cls.model.canvas_type,
             cls.model.canvas_category,
             cls.model.tags,
         ]
@@ -177,6 +179,8 @@ class UserCanvasService(CommonService):
             )
         if canvas_category:
             agents = agents.where(cls.model.canvas_category == canvas_category)
+        if canvas_type:
+            agents = agents.where(cls.model.canvas_type == canvas_type)
         if tags:
             tag_list = [t.strip() for t in tags if t and t.strip()] if isinstance(tags, (list, tuple)) else [t.strip() for t in str(tags).split(",") if t.strip()]
             if tag_list:

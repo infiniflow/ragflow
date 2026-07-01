@@ -59,7 +59,7 @@ type documentServiceIface interface {
 	DeleteDocumentMetadata(docID string, keys []string) error
 	DeleteDocumentAllMetadata(docID string) error
 	GetDocumentMetadataByID(docID string) (map[string]interface{}, error)
-	GetDocumentArtifact(filename string) (*service.ArtifactResponse, error)
+	GetDocumentArtifact(filename, userID string) (*service.ArtifactResponse, error)
 	GetDocumentPreview(docID string) (*service.DocumentPreview, error)
 	UploadLocalDocuments(kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
 	UploadWebDocument(kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error)
@@ -219,8 +219,13 @@ func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		jsonError(c, code, msg)
+		return
+	}
 	filename := c.Param("filename")
-	artifact, err := h.documentService.GetDocumentArtifact(filename)
+	artifact, err := h.documentService.GetDocumentArtifact(filename, user.ID)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrArtifactInvalidFilename),
