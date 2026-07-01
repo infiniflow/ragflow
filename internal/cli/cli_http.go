@@ -362,7 +362,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APIShowProviderInstanceTaskCommand(cmd)
 	case "api_show_provider_model":
 		return c.CommonShowProviderModelCommand(cmd)
-	case "list_provider_models":
+	case "api_list_provider_models":
 		return c.CommonListModelsCommand(cmd)
 	case "api_list_provider_instance_models":
 		return c.CommonListInstanceModelsCommand(cmd)
