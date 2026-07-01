@@ -20,18 +20,33 @@ std::string trim(const std::string& s) {
     auto a = s.find_first_not_of(" \t\r\n");
     return a == std::string::npos ? "" : s.substr(a, s.find_last_not_of(" \t\r\n")-a+1);
 }
+struct JVal; struct JObjMap;
 struct JVal {
     enum Type {NUL,OBJ,ARR,STR,NUM,BOOL} type=NUL;
-    std::string str; std::vector<JVal> arr; std::unordered_map<std::string,JVal> obj; double num=0;
-    const JVal* get(const std::string& k) const { auto it=obj.find(k); return it!=obj.end()?&it->second:nullptr; }
+    std::string str; std::vector<JVal> arr; double num=0;
+    JObjMap* obj = nullptr;
+    JVal() = default;
+    ~JVal();
+    JVal(const JVal& o);
+    JVal& operator=(const JVal& o);
+    JVal(JVal&& o) noexcept;
+    JVal& operator=(JVal&& o) noexcept;
+    const JVal* get(const std::string& k) const;
     int as_int() const { return (int)num; } int64_t as_i64() const { return (int64_t)num; }
 };
+struct JObjMap { std::unordered_map<std::string, JVal> m; };
+inline JVal::~JVal() { delete obj; }
+inline JVal::JVal(const JVal& o) : type(o.type), str(o.str), arr(o.arr), num(o.num) { if (o.obj) obj = new JObjMap(*o.obj); }
+inline JVal& JVal::operator=(const JVal& o) { if (this != &o) { delete obj; type=o.type; str=o.str; arr=o.arr; num=o.num; obj=o.obj ? new JObjMap(*o.obj) : nullptr; } return *this; }
+inline JVal::JVal(JVal&& o) noexcept : type(o.type), str(std::move(o.str)), arr(std::move(o.arr)), num(o.num), obj(o.obj) { o.obj = nullptr; }
+inline JVal& JVal::operator=(JVal&& o) noexcept { if (this != &o) { delete obj; type=o.type; str=std::move(o.str); arr=std::move(o.arr); num=o.num; obj=o.obj; o.obj=nullptr; } return *this; }
+inline const JVal* JVal::get(const std::string& k) const { if (!obj) return nullptr; auto it=obj->m.find(k); return it!=obj->m.end()?&it->second:nullptr; }
 struct JParser {
     const char *p,*e; char pk() { while(p<e&&(*p==' '||*p=='\t'||*p=='\n'||*p=='\r'))++p; return p<e?*p:0; }
     char nx() { while(p<e&&(*p==' '||*p=='\t'||*p=='\n'||*p=='\r'))++p; return p<e?*p++:0; }
     JVal pv() { char c=pk(); if(c=='{')return po(); if(c=='[')return pa(); if(c=='"')return ps(); if(c=='t'||c=='f')return pb();
         if(c=='n'){nx();nx();nx();nx();return JVal{};} return pn(); }
-    JVal po() { JVal v;v.type=JVal::OBJ; nx(); while(pk()!='}'){auto k=ps();nx();v.obj[k.str]=pv();if(pk()==',')nx();else break;}nx();return v; }
+    JVal po() { JVal v;v.type=JVal::OBJ; nx(); if(!v.obj)v.obj=new JObjMap(); while(pk()!='}'){auto k=ps();nx();v.obj->m[k.str]=pv();if(pk()==',')nx();else break;}nx();return v; }
     JVal pa() { JVal v;v.type=JVal::ARR; nx(); while(pk()!=']'){v.arr.push_back(pv());if(pk()==',')nx();else break;}nx();return v; }
     JVal ps() { JVal v;v.type=JVal::STR; nx();while(p<e&&*p!='"'){if(*p=='\\'){++p;if(p<e)v.str+=*p++;}else v.str+=*p++;}if(p<e)++p;return v; }
     JVal pn() { JVal v;v.type=JVal::NUM; auto s=p; if(p<e&&*p=='-')++p; while(p<e&&(*p>='0'&&*p<='9'))++p;
@@ -419,9 +434,9 @@ static bool load_labels(const std::string& dir, State* s) {
     std::stringstream b;b<<f.rdbuf();
     auto d=JParser().parse(b.str()); auto* am=d.get("action_to_label");
     if(!am||am->type!=JVal::OBJ)return false;
-    int mx=0; for(auto&[k,v]:am->obj){try{int a=std::stoi(k);if(a>mx)mx=a;}catch(...){}};
+    int mx=0; for(auto&[k,v]:am->obj->m){try{int a=std::stoi(k);if(a>mx)mx=a;}catch(...){}};
     int n=s->nAct>0?s->nAct:mx+1; s->actLbl.resize(n,"O");
-    for(auto&[k,v]:am->obj){try{int a=std::stoi(k);if(a>=0&&a<n)s->actLbl[a]=v.str;}catch(...){}}
+    for(auto&[k,v]:am->obj->m){try{int a=std::stoi(k);if(a>=0&&a<n)s->actLbl[a]=v.str;}catch(...){}}
     return!s->actLbl.empty();
 }
 
