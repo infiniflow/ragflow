@@ -395,7 +395,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                     f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
-            res.append(beAdoc(deepcopy(doc), question, answer, eng, len(list(reader))))
+            res.append(beAdoc(deepcopy(doc), question, answer, eng, len(lines)))
 
         callback(0.6, ("Extract Q&A: {}".format(len(res)) + (
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
