@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -81,7 +82,7 @@ func TestChatMindMapHandlerSuccess(t *testing.T) {
 		}, nil
 	}}
 	h := NewChatHandler(service.NewChatService(), service.NewUserService())
-	h.SetMindMapDependencies(nil, nil, service.NewChatLLM(llm), service.NewChunkRetriever(chunks))
+	h.SetMindMapDependencies(nil, nil, llm, chunks)
 	c, w := setupGinContextWithUser("POST", "/api/v1/chat/mindmap", `{"question":"What is search?","kb_ids":["kb-1"]}`)
 
 	h.MindMap(c)
@@ -103,7 +104,7 @@ func TestChatMindMapHandlerSuccess(t *testing.T) {
 	if chunks.LastReq == nil || len(chunks.LastReq.Datasets) != 1 || chunks.LastReq.Datasets[0] != "kb-1" {
 		t.Fatalf("retrieval datasets = %+v, want [kb-1]", chunks.LastReq)
 	}
-	if llm.lastTenantID != "user-1" || len(llm.lastMessages) != 2 || !strings.Contains(llm.lastMessages[0].Content, "Hybrid search combines") {
+	if llm.lastTenantID != "user-1" || len(llm.lastMessages) != 2 || !strings.Contains(fmt.Sprint(llm.lastMessages[0].Content), "Hybrid search combines") {
 		t.Fatalf("unexpected LLM call: tenant=%q messages=%v", llm.lastTenantID, llm.lastMessages)
 	}
 }
@@ -114,7 +115,7 @@ func TestChatRecommendationHandlerSuccess(t *testing.T) {
 		response: "Here are related questions:\n1. How does hybrid search work?\n2. What improves retrieval quality?",
 	}
 	h := NewChatHandler(service.NewChatService(), service.NewUserService())
-	h.SetMindMapDependencies(nil, service.NewTenantService(), service.NewChatLLM(llm), nil)
+	h.SetMindMapDependencies(nil, service.NewTenantService(), llm, nil)
 	c, w := setupGinContextWithUser("POST", "/api/v1/chat/recommendation", `{"question":"hybrid search"}`)
 
 	h.Recommendation(c)

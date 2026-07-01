@@ -103,20 +103,20 @@ type SearchBotRequest struct {
 type SearchBotHandler struct {
 	searchSvc *service.SearchService
 	tenantSvc *service.TenantService
-	llm       *service.ChatLLM
-	streamLLM *service.TenantStreamingLLM
-	chunkSvc  *service.ChunkRetriever
+	llm       service.ChatLLM
+	streamLLM service.TenantStreamingLLM
+	chunkSvc  service.Retriever
 	askSvc    *service.AskService
-	sseWriter *service.SSEWriter
+	sseWriter SSEWriter
 }
 
 // NewSearchBotHandler creates a new SearchBotHandler.
-func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm *service.ChatLLM, chunkSvc *service.ChunkRetriever) *SearchBotHandler {
-	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc, sseWriter: service.NewSSEWriter(&ginSSEWriter{})}
+func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm service.ChatLLM, chunkSvc service.Retriever) *SearchBotHandler {
+	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc, sseWriter: &ginSSEWriter{}}
 }
 
 // SetStreamLLM sets the streaming LLM for the Ask endpoint.
-func (h *SearchBotHandler) SetStreamLLM(llm *service.TenantStreamingLLM) { h.streamLLM = llm }
+func (h *SearchBotHandler) SetStreamLLM(llm service.TenantStreamingLLM) { h.streamLLM = llm }
 
 // SetAskService sets the AskService used by the Ask endpoint.
 func (h *SearchBotHandler) SetAskService(svc *service.AskService) { h.askSvc = svc }
@@ -293,6 +293,10 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 
 	if h.askSvc == nil {
 		h.sseWriter.Write(c, sseError("ask service not configured"))
+		return
+	}
+	if h.streamLLM == nil {
+		h.sseWriter.Write(c, sseError("streaming LLM not configured"))
 		return
 	}
 	ctx := c.Request.Context()
@@ -491,6 +495,10 @@ func sseMarker(marker string) string {
 	payload := ssePayload{Code: 0, Message: "", Data: d}
 	b, _ := json.Marshal(payload)
 	return fmt.Sprintf("data: %s\n\n", string(b))
+}
+
+type SSEWriter interface {
+	Write(c *gin.Context, data string)
 }
 
 // ginSSEWriter is the production SSEWriter backed by gin.Context.Stream.

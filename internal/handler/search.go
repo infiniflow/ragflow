@@ -30,9 +30,9 @@ import (
 type SearchHandler struct {
 	searchService *service.SearchService
 	userService   *service.UserService
-	streamLLM     *service.TenantStreamingLLM
+	streamLLM     service.TenantStreamingLLM
 	askService    *service.AskService
-	sseWriter     *service.SSEWriter
+	sseWriter     SSEWriter
 }
 
 // NewSearchHandler create search handler
@@ -40,12 +40,12 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 	return &SearchHandler{
 		searchService: searchService,
 		userService:   userService,
-		sseWriter:     service.NewSSEWriter(&ginSSEWriter{}),
+		sseWriter:     &ginSSEWriter{},
 	}
 }
 
 // SetCompletionDependencies wires the streaming search completion runtime.
-func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.TenantStreamingLLM, askService *service.AskService) {
+func (h *SearchHandler) SetCompletionDependencies(streamLLM service.TenantStreamingLLM, askService *service.AskService) {
 	h.streamLLM = streamLLM
 	h.askService = askService
 }
@@ -480,7 +480,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 
 	writer := h.sseWriter
 	if writer == nil {
-		writer = service.NewSSEWriter(&ginSSEWriter{})
+		writer = &ginSSEWriter{}
 	}
 	if plan.ModelID == "" {
 		writer.Write(c, sseError("chat model not configured"))

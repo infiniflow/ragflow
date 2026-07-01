@@ -27,7 +27,7 @@ import (
 )
 
 // GenerateRelatedQuestions generates related search questions for chat/searchbot endpoints.
-func GenerateRelatedQuestions(tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, llm *ChatLLM) ([]string, error) {
+func GenerateRelatedQuestions(tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, llm ChatLLM) ([]string, error) {
 	if llm == nil {
 		return nil, fmt.Errorf("LLM not configured")
 	}

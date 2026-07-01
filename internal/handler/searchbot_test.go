@@ -39,7 +39,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// mockChunkService implements service.ChunkRetrieverProvider for testing.
+// mockChunkService implements service.Retriever for testing.
 // It captures the last request received so tests can verify field mapping.
 type mockChunkService struct {
 	retrievalTestFn func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
@@ -156,7 +156,7 @@ func TestSearchBotsRetrieval_MissingQuestion(t *testing.T) {
 }
 
 func TestSearchBotsRetrieval_NoAuth(t *testing.T) {
-	h := NewSearchBotHandler(nil, nil, nil, service.NewChunkRetriever(&mockChunkService{}))
+	h := NewSearchBotHandler(nil, nil, nil, &mockChunkService{})
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.POST("/api/v1/searchbots/retrieval_test", h.RetrievalTest)
@@ -411,7 +411,7 @@ func TestSearchBotsRetrieval_EmptyQuestion(t *testing.T) {
 	}
 }
 
-// fakeChatLLM implements service.ChatLLMProvider for testing.
+// fakeChatLLM implements service.ChatLLM for testing.
 type fakeChatLLM struct {
 	response     string
 	err          error
@@ -450,7 +450,7 @@ func TestSearchBotHandler_Success(t *testing.T) {
 2. What are advantages of EV?
 3. Cost of EV?`,
 	}
-	h := NewSearchBotHandler(nil, nil, service.NewChatLLM(llm), nil)
+	h := NewSearchBotHandler(nil, nil, llm, nil)
 
 	c, w := setupSearchBotRequest(`{"question": "EV benefits"}`)
 	h.Handle(c)
@@ -481,7 +481,7 @@ func TestSearchBotHandler_EmptyResponse(t *testing.T) {
 	llm := &fakeChatLLM{
 		response: "No related questions found.",
 	}
-	h := NewSearchBotHandler(nil, nil, service.NewChatLLM(llm), nil)
+	h := NewSearchBotHandler(nil, nil, llm, nil)
 
 	c, w := setupSearchBotRequest(`{"question": "EV benefits"}`)
 	h.Handle(c)
@@ -505,7 +505,7 @@ func TestSearchBotHandler_LLMFailure(t *testing.T) {
 	llm := &fakeChatLLM{
 		err: errFake{msg: "LLM unavailable"},
 	}
-	h := NewSearchBotHandler(nil, nil, service.NewChatLLM(llm), nil)
+	h := NewSearchBotHandler(nil, nil, llm, nil)
 
 	c, w := setupSearchBotRequest(`{"question": "EV benefits"}`)
 	h.Handle(c)
@@ -521,7 +521,7 @@ func TestSearchBotHandler_LLMFailure(t *testing.T) {
 // TestSearchBotHandler_MissingQuestion verifies validation.
 func TestSearchBotHandler_MissingQuestion(t *testing.T) {
 	llm := &fakeChatLLM{response: "dummy"}
-	h := NewSearchBotHandler(nil, nil, service.NewChatLLM(llm), nil)
+	h := NewSearchBotHandler(nil, nil, llm, nil)
 
 	c, w := setupSearchBotRequest(`{}`)
 	h.Handle(c)
@@ -544,8 +544,8 @@ func (e errFake) Error() string { return e.msg }
 func TestAskHandler_MissingQuestion(t *testing.T) {
 	llm := &fakeStreamingLLM{chunks: []string{"answer"}}
 	ret := &fakeChunkRetriever{result: &service.RetrievalTestResponse{}}
-	h := NewSearchBotHandler(nil, nil, nil, service.NewChunkRetriever(ret))
-	h.SetStreamLLM(service.NewTenantStreamingLLM(llm))
+	h := NewSearchBotHandler(nil, nil, nil, ret)
+	h.SetStreamLLM(llm)
 	c, w := cw()
 	c.Request = httptest.NewRequest("POST", "/api/v1/searchbots/ask",
 		strings.NewReader(`{"kb_ids": ["kb1"]}`))
@@ -560,8 +560,8 @@ func TestAskHandler_MissingQuestion(t *testing.T) {
 func TestAskHandler_MissingKbIDs(t *testing.T) {
 	llm := &fakeStreamingLLM{chunks: []string{"answer"}}
 	ret := &fakeChunkRetriever{result: &service.RetrievalTestResponse{}}
-	h := NewSearchBotHandler(nil, nil, nil, service.NewChunkRetriever(ret))
-	h.SetStreamLLM(service.NewTenantStreamingLLM(llm))
+	h := NewSearchBotHandler(nil, nil, nil, ret)
+	h.SetStreamLLM(llm)
 	c, w := cw()
 	c.Request = httptest.NewRequest("POST", "/api/v1/searchbots/ask",
 		strings.NewReader(`{"question": "test"}`))
@@ -573,7 +573,7 @@ func TestAskHandler_MissingKbIDs(t *testing.T) {
 	}
 }
 
-// fakeStreamingLLM implements service.TenantStreamingLLMProvider for testing.
+// fakeStreamingLLM implements service.TenantStreamingLLM for testing.
 type fakeStreamingLLM struct {
 	chunks []string
 	err    error
@@ -700,9 +700,9 @@ func TestAskHandler_DisablesWriteDeadlineForSSE(t *testing.T) {
 		chunks: []string{"first response chunk", "second response chunk"},
 		delay:  120 * time.Millisecond,
 	}
-	h := NewSearchBotHandler(nil, service.NewTenantService(), nil, service.NewChunkRetriever(ret))
-	h.SetStreamLLM(service.NewTenantStreamingLLM(llm))
-	h.SetAskService(service.NewAskService(service.NewChunkRetriever(ret), nil, 0, 1))
+	h := NewSearchBotHandler(nil, service.NewTenantService(), nil, ret)
+	h.SetStreamLLM(llm)
+	h.SetAskService(service.NewAskService(ret, nil, 0, 1))
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -752,8 +752,8 @@ func TestAskHandler_EmptyQuestion(t *testing.T) {
 	ret := &fakeChunkRetriever{result: &service.RetrievalTestResponse{
 		Chunks: []map[string]interface{}{{"id": "c1", "content_with_weight": "test"}},
 	}}
-	h := NewSearchBotHandler(nil, nil, nil, service.NewChunkRetriever(ret))
-	h.SetStreamLLM(service.NewTenantStreamingLLM(llm))
+	h := NewSearchBotHandler(nil, nil, nil, ret)
+	h.SetStreamLLM(llm)
 	c, w := cw()
 	c.Request = httptest.NewRequest("POST", "/api/v1/searchbots/ask",
 		strings.NewReader(`{"question": "  ", "kb_ids": ["kb1"]}`))
@@ -768,8 +768,8 @@ func TestAskHandler_EmptyQuestion(t *testing.T) {
 func TestAskHandler_EmptyKbIDs(t *testing.T) {
 	llm := &fakeStreamingLLM{chunks: []string{"answer"}}
 	ret := &fakeChunkRetriever{result: &service.RetrievalTestResponse{}}
-	h := NewSearchBotHandler(nil, nil, nil, service.NewChunkRetriever(ret))
-	h.SetStreamLLM(service.NewTenantStreamingLLM(llm))
+	h := NewSearchBotHandler(nil, nil, nil, ret)
+	h.SetStreamLLM(llm)
 	c, w := cw()
 	c.Request = httptest.NewRequest("POST", "/api/v1/searchbots/ask",
 		strings.NewReader(`{"question": "test", "kb_ids": []}`))
@@ -787,9 +787,9 @@ func TestAskHandler_NoChatModel(t *testing.T) {
 	ret := &fakeChunkRetriever{result: &service.RetrievalTestResponse{
 		Chunks: []map[string]interface{}{{"id": "c1", "content_with_weight": "test"}},
 	}}
-	h := NewSearchBotHandler(nil, nil, nil, service.NewChunkRetriever(ret))
-	h.sseWriter = service.NewSSEWriter(buf)
-	h.SetStreamLLM(service.NewTenantStreamingLLM(llm))
+	h := NewSearchBotHandler(nil, nil, nil, ret)
+	h.sseWriter = buf
+	h.SetStreamLLM(llm)
 	c, _ := cw()
 	c.Request = httptest.NewRequest("POST", "/api/v1/searchbots/ask",
 		strings.NewReader(`{"question": "test", "kb_ids": ["kb1"]}`))
@@ -805,8 +805,8 @@ func TestAskHandler_NoChatModel(t *testing.T) {
 func TestAskHandler_InvalidJSON(t *testing.T) {
 	llm := &fakeStreamingLLM{chunks: []string{"answer"}}
 	ret := &fakeChunkRetriever{result: &service.RetrievalTestResponse{}}
-	h := NewSearchBotHandler(nil, nil, nil, service.NewChunkRetriever(ret))
-	h.SetStreamLLM(service.NewTenantStreamingLLM(llm))
+	h := NewSearchBotHandler(nil, nil, nil, ret)
+	h.SetStreamLLM(llm)
 	c, w := cw()
 	c.Request = httptest.NewRequest("POST", "/api/v1/searchbots/ask",
 		strings.NewReader(`not json`))
@@ -821,8 +821,8 @@ func TestAskHandler_InvalidJSON(t *testing.T) {
 func TestAskHandler_WhitespaceKbIDFiltered(t *testing.T) {
 	llm := &fakeStreamingLLM{chunks: []string{"answer"}}
 	ret := &fakeChunkRetriever{result: &service.RetrievalTestResponse{}}
-	h := NewSearchBotHandler(nil, nil, nil, service.NewChunkRetriever(ret))
-	h.SetStreamLLM(service.NewTenantStreamingLLM(llm))
+	h := NewSearchBotHandler(nil, nil, nil, ret)
+	h.SetStreamLLM(llm)
 	c, w := cw()
 	c.Request = httptest.NewRequest("POST", "/api/v1/searchbots/ask",
 		strings.NewReader(`{"question": "test", "kb_ids": ["  ", ""]}`))
@@ -841,7 +841,7 @@ func TestMindMapHandlerSuccess(t *testing.T) {
 			Chunks: []map[string]interface{}{{"content_with_weight": "Hybrid search combines vector and keyword retrieval."}},
 		}, nil
 	}}
-	h := NewSearchBotHandler(nil, nil, service.NewChatLLM(llm), service.NewChunkRetriever(chunks))
+	h := NewSearchBotHandler(nil, nil, llm, chunks)
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
@@ -874,7 +874,7 @@ func TestMindMapHandlerSuccess(t *testing.T) {
 	if *chunks.LastReq.Page != 1 || *chunks.LastReq.Size != 12 || *chunks.LastReq.TopK != 1024 {
 		t.Fatalf("retrieval defaults = page %d size %d topK %d", *chunks.LastReq.Page, *chunks.LastReq.Size, *chunks.LastReq.TopK)
 	}
-	if llm.lastTenantID != "user-1" || len(llm.lastMessages) != 2 || !strings.Contains(llm.lastMessages[0].Content, "Hybrid search combines") {
+	if llm.lastTenantID != "user-1" || len(llm.lastMessages) != 2 || !strings.Contains(fmt.Sprint(llm.lastMessages[0].Content), "Hybrid search combines") {
 		t.Fatalf("unexpected LLM call: tenant=%q messages=%v", llm.lastTenantID, llm.lastMessages)
 	}
 }

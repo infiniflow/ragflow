@@ -35,8 +35,8 @@ type mindMapRunConfig struct {
 	SearchConfig  map[string]interface{}
 	AuthUserID    string
 	ModelTenantID string
-	ChunkSvc      *service.ChunkRetriever
-	LLM           *service.ChatLLM
+	ChunkSvc      service.Retriever
+	LLM           service.ChatLLM
 	TenantSvc     *service.TenantService
 }
 
