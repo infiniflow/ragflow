@@ -118,6 +118,20 @@ class BGPT(ToolBase, ABC):
                 self.set_output("json", results)
                 return self.output("formalized_content")
 
+            except requests.HTTPError as e:
+                # Non-retryable 4xx (e.g. 400/401/403/404) should fail fast
+                # rather than wasting retries on bad requests or auth failures.
+                status = e.response.status_code if e.response is not None else None
+                if status is not None and 400 <= status < 500 and status != 429:
+                    last_e = f"HTTP error: {e}"
+                    logging.exception("BGPT non-retryable HTTP error: %s", e)
+                    break
+                if self.check_if_canceled("BGPT processing"):
+                    return
+
+                last_e = f"Network error: {e}"
+                logging.exception("BGPT network error: %s", e)
+                time.sleep(self._param.delay_after_error)
             except requests.RequestException as e:
                 if self.check_if_canceled("BGPT processing"):
                     return
