@@ -154,9 +154,9 @@ if __name__ == "__main__":
         if not os.path.exists(filename):
             urllib.request.urlretrieve(download_url, filename)
 
-    # Extract native static libraries to ~/ragflow-deps/ for Go build.
+    # Extract native static libraries to ~/ragflow-native-libs for Go build.
     # Ensures build.sh can find them without network access.
-    native_deps_dir = os.path.expanduser("~/ragflow-deps")
+    native_deps_dir = os.path.expanduser("    native_deps_dir = os.path.expanduser("~/ragflow-native-libs")")
     extractions = [
         ("pdfium-linux-x64-static.tgz", "pdfium-static"),
         ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide"),

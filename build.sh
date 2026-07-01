@@ -22,28 +22,28 @@ RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 # Strip symbols from Go binaries (set via --strip / -s)
 STRIP_SYMBOLS=""
 
-# Native static library settings. These are the user-cache paths (~/ragflow-deps/).
-# If /opt/ragflow-deps/ exists (pre-seeded in CI runner image), it takes priority
-# and skips the network download.
+# Native static library settings. These are the user-cache paths (~/ragflow-native-libs/).
+# If /opt/ragflow-native-libs/ exists (pre-seeded in CI runner image), it takes priority
+# and skips the network (download_deps.py) fallback.
 SYSTEM_DEPS="/opt/ragflow-native-libs"
 
 # office_oxide native library settings — static linking
-OFFICE_OXIDE_PREFIX="${HOME}/ragflow-deps/office_oxide"
+OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
 OFFICE_OXIDE_VERSION="0.1.2"
 
 # pdfium native library settings — static linking (kognitos/pdfium-static)
-PDFIUM_STATIC_PREFIX="${HOME}/ragflow-deps/pdfium-static"
+PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"
 PDFIUM_STATIC_VERSION="7809"
 
 # pdf_oxide native library settings — static linking (go-ffi tarball)
-PDF_OXIDE_PREFIX="${HOME}/ragflow-deps/pdf_oxide"
+PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide"
 PDF_OXIDE_VERSION="0.3.67"
 
 # Copy a dependency from the system pre-seed directory to the user cache.
 # Returns 0 if the dep was copied or already exists in cache, 1 otherwise.
 _seed_from_system() {
     local dep_name="$1"  # e.g. "pdfium-static", "pdf_oxide", "office_oxide"
-    local dep_dir="${HOME}/ragflow-deps/${dep_name}"
+    local dep_dir="${HOME}/ragflow-native-libs/${dep_name}"
     local sys_dir="${SYSTEM_DEPS}/${dep_name}"
 
     if [ -d "$dep_dir" ]; then

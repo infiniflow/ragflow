@@ -30,7 +30,7 @@ docker compose -f docker/docker-compose-base.yml up -d
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, run `./build.sh --go` first to download native dependencies. Then set the following CGO environment variables in your run configuration or shell:
 >
 > ```bash
-> RAGFLOW_DEPS="${HOME}/ragflow-deps"
+> RAGFLOW_DEPS="${HOME}/ragflow-native-libs"
 > PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
 >
 > export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
