@@ -419,6 +419,11 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.EmbedUserTextCommand(cmd)
 	case "api_rarank_user_document":
 		return c.APIRerankUserDocumentCommand(cmd)
+	case "chat completions":
+		return c.ChatCompletions(cmd)
+	case "chat completions help":
+		printChatCompletionsHelp()
+		return nil, nil
 	case "tts_user_command":
 		return c.APITTSUserCommand(cmd)
 	case "asr_user_command":

@@ -18,7 +18,18 @@ import os
 import enum
 import json
 from common import settings
-from common.constants import ActiveStatusEnum, LLMType, MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS
+from common.constants import (
+    ActiveStatusEnum,
+    LLMType,
+    MINERU_DEFAULT_CONFIG,
+    MINERU_ENV_KEYS,
+    OPENDATALOADER_DEFAULT_CONFIG,
+    OPENDATALOADER_ENV_KEYS,
+    PADDLEOCR_DEFAULT_CONFIG,
+    PADDLEOCR_ENV_KEYS,
+    SOMARK_DEFAULT_CONFIG,
+    SOMARK_ENV_KEYS,
+)
 from api.db.services.tenant_llm_service import TenantService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
@@ -32,6 +43,19 @@ def _factory_model_types(llm: dict) -> list[str]:
     if isinstance(model_type, list):
         return model_type
     return [model_type] if model_type else []
+
+
+def _lookup_factory_llm_info(provider_name: str, pure_model_name: str, extra_fields: dict) -> dict | None:
+    region = extra_fields.get("region", "default")
+    if region == "intl" and provider_name.lower() == "siliconflow":
+        target_factory_name = "siliconflow_intl"
+    else:
+        target_factory_name = provider_name
+    fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == target_factory_name]
+    if not fac_list:
+        return None
+    llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
+    return llm_list[0] if llm_list else None
 
 
 def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | None]:
@@ -238,6 +262,11 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
             raise LookupError(f"Model {model_name} cannot be used as {model_type_val} model.")
 
         model_extra = json.loads(model_obj.extra) if model_obj.extra else {}
+        llm_info = _lookup_factory_llm_info(provider_obj.provider_name, pure_model_name, extra_fields)
+        if "max_tokens" in model_extra:
+            max_tokens = model_extra["max_tokens"]
+        else:
+            max_tokens = (llm_info or {}).get("max_tokens", 8192)
         model_config = {
             "llm_factory": provider_obj.provider_name,
             "api_key": api_key,
@@ -245,8 +274,13 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
             "api_base": extra_fields.get("base_url", ""),
             "model_type": model_obj.model_type,
             "is_tools": model_extra.get("is_tools", is_tool),
-            "max_tokens": model_extra.get("max_tokens") or 8192,
+            "max_tokens": max_tokens,
         }
+        if provider_name.lower() == "somark":
+            # SoMark/OCR factories read parser config (somark_*, parse_method, ...)
+            # from model_config["extra"]; see tenant_llm_service.LLMBundle OCR path.
+            model_config["extra"] = model_extra.get("ocr_config", model_extra)
+
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload
 
@@ -334,6 +368,15 @@ def ensure_opendataloader_from_env(tenant_id: str) -> str | None:
         "OpenDataLoader",
         "opendataloader-from-env",
         _collect_env_config(OPENDATALOADER_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG),
+    )
+
+
+def ensure_somark_from_env(tenant_id: str) -> str | None:
+    return _ensure_ocr_provider_from_env(
+        tenant_id,
+        "SoMark",
+        "somark-from-env",
+        _collect_env_config(SOMARK_ENV_KEYS, SOMARK_DEFAULT_CONFIG),
     )
 
 
