@@ -256,7 +256,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
             "api_base": extra_fields.get("base_url", ""),
             "model_type": model_obj.model_type,
             "is_tools": model_extra.get("is_tools", is_tool),
-            "max_tokens": model_extra.get("max_tokens", 8192),
+            "max_tokens": model_extra.get("max_tokens") or 8192,
         }
         if provider_name.lower() == "somark":
             # SoMark/OCR factories read parser config (somark_*, parse_method, ...)
@@ -289,7 +289,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
             "api_base": extra_fields.get("base_url", ""),
             "model_type": model_type_val,
             "is_tools": llm_info.get("is_tools", is_tool),
-            "max_tokens": llm_info.get("max_tokens", 8192),
+            "max_tokens": llm_info.get("max_tokens") or 8192,
         }
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload
