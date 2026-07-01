@@ -155,9 +155,19 @@ export const useCatchDocumentError = (url: string) => {
   const [error, setError] = useState<string>('');
 
   const fetchDocument = useCallback(async () => {
-    const { data } = await axios.get(url, { headers: httpHeaders });
-    if (data.code !== 0) {
-      setError(data?.message);
+    try {
+      const { data } = await axios.get(url, { headers: httpHeaders });
+      // Only treat as error if response is JSON with an error code
+      // Binary data (like PDF) won't have a code property
+      if (data && typeof data === 'object' && 'code' in data && data.code !== 0) {
+        setError(data?.message || 'Failed to load document');
+      }
+    } catch (e) {
+      // Network errors or non-2xx responses
+      const errMsg = e instanceof Error ? e.message : 'Failed to load document';
+      if (errMsg) {
+        setError(errMsg);
+      }
     }
   }, [url, httpHeaders]);
   useEffect(() => {
