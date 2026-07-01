@@ -406,7 +406,7 @@ class RAGFlowPdfParser:
 
         return best_angle, best_img, results
 
-    def _table_transformer_job(self, ZM, auto_rotate=True):
+    def _table_transformer_job(self, ZM, auto_rotate=None):
         """
         Process table structure recognition.
 
@@ -418,8 +418,12 @@ class RAGFlowPdfParser:
 
         Args:
             ZM: Zoom factor
-            auto_rotate: Whether to enable auto orientation correction
+            auto_rotate: Whether to enable auto orientation correction.
+                         None means reading TABLE_AUTO_ROTATE from the environment.
         """
+        if auto_rotate is None:
+            auto_rotate = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
+
         logging.debug("Table processing...")
         imgs, pos = [], []
         tbcnt = [0]
