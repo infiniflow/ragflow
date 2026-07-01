@@ -510,7 +510,8 @@ export default {
       thinkingDefault: '系統預設',
       thinkingEnabled: '開啟',
       thinkingDisabled: '關閉',
-      thinkingTip: '僅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系統預設會關閉 Qwen 思考，以避免任務長時間執行。',
+      thinkingTip:
+        '僅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系統預設會關閉 Qwen 思考，以避免任務長時間執行。',
       quote: '顯示引文',
       quoteTip: '是否應該顯示原文出處？',
       selfRag: 'Self-RAG',
