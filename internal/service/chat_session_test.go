@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 )
 
@@ -177,6 +179,88 @@ func makeResultChan(results ...AsyncChatResult) <-chan AsyncChatResult {
 	}
 	close(ch)
 	return ch
+}
+
+type feedbackContextKey struct{}
+
+type fakeFeedbackDocEngine struct {
+	engine.DocEngine
+	adjustCalls []struct {
+		ctx       context.Context
+		indexName string
+		chunkID   string
+		kbID      string
+		delta     float64
+		minWeight float64
+		maxWeight float64
+	}
+}
+
+func (f *fakeFeedbackDocEngine) GetType() string { return "elasticsearch" }
+
+func (f *fakeFeedbackDocEngine) AdjustChunkPagerank(ctx context.Context, indexName, chunkID, kbID string, delta, minWeight, maxWeight float64) error {
+	f.adjustCalls = append(f.adjustCalls, struct {
+		ctx       context.Context
+		indexName string
+		chunkID   string
+		kbID      string
+		delta     float64
+		minWeight float64
+		maxWeight float64
+	}{ctx: ctx, indexName: indexName, chunkID: chunkID, kbID: kbID, delta: delta, minWeight: minWeight, maxWeight: maxWeight})
+	return nil
+}
+
+type fakeInfinityFeedbackDocEngine struct {
+	fakeFeedbackDocEngine
+	getChunkCalled bool
+}
+
+func (f *fakeInfinityFeedbackDocEngine) GetType() string { return string(engine.EngineInfinity) }
+
+func (f *fakeInfinityFeedbackDocEngine) GetChunk(ctx context.Context, indexName, chunkID string, datasetIDs []string) (interface{}, error) {
+	f.getChunkCalled = true
+	return nil, errors.New("fallback should not be used")
+}
+
+type fakeFallbackFeedbackDocEngine struct {
+	engine.DocEngine
+	chunks      map[string]map[string]interface{}
+	updateCalls []struct {
+		ctx       context.Context
+		condition map[string]interface{}
+		newValue  map[string]interface{}
+		indexName string
+		kbID      string
+	}
+}
+
+func (f *fakeFallbackFeedbackDocEngine) GetType() string { return "elasticsearch" }
+
+func (f *fakeFallbackFeedbackDocEngine) GetChunk(ctx context.Context, indexName, chunkID string, datasetIDs []string) (interface{}, error) {
+	chunk, ok := f.chunks[chunkID]
+	if !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return chunk, nil
+}
+
+func (f *fakeFallbackFeedbackDocEngine) UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, indexName string, kbID string) error {
+	f.updateCalls = append(f.updateCalls, struct {
+		ctx       context.Context
+		condition map[string]interface{}
+		newValue  map[string]interface{}
+		indexName string
+		kbID      string
+	}{ctx: ctx, condition: condition, newValue: newValue, indexName: indexName, kbID: kbID})
+	return nil
+}
+
+func requireFloatClose(t *testing.T, got, want float64) {
+	t.Helper()
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("got %v want %v", got, want)
+	}
 }
 
 // ===================================================================
@@ -635,6 +719,296 @@ func TestUpdateSession_NotFound(t *testing.T) {
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("code=%v", code)
+	}
+}
+
+// ===================================================================
+// Session message delete / feedback tests
+// ===================================================================
+
+func TestDeleteSessionMessage_RemovesMessagePairAndReference(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		Message: json.RawMessage(`[
+			{"role":"assistant","content":"Welcome!"},
+			{"role":"user","content":"first","id":"msg-1"},
+			{"role":"assistant","content":"answer 1","id":"msg-1"},
+			{"role":"user","content":"second","id":"msg-2"},
+			{"role":"assistant","content":"answer 2","id":"msg-2"}
+		]`),
+		Reference: json.RawMessage(`[
+			{"chunks":[{"id":"chunk-1","kb_id":"kb-1"}]},
+			{"chunks":[{"id":"chunk-2","kb_id":"kb-2"}]}
+		]`),
+	}
+	store.dialogExists["tenant-1|chat-1"] = true
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-1"}},
+		pipeline:       &fakePipeline{},
+	}
+
+	resp, code, err := svc.DeleteSessionMessage("user-1", "chat-1", "session-1", "msg-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if len(resp.Messages) != 3 {
+		t.Fatalf("messages=%#v", resp.Messages)
+	}
+	if resp.Messages[1]["id"] != "msg-2" || resp.Messages[2]["id"] != "msg-2" {
+		t.Fatalf("remaining pair=%#v", resp.Messages)
+	}
+	if len(resp.Reference) != 1 {
+		t.Fatalf("reference=%#v", resp.Reference)
+	}
+	ref, ok := resp.Reference[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("reference type=%T", resp.Reference[0])
+	}
+	chunks, ok := ref["chunks"].([]FormattedChunk)
+	if !ok || len(chunks) != 1 || chunks[0].ID != "chunk-2" {
+		t.Fatalf("remaining chunks=%#v", ref["chunks"])
+	}
+}
+
+func TestUpdateMessageFeedback_AppliesChunkFeedbackWithResolvedTenantAndContext(t *testing.T) {
+	t.Setenv("CHUNK_FEEDBACK_ENABLED", "true")
+	t.Setenv("CHUNK_FEEDBACK_WEIGHTING", "uniform")
+
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		Message: json.RawMessage(`[
+			{"role":"assistant","content":"Welcome!"},
+			{"role":"user","content":"question","id":"msg-1"},
+			{"role":"assistant","content":"answer","id":"msg-1","feedback":"old"}
+		]`),
+		Reference: json.RawMessage(`[
+			{"chunks":[{"id":"chunk-1","kb_id":"kb-1","similarity":0.9}]}
+		]`),
+	}
+	store.dialogExists["tenant-owner|chat-1"] = true
+	docEngine := &fakeFeedbackDocEngine{}
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-owner"}},
+		pipeline:       &fakePipeline{},
+		docEngine:      docEngine,
+	}
+	ctx := context.WithValue(context.Background(), feedbackContextKey{}, "request-context")
+
+	resp, code, err := svc.UpdateMessageFeedback(ctx, "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{
+		"thumbup": true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if len(docEngine.adjustCalls) != 1 {
+		t.Fatalf("adjust calls=%d", len(docEngine.adjustCalls))
+	}
+	call := docEngine.adjustCalls[0]
+	if call.indexName != "ragflow_tenant-owner" || call.chunkID != "chunk-1" || call.kbID != "kb-1" {
+		t.Fatalf("call=%#v", call)
+	}
+	if call.delta != 1 || call.minWeight != 0 || call.maxWeight != 100 {
+		t.Fatalf("weights=%#v", call)
+	}
+	if got := call.ctx.Value(feedbackContextKey{}); got != "request-context" {
+		t.Fatalf("context value=%v", got)
+	}
+	assistant := resp.Messages[2]
+	if assistant["thumbup"] != true {
+		t.Fatalf("assistant=%#v", assistant)
+	}
+	if _, ok := assistant["feedback"]; ok {
+		t.Fatalf("positive feedback should remove text feedback: %#v", assistant)
+	}
+}
+
+func TestUpdateMessageFeedback_ToggleUsesResolvedTenantForUndoAndApply(t *testing.T) {
+	t.Setenv("CHUNK_FEEDBACK_ENABLED", "true")
+	t.Setenv("CHUNK_FEEDBACK_WEIGHTING", "uniform")
+
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		Message: json.RawMessage(`[
+			{"role":"assistant","content":"Welcome!"},
+			{"role":"user","content":"question","id":"msg-1"},
+			{"role":"assistant","content":"answer","id":"msg-1","thumbup":true}
+		]`),
+		Reference: json.RawMessage(`[
+			{"chunks":[{"chunk_id":"chunk-1","dataset_id":"kb-1"}]}
+		]`),
+	}
+	store.dialogExists["tenant-owner|chat-1"] = true
+	docEngine := &fakeFeedbackDocEngine{}
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-owner"}},
+		pipeline:       &fakePipeline{},
+		docEngine:      docEngine,
+	}
+
+	resp, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{
+		"thumbup":  false,
+		"feedback": "not useful",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if len(docEngine.adjustCalls) != 2 {
+		t.Fatalf("adjust calls=%d", len(docEngine.adjustCalls))
+	}
+	for _, call := range docEngine.adjustCalls {
+		if call.indexName != "ragflow_tenant-owner" || call.delta != -1 {
+			t.Fatalf("call=%#v", call)
+		}
+	}
+	assistant := resp.Messages[2]
+	if assistant["thumbup"] != false || assistant["feedback"] != "not useful" {
+		t.Fatalf("assistant=%#v", assistant)
+	}
+}
+
+func TestApplyChunkFeedback_DisabledDoesNotTouchEngine(t *testing.T) {
+	t.Setenv("CHUNK_FEEDBACK_ENABLED", "false")
+	docEngine := &fakeFeedbackDocEngine{}
+	svc := &ChatSessionService{docEngine: docEngine}
+
+	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+		"chunks": []interface{}{map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1"}},
+	}, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["disabled"] != true {
+		t.Fatalf("result=%#v", result)
+	}
+	if len(docEngine.adjustCalls) != 0 {
+		t.Fatalf("adjust calls=%d", len(docEngine.adjustCalls))
+	}
+}
+
+func TestApplyChunkFeedback_UniformSplitsOneVoteAcrossChunks(t *testing.T) {
+	t.Setenv("CHUNK_FEEDBACK_ENABLED", "true")
+	t.Setenv("CHUNK_FEEDBACK_WEIGHTING", "uniform")
+
+	docEngine := &fakeFeedbackDocEngine{}
+	svc := &ChatSessionService{docEngine: docEngine}
+
+	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+		"chunks": []interface{}{
+			map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1"},
+			map[string]interface{}{"id": "chunk-2", "kb_id": "kb-1"},
+		},
+	}, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["success_count"] != 2 {
+		t.Fatalf("result=%#v", result)
+	}
+	if len(docEngine.adjustCalls) != 2 {
+		t.Fatalf("adjust calls=%d", len(docEngine.adjustCalls))
+	}
+	requireFloatClose(t, docEngine.adjustCalls[0].delta, 0.5)
+	requireFloatClose(t, docEngine.adjustCalls[1].delta, 0.5)
+	requireFloatClose(t, docEngine.adjustCalls[0].delta+docEngine.adjustCalls[1].delta, 1)
+}
+
+func TestApplyChunkFeedback_RelevanceDistributesOneVoteBySignals(t *testing.T) {
+	t.Setenv("CHUNK_FEEDBACK_ENABLED", "true")
+	t.Setenv("CHUNK_FEEDBACK_WEIGHTING", "relevance")
+
+	docEngine := &fakeFeedbackDocEngine{}
+	svc := &ChatSessionService{docEngine: docEngine}
+
+	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+		"chunks": []interface{}{
+			map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1", "similarity": 2.0},
+			map[string]interface{}{"id": "chunk-2", "kb_id": "kb-1", "vector_similarity": 1.0},
+			map[string]interface{}{"id": "chunk-3", "kb_id": "kb-1"},
+		},
+	}, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["success_count"] != 3 {
+		t.Fatalf("result=%#v", result)
+	}
+	if len(docEngine.adjustCalls) != 3 {
+		t.Fatalf("adjust calls=%d", len(docEngine.adjustCalls))
+	}
+	requireFloatClose(t, docEngine.adjustCalls[0].delta, -0.5)
+	requireFloatClose(t, docEngine.adjustCalls[1].delta, -0.25)
+	requireFloatClose(t, docEngine.adjustCalls[2].delta, -0.25)
+	requireFloatClose(t, docEngine.adjustCalls[0].delta+docEngine.adjustCalls[1].delta+docEngine.adjustCalls[2].delta, -1)
+}
+
+func TestUpdateChunkWeight_InfinityUsesAtomicAdjuster(t *testing.T) {
+	docEngine := &fakeInfinityFeedbackDocEngine{}
+	svc := &ChatSessionService{docEngine: docEngine}
+
+	if ok := svc.updateChunkWeight(context.Background(), "tenant-1", "chunk-1", "kb-1", 0.25); !ok {
+		t.Fatal("expected updateChunkWeight to succeed")
+	}
+	if docEngine.getChunkCalled {
+		t.Fatal("expected Infinity adjuster path, got GetChunk fallback")
+	}
+	if len(docEngine.adjustCalls) != 1 {
+		t.Fatalf("adjust calls=%d", len(docEngine.adjustCalls))
+	}
+	call := docEngine.adjustCalls[0]
+	if call.indexName != "ragflow_tenant-1" || call.chunkID != "chunk-1" || call.kbID != "kb-1" {
+		t.Fatalf("call=%#v", call)
+	}
+	requireFloatClose(t, call.delta, 0.25)
+}
+
+func TestApplyChunkFeedback_FallbackClampsAndRemovesPagerank(t *testing.T) {
+	t.Setenv("CHUNK_FEEDBACK_ENABLED", "true")
+	t.Setenv("CHUNK_FEEDBACK_WEIGHTING", "uniform")
+
+	docEngine := &fakeFallbackFeedbackDocEngine{
+		chunks: map[string]map[string]interface{}{
+			"chunk-1": {common.PAGERANK_FLD: 0},
+		},
+	}
+	svc := &ChatSessionService{docEngine: docEngine}
+
+	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+		"chunks": []interface{}{map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1"}},
+	}, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["success_count"] != 1 {
+		t.Fatalf("result=%#v", result)
+	}
+	if len(docEngine.updateCalls) != 1 {
+		t.Fatalf("update calls=%d", len(docEngine.updateCalls))
+	}
+	call := docEngine.updateCalls[0]
+	if call.indexName != "ragflow_tenant-1" || call.kbID != "kb-1" {
+		t.Fatalf("call=%#v", call)
+	}
+	if call.condition["id"] != "chunk-1" || call.newValue["remove"] != common.PAGERANK_FLD {
+		t.Fatalf("call=%#v", call)
 	}
 }
 

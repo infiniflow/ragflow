@@ -21,8 +21,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"os"
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
 	"ragflow/internal/storage"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,14 +63,15 @@ type chatPipelineRunner interface {
 // (api/db/services/chunk_feedback_service.py) call site at
 // api/apps/restful_apis/chat_api.py — that handler records the thumb
 // vote against every chunk that produced the assistant message, in
-// addition to the session-level thumbup field. The Go stack does not
-// yet have a chunk-feedback DAO, so this interface is the seam where
-// one will plug in. Production uses *ChatSessionService itself via
-// applyChunkFeedback (which currently no-ops with a debug log) so the
-// handler can still update the session-level thumbup without crashing;
-// tests can swap in a fake by setting ChatSessionService.chunkFeedbackApplier.
+// addition to the session-level thumbup field. Production uses
+// *ChatSessionService itself via applyChunkFeedback; tests can swap
+// in a fake by setting ChatSessionService.chunkFeedbackApplier.
 type chunkFeedbackApplier interface {
-	applyChunkFeedback(tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error)
+	applyChunkFeedback(ctx context.Context, tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error)
+}
+
+type chunkPagerankAdjuster interface {
+	AdjustChunkPagerank(ctx context.Context, indexName, chunkID, kbID string, delta, minWeight, maxWeight float64) error
 }
 
 // ChatSessionService chat session (conversation) service.
@@ -76,6 +81,7 @@ type ChatSessionService struct {
 	userTenantDAO        userTenantStore
 	pipeline             chatPipelineRunner
 	chunkFeedbackApplier chunkFeedbackApplier
+	docEngine            engine.DocEngine
 }
 
 // NewChatSessionService create chat session service
@@ -84,6 +90,7 @@ func NewChatSessionService() *ChatSessionService {
 		chatSessionDAO: dao.NewChatSessionDAO(),
 		userTenantDAO:  dao.NewUserTenantDAO(),
 		pipeline:       NewChatPipelineService(),
+		docEngine:      engine.Get(),
 	}
 }
 
@@ -684,7 +691,10 @@ func (s *ChatSessionService) DeleteSessionMessage(userID, chatID, sessionID, msg
 	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }
 
-func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, msgID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
+func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, chatID, sessionID, msgID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	ownerTenantID := ""
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 	if err != nil {
@@ -796,7 +806,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 			applier = s
 		}
 		if priorThumbBool, ok := priorThumb.(bool); ok && priorThumbBool != thumbup {
-			result, _ := applier.applyChunkFeedback(ownerTenantID, feedbackReference, !priorThumbBool)
+			result, _ := applier.applyChunkFeedback(ctx, ownerTenantID, feedbackReference, !priorThumbBool)
 			if result != nil {
 				common.Debug("Chunk feedback undo applied",
 					zap.Any("success_count", result["success_count"]),
@@ -804,7 +814,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 				)
 			}
 		}
-		result, _ := applier.applyChunkFeedback(ownerTenantID, feedbackReference, thumbup)
+		result, _ := applier.applyChunkFeedback(ctx, ownerTenantID, feedbackReference, thumbup)
 		if result != nil {
 			common.Debug("Chunk feedback applied",
 				zap.Any("success_count", result["success_count"]),
@@ -816,30 +826,306 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }
 
-// applyChunkFeedback records a thumb vote against the chunks that
-// produced a session message. Mirrors Python's
-// ChunkFeedbackService.apply_feedback side effect (called from
-// api/apps/restful_apis/chat_api.py when a user toggles a thumb on
-// an assistant message). The Go persistence port for chunk feedback
-// is intentionally not yet landed — the call here is a documented
-// no-op so the session-level thumbup flow (the user-visible behavior)
-// keeps working while a future PR ports the Python DAO. The returned
-// counts let the caller log a "Chunk feedback applied: N succeeded,
-// M failed" line consistent with the Python equivalent, so log
-// scrapers don't see a regression in success/fail rates.
-//
-// Production callers should always go through the chunkFeedbackApplier
-// field; this method is the default implementation used when that
-// field is nil.
-func (s *ChatSessionService) applyChunkFeedback(tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error) {
-	common.Debug("chunk feedback persistence not yet ported; dropping vote",
-		zap.String("tenant_id", tenantID),
+const (
+	upvoteWeightIncrement   = 1
+	downvoteWeightDecrement = 1
+	minPagerankWeight       = 0.0
+	maxPagerankWeight       = 100.0
+	chunkFeedbackTimeout    = 30 * time.Second
+)
+
+type feedbackChunkRow struct {
+	chunkID string
+	kbID    string
+	chunk   map[string]interface{}
+}
+
+// applyChunkFeedback records a thumb vote against the chunks that produced a
+// session message. It mirrors Python's ChunkFeedbackService.apply_feedback:
+// feature-flagged by CHUNK_FEEDBACK_ENABLED, split by relevance unless
+// CHUNK_FEEDBACK_WEIGHTING=uniform, and clamped through the document engine.
+func (s *ChatSessionService) applyChunkFeedback(ctx context.Context, tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error) {
+	if !chunkFeedbackEnabled() {
+		common.Debug("Chunk feedback feature is disabled")
+		return map[string]interface{}{
+			"success_count": 0,
+			"fail_count":    0,
+			"chunk_ids":     []string{},
+			"disabled":      true,
+		}, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, chunkFeedbackTimeout)
+		defer cancel()
+	}
+
+	rows := feedbackRowsFromReference(reference)
+	chunkIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		chunkIDs = append(chunkIDs, row.chunkID)
+	}
+	if len(rows) == 0 {
+		common.Debug("No chunk IDs found in reference for feedback")
+		return map[string]interface{}{
+			"success_count": 0,
+			"fail_count":    0,
+			"chunk_ids":     chunkIDs,
+		}, nil
+	}
+
+	signedBudget := float64(upvoteWeightIncrement)
+	if !isPositive {
+		signedBudget = -float64(downvoteWeightDecrement)
+	}
+	deltas := allocateFeedbackDeltas(rows, signedBudget, chunkFeedbackWeighting())
+
+	successCount := 0
+	failCount := 0
+	for _, delta := range deltas {
+		if delta.delta == 0 {
+			continue
+		}
+		if s.updateChunkWeight(ctx, tenantID, delta.chunkID, delta.kbID, delta.delta) {
+			successCount++
+		} else {
+			failCount++
+		}
+	}
+
+	common.Info("Applied chunk feedback",
 		zap.Bool("is_positive", isPositive),
+		zap.String("weighting", chunkFeedbackWeighting()),
+		zap.Int("success_count", successCount),
+		zap.Int("chunk_count", len(chunkIDs)),
 	)
 	return map[string]interface{}{
-		"success_count": 0,
-		"fail_count":    0,
+		"success_count": successCount,
+		"fail_count":    failCount,
+		"chunk_ids":     chunkIDs,
 	}, nil
+}
+
+type feedbackDelta struct {
+	chunkID string
+	kbID    string
+	delta   float64
+}
+
+func chunkFeedbackEnabled() bool {
+	return strings.ToLower(os.Getenv("CHUNK_FEEDBACK_ENABLED")) == "true"
+}
+
+func chunkFeedbackWeighting() string {
+	weighting := strings.ToLower(strings.TrimSpace(os.Getenv("CHUNK_FEEDBACK_WEIGHTING")))
+	if weighting == "uniform" || weighting == "relevance" {
+		return weighting
+	}
+	return "relevance"
+}
+
+func feedbackRowsFromReference(reference map[string]interface{}) []feedbackChunkRow {
+	if len(reference) == 0 {
+		return nil
+	}
+	rawChunks, ok := reference["chunks"].([]interface{})
+	if !ok {
+		if chunks, ok := reference["chunks"].([]map[string]interface{}); ok {
+			rows := make([]feedbackChunkRow, 0, len(chunks))
+			for _, chunk := range chunks {
+				if row, ok := feedbackRowFromChunk(chunk); ok {
+					rows = append(rows, row)
+				}
+			}
+			return rows
+		}
+		return nil
+	}
+	rows := make([]feedbackChunkRow, 0, len(rawChunks))
+	for _, raw := range rawChunks {
+		chunk, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if row, ok := feedbackRowFromChunk(chunk); ok {
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+
+func feedbackRowFromChunk(chunk map[string]interface{}) (feedbackChunkRow, bool) {
+	chunkID := stringValue(chunk["id"])
+	if chunkID == "" {
+		chunkID = stringValue(chunk["chunk_id"])
+	}
+	kbID := stringValue(chunk["dataset_id"])
+	if kbID == "" {
+		kbID = stringValue(chunk["kb_id"])
+	}
+	if chunkID == "" || kbID == "" {
+		return feedbackChunkRow{}, false
+	}
+	return feedbackChunkRow{chunkID: chunkID, kbID: kbID, chunk: chunk}, true
+}
+
+func allocateFeedbackDeltas(rows []feedbackChunkRow, signedBudget float64, weighting string) []feedbackDelta {
+	if len(rows) == 0 {
+		return nil
+	}
+	if weighting == "uniform" {
+		step := signedBudget / float64(len(rows))
+		deltas := make([]feedbackDelta, 0, len(rows))
+		for _, row := range rows {
+			deltas = append(deltas, feedbackDelta{chunkID: row.chunkID, kbID: row.kbID, delta: step})
+		}
+		return deltas
+	}
+
+	magnitudes := make([]float64, 0, len(rows))
+	for _, row := range rows {
+		signal := retrievalSignal(row.chunk)
+		if signal <= 0 {
+			signal = 1
+		}
+		magnitudes = append(magnitudes, signal)
+	}
+	parts := splitFloatBudget(magnitudes, math.Abs(signedBudget))
+	sign := math.Copysign(1, signedBudget)
+	deltas := make([]feedbackDelta, 0, len(rows))
+	for i, row := range rows {
+		deltas = append(deltas, feedbackDelta{chunkID: row.chunkID, kbID: row.kbID, delta: sign * parts[i]})
+	}
+	return deltas
+}
+
+func retrievalSignal(chunk map[string]interface{}) float64 {
+	best := 0.0
+	for _, key := range []string{"similarity", "vector_similarity", "term_similarity"} {
+		val, ok := floatValue(chunk[key])
+		if ok && !math.IsInf(val, 0) && !math.IsNaN(val) && val > best {
+			best = val
+		}
+	}
+	return best
+}
+
+func splitFloatBudget(magnitudes []float64, budget float64) []float64 {
+	n := len(magnitudes)
+	out := make([]float64, n)
+	if n == 0 || budget == 0 {
+		return out
+	}
+	total := 0.0
+	for _, magnitude := range magnitudes {
+		total += magnitude
+	}
+	if total <= 0 {
+		base := budget / float64(n)
+		for i := range out {
+			out[i] = base
+		}
+		return out
+	}
+
+	for i, magnitude := range magnitudes {
+		out[i] = budget * magnitude / total
+	}
+	return out
+}
+
+func (s *ChatSessionService) updateChunkWeight(ctx context.Context, tenantID, chunkID, kbID string, delta float64) bool {
+	docEngine := s.docEngine
+	if docEngine == nil {
+		docEngine = engine.Get()
+	}
+	if docEngine == nil {
+		common.Warn("Document engine is not initialized; chunk feedback skipped",
+			zap.String("chunk_id", chunkID),
+			zap.String("kb_id", kbID),
+		)
+		return false
+	}
+
+	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	if adjuster, ok := docEngine.(chunkPagerankAdjuster); ok {
+		if err := adjuster.AdjustChunkPagerank(ctx, indexName, chunkID, kbID, delta, minPagerankWeight, maxPagerankWeight); err != nil {
+			common.Warn("Failed atomic pagerank adjust for chunk",
+				zap.String("chunk_id", chunkID),
+				zap.Error(err),
+			)
+			return false
+		}
+		return true
+	}
+
+	rawChunk, err := docEngine.GetChunk(ctx, indexName, chunkID, []string{kbID})
+	if err != nil {
+		common.Warn("Chunk not found for feedback",
+			zap.String("chunk_id", chunkID),
+			zap.String("index", indexName),
+			zap.Error(err),
+		)
+		return false
+	}
+	chunk, ok := rawChunk.(map[string]interface{})
+	if !ok {
+		common.Warn("Unexpected chunk shape for feedback",
+			zap.String("chunk_id", chunkID),
+			zap.String("kb_id", kbID),
+			zap.String("index", indexName),
+			zap.String("chunk_type", fmt.Sprintf("%T", rawChunk)),
+		)
+		return false
+	}
+
+	currentWeight, _ := floatValue(chunk[common.PAGERANK_FLD])
+	nextWeight := currentWeight + delta
+	if nextWeight < minPagerankWeight {
+		nextWeight = minPagerankWeight
+	}
+	if nextWeight > maxPagerankWeight {
+		nextWeight = maxPagerankWeight
+	}
+
+	newValue := map[string]interface{}{common.PAGERANK_FLD: nextWeight}
+	if nextWeight <= 0 && strings.ToLower(docEngine.GetType()) == string(engine.EngineElasticsearch) {
+		newValue = map[string]interface{}{"remove": common.PAGERANK_FLD}
+	}
+	if err := docEngine.UpdateChunks(ctx, map[string]interface{}{"id": chunkID}, newValue, indexName, kbID); err != nil {
+		common.Warn("Failed to update chunk pagerank",
+			zap.String("chunk_id", chunkID),
+			zap.Error(err),
+		)
+		return false
+	}
+	return true
+}
+
+func floatValue(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case json.Number:
+		f, err := v.Float64()
+		return f, err == nil
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func (s *ChatSessionService) ensureOwnedChat(userID, chatID string) (bool, error) {
