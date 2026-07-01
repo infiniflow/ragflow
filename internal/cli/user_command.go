@@ -247,10 +247,6 @@ func (c *CLI) APISetLogLevelCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to change log level: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to change log level: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
 	return HandleSimpleResponse(resp, "change log level")
 }
 
@@ -353,21 +349,7 @@ func (c *CLI) APIListDatasetsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list datasets failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-
-	return &result, nil
+	return HandleCommonResponse(resp, "list datasets")
 }
 
 func (c *CLI) APIListDatasetDocumentsCommand(cmd *Command) (ResponseIf, error) {
@@ -1052,10 +1034,6 @@ func (c *CLI) APICreateDatasetCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to create dataset: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create dataset: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
 	return HandleSimpleResponse(resp, "create dataset")
 }
 
@@ -1237,20 +1215,7 @@ func (c *CLI) APIListAPIKeysCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list keys: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list keys: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list keys failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list keys")
 }
 
 // APIDeleteAPIKeyCommand deletes an API key
@@ -1267,10 +1232,6 @@ func (c *CLI) APIDeleteAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", fmt.Sprintf("/system/keys/%s", apiKey), "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete key: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete key: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	return HandleSimpleResponse(resp, "delete key")
@@ -1672,10 +1633,6 @@ func (c *CLI) APIAddProviderCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to add provider: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to add provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
 	return HandleSimpleResponse(resp, "add provider")
 }
 
@@ -1690,21 +1647,7 @@ func (c *CLI) APIListProvidersCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list providers: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list providers failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list providers")
 }
 
 // APIDeleteProviderCommand deletes a provider
@@ -1729,10 +1672,6 @@ func (c *CLI) APIDeleteProviderCommand(cmd *Command) (ResponseIf, error) {
 	resp, err := httpClient.Request("DELETE", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete provider: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	return HandleSimpleResponse(resp, "delete provider")
@@ -1767,14 +1706,10 @@ func (c *CLI) APIDropDatasetCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := httpClient.Request("DELETE", "/datasets", "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create dataset: %w", err)
+		return nil, fmt.Errorf("failed to drop dataset: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create dataset: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "create provider instance")
+	return HandleSimpleResponse(resp, "drop dataset")
 }
 
 // APIDropAgentCommand DROP AGENT 'agent_name'
@@ -1806,14 +1741,10 @@ func (c *CLI) APIDropAgentCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := httpClient.Request("DELETE", "/agents", "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create agent: %w", err)
+		return nil, fmt.Errorf("failed to drop agent: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create agent: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "delete agent")
+	return HandleSimpleResponse(resp, "drop agent")
 }
 
 // APIDropChatCommand DROP CHAT 'chat_name'
@@ -1845,14 +1776,10 @@ func (c *CLI) APIDropChatCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := httpClient.Request("DELETE", "/chats", "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create chat: %w", err)
+		return nil, fmt.Errorf("failed to drop chat: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create chat: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "delete chat")
+	return HandleSimpleResponse(resp, "drop chat")
 }
 
 // APIDropSearchCommand DROP SEARCH 'search_name'
@@ -1881,14 +1808,10 @@ func (c *CLI) APIDropSearchCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := httpClient.Request("DELETE", endPoint, "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete search: %w", err)
+		return nil, fmt.Errorf("failed to drop search: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete search: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "delete search")
+	return HandleSimpleResponse(resp, "drop search")
 }
 
 // APIDropMemoryCommand DROP MEMORY 'memory_name'
@@ -1917,14 +1840,10 @@ func (c *CLI) APIDropMemoryCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := httpClient.Request("DELETE", endPoint, "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete memory: %w", err)
+		return nil, fmt.Errorf("failed to drop memory: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete memory: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "delete memory")
+	return HandleSimpleResponse(resp, "drop memory")
 }
 
 // APIAddProviderInstanceCommand creates a new provider instance
@@ -1975,55 +1894,10 @@ func (c *CLI) APIAddProviderInstanceCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := httpClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create provider instance: %w", err)
+		return nil, fmt.Errorf("failed to add provider instance: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create provider instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "create provider instance")
-}
-
-// ShowInstanceBalance shows balance of a specific instance
-// SHOW BALANCE FROM PROVIDER <provider_name> <instance_name>
-func (c *CLI) ShowInstanceBalance(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	instanceName, ok := cmd.Params["instance_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("instance name not provided")
-	}
-
-	providerName, ok := cmd.Params["provider_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("provider name not provided")
-	}
-
-	url := fmt.Sprintf("/providers/%s/instances/%s/balance", providerName, instanceName)
-
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to show instance: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show instance failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "add provider instance")
 }
 
 // DELETE PROVIDER <name> INSTANCE <name>
@@ -2050,14 +1924,10 @@ func (c *CLI) APIDeleteProviderInstanceCommand(cmd *Command) (ResponseIf, error)
 
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", url, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop instance: %w", err)
+		return nil, fmt.Errorf("failed to drop provider instance: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "drop instance")
+	return HandleSimpleResponse(resp, "drop provider instance")
 }
 
 // DELETE PROVIDER <name> INSTANCE <instance_name> MODELS <name1 name2 name3>
@@ -2089,14 +1959,10 @@ func (c *CLI) APIDeleteProviderInstanceModelCommand(cmd *Command) (ResponseIf, e
 
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", url, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop model: %w", err)
+		return nil, fmt.Errorf("failed to delete model: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "drop model")
+	return HandleSimpleResponse(resp, "delete model")
 }
 
 func isValidURL(str string) bool {
@@ -2533,18 +2399,8 @@ func (c *CLI) APIRerankUserDocumentCommand(cmd *Command) (ResponseIf, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to rerank document: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to rerank document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("rerank document failed: invalid JSON (%w)", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+
+	return HandleCommonResponse(resp, "rerank document")
 }
 
 func (c *CLI) APITTSUserCommand(cmd *Command) (ResponseIf, error) {
@@ -2940,19 +2796,7 @@ func (c *CLI) APIOCRUserCommand(cmd *Command) (ResponseIf, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to OCR document: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to OCR document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("OCR document failed: invalid JSON (%w)", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-
-	return &result, nil
+	return HandleCommonDataResponse(resp, "OCR document")
 }
 
 func (c *CLI) APIModelParseFileCommand(cmd *Command) (ResponseIf, error) {
@@ -3042,19 +2886,8 @@ func (c *CLI) APIModelParseFileCommand(cmd *Command) (ResponseIf, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to PARSE document: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to PARSE document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("PARSE document failed: invalid JSON (%w)", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
 
-	return &result, nil
+	return HandleCommonDataResponse(resp, "PARSE document")
 }
 
 func (c *CLI) APIListModelInstanceTasksCommand(cmd *Command) (ResponseIf, error) {
@@ -3080,20 +2913,10 @@ func (c *CLI) APIListModelInstanceTasksCommand(cmd *Command) (ResponseIf, error)
 
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list tasks: %w", err)
+		return nil, fmt.Errorf("failed to list model parsing tasks: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list tasks: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list tasks failed: invalid JSON (%w)", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+
+	return HandleCommonResponse(resp, "list model parsing tasks")
 }
 
 // APIShowProviderInstanceTaskCommand shows the details of a task
@@ -3219,9 +3042,6 @@ func (c *CLI) APIAddCustomModelCommand(cmd *Command) (ResponseIf, error) {
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add custom model: %w", err)
-	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to add custom model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	return HandleSimpleResponse(resp, "add custom model")
@@ -3647,7 +3467,8 @@ func (c *CLI) DevRemoveChunksCommand(cmd *Command) (ResponseIf, error) {
 		case float64:
 			deletedCount = int64(data)
 		case map[string]interface{}:
-			if count, ok := data["deleted_count"].(float64); ok {
+			var count float64
+			if count, ok = data["deleted_count"].(float64); ok {
 				deletedCount = int64(count)
 			}
 		}
@@ -3659,7 +3480,7 @@ func (c *CLI) DevRemoveChunksCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) APIParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIParseDocumentsCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -3687,14 +3508,10 @@ func (c *CLI) APIParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
 	// Normal mode
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", url, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list documents: %w", err)
+		return nil, fmt.Errorf("failed to parse documents: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list documents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	return HandleSimpleResponse(resp, "list documents")
+	return HandleSimpleResponse(resp, "parse documents")
 }
 
 func (c *CLI) APIParseLocalFileCommand(cmd *Command) (ResponseIf, error) {
@@ -3802,21 +3619,7 @@ func (c *CLI) APIListIngestionTasks(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list ingestion tasks: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list ingestion tasks:: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list ingestion tasks: failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list ingestion tasks")
 }
 
 // APIShowLogLevelCommand sets the log level for the system.
@@ -3830,21 +3633,7 @@ func (c *CLI) APIShowLogLevelCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get log level config: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get log level config: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get log level config failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "get log level config")
 
 }
 
@@ -3863,21 +3652,7 @@ func (c *CLI) APIListEnvironmentsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list environments: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list environments: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list environments failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list environments")
 }
 
 // APIListVariablesCommand lists all system variables (api mode only).
@@ -3895,21 +3670,7 @@ func (c *CLI) APIListVariablesCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list variables: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list variables: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list environments failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list variables")
 }
 
 func (c *CLI) APIStartIngestionCommand(cmd *Command) (ResponseIf, error) {
@@ -3943,21 +3704,7 @@ func (c *CLI) APIStartIngestionCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to ingest file: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "ingest file")
 }
 
 func (c *CLI) APIStopIngestionCommand(cmd *Command) (ResponseIf, error) {
@@ -3979,24 +3726,10 @@ func (c *CLI) APIStopIngestionCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("PUT", "/datasets/ingestion/tasks", "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to ingest file: %w", err)
+		return nil, fmt.Errorf("failed to stop ingestion: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "stop ingestion")
 }
 
 func (c *CLI) APIRemoveTaskCommand(cmd *Command) (ResponseIf, error) {
@@ -4026,17 +3759,7 @@ func (c *CLI) APIRemoveTaskCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to remove tasks: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("remove tasks failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "remove tasks")
 }
 
 func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {

@@ -420,3 +420,111 @@ func TestSwitch_MultiTargetTo(t *testing.T) {
 		t.Errorf("_next: got %v, want [\"DataOperations:UpdateSample\", \"CodeExec:FunnyBronsShare\"]", targets)
 	}
 }
+
+// TestSwitch_EmptyAndConditionFallsThrough guards PR #15644 port:
+// an "and" condition with no clauses (or all clauses filtered out
+// by the legacy normaliser) must NOT match. Previously the empty
+// `clauses` short-circuit returned `true` (vacuously), routing the
+// Switch to the empty group's `to` target before reaching the
+// default / end_cpn_ids branch.
+func TestSwitch_EmptyAndConditionFallsThrough(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-empty-and", "task-1")
+	ctx := withStateForTest(context.Background(), state)
+
+	// Empty clauses: must not match. Should fall through to default.
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"op":      "and",
+				"clauses": []any{},
+				"to":      "WRONG_TARGET",
+			},
+		},
+		"default": "DEFAULT",
+	}
+	out, err := s.Invoke(ctx, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	for _, tgt := range targets {
+		if tgt == "WRONG_TARGET" {
+			t.Errorf("empty and-condition must not match, but Switch routed to %q", tgt)
+		}
+	}
+}
+
+// TestSwitch_LegacyEmptyItemsFallsThrough covers the legacy
+// "logical_operator" / "items" form, where every item has an
+// empty `cpn_id` (the bug scenario from the Python PR: items
+// list non-empty but every item skipped, so clauses is empty).
+func TestSwitch_LegacyEmptyItemsFallsThrough(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-legacy-empty", "task-1")
+	ctx := withStateForTest(context.Background(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"logical_operator": "and",
+				"items": []any{
+					map[string]any{"cpn_id": "", "operator": "contains", "value": "x"},
+				},
+				"to": "WRONG_TARGET",
+			},
+		},
+		"default": "DEFAULT",
+	}
+	out, err := s.Invoke(ctx, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	for _, tgt := range targets {
+		if tgt == "WRONG_TARGET" {
+			t.Errorf("all-skipped and-condition must not match, but Switch routed to %q", tgt)
+		}
+	}
+}
+
+// TestSwitch_SatisfiedAndConditionStillRoutes is the negative
+// control: a genuinely satisfied "and" condition MUST still match
+// after the fix. Without this guard, a refactor that breaks the
+// real all() path would slip through.
+func TestSwitch_SatisfiedAndConditionStillRoutes(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-and-ok", "task-1")
+	state.Sys["greeting"] = "hello world"
+	ctx := withStateForTest(context.Background(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"logical_operator": "and",
+				"items": []any{
+					map[string]any{"cpn_id": "sys.greeting", "operator": "contains", "value": "hello"},
+				},
+				"to": "CORRECT_TARGET",
+			},
+		},
+		"default": "DEFAULT",
+	}
+	out, err := s.Invoke(ctx, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	if len(targets) == 0 {
+		t.Fatalf("expected non-empty _next, got nothing (out=%v)", out)
+	}
+	found := false
+	for _, tgt := range targets {
+		if tgt == "CORRECT_TARGET" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("satisfied and-condition must route to CORRECT_TARGET, got %v", targets)
+	}
+}
