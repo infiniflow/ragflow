@@ -1188,9 +1188,13 @@ def get_pending_task_count(priority=None):
     """Count tasks that are genuinely still waiting to be processed.
 
     A task counts as "waiting" when it has not started yet (progress == 0) and
-    its document is still actively running (run == RUNNING and progress in
-    [0, 1)). Cancelled, failed and finished documents are excluded, so the
-    figure drops back to reality as soon as the user stops parsing.
+    its document is neither cancelled nor failed. We deliberately do NOT require
+    the document to be RUNNING with progress in [0, 1): special tasks (graphrag/
+    raptor/mindmap) are queued via ``begin2parse(keep_progress=True)`` while the
+    document's own progress may already be 1, so requiring RUNNING/progress<1
+    would undercount them and wrongly drop the cap to 0 while Redis lag is still
+    non-zero. Only cancelled documents (run == CANCEL) and failed ones
+    (progress < 0) are excluded, plus soft-deleted (invalid) documents.
 
     When ``priority`` is given, only tasks queued at that priority are counted,
     so the figure stays consistent with the per-priority Redis queue it caps.
@@ -1208,9 +1212,9 @@ def get_pending_task_count(priority=None):
             .join(Document, on=(Task.doc_id == Document.id))
             .where(
                 (Task.progress == 0)
-                & (Document.run == TaskStatus.RUNNING.value)
+                & (Document.run != TaskStatus.CANCEL.value)
                 & (Document.progress >= 0)
-                & (Document.progress < 1)
+                & (Document.status == StatusEnum.VALID.value)
             )
         )
         if priority is not None:
@@ -1239,6 +1243,11 @@ def get_queue_length(priority, suffix="common"):
     """
     group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority, suffix), SVR_CONSUMER_GROUP_NAME)
     lag = int(group_info.get("lag", 0) or 0) if group_info else 0
+
+    # Nothing queued in Redis: the answer is 0 regardless of the DB backlog, so
+    # short-circuit to avoid a COUNT/JOIN on every progress-sync cycle.
+    if lag <= 0:
+        return 0
 
     pending = get_pending_task_count(priority)
     if pending is None:

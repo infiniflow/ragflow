@@ -33,7 +33,9 @@ def _install_cv2_stub_if_unavailable():
     try:
         import cv2  # noqa: F401
         return
-    except ImportError as exc:
+    except (ImportError, OSError) as exc:
+        # cv2 can fail to import with OSError too (e.g. missing shared libs),
+        # not just ImportError; fall back to the stub in both cases.
         logging.debug("cv2 unavailable; installing test stub: %s", exc)
 
     stub = types.ModuleType("cv2")
