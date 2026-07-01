@@ -64,7 +64,7 @@ type serverArgs struct {
 	port          *int    // Used by admin, api
 	adminHost     *string // Used by api and ingestor for heartbeat
 	adminPort     *int    // Used by api and ingestor for heartbeat, "ip:port"
-	name          string  // server name
+	name          *string // server name
 }
 
 func parseArgs() (*serverArgs, error) {
@@ -91,30 +91,51 @@ func parseArgs() (*serverArgs, error) {
 		case "--debug":
 			args.debugLog = true
 		case "-f", "--config":
-			configPath = arg
+			if i+1 >= len(os.Args) {
+				return nil, fmt.Errorf("%s requires a value", arg)
+			}
+			i++
+			configPath = os.Args[i]
 			args.configPath = &configPath
 		case "--init-superuser":
 			args.initSuperUser = true
-		case "--port":
-			port, convErr := strconv.Atoi(arg)
+		case "-p", "--port":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--port requires a value")
+			}
+			i++
+			port, convErr := strconv.Atoi(os.Args[i])
 			if convErr != nil {
 				return nil, fmt.Errorf("invalid port: %w", convErr)
 			}
 			args.port = &port
+			if port <= 0 || port > 65535 {
+				return nil, fmt.Errorf("invalid port: %d", port)
+			}
 		case "--admin-host":
-			adminHost := arg
-			// split ip:port into ip and port
-			ip, portStr := strings.SplitN(adminHost, ":", 2)[0], strings.SplitN(adminHost, ":", 2)[1]
-			if len(portStr) == 0 {
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--admin-host requires a value")
+			}
+			i++
+			parts := strings.SplitN(os.Args[i], ":", 2)
+			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 				return nil, errors.New("--admin-host must be in the form 'ip:port'")
 			}
+			ip, portStr := parts[0], parts[1]
 			port, convErr := strconv.Atoi(portStr)
 			if convErr != nil {
-				return nil, fmt.Errorf("invalid admin port: %w", convErr)
+				return nil, fmt.Errorf("failed to parse admin port: %w", convErr)
 			}
 			args.adminHost = &ip
 			args.adminPort = &port
+		case "--name":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--name requires a value")
+			}
+			i++
+			args.name = &os.Args[i]
 		}
+
 	}
 	return args, nil
 }
@@ -195,7 +216,12 @@ func main() {
 
 	// Temporary logger initialization
 	var logFile string
-	serverName := fmt.Sprintf("%s_server", *arguments.mode)
+	var serverName string
+	if arguments.name != nil {
+		serverName = *arguments.name
+	} else {
+		serverName = fmt.Sprintf("%s_server", *arguments.mode)
+	}
 	logFile = fmt.Sprintf("%s.log", serverName)
 
 	logLevel := "info"
@@ -228,7 +254,9 @@ func main() {
 			port = *arguments.port
 			config.Server.Port = port
 		}
-		serverName = fmt.Sprintf("api_server_%d", port)
+		if arguments.name == nil {
+			serverName = fmt.Sprintf("api_server_%d", port)
+		}
 
 	case "admin":
 		port := config.Admin.Port
@@ -236,7 +264,9 @@ func main() {
 			port = *arguments.port
 			config.Admin.Port = port
 		}
-		serverName = fmt.Sprintf("admin_server_%d", port)
+		if arguments.name == nil {
+			serverName = fmt.Sprintf("admin_server_%d", port)
+		}
 	case "ingestor":
 		uuid := common.GenerateUUID()
 		serverName = fmt.Sprintf("ingestor_server_%s", uuid)
@@ -312,7 +342,9 @@ func main() {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
-	arguments.name = serverName
+	if arguments.name == nil {
+		arguments.name = &serverName
+	}
 
 	switch *arguments.mode {
 	case "api":
@@ -413,7 +445,7 @@ func runAdmin(args *serverArgs) error {
 
 func runIngestor(args *serverArgs) error {
 
-	ingestor := ingestion.NewIngestor(args.name, 2, []string{"pdf", "docx", "txt"})
+	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
 
 	go func() {
 		err := ingestor.Start()
@@ -649,8 +681,10 @@ func startServer(config *server.Config) {
 	// Redis blip at boot stranded canary operators with a 404 they
 	// could not diagnose from the client side. Keep the route hot.
 	var adminRuntimeSelector *runtime.Selector
-	if rdb := redis.Get().GetClient(); rdb != nil {
-		adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
+	if redisClient := redis.Get(); redisClient != nil {
+		if rdb := redisClient.GetClient(); rdb != nil {
+			adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
+		}
 	}
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
