@@ -175,7 +175,7 @@ func main() {
 		return
 	}
 
-	if arguments.helpFlag {
+	if arguments.helpFlag || arguments.mode == nil {
 		printHelp(arguments)
 		return
 	}
