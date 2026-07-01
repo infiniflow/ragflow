@@ -185,6 +185,7 @@ type ElasticsearchConfig struct {
 	Hosts    string `mapstructure:"hosts"`
 	Username string `mapstructure:"username"`
 	Password string `mapstructure:"password"`
+	APIKey   string `mapstructure:"api_key"`
 }
 
 // InfinityConfig Infinity configuration
@@ -734,6 +735,7 @@ func FromConfigFile(configPath string) error {
 						Hosts:    esConfig.GetString("hosts"),
 						Username: esConfig.GetString("username"),
 						Password: esConfig.GetString("password"),
+						APIKey:   esConfig.GetString("api_key"),
 					}
 				}
 			}
