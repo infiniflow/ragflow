@@ -17,12 +17,18 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -31,7 +37,59 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 )
+
+type fakeUploadStorage struct {
+	objects map[string][]byte
+}
+
+func newFakeUploadStorage() *fakeUploadStorage {
+	return &fakeUploadStorage{objects: map[string][]byte{}}
+}
+
+func (f *fakeUploadStorage) Health() bool                  { return true }
+func (f *fakeUploadStorage) key(bucket, fnm string) string { return bucket + "/" + fnm }
+func (f *fakeUploadStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
+	f.objects[f.key(bucket, fnm)] = append([]byte(nil), binary...)
+	return nil
+}
+func (f *fakeUploadStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
+	v, ok := f.objects[f.key(bucket, fnm)]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	return append([]byte(nil), v...), nil
+}
+func (f *fakeUploadStorage) Remove(bucket, fnm string, tenantID ...string) error {
+	delete(f.objects, f.key(bucket, fnm))
+	return nil
+}
+func (f *fakeUploadStorage) ObjExist(bucket, fnm string, tenantID ...string) bool {
+	_, ok := f.objects[f.key(bucket, fnm)]
+	return ok
+}
+func (f *fakeUploadStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
+	return "", nil
+}
+func (f *fakeUploadStorage) BucketExists(bucket string) bool  { return true }
+func (f *fakeUploadStorage) RemoveBucket(bucket string) error { return nil }
+func (f *fakeUploadStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool {
+	v, ok := f.objects[f.key(srcBucket, srcPath)]
+	if !ok {
+		return false
+	}
+	f.objects[f.key(destBucket, destPath)] = append([]byte(nil), v...)
+	return true
+}
+func (f *fakeUploadStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
+	if !f.Copy(srcBucket, srcPath, destBucket, destPath) {
+		return false
+	}
+	delete(f.objects, f.key(srcBucket, srcPath))
+	return true
+}
 
 type fakeChatDocEngine struct{}
 
@@ -294,6 +352,32 @@ func testDocumentService(t *testing.T) *DocumentService {
 	}
 }
 
+func makeTestFileHeader(t *testing.T, field, filename string, content []byte) *multipart.FileHeader {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile(field, filename)
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if err := req.ParseMultipartForm(int64(len(content) + 1024)); err != nil {
+		t.Fatalf("parse multipart form: %v", err)
+	}
+	fhs := req.MultipartForm.File[field]
+	if len(fhs) != 1 {
+		t.Fatalf("expected 1 file header, got %d", len(fhs))
+	}
+	return fhs[0]
+}
+
 // sptr returns a pointer to the given string.
 func sptr(s string) *string { return &s }
 
@@ -499,6 +583,164 @@ func TestDeleteDocumentFull_SharedFilePreserved(t *testing.T) {
 	mappings, _ = f2dDAO.GetByDocumentID("doc-2")
 	if len(mappings) != 1 {
 		t.Fatalf("expected 1 f2d mapping for doc-2, got %d", len(mappings))
+	}
+}
+
+func TestSelectUploadParser_MirrorsPython(t *testing.T) {
+	tests := []struct {
+		name         string
+		docType      utility.FileType
+		filename     string
+		defaultValue string
+		want         string
+	}{
+		{name: "visual", docType: utility.FileTypeVISUAL, filename: "img.png", defaultValue: "naive", want: "picture"},
+		{name: "aural", docType: utility.FileTypeAURAL, filename: "audio.mp3", defaultValue: "naive", want: "audio"},
+		{name: "presentation by ext", docType: utility.FileTypeDOC, filename: "deck.pptx", defaultValue: "naive", want: "presentation"},
+		{name: "email by ext", docType: utility.FileTypeDOC, filename: "mail.eml", defaultValue: "naive", want: "email"},
+		{name: "fallback default", docType: utility.FileTypeDOC, filename: "notes.txt", defaultValue: "manual", want: "manual"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := selectUploadParser(tt.docType, tt.filename, tt.defaultValue); got != tt.want {
+				t.Fatalf("selectUploadParser(%q)=%q, want %q", tt.filename, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestContentHashHex_MatchesPythonXXH128(t *testing.T) {
+	tests := []struct {
+		data []byte
+		want string
+	}{
+		{data: []byte("abc"), want: "06b05ab6733a618578af5f94892f3950"},
+		{data: []byte(""), want: "99aa06d3014798d86001c324468d497f"},
+	}
+	for _, tt := range tests {
+		if got := contentHashHex(tt.data); got != tt.want {
+			t.Fatalf("contentHashHex(%q)=%s, want %s", tt.data, got, tt.want)
+		}
+	}
+}
+
+func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	mockStorage := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	origStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(origStorage) })
+
+	pipelineID := "pipe-1"
+	kb := &entity.Knowledgebase{
+		ID:         "kb-upload",
+		TenantID:   "tenant-1",
+		Name:       "kb-upload",
+		ParserID:   "naive",
+		PipelineID: &pipelineID,
+		ParserConfig: entity.JSONMap{
+			"existing": "value",
+		},
+	}
+	if err := dao.DB.Create(kb).Error; err != nil {
+		t.Fatalf("insert kb: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-existing",
+		KbID:         kb.ID,
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		Name:         sptr("deck.pptx"),
+		Status:       sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("insert existing doc: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	fh := makeTestFileHeader(t, "file", "deck.pptx", []byte("abc"))
+	got, errs := svc.UploadLocalDocuments(kb, "user-1", []*multipart.FileHeader{fh}, "nested/path", map[string]interface{}{
+		"table_column_mode": "assist",
+	})
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errs: %v", errs)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 uploaded doc, got %d", len(got))
+	}
+	doc := got[0]
+	if doc["name"] != "deck(1).pptx" {
+		t.Fatalf("name=%v, want deck(1).pptx", doc["name"])
+	}
+	if doc["location"] != "nested/path/deck(1).pptx" {
+		t.Fatalf("location=%v, want nested/path/deck(1).pptx", doc["location"])
+	}
+	if doc["parser_id"] != "presentation" {
+		t.Fatalf("parser_id=%v, want presentation", doc["parser_id"])
+	}
+	if doc["content_hash"] != "06b05ab6733a618578af5f94892f3950" {
+		t.Fatalf("content_hash=%v", doc["content_hash"])
+	}
+	cfg := doc["parser_config"].(map[string]interface{})
+	if cfg["existing"] != "value" || cfg["table_column_mode"] != "assist" {
+		t.Fatalf("parser_config=%v", cfg)
+	}
+
+	storedBlob, err := mockStorage.Get(kb.ID, "nested/path/deck(1).pptx")
+	if err != nil {
+		t.Fatalf("blob not stored: %v", err)
+	}
+	if string(storedBlob) != "abc" {
+		t.Fatalf("stored blob=%q, want abc", storedBlob)
+	}
+}
+
+func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	pipelineID := "pipe-2"
+	kb := &entity.Knowledgebase{
+		ID:         "kb-empty",
+		TenantID:   "tenant-1",
+		Name:       "kb-empty",
+		ParserID:   "manual",
+		PipelineID: &pipelineID,
+		ParserConfig: entity.JSONMap{
+			"foo": "bar",
+		},
+	}
+	if err := dao.DB.Create(kb).Error; err != nil {
+		t.Fatalf("insert kb: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	got, code, err := svc.UploadEmptyDocument(kb, "user-1", "draft.md")
+	if err != nil {
+		t.Fatalf("UploadEmptyDocument error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v, want success", code)
+	}
+	if got["type"] != "virtual" || got["parser_id"] != "manual" || got["size"] != int64(0) {
+		t.Fatalf("unexpected doc map: %v", got)
+	}
+
+	var docCount int64
+	if err := dao.DB.Model(&entity.Document{}).Where("kb_id = ?", kb.ID).Count(&docCount).Error; err != nil {
+		t.Fatalf("count docs: %v", err)
+	}
+	if docCount != 1 {
+		t.Fatalf("doc count=%d, want 1", docCount)
+	}
+	var linkCount int64
+	if err := dao.DB.Model(&entity.File2Document{}).Count(&linkCount).Error; err != nil {
+		t.Fatalf("count links: %v", err)
+	}
+	if linkCount != 1 {
+		t.Fatalf("link count=%d, want 1", linkCount)
 	}
 }
 
@@ -1091,7 +1333,7 @@ func TestArtifactHelpers(t *testing.T) {
 
 func TestGetDocumentArtifact_InvalidFilename(t *testing.T) {
 	svc := testDocumentService(t)
-	_, err := svc.GetDocumentArtifact("../test.txt")
+	_, err := svc.GetDocumentArtifact("../test.txt", "user-1")
 	if err != ErrArtifactInvalidFilename {
 		t.Errorf("expected ErrArtifactInvalidFilename, got %v", err)
 	}
@@ -1099,7 +1341,7 @@ func TestGetDocumentArtifact_InvalidFilename(t *testing.T) {
 
 func TestGetDocumentArtifact_InvalidFileType(t *testing.T) {
 	svc := testDocumentService(t)
-	_, err := svc.GetDocumentArtifact("test.exe")
+	_, err := svc.GetDocumentArtifact("test.exe", "user-1")
 	if err != ErrArtifactInvalidFileType {
 		t.Errorf("expected ErrArtifactInvalidFileType, got %v", err)
 	}
@@ -1656,5 +1898,163 @@ func insertNamedTestDoc(t *testing.T, id, kbID, name string, tokenNum, chunkNum 
 	}
 	if err := dao.DB.Create(doc).Error; err != nil {
 		t.Fatalf("insert named test doc: %v", err)
+	}
+}
+
+// TestGetDocumentArtifact_AuthGate mirrors PR #16169: the sandbox
+// artifact download endpoint must be gated on the caller owning
+// (or having team access to) an agent session whose `message`
+// references the filename. Three cases:
+//   - empty userID -> ErrArtifactNotFound
+//   - filename referenced by another user's session -> ErrArtifactNotFound
+//   - filename referenced by the caller's own session, with
+//     accessible canvas -> no error (storage layer short-circuits
+//     in this test because no real storage is wired)
+//
+// TestEscapeSQLLikePattern pins PR review round 5, Major #8:
+// SQL LIKE wildcards (%, _, \) MUST be escaped before being
+// interpolated into the auth-gate LIKE pattern, otherwise a
+// caller can match a different referenced artifact's filename
+// and bypass the per-filename authorization. The escape
+// character is '\\' to match the ESCAPE clause in
+// sandboxArtifactDialogIDsForUser.
+func TestEscapeSQLLikePattern(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"plain.png", "plain.png"},
+		// % is a wildcard; . is literal — the dot does not need escaping.
+		{"%.png", "!%.png"},
+		{"_underscore", "!_underscore"},
+		// '!' is the escape character; double it inside the input.
+		{"with!bang", "with!!bang"},
+		// Compound: % and _ in one input.
+		{"%_", "!%!_"},
+		// Empty passthrough.
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := escapeSQLLikePattern(c.in); got != c.want {
+			t.Errorf("escapeSQLLikePattern(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestSandboxArtifactDialogIDsForUser_LikeWildcardEscaped pins PR review
+// round 5, Major #8: filename wildcards (%, _) MUST be escaped
+// before being interpolated into the LIKE auth-gate, otherwise a
+// caller can submit a wildcard filename, pass the authorization
+// check against a different referenced artifact, and then GET
+// the requested object by its real name.
+//
+// We exercise the SQL LIKE behavior using a custom in-memory
+// table with TEXT columns (SQLite's gorm AutoMigrate creates
+// columns with NUMERIC affinity for `type:longtext`, which
+// defeats LIKE; production uses MySQL where longtext is a real
+// string type — so the test isolates the SQL escape behaviour
+// rather than the column-type quirk).
+func TestSandboxArtifactDialogIDsForUser_LikeWildcardEscaped(t *testing.T) {
+	db := setupServiceTestDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	// Hand-rolled schema with TEXT columns so SQLite LIKE works
+	// correctly. The production entity uses `type:longtext` which
+	// SQLite gives NUMERIC affinity (LIKE then compares strings
+	// numerically and never matches). The auth-gate query this
+	// test pins operates over TEXT, so we recreate the schema
+	// accordingly.
+	if err := db.Exec(`CREATE TABLE sandbox_artifacts (
+		user_id TEXT,
+		dialog_id TEXT,
+		message TEXT
+	)`).Error; err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO sandbox_artifacts (user_id, dialog_id, message) VALUES (?, ?, ?)`,
+		"user-1", "agent-1",
+		`[{"role":"assistant","content":"saved as documents/artifact/x.png"}]`).Error; err != nil {
+		t.Fatalf("seed row: %v", err)
+	}
+
+	// Wildcard filename must NOT cross-match user-1's x.png.
+	var wildcards int64
+	db.Raw(`SELECT COUNT(*) FROM sandbox_artifacts WHERE message LIKE ? ESCAPE '!'`, "!%.png%").Scan(&wildcards)
+	if wildcards != 0 {
+		t.Errorf("wildcard filename must not match user-1's x.png; got count=%d", wildcards)
+	}
+
+	// Literal filename still matches for the owner.
+	var literal int64
+	db.Raw(`SELECT COUNT(*) FROM sandbox_artifacts WHERE message LIKE ? ESCAPE '!'`, "%x.png%").Scan(&literal)
+	if literal != 1 {
+		t.Errorf("literal filename for the owner must still match; got count=%d", literal)
+	}
+}
+
+func TestGetDocumentArtifact_AuthGate(t *testing.T) {
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.API4Conversation{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	// Seed a canvas owned by user-1.
+	if err := db.Create(&entity.UserCanvas{
+		ID:             "agent-1",
+		UserID:         "user-1",
+		Title:          sptr("Agent"),
+		CanvasCategory: "agent_canvas",
+	}).Error; err != nil {
+		t.Fatalf("seed canvas: %v", err)
+	}
+	// Seed an API4Conversation whose message references the filename.
+	if err := db.Create(&entity.API4Conversation{
+		ID:       "sess-1",
+		DialogID: "agent-1",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[{"role":"assistant","content":"saved as documents/artifact/result.png"}]`),
+	}).Error; err != nil {
+		t.Fatalf("seed conv: %v", err)
+	}
+
+	svc := testDocumentService(t)
+
+	// Case 1: empty user -> not allowed.
+	if _, err := svc.GetDocumentArtifact("result.png", ""); !errors.Is(err, ErrArtifactNotFound) {
+		t.Errorf("empty user: want ErrArtifactNotFound, got %v", err)
+	}
+
+	// Case 2: another user without any session reference -> not allowed.
+	if _, err := svc.GetDocumentArtifact("result.png", "user-2"); !errors.Is(err, ErrArtifactNotFound) {
+		t.Errorf("unrelated user: want ErrArtifactNotFound, got %v", err)
+	}
+
+	// Case 3: another user who has their own (unrelated) session for a
+	// different agent that does NOT mention the filename -> not allowed.
+	if err := db.Create(&entity.UserCanvas{
+		ID:             "agent-2",
+		UserID:         "user-2",
+		Title:          sptr("Other Agent"),
+		CanvasCategory: "agent_canvas",
+	}).Error; err != nil {
+		t.Fatalf("seed canvas 2: %v", err)
+	}
+	if err := db.Create(&entity.API4Conversation{
+		ID:       "sess-2",
+		DialogID: "agent-2",
+		UserID:   "user-2",
+		Message:  json.RawMessage(`[{"role":"user","content":"hello"}]`),
+	}).Error; err != nil {
+		t.Fatalf("seed conv 2: %v", err)
+	}
+	if _, err := svc.GetDocumentArtifact("result.png", "user-2"); !errors.Is(err, ErrArtifactNotFound) {
+		t.Errorf("user-2 with unrelated session: want ErrArtifactNotFound, got %v", err)
 	}
 }

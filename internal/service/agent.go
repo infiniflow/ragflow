@@ -49,6 +49,51 @@ func genID32() string {
 	return strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
 }
 
+// webhookPayloadKey is the unexported context key RunAgent reads to
+// inject root["webhook_payload"]. Only the AgentService.RunAgentWithWebhook
+// public wrapper sets it; the chat / agent-run paths leave it absent so
+// existing callers see no behaviour change.
+//
+// We deliberately do NOT surface the payload as a new RunAgent parameter
+// — keeping the public signature stable means existing tests
+// (agent_run_e2e_test.go, agent_wait_for_user_test.go) keep compiling.
+type webhookPayloadKey struct{}
+
+// LoadCanvasByID is the read-side counterpart of loadCanvasForUser that
+// the webhook handler uses. It deliberately returns the raw DAO/service
+// error (no error-code mapping) because the webhook envelope is 102
+// "Canvas not found." while the chat/run envelope is 103 "Make sure you
+// have permission..." — the choice must stay at the HTTP layer where
+// each handler knows its own spec.
+//
+// Mirrors python: api/apps/restful_apis/agent_api.py:1570
+// (`UserCanvasService.get_by_id(agent_id)`), with the same IDOR guard
+// the chat handler uses.
+func (s *AgentService) LoadCanvasByID(
+	ctx context.Context, userID, canvasID string,
+) (*entity.UserCanvas, error) {
+	return s.loadCanvasForUser(ctx, userID, canvasID)
+}
+
+// RunAgentWithWebhook is a thin wrapper over RunAgent that attaches the
+// webhook payload to the runner root so the Begin component can surface
+// it as state.Sys["webhook_payload"] for downstream components.
+//
+// The payload is intentionally passed via context value (rather than a new
+// RunAgent parameter) to keep the public RunAgent signature stable for
+// the existing chat tests.
+//
+// Mirrors python: api/apps/restful_apis/agent_api.py:2125
+// (`canvas.run(..., webhook_payload=clean_request)`).
+func (s *AgentService) RunAgentWithWebhook(
+	ctx context.Context, userID, canvasID string, payload map[string]any,
+) (<-chan canvas.RunEvent, error) {
+	if payload != nil {
+		ctx = context.WithValue(ctx, webhookPayloadKey{}, payload)
+	}
+	return s.RunAgent(ctx, userID, canvasID, "", "", "")
+}
+
 // ErrAgentNotOwner is returned by DeleteAgent when the canvas exists and
 // is accessible to the caller but is owned by a different user. It maps
 // to the Python "Only the owner of the agent is authorized for this
@@ -158,7 +203,13 @@ type AgentItem struct {
 	ID             string  `json:"id"`
 	Avatar         *string `json:"avatar,omitempty"`
 	Title          *string `json:"title,omitempty"`
+	Description    *string `json:"description,omitempty"`
 	Permission     string  `json:"permission"`
+	UserID         string  `json:"user_id"`
+	TenantID       string  `json:"tenant_id"`
+	Nickname       string  `json:"nickname"`
+	TenantAvatar   *string `json:"tenant_avatar,omitempty"`
+	Tags           string  `json:"tags"`
 	CanvasType     *string `json:"canvas_type,omitempty"`
 	CanvasCategory string  `json:"canvas_category"`
 	CreateTime     *int64  `json:"create_time,omitempty"`
@@ -171,14 +222,32 @@ type ListAgentsResponse struct {
 	Total  int64        `json:"total"`
 }
 
-func toAgentItem(c *entity.UserCanvas) *AgentItem {
+type AgentTagCount struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}
+
+func toAgentItem(c *dao.UserCanvasListItem) *AgentItem {
+	nickname := ""
+	if c.Nickname != nil {
+		nickname = *c.Nickname
+	}
+	if nickname == "" {
+		nickname = c.TenantID
+	}
 	return &AgentItem{
 		ID:             c.ID,
 		Avatar:         c.Avatar,
 		Title:          c.Title,
+		Description:    c.Description,
 		Permission:     c.Permission,
+		UserID:         c.UserID,
+		TenantID:       c.TenantID,
+		Nickname:       nickname,
+		TenantAvatar:   c.TenantAvatar,
 		CanvasType:     c.CanvasType,
 		CanvasCategory: c.CanvasCategory,
+		Tags:           c.Tags,
 		CreateTime:     c.CreateTime,
 		UpdateTime:     c.UpdateTime,
 	}
@@ -187,7 +256,7 @@ func toAgentItem(c *entity.UserCanvas) *AgentItem {
 // ListAgents returns agent canvases visible to userID.
 // Mirrors Python agent_api.list_agents — validates owner_ids against joined tenants,
 // then delegates to the DAO.
-func (s *AgentService) ListAgents(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*ListAgentsResponse, common.ErrorCode, error) {
+func (s *AgentService) ListAgents(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*ListAgentsResponse, common.ErrorCode, error) {
 	// Build the set of tenant IDs the user is authorised to query.
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 	if err != nil {
@@ -223,6 +292,7 @@ func (s *AgentService) ListAgents(userID string, keywords string, page, pageSize
 		desc,
 		keywords,
 		canvasCategory,
+		tags,
 	)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to list agents: %w", err)
@@ -560,7 +630,7 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 // The per-run RunFunc is built by buildRunFunc — see its doc comment
 // for the full production chain (real Compile/Invoke, resume path,
 // error-layering contract).
-func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version, userInput string) (<-chan canvas.RunEvent, error) {
+func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error) {
 	canvasRow, err := s.loadCanvasForUser(ctx, userID, canvasID)
 	if err != nil {
 		return nil, err
@@ -664,11 +734,19 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		"session_id": sessionID,
 		"user_id":    userID,
 	}
-	if userInput != "" {
+	if userInput != nil {
 		root["user_input"] = userInput
 	}
 	if dsl != nil {
 		root["__dsl_present__"] = true
+	}
+	// Webhook payload injection. Only RunAgentWithWebhook sets this
+	// context value; the chat / agent-run paths leave it nil so the
+	// existing surface is unchanged. The Begin component reads
+	// inputs["webhook_payload"] and writes it to state.Sys so
+	// downstream components can read sys.webhook_payload.
+	if payload, ok := ctx.Value(webhookPayloadKey{}).(map[string]any); ok && payload != nil {
+		root["webhook_payload"] = payload
 	}
 	// Phase 4.4 V2.1 (v3.6.1): populate root["tenant_id"] so the
 	// RunTracker.Start call (in buildRunFunc) records the run
@@ -693,7 +771,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		zap.String("userID", userID),
 		zap.String("sessionID", sessionID),
 		zap.Any("tenantID", root["tenant_id"]),
-		zap.Int("userInput_len", func() int { s, _ := root["user_input"].(string); return len(s) }()))
+		zap.Any("userInput", root["user_input"]))
 
 	return s.runner.Run(ctx, run, canvasID, sessionID, userInput, root), nil
 }
@@ -755,9 +833,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		startedAt := float64(time.Now().UnixNano()) / 1e9
 
-		userInput := ""
-		if v, ok := root["user_input"].(string); ok {
-			userInput = v
+		userInput := root["user_input"]
+		userInputText := ""
+		if v, ok := userInput.(string); ok {
+			userInputText = v
 		}
 
 		resumeID, isResume := root["__resume_interrupt_id__"].(string)
@@ -824,6 +903,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 		}
 		state.Sys["query"] = userInput
+		if uid, ok := root["user_id"].(string); ok && uid != "" {
+			state.Sys["user_id"] = uid
+		}
 		if tid, ok := root["tenant_id"].(string); ok && tid != "" {
 			state.Sys["tenant_id"] = tid
 		}
@@ -853,7 +935,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		if s.runTracker != nil {
 			_ = s.runTracker.Start(ctx2, runID, canvasID,
-				tenantIDFromRoot(root), userInput)
+				tenantIDFromRoot(root), userInputText)
 		}
 
 		// Compile.
@@ -975,7 +1057,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				emit("message_end", string(meData))
 
 				wfData, _ := json.Marshal(map[string]interface{}{
-					"inputs":       map[string]string{"query": userInput},
+					"inputs":       map[string]any{"query": userInput},
 					"outputs":      answer,
 					"elapsed_time": now - startedAt,
 					"created_at":   now,
@@ -1003,7 +1085,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		// Emit workflow_finished with the final outputs.
 		wfData, _ := json.Marshal(map[string]interface{}{
-			"inputs":       map[string]string{"query": userInput},
+			"inputs":       map[string]any{"query": userInput},
 			"outputs":      answer,
 			"elapsed_time": now - startedAt,
 			"created_at":   now,

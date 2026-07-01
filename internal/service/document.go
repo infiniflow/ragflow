@@ -29,6 +29,7 @@ import (
 	"math"
 	"math/rand"
 	"mime/multipart"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -50,6 +51,7 @@ import (
 	"ragflow/internal/utility"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -66,6 +68,8 @@ type DocumentService struct {
 	taskDAO             *dao.TaskDAO
 	file2DocumentDAO    *dao.File2DocumentDAO
 	fileDAO             *dao.FileDAO
+	canvasDAO           *dao.UserCanvasDAO
+	api4ConvDAO         *dao.API4ConversationDAO
 }
 
 // NewDocumentService create document service
@@ -82,6 +86,8 @@ func NewDocumentService() *DocumentService {
 		taskDAO:             dao.NewTaskDAO(),
 		file2DocumentDAO:    dao.NewFile2DocumentDAO(),
 		fileDAO:             dao.NewFileDAO(),
+		canvasDAO:           dao.NewUserCanvasDAO(),
+		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
 	}
 }
 
@@ -240,7 +246,15 @@ func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
 }
 
 // GetDocumentArtifact retrieves a sandbox artifact from object storage.
-func (s *DocumentService) GetDocumentArtifact(filename string) (*ArtifactResponse, error) {
+//
+// userID scopes the lookup: a CodeExec sandbox artifact is only
+// returned when the caller owns (or has team access to) at least
+// one agent session whose `message` references this filename (or
+// its `documents/artifact/<name>` URL form). The authorization
+// gate runs BEFORE the storage read so a probe of an unknown
+// filename cannot distinguish "you cannot see it" from "it
+// exists" — both return ErrArtifactNotFound. Mirrors PR #16169.
+func (s *DocumentService) GetDocumentArtifact(filename, userID string) (*ArtifactResponse, error) {
 	basename := filepath.Base(filename)
 	if basename != filename || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
 		return nil, ErrArtifactInvalidFilename
@@ -250,6 +264,12 @@ func (s *DocumentService) GetDocumentArtifact(filename string) (*ArtifactRespons
 	contentType, ok := artifactContentTypes[ext]
 	if !ok {
 		return nil, ErrArtifactInvalidFileType
+	}
+
+	if !s.sandboxArtifactAccessible(basename, userID) {
+		// Same error as "object does not exist" to avoid leaking
+		// whether the artifact exists for a different user/agent.
+		return nil, ErrArtifactNotFound
 	}
 
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -278,11 +298,125 @@ func (s *DocumentService) GetDocumentArtifact(filename string) (*ArtifactRespons
 	}, nil
 }
 
+// sandboxArtifactDialogIDsForUser returns the distinct agent
+// (canvas) dialog_ids for sessions owned by userID whose
+// `message` blob references filename. A CodeExec artifact URL
+// appears in `message` as either a bare filename or the
+// `documents/artifact/<name>` form, so the helper matches both.
+//
+// Implemented as a direct GORM query on the
+// API4Conversation table — GORM's `Contains` maps to MySQL
+// `LIKE '%...%'` which is fine here because the storage path is
+// short and indexed lookup on (user_id, exp_user_id) keeps the
+// scan narrow.
+func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID string) []string {
+	if filename == "" || userID == "" {
+		return nil
+	}
+	// Escape SQL LIKE wildcards (%, _) before building the pattern.
+	// Without escaping, a caller could submit a filename like
+	// "%.png" or "_" and the LIKE query would match arbitrary
+	// referenced artifacts in any user's conversation — letting the
+	// caller pass the authorization check against one filename and
+	// then GET another artifact by name (PR review round 5, Major #8).
+	//
+	// Escape character: '!'. We avoid '\\' because SQL string
+	// literal parsing of '\\' is driver-specific (SQLite treats
+	// it as a single backslash, MySQL treats it as one, Postgres
+	// rejects the unterminated string) — '!' is a benign character
+	// in real filenames (artifact names rarely contain '!') and
+	// parses identically in every driver.
+	filenameSafe := escapeSQLLikePattern(filename)
+	artifactRefSafe := escapeSQLLikePattern("documents/artifact/" + filename)
+	filenamePattern := "%" + filenameSafe + "%"
+	artifactRefPattern := "%" + artifactRefSafe + "%"
+	dialogIDs := make(map[string]struct{})
+	rows, err := dao.DB.Model(&entity.API4Conversation{}).
+		Select("dialog_id").
+		Where("user_id = ? OR exp_user_id = ?", userID, userID).
+		Where(`message LIKE ? ESCAPE '!' OR message LIKE ? ESCAPE '!'`,
+			filenamePattern, artifactRefPattern).
+		Distinct("dialog_id").
+		Rows()
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err == nil && d != "" {
+			dialogIDs[d] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(dialogIDs))
+	for d := range dialogIDs {
+		out = append(out, d)
+	}
+	return out
+}
+
+// escapeSQLLikePattern escapes the SQL LIKE wildcards ('%', '_') and
+// the escape character itself ('!') so a literal user-supplied
+// filename can be safely interpolated into a `LIKE ? ESCAPE '!'`
+// pattern. Without this, "%.png" would match any string ending in
+// ".png" and "_" would match a single character — bypassing the
+// filename-specific authorization check. PR review round 5, Major #8.
+func escapeSQLLikePattern(s string) string {
+	r := strings.NewReplacer(`!`, `!!`, `%`, `!%`, `_`, `!_`)
+	return r.Replace(s)
+}
+
+// sandboxArtifactAccessible reports whether userID may reach at
+// least one agent canvas whose session references filename.
+// Mirrors `UserCanvasService.accessible(dialog_id, user_id)` from
+// the Python fix; on the Go side this is the same predicate as
+// UserCanvasDAO.Accessible (owner or team permission, with the
+// latter scoped to the caller's tenant membership — PR review
+// round 5).
+func (s *DocumentService) sandboxArtifactAccessible(filename, userID string) bool {
+	if userID == "" {
+		return false
+	}
+	// Fetch the caller's tenant list once; passing it into
+	// canvasDAO.Accessible ensures the team-permission branch only
+	// matches canvases the caller can actually see. An empty list
+	// (callers without tenant data) is safe — it effectively disables
+	// the team branch, so the only matches are canvases the caller
+	// directly owns.
+	tenantIDs, terr := dao.NewUserTenantDAO().GetTenantIDsByUserID(userID)
+	if terr != nil {
+		tenantIDs = nil
+	}
+	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(filename, userID) {
+		if s.canvasDAO.Accessible(dialogID, userID, tenantIDs) {
+			return true
+		}
+	}
+	return false
+}
+
 func sandboxArtifactBucket() string {
 	if bucket := os.Getenv("SANDBOX_ARTIFACT_BUCKET"); bucket != "" {
 		return bucket
 	}
 	return "sandbox-artifacts"
+}
+
+// Accessible reports whether docID belongs to a knowledge base
+// reachable by userID. Used by agent endpoints (e.g. RerunAgent,
+// PR #15145) to gate destructive / run-again actions on a document
+// the caller has access to. Returns false on any lookup failure or
+// empty inputs so callers can treat a denial as a 404-equivalent
+// and avoid leaking whether the document exists at all.
+func (s *DocumentService) Accessible(docID, userID string) bool {
+	if docID == "" || userID == "" {
+		return false
+	}
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil || doc == nil {
+		return false
+	}
+	return s.kbDAO.Accessible(doc.KbID, userID)
 }
 
 func sanitizeArtifactFilename(filename string) string {
@@ -2779,6 +2913,403 @@ func mapDocumentRunStatus(run *string) string {
 	default:
 		return "UNSTART"
 	}
+}
+
+// UploadLocalDocuments stores each uploaded file in object storage and inserts a
+// matching Document row into the dataset. It mirrors Python
+// FileService.upload_document: it derives parser_id by filetype, merges the
+// optional parser_config override into the dataset config, dedup-renames the
+// filename, records size + xxhash content hash, and links each document into the
+// file manager (a File row under the dataset folder + a file2document mapping)
+// so it surfaces in the dataset's document list. Chunking/embedding happen later
+// in the parse step, so nothing here touches the doc store index.
+//
+// Gaps vs Python (documented, not yet ported): thumbnail generation and
+// read_potential_broken_pdf repair.
+func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, []string{"storage not initialized"}
+	}
+
+	// Resolve (and create if needed) the dataset's file-manager folder up front.
+	// Without the File / file2document linkage the document list (which inner-joins
+	// file2document + file) would never surface the uploaded files.
+	kbFolder, err := s.ensureKBFolder(kb, tenantID)
+	if err != nil {
+		return nil, []string{err.Error()}
+	}
+
+	// Merge parser_config override (allow-listed keys only) over the dataset config.
+	merged := entity.JSONMap{}
+	for k, v := range kb.ParserConfig {
+		merged[k] = v
+	}
+	for k, v := range parserConfigOverride {
+		merged[k] = v
+	}
+
+	safeParent := utility.SanitizeFilename(parentPath)
+
+	// Don't silently disable dedupe protection: a transient lookup failure means
+	// the existing-name set is unknown, so fail rather than risk duplicates.
+	names, err := s.documentDAO.ListNamesByKbID(kb.ID)
+	if err != nil {
+		return nil, []string{err.Error()}
+	}
+	taken := map[string]bool{}
+	for _, n := range names {
+		taken[n] = true
+	}
+
+	var results []map[string]interface{}
+	var errMsgs []string
+
+	for _, fh := range files {
+		blob, err := readFileHeaderBytes(fh)
+		if err != nil {
+			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
+			continue
+		}
+
+		filename := uniqueUploadName(fh.Filename, taken)
+
+		filetype := utility.FilenameType(filename)
+		if filetype == utility.FileTypeOTHER {
+			errMsgs = append(errMsgs, fh.Filename+": This type of file has not been supported yet!")
+			continue
+		}
+
+		location := filename
+		if safeParent != "" {
+			location = safeParent + "/" + filename
+		}
+		for storageImpl.ObjExist(kb.ID, location) {
+			location += "_"
+		}
+		if err := storageImpl.Put(kb.ID, location, blob); err != nil {
+			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
+			continue
+		}
+
+		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), merged, "local", int64(len(blob)), blob)
+		if err := s.documentDAO.Create(doc); err != nil {
+			// Roll back the orphaned blob so a failed insert doesn't leak storage.
+			_ = storageImpl.Remove(kb.ID, location)
+			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
+			continue
+		}
+		if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+			// Linkage failed: roll back the document row and blob so the partial
+			// state doesn't leave an invisible (unlisted) document behind.
+			_, _ = s.documentDAO.Delete(doc.ID)
+			_ = storageImpl.Remove(kb.ID, location)
+			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
+			continue
+		}
+		// Only reserve the name once the write fully succeeds.
+		taken[filename] = true
+		results = append(results, docToRawMap(doc))
+	}
+
+	return results, errMsgs
+}
+
+// UploadEmptyDocument inserts a zero-byte "virtual" document into the dataset.
+func (s *DocumentService) UploadEmptyDocument(kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
+	// A transient lookup failure means the existing-name set is unknown; fail
+	// rather than write blind and risk a duplicate.
+	names, err := s.documentDAO.ListNamesByKbID(kb.ID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	for _, n := range names {
+		if n == name {
+			return nil, common.CodeDataError, fmt.Errorf("Duplicated document name in the same dataset.")
+		}
+	}
+
+	kbFolder, err := s.ensureKBFolder(kb, tenantID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	doc := s.newDatasetDocument(kb, tenantID, name, "", "virtual", kb.ParserConfig, "local", 0, nil)
+	if err := s.documentDAO.Create(doc); err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+		_, _ = s.documentDAO.Delete(doc.ID)
+		return nil, common.CodeServerError, err
+	}
+	return docToRawMap(doc), common.CodeSuccess, nil
+}
+
+// knowledgebaseFolderName is the file-manager folder under each tenant's root
+// that holds per-dataset subfolders, mirroring Python KNOWLEDGEBASE_FOLDER_NAME.
+const knowledgebaseFolderName = ".knowledgebase"
+
+// ensureKBFolder resolves (creating as needed) the per-dataset file-manager
+// folder: root -> .knowledgebase -> <dataset name>. Mirrors Python
+// get_root_folder + get_kb_folder + new_a_file_from_kb.
+func (s *DocumentService) ensureKBFolder(kb *entity.Knowledgebase, tenantID string) (*entity.File, error) {
+	root, err := s.fileDAO.GetRootFolder(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	kbRoot, err := s.newAFileFromKB(tenantID, knowledgebaseFolderName, root.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.newAFileFromKB(kb.TenantID, kb.Name, kbRoot.ID)
+}
+
+// newAFileFromKB returns the existing folder named name under parentID, or
+// creates it. Mirrors Python FileService.new_a_file_from_kb.
+func (s *DocumentService) newAFileFromKB(tenantID, name, parentID string) (*entity.File, error) {
+	for _, f := range s.fileDAO.Query(name, parentID) {
+		if f.TenantID == tenantID {
+			return f, nil
+		}
+	}
+	loc := ""
+	folder := &entity.File{
+		ID:         strings.ReplaceAll(uuid.New().String(), "-", ""),
+		ParentID:   parentID,
+		TenantID:   tenantID,
+		CreatedBy:  tenantID,
+		Name:       name,
+		Type:       "folder",
+		Size:       0,
+		Location:   &loc,
+		SourceType: string(entity.FileSourceKnowledgebase),
+	}
+	if err := s.fileDAO.Create(folder); err != nil {
+		return nil, err
+	}
+	return folder, nil
+}
+
+// addFileFromKB links a document into the file manager: a File row under the
+// dataset folder plus a file2document mapping. Mirrors Python
+// FileService.add_file_from_kb (idempotent on the document mapping).
+func (s *DocumentService) addFileFromKB(doc *entity.Document, kbFolderID, tenantID string) error {
+	if existing, err := s.file2DocumentDAO.GetByDocumentID(doc.ID); err == nil && len(existing) > 0 {
+		return nil
+	}
+	name := ""
+	if doc.Name != nil {
+		name = *doc.Name
+	}
+	loc := ""
+	if doc.Location != nil {
+		loc = *doc.Location
+	}
+	fileID := strings.ReplaceAll(uuid.New().String(), "-", "")
+	file := &entity.File{
+		ID:         fileID,
+		ParentID:   kbFolderID,
+		TenantID:   tenantID,
+		CreatedBy:  tenantID,
+		Name:       name,
+		Type:       doc.Type,
+		Size:       doc.Size,
+		Location:   &loc,
+		SourceType: string(entity.FileSourceKnowledgebase),
+	}
+	if err := s.fileDAO.Create(file); err != nil {
+		return err
+	}
+	docID := doc.ID
+	if err := s.file2DocumentDAO.Create(&entity.File2Document{
+		ID:         strings.ReplaceAll(uuid.New().String(), "-", ""),
+		FileID:     &fileID,
+		DocumentID: &docID,
+	}); err != nil {
+		_ = s.fileDAO.Delete(fileID)
+		return err
+	}
+	return nil
+}
+
+func (s *DocumentService) UploadWebDocument(kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, common.CodeServerError, fmt.Errorf("storage not initialized")
+	}
+
+	kbFolder, err := s.ensureKBFolder(kb, tenantID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	names, err := s.documentDAO.ListNamesByKbID(kb.ID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	taken := map[string]bool{}
+	for _, n := range names {
+		taken[n] = true
+	}
+
+	blob, headers, _, err := fetchRemoteFileSafely(url, maxUploadDocSize)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	contentType := ""
+	if headers != nil {
+		contentType = headers.Get("Content-Type")
+	}
+	filename := normalizeWebDocumentName(name, contentType, blob)
+	filename, _, blob = normalizeUploadInfoContent(filename, contentType, blob)
+	filename = uniqueUploadName(filename, taken)
+
+	filetype := utility.FilenameType(filename)
+	if filetype == utility.FileTypeOTHER {
+		return nil, common.CodeDataError, fmt.Errorf("This type of file has not been supported yet!")
+	}
+
+	location := filename
+	for storageImpl.ObjExist(kb.ID, location) {
+		location += "_"
+	}
+	if err := storageImpl.Put(kb.ID, location, blob); err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), kb.ParserConfig, "web", int64(len(blob)), blob)
+	if err := s.documentDAO.Create(doc); err != nil {
+		_ = storageImpl.Remove(kb.ID, location)
+		return nil, common.CodeServerError, err
+	}
+	if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+		_, _ = s.documentDAO.Delete(doc.ID)
+		_ = storageImpl.Remove(kb.ID, location)
+		return nil, common.CodeServerError, err
+	}
+	return docToRawMap(doc), common.CodeSuccess, nil
+}
+
+func normalizeWebDocumentName(name, contentType string, blob []byte) string {
+	filename := utility.SanitizeFilename(name)
+	if filepath.Ext(filename) != "" {
+		return filename
+	}
+	lowerCT := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	switch {
+	case lowerCT == "application/pdf" || http.DetectContentType(blob) == "application/pdf" || bytesLooksLikePDF(blob):
+		return filename + ".pdf"
+	case lowerCT == "text/html" || lowerCT == "application/xhtml+xml" || looksLikeHTML(blob):
+		return filename + ".html"
+	default:
+		return filename
+	}
+}
+
+// newDatasetDocument builds a Document row for an upload, deriving parser_id,
+// suffix and content hash. blob may be nil for the empty/virtual document.
+func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID, filename, location, filetype string, parserConfig entity.JSONMap, src string, size int64, blob []byte) *entity.Document {
+	docID := strings.ReplaceAll(uuid.New().String(), "-", "")
+	zero := "0"
+	suffix := ""
+	if i := strings.LastIndex(filename, "."); i >= 0 {
+		suffix = filename[i+1:]
+	}
+	loc := location
+	doc := &entity.Document{
+		ID:           docID,
+		KbID:         kb.ID,
+		ParserID:     selectUploadParser(utility.FileType(filetype), filename, kb.ParserID),
+		PipelineID:   kb.PipelineID,
+		ParserConfig: parserConfig,
+		CreatedBy:    tenantID,
+		Type:         filetype,
+		SourceType:   src,
+		Name:         &filename,
+		Location:     &loc,
+		Size:         size,
+		Suffix:       suffix,
+		Run:          &zero,
+		Status:       &zero,
+	}
+	if blob != nil {
+		hash := contentHashHex(blob)
+		doc.ContentHash = &hash
+	}
+	return doc
+}
+
+// docToRawMap serialises a freshly created Document into the raw key shape the
+// handler remaps (chunk_num→chunk_count, kb_id→dataset_id, parser_id→chunk_method).
+func docToRawMap(doc *entity.Document) map[string]interface{} {
+	m := map[string]interface{}{
+		"id":            doc.ID,
+		"kb_id":         doc.KbID,
+		"parser_id":     doc.ParserID,
+		"parser_config": map[string]interface{}(doc.ParserConfig),
+		"created_by":    doc.CreatedBy,
+		"type":          doc.Type,
+		"source_type":   doc.SourceType,
+		"size":          doc.Size,
+		"chunk_num":     doc.ChunkNum,
+		"token_num":     doc.TokenNum,
+		"suffix":        doc.Suffix,
+		"run":           "0",
+	}
+	if doc.Name != nil {
+		m["name"] = *doc.Name
+	}
+	if doc.Location != nil {
+		m["location"] = *doc.Location
+	}
+	if doc.PipelineID != nil {
+		m["pipeline_id"] = *doc.PipelineID
+	}
+	if doc.ContentHash != nil {
+		m["content_hash"] = *doc.ContentHash
+	}
+	return m
+}
+
+// uniqueUploadName appends a numeric suffix until the name is free, mirroring
+// Python duplicate_name.
+func uniqueUploadName(name string, taken map[string]bool) string {
+	if !taken[name] {
+		return name
+	}
+	base, ext := name, ""
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		base, ext = name[:i], name[i:]
+	}
+	for i := 1; ; i++ {
+		candidate := fmt.Sprintf("%s(%d)%s", base, i, ext)
+		if !taken[candidate] {
+			return candidate
+		}
+	}
+}
+
+// maxUploadDocSize bounds a single uploaded file held in memory, mirroring the
+// Python DOC_MAXIMUM_SIZE default (128 MiB; overridable there via MAX_CONTENT_LENGTH).
+const maxUploadDocSize = 128 * 1024 * 1024
+
+func readFileHeaderBytes(fh *multipart.FileHeader) ([]byte, error) {
+	if fh.Size > maxUploadDocSize {
+		return nil, fmt.Errorf("file exceeds the maximum allowed size of %d bytes", maxUploadDocSize)
+	}
+	src, err := fh.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer src.Close()
+	blob, err := io.ReadAll(io.LimitReader(src, maxUploadDocSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(blob) > maxUploadDocSize {
+		return nil, fmt.Errorf("file exceeds the maximum allowed size of %d bytes", maxUploadDocSize)
+	}
+	return blob, nil
 }
 
 // MetadataUpdate is one update item: set key to value.

@@ -30,6 +30,9 @@ import (
 type SearchHandler struct {
 	searchService *service.SearchService
 	userService   *service.UserService
+	streamLLM     *service.ModelProviderService
+	askService    *service.AskService
+	sseWriter     SSEWriter
 }
 
 // NewSearchHandler create search handler
@@ -37,7 +40,14 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 	return &SearchHandler{
 		searchService: searchService,
 		userService:   userService,
+		sseWriter:     &ginSSEWriter{},
 	}
+}
+
+// SetCompletionDependencies wires the streaming search completion runtime.
+func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.ModelProviderService, askService *service.AskService) {
+	h.streamLLM = streamLLM
+	h.askService = askService
 }
 
 // ListSearches list search apps
@@ -420,4 +430,88 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 		"data":    result,
 		"message": "success",
 	})
+}
+
+func (h *SearchHandler) Completion(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.SearchCompletionsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeArgumentError, "question is required")
+		return
+	}
+
+	searchSvc := h.searchService
+	if searchSvc == nil {
+		searchSvc = service.NewSearchService()
+	}
+
+	plan, code, err := searchSvc.PrepareCompletion(user.ID, c.Param("search_id"), &req)
+	if err != nil {
+		if code == common.CodeAuthenticationError {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    code,
+				"data":    false,
+				"message": err.Error(),
+			})
+			return
+		}
+		if code == common.CodeServerError {
+			jsonInternalError(c, err)
+			return
+		}
+		jsonError(c, code, err.Error())
+		return
+	}
+	if plan == nil {
+		jsonError(c, common.CodeServerError, "completion plan is nil")
+		return
+	}
+
+	disableWriteDeadlineForSSE(c)
+	c.Header("Content-Type", "text/event-stream; charset=utf-8")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	writer := h.sseWriter
+	if writer == nil {
+		writer = &ginSSEWriter{}
+	}
+	if plan.ModelID == "" {
+		writer.Write(c, sseError("chat model not configured"))
+		return
+	}
+	if h.askService == nil {
+		writer.Write(c, sseError("ask service not configured"))
+		return
+	}
+	if h.streamLLM == nil {
+		writer.Write(c, sseError("streaming LLM not configured"))
+		return
+	}
+
+	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: plan.UserID, ModelID: plan.ModelID}
+
+	hadError := false
+	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.KBIDs, plan.Options) {
+		switch delta.Kind {
+		case service.AskDeltaAnswer:
+			writer.Write(c, sseAnswer(delta.Value, nil, false))
+		case service.AskDeltaMarker:
+			writer.Write(c, sseMarker(delta.Value))
+		case service.AskDeltaError:
+			hadError = true
+			writer.Write(c, sseError(delta.Value))
+		case service.AskDeltaFinal:
+			writer.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+		}
+	}
+	if !hadError {
+		writer.Write(c, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
+	}
 }

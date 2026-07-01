@@ -37,6 +37,7 @@ Key consequence: task executors import a different code surface than the API ser
 
 - **Document ingestion pipeline**: `rag/flow/pipeline.py` — `Pipeline` (extends `agent.canvas.Graph`) orchestrates the ingestion DAG. Components: File (fetches binary from storage), Parser (dispatches to `deepdoc.parser` based on file type), TokenChunker/TitleChunker (splits into chunks), Tokenizer (computes full-text tokens + embedding vectors), Extractor (LLM-based extraction). Data flows via Pydantic `*FromUpstream` schemas.
 - **Document parsing**: `deepdoc/` — PDF parsing (vision-based OCR, layout analysis, table structure recognition) and format-specific parsers (DOCX, XLSX, PPT, Markdown, HTML, images). All parsers normalize to a common structure (list of bbox dicts for PDFs, `{text, doc_type_kwd}` for others).
+- **DeepDoc HTTP API service** (`deepdoc/server/`): OSS ONNX models (DLA, OCR, TSR) wrapped with LitServe as a standalone HTTP API on port 8124. The Go parser (`internal/parser/`) calls this service via `DeepDocClient`. Endpoints: `GET /health`, `GET /model`, `POST /predict/dla`, `POST /predict/tsr`, `POST /predict/ocr` (with `operator=det` or `operator=rec` form field). Docker image: `deepdoc_oss:latest`. See `deepdoc/server/README.md` for the full API reference.
 - **LLM Integration**: `rag/llm/` — factory pattern with runtime class discovery. `chat_model.py` (30+ providers via OpenAI SDK and LiteLLM wrappers), `embedding_model.py`, `rerank_model.py`, `cv_model.py` (image-to-text), `sequence2txt_model.py` (ASR), `tts_model.py`. Use `LLMBundle` (from `api.db.services.llm_service`) as the unified interface.
 - **Graph RAG**: `rag/graphrag/` — multi-phase pipeline: per-document subgraph extraction (LLM or spaCy NER), Leiden community detection, entity resolution, community summarization. Entities/relations/reports are indexed as chunks alongside regular text chunks, differentiated by `knowledge_graph_kwd`.
 - **Search**: `rag/nlp/search.py` — `Dealer` class combines vector similarity + BM25 + re-ranking. `KGSearch` extends it for graph-aware retrieval (entity resolution, n-hop enrichment).
@@ -71,7 +72,9 @@ Key consequence: task executors import a different code surface than the API ser
 # Install Python dependencies
 uv sync --python 3.13 --all-extras
 uv run python3 ragflow_deps/download_deps.py
-pre-commit install
+
+# Run once after the first clone to enable local Git hooks
+lefthook install
 
 # Start dependent services
 docker compose -f docker/docker-compose-base.yml up -d
@@ -103,12 +106,16 @@ npm run test       # Jest tests
 ### Docker Development
 
 ```bash
-# Full stack with Docker
+# Full stack with Docker (includes deepdoc vision service)
 cd docker
 docker compose -f docker-compose.yml up -d
 
 # Check server status
 docker logs -f ragflow-server
+
+# Build the OSS deepdoc vision service standalone
+docker build -f docker/Dockerfile_deepdoc_oss -t deepdoc_oss:latest .
+docker run -p 8124:8124 deepdoc_oss:latest
 
 # Rebuild images
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .

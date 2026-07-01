@@ -56,6 +56,15 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	g.PUT("/:canvas_id/tags", h.UpdateAgentTags)
 	g.POST("/:canvas_id/reset", h.ResetAgent)
 
+	// File operations.
+	g.GET("/download", h.DownloadAgentFile)
+	g.GET("/attachments/:attachment_id/download", h.DownloadAttachment)
+	g.POST("/:canvas_id/upload", h.UploadAgentFile)
+
+	// Component introspection + debug.
+	g.GET("/:canvas_id/components/:component_id/input-form", h.GetComponentInputForm)
+	g.POST("/:canvas_id/components/:component_id/debug", h.DebugComponent)
+
 	// Versions.
 	g.GET("/:canvas_id/versions", h.ListVersions)
 	g.GET("/:canvas_id/versions/:version_id", h.GetVersion)
@@ -71,9 +80,43 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	// Logs and webhook.
 	g.GET("/:canvas_id/logs/:message_id", h.GetAgentLogs)
 	g.GET("/:canvas_id/webhook/logs", h.GetAgentWebhookLogs)
+	// Webhook trigger endpoints. The Python agent API
+	// (api/apps/restful_apis/agent_api.py:1563-1564) registers six
+	// HTTP methods on a single path. Gin has no Match() helper, so we
+	// register each verb explicitly via registerAnyMethod. The handler
+	// is identical for all six; semantics differ only by
+	// c.Request.Method.
+	registerAnyMethod(g, "/:canvas_id/webhook", h.Webhook)
+	registerAnyMethod(g, "/:canvas_id/webhook/test", h.Webhook)
 
 	// Top-level actions (no canvas id in path).
+	// NOTE: `/chat/completion` (singular) is intentionally NOT registered.
+	// The singular form was a historical typo in earlier Python releases —
+	// no client, SDK, or doc ever called it, and the Python side
+	// (api/apps/restful_apis/agent_api.py) has since removed the route.
+	// See plan: .claude/plans/agent-api-gaps-go-port.md §Gap E.
 	g.POST("/chat/completions", h.AgentChatCompletions)
 	g.POST("/rerun", h.RerunAgent)
 	g.POST("/test_db_connection", h.TestDBConnection)
+}
+
+// registerAnyMethod mirrors the Python
+// `@manager.route(path, methods=["POST","GET","PUT","PATCH","DELETE","HEAD"])`
+// pattern. Gin has no Match() helper, so we register each verb
+// explicitly. The handler is identical for all six — semantics differ
+// only by c.Request.Method.
+//
+// Centralising the registration here keeps RegisterAgentRoutes readable
+// when both the production trigger and the test trigger share the same
+// six-method shape.
+func registerAnyMethod(g *gin.RouterGroup, path string, h gin.HandlerFunc) {
+	if g == nil || h == nil {
+		return
+	}
+	g.POST(path, h)
+	g.GET(path, h)
+	g.PUT(path, h)
+	g.PATCH(path, h)
+	g.DELETE(path, h)
+	g.HEAD(path, h)
 }

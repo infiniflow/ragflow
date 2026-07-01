@@ -343,24 +343,6 @@ func (s *Service) DeleteModels(userID, providerName, instanceName string, models
 	}, nil
 }
 
-// ListAllModels list all models
-func (s *Service) ListAllModels() ([]map[string]interface{}, error) {
-	return []map[string]interface{}{
-		{
-			"command": "list_all_models",
-			"error":   "'list all models' is implemented in enterprise edition",
-		},
-	}, nil
-}
-
-func (s *Service) GetModelByModelName(modelName string) (map[string]interface{}, error) {
-	return map[string]interface{}{
-		"command":    "get_model_by_model_name",
-		"model_name": modelName,
-		"error":      "'get model by model name' is implemented in enterprise edition",
-	}, nil
-}
-
 func (s *Service) GetSystemFingerprint() (map[string]interface{}, error) {
 	result := map[string]interface{}{
 		"command": "get_system_fingerprint",
@@ -917,6 +899,17 @@ func (s *Service) ListUsersQuota(pageIndex, pageSize, top int, quotaThreshold *i
 		"days":            daysInt,
 		"command":         "list_users_quota",
 		"error":           "'List users quota' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+// ShowUsersPlanSummary show users plan summary for enterprise edition
+func (s *Service) ShowUsersPlanSummary() (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"command": "show_users_plan_summary",
+		"error":   "'Show users plan summary' is implemented in enterprise edition",
 	}
 
 	return result, nil

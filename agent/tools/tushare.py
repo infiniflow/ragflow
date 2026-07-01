@@ -14,11 +14,13 @@
 #  limitations under the License.
 #
 import json
+import logging
 from abc import ABC
 import pandas as pd
 import time
 import requests
 from agent.component.base import ComponentBase, ComponentParamBase
+from common.http_client import DEFAULT_TIMEOUT
 
 
 class TuShareParam(ComponentParamBase):
@@ -62,7 +64,7 @@ class TuShare(ComponentBase, ABC):
                 "params": {"src": self._param.src, "start_date": self._param.start_date,
                            "end_date": self._param.end_date}
             }
-            response = requests.post(url="http://api.tushare.pro", data=json.dumps(params).encode('utf-8'))
+            response = requests.post(url="http://api.tushare.pro", data=json.dumps(params).encode('utf-8'), timeout=DEFAULT_TIMEOUT)
             response = response.json()
             if self.check_if_canceled("TuShare processing"):
                 return
@@ -72,7 +74,18 @@ class TuShare(ComponentBase, ABC):
             df.columns = response['data']['fields']
             if self.check_if_canceled("TuShare processing"):
                 return
-            tus_res.append({"content": (df[df['content'].str.contains(self._param.keyword, case=False)]).to_markdown()})
+            keyword = self._param.keyword or ans
+            logging.info(
+                "TuShare news filter keyword source=%s",
+                "param.keyword" if self._param.keyword else "upstream_input",
+            )
+            tus_res.append(
+                {
+                    "content": (
+                        df[df["content"].str.contains(keyword, case=False, na=False, regex=False)]
+                    ).to_markdown()
+                }
+            )
         except Exception as e:
             if self.check_if_canceled("TuShare processing"):
                 return

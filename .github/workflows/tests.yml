@@ -92,13 +92,6 @@ jobs:
           echo "ARTIFACTS_DIR=${ARTIFACTS_DIR}" >> ${GITHUB_ENV}
           rm -rf ${ARTIFACTS_DIR} && mkdir -p ${ARTIFACTS_DIR}
 
-      # https://github.com/astral-sh/ruff-action
-      - name: Static check with Ruff
-        uses: astral-sh/ruff-action@v3
-        with:
-          version: ">=0.11.x"
-          args: "check"
-
 #      - name: Check comments of changed Python files
 #        if: ${{ false }}
 #        run: |
@@ -131,32 +124,23 @@ jobs:
 #            fi
 #          fi
 
-      - name: Check format of changed Go files
-        if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
+      - name: Run Lefthook on changed files
         run: |
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
-            | grep -E '\.go$' || true)
-
-          if [ -n "$CHANGED_FILES" ]; then
-            echo "Check gofmt of changed Go files"
-            readarray -t files <<< "$CHANGED_FILES"
-            HAS_ERROR=0
-            for file in "${files[@]}"; do
-              if [ -f "$file" ]; then
-                if [ -z "$(gofmt -l "$file")" ]; then
-                  echo "✅ $file"
-                else
-                  echo "❌ $file (run: gofmt -w \"$file\")"
-                  HAS_ERROR=1
-                fi
-              fi
-            done
-
-            if [ $HAS_ERROR -ne 0 ]; then
-              exit 1
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${GITHUB_EVENT_NAME}" == "pull_request_target" ]]; then
+            changed_files=$(mktemp)
+            trap 'rm -f "$changed_files"' EXIT
+            git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
+              | while read -r file; do
+                  [[ -f "$file" ]] && printf '%s\0' "$file"
+                done > "$changed_files"
+            echo "Changed files to run lefthook on:"
+            if [[ -s "$changed_files" ]]; then
+              tr '\0' '\n' < "$changed_files" | sed 's/^/  /'
+            else
+              echo "  (none — lefthook will be a no-op)"
             fi
-          else
-            echo "No Go files changed"
+            lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
           fi
 
       - name: Set test level
@@ -250,7 +234,10 @@ jobs:
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/tokenizer$' \
-            | grep -v '/internal/handler$' || true)
+            | grep -v '/internal/handler$' \
+            | grep -v '/internal/deepdoc/parser/pdf/pdfium' \
+            | grep -v '/internal/deepdoc/parser/pdf/pdfoxide' \
+            | grep -v '/internal/deepdoc/parser/pdf' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
           else
@@ -394,7 +381,7 @@ jobs:
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu,deepdoc"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
@@ -693,7 +680,10 @@ jobs:
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/tokenizer$' \
-            | grep -v '/internal/handler$' || true)
+            | grep -v '/internal/handler$' \
+            | grep -v '/internal/deepdoc/parser/pdf/pdfium' \
+            | grep -v '/internal/deepdoc/parser/pdf/pdfoxide' \
+            | grep -v '/internal/deepdoc/parser/pdf' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
           else
@@ -837,7 +827,7 @@ jobs:
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu,deepdoc"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"

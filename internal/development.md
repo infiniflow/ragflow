@@ -19,6 +19,14 @@ docker compose -f docker/docker-compose-base.yml up -d
 ./build.sh --go
 ```
 
+- Production builds (strip debug symbols for smaller binaries):
+
+```bash
+./build.sh --strip --all
+# or
+./build.sh -s --go
+```
+
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, you must set the following two CGO environment variables in your run configuration or shell:
 >
 > ```bash
@@ -159,7 +167,33 @@ Time: 76.582520
 ```
 Note: Both image and video understanding support streaming and thinking modes as well.
 
-### 6.8. Chat with OpenAI compatible API
+### 6.8. Chat completions
+
+```
+RAGFlow(api/default)> chat completion 'hello'
+Answer: Hello! How can I assist you today? 😊
+Time: 1.591929
+```
+
+```
+RAGFlow(api/default)> CHAT COMPLETIONS '<question>' chat_id '<chat_id>';
+```
+
+```
+RAGFlow(api/default)> CHAT COMPLETIONS 'Explain the theory' \
+                      chat_id '<chat_id>' \
+                      session '<session_id>' llm 'glm-4.5-flash@test@zhipu-ai' stream true;
+```
+
+```
+RAGFlow(api/default)> CHAT COMPLETIONS 'Continue' \
+                      system 'You are a helpful assistant.' \
+                      history 'user:What is RAG?;assistant:RAG stands for Retrieval-Augmented Generation...' \
+                      history_delimiter ';';
+```
+
+### 6.9. Chat with OpenAI compatible API
+
 ```
 RAGFlow(api/default)> openai_chat '<chat_id>' 'Hello, how are you?';
 Answer: Hello! I'm just a virtual assistant, so I don't have feelings, but I'm here and ready to help you with anything you need. How can I assist you today? 😊
@@ -196,17 +230,17 @@ RAGFlow(api/default)> openai_chat '<chat_id>' 'Hello, how are you?' extra_body '
 CLI error: OPENAI_CHAT extra_body: unknown field "ref" (valid: reference, reference_metadata, metadata_condition)
 ```
 
-### 6.9. Generate Embeddings
+### 6.10. Generate Embeddings
 ```
 RAGFlow(api/default)> embed text 'what is rag' 'who are you' with 'embedding-3@test@zhipu-ai' dimension 16;
 ```
 
-### 6.10. Document Reranking
+### 6.11. Document Reranking
 ```
 RAGFlow(api/default)> rerank query 'what is rag' document 'rag is retrieval augment generation' 'rag need llm' 'famous rag project includes ragflow' with 'rerank@test@zhipu-ai' top 2;
 ```
 
-### 6.11. Get supported models from provider API
+### 6.12. Get supported models from provider API
 
 ```
 RAGFlow(api/default)> list supported models from 'gitee' 'test';
@@ -228,7 +262,7 @@ RAGFlow(api/default)> list supported models from 'gitee' 'test';
 +-----------+---------------------------+---------------+------------+-----------------------------------------------------------------+----------------------------------------------------------+---------------------------------------------+
 ```
 
-### 6.12. Get preset models of a provider
+### 6.13. Get preset models of a provider
 
 ```
 RAGFlow(api/default)> list models from 'minimax';
@@ -246,7 +280,7 @@ RAGFlow(api/default)> list models from 'minimax';
 +------------+-------------+------------------------+
 ```
 
-### 6.13. List instances of a provider
+### 6.14. List instances of a provider
 
 ```
 RAGFlow(api/default)> list instances from 'zhipu-ai';
@@ -257,7 +291,7 @@ RAGFlow(api/default)> list instances from 'zhipu-ai';
 +---------+----------------------+----------------------------------+--------------+----------------------------------+--------+
 ```
 
-### 6.14. Show instance of a provider
+### 6.15. Show instance of a provider
 ```
 RAGFlow(api/default)> show instance 'test' from 'zhipu-ai';
 +----------------------------------+--------------+----------------------------------+---------+--------+
@@ -267,7 +301,7 @@ RAGFlow(api/default)> show instance 'test' from 'zhipu-ai';
 +----------------------------------+--------------+----------------------------------+---------+--------+
 ```
 
-### 6.15. List models of a specific instance
+### 6.16. List models of a specific instance
 
 ```
 RAGFlow(api/default)> list models from 'minimax' 'test';
@@ -285,7 +319,7 @@ RAGFlow(api/default)> list models from 'minimax' 'test';
 +------------+-------------+------------------------+--------+
 ```
 
-### 6.16. List added providers
+### 6.17. List added providers
 ```
 RAGFlow(api/default)> list providers;
 +--------------------------------------------------------------------------+-------------+--------------+
@@ -297,7 +331,7 @@ RAGFlow(api/default)> list providers;
 +--------------------------------------------------------------------------+-------------+--------------+
 ```
 
-### 6.17. Deactivate / activate a model
+### 6.18. Deactivate / activate a model
 
 ```
 RAGFlow(api/default)> disable model 'deepseek-v4-pro' from 'deepseek' 'test';
@@ -313,7 +347,7 @@ RAGFlow(api/default)> enable model 'deepseek-v4-pro' from 'deepseek' 'test';
 SUCCESS
 ```
 
-### 6.18. Set current model
+### 6.19. Set current model
 ```
 RAGFlow(api/default)> use model 'glm-4.5-flash@test@zhipu-ai';
 SUCCESS
@@ -322,7 +356,7 @@ Answer: Large language models are advanced AI systems. They process text to unde
 Time: 1.680416
 ```
 
-### 6.19. Set, reset, and list default models
+### 6.20. Set, reset, and list default models
 ```
 RAGFlow(api/default)> set default chat model 'glm-4.5-flash@test@zhipu-ai';
 SUCCESS
@@ -366,7 +400,7 @@ RAGFlow(api/default)> list default models;
 +--------+----------------+--------------+----------------+------------+
 ```
 
-### 6.20. Show current balance of a provider instance
+### 6.21. Show current balance of a provider instance
 ```
 RAGFlow(api/default)> show balance from 'gitee' 'test';
 +-------------+----------+
@@ -376,13 +410,13 @@ RAGFlow(api/default)> show balance from 'gitee' 'test';
 +-------------+----------+
 ```
 
-### 6.21. Check provider instance availability
+### 6.22. Check provider instance availability
 ```
 RAGFlow(api/default)> check instance 'test' from 'zhipu-ai';
 SUCCESS
 ```
 
-### 6.22. Add local model to RAGFlow, only for local deployed inference server, such as ollama
+### 6.23. Add local model to RAGFlow, only for local deployed inference server, such as ollama
 ```
 RAGFlow(api/default)> add model 'Qwen/Qwen2.5-0.5B' to provider 'vllm' instance 'test' with tokens 131072 chat;
 SUCCESS
@@ -396,7 +430,7 @@ RAGFlow(api/default)> drop model 'Qwen/Qwen2.5-0.5B' from 'vllm' 'test';
 SUCCESS
 ```
 
-### 6.23. List datasets
+### 6.24. List datasets
 ```
 RAGFlow(api/default)> list datasets;
 +-------------+--------------+----------------+----------------------+----------------------------------+----------+------+----------+------------+----------------------------------+-----------+---------------+
@@ -407,14 +441,14 @@ RAGFlow(api/default)> list datasets;
 +-------------+--------------+----------------+----------------------+----------------------------------+----------+------+----------+------------+----------------------------------+-----------+---------------+
 ```
 
-### 6.24. Text to Speech
+### 6.25. Text to Speech
 ```
 RAGFlow(api/default)> tts with 'speech-2.8-hd@test@minimax' text 'He who desires but acts not, breeds pestilence.' play format 'wav' save './internal' param '{"voice_setting": {"voice_id": "English_radiant_girl", "speed": 1, "vol": 1, "pitch": 0}, "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "wav", "channel": 1}, "output_format": "hex"}'
 Saved to directory: /home/infiniflow/Documents/development/ragflow/internal/speech-2.8-hd_output.wav
 SUCCESS
 ```
 
-### 6.25. Audio to Speech
+### 6.26. Audio to Speech
 ```
 RAGFlow(api/default)> asr with 'FunAudioLLM/SenseVoiceSmall@test@siliconflow' audio './internal/test.wav' param ''
 +----------------------------------------------------------------------------------------------------------------------+
@@ -424,7 +458,7 @@ RAGFlow(api/default)> asr with 'FunAudioLLM/SenseVoiceSmall@test@siliconflow' au
 +----------------------------------------------------------------------------------------------------------------------+
 ```
 
-### 6.26. Optical Character Recognition
+### 6.27. Optical Character Recognition
 ```
 RAGFlow(api/default)> ocr with 'paddleocr-vl-0.9b@test@baidu' file './internal/text.jpg'
 +------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
@@ -434,7 +468,7 @@ RAGFlow(api/default)> ocr with 'paddleocr-vl-0.9b@test@baidu' file './internal/t
 +------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ```
 
-### 6.27. Chunk Management Commands
+### 6.28. Chunk Management Commands
 
 - Create a chunk store with vector size
 ```
@@ -481,7 +515,7 @@ RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test'
 RAGFlow(api/default)> GET CHUNK '29cc4f6d7a5c6e7c' OF DATASET 'test' DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test'
 ```
 
-### 6.28. Metadata Management Commands
+### 6.29. Metadata Management Commands
 
 - Create metadata store
 ```
@@ -517,7 +551,7 @@ RAGFlow(api/default)> DROP METADATA STORE
 RAGFlow(api/default)> GET METADATA OF DATASET 'test' 'test2'
 ```
 
-### 6.29. Search datasets
+### 6.30. Search datasets
 
 - Search datasets using SQL-like dataset search syntax:
 ```

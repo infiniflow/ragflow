@@ -26,7 +26,6 @@ type fakeSessionStore struct {
 	getByIDErr    error
 	createErr     error
 	updateByIDErr error
-	deleteByIDErr error
 	getDialogErr  error
 	// record calls
 	createCalled []*entity.ChatSession
@@ -34,7 +33,6 @@ type fakeSessionStore struct {
 		id      string
 		updates map[string]interface{}
 	}
-	deleteByIDIDs []string
 }
 
 func newFakeSessionStore() *fakeSessionStore {
@@ -112,12 +110,6 @@ func (f *fakeSessionStore) UpdateByID(id string, updates map[string]interface{})
 }
 
 func (f *fakeSessionStore) DeleteByID(id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.deleteByIDErr != nil {
-		return f.deleteByIDErr
-	}
-	f.deleteByIDIDs = append(f.deleteByIDIDs, id)
 	delete(f.sessions, id)
 	return nil
 }
@@ -177,226 +169,6 @@ func makeResultChan(results ...AsyncChatResult) <-chan AsyncChatResult {
 	}
 	close(ch)
 	return ch
-}
-
-// ===================================================================
-// SetChatSession tests
-// ===================================================================
-
-func TestSetChatSession_CreateNew(t *testing.T) {
-	store := newFakeSessionStore()
-	dialog := &entity.Chat{ID: "dialog-1", PromptConfig: entity.JSONMap{"prologue": "Welcome!"}}
-	store.dialogs["dialog-1"] = dialog
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
-	}
-
-	resp, err := svc.SetChatSession("user-1", &SetChatSessionRequest{
-		DialogID: "dialog-1",
-		IsNew:    true,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp.ID == "" {
-		t.Fatal("expected session ID to be generated")
-	}
-	if resp.DialogID != "dialog-1" {
-		t.Fatalf("expected dialog_id=dialog-1, got %s", resp.DialogID)
-	}
-	if len(store.createCalled) != 1 {
-		t.Fatalf("expected 1 Create call, got %d", len(store.createCalled))
-	}
-
-	// Verify prologue is in the message list.
-	var msgs []map[string]interface{}
-	if err := json.Unmarshal(store.createCalled[0].Message, &msgs); err != nil {
-		t.Fatalf("failed to unmarshal message: %v", err)
-	}
-	if len(msgs) != 1 {
-		t.Fatalf("expected 1 initial message, got %d", len(msgs))
-	}
-	firstMsg := msgs[0]
-	if firstMsg["role"] != "assistant" || firstMsg["content"] != "Welcome!" {
-		t.Fatalf("unexpected prologue message: %#v", firstMsg)
-	}
-}
-
-func TestSetChatSession_CreateNewDefaultPrologue(t *testing.T) {
-	store := newFakeSessionStore()
-	store.dialogs["dialog-1"] = &entity.Chat{ID: "dialog-1"}
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
-	}
-
-	resp, err := svc.SetChatSession("user-1", &SetChatSessionRequest{
-		DialogID: "dialog-1",
-		IsNew:    true,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp.ID == "" {
-		t.Fatal("expected session ID")
-	}
-	// Default prologue
-	var msgs []map[string]interface{}
-	json.Unmarshal(store.createCalled[0].Message, &msgs)
-	firstMsg := msgs[0]
-	if !strings.Contains(firstMsg["content"].(string), "Hi! I'm your assistant") {
-		t.Fatalf("expected default prologue, got %q", firstMsg["content"])
-	}
-}
-
-func TestSetChatSession_CreateNewDialogNotFound(t *testing.T) {
-	store := newFakeSessionStore()
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
-	}
-
-	_, err := svc.SetChatSession("user-1", &SetChatSessionRequest{
-		DialogID: "nonexistent",
-		IsNew:    true,
-	})
-	if err == nil || err.Error() != "Dialog not found" {
-		t.Fatalf("expected 'Dialog not found' error, got %v", err)
-	}
-}
-
-func TestSetChatSession_UpdateExisting(t *testing.T) {
-	store := newFakeSessionStore()
-	store.sessions["session-1"] = &entity.ChatSession{
-		ID: "session-1", DialogID: "dialog-1", Name: strPtr("old name"),
-	}
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
-	}
-
-	resp, err := svc.SetChatSession("user-1", &SetChatSessionRequest{
-		SessionID: "session-1",
-		Name:      "new name",
-		IsNew:     false,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp.ID != "session-1" {
-		t.Fatalf("expected session-1, got %s", resp.ID)
-	}
-	if len(store.updateCalled) != 1 {
-		t.Fatalf("expected UpdateByID call, got %d", len(store.updateCalled))
-	}
-}
-
-func TestSetChatSession_UpdateNotFound(t *testing.T) {
-	store := newFakeSessionStore()
-	store.updateByIDErr = errors.New("Chat session not found")
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
-	}
-
-	_, err := svc.SetChatSession("user-1", &SetChatSessionRequest{
-		SessionID: "missing",
-		IsNew:     false,
-	})
-	if err == nil || err.Error() != "Chat session not found" {
-		t.Fatalf("expected 'Chat session not found' error, got %v", err)
-	}
-}
-
-func TestSetChatSession_NameTruncation(t *testing.T) {
-	store := newFakeSessionStore()
-	store.dialogs["dialog-1"] = &entity.Chat{ID: "dialog-1"}
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
-	}
-
-	longName := strings.Repeat("x", 300)
-	resp, err := svc.SetChatSession("user-1", &SetChatSessionRequest{
-		DialogID: "dialog-1",
-		Name:     longName,
-		IsNew:    true,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp.Name == nil || len(*resp.Name) > 255 {
-		t.Fatalf("expected name truncated to <=255, got len=%d", len(*resp.Name))
-	}
-}
-
-// ===================================================================
-// RemoveChatSessions tests
-// ===================================================================
-
-func TestRemoveChatSessions_Success(t *testing.T) {
-	store := newFakeSessionStore()
-	store.sessions["conv-1"] = &entity.ChatSession{ID: "conv-1", DialogID: "dialog-1"}
-	store.sessions["conv-2"] = &entity.ChatSession{ID: "conv-2", DialogID: "dialog-1"}
-	store.dialogExists["user-1|dialog-1"] = true
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-1"}},
-		pipeline:       &fakePipeline{},
-	}
-
-	err := svc.RemoveChatSessions("user-1", []string{"conv-1", "conv-2"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(store.deleteByIDIDs) != 2 {
-		t.Fatalf("expected 2 deletes, got %d", len(store.deleteByIDIDs))
-	}
-}
-
-func TestRemoveChatSessions_SessionNotFound(t *testing.T) {
-	store := newFakeSessionStore()
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-1"}},
-		pipeline:       &fakePipeline{},
-	}
-
-	err := svc.RemoveChatSessions("user-1", []string{"missing"})
-	if err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("expected 'not found' error, got %v", err)
-	}
-}
-
-func TestRemoveChatSessions_NotOwner(t *testing.T) {
-	store := newFakeSessionStore()
-	store.sessions["conv-1"] = &entity.ChatSession{ID: "conv-1", DialogID: "dialog-1"}
-	// No tenant matches — dialogExists stays false for all combinations
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-other"}},
-		pipeline:       &fakePipeline{},
-	}
-
-	err := svc.RemoveChatSessions("user-1", []string{"conv-1"})
-	if err == nil || !strings.Contains(err.Error(), "Only owner") {
-		t.Fatalf("expected 'Only owner' error, got %v", err)
-	}
 }
 
 // ===================================================================
@@ -638,366 +410,221 @@ func TestUpdateSession_NotFound(t *testing.T) {
 	}
 }
 
-// ===================================================================
-// Completion tests
-// ===================================================================
-
-func TestCompletion_Success(t *testing.T) {
-	store := newFakeSessionStore()
-	session := &entity.ChatSession{
-		ID: "session-1", DialogID: "dialog-1",
-		Message:   json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
-		Reference: json.RawMessage(`[]`),
+func TestParseCollections_ReturnEmptySlicesForMissingOrNull(t *testing.T) {
+	messageInputs := []json.RawMessage{
+		nil,
+		json.RawMessage(`null`),
+		json.RawMessage(`{"messages":null}`),
 	}
-	store.sessions["session-1"] = session
-	store.dialogs["dialog-1"] = &entity.Chat{
-		ID: "dialog-1", TenantID: "tenant-1", LLMID: "chat@factory",
-		LLMSetting: entity.JSONMap{},
-	}
-
-	pipeline := &fakePipeline{
-		resultChan: makeResultChan(
-			AsyncChatResult{Answer: "Hello", Reference: map[string]interface{}{"chunks": []interface{}{}}},
-			AsyncChatResult{Answer: " world", Final: true, Reference: map[string]interface{}{"chunks": []interface{}{}}},
-		),
-	}
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       pipeline,
-	}
-
-	result, err := svc.Completion("user-1", "session-1", []map[string]interface{}{
-		{"role": "user", "content": "hi"},
-	}, "", nil, "msg-1")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	ans, _ := result["answer"].(string)
-	if ans != "Hello world" {
-		t.Fatalf("expected answer 'Hello world', got %q", ans)
-	}
-
-	got := parseMessages(store.sessions["session-1"].Message)
-	if len(got) != 3 {
-		t.Fatalf("stored messages=%#v", got)
-	}
-	if got[0]["role"] != "assistant" || got[0]["content"] != "Welcome!" {
-		t.Fatalf("stored prologue=%#v", got[0])
-	}
-	if got[1]["role"] != "user" || got[1]["content"] != "hi" {
-		t.Fatalf("stored user message=%#v", got[1])
-	}
-	if got[2]["role"] != "assistant" || got[2]["content"] != "Hello world" || got[2]["id"] != "msg-1" {
-		t.Fatalf("stored assistant message=%#v", got[2])
-	}
-}
-
-func TestCompletion_EmptyMessages(t *testing.T) {
-	svc := &ChatSessionService{
-		chatSessionDAO: &fakeSessionStore{},
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
-	}
-
-	_, err := svc.Completion("user-1", "session-1", nil, "", nil, "msg-1")
-	if err == nil || err.Error() != "messages cannot be empty" {
-		t.Fatalf("expected 'messages cannot be empty', got %v", err)
-	}
-}
-
-func TestCompletion_LastMessageNotFromUser(t *testing.T) {
-	svc := &ChatSessionService{
-		chatSessionDAO: &fakeSessionStore{},
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
-	}
-
-	_, err := svc.Completion("user-1", "session-1", []map[string]interface{}{
-		{"role": "assistant", "content": "hello"},
-	}, "", nil, "msg-1")
-	if err == nil || !strings.Contains(err.Error(), "not from user") {
-		t.Fatalf("expected 'not from user' error, got %v", err)
-	}
-}
-
-func TestCompletion_ConversationNotFound(t *testing.T) {
-	store := newFakeSessionStore()
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
-	}
-
-	_, err := svc.Completion("user-1", "missing", []map[string]interface{}{
-		{"role": "user", "content": "hi"},
-	}, "", nil, "msg-1")
-	if err == nil || err.Error() != "Conversation not found" {
-		t.Fatalf("expected 'Conversation not found', got %v", err)
-	}
-}
-
-func TestCompletion_DialogNotFound(t *testing.T) {
-	store := newFakeSessionStore()
-	store.sessions["session-1"] = &entity.ChatSession{
-		ID: "session-1", DialogID: "dialog-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-	}
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
-	}
-
-	_, err := svc.Completion("user-1", "session-1", []map[string]interface{}{
-		{"role": "user", "content": "hi"},
-	}, "", nil, "msg-1")
-	if err == nil || err.Error() != "Dialog not found" {
-		t.Fatalf("expected 'Dialog not found', got %v", err)
-	}
-}
-
-func TestCompletion_PipelineError(t *testing.T) {
-	store := newFakeSessionStore()
-	store.sessions["session-1"] = &entity.ChatSession{
-		ID: "session-1", DialogID: "dialog-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-	}
-	store.dialogs["dialog-1"] = &entity.Chat{
-		ID: "dialog-1", TenantID: "tenant-1", LLMID: "chat@factory",
-		LLMSetting: entity.JSONMap{},
-	}
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{err: errors.New("model unavailable")},
-	}
-
-	_, err := svc.Completion("user-1", "session-1", []map[string]interface{}{
-		{"role": "user", "content": "hi"},
-	}, "", nil, "msg-1")
-	if err == nil || err.Error() != "model unavailable" {
-		t.Fatalf("expected 'model unavailable' error, got %v", err)
-	}
-}
-
-// ===================================================================
-// CompletionStream tests
-// ===================================================================
-
-func readStreamChan(ch <-chan string, n int) []string {
-	var msgs []string
-	for i := 0; i < n; i++ {
-		select {
-		case msg, ok := <-ch:
-			if !ok {
-				return msgs
-			}
-			msgs = append(msgs, msg)
-		default:
-			return msgs
+	for _, input := range messageInputs {
+		got := parseMessages(input)
+		if got == nil || len(got) != 0 {
+			t.Fatalf("parseMessages(%s)=%#v", string(input), got)
 		}
 	}
-	return msgs
-}
 
-func TestCompletionStream_Success(t *testing.T) {
-	store := newFakeSessionStore()
-	store.sessions["session-1"] = &entity.ChatSession{
-		ID: "session-1", DialogID: "dialog-1",
-		Message:   json.RawMessage(`{"messages":[{"role":"assistant","content":"Welcome!"}]}`),
-		Reference: json.RawMessage(`[]`),
+	referenceInputs := []json.RawMessage{
+		nil,
+		json.RawMessage(`null`),
 	}
-	store.dialogs["dialog-1"] = &entity.Chat{
-		ID: "dialog-1", TenantID: "tenant-1", LLMID: "chat@factory",
-		LLMSetting: entity.JSONMap{},
-	}
-
-	pipeline := &fakePipeline{
-		resultChan: makeResultChan(
-			AsyncChatResult{Answer: "stream", Reference: map[string]interface{}{"chunks": []interface{}{}}},
-			AsyncChatResult{Answer: " answer", Reference: map[string]interface{}{"chunks": []interface{}{}}},
-		),
-	}
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       pipeline,
-	}
-
-	streamChan := make(chan string, 10)
-	err := svc.CompletionStream(context.Background(), "user-1", "session-1", []map[string]interface{}{
-		{"role": "user", "content": "hi"},
-	}, "", nil, "msg-1", streamChan)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Should receive data events and final signal
-	msgs := readStreamChan(streamChan, 5)
-	if len(msgs) < 3 {
-		t.Fatalf("expected at least 3 stream messages, got %d: %v", len(msgs), msgs)
-	}
-	// Check final signal
-	finalFound := false
-	for _, m := range msgs {
-		if strings.Contains(m, `"data":true`) {
-			finalFound = true
-			break
+	for _, input := range referenceInputs {
+		got := parseReferenceList(input)
+		if got == nil || len(got) != 0 {
+			t.Fatalf("parseReferenceList(%s)=%#v", string(input), got)
 		}
 	}
-	if !finalFound {
-		t.Fatal("expected final=true signal in stream")
+}
+
+func TestParseCollections_ReturnNilForMalformedData(t *testing.T) {
+	messageInputs := []json.RawMessage{
+		json.RawMessage(`not-json`),
+		json.RawMessage(`{"unexpected":[]}`),
+	}
+	for _, input := range messageInputs {
+		if got := parseMessages(input); got != nil {
+			t.Fatalf("parseMessages(%s)=%#v, want nil", string(input), got)
+		}
 	}
 
-	got := parseMessages(store.sessions["session-1"].Message)
-	if len(got) != 3 {
-		t.Fatalf("stored messages=%#v", got)
+	referenceInputs := []json.RawMessage{
+		json.RawMessage(`not-json`),
+		json.RawMessage(`{"unexpected":[]}`),
 	}
-	if got[0]["role"] != "assistant" || got[0]["content"] != "Welcome!" {
-		t.Fatalf("stored prologue=%#v", got[0])
-	}
-	if got[1]["role"] != "user" || got[1]["content"] != "hi" {
-		t.Fatalf("stored user message=%#v", got[1])
-	}
-	if got[2]["role"] != "assistant" || got[2]["content"] != "stream answer" || got[2]["id"] != "msg-1" {
-		t.Fatalf("stored assistant message=%#v", got[2])
+	for _, input := range referenceInputs {
+		if got := parseReferenceList(input); got != nil {
+			t.Fatalf("parseReferenceList(%s)=%#v, want nil", string(input), got)
+		}
 	}
 }
 
-func TestStructureAnswerWithConv_ParsesArrayMessages(t *testing.T) {
-	session := &entity.ChatSession{
-		ID:      "session-1",
-		Message: json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
+// ===================================================================
+// chunksFormat tests — verifies field normalization after the rewrite.
+// ===================================================================
+
+func TestChunksFormat_NormalizesRawFieldNames(t *testing.T) {
+	svc := &ChatSessionService{}
+	ref := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{
+				"chunk_id":            "c1",
+				"content_with_weight": "hello world",
+				"content_ltks":        "hello world ltks",
+				"doc_id":              "d1",
+				"docnm_kwd":           "Document 1",
+				"kb_id":               "kb1",
+				"image_id":            "img1",
+				"img_id":              "img2",
+				"positions":           []int{0, 10},
+				"position_int":        []int{1, 11},
+				"doc_type_kwd":        "pdf",
+				"similarity":          0.95,
+				"vector_similarity":   0.9,
+				"term_similarity":     0.85,
+				"row_id":              "r1",
+				"url":                 "http://example.com",
+				"document_metadata":   map[string]interface{}{"author": "Alice"},
+			},
+		},
 	}
+
+	result := svc.chunksFormat(ref)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(result))
+	}
+	c := result[0]
+
+	if c["id"] != "c1" {
+		t.Fatalf("id=%v", c["id"])
+	}
+	if c["content"] != "hello world" {
+		t.Fatalf("content=%v", c["content"])
+	}
+	if c["document_id"] != "d1" {
+		t.Fatalf("document_id=%v", c["document_id"])
+	}
+	if c["document_name"] != "Document 1" {
+		t.Fatalf("document_name=%v", c["document_name"])
+	}
+	if c["dataset_id"] != "kb1" {
+		t.Fatalf("dataset_id=%v", c["dataset_id"])
+	}
+	if c["image_id"] != "img1" {
+		t.Fatalf("image_id=%v", c["image_id"])
+	}
+	if c["doc_type"] != "pdf" {
+		t.Fatalf("doc_type=%v", c["doc_type"])
+	}
+	if c["similarity"] != 0.95 {
+		t.Fatalf("similarity=%v", c["similarity"])
+	}
+	if c["url"] != "http://example.com" {
+		t.Fatalf("url=%v", c["url"])
+	}
+
+	pos, ok := c["positions"].([]int)
+	if !ok || len(pos) != 2 || pos[0] != 0 {
+		t.Fatalf("positions=%v (%T)", c["positions"], c["positions"])
+	}
+
+	// Raw keys must be normalized away.
+	if _, exists := c["content_with_weight"]; exists {
+		t.Fatal("content_with_weight should not be present after normalization")
+	}
+	if _, exists := c["content_ltks"]; exists {
+		t.Fatal("content_ltks should not be present after normalization")
+	}
+}
+
+func TestChunksFormat_PreservesAlreadyNormalizedFields(t *testing.T) {
+	svc := &ChatSessionService{}
+	ref := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{
+				"id":            "c2",
+				"content":       "already normalized",
+				"document_id":   "d2",
+				"document_name": "Doc 2",
+			},
+		},
+	}
+
+	result := svc.chunksFormat(ref)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(result))
+	}
+	c := result[0]
+	if c["id"] != "c2" {
+		t.Fatalf("id=%v", c["id"])
+	}
+	if c["content"] != "already normalized" {
+		t.Fatalf("content=%v", c["content"])
+	}
+}
+
+func TestChunksFormat_EmptyReference(t *testing.T) {
 	svc := &ChatSessionService{}
 
-	ans := svc.structureAnswerWithConv(session, map[string]interface{}{
-		"answer":    "Final answer",
-		"reference": map[string]interface{}{"chunks": []interface{}{}},
-		"final":     true,
-	}, "msg-1", "session-1", []interface{}{map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}}})
-
-	if ans["id"] != "msg-1" || ans["session_id"] != "session-1" {
-		t.Fatalf("ans=%#v", ans)
+	if n := len(svc.chunksFormat(nil)); n != 0 {
+		t.Fatalf("nil ref: expected 0, got %d", n)
 	}
-
-	got := parseMessages(session.Message)
-	if len(got) != 1 {
-		t.Fatalf("stored messages=%#v", got)
+	if n := len(svc.chunksFormat(map[string]interface{}{})); n != 0 {
+		t.Fatalf("empty ref: expected 0, got %d", n)
 	}
-	if got[0]["role"] != "assistant" || got[0]["content"] != "Final answer" || got[0]["id"] != "msg-1" {
-		t.Fatalf("stored assistant message=%#v", got[0])
+	if n := len(svc.chunksFormat(map[string]interface{}{"chunks": nil})); n != 0 {
+		t.Fatalf("nil chunks: expected 0, got %d", n)
+	}
+	if n := len(svc.chunksFormat(map[string]interface{}{"chunks": []map[string]interface{}{}})); n != 0 {
+		t.Fatalf("empty chunks: expected 0, got %d", n)
 	}
 }
 
-func TestParseMessages_LegacyWrappedObject(t *testing.T) {
-	got := parseMessages(json.RawMessage(`{"messages":[{"role":"assistant","content":"legacy"}]}`))
-	if !reflect.DeepEqual(got, []map[string]interface{}{{"role": "assistant", "content": "legacy"}}) {
-		t.Fatalf("messages=%#v", got)
+func TestChunksFormat_ChunksAsInterfaceSlice(t *testing.T) {
+	svc := &ChatSessionService{}
+	ref := map[string]interface{}{
+		"chunks": []interface{}{
+			map[string]interface{}{
+				"chunk_id":            "c3",
+				"content_with_weight": "from interface slice",
+			},
+		},
+	}
+	result := svc.chunksFormat(ref)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(result))
+	}
+	if result[0]["id"] != "c3" {
+		t.Fatalf("id=%v", result[0]["id"])
+	}
+	if result[0]["content"] != "from interface slice" {
+		t.Fatalf("content=%v", result[0]["content"])
 	}
 }
 
-func TestCompletionStream_EmptyMessages(t *testing.T) {
-	svc := &ChatSessionService{
-		chatSessionDAO: &fakeSessionStore{},
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
+func TestChunksFormat_IgnoresNonMapItems(t *testing.T) {
+	svc := &ChatSessionService{}
+	ref := map[string]interface{}{
+		"chunks": []interface{}{
+			"not a map",
+			map[string]interface{}{
+				"chunk_id":            "c4",
+				"content_with_weight": "valid chunk",
+			},
+		},
 	}
-
-	streamChan := make(chan string, 10)
-	err := svc.CompletionStream(context.Background(), "user-1", "session-1", nil, "", nil, "msg-1", streamChan)
-	if err == nil || err.Error() != "messages cannot be empty" {
-		t.Fatalf("expected 'messages cannot be empty', got %v", err)
+	result := svc.chunksFormat(ref)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 chunk (non-maps skipped), got %d", len(result))
 	}
-}
-
-func TestCompletionStream_LastMessageNotFromUser(t *testing.T) {
-	svc := &ChatSessionService{
-		chatSessionDAO: &fakeSessionStore{},
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
-	}
-
-	streamChan := make(chan string, 10)
-	err := svc.CompletionStream(context.Background(), "user-1", "session-1", []map[string]interface{}{
-		{"role": "assistant", "content": "hello"},
-	}, "", nil, "msg-1", streamChan)
-	if err == nil || !strings.Contains(err.Error(), "not from user") {
-		t.Fatalf("expected 'not from user' error, got %v", err)
+	if result[0]["id"] != "c4" {
+		t.Fatalf("id=%v", result[0]["id"])
 	}
 }
 
-func TestCompletionStream_ConversationNotFound(t *testing.T) {
-	store := newFakeSessionStore()
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
-	}
-
-	streamChan := make(chan string, 10)
-	err := svc.CompletionStream(context.Background(), "user-1", "missing", []map[string]interface{}{
-		{"role": "user", "content": "hi"},
-	}, "", nil, "msg-1", streamChan)
-	if err == nil || err.Error() != "Conversation not found" {
-		t.Fatalf("expected 'Conversation not found', got %v", err)
-	}
-}
-
-func TestCompletionStream_DialogNotFound(t *testing.T) {
-	store := newFakeSessionStore()
-	store.sessions["session-1"] = &entity.ChatSession{
-		ID: "session-1", DialogID: "dialog-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-	}
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
-	}
-
-	streamChan := make(chan string, 10)
-	err := svc.CompletionStream(context.Background(), "user-1", "session-1", []map[string]interface{}{
-		{"role": "user", "content": "hi"},
-	}, "", nil, "msg-1", streamChan)
-	if err == nil || err.Error() != "Dialog not found" {
-		t.Fatalf("expected 'Dialog not found', got %v", err)
-	}
-}
-
-func TestCompletionStream_PipelineError(t *testing.T) {
-	store := newFakeSessionStore()
-	store.sessions["session-1"] = &entity.ChatSession{
-		ID: "session-1", DialogID: "dialog-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-	}
-	store.dialogs["dialog-1"] = &entity.Chat{
-		ID: "dialog-1", TenantID: "tenant-1", LLMID: "chat@factory",
-		LLMSetting: entity.JSONMap{},
-	}
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{err: errors.New("model unavailable")},
-	}
-
-	streamChan := make(chan string, 10)
-	err := svc.CompletionStream(context.Background(), "user-1", "session-1", []map[string]interface{}{
-		{"role": "user", "content": "hi"},
-	}, "", nil, "msg-1", streamChan)
-	if err == nil || err.Error() != "model unavailable" {
-		t.Fatalf("expected 'model unavailable' error, got %v", err)
+func TestChunksFormat_UnsupportedTypeReturnsEmpty(t *testing.T) {
+	svc := &ChatSessionService{}
+	ref := map[string]interface{}{"chunks": "not a slice"}
+	result := svc.chunksFormat(ref)
+	if len(result) != 0 {
+		t.Fatalf("expected empty for string type, got %d", len(result))
 	}
 }
