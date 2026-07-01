@@ -46,6 +46,8 @@ func NewClient(baseURL string) (*Client, error) {
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
+		DLALabels: DefaultDLALabels(),
+		TSRLabels: DefaultTSRLabels(),
 	}, nil
 }
 
@@ -91,9 +93,6 @@ func (c *Client) DLA(ctx context.Context, pageImage image.Image) ([]pdf.DLARegio
 			continue
 		}
 		labels := c.DLALabels
-		if labels == nil {
-			labels = DefaultDLALabels()
-		}
 		label := ""
 		if clsID := int(b[5]); clsID >= 0 && clsID < len(labels) {
 			label = labels[clsID]
@@ -123,9 +122,6 @@ func (c *Client) TSR(ctx context.Context, cropped image.Image) ([]pdf.TSRCell, e
 			continue
 		}
 		tlabels := c.TSRLabels
-		if tlabels == nil {
-			tlabels = DefaultTSRLabels()
-		}
 		label := ""
 		if len(b) >= 6 {
 			if cls := int(b[5]); cls >= 0 && cls < len(tlabels) {

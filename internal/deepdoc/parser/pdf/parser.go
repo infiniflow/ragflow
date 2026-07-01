@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"sync"
 
-	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -50,16 +49,6 @@ func RegisterTableBuilder(factory func(pdf.DocAnalyzer) pdf.TableBuilder) {
 func NewTableBuilderFor(doc pdf.DocAnalyzer) pdf.TableBuilder {
 	if tableBuilderFactory != nil {
 		return tableBuilderFactory(doc)
-	}
-	if c, ok := doc.(*inf.Client); ok {
-		clone := *c
-		if len(clone.DLALabels) == 0 {
-			clone.DLALabels = inf.DefaultDLALabels()
-		}
-		if len(clone.TSRLabels) == 0 {
-			clone.TSRLabels = inf.DefaultTSRLabels()
-		}
-		doc = &clone
 	}
 	return tbl.NewDeepDocTableBuilder(doc)
 }
