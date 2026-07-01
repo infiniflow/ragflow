@@ -213,7 +213,9 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 		modelMaxTokens := 8192
 		if llmModelConfig != nil {
-			if mt, ok := llmModelConfig["max_tokens"].(float64); ok {
+			// Treat max_tokens=0 as unset (default 8192) — mirrors
+			// PR #16413 Python fix: model_extra.get("max_tokens") or 8192
+			if mt, ok := llmModelConfig["max_tokens"].(float64); ok && int(mt) > 0 {
 				modelMaxTokens = int(mt)
 			}
 		}
@@ -2386,6 +2388,12 @@ func (s *ChatPipelineService) formatPrompt(template string, kwargs map[string]in
 // messageFitIn trims messages to fit within a token budget.
 // Mirrors Python's message_fit_in() in rag/prompts/generator.py.
 func (s *ChatPipelineService) messageFitIn(messages []map[string]interface{}, maxTokens int) (int, []map[string]interface{}) {
+	// Guard against zero or negative budget: treat as 8192 so
+	// non-empty messages are preserved. Mirrors PR #16413 fix in
+	// Python's message_fit_in.
+	if maxTokens <= 0 {
+		maxTokens = 8192
+	}
 	totalTokens := 0
 	var result []map[string]interface{}
 

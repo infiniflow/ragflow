@@ -275,7 +275,7 @@ func (dao *UserCanvasDAO) GetByUserAndTitle(userID, title, canvasCategory string
 
 // GetList get canvases list with pagination and filtering
 // Similar to Python UserCanvasService.get_list
-func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int, orderby string, desc bool, id, title string, canvasCategory string) ([]*entity.UserCanvas, error) {
+func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int, orderby string, desc bool, id, title string, canvasCategory, canvasType string) ([]*entity.UserCanvas, error) {
 
 	query := DB.Model(&entity.UserCanvas{}).
 		Where("user_id = ?", tenantID)
@@ -291,6 +291,10 @@ func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int,
 	} else {
 		// Default to agent category
 		query = query.Where("canvas_category = ?", "agent_canvas")
+	}
+
+	if canvasType != "" {
+		query = query.Where("canvas_type = ?", canvasType)
 	}
 
 	// Order by
@@ -383,6 +387,10 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page
 		base = base.Where("user_canvas.canvas_category = ?", canvasCategory)
 	} else {
 		base = base.Where("user_canvas.canvas_category = ?", "agent_canvas")
+	}
+
+	if canvasType != "" {
+		base = base.Where("canvas_type = ?", canvasType)
 	}
 
 	if keywords != "" {

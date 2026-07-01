@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
 )
@@ -313,6 +314,8 @@ func chatURLSuffixFor(driver string) models.URLSuffix {
 	switch strings.ToLower(driver) {
 	case "anthropic":
 		return models.URLSuffix{Chat: "v1/messages"}
+	case "ollama":
+		return models.URLSuffix{Chat: "api/chat"}
 	default:
 		return models.URLSuffix{Chat: "chat/completions"}
 	}
@@ -371,8 +374,29 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 	if p.UserPrompt == "" {
 		p.UserPrompt = p.SystemPrompt
 	}
+	// Collect sys.files from canvas globals and inject their
+	// content into prompts and the image list. Mirrors Python's
+	// _collect_sys_files and the injection path in
+	// _prepare_prompt_variables (llm.py:225-281).
+	var sysFileTexts []string
+	var sysFileImgs []string
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		sysFileTexts, sysFileImgs = collectSysFiles(state, p.SystemPrompt, p.UserPrompt)
+		if len(sysFileImgs) > 0 {
+			p.VisualFiles = dedupStrings(append(p.VisualFiles, sysFileImgs...))
+		}
+	}
 
 	msgs := buildMessagesWithImages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite)
+	// Inject sys.files text content into the last user message.
+	if len(sysFileTexts) > 0 {
+		joined := strings.Join(sysFileTexts, "\n\n")
+		if len(msgs) > 0 && msgs[len(msgs)-1].Role == schema.User {
+			msgs[len(msgs)-1].Content = msgs[len(msgs)-1].Content + "\n\n" + joined
+		} else {
+			msgs = append(msgs, schema.Message{Role: schema.User, Content: joined})
+		}
+	}
 	// Prepend the last N turns of conversation history from the
 	// canvas state. Mirrors Python's `_get_chat_template_kwargs` /
 	// `_fit_messages` path. When window size is 0 or history is
@@ -697,6 +721,51 @@ func extractDataImages(values []string) []string {
 	return out
 }
 
+// collectSysFiles splits sys.files from canvas globals into text parts
+// and image data URIs. When the system prompt or user prompt contains
+// {sys.files}, the caller should handle injection explicitly and this
+// function returns empty (matching Python's explicit template check in
+// _collect_sys_files).
+func collectSysFiles(state *runtime.CanvasState, sysPrompt, userPrompt string) (textParts, imageURIs []string) {
+	files, ok := state.Globals["sys.files"]
+	if !ok {
+		return nil, nil
+	}
+	fileList, ok := files.([]any)
+	if !ok || len(fileList) == 0 {
+		return nil, nil
+	}
+	if strings.Contains(sysPrompt, "{sys.files}") || strings.Contains(userPrompt, "{sys.files}") {
+		return nil, nil
+	}
+	for _, f := range fileList {
+		s, ok := f.(string)
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(s, "data:image/") {
+			imageURIs = append(imageURIs, s)
+		} else {
+			textParts = append(textParts, s)
+		}
+	}
+	return textParts, imageURIs
+}
+
+// dedupStrings returns the deduplicated slice in first-seen order.
+func dedupStrings(vals []string) []string {
+	seen := make(map[string]struct{}, len(vals))
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		if _, dup := seen[v]; dup {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
 // prependHistory inserts up to `window` prior turns from the canvas
 // history before the current system+user messages. Each history entry
 // is a {role, content} map; only the last `window` are kept, with
@@ -860,15 +929,131 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		p.MaxTokens = &i
 	}
 	if v, ok := stringFrom(inputs, "thinking"); ok {
-		// Only allow the two known sentinels through; an arbitrary
-		// string from the DSL is dropped to avoid surprising the LLM
-		// driver. Mirrors python llm.py:78-79 which gates on the
-		// same {"enabled","disabled"} set.
+		// Only allow "enabled" or "disabled"; arbitrary DSL
+		// strings are dropped. Python PR #15220 removed
+		// thinking from llm.py's gen_conf() — it is no
+		// longer forwarded to the model. The field is still
+		// parsed here to match the Python form parameter
+		// definition, but einoChatInvoker does not consume
+		// it, consistent with Python's behavior.
 		if v == "enabled" || v == "disabled" {
 			p.Thinking = v
 		}
 	}
 	return p
+}
+
+// effectiveContextLength returns maxLength if positive, otherwise 8192.
+// Mirrors Python's LLM.effective_context_length in PR #16413 — prevents
+// zero/negative context windows from silently trimming all prompt content.
+func effectiveContextLength(maxLength int) int {
+	if maxLength > 0 {
+		return maxLength
+	}
+	return 8192
+}
+
+// contextFitBudget returns 97% of the effective context length as the
+// token budget for message_fit_in. Mirrors Python's LLM.context_fit_budget
+// in PR #16413.
+func contextFitBudget(maxLength int) int {
+	return int(float64(effectiveContextLength(maxLength)) * 0.97)
+}
+
+// validateFittedMessages checks that the fitted message list has at least
+// a system and user message, and that the last message is a non-empty
+// user turn. Returns an error string on failure, empty string on success.
+// Mirrors Python's LLM.validate_fitted_messages in PR #16413.
+func validateFittedMessages(msgFit []schema.Message) string {
+	if len(msgFit) < 2 {
+		return "**ERROR**: message_fit_in produced insufficient messages for LLM"
+	}
+	last := msgFit[len(msgFit)-1]
+	if last.Role != schema.User || strings.TrimSpace(last.Content) == "" {
+		return "**ERROR**: LLM user message is empty after prompt fitting; check model max_tokens context setting"
+	}
+	return ""
+}
+
+// fitMessages calls message_fit_in semantics on the given messages and
+// validates that the result ends with a non-empty user turn. Returns the
+// fitted messages and an error string (empty on success).
+// Mirrors Python's LLM.fit_messages in PR #16413.
+func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]schema.Message, string) {
+	// Convert schema.Message → []map[string]interface{} for fitting.
+	all := make([]map[string]interface{}, 0, 1+len(msgs))
+	// Deep-copy msgs (mirrors Python's deepcopy) to avoid mutating caller's slice.
+	copied := make([]schema.Message, len(msgs))
+	for i, m := range msgs {
+		copied[i] = schema.Message{Role: m.Role, Content: m.Content}
+	}
+	// System prompt first.
+	all = append(all, map[string]interface{}{
+		"role":    "system",
+		"content": systemPrompt,
+	})
+	for _, m := range copied {
+		all = append(all, map[string]interface{}{
+			"role":    string(m.Role),
+			"content": m.Content,
+		})
+	}
+	// Use 97% of effective context as the token budget.
+	budget := contextFitBudget(maxLength)
+	_, fitted := messageFitInRaw(all, budget)
+
+	// Convert back to []schema.Message.
+	result := make([]schema.Message, 0, len(fitted))
+	for _, m := range fitted {
+		role, _ := m["role"].(string)
+		content, _ := m["content"].(string)
+		result = append(result, schema.Message{
+			Role:    schema.RoleType(role),
+			Content: content,
+		})
+	}
+	return result, validateFittedMessages(result)
+}
+
+// messageFitInRaw trims messages to fit within a token budget. Operates on
+// raw []map[string]interface{} (role + content). Returns the token count
+// used and the trimmed slice. Mirrors Python's message_fit_in in
+// rag/prompts/generator.py, with the zero-budget guard from PR #16413.
+func messageFitInRaw(messages []map[string]interface{}, maxTokens int) (int, []map[string]interface{}) {
+	if maxTokens <= 0 {
+		maxTokens = 8192
+	}
+	totalTokens := 0
+	var result []map[string]interface{}
+
+	// Always keep the system message first.
+	if len(messages) > 0 {
+		if role, _ := messages[0]["role"].(string); role == "system" {
+			if content, ok := messages[0]["content"].(string); ok {
+				sysTokens := tokenizer.NumTokensFromString(content)
+				if sysTokens <= maxTokens {
+					totalTokens = sysTokens
+					result = append(result, messages[0])
+				}
+			}
+		}
+	}
+
+	// Add user/assistant messages from the end, working backwards.
+	rest := messages[1:]
+	for i := len(rest) - 1; i >= 0; i-- {
+		m := rest[i]
+		content, _ := m["content"].(string)
+		tokens := tokenizer.NumTokensFromString(content)
+		if totalTokens+tokens > maxTokens {
+			break
+		}
+		totalTokens += tokens
+		// Prepend to maintain order.
+		result = append([]map[string]interface{}{m}, result...)
+	}
+
+	return totalTokens, result
 }
 
 // stringFrom extracts a string from inputs[name], accepting both string and
