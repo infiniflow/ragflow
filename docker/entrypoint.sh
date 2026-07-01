@@ -36,6 +36,7 @@ function usage() {
 ENABLE_WEBSERVER=1 # Default to enable web server
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
 ENABLE_DATASYNC=1
+ENABLE_DB_INIT=1
 ENABLE_MCP_SERVER=0
 ENABLE_ADMIN_SERVER=0 # Default close admin server
 INIT_SUPERUSER_ARGS="" # Default to not initialize superuser
@@ -81,6 +82,10 @@ for arg in "$@"; do
       ;;
     --disable-datasync)
       ENABLE_DATASYNC=0
+      shift
+      ;;
+    --disable-db-init)
+      ENABLE_DB_INIT=0
       shift
       ;;
     --enable-mcpserver)
@@ -270,7 +275,10 @@ function wait_for_server() {
 # Start components based on flags
 # -----------------------------------------------------------------------------
 ensure_docling
-ensure_db_init
+
+if [[ "${ENABLE_DB_INIT}" -eq 1 ]]; then
+  ensure_db_init
+fi
 
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
     echo "Running model provider table migrations..."
