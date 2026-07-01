@@ -369,6 +369,11 @@ setup_cgo_env() {
     # staticlibs that embed the Rust runtime; linking them together produces
     # duplicate rust_eh_personality symbols.
     if [ "$(uname -s)" = "Linux" ]; then
+        if ! command -v ld.lld >/dev/null 2>&1; then
+            echo -e "${RED}Error: ld.lld not found. Install with: sudo apt install lld-20${NC}"
+            echo "  lld is required to static-link Chromium-built pdfium (.eh_frame format)"
+            return 1
+        fi
         export CGO_LDFLAGS="$CGO_LDFLAGS \
             ${PDFIUM_STATIC_PREFIX}/lib/libc++.a \
             ${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a \
