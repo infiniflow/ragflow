@@ -83,8 +83,20 @@ const fetchDocumentImage = (url: string, authorization: string) => {
 };
 
 // Check if a URL requires authentication (internal API URLs)
+// Only attach Authorization headers to same-origin requests to prevent token leakage
 const isAuthRequiredUrl = (url: string): boolean => {
-  return url.startsWith('/api/v1/') || url.includes('/documents/images/');
+  try {
+    const parsedUrl = new URL(url, window.location.origin);
+    if (parsedUrl.origin !== window.location.origin) {
+      return false;
+    }
+    return (
+      parsedUrl.pathname.startsWith('/api/v1/') ||
+      parsedUrl.pathname.includes('/documents/images/')
+    );
+  } catch {
+    return false;
+  }
 };
 
 export const useDocumentImageUrl = (id: string, t?: string | number) => {
@@ -172,11 +184,14 @@ export const AuthenticatedImg = ({
   src,
   alt,
   className,
+  fallback,
   ...props
-}: React.ImgHTMLAttributes<HTMLImageElement>) => {
+}: React.ImgHTMLAttributes<HTMLImageElement> & {
+  fallback?: React.ReactNode;
+}) => {
   const authenticatedSrc = useAuthenticatedImageUrl(src);
 
-  if (!authenticatedSrc) return null;
+  if (!authenticatedSrc) return fallback ?? null;
 
   return (
     <img
