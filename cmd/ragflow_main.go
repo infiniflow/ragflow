@@ -175,56 +175,31 @@ func main() {
 		return
 	}
 
-	if arguments.versionFlag {
-		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
-		return
-	}
-
 	if arguments.helpFlag {
 		printHelp(arguments)
 		return
 	}
 
-	if err = runCommon(arguments); err != nil {
+	if arguments.versionFlag {
+		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
+		return
+	}
+
+	// Initialize local variables (runtime variables from Redis)
+	err = server.InitLocalVariables()
+	if err != nil {
+
 		fmt.Printf("Failed to start %s server: %v\n", *arguments.mode, err)
 		os.Exit(1)
 	}
 
-	switch *arguments.mode {
-	case "api":
-		if err = runAPI(arguments); err != nil {
-			fmt.Printf("Failed to start API server: %v\n", err)
-			os.Exit(1)
-		}
-	case "admin":
-		if err = runAdmin(arguments); err != nil {
-			fmt.Printf("Failed to start admin server: %v\n", err)
-			os.Exit(1)
-		}
-	case "ingestor":
-		if err = runIngestor(arguments); err != nil {
-			fmt.Printf("Failed to start ingestion worker: %v\n", err)
-			os.Exit(1)
-		}
-	default:
-		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
-		os.Exit(1)
-	}
-}
-
-func runCommon(args *serverArgs) error {
-
-	err := server.InitLocalVariables()
-	if err != nil {
-		return err
-	}
-
+	// Temporary logger initialization
 	var logFile string
-	serverName := fmt.Sprintf("%s_server", *args.mode)
+	serverName := fmt.Sprintf("%s_server", *arguments.mode)
 	logFile = fmt.Sprintf("%s.log", serverName)
 
 	logLevel := "info"
-	if args.debugLog {
+	if arguments.debugLog {
 		logLevel = "debug"
 	}
 
@@ -232,40 +207,45 @@ func runCommon(args *serverArgs) error {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
+	// Initialize configuration
 	var configPath string
-	if args.configPath != nil {
-		configPath = *args.configPath
+	if arguments.configPath != nil {
+		configPath = *arguments.configPath
 	}
 
 	if err = server.Init(configPath); err != nil {
 		common.Error("Failed to initialize configuration", err)
-		return err
+		os.Exit(1)
 	}
 
 	config := server.GetConfig()
 
-	switch *args.mode {
+	// override default port if provided
+	switch *arguments.mode {
 	case "api":
 		port := config.Server.Port
-		if args.port != nil {
-			port = *args.port
+		if arguments.port != nil {
+			port = *arguments.port
 			config.Server.Port = port
 		}
 		serverName = fmt.Sprintf("api_server_%d", port)
 
 	case "admin":
 		port := config.Admin.Port
-		if args.port != nil {
-			port = *args.port
-			config.Server.Port = port
+		if arguments.port != nil {
+			port = *arguments.port
+			config.Admin.Port = port
 		}
 		serverName = fmt.Sprintf("admin_server_%d", port)
 	case "ingestor":
 		uuid := common.GenerateUUID()
 		serverName = fmt.Sprintf("ingestor_server_%s", uuid)
 	default:
-		return fmt.Errorf("invalid server mode: %s", *args.mode)
+		common.Error("invalid server mode", errors.New(*arguments.mode))
+		os.Exit(1)
 	}
+
+	// set server name and log file path
 	server.SetServerName(serverName)
 	logFile = fmt.Sprintf("%s.log", serverName)
 
@@ -275,7 +255,7 @@ func runCommon(args *serverArgs) error {
 		logLevel = "info"
 	}
 
-	if args.debugLog {
+	if arguments.debugLog {
 		logLevel = "debug"
 	}
 
@@ -297,8 +277,9 @@ func runCommon(args *serverArgs) error {
 
 	server.SetLogger(common.Logger)
 
+	// Print all configuration settings
 	server.PrintAll()
-	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *args.mode, serverName, config.Server.Mode))
+	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, config.Server.Mode))
 
 	// Initialize database
 	if err = dao.InitDB(); err != nil {
@@ -331,9 +312,28 @@ func runCommon(args *serverArgs) error {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
-	args.name = serverName
+	arguments.name = serverName
 
-	return nil
+	switch *arguments.mode {
+	case "api":
+		if err = runAPI(arguments); err != nil {
+			fmt.Printf("Failed to start API server: %v\n", err)
+			os.Exit(1)
+		}
+	case "admin":
+		if err = runAdmin(arguments); err != nil {
+			fmt.Printf("Failed to start admin server: %v\n", err)
+			os.Exit(1)
+		}
+	case "ingestor":
+		if err = runIngestor(arguments); err != nil {
+			fmt.Printf("Failed to start ingestion worker: %v\n", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
+		os.Exit(1)
+	}
 }
 
 func runAdmin(args *serverArgs) error {
@@ -408,6 +408,83 @@ func runAdmin(args *serverArgs) error {
 	}
 
 	common.Info("Admin HTTP server exited")
+	return nil
+}
+
+func runIngestor(args *serverArgs) error {
+
+	ingestor := ingestion.NewIngestor(args.name, 2, []string{"pdf", "docx", "txt"})
+
+	go func() {
+		err := ingestor.Start()
+		if err != nil {
+			common.Error("Failed to initialize ingestor", err)
+			return
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
+
+	// Print all configuration settings
+	server.PrintAll()
+	common.Info("\n    ____                      __  _\n" +
+		"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
+		"   / // __ \\/ __ `/ _ \\/ ___/ __/ / __ \\/ __ \\   / ___/ _ \\/ ___/ | / / _ \\/ ___/\n" +
+		" _/ // / / / /_/ /  __(__  ) /_/ / /_/ / / / /  (__  )  __/ /   | |/ /  __/ /\n" +
+		"/___/_/ /_/\\__, /\\___/____/\\__/_/\\____/_/ /_/  /____/\\___/_/    |___/\\___/_/\n" +
+		"          /____/\n")
+
+	// Print RAGFlow version
+	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", utility.GetRAGFlowVersion()))
+
+	// Get local IP address for heartbeat reporting
+	localIP, err := utility.GetLocalIP()
+	if err != nil {
+		common.Fatal("fail to get local ip address")
+	}
+
+	// Initialize and start heartbeat reporter to admin server
+	service.AdminServiceClient = service.NewAdminClient(
+		common.Logger,
+		common.ServerTypeIngestion,
+		fmt.Sprintf("ingestor-%s", ingestor.ID()),
+		localIP,
+		-1,
+	)
+	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
+		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
+	} else {
+		// Start heartbeat reporter with 30 seconds interval
+		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
+			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
+				local.SetAdminStatus(0, "")
+			} else {
+				local.SetAdminStatus(1, err.Error())
+				//logger.Warn(fmt.Sprintf(err.Error()))
+			}
+		})
+		heartbeatReporter.Start()
+		defer heartbeatReporter.Stop()
+	}
+
+	// Wait for either an OS signal or a shutdown command from the admin
+	select {
+	case sig := <-quit:
+		common.Info("Received signal", zap.String("signal", sig.String()))
+		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", args.name))
+	case <-ingestor.ShutdownCh:
+		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", args.name))
+	}
+
+	// Create context with timeout for graceful shutdown
+	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	ingestor.Stop()
+
+	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", args.name))
+
 	return nil
 }
 
@@ -740,83 +817,6 @@ func buildAgentRunOptions() agentRunOptions {
 	out.runTracker = rt
 	common.Info("agent: redis-backed run infra installed (24h TTL on checkpoint store + run tracker; eino default serializer)")
 	return out
-}
-
-func runIngestor(args *serverArgs) error {
-
-	ingestor := ingestion.NewIngestor(args.name, 2, []string{"pdf", "docx", "txt"})
-
-	go func() {
-		err := ingestor.Start()
-		if err != nil {
-			common.Error("Failed to initialize ingestor", err)
-			return
-		}
-	}()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
-
-	// Print all configuration settings
-	server.PrintAll()
-	common.Info("\n    ____                      __  _\n" +
-		"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
-		"   / // __ \\/ __ `/ _ \\/ ___/ __/ / __ \\/ __ \\   / ___/ _ \\/ ___/ | / / _ \\/ ___/\n" +
-		" _/ // / / / /_/ /  __(__  ) /_/ / /_/ / / / /  (__  )  __/ /   | |/ /  __/ /\n" +
-		"/___/_/ /_/\\__, /\\___/____/\\__/_/\\____/_/ /_/  /____/\\___/_/    |___/\\___/_/\n" +
-		"          /____/\n")
-
-	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", utility.GetRAGFlowVersion()))
-
-	// Get local IP address for heartbeat reporting
-	localIP, err := utility.GetLocalIP()
-	if err != nil {
-		common.Fatal("fail to get local ip address")
-	}
-
-	// Initialize and start heartbeat reporter to admin server
-	service.AdminServiceClient = service.NewAdminClient(
-		common.Logger,
-		common.ServerTypeIngestion,
-		fmt.Sprintf("ingestor-%s", ingestor.ID()),
-		localIP,
-		-1,
-	)
-	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
-		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
-	} else {
-		// Start heartbeat reporter with 30 seconds interval
-		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
-				local.SetAdminStatus(0, "")
-			} else {
-				local.SetAdminStatus(1, err.Error())
-				//logger.Warn(fmt.Sprintf(err.Error()))
-			}
-		})
-		heartbeatReporter.Start()
-		defer heartbeatReporter.Stop()
-	}
-
-	// Wait for either an OS signal or a shutdown command from the admin
-	select {
-	case sig := <-quit:
-		common.Info("Received signal", zap.String("signal", sig.String()))
-		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", args.name))
-	case <-ingestor.ShutdownCh:
-		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", args.name))
-	}
-
-	// Create context with timeout for graceful shutdown
-	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	ingestor.Stop()
-
-	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", args.name))
-
-	return nil
 }
 
 // configureTTSSynthesizer installs the audio.ModelProviderFunc
