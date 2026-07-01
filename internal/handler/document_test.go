@@ -44,6 +44,7 @@ type fakeDocumentService struct {
 	stopErr         error
 	thumbnails      map[string]string
 	thumbnailErr    error
+	thumbnailUserID string
 	thumbnailDocIDs []string
 	metadataSummary map[string]interface{}
 	metadataErr     error
@@ -148,7 +149,8 @@ func (f *fakeDocumentService) ListDocumentsByDatasetID(kbID string, page, pageSi
 func (f *fakeDocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
 	return map[string]interface{}{}, common.CodeSuccess, nil
 }
-func (f *fakeDocumentService) GetThumbnails(docIDs []string) (map[string]string, error) {
+func (f *fakeDocumentService) GetThumbnails(userID string, docIDs []string) (map[string]string, error) {
+	f.thumbnailUserID = userID
 	f.thumbnailDocIDs = append([]string(nil), docIDs...)
 	return f.thumbnails, f.thumbnailErr
 }
@@ -933,6 +935,9 @@ func TestGetThumbnail_Success(t *testing.T) {
 	}
 	if len(fake.thumbnailDocIDs) != 2 || fake.thumbnailDocIDs[0] != "doc-1" || fake.thumbnailDocIDs[1] != "doc-2" {
 		t.Fatalf("unexpected docIDs: %#v", fake.thumbnailDocIDs)
+	}
+	if fake.thumbnailUserID != "user-1" {
+		t.Fatalf("unexpected userID: %s", fake.thumbnailUserID)
 	}
 
 	var resp map[string]interface{}

@@ -864,11 +864,21 @@ func (s *DocumentService) ListDocuments(page, pageSize int) ([]*DocumentResponse
 	return responses, total, nil
 }
 
-func (s *DocumentService) GetThumbnails(docIDs []string) (map[string]string, error) {
+func (s *DocumentService) GetThumbnails(userID string, docIDs []string) (map[string]string, error) {
 	if len(docIDs) == 0 {
 		return map[string]string{}, nil
 	}
-	documents, err := s.documentDAO.GetByIDs(docIDs)
+
+	tenantIDs := []string{userID}
+	if userID != "" {
+		ids, err := dao.NewUserTenantDAO().GetTenantIDsByUserID(userID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch user tenants: %w", err)
+		}
+		tenantIDs = append(tenantIDs, ids...)
+	}
+
+	documents, err := s.documentDAO.GetByIDsAndTenantIDs(docIDs, tenantIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch document thumbnails: %w", err)
 	}

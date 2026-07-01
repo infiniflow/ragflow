@@ -2063,12 +2063,27 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
-	if err := db.AutoMigrate(&entity.Document{}); err != nil {
+	if err := db.AutoMigrate(&entity.Document{}, &entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("migrate: %v", err)
+	}
+
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestKB(t, "kb-2", "tenant-1", 0, 0, 0)
+	insertTestKB(t, "kb-other", "tenant-other", 0, 0, 0)
+	if err := db.Create(&entity.UserTenant{
+		ID:        "user-1_tenant-1",
+		UserID:    "user-1",
+		TenantID:  "tenant-1",
+		Role:      "owner",
+		InvitedBy: "user-1",
+		Status:    sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("seed user tenant: %v", err)
 	}
 
 	base64Thumb := "data:image/png;base64,AAAA"
 	fileThumb := "thumb.png"
+	otherThumb := "secret.png"
 	if err := db.Create(&entity.Document{
 		ID:           "doc-file",
 		KbID:         "kb-1",
@@ -2095,9 +2110,22 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed base64 thumbnail doc: %v", err)
 	}
+	if err := db.Create(&entity.Document{
+		ID:           "doc-other",
+		KbID:         "kb-other",
+		Thumbnail:    &otherThumb,
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "user-other",
+		Suffix:       "png",
+	}).Error; err != nil {
+		t.Fatalf("seed other tenant thumbnail doc: %v", err)
+	}
 
 	svc := testDocumentService(t)
-	got, err := svc.GetThumbnails([]string{"doc-file", "doc-base64", "missing-doc"})
+	got, err := svc.GetThumbnails("user-1", []string{"doc-file", "doc-base64", "doc-other", "missing-doc"})
 	if err != nil {
 		t.Fatalf("GetThumbnails failed: %v", err)
 	}
@@ -2110,5 +2138,8 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 	}
 	if _, ok := got["missing-doc"]; ok {
 		t.Fatalf("did not expect missing doc in result: %#v", got)
+	}
+	if _, ok := got["doc-other"]; ok {
+		t.Fatalf("did not expect other tenant doc in result: %#v", got)
 	}
 }

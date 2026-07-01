@@ -52,7 +52,7 @@ type documentServiceIface interface {
 	ListDocuments(page, pageSize int) ([]*service.DocumentResponse, int64, error)
 	ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
 	GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*service.DocumentResponse, int64, error)
-	GetThumbnails(docIDs []string) (map[string]string, error)
+	GetThumbnails(userID string, docIDs []string) (map[string]string, error)
 	GetDocumentImage(imageID string) ([]byte, error)
 	GetMetadataSummary(kbID string, docIDs []string) (map[string]interface{}, error)
 	SetDocumentMetadata(docID string, meta map[string]interface{}) error
@@ -168,7 +168,7 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 
 // GetThumbnail Get thumbnails for documents.
 func (h *DocumentHandler) GetThumbnail(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
@@ -180,7 +180,7 @@ func (h *DocumentHandler) GetThumbnail(c *gin.Context) {
 		return
 	}
 
-	result, err := h.documentService.GetThumbnails(docIDs)
+	result, err := h.documentService.GetThumbnails(user.ID, docIDs)
 	if err != nil {
 		jsonError(c, common.CodeServerError, err.Error())
 		return
