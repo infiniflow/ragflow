@@ -32,10 +32,11 @@ import (
 // registrar because each carries a different <param_name>
 // (dialog_id vs agent_id) and would otherwise register paths under
 // the wrong group.
-func RegisterChatbotRoutes(g *gin.RouterGroup, h *handler.BotHandler) {
+func RegisterChatbotRoutes(g *gin.RouterGroup, mw gin.HandlerFunc, h *handler.BotHandler) {
 	if g == nil || h == nil {
 		return
 	}
+	g.Use(mw)
 	g.POST("/:dialog_id/completions", h.ChatbotCompletion)
 	g.GET("/:dialog_id/info", h.ChatbotInfo)
 }
@@ -45,10 +46,12 @@ func RegisterChatbotRoutes(g *gin.RouterGroup, h *handler.BotHandler) {
 //
 //	@manager.route("/agentbots/<agent_id>/completions")   bot_api.py:157
 //	@manager.route("/agentbots/<agent_id>/inputs")        bot_api.py:239
-func RegisterAgentbotRoutes(g *gin.RouterGroup, h *handler.BotHandler) {
+//	@manager.route("/agentbots/<shared_id>/logs/<message_id>")  bot_api.py:251
+func RegisterAgentbotRoutes(g *gin.RouterGroup, mw gin.HandlerFunc, h *handler.BotHandler) {
 	if g == nil || h == nil {
 		return
 	}
 	g.POST("/:agent_id/completions", h.AgentbotCompletion)
 	g.GET("/:agent_id/inputs", h.AgentbotInputs)
+	g.GET("/:agent_id/logs/:message_id", h.GetAgentbotLogs)
 }
