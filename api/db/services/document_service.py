@@ -1212,7 +1212,7 @@ def get_pending_task_count(priority=None):
             .join(Document, on=(Task.doc_id == Document.id))
             .where(
                 (Task.progress == 0)
-                & (Document.run != TaskStatus.CANCEL.value)
+                & ((Document.run.is_null(True)) | (Document.run != TaskStatus.CANCEL.value))
                 & (Document.progress >= 0)
                 & (Document.status == StatusEnum.VALID.value)
             )
