@@ -81,7 +81,7 @@ func (f *fakeDocumentService) UploadDocumentInfoByURL(userID, rawURL string) (ma
 	return nil, common.CodeSuccess, nil
 }
 
-func (f *fakeDocumentService) GetDocumentArtifact(filename string) (*service.ArtifactResponse, error) {
+func (f *fakeDocumentService) GetDocumentArtifact(filename, _ string) (*service.ArtifactResponse, error) {
 	if filename == "error.txt" {
 		return nil, service.ErrArtifactNotFound
 	}
