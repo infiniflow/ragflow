@@ -581,10 +581,9 @@ func TestParser_ConcurrentSafety(t *testing.T) {
 
 func TestParseRaw_ClampsFromPage(t *testing.T) {
 	// A negative FromPage should be treated as page 0.
+	// Only page 0 has content so we can verify clamping worked.
 	eng := &MockEngine{NumPages: 3, Chars: map[int][]pdf.TextChar{
 		0: {{Text: "page0", X0: 100, X1: 200, Top: 100, Bottom: 120}},
-		1: {{Text: "page1", X0: 100, X1: 200, Top: 100, Bottom: 120}},
-		2: {{Text: "page2", X0: 100, X1: 200, Top: 100, Bottom: 120}},
 	}}
 	mockDLA := &MockDocAnalyzer{Healthy: true}
 	cfg := pdf.DefaultParserConfig()
@@ -612,11 +611,16 @@ func TestParseRaw_ZeroZoom_NoNaN(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseRaw: %v", err)
 	}
+	foundPosition := false
 	for _, s := range result.Sections {
 		for _, pos := range s.Positions {
+			foundPosition = true
 			if math.IsNaN(pos.Left) || math.IsNaN(pos.Top) {
 				t.Error("Zoom=0 produced NaN coordinates")
 			}
 		}
+	}
+	if !foundPosition {
+		t.Fatal("expected at least one position to validate")
 	}
 }
