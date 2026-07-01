@@ -167,6 +167,15 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 			}
 		}
 	}
+	var tags []string
+	if raw := c.Query("tags"); raw != "" {
+		for _, tag := range strings.Split(raw, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag != "" {
+				tags = append(tags, tag)
+			}
+		}
+	}
 
 	result, code, err := h.agentService.ListAgents(
 		user.ID,
@@ -177,6 +186,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		desc,
 		ownerIDs,
 		canvasCategory,
+		tags,
 	)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -682,16 +692,23 @@ func (h *AgentHandler) Prompts(c *gin.Context) {
 	})
 }
 
-// ListAgentTags GET /api/v1/agents/tags — out of scope (no test depends on
-// it); return 501 to keep the surface honest.
+// ListAgentTags list agent tags.
 func (h *AgentHandler) ListAgentTags(c *gin.Context) {
-	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
 		jsonError(c, code, msg)
 		return
 	}
+
+	rows, errCode, err := h.agentService.ListAgentTags(user.ID, strings.TrimSpace(c.Query("canvas_category")))
+	if err != nil {
+		jsonError(c, errCode, err.Error())
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
-		"data":    []string{},
+		"data":    rows,
 		"message": "success",
 	})
 }

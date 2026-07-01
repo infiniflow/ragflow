@@ -280,8 +280,7 @@ func TestBuildCancelFunc_CASFailStateDone(t *testing.T) {
 func TestDeriveAgentToolCancelContext(t *testing.T) {
 	t.Run("Shallow/DoesNotPropagateSafePoint", func(t *testing.T) {
 		parent := newCancelContext()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		child := parent.deriveAgentToolCancelContext(ctx)
 		defer child.markDone()
 		parent.triggerCancel(CancelAfterChatModel)
@@ -293,8 +292,7 @@ func TestDeriveAgentToolCancelContext(t *testing.T) {
 	})
 	t.Run("Shallow/ImmediateDoesNotPropagate", func(t *testing.T) {
 		parent := newCancelContext()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		child := parent.deriveAgentToolCancelContext(ctx)
 		defer child.markDone()
 		parent.triggerImmediate()
@@ -306,8 +304,7 @@ func TestDeriveAgentToolCancelContext(t *testing.T) {
 	})
 	t.Run("Shallow/GrandchildNoPropagation", func(t *testing.T) {
 		a := newCancelContext()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		b := a.deriveAgentToolCancelContext(ctx)
 		c := b.deriveAgentToolCancelContext(ctx)
 		t.Cleanup(func() { c.markDone(); b.markDone() })
@@ -370,8 +367,7 @@ func TestDeriveAgentToolCancelContext(t *testing.T) {
 	})
 	t.Run("Recursive/GrandchildPropagation", func(t *testing.T) {
 		a := newCancelContext()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		b := a.deriveAgentToolCancelContext(ctx)
 		c := b.deriveAgentToolCancelContext(ctx)
 		t.Cleanup(func() { c.markDone(); b.markDone() })
@@ -428,8 +424,7 @@ func TestDeriveAgentToolCancelContext_Race(t *testing.T) {
 	})
 	t.Run("ChildCompletesBeforeEscalation", func(t *testing.T) {
 		parent := newCancelContext()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		child := parent.deriveAgentToolCancelContext(ctx)
 		parent.triggerCancel(CancelAfterChatModel)
 		time.Sleep(50 * time.Millisecond)
@@ -444,8 +439,7 @@ func TestDeriveAgentToolCancelContext_Race(t *testing.T) {
 	})
 	t.Run("MultipleChildren_PartialCompletion", func(t *testing.T) {
 		parent := newCancelContext()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		child1 := parent.deriveAgentToolCancelContext(ctx)
 		child2 := parent.deriveAgentToolCancelContext(ctx)
 		parent.triggerCancel(CancelAfterChatModel)
@@ -1271,8 +1265,7 @@ func TestAgentCancelFunc_MultiCall_TimeoutDeadlineJoinUsesAbsoluteTime(t *testin
 
 func TestCancelContext_RecursiveGraceBoundary(t *testing.T) {
 	a := newCancelContext()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	b := a.deriveAgentToolCancelContext(ctx)
 	c := b.deriveAgentToolCancelContext(ctx)
 	t.Cleanup(func() { c.markDone(); b.markDone() })
