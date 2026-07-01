@@ -18,6 +18,8 @@ package dao
 
 import (
 	"errors"
+	"regexp"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -53,6 +55,60 @@ func userCanvasOrderClause(orderby string, desc bool) string {
 		return orderby + " DESC"
 	}
 	return orderby + " ASC"
+}
+
+func userCanvasQualifiedOrderClause(orderby string, desc bool) string {
+	if _, ok := userCanvasOrderableColumns[orderby]; !ok {
+		orderby = "create_time"
+	}
+	order := "user_canvas." + orderby
+	if desc {
+		return order + " DESC"
+	}
+	return order + " ASC"
+}
+
+func escapeSQLLike(s string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return replacer.Replace(s)
+}
+
+func splitUserCanvasTags(raw string) []string {
+	parts := strings.Split(raw, ",")
+	tags := make([]string, 0, len(parts))
+	for _, tag := range parts {
+		tag = strings.TrimSpace(tag)
+		if tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return tags
+}
+
+func applyUserCanvasTagFilter(query *gorm.DB, tags []string) *gorm.DB {
+	if len(tags) == 0 {
+		return query
+	}
+	tagQuery := DB.Session(&gorm.Session{NewDB: true})
+	hasTag := false
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		pattern := "(^|,)[[:space:]]*" + regexp.QuoteMeta(tag) + "[[:space:]]*(,|$)"
+		cond := DB.Where("user_canvas.tags REGEXP ?", pattern)
+		if !hasTag {
+			tagQuery = tagQuery.Where(cond)
+			hasTag = true
+		} else {
+			tagQuery = tagQuery.Or(cond)
+		}
+	}
+	if !hasTag {
+		return query
+	}
+	return query.Where(tagQuery)
 }
 
 var ErrUserCanvasNotFound = errors.New("user_canvas: not found or access denied")
@@ -126,6 +182,51 @@ func (dao *UserCanvasDAO) GetByIDForUser(canvasID, userID string, tenantIDs []st
 // Update update user canvas
 func (dao *UserCanvasDAO) Update(userCanvas *entity.UserCanvas) error {
 	return DB.Save(userCanvas).Error
+}
+
+// Accessible reports whether canvasID is reachable by userID under
+// the same owner-or-team rule used by GetByIDForUser. Used by
+// downstream authorization gates (e.g. the sandbox-artifact
+// download endpoint introduced by PR #16169) to confirm a caller
+// may reach a given canvas before exposing its runtime artifacts.
+// Returns false on any error (not found, DB failure, or empty
+// inputs) so callers can treat a denial as a 404-equivalent and
+// avoid leaking whether the canvas exists at all.
+//
+// Tenant scoping (PR review round 5, security review #1): unlike
+// the previous form, a `permission = "team"` canvas is only
+// reachable when userID is a member of one of the owner's tenants.
+// Passing a nil/empty tenantIDs list effectively disables the
+// team-canvas branch (no team canvas can match), which is the
+// safe default — a caller that forgot to plumb the tenant list
+// cannot accidentally bypass team-membership scoping.
+//
+// Callers that don't have a tenant list handy (rare; most
+// handlers derive it from the user context) should call
+// GetTenantIDsByUserID first and pass the result.
+func (dao *UserCanvasDAO) Accessible(canvasID, userID string, tenantIDs []string) bool {
+	if canvasID == "" || userID == "" {
+		return false
+	}
+	// Owner can always access their own canvas regardless of permission.
+	// Team-permission canvases are reachable only when the caller is a
+	// member of one of the owner's tenants — mirrors the predicate in
+	// GetByIDForUser / ListByTenantIDs.
+	ownerOrTeam := DB.Where("user_id = ?", userID)
+	if len(tenantIDs) > 0 {
+		ownerOrTeam = ownerOrTeam.Or(
+			"user_id IN ? AND permission = ?", tenantIDs, "team",
+		)
+	}
+	var canvas entity.UserCanvas
+	err := DB.Select("id").
+		Where("id = ?", canvasID).
+		Where(ownerOrTeam).
+		First(&canvas).Error
+	if err != nil {
+		return false
+	}
+	return canvas.ID == canvasID
 }
 
 // Delete delete user canvas
@@ -226,54 +327,127 @@ func (dao *UserCanvasDAO) GetAllCanvasesByTenantIDs(tenantIDs []string, userID s
 	return results, err
 }
 
+// UserCanvasListItem is the joined row returned by ListByTenantIDs.
+type UserCanvasListItem struct {
+	ID             string  `gorm:"column:id"`
+	Avatar         *string `gorm:"column:avatar"`
+	Title          *string `gorm:"column:title"`
+	Description    *string `gorm:"column:description"`
+	Permission     string  `gorm:"column:permission"`
+	UserID         string  `gorm:"column:user_id"`
+	TenantID       string  `gorm:"column:tenant_id"`
+	Nickname       *string `gorm:"column:nickname"`
+	TenantAvatar   *string `gorm:"column:tenant_avatar"`
+	CanvasType     *string `gorm:"column:canvas_type"`
+	CanvasCategory string  `gorm:"column:canvas_category"`
+	Tags           string  `gorm:"column:tags"`
+	CreateTime     *int64  `gorm:"column:create_time"`
+	UpdateTime     *int64  `gorm:"column:update_time"`
+}
+
 // ListByTenantIDs lists agent canvases accessible to the given owner IDs with optional
-// keyword filter, pagination, and ordering.
+// keyword filter, tag filter, pagination, and ordering.
 // Mirrors Python UserCanvasService.get_by_tenant_ids (list route only).
-func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string, canvasCategory string) ([]*entity.UserCanvas, int64, error) {
+func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string, canvasCategory string, tags []string) ([]*UserCanvasListItem, int64, error) {
 	if len(ownerIDs) == 0 {
 		return nil, 0, nil
 	}
 
 	// Canvases owned by any of the ownerIDs that are "team"-permission, plus all owned by userID.
 	base := DB.Model(&entity.UserCanvas{}).
+		Select(`user_canvas.id,
+			user_canvas.avatar,
+			user_canvas.title,
+			user_canvas.description,
+			user_canvas.permission,
+			user_canvas.user_id,
+			user_canvas.user_id AS tenant_id,
+			user.nickname,
+			user.avatar AS tenant_avatar,
+			user_canvas.canvas_type,
+			user_canvas.canvas_category,
+			user_canvas.tags,
+			user_canvas.create_time,
+			user_canvas.update_time`).
+		Joins("LEFT JOIN user ON user_canvas.user_id = user.id").
 		Where(
-			DB.Where("user_id IN ? AND permission = ?", ownerIDs, "team").
-				Or("user_id = ?", userID),
-		)
+			DB.Where("user_canvas.user_id IN ? AND user_canvas.permission = ?", ownerIDs, "team").
+				Or("user_canvas.user_id = ?", userID),
+			"user_canvas.user_id IN ?",
+			ownerIDs,
+		).Where(
+		DB.Where("user_canvas.permission = ?", "team").
+			Or("user_canvas.user_id = ?", userID))
 
 	if canvasCategory != "" {
-		base = base.Where("canvas_category = ?", canvasCategory)
+		base = base.Where("user_canvas.canvas_category = ?", canvasCategory)
 	} else {
-		base = base.Where("canvas_category = ?", "agent_canvas")
+		base = base.Where("user_canvas.canvas_category = ?", "agent_canvas")
 	}
 
 	if keywords != "" {
 		like := "%" + keywords + "%"
-		base = base.Where("title LIKE ?", like)
+		base = base.Where("user_canvas.title LIKE ?", like)
 	}
+	base = applyUserCanvasTagFilter(base, tags)
 
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	order := userCanvasOrderClause(orderby, desc)
+	order := userCanvasQualifiedOrderClause(orderby, desc)
 	// codeql[go/sql-injection] False positive: `order` was just derived
-	// from userCanvasOrderClause above, which validates `orderby`
+	// from userCanvasQualifiedOrderClause above, which validates `orderby`
 	// against userCanvasOrderableColumns (a closed allowlist) and
 	// defaults to "create_time" on miss. The string spliced into
-	// Order() is always one of a fixed set of column names.
+	// Order() is always one of a fixed set of qualified column names.
 	query := base.Order(order)
 
 	if page > 0 && pageSize > 0 {
 		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
 	}
 
-	var canvases []*entity.UserCanvas
-	if err := query.Find(&canvases).Error; err != nil {
+	var canvases []*UserCanvasListItem
+	if err := query.Scan(&canvases).Error; err != nil {
 		return nil, 0, err
 	}
 	return canvases, total, nil
+}
+
+// ListTags returns tag usage counts across canvases visible to userID.
+func (dao *UserCanvasDAO) ListTags(ownerIDs []string, userID string, canvasCategory string) (map[string]int, error) {
+	if len(ownerIDs) == 0 {
+		return map[string]int{}, nil
+	}
+
+	query := DB.Model(&entity.UserCanvas{}).
+		Select("user_canvas.tags").
+		Where(
+			DB.Where("user_canvas.user_id IN ? AND user_canvas.permission = ?", ownerIDs, "team").
+				Or("user_canvas.user_id = ?", userID),
+		)
+
+	if canvasCategory != "" {
+		query = query.Where("user_canvas.canvas_category = ?", canvasCategory)
+	} else {
+		query = query.Where("user_canvas.canvas_category = ?", "agent_canvas")
+	}
+
+	var rows []struct {
+		Tags string `gorm:"column:tags"`
+	}
+	if err := query.Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	counts := make(map[string]int)
+	for _, row := range rows {
+		for _, tag := range splitUserCanvasTags(row.Tags) {
+			counts[tag]++
+		}
+	}
+	return counts, nil
 }
 
 // GetByCanvasID get user canvas by canvas ID (alias for GetByID)

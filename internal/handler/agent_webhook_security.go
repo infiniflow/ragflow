@@ -36,6 +36,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -75,8 +76,26 @@ const (
 	jwtReservedClaims = "exp,sub,aud,iss,nbf,iat"
 )
 
-// validateWebhookSecurity is the orchestrator. Empty/nil cfg → no-op
-// (matches agent_api.py:1607 "No security config → allowed by default").
+// errWebhookFailClosed is the sentinel returned from BOTH the
+// "missing security block" branch and the "auth_type=none without
+// allow_anonymous opt-in" branch of validateWebhookSecurity.
+// Sharing one error prevents a probe from distinguishing the two
+// states (and therefore from learning whether a canvas has any
+// security config at all) — the whole point of PR #14890's
+// fail-closed default. PR review round 5 (#2) — the previous
+// form leaked that distinction via two different messages.
+var errWebhookFailClosed = errors.New(
+	"webhook security is required. Set allow_anonymous to true to permit unauthenticated webhooks.",
+)
+
+// validateWebhookSecurity is the orchestrator.
+//
+// PR #14890 changed the python default: empty/nil security cfg
+// is no longer "allowed by default" — it must be a non-empty
+// dict, and `auth_type == "none"` requires an explicit
+// `allow_anonymous: true` opt-in. The previous "fail open" default
+// let unauthenticated callers hit any webhook by simply omitting
+// the security block.
 //
 // Sub-validators run in the python-defined order:
 //  1. validateMaxBodySize
@@ -89,7 +108,7 @@ func validateWebhookSecurity(
 	canvasID string,
 ) error {
 	if len(securityCfg) == 0 {
-		return nil
+		return errWebhookFailClosed
 	}
 	if err := validateMaxBodySize(c, securityCfg); err != nil {
 		return err
@@ -275,11 +294,20 @@ func validateRateLimit(canvasID string, cfg map[string]any) error {
 	return nil
 }
 
-// validateAuth dispatches on auth_type. Empty cfg or auth_type=="none"
-// → allow (matches agent_api.py:1621).
+// validateAuth dispatches on auth_type. `auth_type == "none"`
+// (or unset) used to allow every request by default — a fail-open
+// security posture. PR #14890 closed that gap: anonymous
+// webhook access is now allowed only when the operator sets
+// `allow_anonymous: true` on the security block (mirrors
+// python agent_api.py:1659-1664).
 func validateAuth(c *gin.Context, cfg map[string]any) error {
 	authType, _ := cfg["auth_type"].(string)
 	if authType == "" || authType == "none" {
+		if !isTruthyAllowAnonymous(cfg) {
+			// Same sentinel as the missing-security-block branch
+			// above; see errWebhookFailClosed. PR review round 5 (#2).
+			return errWebhookFailClosed
+		}
 		return nil
 	}
 	switch authType {
@@ -291,6 +319,38 @@ func validateAuth(c *gin.Context, cfg map[string]any) error {
 		return validateJWTAuth(c, cfg)
 	}
 	return fmt.Errorf("unsupported auth_type: %s", authType)
+}
+
+// isTruthyAllowAnonymous mirrors python agent_api.py:_is_truthy
+// applied to cfg["allow_anonymous"]. Returns true only when the
+// value is an explicit boolean true, a non-zero int, or one of
+// {"1","true","yes","on"} (case-insensitive, trimmed). Anything
+// else (including the key being absent) is falsy — closing the
+// implicit-anonymous gap.
+func isTruthyAllowAnonymous(cfg map[string]any) bool {
+	if cfg == nil {
+		return false
+	}
+	v, ok := cfg["allow_anonymous"]
+	if !ok {
+		return false
+	}
+	switch x := v.(type) {
+	case bool:
+		return x
+	case int:
+		return x != 0
+	case int64:
+		return x != 0
+	case float64:
+		return x != 0
+	case string:
+		switch strings.ToLower(strings.TrimSpace(x)) {
+		case "1", "true", "yes", "on":
+			return true
+		}
+	}
+	return false
 }
 
 // validateTokenAuth mirrors python agent_api.py:1725-1733.

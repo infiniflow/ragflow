@@ -191,6 +191,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowUsersSummaryCommand(cmd)
 	case "admin_show_users_activity_command":
 		return c.AdminShowUsersActivityCommand(cmd)
+	case "admin_show_users_plan_command":
+		return c.AdminShowUsersPlanCommand(cmd)
 	case "admin_list_users_command":
 		return c.AdminListUsersCommand(cmd)
 	case "admin_list_users_condition_command":
@@ -360,7 +362,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APIShowProviderInstanceTaskCommand(cmd)
 	case "api_show_provider_model":
 		return c.CommonShowProviderModelCommand(cmd)
-	case "list_provider_models":
+	case "api_list_provider_models":
 		return c.CommonListModelsCommand(cmd)
 	case "api_list_provider_instance_models":
 		return c.CommonListInstanceModelsCommand(cmd)
@@ -417,6 +419,11 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.EmbedUserTextCommand(cmd)
 	case "api_rarank_user_document":
 		return c.APIRerankUserDocumentCommand(cmd)
+	case "chat completions":
+		return c.ChatCompletions(cmd)
+	case "chat completions help":
+		printChatCompletionsHelp()
+		return nil, nil
 	case "tts_user_command":
 		return c.APITTSUserCommand(cmd)
 	case "asr_user_command":
@@ -442,7 +449,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "api_list_default_models":
 		return c.APIListDefaultModelsCommand(cmd)
 	case "api_parse_documents":
-		return c.APIParseDocumentsUserCommand(cmd)
+		return c.APIParseDocumentsCommand(cmd)
 	case "api_start_ingestion":
 		return c.APIStartIngestionCommand(cmd)
 	case "api_stop_ingestion":

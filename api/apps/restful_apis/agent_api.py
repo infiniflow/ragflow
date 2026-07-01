@@ -71,6 +71,20 @@ from peewee import MySQLDatabase, PostgresqlDatabase
 _background_tasks: Set[asyncio.Task] = set()
 
 
+def _canvas_json_default(obj):
+    """Fallback serializer for canvas SSE events.
+
+    Agent components store functools.partial objects as deferred streaming
+    handles (see llm.py, agent_with_tools.py, message.py). These leak into
+    SSE event dicts via component input/output propagation and are not
+    JSON-serializable. This handler converts them to None so that downstream
+    consumers never receive opaque ``str(partial(...))`` representations.
+    """
+    if callable(obj):
+        return None
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 def _require_canvas_access_sync(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -312,7 +326,7 @@ async def _run_workflow_session(
                                 }
                             )
                     final_ans = ans
-                    yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+                    yield "data:" + json.dumps(ans, ensure_ascii=False, default=_canvas_json_default) + "\n\n"
 
                 if final_ans:
                     if "data" not in final_ans or not isinstance(final_ans["data"], dict):
@@ -323,6 +337,20 @@ async def _run_workflow_session(
                         final_ans["data"]["structured"] = structured_output
                     if trace_items:
                         final_ans["data"]["trace"] = trace_items
+                else:
+                    # Canvas produced no events (e.g. empty query). Still
+                    # surface the session_id so the client can resume the
+                    # conversation — without it the SSE stream is just a
+                    # bare [DONE] (fixes #15169).
+                    logging.info(
+                        "empty agent output - returning session_id (agent_id=%s session_id=%s stream=%s)",
+                        agent_id, session_id, True,
+                    )
+                    yield (
+                        "data:"
+                        + json.dumps({"session_id": session_id, "data": {}}, ensure_ascii=False)
+                        + "\n\n"
+                    )
                 await persist_workflow_session()
             except Exception as exc:
                 logging.exception(exc)
@@ -366,8 +394,16 @@ async def _run_workflow_session(
         return get_result(data=f"**ERROR**: {str(exc)}")
 
     if not final_ans:
+        # Canvas produced no events (e.g. caller sent an empty query). The
+        # API contract still promises a session_id back so the client can
+        # resume the conversation — return it instead of an empty dict
+        # (fixes #15169).
+        logging.info(
+            "empty agent output - returning session_id (agent_id=%s session_id=%s stream=%s)",
+            agent_id, session_id, False,
+        )
         await commit_runtime_replica()
-        return get_result(data={})
+        return get_result(data={"session_id": session_id})
 
     if "data" not in final_ans or not isinstance(final_ans["data"], dict):
         final_ans["data"] = {}
@@ -619,6 +655,7 @@ def prompts():
 def list_agents(tenant_id):
     keywords = request.args.get("keywords", "")
     canvas_category = request.args.get("canvas_category")
+    canvas_type = request.args.get("canvas_type")
     owner_ids = [item for item in request.args.get("owner_ids", "").strip().split(",") if item]
     tags = [item for item in request.args.get("tags", "").strip().split(",") if item]
 
@@ -653,6 +690,7 @@ def list_agents(tenant_id):
         keywords,
         canvas_category,
         tags,
+        canvas_type,
     )
 
     return get_json_result(data={"canvas": canvas, "total": total})
@@ -1549,8 +1587,24 @@ async def agent_chat_completion(tenant_id, agent_id=None):
     if req.get("stream", True):
 
         async def generate():
+            emitted = False
             async for ans in _iter_session_completion_events(tenant_id, agent_id, req, return_trace):
-                yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+                emitted = True
+                yield "data:" + json.dumps(ans, ensure_ascii=False, default=_canvas_json_default) + "\n\n"
+            if not emitted:
+                # Parity with the new-session SSE path: if the canvas yields
+                # no events on an existing session (e.g. empty query), still
+                # echo the session_id so clients can recover it instead of
+                # seeing only a bare [DONE] (fixes #15169).
+                logging.info(
+                    "empty agent output - returning session_id (agent_id=%s session_id=%s stream=%s)",
+                    agent_id, session_id, True,
+                )
+                yield (
+                    "data:"
+                    + json.dumps({"session_id": session_id, "data": {}}, ensure_ascii=False)
+                    + "\n\n"
+                )
             yield "data:[DONE]\n\n"
 
         return _build_sse_response(generate())
@@ -1587,7 +1641,15 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             return get_result(data=f"**ERROR**: {str(exc)}")
 
     if not final_ans:
-        return get_result(data={})
+        # Same contract as the new-session path: even when the canvas
+        # emits nothing (e.g. empty query against an existing session),
+        # echo the session_id back so the client can keep using it
+        # (fixes #15169).
+        logging.info(
+            "empty agent output - returning session_id (agent_id=%s session_id=%s stream=%s)",
+            agent_id, session_id, False,
+        )
+        return get_result(data={"session_id": session_id})
 
     if "data" not in final_ans or not isinstance(final_ans["data"], dict):
         final_ans["data"] = {}
