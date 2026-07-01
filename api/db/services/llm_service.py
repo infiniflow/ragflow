@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import asyncio
+import base64
 import inspect
 import logging
 import queue
@@ -299,6 +300,51 @@ class LLMBundle(LLM4Tenant):
         else:
             return {k: v for k, v in kwargs.items() if k in allowed_params}
 
+    @staticmethod
+    def _images_to_b64(images):
+        """Normalize attached images to base64/data-URI strings.
+
+        Raw attachments coming from ``FileService.get_files(raw=True)`` are
+        bytes blobs; the multimodal folder expects base64 or data-URI strings.
+        """
+        normalized = []
+        for img in images:
+            if isinstance(img, (bytes, bytearray)):
+                normalized.append(base64.b64encode(bytes(img)).decode("utf-8"))
+            else:
+                normalized.append(str(img))
+        return normalized
+
+    @staticmethod
+    def _fold_images_if_unsupported(base_fn, history, kwargs, factory=""):
+        """Embed ``images`` into the chat history when the model can't take them as a kwarg.
+
+        Base (OpenAI-compatible) chat models accept images only as multimodal
+        message content, not as an ``images=`` argument — forwarding the kwarg
+        reaches the provider SDK and raises
+        ``...create() got an unexpected keyword argument 'images'`` (#15966).
+
+        When the target model does not declare an explicit ``images`` parameter,
+        the attached images are folded into the last user message and the kwarg
+        is dropped. CV models that consume ``images`` natively are left as-is.
+        """
+        images = kwargs.get("images")
+        if not images:
+            kwargs.pop("images", None)
+            return
+        try:
+            if "images" in inspect.signature(base_fn).parameters:
+                return
+        except (TypeError, ValueError):
+            logging.warning("LLMBundle: cannot inspect signature of %r; leaving 'images' kwarg as-is, which may reach the provider SDK.", base_fn)
+            return
+        # Local import to avoid a circular dependency (dialog_service imports LLMBundle).
+        from api.db.services.dialog_service import convert_last_user_msg_to_multimodal
+
+        logging.debug("LLMBundle: target model has no 'images' parameter; folding %d image(s) into the chat message and dropping the kwarg.", len(images))
+        convert_last_user_msg_to_multimodal(history, LLMBundle._images_to_b64(images), factory)
+        kwargs.pop("images", None)
+
     def _run_coroutine_sync(self, coro):
         try:
             asyncio.get_running_loop()
@@ -375,6 +421,8 @@ class LLMBundle(LLM4Tenant):
         else:
             raise RuntimeError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
 
+        self._fold_images_if_unsupported(base_fn, history, kwargs, self.model_config.get("llm_factory", ""))
+
         generation = None
         if self.langfuse:
             generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="chat", model=self.model_config["llm_name"], input={"system": system, "history": history})
@@ -415,6 +463,8 @@ class LLMBundle(LLM4Tenant):
             stream_fn = getattr(self.mdl, "async_chat_streamly", None)
         else:
             raise RuntimeError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
+
+        self._fold_images_if_unsupported(stream_fn, history, kwargs, self.model_config.get("llm_factory", ""))
 
         generation = None
         if self.langfuse:
@@ -458,6 +508,8 @@ class LLMBundle(LLM4Tenant):
             stream_fn = getattr(self.mdl, "async_chat_streamly", None)
         else:
             raise RuntimeError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
+
+        self._fold_images_if_unsupported(stream_fn, history, kwargs, self.model_config.get("llm_factory", ""))
 
         generation = None
         if self.langfuse:
