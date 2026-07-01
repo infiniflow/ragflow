@@ -1960,8 +1960,13 @@ func (s *DocumentService) SetDocumentMetadata(docID string, meta map[string]inte
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
 
-	// Update metadata using the document engine (merges with existing)
-	err = s.docEngine.UpdateMetadata(nil, docID, doc.KbID, meta, tenantID)
+	_, err = s.docEngine.InsertMetadata(nil, []map[string]interface{}{
+		{
+			"id":          docID,
+			"kb_id":       doc.KbID,
+			"meta_fields": meta,
+		},
+	}, tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}

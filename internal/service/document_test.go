@@ -279,6 +279,24 @@ func (m *metadataDocEngine) UpdateMetadata(_ context.Context, docID string, data
 	return nil
 }
 
+func (m *metadataDocEngine) InsertMetadata(_ context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
+	for _, doc := range metadata {
+		docID, _ := doc["id"].(string)
+		kbID, _ := doc["kb_id"].(string)
+		metaFields, _ := doc["meta_fields"].(map[string]interface{})
+		if docID == "" || kbID == "" {
+			continue
+		}
+		dup := make(map[string]interface{}, len(metaFields))
+		for k, v := range metaFields {
+			dup[k] = v
+		}
+		m.records[docID] = dup
+		m.docKBs[docID] = kbID
+	}
+	return []string{}, nil
+}
+
 func (m *metadataDocEngine) DeleteMetadata(_ context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
 	docID, _ := condition["id"].(string)
 	if docID == "" {
@@ -1608,6 +1626,28 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	}
 	if engine.updateCalled {
 		t.Fatal("metadata update should not run after delete failure")
+	}
+}
+
+func TestSetDocumentMetadataInsertsMetadataRow(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 0, 0)
+
+	engine := newMetadataDocEngine(map[string]map[string]interface{}{}, map[string]string{})
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = &MetadataService{kbDAO: dao.NewKnowledgebaseDAO(), docEngine: engine}
+
+	if err := svc.SetDocumentMetadata("doc-1", map[string]interface{}{"author": "alice"}); err != nil {
+		t.Fatalf("SetDocumentMetadata failed: %v", err)
+	}
+	if got := engine.records["doc-1"]["author"]; got != "alice" {
+		t.Fatalf("author = %#v, want alice", got)
+	}
+	if got := engine.docKBs["doc-1"]; got != "kb-1" {
+		t.Fatalf("kb_id = %q, want kb-1", got)
 	}
 }
 

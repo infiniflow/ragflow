@@ -136,7 +136,7 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 	// Execute bulk request
 	req := esapi.BulkRequest{
 		Body:    bytes.NewReader(buf.Bytes()),
-		Refresh: "false",
+		Refresh: "wait_for",
 	}
 
 	res, err := req.Do(ctx, e.client)
