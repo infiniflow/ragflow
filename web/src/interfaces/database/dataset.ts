@@ -242,3 +242,23 @@ export interface IArtifactPage {
   source_chunk_ids: string[];
   source_doc_ids: string[];
 }
+
+export interface IArtifactGraphEntity {
+  slug: string;
+  name: string;
+  aliases: string[];
+  description: string;
+  type: string;
+  weight: number;
+  source_chunk_ids?: string[];
+}
+
+export interface IArtifactGraphRelation {
+  from: string;
+  to: string;
+}
+
+export interface IArtifactGraph {
+  entities: IArtifactGraphEntity[];
+  relations: IArtifactGraphRelation[];
+}

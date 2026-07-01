@@ -48,6 +48,10 @@ export interface IFetchArtifactListRequestParams {
   keywords?: string;
 }
 
+export interface IFetchArtifactGraphRequestParams {
+  node?: string;
+}
+
 export interface IUpdateArtifactPageRequestBody {
   content_md: string;
   comments: string;

@@ -130,6 +130,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/artifacts`,
   getArtifactPage: (datasetId: string, pageType: string, slug: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/${pageType}/${slug}`,
+  getArtifactGraph: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/graph`,
   getDatasetSkillTree: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/skills`,
   getDatasetSkillPage: (datasetId: string, skillKwd: string) =>

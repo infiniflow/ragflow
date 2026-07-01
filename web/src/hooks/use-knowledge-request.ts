@@ -4,6 +4,7 @@ import { ParseType } from '@/constants/knowledge';
 import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
   IArtifact,
+  IArtifactGraph,
   IArtifactPage,
   IDataset,
   IDatasetListResult,
@@ -13,12 +14,14 @@ import {
   ITestingResult,
 } from '@/interfaces/database/dataset';
 import {
+  IFetchArtifactGraphRequestParams,
   ITestRetrievalRequestBody,
   IUpdateArtifactPageRequestParams,
 } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
   deleteKnowledgeGraph,
+  getArtifactGraph,
   getArtifactPage,
   getKbDetail,
   getKnowledgeGraph,
@@ -58,6 +61,7 @@ export const enum KnowledgeApiAction {
   FetchKnowledgeGraph = 'fetchKnowledgeGraph',
   FetchArtifactList = 'fetchArtifactList',
   FetchArtifactPage = 'fetchArtifactPage',
+  FetchArtifactGraph = 'fetchArtifactGraph',
   UpdateArtifactPage = 'updateArtifactPage',
   FetchMetadata = 'fetchMetadata',
   FetchMetadataKeys = 'fetchMetadataKeys',
@@ -487,6 +491,30 @@ export function useFetchKnowledgeGraph() {
     queryFn: async () => {
       const { data } = await getKnowledgeGraph(knowledgeBaseId);
       return data?.data;
+    },
+  });
+
+  return { data, loading };
+}
+
+const artifactGraphKeys = {
+  graph: (datasetId: string, params?: IFetchArtifactGraphRequestParams) =>
+    [KnowledgeApiAction.FetchArtifactGraph, datasetId, params?.node] as const,
+};
+
+export function useFetchArtifactGraph(
+  params?: IFetchArtifactGraphRequestParams,
+) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<IArtifactGraph>({
+    queryKey: artifactGraphKeys.graph(knowledgeBaseId, params),
+    initialData: { entities: [], relations: [] } as IArtifactGraph,
+    enabled: !!knowledgeBaseId,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getArtifactGraph(knowledgeBaseId, params);
+      return data?.data ?? { entities: [], relations: [] };
     },
   });
 

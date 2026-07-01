@@ -398,6 +398,11 @@ export const getArtifactPage = (
   slug: string,
 ) => request.get(api.getArtifactPage(datasetId, pageType, slug));
 
+export const getArtifactGraph = (
+  datasetId: string,
+  params?: { node?: string },
+) => request.get(api.getArtifactGraph(datasetId), { params });
+
 export const updateArtifactPage = (
   datasetId: string,
   pageType: string,

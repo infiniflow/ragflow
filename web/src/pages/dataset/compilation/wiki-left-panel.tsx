@@ -6,10 +6,10 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 
 import {
+  useFetchArtifactGraph,
   useFetchArtifactList,
-  useFetchKnowledgeGraph,
 } from '@/hooks/use-knowledge-request';
-import KnowledgeForceGraph from './knowledge-force-graph';
+import ArtifactForceGraph from './artifact-force-graph';
 
 export enum LeftPanelTab {
   Contents = 'contents',
@@ -116,7 +116,7 @@ export function WikiLeftPanel({
   onSelectArtifact,
 }: LeftPanelProps) {
   const { t } = useTranslation();
-  const { data } = useFetchKnowledgeGraph();
+  const { data } = useFetchArtifactGraph();
 
   return (
     <aside className="size-full flex flex-col">
@@ -139,7 +139,16 @@ export function WikiLeftPanel({
           />
         )}
         {tab === LeftPanelTab.Graph && (
-          <KnowledgeForceGraph data={data?.graph} show />
+          <ArtifactForceGraph
+            data={data}
+            show
+            mapNodeToValue={(node) => ({
+              slug: node.slug,
+              title: node.name,
+              page_type: node.type,
+            })}
+            onNodeClick={onSelectArtifact}
+          />
         )}
       </div>
     </aside>
