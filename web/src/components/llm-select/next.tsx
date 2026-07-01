@@ -43,7 +43,7 @@ const NextInnerLLMSelect = forwardRef<
 
     const modelTypes = useMemo(() => {
       if (filter === LlmModelType.Chat) {
-        return ['chat'];
+        return ['chat', ...ttsModel];
       } else if (filter === LlmModelType.Image2text) {
         return ['vision', ...ttsModel];
       } else {

@@ -24,10 +24,10 @@ const (
 	ModelTypeChat ModelType = "chat"
 	// ModelTypeEmbedding embedding model
 	ModelTypeEmbedding ModelType = "embedding"
-	// ModelTypeSpeech2Text speech to text model
-	ModelTypeSpeech2Text ModelType = "speech2text"
-	// ModelTypeImage2Text image to text model
-	ModelTypeImage2Text ModelType = "image2text"
+	// ModelTypeSpeech2Text speech to text model (ASR)
+	ModelTypeSpeech2Text ModelType = "asr"
+	// ModelTypeImage2Text image to text model (Vision)
+	ModelTypeImage2Text ModelType = "vision"
 	// ModelTypeRerank rerank model
 	ModelTypeRerank ModelType = "rerank"
 	// ModelTypeTTS text to speech model

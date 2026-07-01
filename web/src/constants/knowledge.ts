@@ -74,8 +74,8 @@ export const settledModelVariableMap = {
 export enum LlmModelType {
   Embedding = 'embedding',
   Chat = 'chat',
-  Image2text = 'image2text',
-  Speech2text = 'speech2text',
+  Image2text = 'vision',
+  Speech2text = 'asr',
   Rerank = 'rerank',
   TTS = 'tts',
   Ocr = 'ocr',
