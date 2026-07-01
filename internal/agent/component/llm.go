@@ -392,7 +392,31 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 	if len(sysFileTexts) > 0 {
 		joined := strings.Join(sysFileTexts, "\n\n")
 		if len(msgs) > 0 && msgs[len(msgs)-1].Role == schema.User {
-			msgs[len(msgs)-1].Content = msgs[len(msgs)-1].Content + "\n\n" + joined
+			last := &msgs[len(msgs)-1]
+			if len(last.UserInputMultiContent) > 0 {
+				inserted := false
+				for i := range last.UserInputMultiContent {
+					if last.UserInputMultiContent[i].Type == schema.ChatMessagePartTypeText {
+						if last.UserInputMultiContent[i].Text != "" {
+							last.UserInputMultiContent[i].Text += "\n\n" + joined
+						} else {
+							last.UserInputMultiContent[i].Text = joined
+						}
+						inserted = true
+						break
+					}
+				}
+				if !inserted {
+					last.UserInputMultiContent = append([]schema.MessageInputPart{{
+						Type: schema.ChatMessagePartTypeText,
+						Text: joined,
+					}}, last.UserInputMultiContent...)
+				}
+			} else if last.Content != "" {
+				last.Content += "\n\n" + joined
+			} else {
+				last.Content = joined
+			}
 		} else {
 			msgs = append(msgs, schema.Message{Role: schema.User, Content: joined})
 		}
@@ -406,6 +430,23 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
 			msgs = prependHistory(msgs, state.History, p.MessageHistoryWindowSize)
 		}
+	}
+	// Apply message fitting (trim to context window) after all
+	// prompt/history/sys.files augmentation and before invoking the
+	// LLM. Mirrors Python's message_fit_in in PR #16413.
+	{
+		maxCtx := 0
+		if p.MaxTokens != nil {
+			maxCtx = *p.MaxTokens
+		}
+		// The system prompt is already embedded as the first message
+		// in msgs by buildMessagesWithImages; pass "" so fitMessages
+		// does not duplicate it.
+		fitted, fitErr := fitMessages("", msgs, maxCtx)
+		if fitErr != "" {
+			return map[string]any{"content": fitErr}, nil
+		}
+		msgs = fitted
 	}
 	inv := getDefaultChatInvoker()
 	// Param-level retry override. When MaxRetries OR
@@ -960,16 +1001,21 @@ func contextFitBudget(maxLength int) int {
 	return int(float64(effectiveContextLength(maxLength)) * 0.97)
 }
 
-// validateFittedMessages checks that the fitted message list has at least
-// a system and user message, and that the last message is a non-empty
-// user turn. Returns an error string on failure, empty string on success.
-// Mirrors Python's LLM.validate_fitted_messages in PR #16413.
+// validateFittedMessages checks that the fitted message list is non-empty
+// and the last message is a non-empty user turn (content or multi-modal
+// parts). Returns an error string on failure, empty string on success.
+// Python requires len >= 2 because the system prompt is always injected
+// upstream; Go allows len >= 1 because the system message may be embedded
+// inside msgs (from buildMessagesWithImages) or absent entirely.
 func validateFittedMessages(msgFit []schema.Message) string {
-	if len(msgFit) < 2 {
+	if len(msgFit) == 0 {
 		return "**ERROR**: message_fit_in produced insufficient messages for LLM"
 	}
 	last := msgFit[len(msgFit)-1]
-	if last.Role != schema.User || strings.TrimSpace(last.Content) == "" {
+	if last.Role != schema.User {
+		return "**ERROR**: LLM last message is not a user turn after prompt fitting; check model max_tokens context setting"
+	}
+	if strings.TrimSpace(last.Content) == "" && len(last.UserInputMultiContent) == 0 {
 		return "**ERROR**: LLM user message is empty after prompt fitting; check model max_tokens context setting"
 	}
 	return ""
@@ -985,18 +1031,39 @@ func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 	// Deep-copy msgs (mirrors Python's deepcopy) to avoid mutating caller's slice.
 	copied := make([]schema.Message, len(msgs))
 	for i, m := range msgs {
-		copied[i] = schema.Message{Role: m.Role, Content: m.Content}
+		cloned := slices.Clone(m.UserInputMultiContent)
+		for j, p := range cloned {
+			if p.Image != nil {
+				imgCopy := *p.Image
+				if p.Image.URL != nil {
+					u := *p.Image.URL
+					imgCopy.URL = &u
+				}
+				cloned[j].Image = &imgCopy
+			}
+		}
+		copied[i] = schema.Message{
+			Role:                  m.Role,
+			Content:               m.Content,
+			UserInputMultiContent: cloned,
+		}
 	}
-	// System prompt first.
-	all = append(all, map[string]interface{}{
-		"role":    "system",
-		"content": systemPrompt,
-	})
-	for _, m := range copied {
+	// System prompt first (when not already embedded in msgs).
+	if systemPrompt != "" {
 		all = append(all, map[string]interface{}{
+			"role":    "system",
+			"content": systemPrompt,
+		})
+	}
+	for _, m := range copied {
+		entry := map[string]interface{}{
 			"role":    string(m.Role),
 			"content": m.Content,
-		})
+		}
+		if len(m.UserInputMultiContent) > 0 {
+			entry["user_input_multi_content"] = m.UserInputMultiContent
+		}
+		all = append(all, entry)
 	}
 	// Use 97% of effective context as the token budget.
 	budget := contextFitBudget(maxLength)
@@ -1007,10 +1074,14 @@ func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 	for _, m := range fitted {
 		role, _ := m["role"].(string)
 		content, _ := m["content"].(string)
-		result = append(result, schema.Message{
+		msg := schema.Message{
 			Role:    schema.RoleType(role),
 			Content: content,
-		})
+		}
+		if multi, ok := m["user_input_multi_content"].([]schema.MessageInputPart); ok {
+			msg.UserInputMultiContent = multi
+		}
+		result = append(result, msg)
 	}
 	return result, validateFittedMessages(result)
 }
@@ -1018,42 +1089,82 @@ func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 // messageFitInRaw trims messages to fit within a token budget. Operates on
 // raw []map[string]interface{} (role + content). Returns the token count
 // used and the trimmed slice. Mirrors Python's message_fit_in in
-// rag/prompts/generator.py, with the zero-budget guard from PR #16413.
+// rag/prompts/generator.py.
+//
+// Strategy:
+//  1. If everything fits → return as-is.
+//  2. Keep all system messages + the last user/assistant message.
+//  3. If still too large, trim content proportionally:
+//     - System dominates (>80%) → preserve last message first.
+//     - Otherwise → preserve system first.
 func messageFitInRaw(messages []map[string]interface{}, maxTokens int) (int, []map[string]interface{}) {
 	if maxTokens <= 0 {
 		maxTokens = 8192
 	}
-	totalTokens := 0
-	var result []map[string]interface{}
 
-	// Always keep the system message first.
-	if len(messages) > 0 {
-		if role, _ := messages[0]["role"].(string); role == "system" {
-			if content, ok := messages[0]["content"].(string); ok {
-				sysTokens := tokenizer.NumTokensFromString(content)
-				if sysTokens <= maxTokens {
-					totalTokens = sysTokens
-					result = append(result, messages[0])
-				}
-			}
-		}
+	// Step 1: everything fits.
+	totalTokens := countAllTokens(messages)
+	if totalTokens < maxTokens {
+		return totalTokens, messages
 	}
 
-	// Add user/assistant messages from the end, working backwards.
-	rest := messages[1:]
-	for i := len(rest) - 1; i >= 0; i-- {
-		m := rest[i]
-		content, _ := m["content"].(string)
-		tokens := tokenizer.NumTokensFromString(content)
-		if totalTokens+tokens > maxTokens {
-			break
+	// Step 2: keep all system messages + the last message.
+	result := make([]map[string]interface{}, 0)
+	for _, m := range messages {
+		if role, _ := m["role"].(string); role == "system" {
+			result = append(result, m)
 		}
-		totalTokens += tokens
-		// Prepend to maintain order.
-		result = append([]map[string]interface{}{m}, result...)
+	}
+	if len(messages) > 1 {
+		result = append(result, messages[len(messages)-1])
 	}
 
-	return totalTokens, result
+	totalTokens = countAllTokens(result)
+	if totalTokens < maxTokens {
+		return totalTokens, result
+	}
+
+	// Step 3: trim content to fit.
+	ll := tokenizer.NumTokensFromString(stringContent(result[0]))
+	ll2 := tokenizer.NumTokensFromString(stringContent(result[len(result)-1]))
+	total := ll + ll2
+	if total <= 0 {
+		return 0, result
+	}
+
+	if len(result) == 1 {
+		result[0]["content"] = tokenizer.TrimContentToTokenLimit(stringContent(result[0]), maxTokens)
+		return countAllTokens(result), result
+	}
+
+	if float64(ll)/float64(total) > 0.8 {
+		preservedLast := min(ll2, maxTokens)
+		result[len(result)-1]["content"] = tokenizer.TrimContentToTokenLimit(stringContent(result[len(result)-1]), preservedLast)
+		remaining := max(0, maxTokens-preservedLast)
+		result[0]["content"] = tokenizer.TrimContentToTokenLimit(stringContent(result[0]), remaining)
+	} else {
+		preservedSystem := min(ll, maxTokens)
+		result[0]["content"] = tokenizer.TrimContentToTokenLimit(stringContent(result[0]), preservedSystem)
+		remaining := max(0, maxTokens-preservedSystem)
+		result[len(result)-1]["content"] = tokenizer.TrimContentToTokenLimit(stringContent(result[len(result)-1]), remaining)
+	}
+
+	return countAllTokens(result), result
+}
+
+// countAllTokens returns the total token count across all messages.
+func countAllTokens(messages []map[string]interface{}) int {
+	total := 0
+	for _, m := range messages {
+		total += tokenizer.NumTokensFromString(stringContent(m))
+	}
+	return total
+}
+
+// stringContent extracts the "content" string from a message map, or "".
+func stringContent(m map[string]interface{}) string {
+	s, _ := m["content"].(string)
+	return s
 }
 
 // stringFrom extracts a string from inputs[name], accepting both string and

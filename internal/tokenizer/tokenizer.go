@@ -533,3 +533,22 @@ func NumTokensFromString(s string) int {
 	}
 	return len(enc.Encode(s, nil, nil))
 }
+
+// TrimContentToTokenLimit truncates s to at most limit tokens using the
+// cl100k_base encoder. Mirrors Python's trim_content helper in
+// rag/prompts/generator.py: encoder.decode(encoder.encode(content)[:limit]).
+// Returns the original string if it already fits, or the encoder is unavailable.
+func TrimContentToTokenLimit(s string, limit int) string {
+	if limit < 0 {
+		limit = 0
+	}
+	enc, err := getCL100KEncoder()
+	if err != nil {
+		return s
+	}
+	tokens := enc.Encode(s, nil, nil)
+	if len(tokens) <= limit {
+		return s
+	}
+	return enc.Decode(tokens[:limit])
+}

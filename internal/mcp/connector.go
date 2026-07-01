@@ -59,15 +59,22 @@ func (c *ServiceConnector) ListDatasets(page, pageSize int, orderby string, desc
 	var lines []string
 	for _, d := range data {
 		id, _ := d["id"].(string)
+		name := ""
+		if v, ok := d["name"]; ok {
+			if s, ok := v.(string); ok {
+				name = s
+			}
+		}
 		desc := ""
 		if v, ok := d["description"]; ok {
 			if s, ok := v.(string); ok {
 				desc = s
 			}
 		}
-		// Match Python output: {"id": "...", "description": "..."}
+		// Match Python output: {"id": "...", "name": "...", "description": "..."}
 		item := map[string]interface{}{
 			"id":          id,
+			"name":        name,
 			"description": desc,
 		}
 		b, err := json.Marshal(item)

@@ -76,6 +76,8 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 		return
 	}
 
+	const maxMCPBodyBytes = 1 << 20 // 1 MiB
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxMCPBodyBytes)
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -180,9 +182,10 @@ func MCPRetrieval(ds *service.DatasetService, userID string, req mcp.RetrievalRe
 	}
 
 	searchReq := &service.SearchDatasetsRequest{
-		DatasetIDs: datasetIDs,
-		Question:   req.Question,
-		DocIDs:     req.DocumentIDs,
+		DatasetIDs:   datasetIDs,
+		Question:     req.Question,
+		DocIDs:       req.DocumentIDs,
+		ForceRefresh: req.ForceRefresh,
 	}
 
 	if req.Page > 0 {

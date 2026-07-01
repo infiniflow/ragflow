@@ -188,6 +188,10 @@ func (b *BGPTTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.
 		return bgptErrJSON(fmt.Errorf("bgpt: parse response: %w", err)),
 			fmt.Errorf("bgpt: parse response: %w", err)
 	}
+	if strings.TrimSpace(raw.Error) != "" {
+		err := fmt.Errorf("bgpt: %s", strings.TrimSpace(raw.Error))
+		return bgptErrJSON(err), err
+	}
 
 	results := make([]bgptResult, 0, len(raw.Results))
 	for _, r := range raw.Results {

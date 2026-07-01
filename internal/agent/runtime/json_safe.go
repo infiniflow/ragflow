@@ -26,7 +26,9 @@ package runtime
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -83,12 +85,16 @@ func cleanForJSON(v any) any {
 				zap.String("type", rv.Type().String()))
 			return nil
 		case reflect.Map:
-			// Generic map fallback (e.g., map[string]int, etc.)
-			cleaned := reflect.MakeMap(rv.Type())
+			// Generic map fallback (e.g., map[string]int, etc.).
+			// Build as map[string]any because cleaned values may
+			// change type (func→nil, typed slice→[]any, etc.) and
+			// SetMapIndex on an original-typed map would panic.
+			cleaned := make(map[string]any, rv.Len())
 			for iter := rv.MapRange(); iter.Next(); {
-				cleaned.SetMapIndex(iter.Key(), reflect.ValueOf(cleanForJSON(iter.Value().Interface())))
+				key := fmt.Sprint(iter.Key().Interface())
+				cleaned[key] = cleanForJSON(iter.Value().Interface())
 			}
-			return cleaned.Interface()
+			return cleaned
 		case reflect.Slice, reflect.Array:
 			length := rv.Len()
 			cleaned := make([]any, length)
@@ -96,10 +102,41 @@ func cleanForJSON(v any) any {
 				cleaned[i] = cleanForJSON(rv.Index(i).Interface())
 			}
 			return cleaned
+		case reflect.Ptr:
+			if rv.IsNil() {
+				return nil
+			}
+			return cleanForJSON(rv.Elem().Interface())
+		case reflect.Interface:
+			if rv.IsNil() {
+				return nil
+			}
+			return cleanForJSON(rv.Elem().Interface())
 		case reflect.Struct:
-			common.Warn("cleanForJSON: struct value may not be JSON-serializable, using string representation",
-				zap.String("type", rv.Type().String()))
-			return v
+			cleaned := make(map[string]any, rv.NumField())
+			t := rv.Type()
+			for i := 0; i < rv.NumField(); i++ {
+				field := t.Field(i)
+				if !field.IsExported() {
+					continue
+				}
+				fv := rv.Field(i)
+				if !fv.CanInterface() {
+					continue
+				}
+				key := field.Name
+				if tag := field.Tag.Get("json"); tag != "" {
+					name, _, _ := strings.Cut(tag, ",")
+					if name == "-" {
+						continue
+					}
+					if name != "" {
+						key = name
+					}
+				}
+				cleaned[key] = cleanForJSON(fv.Interface())
+			}
+			return cleaned
 		default:
 			return v
 		}
