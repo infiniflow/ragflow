@@ -1,3 +1,5 @@
+//go:build cgo
+
 // Package pdfium renders PDF pages using the system's libpdfium.so
 // (bundled with pypdfium2). It exists solely to replace pdf_oxide's
 // RenderPageRaw for use cases where image quality matters for downstream
