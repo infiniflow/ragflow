@@ -58,6 +58,24 @@ func (r *CommonResponse) PrintOut() {
 	}
 }
 
+func HandleCommonResponse(response *Response, command string) (ResponseIf, error) {
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to %s: HTTP %d, body: %s", command, response.StatusCode, string(response.Body))
+	}
+
+	var result CommonResponse
+	if err := json.Unmarshal(response.Body, &result); err != nil {
+		return nil, fmt.Errorf("%s failed: invalid JSON (%w)", command, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = response.Duration
+	return &result, nil
+}
+
 type ModelsResponse struct {
 	Code         int                                 `json:"code"`
 	Data         map[string][]map[string]interface{} `json:"data"`
@@ -142,6 +160,24 @@ func (r *CommonDataResponse) PrintOut() {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
+}
+
+func HandleCommonDataResponse(response *Response, command string) (ResponseIf, error) {
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to %s: HTTP %d, body: %s", command, response.StatusCode, string(response.Body))
+	}
+
+	var result CommonDataResponse
+	if err := json.Unmarshal(response.Body, &result); err != nil {
+		return nil, fmt.Errorf("%s failed: invalid JSON (%w)", command, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = response.Duration
+	return &result, nil
 }
 
 type ListDocumentsResponse struct {
@@ -451,6 +487,10 @@ func (r *SimpleResponse) PrintOut() {
 }
 
 func HandleSimpleResponse(response *Response, command string) (ResponseIf, error) {
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to %s: HTTP %d, body: %s", command, response.StatusCode, string(response.Body))
+	}
+
 	var result SimpleResponse
 	if err := json.Unmarshal(response.Body, &result); err != nil {
 		return nil, fmt.Errorf("%s failed: invalid JSON (%w)", command, err)
@@ -912,7 +952,7 @@ func printReferenceChunks(raw json.RawMessage) {
 
 	fmt.Println("Reference:")
 	for i, chunk := range chunks {
-		id := chunkID(chunk)
+		id := getChunkID(chunk)
 		content := chunkContent(chunk)
 		docName := chunkDocName(chunk)
 		fmt.Printf("  [ID:%d] id=%s content=%q", i, id, truncateStr(content, 120))
@@ -930,7 +970,7 @@ func printReferenceChunks(raw json.RawMessage) {
 	}
 }
 
-func chunkID(c map[string]interface{}) string {
+func getChunkID(c map[string]interface{}) string {
 	for _, key := range []string{"chunk_id", "id"} {
 		if v, ok := c[key]; ok {
 			return fmt.Sprint(v)
@@ -1171,5 +1211,75 @@ func (r *OrderedCommonDataResponse) PrintOut() {
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type QuotaSummaryResponse struct {
+	CommonDataResponse
+}
+
+func (r *QuotaSummaryResponse) Type() string {
+	return "quota_summary"
+}
+
+func (r *QuotaSummaryResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *QuotaSummaryResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *QuotaSummaryResponse) PrintOut() {
+	if r.Code != 0 {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+		return
+	}
+
+	sections := []struct {
+		key     string
+		title   string
+		columns []string
+	}{
+		{"storage", "Storage", []string{"Plan", "Users", "Avg Used", "Limit", "Avg Usage"}},
+		{"apps", "Apps", []string{"Plan", "Avg Used", "Limit", "Avg Usage"}},
+		{"api", "API Requests", []string{"Plan", "Tokens", "Limit/min"}},
+	}
+
+	for i, section := range sections {
+		if i > 0 {
+			fmt.Println()
+		}
+		fmt.Printf("--- %s ---\n", section.title)
+
+		rowsRaw, ok := r.Data[section.key]
+		if !ok {
+			fmt.Println("No data")
+			continue
+		}
+
+		rows, ok := rowsRaw.([]interface{})
+		if !ok || len(rows) == 0 {
+			fmt.Println("No data")
+			continue
+		}
+
+		table := make([]map[string]interface{}, 0, len(rows))
+		for _, row := range rows {
+			if m, ok := row.(map[string]interface{}); ok {
+				orderedRow := make(map[string]interface{})
+				for _, col := range section.columns {
+					if v, exists := m[col]; exists {
+						orderedRow[col] = v
+					} else {
+						orderedRow[col] = ""
+					}
+				}
+				table = append(table, orderedRow)
+			}
+		}
+
+		PrintTableSimpleByFormatWithOrder(table, section.columns, r.OutputFormat)
 	}
 }
