@@ -188,6 +188,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		desc,
 		ownerIDs,
 		canvasCategory,
+		canvasType,
 		tags,
 	)
 	if err != nil {
