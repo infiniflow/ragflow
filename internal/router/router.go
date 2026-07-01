@@ -52,6 +52,7 @@ type Router struct {
 	modelHandler         *handler.ModelHandler
 	fileCommitHandler    *handler.FileCommitHandler
 	adminRuntimeHandler  *handler.AdminRuntimeHandler
+	botHandler           *handler.BotHandler
 }
 
 // NewRouter create router
@@ -84,6 +85,7 @@ func NewRouter(
 	fileCommitHandler *handler.FileCommitHandler,
 	adminRuntimeHandler *handler.AdminRuntimeHandler,
 	openaiChatHandler *handler.OpenAIChatHandler,
+	botHandler *handler.BotHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -114,6 +116,7 @@ func NewRouter(
 		modelHandler:         modelHandler,
 		fileCommitHandler:    fileCommitHandler,
 		adminRuntimeHandler:  adminRuntimeHandler,
+		botHandler:           botHandler,
 	}
 }
 
@@ -142,6 +145,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// the RAGFlow auth middleware.
 	engine.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 	engine.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+	engine.GET("/connectors/box/oauth/web/callback", r.connectorHandler.BoxWebOAuthCallback)
 
 	apiNoAuth := engine.Group("/api/v1")
 	{
@@ -169,12 +173,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
 
-		// Document images are embedded directly in pages and match Python's public route.
-		apiNoAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
-
 		// Google redirects here after Gmail / Google Drive web OAuth completes.
 		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+		apiNoAuth.GET("/connectors/box/oauth/web/callback", r.connectorHandler.BoxWebOAuthCallback)
 		// Forgot-password flow (fixes #15282).
 		// Routes are intentionally registered before any auth middleware:
 		// a user who has forgotten their password is, by definition,
@@ -183,6 +185,29 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/forgot/otp", r.userHandler.ForgotSendOTP)
 		apiNoAuth.POST("/auth/password/forgot/otp/verify", r.userHandler.ForgotVerifyOTP)
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
+	}
+
+	// Beta-token routes. Mirrors python's
+	// @login_required(auth_types=AUTH_BETA) on bot_api.py bot endpoints.
+	apiBetaAuth := engine.Group("/api/v1")
+	apiBetaAuth.Use(r.authHandler.BetaAuthMiddleware())
+	{
+		searchbotGroup := apiBetaAuth.Group("/searchbots")
+		searchbotGroup.POST("/related_questions", r.searchBotHandler.Handle)
+		searchbotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
+		searchbotGroup.POST("/ask", r.searchBotHandler.Ask)
+		searchbotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
+
+		if r.botHandler != nil {
+			chatbotGroup := apiBetaAuth.Group("/chatbots")
+			betaMW := r.authHandler.BetaAuthMiddleware()
+			RegisterChatbotRoutes(chatbotGroup, betaMW, r.botHandler)
+			agentbotGroup := apiBetaAuth.Group("/agentbots")
+			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
+		}
+		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
+		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
+		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
 	}
 
 	// Protected routes
@@ -242,7 +267,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.POST("/upload", r.documentHandler.UploadInfo)
 				documents.GET("", r.documentHandler.ListDocuments)
 				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
-				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
@@ -250,13 +274,20 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 
 			// Chat routes
+			v1.POST("/chat/mindmap", r.chatHandler.MindMap)
+			v1.POST("/chat/recommendation", r.chatHandler.Recommendation)
 			chats := v1.Group("/chats")
 			{
 				chats.GET("", r.chatHandler.ListChats)
+				chats.POST("", r.chatHandler.Create)
 				chats.DELETE("", r.chatHandler.BulkDeleteChats)
 				chats.DELETE("/:chat_id", r.chatHandler.DeleteChat)
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
+				chats.PUT("/:chat_id", r.chatHandler.UpdateChat)
+				chats.PATCH("/:chat_id", r.chatHandler.PatchChat)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
+				chats.POST("/:chat_id/sessions", r.chatSessionHandler.CreateSession)
+				chats.DELETE("/:chat_id/sessions", r.chatSessionHandler.DeleteSessions)
 				chats.GET("/:chat_id/sessions/:session_id", r.chatSessionHandler.GetSession)
 				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
 			}
@@ -266,11 +297,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				openai.POST("/:chat_id/chat/completions", r.openaiChatHandler.OpenAIChatCompletions)
 			}
-
-			// Searchbot routes
-			v1.POST("/searchbots/related_questions", r.searchBotHandler.Handle)
-			v1.POST("/searchbots/retrieval_test", r.searchBotHandler.RetrievalTest)
-			v1.POST("/searchbots/ask", r.searchBotHandler.Ask)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")
@@ -342,6 +368,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				searches.GET("/:search_id", r.searchHandler.GetSearch)
 				searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
 				searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
+				searches.POST("/:search_id/completion", r.searchHandler.Completion)
+				searches.POST("/:search_id/completions", r.searchHandler.Completion)
 			}
 
 			file := v1.Group("/files")
@@ -418,6 +446,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			message := v1.Group("/messages")
 			{
 				message.GET("", r.memoryHandler.GetMessages)
+				message.POST("", r.memoryHandler.AddMessage)
 				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
 				message.PUT("/:memory_message", r.memoryHandler.UpdateMessage)
 				message.GET("/:memory_message/content", r.memoryHandler.GetMessageContent)
@@ -526,6 +555,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.POST("/", r.connectorHandler.CreateConnector)
 				connector.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connector.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
+				connector.POST("/box/oauth/web/start", r.connectorHandler.StartBoxWebOAuth)
+				connector.POST("/box/oauth/web/result", r.connectorHandler.PollBoxWebOAuthResult)
 				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
 				connector.PATCH("/:connector_id", r.connectorHandler.UpdateConnector)
 				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
@@ -639,8 +670,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			doc.POST("/set_meta", r.documentHandler.SetMeta)
 			doc.POST("/delete_meta", r.documentHandler.DeleteMeta) // Internal API only for GO
 		}
-
-		v1.GET("/thumbnails", r.documentHandler.GetThumbnail)
 
 		// Chunk routes
 		chunk := v1.Group("/chunk")

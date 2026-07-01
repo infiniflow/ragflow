@@ -84,20 +84,10 @@ def list_providers(tenant_id: str, all_available: bool = False):
         for factory_info in FACTORY_LLM_INFOS:
             if factory_info["name"] in ["Youdao", "FastEmbed", "BAAI", "Builtin", "siliconflow_intl"]:
                 continue
-            model_types = sorted(set(
-                model_type
-                for llm in factory_info.get("llm", [])
-                for model_type in _factory_model_types(llm)
-            )) if factory_info.get("llm", []) else []
+            model_types = sorted(set(model_type for llm in factory_info.get("llm", []) for model_type in _factory_model_types(llm))) if factory_info.get("llm", []) else []
             if factory_info["name"] in ["MinerU", "PaddleOCR", "OpenDataLoader"]:
                 model_types.append("ocr")
-            provider = {
-                "model_types": model_types,
-                "name": factory_info["name"],
-                "url": {
-                    "default": factory_info.get("url", "")
-                }
-            }
+            provider = {"model_types": model_types, "name": factory_info["name"], "url": {"default": factory_info.get("url", "")}}
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
             elif factory_info["name"] == "Tongyi-Qianwen":
@@ -114,21 +104,11 @@ def list_providers(tenant_id: str, all_available: bool = False):
     for name in factory_names:
         if name not in ["Youdao", "FastEmbed", "BAAI", "Builtin", "siliconflow_intl"] and factory_info_mapping.get(name):
             factory_info = factory_info_mapping[name]
-            model_types = sorted(set(
-                model_type
-                for llm in factory_info.get("llm", [])
-                for model_type in _factory_model_types(llm)
-            )) if factory_info.get("llm", []) else []
+            model_types = sorted(set(model_type for llm in factory_info.get("llm", []) for model_type in _factory_model_types(llm))) if factory_info.get("llm", []) else []
             if name in ["MinerU", "PaddleOCR", "OpenDataLoader"]:
                 model_types.append("ocr")
 
-            provider = {
-                "model_types": model_types,
-                "name": factory_info["name"],
-                "url": {
-                    "default": factory_info.get("url", "")
-                }
-            }
+            provider = {"model_types": model_types, "name": factory_info["name"], "url": {"default": factory_info.get("url", "")}}
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
             elif factory_info["name"] == "Tongyi-Qianwen":
@@ -157,10 +137,7 @@ def add_provider(tenant_id: str, provider_name: str):
     if existing:
         return False, f"Provider {provider_name} already exists"
 
-    TenantModelProviderService.insert(
-        tenant_id=tenant_id,
-        provider_name=provider_name
-    )
+    TenantModelProviderService.insert(tenant_id=tenant_id, provider_name=provider_name)
     return True, "success"
 
 
@@ -197,17 +174,11 @@ def show_provider(provider_id_or_name: str):
     if provider_id_or_name:
         _, provider_obj = TenantModelProviderService.get_by_id(provider_id_or_name)
     provider_name = provider_obj.provider_name if provider_obj else provider_id_or_name
-    fac_list = [f for f in FACTORY_LLM_INFOS if f["name"]==provider_name]
+    fac_list = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
     if not fac_list:
         return False, f"Provider '{provider_id_or_name}' not found"
     factory_info = fac_list[0]
-    return True, {
-        "base_url": {
-            "default": factory_info.get("url", "")
-        },
-        "name": factory_info["name"],
-        "total_models": len(factory_info.get("llm", []))
-    }
+    return True, {"base_url": {"default": factory_info.get("url", "")}, "name": factory_info["name"], "total_models": len(factory_info.get("llm", []))}
 
 
 async def list_provider_models(provider_id_or_name: str, api_key: str = None, base_url: str = None):
@@ -227,19 +198,15 @@ async def list_provider_models(provider_id_or_name: str, api_key: str = None, ba
     if not factory_info:
         return False, f"Provider '{provider_id_or_name}' not found"
     api_key = _normalize_provider_api_key(provider_name, api_key)
-    static_llms = [{
+    static_llms = [
+        {
             "name": _factory_llm_name(llm),
             "max_tokens": llm["max_tokens"],
             "model_types": _factory_model_types(llm),
-            "features": (
-                llm.get("features")
-                if llm.get("features") is not None
-                else (
-                    (["is_tools"] if llm.get("is_tools") else [])
-                    + (["thinking"] if llm.get("thinking") else [])
-                )
-            )
-        } for llm in factory_info[0]["llm"]]
+            "features": (llm.get("features") if llm.get("features") is not None else ((["is_tools"] if llm.get("is_tools") else []) + (["thinking"] if llm.get("thinking") else []))),
+        }
+        for llm in factory_info[0]["llm"]
+    ]
 
     model_base_url = _normalize_provider_base_url(provider_name, base_url) or factory_info[0].get("url", "")
     remote_models = []
@@ -286,7 +253,7 @@ def show_provider_model(provider_id_or_name: str, model_name: str):
         "max_tokens": llm_info["max_tokens"],
         "model_types": _factory_model_types(llm_info),
         "thinking": None,
-        "model_type_map": {model_type: True for model_type in _factory_model_types(llm_info)}
+        "model_type_map": {model_type: True for model_type in _factory_model_types(llm_info)},
     }
 
 
@@ -465,7 +432,7 @@ async def update_provider_instance(tenant_id: str, provider_id_or_name: str, ins
     return True, "success"
 
 
-async def create_provider_instance(tenant_id: str, provider_id_or_name: str, instance_name: str, api_key: str|dict, base_url: str, region: str, model_info: list[dict]=None):
+async def create_provider_instance(tenant_id: str, provider_id_or_name: str, instance_name: str, api_key: str | dict, base_url: str, region: str, model_info: list[dict] = None):
     """
     Create a provider instance.
 
@@ -514,6 +481,34 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
     api_key_str = ""
     if api_key:
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
+
+    # Only verify when there are models to probe. Generic providers such as
+    # "OpenAI-API-Compatible" may start empty and receive custom models later.
+    factory_entry = next((f for f in FACTORY_LLM_INFOS if f["name"] == provider_name), None)
+    if (factory_entry and factory_entry.get("llm")) or model_info:
+        success, msg = await verify_api_key(provider_name, api_key, base_url, region, model_info)
+        if not success:
+            return False, msg
+
+    # For SoMark, embed OCR config from model_info into the api_key JSON so
+    # SoMarkOcrModel.__init__ can read it via the existing key → api_key_payload
+    # path.  This avoids changing the deprecated LLMBundle in tenant_llm_service.py.
+    if provider_name == "SoMark" and model_info:
+        cfg = {}
+        if api_key_str:
+            try:
+                cfg = json.loads(api_key_str)
+            except Exception:
+                pass
+        if not isinstance(cfg, dict):
+            cfg = {}
+        for model in model_info:
+            if model.get("extra"):
+                cfg.update(model["extra"])
+        if base_url:
+            cfg["SOMARK_BASE_URL"] = base_url
+        api_key_str = json.dumps(cfg)
+
     success, msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
     if not success:
         return False, msg
@@ -523,7 +518,7 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
         extra_fields["base_url"] = base_url
     if region:
         extra_fields["region"] = region
-    TenantModelInstanceService.create_instance(provider_id=provider_obj.id,instance_name=instance_name,api_key=api_key_str, extra=json.dumps(extra_fields))
+    TenantModelInstanceService.create_instance(provider_id=provider_obj.id, instance_name=instance_name, api_key=api_key_str, extra=json.dumps(extra_fields))
     if model_info:
         msg = ""
         for model in model_info:
@@ -611,18 +606,20 @@ def list_provider_instances(tenant_id: str, provider_id_or_name: str):
     instances = []
     for instance_obj in instance_objs:
         extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
-        instances.append({
-            "id": instance_obj.id,
-            "instance_name": instance_obj.instance_name,
-            "provider_id": provider_id,
-            "region": extra_fields.get("region", ""),
-            "status": instance_obj.status,
-        })
+        instances.append(
+            {
+                "id": instance_obj.id,
+                "instance_name": instance_obj.instance_name,
+                "provider_id": provider_id,
+                "region": extra_fields.get("region", ""),
+                "status": instance_obj.status,
+            }
+        )
 
     return True, instances
 
 
-async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: str=None, region: str=None, model_info: list[dict]=None):
+async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url: str = None, region: str = None, model_info: list[dict] = None):
     """
     Verify API key for a provider.
 
@@ -661,6 +658,19 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
     if not factory_info:
         return False, f"Provider '{provider_id_or_name}' not found"
 
+    factory_llms = factory_info[0]["llm"]
+    if not factory_llms:
+        if not model_info:
+            return False, f"No models found for provider '{provider_id_or_name}'"
+        factory_llms = [
+            {
+                "model_type": _type,
+                "llm_name": model.get("model_name", ""),
+            }
+            for model in model_info
+            if model
+            for _type in model.get("model_type", [])
+        ]
     if model_info:
         factory_llms = [{
             "model_type": _type,
@@ -712,11 +722,12 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
             assert provider_name in ChatModel, f"Chat model from {provider_name} is not supported yet."
             mdl = ChatModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url, **extra)
             try:
+
                 async def check_streamly():
                     async for chunk in mdl.async_chat_streamly(
-                            None,
-                            [{"role": "user", "content": "Hi"}],
-                            {"temperature": 0.9},
+                        None,
+                        [{"role": "user", "content": "Hi"}],
+                        {"temperature": 0.9},
                     ):
                         if chunk and isinstance(chunk, str) and chunk.find("**ERROR**") < 0:
                             return True
@@ -786,6 +797,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
             assert provider_name in TTSModel, f"TTS model from {provider_name} is not supported yet."
             mdl = TTSModel[provider_name](key=api_key_str, model_name=llm["llm_name"], base_url=base_url)
             try:
+
                 def drain_tts():
                     for _ in mdl.tts("Hello~ RAGFlower!"):
                         pass
@@ -972,7 +984,7 @@ def update_instance_models(tenant_id: str, provider_id_or_name: str, instance_id
     return True, "success"
 
 
-def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str, model_name: str, model_type: str|list[str], max_tokens: int=8192, extra: dict=None):
+def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str, model_name: str, model_type: str | list[str], max_tokens: int = 8192, extra: dict = None):
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_id(tenant_id, provider_id_or_name)
     if not provider_obj:
         provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_id_or_name)

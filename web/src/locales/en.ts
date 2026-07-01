@@ -124,6 +124,9 @@ export default {
       welcome: 'Welcome to',
       dataset: 'Dataset',
       memories: 'Memory',
+      discord: 'Discord',
+      github: 'GitHub',
+      help: 'Help',
     },
     skills: {
       title: 'Skills',
@@ -1056,6 +1059,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
+      thinking: 'Thinking',
+      thinkingDefault: 'System default',
+      thinkingEnabled: 'Enabled',
+      thinkingDisabled: 'Disabled',
+      thinkingTip:
+        'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show quote',
       quoteTip: 'Whether to display the original text as a reference.',
       selfRag: 'Self-RAG',
@@ -1396,6 +1405,32 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       postgresqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      bigqueryDescription:
+        'Connect to Google BigQuery to sync rows from a table or a custom GoogleSQL query.',
+      bigqueryProjectIdTip:
+        'GCP project that owns the query jobs (e.g. my-gcp-project).',
+      bigqueryLocationTip:
+        'Default location for the client and query jobs, such as US or EU. Leave empty to let BigQuery infer it.',
+      bigqueryServiceAccountJsonTip:
+        'Service account key JSON with BigQuery access. Paste the full key file contents.',
+      bigqueryDatasetIdTip:
+        'Dataset id for table mode. Required together with Table ID when no SQL query is provided.',
+      bigqueryTableIdTip:
+        'Table id for table mode. Required together with Dataset ID when no SQL query is provided.',
+      bigqueryQueryTip:
+        'Custom GoogleSQL query. Takes precedence over Dataset ID and Table ID. Standard SQL only.',
+      bigqueryContentColumnsTip:
+        'Comma-separated column names whose values will be combined as document content for vectorization.',
+      bigqueryMetadataColumnsTip:
+        'Comma-separated column names to store as document metadata (not vectorized, but searchable).',
+      bigqueryIdColumnTip:
+        'Column to use as unique document ID. If not specified, a hash of the content will be used.',
+      bigqueryTimestampColumnTip:
+        'Timestamp, datetime, date, or numeric column for incremental sync. Only rows newer than the last sync will be fetched.',
+      bigqueryMaximumBytesBilledTip:
+        'Hard cost guard applied to every query job, in bytes. Defaults to 1 GiB.',
+      bigqueryJobTimeoutMsTip:
+        'Optional per-query job timeout in milliseconds.',
       rest_apiDescription:
         'Connect any REST API endpoint as a data source using a flexible, configuration-driven connector.',
       onedriveDescription:
@@ -1773,6 +1808,8 @@ Example: Virtual Hosted Style`,
       updateDate: 'Date',
       role: 'State',
       invite: 'Invite member',
+      inviteTip:
+        'Only registered users can be invited. Please register the account before sending an invitation.',
       agree: 'Accept',
       refuse: 'Decline',
       teamMembers: 'Team members',
@@ -1815,6 +1852,31 @@ Example: Virtual Hosted Style`,
           vlmLmdeployEngine:
             'Vision Language Model with LMDeploy Engine (Experimental)',
         },
+      },
+      somark: {
+        modelNameMessage: 'Please input your model name',
+        baseUrl: 'Base URL',
+        baseUrlMessage: 'Please input the Base URL',
+        baseUrlPlaceholder:
+          'For SoMark API, fill in https://somark.tech/api/v1; for self-hosted deployment, fill in your local Base URL',
+        apiKey: 'API Key',
+        apiKeyPlaceholder:
+          'Required for SoMark API; leave blank for self-hosted deployment',
+        verifyPassed: 'Verified',
+        verifyFailed: 'Verification failed',
+        sectionElementFormats: 'Element Formats',
+        imageFormat: 'Image Format',
+        formulaFormat: 'Formula Format',
+        tableFormat: 'Table Format',
+        csFormat: 'Chemical Structural Formula Format',
+        sectionFeatureConfig: 'Feature Config',
+        enableInlineImage: 'Enable Inline Image',
+        enableTableImage: 'Enable Table Image',
+        enableImageUnderstanding: 'Enable Image Understanding',
+        enableTitleLevelRecognition: 'Enable Title Level Recognition',
+        enableTextCrossPage: 'Enable Text Cross Page',
+        enableTableCrossPage: 'Enable Table Cross Page',
+        keepHeaderFooter: 'Keep Header Footer',
       },
       modelTypes: {
         chat: 'Chat',
@@ -2172,6 +2234,13 @@ Best for: Documents with flowing, contextually connected content — such as boo
       pubMed: 'PubMed',
       pubMedDescription:
         'A component that searches from https://pubmed.ncbi.nlm.nih.gov/, allowing you to specify the number of search results using TopN. It supplements the existing datasets.',
+      bGPT: 'BGPT',
+      bGPTDescription:
+        'Search scientific papers via BGPT and return structured evidence from full-text studies: methods, sample sizes, limitations, conflicts of interest, data availability, blind spots, and falsification prompts. Optional API key after the free tier.',
+      bgptApiKey: 'API key',
+      bgptApiKeyTip: 'Optional. Leave blank for the free tier (first 50 results).',
+      bgptDaysBack: 'Days back',
+      bgptDaysBackTip: 'Optional recency filter (e.g. 365 for the last year).',
       email: 'Email',
       emailTip:
         'E-mail is a required field. You must input an E-mail address here.',
@@ -2691,6 +2760,8 @@ This process aggregates variables from multiple branches into a single variable 
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
+      duplicate: 'Duplicate',
+      copyOfAgentName: '{{name}} (copy)',
       ceateAgent: 'Workflow',
       createPipeline: 'Ingestion pipeline',
       chooseAgentType: 'Choose agent type',
@@ -2875,6 +2946,9 @@ Important structured information may include: names, dates, locations, events, k
           'Accepted Response: The system returns an acknowledgment immediately after the request is validated, while the workflow continues to execute asynchronously in the background. /Final Response: The system returns a response only after the workflow execution is completed.',
         authMethods: 'Authentication methods',
         authType: 'Authentication type',
+        allowAnonymous: 'Allow anonymous access',
+        allowAnonymousTip:
+          'Anyone with this webhook URL can trigger the agent when this is enabled.',
         limit: 'Request frequency limit',
         per: 'Time period',
         maxBodySize: 'Maximum body size',

@@ -59,7 +59,7 @@ class LLMBundle(LLM4Tenant):
 
     def bind_tools(self, toolcall_session, tools):
         if not self.is_tools:
-            logging.warning(f"Model {self.model_config['llm_name']} does not support tool call, but you have assigned one or more tools to it!")
+            logging.warning("Model does not support tool call, but you have assigned one or more tools to it!")
             return
         self.mdl.bind_tools(toolcall_session, tools)
 
@@ -79,6 +79,11 @@ class LLMBundle(LLM4Tenant):
             if text is None or not str(text).strip():
                 marker = "None" if text is None else "whitespace-only"
                 logging.warning(
+                    # codeql[py/clear-text-logging-sensitive-data] False positive:
+                    # model_config["llm_name"] is the model identifier (e.g.
+                    # "gpt-4"), not an API key or credential. CodeQL flags
+                    # it as a sensitive data source only because it lives
+                    # in the same dict as api_key.
                     "LLMBundle.encode: empty input at index %d (%s) coerced to placeholder 'None' for model %s",
                     idx,
                     marker,
@@ -97,7 +102,7 @@ class LLMBundle(LLM4Tenant):
         if self.model_config["llm_factory"] == "Builtin":
             logging.debug("LLMBundle.encode query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(texts, len(embeddings), used_tokens))
         else:
-            logging.info("LLMBundle.encode used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+            logging.info("LLMBundle.encode used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(usage_details={"total_tokens": used_tokens})
@@ -112,6 +117,9 @@ class LLMBundle(LLM4Tenant):
         if query is None or not str(query).strip():
             marker = "None" if query is None else "whitespace-only"
             logging.warning(
+                # codeql[py/clear-text-logging-sensitive-data] False positive:
+                # llm_name is a model identifier, not a credential. See the
+                # matching suppression on the encode() warning above.
                 "LLMBundle.encode_queries: empty query (%s) coerced to placeholder 'None' for model %s",
                 marker,
                 self.model_config["llm_name"],
@@ -121,7 +129,7 @@ class LLMBundle(LLM4Tenant):
         if self.model_config["llm_factory"] == "Builtin":
             logging.info("LLMBundle.encode_queries query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(query, len(emd), used_tokens))
         else:
-            logging.info("LLMBundle.encode_queries used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+            logging.info("LLMBundle.encode_queries used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(usage_details={"total_tokens": used_tokens})
@@ -134,7 +142,7 @@ class LLMBundle(LLM4Tenant):
             generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="similarity", model=self.model_config["llm_name"], input={"query": query, "texts": texts})
 
         sim, used_tokens = self.mdl.similarity(query, texts)
-        logging.info("LLMBundle.similarity used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+        logging.info("LLMBundle.similarity used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(usage_details={"total_tokens": used_tokens})
@@ -147,7 +155,7 @@ class LLMBundle(LLM4Tenant):
             generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="describe", metadata={"model": self.model_config["llm_name"]})
 
         txt, used_tokens = self.mdl.describe(image)
-        logging.info("LLMBundle.describe used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+        logging.info("LLMBundle.describe used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
@@ -160,7 +168,7 @@ class LLMBundle(LLM4Tenant):
             generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="describe_with_prompt", metadata={"model": self.model_config["llm_name"], "prompt": prompt})
 
         txt, used_tokens = self.mdl.describe_with_prompt(image, prompt)
-        logging.info("LLMBundle.describe_with_prompt used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+        logging.info("LLMBundle.describe_with_prompt used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
@@ -173,7 +181,7 @@ class LLMBundle(LLM4Tenant):
             generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="transcription", metadata={"model": self.model_config["llm_name"]})
 
         txt, used_tokens = self.mdl.transcription(audio)
-        logging.info("LLMBundle.transcription used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+        logging.info("LLMBundle.transcription used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
@@ -208,7 +216,7 @@ class LLMBundle(LLM4Tenant):
             finally:
                 if final_text:
                     used_tokens = num_tokens_from_string(final_text)
-                    logging.info("LLMBundle.stream_transcription used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+                    logging.info("LLMBundle.stream_transcription used_tokens: %d", used_tokens)
 
                 if self.langfuse:
                     generation.update(
@@ -227,7 +235,7 @@ class LLMBundle(LLM4Tenant):
             )
 
         full_text, used_tokens = mdl.transcription(audio)
-        logging.info("LLMBundle.stream_transcription used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+        logging.info("LLMBundle.stream_transcription used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(
@@ -248,6 +256,9 @@ class LLMBundle(LLM4Tenant):
 
         for chunk in self.mdl.tts(text):
             if isinstance(chunk, int):
+                # codeql[py/clear-text-logging-sensitive-data] False positive:
+                # llm_name is a model identifier (e.g. "tts-1"), not a
+                # credential. The token count is non-sensitive.
                 logging.info("LLMBundle.tts used_tokens: {}, model_name: {}".format(chunk, self.model_config["llm_name"]))
                 return
             yield chunk
@@ -384,7 +395,7 @@ class LLMBundle(LLM4Tenant):
             txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
 
         if used_tokens:
-            logging.info("LLMBundle.async_chat used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+            logging.info("LLMBundle.async_chat used_tokens: %d", used_tokens)
 
         if generation:
             generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
@@ -432,7 +443,7 @@ class LLMBundle(LLM4Tenant):
                     generation.end()
                 raise
             if total_tokens:
-                logging.info("LLMBundle.async_chat_streamly used_tokens: {}, llm_name: {}".format(total_tokens, self.model_config["llm_name"]))
+                logging.info("LLMBundle.async_chat_streamly used_tokens: %d", total_tokens)
             if generation:
                 generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
                 generation.end()
@@ -475,7 +486,7 @@ class LLMBundle(LLM4Tenant):
                     generation.end()
                 raise
             if total_tokens:
-                logging.info("LLMBundle.async_chat_streamly_delta used_tokens: {}, llm_name: {}".format(total_tokens, self.model_config["llm_name"]))
+                logging.info("LLMBundle.async_chat_streamly_delta used_tokens: %d", total_tokens)
             if generation:
                 generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
                 generation.end()

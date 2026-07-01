@@ -469,3 +469,16 @@ class VLLM(OpenAIAPICompatible):
 
 class LMStudio(OpenAIAPICompatible):
     _FACTORY_NAME = "LM-Studio"
+
+
+class NewAPI(OpenAIAPICompatible):
+    _FACTORY_NAME = "New API"
+
+    def _get_api_key(self):
+        try:
+            parsed = json.loads(self.api_key)
+            if isinstance(parsed, dict):
+                return parsed.get("api_key", self.api_key)
+        except (JSONDecodeError, TypeError):
+            pass
+        return self.api_key

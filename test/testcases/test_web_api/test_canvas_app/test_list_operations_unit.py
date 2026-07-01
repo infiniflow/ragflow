@@ -189,3 +189,13 @@ def test_set_outputs_tracks_first_and_last(monkeypatch):
     assert component._param.outputs["result"]["value"] == ["c", "d", "e"]
     assert component._param.outputs["first"]["value"] == "c"
     assert component._param.outputs["last"]["value"] == "e"
+
+
+@pytest.mark.p2
+def test_topn_operation_alias_normalizes_to_head(monkeypatch):
+    module = _load_list_operations_module(monkeypatch)
+    param = module.ListOperationsParam()
+    param.query = "items"
+    param.operations = "topN"
+    param.check()
+    assert param.operations == "head"

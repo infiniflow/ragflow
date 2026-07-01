@@ -18,7 +18,19 @@ import os
 import enum
 import json
 from common import settings
-from common.constants import ActiveStatusEnum, LLMType, ModelTypeBinary, MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS
+from common.constants import (
+    ActiveStatusEnum,
+    LLMType,
+    ModelTypeBinary,
+    MINERU_DEFAULT_CONFIG,
+    MINERU_ENV_KEYS,
+    OPENDATALOADER_DEFAULT_CONFIG,
+    OPENDATALOADER_ENV_KEYS,
+    PADDLEOCR_DEFAULT_CONFIG,
+    PADDLEOCR_ENV_KEYS,
+    SOMARK_DEFAULT_CONFIG,
+    SOMARK_ENV_KEYS,
+)
 from api.db.services.tenant_llm_service import TenantService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
@@ -135,7 +147,7 @@ def ensure_paddleocr_from_env(tenant_id: str) -> str | None:
     )
 
 
-def get_tenant_default_model_by_type(tenant_id: str, model_type: str|enum.Enum):
+def get_tenant_default_model_by_type(tenant_id: str, model_type: str | enum.Enum):
     exist, tenant = TenantService.get_by_id(tenant_id)
     if not exist:
         raise LookupError("Tenant not found")
@@ -145,7 +157,7 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str|enum.Enum):
         case LLMType.EMBEDDING.value:
             model_name = tenant.embd_id
         case LLMType.SPEECH2TEXT.value:
-            model_name =  tenant.asr_id
+            model_name = tenant.asr_id
         case LLMType.IMAGE2TEXT.value:
             model_name = tenant.img2txt_id
         case LLMType.CHAT.value:
@@ -181,16 +193,36 @@ def split_model_name(model_name: str):
     return pure_model_name, instance_name, provider_name
 
 
-def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum, model_name: str):
+def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: str):
+    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
+    if instance_obj:
+        return instance_obj
+    if instance_name != "default":
+        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+
+    active_instances = [inst for inst in TenantModelInstanceService.get_all_by_provider_id(provider_obj.id) if inst.status == ActiveStatusEnum.ACTIVE.value]
+    if len(active_instances) == 1:
+        logger.warning(
+            "Model instance fallback applied for legacy default instance name",
+            extra={
+                "provider_name": provider_obj.provider_name,
+                "requested_instance_name": instance_name,
+                "resolved_instance_name": active_instances[0].instance_name,
+                "model_name": model_name,
+            },
+        )
+        return active_instances[0]
+
+    raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+
+
+def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.Enum, model_name: str):
     pure_model_name, instance_name, provider_name = split_model_name(model_name)
     model_type_val = model_type if isinstance(model_type, str) else model_type.value
     # Builtin embedding model
     compose_profiles = os.getenv("COMPOSE_PROFILES", "")
     is_tei_builtin_embedding = (
-            model_type_val == LLMType.EMBEDDING.value
-            and "tei-" in compose_profiles
-            and pure_model_name == os.getenv("TEI_MODEL", "")
-            and (provider_name == "Builtin" or not provider_name)
+        model_type_val == LLMType.EMBEDDING.value and "tei-" in compose_profiles and pure_model_name == os.getenv("TEI_MODEL", "") and (provider_name == "Builtin" or not provider_name)
     )
     if is_tei_builtin_embedding:
         # configured local embedding model
@@ -206,9 +238,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
-    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
-    if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, pure_model_name)
 
     api_key, is_tool, api_key_payload = _decode_api_key_config(instance_obj.api_key)
@@ -228,8 +258,13 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
             "api_base": extra_fields.get("base_url", ""),
             "model_type": model_type_val,
             "is_tools": model_extra.get("is_tools", is_tool),
-            "max_tokens": model_extra.get("max_tokens", 8192),
+            "max_tokens": model_extra.get("max_tokens") or 8192,
         }
+        if provider_name.lower() == "somark":
+            # SoMark/OCR factories read parser config (somark_*, parse_method, ...)
+            # from model_config["extra"]; see tenant_llm_service.LLMBundle OCR path.
+            model_config["extra"] = model_extra.get("ocr_config", model_extra)
+
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload
 
@@ -246,9 +281,7 @@ def get_api_key(tenant_id: str, model_name: str):
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found.")
-    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
-    if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found.")
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
     return instance_obj.api_key
 
 
@@ -280,4 +313,13 @@ def ensure_opendataloader_from_env(tenant_id: str) -> str | None:
         "OpenDataLoader",
         "opendataloader-from-env",
         _collect_env_config(OPENDATALOADER_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG),
+    )
+
+
+def ensure_somark_from_env(tenant_id: str) -> str | None:
+    return _ensure_ocr_provider_from_env(
+        tenant_id,
+        "SoMark",
+        "somark-from-env",
+        _collect_env_config(SOMARK_ENV_KEYS, SOMARK_DEFAULT_CONFIG),
     )

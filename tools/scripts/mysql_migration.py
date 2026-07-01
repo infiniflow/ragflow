@@ -978,10 +978,13 @@ class TenantModelStage(MigrationStage):
                 resolved.append((source_id, llm_name, provider_id, instance_id, model_type, status, api_key))
             else:
                 skipped += 1
+                # Don't include the API key (even truncated) in the log:
+                # CodeQL flags this as clear-text-logging-sensitive-data,
+                # and the first 30 chars of an API key often carry enough
+                # entropy to be useful to an attacker who reads the log.
                 logger.warning(
-                    f"No matching instance for tenant_llm id={source_id}, "
-                    f"provider_id={provider_id}, llm_name={llm_name}, "
-                    f"canonical_api_key={canonical[:30]}..."
+                    "No matching instance for tenant_llm id=%s provider_id=%s llm_name=%s",
+                    source_id, provider_id, llm_name,
                 )
 
         if skipped > 0:
@@ -1888,10 +1891,10 @@ Examples:
   python mysql_migration.py --list-stages
 
   # Check whether migration is needed for a target version
-  python mysql_migration.py --check-database-version --database-version v0.26.1 --config /path/to/config.yaml
+  python mysql_migration.py --check-database-version --database-version v0.26.2 --config /path/to/config.yaml
 
   # Mark database version separately
-  python mysql_migration.py --mark-database-version --database-version v0.26.1 --config /path/to/config.yaml
+  python mysql_migration.py --mark-database-version --database-version v0.26.2 --config /path/to/config.yaml
   
   # Dry run (default - check only, no write) with config file
   python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml
@@ -1905,11 +1908,11 @@ Examples:
   # Execute full migration (create tables and migrate data)
   python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --execute
 
-  # Execute migration only when database version is lower than v0.26.1
-  python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --execute --database-version v0.26.1
+  # Execute migration only when database version is lower than v0.26.2
+  python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --execute --database-version v0.26.2
 
   # Execute migration and mark the database version when all stages succeed
-  python mysql_migration.py --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config --config /path/to/config.yaml --execute --database-version v0.26.1 --mark-database-version-on-success
+  python mysql_migration.py --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config --config /path/to/config.yaml --execute --database-version v0.26.2 --mark-database-version-on-success
   
   # Normalize legacy model IDs in stored configs
   python mysql_migration.py --stages model_id_config --config /path/to/config.yaml --execute

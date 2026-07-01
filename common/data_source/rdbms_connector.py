@@ -359,7 +359,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         conditions = []
         if start is not None:
             conditions.append(
-                f"ragflow_src.{self.timestamp_column} > {self._format_sql_value(start)}"
+                f"ragflow_src.{self.timestamp_column} >= {self._format_sql_value(start)}"
             )
         if end is not None:
             conditions.append(
@@ -666,16 +666,17 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self,
         start_value: Any = None,
         end_value: Any = None,
+        start_id: Any = None,
     ) -> Generator[list[Document], None, None]:
-        """Yield documents whose timestamp column falls in ``(start_value, end_value]``.
+        """Yield documents whose timestamp column falls in ``[start_value, end_value]``.
 
         Returns an empty iterator when *end_value* is ``None`` or the range is
-        empty (``end_value <= start_value``).
+        empty (``end_value < start_value``).
         """
         if end_value is None:
             self._close_connection()
             return iter(())
-        if start_value is not None and end_value <= start_value:
+        if start_value is not None and end_value < start_value:
             self._close_connection()
             return iter(())
         return self._yield_documents(start_value, end_value)

@@ -1759,7 +1759,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
-            "rank": "988",
+            "rank": "830",
             "llm": []
         },
         {
@@ -7489,6 +7489,14 @@
             "llm": []
         },
         {
+            "name": "SoMark",
+            "logo": "",
+            "tags": "OCR",
+            "status": "1",
+            "rank": "930",
+            "llm": []
+        },
+        {
             "name": "n1n",
             "logo": "",
             "tags": "LLM",
@@ -8058,6 +8066,14 @@
                     "model_type": "embedding"
                 }
             ]
+        },
+        {
+            "name": "New API",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,IMAGE2TEXT,TTS,SPEECH2TEXT",
+            "status": "1",
+            "llm": [],
+            "rank": "885"
         }
     ]
 }

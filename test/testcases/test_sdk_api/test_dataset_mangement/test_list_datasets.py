@@ -250,14 +250,14 @@ class TestDatasetsList:
         params = {"id": "not_uuid"}
         with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
+        assert "Invalid UUID format" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_id_not_uuid1(self, client):
         params = {"id": uuid.uuid4().hex}
         with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
+        assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_id_wrong_uuid(self, client):
@@ -271,7 +271,7 @@ class TestDatasetsList:
         params = {"id": ""}
         with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
+        assert "Invalid UUID format" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_id_none(self, client):
