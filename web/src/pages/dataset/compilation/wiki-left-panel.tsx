@@ -1,8 +1,17 @@
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
+import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { Spin } from '@/components/ui/spin';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IArtifact } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
+import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -10,6 +19,8 @@ import {
   useFetchArtifactList,
 } from '@/hooks/use-knowledge-request';
 import ArtifactForceGraph from './artifact-force-graph';
+import { CreateDirectoryDialog } from './create-directory-dialog';
+import { useCreateDirectory } from './use-create-directory';
 
 export enum LeftPanelTab {
   Contents = 'contents',
@@ -69,19 +80,62 @@ function ContentList({ selectedArtifact, onSelectArtifact }: ContentListProps) {
     handleScroll,
     hasMore,
   } = useFetchArtifactList();
+  const {
+    open,
+    loading: createLoading,
+    form,
+    showModal: handleShowCreateDialog,
+    hideModal: handleHideCreateDialog,
+    handleOk: handleCreateOk,
+  } = useCreateDirectory();
 
   return (
-    <div className="size-full flex flex-col">
-      <div className="px-3 py-2">
-        <SearchInput
-          placeholder={t('common.search')}
-          value={searchString}
-          onChange={handleSearchChange}
-        />
+    <div className="size-full flex flex-col gap-3 px-3">
+      <SearchInput
+        placeholder={t('common.search')}
+        value={searchString}
+        onChange={handleSearchChange}
+        className="flex-1"
+      />
+      <div className="space-x-4">
+        <Button variant={'outline'}>Concept</Button>
+        <Button variant={'outline'}>Entity</Button>
       </div>
-
+      <section>
+        <div className="flex items-center justify-between">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink className="text-text-secondary text-sm">
+                  Department
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbLink className="text-text-primary text-sm">
+                  Department 00
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+          <Button
+            variant="secondary"
+            size="icon-xs"
+            onClick={handleShowCreateDialog}
+          >
+            <Plus className="size-4" />
+          </Button>
+        </div>
+      </section>
+      <CreateDirectoryDialog
+        open={open}
+        loading={createLoading}
+        form={form}
+        onOk={handleCreateOk}
+        onCancel={handleHideCreateDialog}
+      />
       <div
-        className="flex-1 min-h-0 overflow-y-auto px-3 pb-3"
+        className="flex-1 min-h-0 overflow-y-auto pb-3"
         onScroll={handleScroll}
       >
         <ul className="space-y-1">

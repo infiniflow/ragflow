@@ -16,8 +16,9 @@ import { useCommitArtifact } from '@/pages/dataset/compilation/use-commit-artifa
 import { useWikiEditor } from '@/pages/dataset/compilation/use-wiki-editor';
 import { VersionHistorySheet } from '@/pages/dataset/compilation/version-history-sheet';
 import { WikiCommitModal } from '@/pages/dataset/compilation/wiki-commit-modal';
-import { Upload } from 'lucide-react';
-import { useMemo } from 'react';
+import { downloadMarkdownFile } from '@/utils/file-util';
+import { Download } from 'lucide-react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 type WikiDetailContentProps = {
@@ -59,6 +60,11 @@ export function WikiDetailContent({
     );
   }, [documents]);
 
+  const handleExport = useCallback(() => {
+    const filename = `${data?.title ?? selectedArtifact?.title ?? 'document'}.md`;
+    downloadMarkdownFile(editedContent, filename);
+  }, [data?.title, selectedArtifact?.title, editedContent]);
+
   const renderToolbarButtons = () => {
     if (isDirty) {
       return (
@@ -82,8 +88,13 @@ export function WikiDetailContent({
       <div className="flex items-center gap-1">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-8">
-              <Upload className="size-4" />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              onClick={handleExport}
+            >
+              <Download className="size-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{t('knowledgeDetails.export')}</TooltipContent>
