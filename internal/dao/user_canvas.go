@@ -18,6 +18,7 @@ package dao
 
 import (
 	"errors"
+	"regexp"
 	"strings"
 
 	"gorm.io/gorm"
@@ -72,6 +73,18 @@ func escapeSQLLike(s string) string {
 	return replacer.Replace(s)
 }
 
+func splitUserCanvasTags(raw string) []string {
+	parts := strings.Split(raw, ",")
+	tags := make([]string, 0, len(parts))
+	for _, tag := range parts {
+		tag = strings.TrimSpace(tag)
+		if tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return tags
+}
+
 func applyUserCanvasTagFilter(query *gorm.DB, tags []string) *gorm.DB {
 	if len(tags) == 0 {
 		return query
@@ -83,11 +96,8 @@ func applyUserCanvasTagFilter(query *gorm.DB, tags []string) *gorm.DB {
 		if tag == "" {
 			continue
 		}
-		escaped := escapeSQLLike(tag)
-		cond := DB.Where("user_canvas.tags = ?", tag).
-			Or("user_canvas.tags LIKE ? ESCAPE '\\\\'", escaped+",%").
-			Or("user_canvas.tags LIKE ? ESCAPE '\\\\'", "%,"+escaped).
-			Or("user_canvas.tags LIKE ? ESCAPE '\\\\'", "%,"+escaped+",%")
+		pattern := "(^|,)[[:space:]]*" + regexp.QuoteMeta(tag) + "[[:space:]]*(,|$)"
+		cond := DB.Where("user_canvas.tags REGEXP ?", pattern)
 		if !hasTag {
 			tagQuery = tagQuery.Where(cond)
 			hasTag = true
@@ -363,7 +373,11 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page
 		Where(
 			DB.Where("user_canvas.user_id IN ? AND user_canvas.permission = ?", ownerIDs, "team").
 				Or("user_canvas.user_id = ?", userID),
-		)
+			"user_canvas.user_id IN ?",
+			ownerIDs,
+		).Where(
+		DB.Where("user_canvas.permission = ?", "team").
+			Or("user_canvas.user_id = ?", userID))
 
 	if canvasCategory != "" {
 		base = base.Where("user_canvas.canvas_category = ?", canvasCategory)
@@ -429,11 +443,8 @@ func (dao *UserCanvasDAO) ListTags(ownerIDs []string, userID string, canvasCateg
 
 	counts := make(map[string]int)
 	for _, row := range rows {
-		for _, tag := range strings.Split(row.Tags, ",") {
-			tag = strings.TrimSpace(tag)
-			if tag != "" {
-				counts[tag]++
-			}
+		for _, tag := range splitUserCanvasTags(row.Tags) {
+			counts[tag]++
 		}
 	}
 	return counts, nil

@@ -209,7 +209,7 @@ type AgentItem struct {
 	TenantID       string  `json:"tenant_id"`
 	Nickname       string  `json:"nickname"`
 	TenantAvatar   *string `json:"tenant_avatar,omitempty"`
-	Tags           string  `json:"tags,omitempty"`
+	Tags           string  `json:"tags"`
 	CanvasType     *string `json:"canvas_type,omitempty"`
 	CanvasCategory string  `json:"canvas_category"`
 	CreateTime     *int64  `json:"create_time,omitempty"`
