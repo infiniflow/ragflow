@@ -202,7 +202,7 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		RerankID:  rerankID,
 		TTSID:     ttsID,
 		OCRID:     ocrID,
-		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
+		ParserIDs: "naive:General,qa:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
 	userTenantID := utility.GenerateToken()
@@ -1064,6 +1064,35 @@ func (s *UserService) GetUserByAPIToken(authorization string) (*entity.User, com
 
 	return user, common.CodeSuccess, nil
 
+}
+
+// GetAPITokenByBeta returns the APIToken row whose `beta` column
+// matches the given raw token. Used by the beta-auth middleware
+// to expose DialogID (the real agent_id) to downstream handlers
+// without re-parsing the Authorization header. Mirrors
+// `APIToken.query(beta=token)` from python bot_api.py:agent_bot_logs.
+func (s *UserService) GetAPITokenByBeta(authorization string) (*entity.APIToken, error) {
+	authorization = strings.TrimSpace(authorization)
+	if authorization == "" {
+		return nil, fmt.Errorf("authorization header is empty")
+	}
+	parts := strings.Fields(authorization)
+	var token string
+	if len(parts) == 2 {
+		token = parts[1]
+	} else if len(parts) == 1 {
+		if strings.EqualFold(parts[0], "Bearer") {
+			return nil, fmt.Errorf("invalid authorization format")
+		}
+		token = parts[0]
+	} else {
+		return nil, fmt.Errorf("invalid authorization format")
+	}
+	if token == "" {
+		return nil, fmt.Errorf("invalid authorization format")
+	}
+	apiTokenDAO := dao.NewAPITokenDAO()
+	return apiTokenDAO.GetByBeta(token)
 }
 
 // GetUserByBetaAPIToken gets user by beta access key from Authorization

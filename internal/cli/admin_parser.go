@@ -1433,14 +1433,14 @@ func (p *Parser) parseAdminAlterProvider() (*Command, error) {
 	}
 	p.nextToken()
 
-	newModelName := ""
+	newInstanceName := ""
 	newAPIKey := ""
 optionsLoop:
 	for {
 		switch p.curToken.Type {
 		case TokenName:
 			p.nextToken()
-			newModelName, err = p.parseQuotedString()
+			newInstanceName, err = p.parseQuotedString()
 			if err != nil {
 				return nil, fmt.Errorf("expected model name: %w", err)
 			}
@@ -1457,14 +1457,14 @@ optionsLoop:
 		}
 	}
 
-	if newModelName == "" && newAPIKey == "" {
+	if newInstanceName == "" && newAPIKey == "" {
 		return nil, fmt.Errorf("expected NAME or KEY after INSTANCE")
 	}
 
 	cmd := NewCommand("admin_alter_provider_instance")
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
-	cmd.Params["new_model_name"] = newModelName
+	cmd.Params["new_instance_name"] = newInstanceName
 	cmd.Params["new_api_key"] = newAPIKey
 
 	p.nextToken()
@@ -2100,9 +2100,9 @@ func (p *Parser) parseAdminDeleteCommands() (*Command, error) {
 	p.nextToken() // consume DELETE
 	switch p.curToken.Type {
 	case TokenAPI:
-		return p.parseDeleteAPIServer()
+		return p.parseAPIDeleteAPIServer()
 	case TokenAdmin:
-		return p.parseDeleteAdminServer()
+		return p.parseAPIDeleteAdminServer()
 	case TokenProvider:
 		return p.parseAdminDeleteProvider()
 	default:
@@ -2525,6 +2525,8 @@ func (p *Parser) parseAdminShowUsersCommands() (*Command, error) {
 		return cmd, nil
 	case TokenActivity:
 		return p.parseAdminShowUsersActivity()
+	case TokenPlan:
+		return p.parseAdminShowUsersPlan()
 	default:
 		return nil, fmt.Errorf("invalid command")
 	}
@@ -2578,6 +2580,21 @@ commandLoop:
 	cmd := NewCommand("admin_show_users_activity_command")
 	cmd.Params["days"] = days
 	cmd.Params["window"] = windowSize
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminShowUsersPlan() (*Command, error) {
+	p.nextToken() // consume PLAN
+
+	if p.curToken.Type != TokenSummary {
+		return nil, fmt.Errorf("expected SUMMARY")
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_show_users_plan_command")
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 	return cmd, nil
 }
 

@@ -35,6 +35,8 @@ func setupDocumentTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(
 		&entity.Document{},
+		&entity.Knowledgebase{},
+		&entity.Tenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -161,6 +163,64 @@ func TestDocumentGetByDocumentIDAndDatasetIDUsesKBID(t *testing.T) {
 
 	if _, err := NewDocumentDAO().GetByDocumentIDAndDatasetID("doc1", "kb2"); err == nil {
 		t.Fatal("expected no match when document does not belong to dataset")
+	}
+}
+
+func TestDocumentGetChunkingConfigScansParserConfig(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	pushDocDB(t, db)
+
+	if err := db.Create(&entity.Tenant{
+		ID:        "tenant1",
+		LLMID:     "llm1",
+		EmbdID:    "embd1",
+		ASRID:     "asr1",
+		Img2TxtID: "img2txt1",
+		RerankID:  "rerank1",
+		ParserIDs: "naive",
+	}).Error; err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	if err := db.Create(&entity.Knowledgebase{
+		ID:           "kb1",
+		TenantID:     "tenant1",
+		Name:         "Dataset 1",
+		Language:     sp("English"),
+		EmbdID:       "kb-embd1",
+		Permission:   "me",
+		CreatedBy:    "user1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("create knowledgebase: %v", err)
+	}
+	if err := db.Create(&entity.Document{
+		ID:           "doc1",
+		KbID:         "kb1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{"chunk_token_num": float64(128), "delimiter": "\\n"},
+		SourceType:   "local",
+		Type:         "doc",
+		CreatedBy:    "user1",
+		Size:         42,
+		Suffix:       ".txt",
+	}).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+
+	config, err := NewDocumentDAO().GetChunkingConfig("doc1")
+	if err != nil {
+		t.Fatalf("GetChunkingConfig failed: %v", err)
+	}
+	parserConfig, ok := config["parser_config"].(entity.JSONMap)
+	if !ok {
+		t.Fatalf("parser_config type = %T, want entity.JSONMap", config["parser_config"])
+	}
+	if parserConfig["chunk_token_num"] != float64(128) || parserConfig["delimiter"] != "\\n" {
+		t.Fatalf("unexpected parser_config: %#v", parserConfig)
+	}
+	if config["tenant_id"] != "tenant1" || config["embd_id"] != "kb-embd1" {
+		t.Fatalf("unexpected joined config: %#v", config)
 	}
 }
 

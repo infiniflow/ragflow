@@ -24001,18 +24001,14 @@
     },
     {
       "name": "paddleocr/paddleocr-vl-0.9b",
-      "alias": [
-        "paddleocr-vl-1.5"
-      ],
+      "alias": [],
       "model_types": [
         "ocr"
       ]
     },
     {
       "name": "paddleocr/pp-ocrv5",
-      "alias": [
-        "PP-OCRv5"
-      ],
+      "alias": [],
       "model_types": [
         "ocr"
       ],
@@ -24020,9 +24016,7 @@
     },
     {
       "name": "paddleocr/pp-structurev3",
-      "alias": [
-        "PP-StructureV3"
-      ],
+      "alias": [],
       "model_types": [
         "ocr"
       ],
@@ -24043,9 +24037,7 @@
     },
     {
       "name": "paddlepaddle/paddleocr-vl",
-      "alias": [
-        "paddleocr-vl"
-      ],
+      "alias": [],
       "max_tokens": 16384,
       "max_completion_tokens": 16384,
       "model_types": [
