@@ -788,6 +788,34 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 		if !s.checkFileTeamPermission(destFolder, uid) {
 			return false, "No authorization to write to destination folder."
 		}
+
+		if destFolder.Type != FileTypeFolder {
+			return false, "Destination is not a folder."
+		}
+
+		destAncestors, err := s.fileDAO.GetAllParentFolders(destFolder.ID)
+		if err != nil {
+			return false, "Parent folder not found!"
+		}
+
+		destAncestorIDs := make(map[string]struct{}, len(destAncestors))
+		for _, folder := range destAncestors {
+			destAncestorIDs[folder.ID] = struct{}{}
+		}
+
+		for _, file := range files {
+			if file.Type != FileTypeFolder {
+				continue
+			}
+
+			if file.ID == destFolder.ID {
+				return false, "Cannot move a folder to itself."
+			}
+
+			if _, ok := destAncestorIDs[file.ID]; ok {
+				return false, "Cannot move a folder into its own subfolder."
+			}
+		}
 	}
 
 	// 5. Validate new_name if provided
