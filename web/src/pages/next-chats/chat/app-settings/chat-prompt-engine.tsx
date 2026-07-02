@@ -7,6 +7,7 @@ import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { SwitchFormField } from '@/components/switch-fom-field';
 import { TavilyFormField } from '@/components/tavily-form-field';
+import { TemporalRetrieval } from '@/components/temporal-retrieval';
 import { TOCEnhanceFormField } from '@/components/toc-enhance-form-field';
 import { TopNFormField } from '@/components/top-n-item';
 import {
@@ -134,6 +135,7 @@ export function ChatPromptEngine({ prefix = '' }: ChatPromptEngineProps) {
           name={prefixName(prefix, 'prompt_config.tavily_api_key')}
         ></TavilyFormField>
         <MetadataFilter></MetadataFilter>
+        <TemporalRetrieval></TemporalRetrieval>
         <FormField
           control={form.control}
           name={prefixName(prefix, 'prompt_config.reference_metadata.include')}

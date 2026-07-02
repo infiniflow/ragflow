@@ -4,6 +4,7 @@ import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { TemporalRetrieval } from '@/interfaces/database/chat';
 import searchService from '@/services/search-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
@@ -185,6 +186,7 @@ export interface ISearchAppDetailProps {
       method: string;
       manual: { key: string; op: string; value: string }[];
     };
+    temporal_retrieval?: TemporalRetrieval;
     reference_metadata?: {
       include?: boolean;
       fields?: string[];
@@ -288,7 +290,7 @@ export const useUpdateSearch = () => {
       }
       return response.data;
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       message.success(t('message.updated'));
       queryClient.invalidateQueries({
         queryKey: ['searchDetail', variables.search_id],

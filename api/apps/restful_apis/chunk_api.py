@@ -54,7 +54,8 @@ from api.utils.reference_metadata_utils import (
 )
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
-from common.metadata_utils import convert_conditions, meta_filter
+from common.metadata_utils import convert_conditions
+from common.temporal_retrieval import merge_temporal_reference_fields, resolve_temporal_retrieval_context
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.tag_feature_utils import validate_tag_features
@@ -317,17 +318,26 @@ async def retrieval_test(tenant_id):
         for doc_id in doc_ids:
             if doc_id not in doc_ids_list:
                 return get_error_data_result(f"The datasets don't own the document {doc_id}")
-    if not doc_ids:
-        metadata_condition = req.get("metadata_condition")
-        if metadata_condition:
-            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
-            doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
-            if not doc_ids and metadata_condition.get("conditions"):
-                return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
-            if metadata_condition and not doc_ids:
-                doc_ids = ["-999"]
-        else:
-            doc_ids = None
+    metadata_condition = req.get("metadata_condition")
+    temporal_retrieval = req.get("temporal_retrieval")
+    if metadata_condition is not None and not isinstance(metadata_condition, dict):
+        return get_error_data_result("`metadata_condition` should be an object.")
+    if temporal_retrieval is not None and not isinstance(temporal_retrieval, dict):
+        return get_error_data_result("`temporal_retrieval` should be an object.")
+    from common.temporal_validation import validate_temporal_retrieval_config
+
+    temporal_err = validate_temporal_retrieval_config(temporal_retrieval)
+    if temporal_err:
+        return get_error_data_result(temporal_err)
+    metadata_condition = metadata_condition or {}
+    temporal_retrieval = temporal_retrieval or {}
+    meta_data_filter = {}
+    if metadata_condition:
+        meta_data_filter = {
+            "method": "manual",
+            "manual": convert_conditions(metadata_condition),
+            "logic": metadata_condition.get("logic", "and"),
+        }
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
@@ -343,6 +353,7 @@ async def retrieval_test(tenant_id):
     else:
         return get_error_data_result("`highlight` should be a boolean")
     include_metadata, metadata_fields = _resolve_reference_metadata(req)
+    metadata_fields = merge_temporal_reference_fields(include_metadata, metadata_fields, temporal_retrieval)
     try:
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
@@ -358,6 +369,19 @@ async def retrieval_test(tenant_id):
 
         if langs:
             question = await cross_languages(kb.tenant_id, None, question, langs)
+        temporal_ctx = await resolve_temporal_retrieval_context(
+            raw_query=req["question"].strip() if isinstance(req["question"], str) else req["question"],
+            refined_query=question,
+            retrieval_query=question,
+            meta_data_filter=meta_data_filter,
+            temporal_retrieval=temporal_retrieval,
+            kb_ids=kb_ids,
+            base_doc_ids=doc_ids,
+            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+        )
+        doc_ids = temporal_ctx.doc_ids
+        if metadata_condition.get("conditions") and doc_ids == ["-999"]:
+            return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
         if req.get("keyword", False):
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
             question += await keyword_extraction(LLMBundle(kb.tenant_id, chat_model_config), question)
@@ -366,6 +390,7 @@ async def retrieval_test(tenant_id):
             question, embd_mdl, tenant_ids, kb_ids, page, size, similarity_threshold,
             vector_similarity_weight, top, doc_ids, rerank_mdl=rerank_mdl,
             highlight=highlight, rank_feature=label_question(question, kbs),
+            temporal_rank_policy=temporal_ctx.temporal_rank_policy,
         )
         if toc_enhance:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)

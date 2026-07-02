@@ -120,6 +120,17 @@ def test_reported_regression_page7_not_short():
 
 
 @pytest.mark.p1
+def test_temporal_window_floor_stays_page_aligned():
+    page_size, top = 10, 1024
+    window = _rerank_window(page_size, top, temporal_min_candidates=128)
+
+    assert window % page_size == 0
+    assert window >= 128
+    assert window <= top
+    assert _rerank_window(1, 0) == 30
+
+
+@pytest.mark.p1
 def test_matches_legacy_window_on_non_buggy_paths():
     """Where the old formula already produced a page-aligned value, the new
     window is unchanged (no behavioral regression on the non-buggy paths)."""

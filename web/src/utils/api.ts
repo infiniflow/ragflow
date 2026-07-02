@@ -128,6 +128,8 @@ export default {
   getMeta: `${restAPIv1}/datasets/metadata/flattened`,
   getKnowledgeBasicInfo: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions/summary`,
+  getMetaKeys: `${restAPIv1}/datasets/metadata/keys`,
+  getTemporalMetadataProfile: `${restAPIv1}/datasets/metadata/temporal/profile`,
   // data pipeline log
   fetchDataPipelineLog: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
