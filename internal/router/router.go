@@ -208,8 +208,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			agentbotGroup := apiBetaAuth.Group("/agentbots")
 			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
 		}
-		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
+		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
 
 		// MCP server endpoint — exposes RAGFlow capabilities as MCP tools.
@@ -300,6 +300,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.DELETE("/:chat_id/sessions", r.chatSessionHandler.DeleteSessions)
 				chats.GET("/:chat_id/sessions/:session_id", r.chatSessionHandler.GetSession)
 				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
+				chats.DELETE("/:chat_id/sessions/:session_id/messages/:msg_id", r.chatSessionHandler.DeleteSessionMessage)
+				chats.PUT("/:chat_id/sessions/:session_id/messages/:msg_id/feedback", r.chatSessionHandler.UpdateMessageFeedback)
 			}
 
 			chat := v1.Group("/chat")
