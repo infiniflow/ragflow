@@ -49,6 +49,7 @@ from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
+from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import chunks_format
 from rag.prompts.template import load_prompt
 
@@ -1147,6 +1148,22 @@ async def recommendation():
     return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
 
 
+def completion_usage(prompt_text: str, answer_text: str) -> dict:
+    """Token-usage block for a completion response (issue #8035).
+
+    Mirrors the OpenAI-compatible endpoint's accounting (openai_api.py): counts are
+    recomputed from the prompt and answer strings via ``num_tokens_from_string`` —
+    self-contained, so no model-internal counter has to be threaded through. Reusable
+    by the agent-completion endpoint as well."""
+    prompt_tokens = num_tokens_from_string(prompt_text or "")
+    completion_tokens = num_tokens_from_string(answer_text or "")
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+    }
+
+
 @manager.route("/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 async def session_completion(chat_id_in_arg=""):
@@ -1242,6 +1259,10 @@ async def session_completion(chat_id_in_arg=""):
             formatted = structure_answer(conv, ans, message_id, session_id)
             if chat_id:
                 formatted["chat_id"] = chat_id
+            if ans.get("final"):
+                # issue #8035: surface token usage on the final completion chunk
+                question = request_msg[-1].get("content", "") if request_msg else ""
+                formatted["usage"] = completion_usage(question, formatted.get("answer", ""))
             return formatted
 
         async def stream():
