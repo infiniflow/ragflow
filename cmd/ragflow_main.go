@@ -30,6 +30,7 @@ import (
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion"
+	"ragflow/internal/mcp"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
@@ -609,6 +610,21 @@ func startServer(config *server.Config) {
 	fileHandler := handler.NewFileHandler(fileService, userService)
 	memoryHandler := handler.NewMemoryHandler(memoryService)
 	mcpHandler := handler.NewMCPHandler(mcpService)
+
+	// MCP server endpoint — exposes RAGFlow capabilities as MCP tools
+	// (ragflow_retrieval, ragflow_list_datasets, ragflow_list_chats) to
+	// external AI clients via JSON-RPC over HTTP.
+	mcpServerHandler := handler.NewMCPServerHandler(
+		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+			return handler.MCPListDatasets(datasetsService, userID, page, pageSize, orderby, desc)
+		},
+		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+			return handler.MCPListChats(chatService, userID, page, pageSize, orderby, desc)
+		},
+		func(userID string, req mcp.RetrievalRequest) (string, error) {
+			return handler.MCPRetrieval(datasetsService, userID, req)
+		},
+	)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	// Install the agent service's Redis-backed run infrastructure
@@ -707,6 +723,7 @@ func startServer(config *server.Config) {
 		fileHandler,
 		memoryHandler,
 		mcpHandler,
+		mcpServerHandler,
 		skillSearchHandler,
 		providerHandler,
 		agentHandler,
@@ -719,7 +736,8 @@ func startServer(config *server.Config) {
 		openaiChatHandler,
 		botHandler)
 
-	// Create Gin engine
+	// Create Gin enginegit diff
+
 	ginEngine := gin.New()
 
 	// Middleware
