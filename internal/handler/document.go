@@ -50,7 +50,7 @@ type documentServiceIface interface {
 	ParseDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopParseDocuments(datasetID string, docIDs []string) (map[string]interface{}, error)
 	ListDocuments(page, pageSize int) ([]*service.DocumentResponse, int64, error)
-	ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
+	ListDocumentsByDatasetID(kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
 	GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*service.DocumentResponse, int64, error)
 	GetThumbnail(docID string) (*service.ThumbnailResponse, error)
 	GetDocumentImage(imageID string) ([]byte, error)
@@ -492,6 +492,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
 	pageStr := c.Query("page")
+	keywords := c.Query("keywords")
 	pageSizeStr := c.Query("page_size")
 	page, _ := strconv.Atoi(pageStr)
 	pageSize, _ := strconv.Atoi(pageSizeStr)
@@ -511,7 +512,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 
 	// Use kbID to filter documents
-	documents, total, err := h.documentService.ListDocumentsByDatasetID(datasetID, page, pageSize)
+	documents, total, err := h.documentService.ListDocumentsByDatasetID(datasetID, keywords, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    1,

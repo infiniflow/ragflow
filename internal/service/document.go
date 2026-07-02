@@ -977,9 +977,9 @@ func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status st
 }
 
 // ListDocumentsByDatasetID list documents by knowledge base ID
-func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+func (s *DocumentService) ListDocumentsByDatasetID(kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	offset := (page - 1) * pageSize
-	documents, total, err := s.documentDAO.ListByKBID(kbID, offset, pageSize)
+	documents, total, err := s.documentDAO.ListByKBID(kbID, keywords, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
