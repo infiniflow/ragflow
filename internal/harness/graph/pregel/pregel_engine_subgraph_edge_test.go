@@ -177,15 +177,13 @@ func TestEngine_ReuseDiffConfig(t *testing.T) {
 func TestEngine_ManyParallelRuns(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 30; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(10))
 			_, err := engine.RunSync(context.Background(), map[string]any{"value": "par"})
 			if err != nil {
 				t.Errorf("RunSync: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

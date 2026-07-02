@@ -343,15 +343,18 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
     if chat_template_kwargs is not None:
         run_kwargs["chat_template_kwargs"] = chat_template_kwargs
 
-    async for ans in canvas.run(**run_kwargs):
-        ans["session_id"] = session_id
-        if ans["event"] == "message":
-            txt += ans["data"]["content"]
-            if ans["data"].get("start_to_think", False):
-                txt += "<think>"
-            elif ans["data"].get("end_to_think", False):
-                txt += "</think>"
-        yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+    try:
+        async for ans in canvas.run(**run_kwargs):
+            ans["session_id"] = session_id
+            if ans["event"] == "message":
+                txt += ans["data"]["content"]
+                if ans["data"].get("start_to_think", False):
+                    txt += "<think>"
+                elif ans["data"].get("end_to_think", False):
+                    txt += "</think>"
+            yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+    finally:
+        canvas.close()
 
     conv.message.append({"role": "assistant", "content": txt, "created_at": time.time(), "id": message_id})
     current_reference = canvas.get_reference()
