@@ -26,6 +26,11 @@ class LoopLocalSemaphore:
 
     def __init__(self, value: int):
         self._value = int(value)
+        if self._value <= 0:
+            raise ValueError(
+                f"LoopLocalSemaphore value must be > 0, got {self._value}. "
+                "Check MAX_CONCURRENT_* environment variables."
+            )
         self._semaphores: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
             weakref.WeakKeyDictionary()
         )
