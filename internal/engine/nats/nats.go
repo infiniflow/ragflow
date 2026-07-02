@@ -48,15 +48,16 @@ func NewNatsEngine(host string, port int) *NatsEngine {
 
 func (n *NatsEngine) Init() error {
 	var err error
-	n.nc, err = nats.Connect(nats.DefaultURL)
+	natsURL := fmt.Sprintf("nats://%s:%d", n.host, n.port)
+	n.nc, err = nats.Connect(natsURL)
 	if err != nil {
-		return fmt.Errorf("failed to connect to NATS: %w", err)
+		return fmt.Errorf("failed to connect to NATS at %s: %w", natsURL, err)
 	}
 
 	n.jetStream, err = jetstream.New(n.nc)
 	if err != nil {
 		n.nc.Close()
-		return fmt.Errorf("failed to create JetStream context: %w", err)
+		return fmt.Errorf("failed to create JetStream context at %s: %w", natsURL, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -73,19 +74,19 @@ func (n *NatsEngine) Init() error {
 
 	n.stream, err = n.jetStream.CreateStream(ctx, streamCfg)
 	if err != nil {
-		if err.Error() != "stream already exists" {
+		if !strings.Contains(err.Error(), "already exists") {
 			n.nc.Close()
-			return fmt.Errorf("fail to create stream: %w", err)
+			return fmt.Errorf("fail to create stream at %s: %w", natsURL, err)
 		}
 
 		common.Info("NATS stream already exists, use existing stream")
 		n.stream, err = n.jetStream.Stream(ctx, "RAGFLOW_TASKS")
 		if err != nil {
 			n.nc.Close()
-			return fmt.Errorf("fail to get existing stream: %w", err)
+			return fmt.Errorf("fail to get existing stream at %s: %w", natsURL, err)
 		}
 	} else {
-		common.Info("NATS stream create successfully")
+		common.Info(fmt.Sprintf("NATS stream create successfully at %s", natsURL))
 	}
 
 	return nil
@@ -181,6 +182,9 @@ func (n *NatsEngine) ListMessages(messageType string, pending bool) ([]map[strin
 }
 
 func (n *NatsEngine) InitConsumer(subject string) error {
+	if n.stream == nil {
+		return fmt.Errorf("NATS stream is nil, engine not properly initialized")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

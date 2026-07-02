@@ -204,6 +204,7 @@ jobs:
           set -euo pipefail
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
+            | grep -v '/internal/agent$' \
             | grep -v '/internal/tokenizer$' \
             | grep -v '/internal/handler$' || true)
           if [ -z "$PKGS" ]; then

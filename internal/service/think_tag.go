@@ -46,6 +46,30 @@ type ThinkStreamState struct {
 	answerBuffer string
 	// carry holds text at the end of a chunk that may be a partial <think> or </think> prefix.
 	carry string
+	// inReasoning tracks whether the model is currently streaming reasoning chunks
+	// (via a dedicated reason field).  Kept separate from inThink, which tracks
+	// <think>/</think> tag boundaries parsed from the text stream itself.
+	inReasoning bool
+}
+
+// EnterReasoning marks the start of a reasoning block (model-level, not tag-based).
+// Returns true when this is a new transition (reasoning was not already active).
+func (s *ThinkStreamState) EnterReasoning() bool {
+	if s.inReasoning {
+		return false
+	}
+	s.inReasoning = true
+	return true
+}
+
+// ExitReasoning marks the end of a reasoning block (model-level, not tag-based).
+// Returns true when this is a new transition (reasoning was active).
+func (s *ThinkStreamState) ExitReasoning() bool {
+	if !s.inReasoning {
+		return false
+	}
+	s.inReasoning = false
+	return true
 }
 
 // ThinkDeltaKind describes the type of a think-tag delta event.
