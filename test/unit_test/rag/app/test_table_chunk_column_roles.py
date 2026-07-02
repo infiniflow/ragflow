@@ -247,3 +247,42 @@ def test_chunk_updates_table_column_names(table_module, mock_update_kb: MagicMoc
 def test_chunk_count_matches_row_count(table_module, mock_update_kb: MagicMock):
     chunks = _run_chunk(table_module, {}, mock_update_kb)
     assert len(chunks) == 3
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        ["0.5", "0.7", "0.9"],
+        ["0.99", "0.50", "0.25"],
+        ["0.5", "1.5", "0.7"],
+    ],
+)
+def test_column_data_type_classifies_sub_one_decimals_as_float(table_module, values):
+    """Decimal values in [0, 1) start with '0.', so a guard meant to keep
+    leading-zero integer identifiers out of the numeric buckets must not also
+    reject them: a column of values like 0.5 / 0.99 must be classified float,
+    not text."""
+    _, ty = table_module.column_data_type(values)
+    assert ty == "float"
+
+
+def test_column_data_type_leading_zero_ids_not_numeric(table_module):
+    """Leading-zero integer identifiers (e.g. '007') must still be kept out of
+    the int/float buckets."""
+    _, ty = table_module.column_data_type(["007", "008", "009"])
+    assert ty not in ("int", "float")
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        ["0.0.1", "0.0.2", "0.0.3"],
+        ["1.2.3"],
+    ],
+)
+def test_column_data_type_version_like_strings_not_float(table_module, values):
+    """Version-like strings (more than one '.') match the loose numeric regex
+    but are not valid floats (e.g. float('0.0.1') raises), so they must not be
+    classified as float."""
+    _, ty = table_module.column_data_type(values)
+    assert ty != "float"
