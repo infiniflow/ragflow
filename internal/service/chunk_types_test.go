@@ -288,6 +288,22 @@ func TestChunkTypesDecrementChunkStats(t *testing.T) {
 	if kb.TokenNum != 20 || kb.ChunkNum != 3 {
 		t.Fatalf("knowledgebase stats token=%d chunk=%d, want token=20 chunk=3", kb.TokenNum, kb.ChunkNum)
 	}
+
+	if err := svc.decrementChunkStats("doc-1", "kb-1", 30, 30, -1); err != nil {
+		t.Fatalf("decrementChunkStats() clamp error = %v", err)
+	}
+	if err := dao.DB.First(&doc, "id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("get doc after clamp: %v", err)
+	}
+	if doc.TokenNum != 0 || doc.ChunkNum != 0 || doc.ProcessDuration != 0 {
+		t.Fatalf("document clamped stats token=%d chunk=%d duration=%v, want zeros", doc.TokenNum, doc.ChunkNum, doc.ProcessDuration)
+	}
+	if err := dao.DB.First(&kb, "id = ?", "kb-1").Error; err != nil {
+		t.Fatalf("get kb after clamp: %v", err)
+	}
+	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
+		t.Fatalf("knowledgebase clamped stats token=%d chunk=%d, want zeros", kb.TokenNum, kb.ChunkNum)
+	}
 }
 
 func TestNewSourcedChunks_RoundTrip(t *testing.T) {

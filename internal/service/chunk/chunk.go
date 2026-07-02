@@ -1769,7 +1769,7 @@ func (s *ChunkService) RemoveChunks(req *service.RemoveChunksRequest, userID str
 
 	if deletedCount > 0 {
 		if err := s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
-			return 0, fmt.Errorf("failed to update chunk stats: %w", err)
+			return deletedCount, fmt.Errorf("failed to update chunk stats: %w", err)
 		}
 	}
 
@@ -2086,9 +2086,9 @@ func (s *ChunkService) decrementChunkStats(docID, kbID string, tokenNum, chunkNu
 		result := tx.Model(&entity.Document{}).
 			Where("id = ? AND kb_id = ?", docID, kbID).
 			Updates(map[string]interface{}{
-				"token_num":        gorm.Expr("token_num - ?", tokenNum),
-				"chunk_num":        gorm.Expr("chunk_num - ?", chunkNum),
-				"process_duration": gorm.Expr("process_duration + ?", duration),
+				"token_num":        gorm.Expr("CASE WHEN token_num - ? >= 0 THEN token_num - ? ELSE 0 END", tokenNum, tokenNum),
+				"chunk_num":        gorm.Expr("CASE WHEN chunk_num - ? >= 0 THEN chunk_num - ? ELSE 0 END", chunkNum, chunkNum),
+				"process_duration": gorm.Expr("CASE WHEN process_duration + ? >= 0 THEN process_duration + ? ELSE 0 END", duration, duration),
 			})
 		if result.Error != nil {
 			return result.Error
@@ -2100,8 +2100,8 @@ func (s *ChunkService) decrementChunkStats(docID, kbID string, tokenNum, chunkNu
 		result = tx.Model(&entity.Knowledgebase{}).
 			Where("id = ?", kbID).
 			Updates(map[string]interface{}{
-				"token_num": gorm.Expr("token_num - ?", tokenNum),
-				"chunk_num": gorm.Expr("chunk_num - ?", chunkNum),
+				"token_num": gorm.Expr("CASE WHEN token_num - ? >= 0 THEN token_num - ? ELSE 0 END", tokenNum, tokenNum),
+				"chunk_num": gorm.Expr("CASE WHEN chunk_num - ? >= 0 THEN chunk_num - ? ELSE 0 END", chunkNum, chunkNum),
 			})
 		if result.Error != nil {
 			return result.Error

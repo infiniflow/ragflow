@@ -888,8 +888,42 @@ func TestRemoveChunksReturnsStatsError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "failed to update chunk stats") {
 		t.Fatalf("expected stats update error, got count=%d err=%v", deletedCount, err)
 	}
-	if deletedCount != 0 {
-		t.Fatalf("deleted count on error = %d, want 0", deletedCount)
+	if deletedCount != 2 {
+		t.Fatalf("deleted count on error = %d, want 2", deletedCount)
+	}
+}
+
+func TestDecrementChunkStatsClampsCounters(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	setChunkTestStats(t, "doc-1", "kb-1", 2, 1, 3, 2)
+	if err := dao.DB.Model(&entity.Document{}).
+		Where("id = ?", "doc-1").
+		Update("process_duration", 0.5).Error; err != nil {
+		t.Fatalf("set process duration: %v", err)
+	}
+
+	svc := &ChunkService{}
+	if err := svc.decrementChunkStats("doc-1", "kb-1", 5, 7, -1); err != nil {
+		t.Fatalf("decrementChunkStats() error = %v", err)
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	if err != nil {
+		t.Fatalf("get doc: %v", err)
+	}
+	if doc.TokenNum != 0 || doc.ChunkNum != 0 || doc.ProcessDuration != 0 {
+		t.Fatalf("document stats token=%d chunk=%d duration=%v, want zeros", doc.TokenNum, doc.ChunkNum, doc.ProcessDuration)
+	}
+
+	kb, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get kb: %v", err)
+	}
+	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
+		t.Fatalf("knowledgebase stats token=%d chunk=%d, want zeros", kb.TokenNum, kb.ChunkNum)
 	}
 }
 
