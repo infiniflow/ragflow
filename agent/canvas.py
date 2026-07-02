@@ -35,6 +35,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from common.constants import LLMType
+from common.llm_request_context import set_llm_request_context, reset_llm_request_context
 from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
 from common.token_utils import token_usage_sink, langfuse_run_attrs
@@ -415,9 +416,10 @@ class Canvas(Graph):
 
     async def run(self, **kwargs):
         # Install a fresh per-run token usage sink and Langfuse correlation context,
-        # and guarantee both are torn down when the run ends (even on early return or
-        # exception) so later LLM calls in the same task never inherit a previous
-        # run's sink or session/user attributes.
+        # and forward the originating session/user to upstream LLM providers (as the
+        # OpenAI `user` field). All three are torn down when the run ends (even on
+        # early return or exception) so later LLM calls in the same task never inherit
+        # a previous run's sink, session/user attributes, or forwarded `user` value.
         self._run_token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
         _lf_attrs = {}
         _user_id = kwargs.get("user_id")
@@ -428,10 +430,15 @@ class Canvas(Graph):
             _lf_attrs["session_id"] = str(_session_id)[:200]
         sink_token = token_usage_sink.set(self._run_token_usage)
         attrs_token = langfuse_run_attrs.set(_lf_attrs)
+        _req_ctx_token = set_llm_request_context(
+            session_id=kwargs.get("session_id"),
+            user_id=kwargs.get("user_id"),
+        )
         try:
             async for ev in self._run_impl(**kwargs):
                 yield ev
         finally:
+            reset_llm_request_context(_req_ctx_token)
             # reset() can raise if the generator is closed from a different context
             # (e.g. client disconnect); fall back to clearing the values in that case.
             try:
@@ -530,8 +537,9 @@ class Canvas(Graph):
                         await cpn_obj.invoke_async(**(call_kwargs or {}))
                         return
                     # run_in_executor does not propagate context variables; copy the
-                    # current context so the token usage sink / Langfuse attributes set
-                    # by run() remain visible to LLMBundle calls inside sync components.
+                    # current context so the token usage sink, Langfuse run attributes,
+                    # and the LLM request context (the `user` forwarding) set by run()
+                    # remain visible to LLMBundle calls inside sync components.
                     ctx = contextvars.copy_context()
                     await loop.run_in_executor(self._thread_pool, lambda: ctx.run(partial(sync_fn, **(call_kwargs or {}))))
 
