@@ -153,15 +153,13 @@ func TestStream_ConcurrentConsumers(t *testing.T) {
 
 	// Multiple consumers read from the same channel.
 	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for result := range outputCh {
 				if _, ok := result.(*StreamEvent); ok {
 					eventCount.Add(1)
 				}
 			}
-		}()
+		})
 	}
 	// Wait for all consumers.
 	wg.Wait()

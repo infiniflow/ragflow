@@ -43,6 +43,7 @@ type Router struct {
 	fileHandler          *handler.FileHandler
 	memoryHandler        *handler.MemoryHandler
 	mcpHandler           *handler.MCPHandler
+	mcpServerHandler     *handler.MCPServerHandler
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
 	agentHandler         *handler.AgentHandler
@@ -75,6 +76,7 @@ func NewRouter(
 	fileHandler *handler.FileHandler,
 	memoryHandler *handler.MemoryHandler,
 	mcpHandler *handler.MCPHandler,
+	mcpServerHandler *handler.MCPServerHandler,
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
@@ -107,6 +109,7 @@ func NewRouter(
 		fileHandler:          fileHandler,
 		memoryHandler:        memoryHandler,
 		mcpHandler:           mcpHandler,
+		mcpServerHandler:     mcpServerHandler,
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
 		agentHandler:         agentHandler,
@@ -205,9 +208,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 			agentbotGroup := apiBetaAuth.Group("/agentbots")
 			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
 		}
-		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
+		// Public bot endpoints (authenticated with an SDK beta token, not a session)
+		apiBetaAuth.GET("/chatbots/:dialog_id/info", r.botHandler.ChatbotInfo)
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
+		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
+
+		// MCP server endpoint — exposes RAGFlow capabilities as MCP tools.
+		// Uses BetaAuthMiddleware to resolve the user from the
+		// Authorization header.
+		if r.mcpServerHandler != nil {
+			apiBetaAuth.POST("/mcp", r.mcpServerHandler.HandleMCP)
+		}
 	}
 
 	// Protected routes
@@ -290,6 +302,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.DELETE("/:chat_id/sessions", r.chatSessionHandler.DeleteSessions)
 				chats.GET("/:chat_id/sessions/:session_id", r.chatSessionHandler.GetSession)
 				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
+				chats.DELETE("/:chat_id/sessions/:session_id/messages/:msg_id", r.chatSessionHandler.DeleteSessionMessage)
+				chats.PUT("/:chat_id/sessions/:session_id/messages/:msg_id/feedback", r.chatSessionHandler.UpdateMessageFeedback)
 			}
 
 			chat := v1.Group("/chat")
