@@ -40,7 +40,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/canvas"
@@ -284,7 +283,7 @@ func (s *BotService) ChatbotCompletion(
 			},
 		})
 		session = &entity.API4Conversation{
-			ID:       uuid.NewString(),
+			ID:       common.GenerateUUID(),
 			DialogID: dialogID,
 			UserID:   tenantID,
 			Message:  seedMsg,
