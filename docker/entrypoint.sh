@@ -273,14 +273,19 @@ ensure_docling
 ensure_db_init
 
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
-    echo "Running model provider table migrations..."
-    "$PY" tools/scripts/mysql_migration.py \
-        --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
-        --config conf/service_conf.yaml \
-        --execute \
-        --database-version "v0.26.1" \
-        --mark-database-version-on-success
-    echo "Model provider table migrations completed."
+    if [[ -f tools/scripts/mysql_migration.py ]]; then
+        echo "Running model provider table migrations..."
+        "$PY" tools/scripts/mysql_migration.py \
+            --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
+            --config conf/service_conf.yaml \
+            --execute \
+            --database-version "v0.26.1" \
+            --mark-database-version-on-success
+        echo "Model provider table migrations completed."
+        exit 0
+    else
+        echo "Skipping model provider table migrations: tools/scripts/mysql_migration.py not found."
+    fi
 fi
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
