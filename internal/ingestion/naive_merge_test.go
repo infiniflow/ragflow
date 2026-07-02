@@ -183,7 +183,7 @@ func TestNaiveMerge_TableDriven(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			chunks := NaiveMerge(tt.texts, tt.chunkTokenNum, tt.delimiter, tt.overlappedPct)
+			chunks := NaiveMerge(tt.texts, nil, tt.chunkTokenNum, tt.delimiter, tt.overlappedPct)
 
 			// Check min/max count
 			if len(chunks) < tt.minChunks {
@@ -240,7 +240,7 @@ func TestNaiveMerge_OverlapContent(t *testing.T) {
 		"CCCCC。",
 		"DDDDD。",
 	}
-	chunks := NaiveMerge(texts, 10, "\n。；！？", 30) // 30% overlap
+	chunks := NaiveMerge(texts, nil, 10, "\n。；！？", 30) // 30% overlap
 
 	// With token limit 10 and 30% overlap, chunks should reuse end of previous.
 	// Verify we got chunks and they look reasonable.
@@ -261,7 +261,7 @@ func TestNaiveMerge_DelimiterAsSplitPoint(t *testing.T) {
 	// For texts under the token limit, no splitting occurs.
 	// This test verifies that a large text IS split at delimiters.
 	texts := []string{strings.Repeat("A。", 100)} // many sentences, over token limit
-	chunks := NaiveMerge(texts, 20, "\n。；！？", 0)
+	chunks := NaiveMerge(texts, nil, 20, "\n。；！？", 0)
 
 	// Should be split into multiple chunks (token limit 20 is small)
 	if len(chunks) < 2 {
@@ -278,7 +278,7 @@ func TestNaiveMerge_DelimiterAsSplitPoint(t *testing.T) {
 func TestNaiveMerge_AllBelowTokenThreshold(t *testing.T) {
 	// All texts below chunk_token_num → should merge into one chunk.
 	texts := []string{"A", "B", "C", "D", "E"}
-	chunks := NaiveMerge(texts, 128, "\n。；！？", 0)
+	chunks := NaiveMerge(texts, nil, 128, "\n。；！？", 0)
 
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
@@ -294,7 +294,7 @@ func TestNaiveMerge_AllBelowTokenThreshold(t *testing.T) {
 func TestNaiveMerge_PositionInfo(t *testing.T) {
 	// Texts with position info should have positions carried through.
 	texts := []string{"Page 1 content。", "Page 2 content。"}
-	chunks := NaiveMerge(texts, 128, "\n。；！？", 0)
+	chunks := NaiveMerge(texts, nil, 128, "\n。；！？", 0)
 
 	// Verify SectionIndices are tracked
 	for _, c := range chunks {
@@ -313,7 +313,7 @@ func TestNaiveMerge_PositionInfo(t *testing.T) {
 func TestNaiveMerge_CustomDelimiterExclusive(t *testing.T) {
 	// Custom delimiter mode: each segment is its own chunk, no merging.
 	texts := []string{"Part A `---` Part B `---` Part C"}
-	chunks := NaiveMerge(texts, 128, "`---`", 0)
+	chunks := NaiveMerge(texts, nil, 128, "`---`", 0)
 
 	// Should produce 3 chunks (one per segment between ---)
 	if len(chunks) != 3 {
@@ -330,7 +330,7 @@ func TestNaiveMerge_CustomDelimiterExclusive(t *testing.T) {
 func TestNaiveMerge_LeadingNewline(t *testing.T) {
 	// Python adds "\n" prefix to each text before adding as chunk.
 	texts := []string{"Hello World"}
-	chunks := NaiveMerge(texts, 128, "\n。；！？", 0)
+	chunks := NaiveMerge(texts, nil, 128, "\n。；！？", 0)
 
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
@@ -344,7 +344,7 @@ func TestNaiveMerge_LeadingNewline(t *testing.T) {
 func TestNaiveMerge_SectionIndicesCorrect(t *testing.T) {
 	// Verify that merged chunks track which input sections they came from.
 	texts := []string{"First。", "Second。", "Third。", "Fourth。"}
-	chunks := NaiveMerge(texts, 40, "\n。；！？", 0)
+	chunks := NaiveMerge(texts, nil, 40, "\n。；！？", 0)
 
 	// Collect all section indices across all chunks
 	allIndices := make(map[int]bool)
@@ -359,5 +359,59 @@ func TestNaiveMerge_SectionIndicesCorrect(t *testing.T) {
 		if !allIndices[i] {
 			t.Errorf("section %d (%q) not found in any chunk", i, texts[i])
 		}
+	}
+}
+
+// ── Position-aware tests (gap: Python carries pos through add_chunk) ──────────
+
+func TestNaiveMerge_PositionCarriedThrough(t *testing.T) {
+	texts := []string{"Long enough text with sufficient tokens for position to stay。", "Another long sentence with enough tokens。"}
+	positions := []string{"p1", "p2"}
+	chunks := NaiveMerge(texts, positions, 128, "\n。；！？", 0)
+
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0].Position == "" {
+		t.Error("position should not be empty for merged chunk")
+	}
+}
+
+func TestNaiveMerge_PositionClearedWhenBelowThreshold(t *testing.T) {
+	// Token count < 8 → position should be cleared (Python: tnum < 8 → pos = "")
+	texts := []string{"Hi"}
+	positions := []string{"page1_top100"}
+	chunks := NaiveMerge(texts, positions, 128, "\n。；！？", 0)
+
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0].Position != "" {
+		t.Errorf("position should be empty for short text (< 8 tokens), got %q", chunks[0].Position)
+	}
+}
+
+func TestNaiveMerge_PositionAppendedWhenNotPresent(t *testing.T) {
+	texts := []string{"Long enough text that exceeds eight tokens easily。"}
+	positions := []string{"[page1]"}
+	chunks := NaiveMerge(texts, positions, 128, "\n。；！？", 0)
+
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0].Position != "[page1]" {
+		t.Errorf("position = %q, want %q", chunks[0].Position, "[page1]")
+	}
+}
+
+func TestNaiveMerge_NilPositions(t *testing.T) {
+	texts := []string{"Text A。", "Text B。"}
+	chunks := NaiveMerge(texts, nil, 128, "\n。；！？", 0)
+
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0].Position != "" {
+		t.Errorf("position should be empty when positions is nil, got %q", chunks[0].Position)
 	}
 }

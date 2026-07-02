@@ -30,12 +30,14 @@ import (
 type MergedSegment struct {
 	Text           string `json:"text"`
 	SectionIndices []int  `json:"section_indices"`
+	Position       string `json:"position,omitempty"`
 }
 
-// indexedText pairs text content with its original index in the input slice.
+// indexedText pairs text content with its original index and position.
 type indexedText struct {
 	text string
 	idx  int
+	pos  string
 }
 
 // NaiveMerge merges texts into chunks by token count with delimiter-based
@@ -43,19 +45,24 @@ type indexedText struct {
 //
 // Parameters:
 //   - texts: input text segments (one per parsed section)
+//   - positions: optional position strings (one per section, may be nil)
 //   - chunkTokenNum: max token count per chunk (default 128 in Python)
 //   - delimiter: delimiter pattern, supports backtick-quoted custom delimiters
 //   - overlappedPercent: overlap percentage (0-100)
-func NaiveMerge(texts []string, chunkTokenNum int, delimiter string, overlappedPercent float64) []MergedSegment {
+func NaiveMerge(texts []string, positions []string, chunkTokenNum int, delimiter string, overlappedPercent float64) []MergedSegment {
 	if len(texts) == 0 {
 		return nil
 	}
 
-	// Filter out empty texts but track original indices
+	// Filter out empty texts but track original indices and positions
 	var filtered []indexedText
 	for i, t := range texts {
 		if strings.TrimSpace(t) != "" {
-			filtered = append(filtered, indexedText{text: t, idx: i})
+			pos := ""
+			if positions != nil && i < len(positions) {
+				pos = positions[i]
+			}
+			filtered = append(filtered, indexedText{text: t, idx: i, pos: pos})
 		}
 	}
 	if len(filtered) == 0 {
@@ -79,7 +86,6 @@ func NaiveMerge(texts []string, chunkTokenNum int, delimiter string, overlappedP
 // parseDelimiters extracts custom (backtick-quoted) and normal delimiters.
 // Matches Python get_delimiters().
 func parseDelimiters(delimiter string) (custom []string, pattern string) {
-	// Extract backtick-quoted custom delimiters: `CHAPTER`, `---`, etc.
 	re := regexp.MustCompile("`([^`]+)`")
 	matches := re.FindAllStringSubmatchIndex(delimiter, -1)
 
@@ -87,18 +93,14 @@ func parseDelimiters(delimiter string) (custom []string, pattern string) {
 	lastEnd := 0
 	for _, m := range matches {
 		start, end := m[0], m[1]
-		// Characters before this match are normal delimiters
 		normalChars = append(normalChars, []rune(delimiter[lastEnd:start])...)
-		// The captured group is a custom delimiter
 		custom = append(custom, delimiter[m[2]:m[3]])
 		lastEnd = end
 	}
-	// Remaining characters after last match
 	if lastEnd < len(delimiter) {
 		normalChars = append(normalChars, []rune(delimiter[lastEnd:])...)
 	}
 
-	// Build pattern from normal delimiter characters
 	var dels []string
 	seen := make(map[string]bool)
 	for _, r := range normalChars {
@@ -109,7 +111,6 @@ func parseDelimiters(delimiter string) (custom []string, pattern string) {
 		}
 	}
 
-	// Sort by length desc (longest match first)
 	sort.Slice(dels, func(i, j int) bool {
 		return len(dels[i]) > len(dels[j])
 	})
@@ -123,7 +124,6 @@ func parseDelimiters(delimiter string) (custom []string, pattern string) {
 // ── Custom delimiter mode ───────────────────────────────────────────────────
 
 func mergeByCustomDelimiters(texts []indexedText, customDels []string, chunkTokenNum int) []MergedSegment {
-	// Build pattern: sort by length desc, escape, join
 	sort.Slice(customDels, func(i, j int) bool {
 		return len(customDels[i]) > len(customDels[j])
 	})
@@ -137,7 +137,6 @@ func mergeByCustomDelimiters(texts []indexedText, customDels []string, chunkToke
 	for _, it := range texts {
 		parts := pattern.Split(it.text, -1)
 		for _, part := range parts {
-			// Skip parts that are exact matches of the delimiter
 			if part == "" {
 				continue
 			}
@@ -152,11 +151,14 @@ func mergeByCustomDelimiters(texts []indexedText, customDels []string, chunkToke
 				continue
 			}
 
-			seg := MergedSegment{
-				Text:           "\n" + part,
+			textSeg := "\n" + part
+			pos := resolvePosition(textSeg, it.pos)
+
+			result = append(result, MergedSegment{
+				Text:           textSeg,
 				SectionIndices: []int{it.idx},
-			}
-			result = append(result, seg)
+				Position:       pos,
+			})
 		}
 	}
 	return result
@@ -167,11 +169,9 @@ func mergeByCustomDelimiters(texts []indexedText, customDels []string, chunkToke
 func mergeByTokenCount(texts []indexedText, delimPattern string, chunkTokenNum int, overlappedPercent float64) []MergedSegment {
 	var result []MergedSegment
 
-	// Token threshold for starting a new chunk
 	threshold := float64(chunkTokenNum) * (100.0 - overlappedPercent) / 100.0
 
 	for _, it := range texts {
-		// Split oversized text at delimiter boundaries
 		var subSegments []indexedText
 		if delimPattern != "" && tokenizer.NumTokensFromString(it.text) >= chunkTokenNum {
 			re := regexp.MustCompile("(" + delimPattern + ")")
@@ -180,22 +180,32 @@ func mergeByTokenCount(texts []indexedText, delimPattern string, chunkTokenNum i
 				if part == "" {
 					continue
 				}
-				// Skip delimiter-only parts
 				if matched, _ := regexp.MatchString("^("+delimPattern+")$", part); matched {
 					continue
 				}
-				subSegments = append(subSegments, indexedText{text: "\n" + part, idx: it.idx})
+				subSegments = append(subSegments, indexedText{
+					text: "\n" + part,
+					idx:  it.idx,
+					pos:  it.pos,
+				})
 			}
 		} else {
-			subSegments = append(subSegments, indexedText{text: "\n" + it.text, idx: it.idx})
+			subSegments = append(subSegments, indexedText{
+				text: "\n" + it.text,
+				idx:  it.idx,
+				pos:  it.pos,
+			})
 		}
 
-		// Merge sub-segments into chunks
 		for _, sub := range subSegments {
+			tk := tokenizer.NumTokensFromString(sub.text)
+			pos := resolvePosition(sub.text, sub.pos)
+
 			if len(result) == 0 {
 				result = append(result, MergedSegment{
 					Text:           sub.text,
 					SectionIndices: []int{sub.idx},
+					Position:       pos,
 				})
 				continue
 			}
@@ -203,10 +213,8 @@ func mergeByTokenCount(texts []indexedText, delimPattern string, chunkTokenNum i
 			last := &result[len(result)-1]
 			lastTk := tokenizer.NumTokensFromString(last.Text)
 
-			// Start new chunk if threshold exceeded
 			if lastTk > int(threshold) {
 				newText := sub.text
-				// Apply overlap from previous chunk
 				if overlappedPercent > 0 && lastTk > 0 {
 					overlapChars := int(float64(len([]rune(last.Text))) * (100.0 - overlappedPercent) / 100.0)
 					if overlapChars > 0 && overlapChars < len([]rune(last.Text)) {
@@ -217,12 +225,17 @@ func mergeByTokenCount(texts []indexedText, delimPattern string, chunkTokenNum i
 				result = append(result, MergedSegment{
 					Text:           newText,
 					SectionIndices: []int{sub.idx},
+					Position:       pos,
 				})
 			} else {
-				// Append to current chunk
 				last.Text += sub.text
 				last.SectionIndices = appendUnique(last.SectionIndices, sub.idx)
+				// Position: keep the first non-empty position
+				if last.Position == "" && pos != "" {
+					last.Position = pos
+				}
 			}
+			_ = tk
 		}
 	}
 
@@ -230,6 +243,21 @@ func mergeByTokenCount(texts []indexedText, delimPattern string, chunkTokenNum i
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+// resolvePosition applies Python position rules:
+//   - if token count < 8 → clear position
+//   - if position is not already in text → append to text (done by caller)
+// Returns the resolved position string.
+func resolvePosition(text, pos string) string {
+	if pos == "" {
+		return ""
+	}
+	tk := tokenizer.NumTokensFromString(text)
+	if tk < 8 {
+		return ""
+	}
+	return pos
+}
 
 func appendUnique(slice []int, val int) []int {
 	for _, v := range slice {
