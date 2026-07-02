@@ -1,4 +1,4 @@
-name: tests
+name: sep-tests
 permissions:
   contents: read
 
@@ -37,6 +37,8 @@ jobs:
     runs-on: [ "self-hosted", "ragflow-test" ]
     outputs:
       http_api_test_level: ${{ steps.test_level.outputs.http_api_test_level }}
+      has_go_changes: ${{ steps.detect_changes.outputs.has_go_changes }}
+      has_python_changes: ${{ steps.detect_changes.outputs.has_python_changes }}
     steps:
       - name: Ensure workspace ownership
         run: |
@@ -92,6 +94,38 @@ jobs:
           echo "ARTIFACTS_DIR=${ARTIFACTS_DIR}" >> ${GITHUB_ENV}
           rm -rf ${ARTIFACTS_DIR} && mkdir -p ${ARTIFACTS_DIR}
 
+#      - name: Check comments of changed Python files
+#        if: ${{ false }}
+#        run: |
+#          if [[ ${{ github.event_name }} == 'pull_request' || ${{ github.event_name }} == 'pull_request_target' ]]; then
+#            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
+#              | grep -E '\.(py)$' || true)
+#
+#            if [ -n "$CHANGED_FILES" ]; then
+#              echo "Check comments of changed Python files with check_comment_ascii.py"
+#
+#              readarray -t files <<< "$CHANGED_FILES"
+#              HAS_ERROR=0
+#
+#              for file in "${files[@]}"; do
+#                if [ -f "$file" ]; then
+#                  if python3 check_comment_ascii.py "$file"; then
+#                    echo "✅ $file"
+#                  else
+#                    echo "❌ $file"
+#                    HAS_ERROR=1
+#                  fi
+#                fi
+#              done
+#
+#              if [ $HAS_ERROR -ne 0 ]; then
+#                exit 1
+#              fi
+#            else
+#              echo "No Python files changed"
+#            fi
+#          fi
+
       - name: Run Lefthook on changed files
         run: |
           set -euo pipefail
@@ -108,10 +142,7 @@ jobs:
             else
               echo "  (none — lefthook will be a no-op)"
             fi
-            # LEFTHOOK_CHECK_ONLY=1 makes the pre-commit jobs verify without
-            # applying --fix or `git add`, so CI only checks and reports
-            # failures instead of rewriting the working tree.
-            LEFTHOOK_CHECK_ONLY=1 lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
+            lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
           fi
 
       - name: Set test level
@@ -126,12 +157,49 @@ jobs:
           echo "HTTP_API_TEST_LEVEL=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_ENV}
           echo "http_api_test_level=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_OUTPUT}
 
+      - name: Detect changed file types
+        id: detect_changes
+        run: |
+          set -euo pipefail
+          has_go=false
+          has_python=false
+
+          if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
+            has_go=true
+            has_python=true
+          else
+            if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+              CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }})
+            else
+              CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+            fi
+
+            while IFS= read -r file; do
+              case "$file" in
+                *.go|go.mod|go.sum)                      has_go=true ;;
+                *.py|pyproject.toml|requirements*.txt)    has_python=true ;;
+                Dockerfile|docker-compose*.yml|build.sh)  has_go=true; has_python=true ;;
+              esac
+            done <<< "$CHANGED_FILES"
+
+            if [[ "$has_go" == "false" && "$has_python" == "false" ]]; then
+              has_go=true
+              has_python=true
+            fi
+          fi
+
+          echo "has_go_changes=${has_go}"        >> $GITHUB_OUTPUT
+          echo "has_python_changes=${has_python}" >> $GITHUB_OUTPUT
+          echo "Go: ${has_go}, Python: ${has_python}"
+
       - name: Prepare Python test environment
+        if: steps.detect_changes.outputs.has_python_changes == 'true'
         run: |
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
       - name: Run unit test
+        if: steps.detect_changes.outputs.has_python_changes == 'true'
         run: |
           source .venv/bin/activate
           which pytest || echo "pytest not in PATH"
@@ -149,13 +217,17 @@ jobs:
       DOC_ENGINE: infinity
       RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-infinity
       HTTP_API_TEST_LEVEL: ${{ needs.ragflow_preflight.outputs.http_api_test_level }}
+      HAS_GO: ${{ needs.ragflow_preflight.outputs.has_go_changes }}
+      HAS_PYTHON: ${{ needs.ragflow_preflight.outputs.has_python_changes }}
     steps:
       - name: Ensure workspace ownership
+        if: always()
         run: |
           echo "Workflow triggered by ${{ github.event_name }}"
           echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
 
       - name: Check out code
+        if: always()
         uses: actions/checkout@v6
         with:
           ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
@@ -163,6 +235,7 @@ jobs:
           fetch-tags: true
 
       - name: Build ragflow go server
+        if: env.HAS_GO == 'true'
         run: |
           set -euo pipefail
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
@@ -184,6 +257,7 @@ jobs:
           ./build.sh --go
 
       - name: Run Go unit tests
+        if: env.HAS_GO == 'true'
         # Runs after `./build.sh --go`, which guarantees the C++ static
         # library (librag_tokenizer_c_api.a) is present on disk. The Go
         # test binaries link against it transitively through
@@ -213,17 +287,20 @@ jobs:
           fi
 
       - name: Build ragflow:nightly
+        if: env.HAS_PYTHON == 'true'
         run: |
           set -euo pipefail
           sudo docker pull ubuntu:24.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
 
       - name: Prepare Python test environment
+        if: env.HAS_PYTHON == 'true'
         run: |
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
       - name: Prepare function test environment
+        if: env.HAS_PYTHON == 'true'
         working-directory: docker
         run: |
           set -euo pipefail
@@ -361,12 +438,14 @@ jobs:
 
 
       - name: Start ragflow:nightly for Infinity
+        if: env.HAS_PYTHON == 'true'
         run: |
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} up -d
 
       - name: Run sdk tests against Infinity
+        if: env.HAS_PYTHON == 'true'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
@@ -387,6 +466,7 @@ jobs:
           source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-infinity-sdk.xml test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
 
       - name: Run New RESTFUL api tests against Infinity
+        if: env.HAS_PYTHON == 'true'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
@@ -406,6 +486,7 @@ jobs:
           source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/restful_api 2>&1 | tee infinity_restful_api_test.log
 
       - name: RAGFlow CLI retrieval test Infinity
+        if: env.HAS_PYTHON == 'true'
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -517,7 +598,7 @@ jobs:
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "Benchmark 16 100 search 'what are these documents about' on datasets '$DATASET'"
 
       - name: Stop ragflow to save coverage Infinity
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}
         run: |
           # Send SIGINT to ragflow_server.py to trigger coverage save
           PID=$(sudo docker exec ${RAGFLOW_CONTAINER} ps aux | grep "ragflow_server.py" | grep -v grep | awk '{print $2}' | head -n 1)
@@ -532,7 +613,7 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} stop
 
       - name: Generate server coverage report Infinity
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}
         run: |
           # .coverage file should be in docker/ragflow-logs/.coverage
           if [ -f docker/ragflow-logs/.coverage ]; then
@@ -558,7 +639,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Collect ragflow log Infinity
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}
         run: |
           if [ -d docker/ragflow-logs ]; then
             cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-infinity
@@ -569,7 +650,7 @@ jobs:
           sudo rm -rf docker/ragflow-logs || true
 
       - name: Stop ragflow:nightly for Infinity
-        if: always()  # always run this step even if previous steps failed
+        if: ${{ always() && env.HAS_PYTHON == 'true' }}
         run: |
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
@@ -592,13 +673,17 @@ jobs:
       DOC_ENGINE: elasticsearch
       RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-elasticsearch
       HTTP_API_TEST_LEVEL: ${{ needs.ragflow_preflight.outputs.http_api_test_level }}
+      HAS_GO: ${{ needs.ragflow_preflight.outputs.has_go_changes }}
+      HAS_PYTHON: ${{ needs.ragflow_preflight.outputs.has_python_changes }}
     steps:
       - name: Ensure workspace ownership
+        if: always()
         run: |
           echo "Workflow triggered by ${{ github.event_name }}"
           echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
 
       - name: Check out code
+        if: always()
         uses: actions/checkout@v6
         with:
           ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
@@ -606,6 +691,7 @@ jobs:
           fetch-tags: true
 
       - name: Build ragflow go server
+        if: env.HAS_GO == 'true'
         run: |
           set -euo pipefail
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
@@ -627,6 +713,7 @@ jobs:
           ./build.sh --go
 
       - name: Run Go unit tests
+        if: env.HAS_GO == 'true'
         # Runs after `./build.sh --go`, which guarantees the C++ static
         # library (librag_tokenizer_c_api.a) is present on disk. The Go
         # test binaries link against it transitively through
@@ -656,17 +743,20 @@ jobs:
           fi
 
       - name: Build ragflow:nightly
+        if: env.HAS_PYTHON == 'true'
         run: |
           set -euo pipefail
           sudo docker pull ubuntu:24.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
 
       - name: Prepare Python test environment
+        if: env.HAS_PYTHON == 'true'
         run: |
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
       - name: Prepare function test environment
+        if: env.HAS_PYTHON == 'true'
         working-directory: docker
         run: |
           set -euo pipefail
@@ -804,12 +894,14 @@ jobs:
 
 
       - name: Start ragflow:nightly for Elasticsearch
+        if: env.HAS_PYTHON == 'true'
         run: |
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} up -d
 
       - name: Run sdk tests against Elasticsearch
+        if: env.HAS_PYTHON == 'true'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
@@ -830,6 +922,7 @@ jobs:
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-es-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-es-sdk.xml test/testcases/test_sdk_api 2>&1 | tee es_sdk_test.log
 
       - name: Run New RESTFUL api tests against Elasticsearch
+        if: env.HAS_PYTHON == 'true'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
@@ -849,6 +942,7 @@ jobs:
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/restful_api 2>&1 | tee es_restful_api_test.log
 
       - name: RAGFlow CLI retrieval test Elasticsearch
+        if: env.HAS_PYTHON == 'true'
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -960,7 +1054,7 @@ jobs:
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "Benchmark 16 100 search 'what are these documents about' on datasets '$DATASET'"
 
       - name: Stop ragflow to save coverage Elasticsearch
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}
         run: |
           # Send SIGINT to ragflow_server.py to trigger coverage save
           PID=$(sudo docker exec ${RAGFLOW_CONTAINER} ps aux | grep "ragflow_server.py" | grep -v grep | awk '{print $2}' | head -n 1)
@@ -975,7 +1069,7 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} stop
 
       - name: Generate server coverage report Elasticsearch
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}
         run: |
           # .coverage file should be in docker/ragflow-logs/.coverage
           if [ -f docker/ragflow-logs/.coverage ]; then
@@ -996,7 +1090,7 @@ jobs:
           fi
 
       - name: Collect ragflow log Elasticsearch
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}
         run: |
           if [ -d docker/ragflow-logs ]; then
             cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-es
@@ -1007,7 +1101,7 @@ jobs:
           sudo rm -rf docker/ragflow-logs || true
 
       - name: Stop ragflow:nightly for Elasticsearch
-        if: always()  # always run this step even if previous steps failed
+        if: ${{ always() && env.HAS_PYTHON == 'true' }}
         run: |
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
