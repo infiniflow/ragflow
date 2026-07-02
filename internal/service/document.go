@@ -54,6 +54,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DocumentService document service
@@ -1235,8 +1236,8 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 			}
 		}
 
-		if rerunWithDelete && doc.Run != nil && *doc.Run == string(entity.TaskStatusDone) {
-			if err := s.clearKBChunkNumWhenRerun(doc); err != nil {
+		if rerunWithDelete {
+			if err := s.prepareDocumentRerunWithDelete(doc, kb.TenantID); err != nil {
 				return common.CodeExceptionError, err
 			}
 		}
@@ -1245,7 +1246,7 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 			return common.CodeExceptionError, err
 		}
 
-		if req.Delete {
+		if req.Delete && !rerunWithDelete {
 			_, _ = s.taskDAO.DeleteByDocIDs([]string{doc.ID})
 			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 			if s.docEngine != nil {
@@ -1323,6 +1324,100 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 	}
 
 	return common.CodeSuccess, nil
+}
+
+func (s *DocumentService) prepareDocumentRerunWithDelete(doc *entity.Document, tenantID string) error {
+	if doc == nil {
+		return fmt.Errorf("document is nil")
+	}
+
+	s.cancelExistingParseTasksBestEffort(doc.ID)
+
+	if _, err := s.taskDAO.DeleteByDocIDs([]string{doc.ID}); err != nil {
+		return err
+	}
+
+	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {
+		return err
+	}
+
+	if s.docEngine == nil {
+		return nil
+	}
+
+	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, doc.KbID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *DocumentService) cancelExistingParseTasksBestEffort(docID string) {
+	tasks, err := s.taskDAO.GetByDocID(docID)
+	if err != nil {
+		common.Logger.Warn(fmt.Sprintf("cancelExistingParseTasksBestEffort: failed to get tasks for %s: %v", docID, err))
+		return
+	}
+	redisClient := redis.Get()
+	if redisClient == nil {
+		return
+	}
+	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
+		redisClient.Set(fmt.Sprintf("%s-cancel", task.ID), "x", 24*time.Hour)
+	}
+}
+
+func (s *DocumentService) clearDocumentAndKBCountersForRerun(docID, kbID string) error {
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		var current entity.Document
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND kb_id = ?", docID, kbID).
+			First(&current).Error; err != nil {
+			return err
+		}
+
+		if current.TokenNum == 0 && current.ChunkNum == 0 && current.ProcessDuration == 0 {
+			return nil
+		}
+
+		result := tx.Model(&entity.Document{}).
+			Where("id = ? AND kb_id = ?", docID, kbID).
+			Updates(map[string]interface{}{
+				"token_num":        0,
+				"chunk_num":        0,
+				"process_duration": 0,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if current.TokenNum == 0 && current.ChunkNum == 0 {
+			return nil
+		}
+
+		result = tx.Model(&entity.Knowledgebase{}).
+			Where("id = ?", kbID).
+			Updates(map[string]interface{}{
+				"token_num": gorm.Expr("token_num - ?", current.TokenNum),
+				"chunk_num": gorm.Expr("chunk_num - ?", current.ChunkNum),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("knowledgebase not found")
+		}
+		return nil
+	})
 }
 
 func (s *DocumentService) countDoneDocuments(datasetID string) (int64, error) {
