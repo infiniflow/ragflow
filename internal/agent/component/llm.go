@@ -218,14 +218,7 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*C
 	if driver == "" {
 		driver = "dummy"
 	}
-	// baseURL: drivers consult map["default"] as the canonical endpoint
-	// (see internal/entity/models/base_model.go:GetBaseURL). When the
-	// caller did not override, leave the driver default in place by
-	// passing nil — every driver seeds its own map at construction time.
-	var baseURL map[string]string
-	if req.BaseURL != "" {
-		baseURL = map[string]string{"default": req.BaseURL}
-	}
+	baseURL := baseURLMapForDriver(driver, req.BaseURL)
 	// urlSuffix: each driver appends URLSuffix.Chat to baseURL to form
 	// the chat-completions endpoint (e.g. "chat/completions" for
 	// openai-compatible drivers, "v1/messages" for anthropic). The
@@ -319,6 +312,25 @@ func chatURLSuffixFor(driver string) models.URLSuffix {
 	default:
 		return models.URLSuffix{Chat: "chat/completions"}
 	}
+}
+
+func baseURLMapForDriver(driver, override string) map[string]string {
+	if override != "" {
+		return map[string]string{"default": override}
+	}
+	pm := models.GetProviderManager()
+	if pm == nil {
+		return nil
+	}
+	provider := pm.FindProvider(driver)
+	if provider == nil || len(provider.URL) == 0 {
+		return nil
+	}
+	baseURL := make(map[string]string, len(provider.URL))
+	for region, url := range provider.URL {
+		baseURL[region] = url
+	}
+	return baseURL
 }
 
 // NewLLMComponent builds an LLMComponent from raw params.

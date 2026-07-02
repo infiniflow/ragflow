@@ -93,6 +93,8 @@ type AgentParam struct {
 	BaseURL string
 }
 
+const agentUserPromptSchemaDefault = "This is the order you need to send to the agent."
+
 // AgentMeta declares the OpenAI-style function-call interface for the
 // Agent component. Mirrors ragflow Python's ToolMeta shape.
 type AgentMeta struct {
@@ -394,6 +396,7 @@ func (c *AgentComponent) Name() string { return "Agent" }
 // the output map.
 func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	p := mergeAgentParam(c.param, inputs)
+	hasRuntimeUserPrompt := hasNonEmptyString(inputs, "user_prompt")
 
 	// v3.6.1: derive the driver and bare model name from the
 	// composite llm_id when the Agent DSL didn't set `driver`. The
@@ -417,6 +420,30 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 		}
 	}
 	p.APIKey, p.BaseURL = resolveTenantLLMConfig(ctx, p.Driver, p.ModelID, p.APIKey, p.BaseURL, originalModelID)
+
+	var state *runtime.CanvasState
+	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
+		state = s
+		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
+			p.SystemPrompt = resolved
+			if rerr != nil {
+				common.Debug("agent: resolve system_prompt", zap.Error(rerr))
+			}
+		}
+		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); resolved != p.UserPrompt || rerr == nil {
+			p.UserPrompt = resolved
+			if rerr != nil {
+				common.Debug("agent: resolve user_prompt", zap.Error(rerr))
+			}
+		}
+	}
+	if hasRuntimeUserPrompt {
+		p.UserPrompt = formatAgentRuntimePrompt(inputs, p.UserPrompt)
+	} else if shouldFallbackToSysQuery(p.UserPrompt) && state != nil {
+		if query, ok := stringFromState(state, "query"); ok {
+			p.UserPrompt = query
+		}
+	}
 
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
@@ -586,10 +613,7 @@ func buildAgentChatModel(p AgentParam) (*models.EinoChatModel, error) {
 	if driver == "" {
 		driver = "dummy"
 	}
-	var baseURL map[string]string
-	if p.BaseURL != "" {
-		baseURL = map[string]string{"default": p.BaseURL}
-	}
+	baseURL := baseURLMapForDriver(driver, p.BaseURL)
 	// urlSuffix: see chatURLSuffixFor in llm.go for the rationale.
 	// The factory's NewModelDriver stores URLSuffix verbatim; the
 	// driver then appends URLSuffix.Chat to baseURL to build the
@@ -696,6 +720,95 @@ func extractToolCalls(msg *schema.Message) []map[string]any {
 	return calls
 }
 
+// promptMessagesFromParams extracts the Python DSL `prompts` list into
+// the single system/user prompt shape supported by the Go ReAct runner.
+func promptMessagesFromParams(params map[string]any) (systemPrompt, userPrompt string, ok bool) {
+	raw, exists := params["prompts"]
+	if !exists {
+		return "", "", false
+	}
+	switch v := raw.(type) {
+	case string:
+		return "", v, true
+	case []any:
+		var systems, users []string
+		for _, item := range v {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			content, ok := stringFrom(m, "content")
+			if !ok {
+				continue
+			}
+			role, _ := stringFrom(m, "role")
+			switch strings.ToLower(strings.TrimSpace(role)) {
+			case "system":
+				systems = append(systems, content)
+			case "user", "":
+				users = append(users, content)
+			}
+		}
+		if len(systems) == 0 && len(users) == 0 {
+			return "", "", false
+		}
+		return strings.Join(systems, "\n"), strings.Join(users, "\n"), true
+	case []map[string]any:
+		items := make([]any, 0, len(v))
+		for _, item := range v {
+			items = append(items, item)
+		}
+		return promptMessagesFromParams(map[string]any{"prompts": items})
+	}
+	return "", "", false
+}
+
+func appendPromptText(base, extra string) string {
+	if strings.TrimSpace(extra) == "" {
+		return base
+	}
+	if strings.TrimSpace(base) == "" {
+		return extra
+	}
+	return base + "\n" + extra
+}
+
+func hasNonEmptyString(inputs map[string]any, name string) bool {
+	v, ok := stringFrom(inputs, name)
+	return ok && strings.TrimSpace(v) != ""
+}
+
+func shouldFallbackToSysQuery(prompt string) bool {
+	p := strings.TrimSpace(prompt)
+	return p == "" || p == agentUserPromptSchemaDefault
+}
+
+func stringFromState(state *runtime.CanvasState, name string) (string, bool) {
+	if state == nil {
+		return "", false
+	}
+	v, ok := state.Sys[name].(string)
+	if !ok || strings.TrimSpace(v) == "" {
+		return "", false
+	}
+	return v, true
+}
+
+func formatAgentRuntimePrompt(inputs map[string]any, userPrompt string) string {
+	var b strings.Builder
+	if reasoning, ok := stringFrom(inputs, "reasoning"); ok && reasoning != "" {
+		fmt.Fprintf(&b, "\nREASONING:\n%s\n", reasoning)
+	}
+	if contextText, ok := stringFrom(inputs, "context"); ok && contextText != "" {
+		fmt.Fprintf(&b, "\nCONTEXT:\n%s\n", contextText)
+	}
+	if b.Len() == 0 {
+		return userPrompt
+	}
+	fmt.Fprintf(&b, "\nQUERY:\n%s\n", userPrompt)
+	return b.String()
+}
+
 // mergeAgentParam layers raw inputs over the receiver's default param set.
 //
 // v1 aliases accepted alongside the v2 names: "llm_id" → "model_id",
@@ -713,6 +826,10 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		p.SystemPrompt = v
 	} else if v, ok := stringFrom(inputs, "sys_prompt"); ok {
 		p.SystemPrompt = v
+	}
+	if promptSystem, promptUser, ok := promptMessagesFromParams(inputs); ok {
+		p.SystemPrompt = appendPromptText(p.SystemPrompt, promptSystem)
+		p.UserPrompt = promptUser
 	}
 	if v, ok := stringFrom(inputs, "user_prompt"); ok {
 		p.UserPrompt = v
@@ -807,7 +924,11 @@ func init() {
 		} else if v, ok := stringFrom(params, "sys_prompt"); ok {
 			p.SystemPrompt = v
 		}
-		if v, ok := stringFrom(params, "user_prompt"); ok {
+		if promptSystem, promptUser, ok := promptMessagesFromParams(params); ok {
+			p.SystemPrompt = appendPromptText(p.SystemPrompt, promptSystem)
+			p.UserPrompt = promptUser
+		}
+		if v, ok := stringFrom(params, "user_prompt"); ok && p.UserPrompt == "" {
 			p.UserPrompt = v
 		}
 		if v, ok := floatFrom(params, "top_p"); ok {

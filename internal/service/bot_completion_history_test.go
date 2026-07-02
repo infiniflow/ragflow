@@ -249,6 +249,8 @@ func TestWriteChatbotRunEvent_UserInputsEvent(t *testing.T) {
 	rec := &recordingResponseWriter{header: http.Header{}}
 	if err := WriteChatbotRunEvent(rec, canvas.RunEvent{
 		Type:      "user_inputs",
+		MessageID: "msg-1",
+		TaskID:    "task-1",
 		Data:      `{"components":[{"id":"email","type":"text","required":true}]}`,
 		SessionID: "sess-1",
 	}); err != nil {
@@ -258,8 +260,17 @@ func TestWriteChatbotRunEvent_UserInputsEvent(t *testing.T) {
 	if !strings.Contains(body, `"event":"user_inputs"`) {
 		t.Errorf("body missing event=user_inputs: %s", body)
 	}
+	if !strings.Contains(body, `"message_id":"msg-1"`) {
+		t.Errorf("body missing message_id: %s", body)
+	}
+	if !strings.Contains(body, `"task_id":"task-1"`) {
+		t.Errorf("body missing task_id: %s", body)
+	}
 	if !strings.Contains(body, `"session_id":"sess-1"`) {
 		t.Errorf("body missing session_id: %s", body)
+	}
+	if strings.Contains(body, `"answer":"`) {
+		t.Errorf("body should not wrap run events in data.answer: %s", body)
 	}
 }
 
@@ -270,7 +281,7 @@ func TestWriteChatbotRunEvent_WorkflowFinishedEvent(t *testing.T) {
 	rec := &recordingResponseWriter{header: http.Header{}}
 	if err := WriteChatbotRunEvent(rec, canvas.RunEvent{
 		Type:      "workflow_finished",
-		Data:      `{"answer":"done"}`,
+		Data:      `{"outputs":"done"}`,
 		SessionID: "sess-2",
 	}); err != nil {
 		t.Fatalf("WriteChatbotRunEvent: %v", err)
@@ -278,6 +289,9 @@ func TestWriteChatbotRunEvent_WorkflowFinishedEvent(t *testing.T) {
 	body := rec.body.String()
 	if !strings.Contains(body, `"event":"workflow_finished"`) {
 		t.Errorf("body missing event=workflow_finished: %s", body)
+	}
+	if !strings.Contains(body, `"outputs":"done"`) {
+		t.Errorf("body missing workflow output payload: %s", body)
 	}
 }
 
@@ -290,7 +304,8 @@ func TestWriteChatbotRunEvent_MessageEventCarriesEvent(t *testing.T) {
 	rec := &recordingResponseWriter{header: http.Header{}}
 	if err := WriteChatbotRunEvent(rec, canvas.RunEvent{
 		Type:      "message",
-		Data:      `{"answer":"hi"}`,
+		MessageID: "msg-3",
+		Data:      `{"content":"hi"}`,
 		SessionID: "sess-3",
 	}); err != nil {
 		t.Fatalf("WriteChatbotRunEvent: %v", err)
@@ -298,6 +313,12 @@ func TestWriteChatbotRunEvent_MessageEventCarriesEvent(t *testing.T) {
 	body := rec.body.String()
 	if !strings.Contains(body, `"event":"message"`) {
 		t.Errorf("message frame should carry event=message: %s", body)
+	}
+	if !strings.Contains(body, `"message_id":"msg-3"`) {
+		t.Errorf("message frame should carry top-level message_id: %s", body)
+	}
+	if !strings.Contains(body, `"content":"hi"`) {
+		t.Errorf("message frame should carry data.content: %s", body)
 	}
 }
 
