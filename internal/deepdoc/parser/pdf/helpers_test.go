@@ -1,6 +1,6 @@
 //go:build cgo
 
-package parser
+package pdf
 
 import (
 	"os"
@@ -11,20 +11,14 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// ── Shared CGO test helpers ──────────────────────────────────────────────────
-// These helpers were previously duplicated across multiple test files with
-// different build tags (integration, manual). Consolidating them into one file
-// with the //go:build cgo tag makes them available to all cgo-tagged tests.
-
-// mustConnectInferenceClient returns a InferenceClient pointed at the OSS service;
-// skips the test if the service reports a non-OSS model type.
-func mustConnectInferenceClient(t *testing.T) *inf.InferenceClient {
+// mustConnectInferenceClient returns a InferenceClient for the OSS DeepDoc service.
+func mustConnectInferenceClient(t *testing.T) *inf.Client {
 	t.Helper()
 	url := os.Getenv("OSSDEEPDOC_URL")
 	if url == "" {
 		url = "http://localhost:9390"
 	}
-	client, err := inf.NewInferenceClient(url)
+	client, err := inf.NewClient(url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,4 +41,13 @@ func mustOpenEngine(t *testing.T, name string) pdf.PDFEngine {
 		t.Fatalf("open engine %s: %v", name, err)
 	}
 	return eng
+}
+
+func mustReadPDF(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", "pdfs", name))
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", name, err)
+	}
+	return data
 }

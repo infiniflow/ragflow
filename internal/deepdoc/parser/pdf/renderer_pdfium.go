@@ -1,6 +1,6 @@
 //go:build cgo
 
-package parser
+package pdf
 
 import (
 	"image"
