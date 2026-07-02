@@ -549,18 +549,18 @@ func FromEnvironments() error {
 		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", minioIP, port)
 	}
 
-	minioPort := strings.ToLower(os.Getenv("MINIO_PORT"))
-	// println(fmt.Sprintf("MINIO ip and port from env: %s:%s", minioIP, minioPort))
-	if minioPort != "" {
-		if globalConfig.StorageEngine.Minio == nil {
-			return fmt.Errorf("Minio config not found")
-		}
-		ip, _, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
-		if err != nil {
-			return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
-		}
-		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", ip, minioPort)
-	}
+	//minioPort := strings.ToLower(os.Getenv("MINIO_PORT"))
+	//// println(fmt.Sprintf("MINIO ip and port from env: %s:%s", minioIP, minioPort))
+	//if minioPort != "" {
+	//	if globalConfig.StorageEngine.Minio == nil {
+	//		return fmt.Errorf("Minio config not found")
+	//	}
+	//	ip, _, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
+	//	if err != nil {
+	//		return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
+	//	}
+	//	globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", ip, minioPort)
+	//}
 
 	minioRegion := strings.ToLower(os.Getenv("MINIO_REGION"))
 	if minioRegion != "" {

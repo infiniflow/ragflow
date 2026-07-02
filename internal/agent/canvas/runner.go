@@ -60,6 +60,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 )
 
@@ -334,14 +335,13 @@ func (r *Runner) Run(
 						}
 					}
 				}
-				payload, _ := json.Marshal(waiting)
-				push(out, RunEvent{Type: "waiting_for_user", Data: string(payload), MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
-				// Always close a RunAgent call with the `done`
-				// terminator so the front-end can rely on a
-				// channel-end sentinel regardless of whether the run
-				// completed, errored, or paused for user input.
-				push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
-				return
+			push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(waiting), MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
+			// Always close a RunAgent call with the `done`
+			// terminator so the front-end can rely on a
+			// channel-end sentinel regardless of whether the run
+			// completed, errored, or paused for user input.
+			push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
+			return
 			}
 			if IsInterruptError(runErr) {
 				// Raw InterruptSignal (no wrapped InterruptCtx list
@@ -349,8 +349,7 @@ func (r *Runner) Run(
 				// without a cpn id — the front-end falls back to
 				// the first paused session it knows about.
 				r.saveInterruptID(canvasID, sessionID, runErr.Error())
-				payload, _ := json.Marshal(WaitingForUserEvent{CpnID: runErr.Error()})
-				push(out, RunEvent{Type: "waiting_for_user", Data: string(payload), MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
+				push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(WaitingForUserEvent{CpnID: runErr.Error()}), MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
 				push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
 				return
 			}
@@ -457,8 +456,34 @@ func push(out chan<- RunEvent, ev RunEvent) {
 
 // pushErr serialises an ErrorEvent and pushes it on the channel.
 func pushErr(out chan<- RunEvent, msg string) {
-	payload, _ := json.Marshal(ErrorEvent{Message: msg})
+	payload, err := json.Marshal(ErrorEvent{Message: msg})
+	if err != nil {
+		common.Warn("runner: pushErr json.Marshal failed, falling back",
+			zap.Error(err))
+		// ErrorEvent only has a string field; this should never fail.
+		// Fall back to a hard-coded minimal JSON.
+		payload = []byte(`{"message":"event serialization failed"}`)
+	}
 	push(out, RunEvent{Type: "error", Data: string(payload)})
+}
+
+// safeEventJSON marshals v to a JSON string, falling back to
+// runtime.SafeJSONMarshal when the value contains non-serializable
+// types (funcs, channels). Mirrors the Python PR #14210
+// _canvas_json_default fallback for SSE event serialization.
+func safeEventJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		common.Warn("runner: json.Marshal event payload failed, trying SafeJSONMarshal",
+			zap.Error(err))
+		b, err = runtime.SafeJSONMarshal(v)
+		if err != nil {
+			common.Error("runner: SafeJSONMarshal also failed, using fallback",
+				err)
+			b = []byte(`{"message":"event serialization failed"}`)
+		}
+	}
+	return string(b)
 }
 
 // nowUnix returns the current Unix timestamp in seconds.

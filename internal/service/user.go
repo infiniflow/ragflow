@@ -1092,7 +1092,14 @@ func (s *UserService) GetAPITokenByBeta(authorization string) (*entity.APIToken,
 		return nil, fmt.Errorf("invalid authorization format")
 	}
 	apiTokenDAO := dao.NewAPITokenDAO()
-	return apiTokenDAO.GetByBeta(token)
+	tokens, err := apiTokenDAO.GetByBeta(token)
+	if err != nil {
+		return nil, err
+	}
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("invalid API token")
+	}
+	return tokens[0], nil
 }
 
 // GetUserByBetaAPIToken gets user by beta access key from Authorization
@@ -1120,10 +1127,11 @@ func (s *UserService) GetUserByBetaAPIToken(authorization string) (*entity.User,
 	}
 
 	apiTokenDAO := dao.NewAPITokenDAO()
-	userToken, err := apiTokenDAO.GetByBeta(token)
-	if err != nil {
+	userTokens, err := apiTokenDAO.GetByBeta(token)
+	if err != nil || len(userTokens) == 0 {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid beta access token")
 	}
+	userToken := userTokens[0]
 
 	user, err := s.userDAO.GetByTenantID(userToken.TenantID)
 	if err != nil {

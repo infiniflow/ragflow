@@ -84,6 +84,8 @@ class MemoryService(CommonService):
             User.nickname.alias("owner_name"),
             cls.model.memory_type,
             cls.model.storage_type,
+            cls.model.embd_id,
+            cls.model.llm_id,
             cls.model.permissions,
             cls.model.description,
             cls.model.create_time,
