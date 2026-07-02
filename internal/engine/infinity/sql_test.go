@@ -327,20 +327,15 @@ func TestLoadFieldMapping_MissingFileReturnsEmpty(t *testing.T) {
 func TestLoadFieldMapping_ParsesAliases(t *testing.T) {
 	// Write a temporary mapping file.
 	dir := t.TempDir()
-	mappingPath := filepath.Join(dir, "test_mapping.json")
 	contents := `{
 		"docnm": {"type": "varchar", "comment": "docnm_kwd, title_tks, title_sm_tks"},
 		"content": {"type": "varchar", "comment": "content_with_weight, content_ltks"},
 		"plain": {"type": "varchar"}
 	}`
-	if err := os.WriteFile(mappingPath, []byte(contents), 0o644); err != nil {
-		t.Fatalf("write mapping: %v", err)
-	}
 
 	// Set RAG_PROJECT_BASE to the temp dir's parent so loadFieldMapping
 	// finds the file at <base>/conf/<filename>.
-	os.Setenv("RAG_PROJECT_BASE", dir)
-	defer os.Unsetenv("RAG_PROJECT_BASE")
+	t.Setenv("RAG_PROJECT_BASE", dir)
 
 	// Need to create conf/ subdir.
 	if err := os.MkdirAll(filepath.Join(dir, "conf"), 0o755); err != nil {
@@ -384,6 +379,8 @@ func TestLoadFieldMapping_EmptyNameDefaultsToInfinityMappingJSON(t *testing.T) {
 	// Empty name → defaults to "infinity_mapping.json" (line 145).
 	// We just verify the function doesn't panic and the file-not-found
 	// path is taken silently.
+	t.Setenv("RAG_PROJECT_BASE", t.TempDir())
+
 	a2a, r2a, err := loadFieldMapping("")
 	if err != nil {
 		t.Fatalf("empty name: %v", err)

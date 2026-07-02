@@ -35,6 +35,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/dao"
 	"ragflow/internal/service"
 )
 
@@ -50,7 +51,11 @@ type documentServiceIface interface {
 	ParseDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopParseDocuments(datasetID string, docIDs []string) (map[string]interface{}, error)
 	ListDocuments(page, pageSize int) ([]*service.DocumentResponse, int64, error)
-	ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
+	ListDocumentsByDatasetID(kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
+	ListDocumentsByDatasetIDWithOptions(opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
+	ListDocumentIDsByDatasetIDWithOptions(opts dao.DocumentListOptions) ([]string, error)
+	GetDocumentFiltersByDatasetID(opts dao.DocumentListOptions) (map[string]interface{}, int64, error)
+	GetMetadataByKBs(kbIDs []string) (map[string]interface{}, error)
 	GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*service.DocumentResponse, int64, error)
 	GetThumbnails(userID string, docIDs []string) (map[string]string, error)
 	GetDocumentImage(imageID string) ([]byte, error)
@@ -521,8 +526,48 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		pageSize = 10
 	}
 
+	opts, errMsg := parseDocumentListOptions(c, datasetID)
+	if errMsg != "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": errMsg,
+			"data":    map[string]interface{}{"total": 0, "docs": []interface{}{}},
+		})
+		return
+	}
+	opts, errMsg = h.applyDocumentMetadataFilter(c, opts)
+	if errMsg != "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": errMsg,
+			"data":    map[string]interface{}{"total": 0, "docs": []interface{}{}},
+		})
+		return
+	}
+
+	if c.Query("type") == "filter" {
+		filters, total, err := h.documentService.GetDocumentFiltersByDatasetID(opts)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeExceptionError,
+				"message": "failed to get document filters",
+				"data":    map[string]interface{}{"total": 0, "filter": map[string]interface{}{}},
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeSuccess,
+			"message": "success",
+			"data": gin.H{
+				"total":  total,
+				"filter": filters,
+			},
+		})
+		return
+	}
+
 	// Use kbID to filter documents
-	documents, total, err := h.documentService.ListDocumentsByDatasetID(datasetID, page, pageSize)
+	documents, total, err := h.documentService.ListDocumentsByDatasetIDWithOptions(opts, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    1,
@@ -550,6 +595,257 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			"docs":  docs,
 		},
 	})
+}
+
+func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentListOptions, string) {
+	opts := dao.DocumentListOptions{
+		KbID:     datasetID,
+		Keywords: c.Query("keywords"),
+		OrderBy:  c.DefaultQuery("orderby", "create_time"),
+		Desc:     strings.ToLower(strings.TrimSpace(c.DefaultQuery("desc", "true"))) != "false",
+		Suffixes: queryValues(c, "suffix"),
+		Types:    queryValues(c, "types"),
+	}
+
+	opts.RunStatuses = normalizeRunStatusFilter(queryValues(c, "run", "run_status"))
+	if len(queryValues(c, "run", "run_status")) > 0 && len(opts.RunStatuses) == 0 {
+		return opts, "Invalid filter run status conditions"
+	}
+
+	opts.Name = c.Query("name")
+	docID := c.Query("id")
+	docIDs := queryValues(c, "ids")
+	if docID != "" && len(docIDs) > 0 {
+		return opts, fmt.Sprintf("Should not provide both 'id':%s and 'ids'%v", docID, docIDs)
+	}
+	if docID != "" {
+		opts.DocIDs = []string{docID}
+		opts.DocIDFilterApplied = true
+	} else if len(docIDs) > 0 {
+		opts.DocIDs = docIDs
+		opts.DocIDFilterApplied = true
+	}
+
+	if v := c.Query("create_time_from"); v != "" {
+		createTimeFrom, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return opts, "create_time_from must be an integer"
+		}
+		opts.CreateTimeFrom = createTimeFrom
+	}
+	if v := c.Query("create_time_to"); v != "" {
+		createTimeTo, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return opts, "create_time_to must be an integer"
+		}
+		opts.CreateTimeTo = createTimeTo
+	}
+
+	return opts, ""
+}
+
+func (h *DocumentHandler) applyDocumentMetadataFilter(c *gin.Context, opts dao.DocumentListOptions) (dao.DocumentListOptions, string) {
+	metadata, err := parseMetadataQuery(c.Request.URL.Query())
+	if err != nil {
+		return opts, err.Error()
+	}
+	returnEmptyMetadata := strings.ToLower(strings.TrimSpace(c.Query("return_empty_metadata"))) == "true"
+	if !returnEmptyMetadata && len(metadata) == 0 {
+		return opts, ""
+	}
+
+	candidateIDs, err := h.documentService.ListDocumentIDsByDatasetIDWithOptions(opts)
+	if err != nil {
+		return opts, "failed to get documents"
+	}
+	candidateSet := stringSet(candidateIDs)
+
+	metadataByKey, err := h.documentService.GetMetadataByKBs([]string{opts.KbID})
+	if err != nil {
+		return opts, err.Error()
+	}
+
+	docIDsWithMetadata := map[string]bool{}
+	matchedIDs := map[string]bool{}
+	firstMetadataKey := true
+	for key, values := range metadata {
+		valueMatches := map[string]bool{}
+		rawValues, _ := metadataByKey[key].(map[string][]string)
+		for _, value := range values {
+			for _, docID := range rawValues[value] {
+				valueMatches[docID] = true
+				docIDsWithMetadata[docID] = true
+			}
+		}
+		if firstMetadataKey {
+			matchedIDs = valueMatches
+			firstMetadataKey = false
+		} else {
+			matchedIDs = intersectStringSets(matchedIDs, valueMatches)
+		}
+	}
+	if returnEmptyMetadata {
+		for _, rawValue := range metadataByKey {
+			values, _ := rawValue.(map[string][]string)
+			for _, docIDs := range values {
+				for _, docID := range docIDs {
+					docIDsWithMetadata[docID] = true
+				}
+			}
+		}
+	}
+
+	filteredIDs := make([]string, 0)
+	if returnEmptyMetadata {
+		for _, docID := range candidateIDs {
+			if !docIDsWithMetadata[docID] {
+				filteredIDs = append(filteredIDs, docID)
+			}
+		}
+	} else {
+		for docID := range matchedIDs {
+			if candidateSet[docID] {
+				filteredIDs = append(filteredIDs, docID)
+			}
+		}
+	}
+
+	opts.DocIDs = filteredIDs
+	opts.DocIDFilterApplied = true
+	return opts, ""
+}
+
+func parseMetadataQuery(values url.Values) (map[string][]string, error) {
+	metadata := map[string][]string{}
+	if raw := strings.TrimSpace(values.Get("metadata")); raw != "" {
+		var parsed map[string]interface{}
+		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+			return nil, fmt.Errorf("metadata must be valid JSON")
+		}
+		for key, value := range parsed {
+			for _, item := range interfaceToStringSlice(value) {
+				metadata[key] = append(metadata[key], item)
+			}
+		}
+	}
+
+	for key, vals := range values {
+		if !strings.HasPrefix(key, "metadata[") || !strings.HasSuffix(key, "]") {
+			continue
+		}
+		name := strings.TrimPrefix(key, "metadata[")
+		if end := strings.Index(name, "]"); end >= 0 {
+			name = name[:end]
+		}
+		if name == "" || name == "empty_metadata" {
+			continue
+		}
+		for _, value := range vals {
+			for _, item := range interfaceToStringSlice(value) {
+				metadata[name] = append(metadata[name], item)
+			}
+		}
+	}
+	return metadata, nil
+}
+
+func interfaceToStringSlice(value interface{}) []string {
+	switch typed := value.(type) {
+	case []interface{}:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if item == nil {
+				continue
+			}
+			if s := strings.TrimSpace(fmt.Sprintf("%v", item)); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case []string:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if s := strings.TrimSpace(item); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case string:
+		if strings.TrimSpace(typed) == "" {
+			return nil
+		}
+		return []string{strings.TrimSpace(typed)}
+	default:
+		if value == nil {
+			return nil
+		}
+		return []string{fmt.Sprintf("%v", value)}
+	}
+}
+
+func stringSet(values []string) map[string]bool {
+	out := make(map[string]bool, len(values))
+	for _, value := range values {
+		out[value] = true
+	}
+	return out
+}
+
+func intersectStringSets(left, right map[string]bool) map[string]bool {
+	out := make(map[string]bool)
+	for value := range left {
+		if right[value] {
+			out[value] = true
+		}
+	}
+	return out
+}
+
+func queryValues(c *gin.Context, names ...string) []string {
+	values := make([]string, 0)
+	for _, name := range names {
+		values = append(values, c.QueryArray(name)...)
+		values = append(values, c.QueryArray(name+"[]")...)
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func normalizeRunStatusFilter(statuses []string) []string {
+	if len(statuses) == 0 {
+		return nil
+	}
+	statusTextToNumeric := map[string]string{
+		"UNSTART": string(entity.TaskStatusUnstart),
+		"RUNNING": string(entity.TaskStatusRunning),
+		"CANCEL":  string(entity.TaskStatusCancel),
+		"DONE":    string(entity.TaskStatusDone),
+		"FAIL":    string(entity.TaskStatusFail),
+	}
+	validStatuses := map[string]bool{
+		string(entity.TaskStatusUnstart): true,
+		string(entity.TaskStatusRunning): true,
+		string(entity.TaskStatusCancel):  true,
+		string(entity.TaskStatusDone):    true,
+		string(entity.TaskStatusFail):    true,
+	}
+	out := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		normalized := statusTextToNumeric[strings.ToUpper(status)]
+		if normalized == "" {
+			normalized = status
+		}
+		if !validStatuses[normalized] {
+			return nil
+		}
+		out = append(out, normalized)
+	}
+	return out
 }
 
 func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
