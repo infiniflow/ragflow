@@ -709,7 +709,7 @@ class FileCommitService(CommonService):
             return None
 
         title_ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        final_title = f"{(title or '').strip() or f'Edit {slug}'} {title_ts}"
+        final_title = f"{(title or '').strip() or f'{title_ts} {slug}'} "
         commit_id = get_uuid()
         item_id = get_uuid()
         file_id = _artifact_file_id(kb_id, slug)
