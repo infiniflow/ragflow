@@ -39,6 +39,7 @@ jobs:
       http_api_test_level: ${{ steps.test_level.outputs.http_api_test_level }}
       has_go_changes: ${{ steps.detect_changes.outputs.has_go_changes }}
       has_python_changes: ${{ steps.detect_changes.outputs.has_python_changes }}
+      has_web_changes: ${{ steps.detect_changes.outputs.has_web_changes }}
     steps:
       - name: Ensure workspace ownership
         run: |
@@ -163,10 +164,12 @@ jobs:
           set -euo pipefail
           has_go=false
           has_python=false
+          has_web=false
 
           if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
             has_go=true
             has_python=true
+            has_web=true
           else
             if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
               CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }})
@@ -178,19 +181,22 @@ jobs:
               case "$file" in
                 *.go|go.mod|go.sum)                      has_go=true ;;
                 *.py|pyproject.toml|requirements*.txt)    has_python=true ;;
+                web/*)                                    has_web=true ;;
                 Dockerfile|docker-compose*.yml|build.sh)  has_go=true; has_python=true ;;
               esac
             done <<< "$CHANGED_FILES"
 
-            if [[ "$has_go" == "false" && "$has_python" == "false" ]]; then
+            if [[ "$has_go" == "false" && "$has_python" == "false" && "$has_web" == "false" ]]; then
               has_go=true
               has_python=true
+              has_web=true
             fi
           fi
 
           echo "has_go_changes=${has_go}"        >> $GITHUB_OUTPUT
           echo "has_python_changes=${has_python}" >> $GITHUB_OUTPUT
-          echo "Go: ${has_go}, Python: ${has_python}"
+          echo "has_web_changes=${has_web}"       >> $GITHUB_OUTPUT
+          echo "Go: ${has_go}, Python: ${has_python}, Web: ${has_web}"
 
       - name: Prepare Python test environment
         if: steps.detect_changes.outputs.has_python_changes == 'true'
@@ -219,6 +225,7 @@ jobs:
       HTTP_API_TEST_LEVEL: ${{ needs.ragflow_preflight.outputs.http_api_test_level }}
       HAS_GO: ${{ needs.ragflow_preflight.outputs.has_go_changes }}
       HAS_PYTHON: ${{ needs.ragflow_preflight.outputs.has_python_changes }}
+      HAS_WEB: ${{ needs.ragflow_preflight.outputs.has_web_changes }}
     steps:
       - name: Ensure workspace ownership
         if: always()
@@ -287,7 +294,7 @@ jobs:
           fi
 
       - name: Build ragflow:nightly
-        if: env.HAS_PYTHON == 'true'
+        if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
         run: |
           set -euo pipefail
           sudo docker pull ubuntu:24.04
@@ -438,7 +445,7 @@ jobs:
 
 
       - name: Start ragflow:nightly for Infinity
-        if: env.HAS_PYTHON == 'true'
+        if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
         run: |
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
@@ -650,7 +657,7 @@ jobs:
           sudo rm -rf docker/ragflow-logs || true
 
       - name: Stop ragflow:nightly for Infinity
-        if: ${{ always() && env.HAS_PYTHON == 'true' }}
+        if: ${{ always() && (env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true') }}
         run: |
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
@@ -675,6 +682,7 @@ jobs:
       HTTP_API_TEST_LEVEL: ${{ needs.ragflow_preflight.outputs.http_api_test_level }}
       HAS_GO: ${{ needs.ragflow_preflight.outputs.has_go_changes }}
       HAS_PYTHON: ${{ needs.ragflow_preflight.outputs.has_python_changes }}
+      HAS_WEB: ${{ needs.ragflow_preflight.outputs.has_web_changes }}
     steps:
       - name: Ensure workspace ownership
         if: always()
@@ -743,7 +751,7 @@ jobs:
           fi
 
       - name: Build ragflow:nightly
-        if: env.HAS_PYTHON == 'true'
+        if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
         run: |
           set -euo pipefail
           sudo docker pull ubuntu:24.04
@@ -894,7 +902,7 @@ jobs:
 
 
       - name: Start ragflow:nightly for Elasticsearch
-        if: env.HAS_PYTHON == 'true'
+        if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
         run: |
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
@@ -1101,7 +1109,7 @@ jobs:
           sudo rm -rf docker/ragflow-logs || true
 
       - name: Stop ragflow:nightly for Elasticsearch
-        if: ${{ always() && env.HAS_PYTHON == 'true' }}
+        if: ${{ always() && (env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true') }}
         run: |
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
