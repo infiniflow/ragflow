@@ -21,8 +21,8 @@ import (
 	"github.com/cenkalti/backoff/v5"
 )
 
-// InferenceClient wraps the DeepDoc HTTP API.
-type InferenceClient struct {
+// Client wraps the DeepDoc HTTP API.
+type Client struct {
 	baseURL    string
 	httpClient *http.Client
 
@@ -33,24 +33,27 @@ type InferenceClient struct {
 }
 
 // BaseURL returns the configured DeepDoc service URL.
-func (c *InferenceClient) BaseURL() string { return c.baseURL }
+func (c *Client) BaseURL() string { return c.baseURL }
 
-// NewInferenceClient creates a client.  baseURL must be provided by the caller
+// NewClient creates a client.  baseURL must be provided by the caller
 // (e.g. from the DEEPDOC_URL environment variable).  Returns an error if empty.
-func NewInferenceClient(baseURL string) (*InferenceClient, error) {
+func NewClient(baseURL string) (*Client, error) {
 	if baseURL == "" {
 		return nil, fmt.Errorf("deepdoc client: baseURL is required (set DEEPDOC_URL)")
 	}
-	return &InferenceClient{
+	return &Client{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
+		DLALabels: DefaultDLALabels(),
+		TSRLabels: DefaultTSRLabels(),
 	}, nil
 }
 
-// Default DLA/TSR label tables used as fallback when no model-specific
-// labels are injected by a TableBuilder constructor.
+// DefaultDLALabels returns the 10-class DLA taxonomy matching Python's
+// deepdoc/vision/dla_cli.py:10-21.  Duplicates at indices 4, 7, 9 are
+// kept verbatim for backward compatibility with existing inference servers.
 func DefaultDLALabels() []string {
 	return []string{
 		pdf.LayoutTypeTitle, pdf.LayoutTypeText, pdf.LayoutTypeReference,
@@ -59,6 +62,9 @@ func DefaultDLALabels() []string {
 		pdf.LayoutTypeEquation, pdf.DLALabelFigureCaption,
 	}
 }
+
+// DefaultTSRLabels returns the 6-class TSR taxonomy matching Python's
+// deepdoc/server/adapters/tsr_adapter.py:21-26.
 func DefaultTSRLabels() []string {
 	return []string{
 		"table", "table column", "table row",
@@ -72,7 +78,7 @@ type bboxesResponse struct {
 }
 
 // DLA analyzes a full page image and returns labeled regions.
-func (c *InferenceClient) DLA(ctx context.Context, pageImage image.Image) ([]pdf.DLARegion, error) {
+func (c *Client) DLA(ctx context.Context, pageImage image.Image) ([]pdf.DLARegion, error) {
 	data, err := util.EncodeJPEG(pageImage)
 	if err != nil {
 		return nil, fmt.Errorf("dla: encode: %w", err)
@@ -87,9 +93,6 @@ func (c *InferenceClient) DLA(ctx context.Context, pageImage image.Image) ([]pdf
 			continue
 		}
 		labels := c.DLALabels
-		if labels == nil {
-			labels = DefaultDLALabels()
-		}
 		label := ""
 		if clsID := int(b[5]); clsID >= 0 && clsID < len(labels) {
 			label = labels[clsID]
@@ -104,7 +107,7 @@ func (c *InferenceClient) DLA(ctx context.Context, pageImage image.Image) ([]pdf
 }
 
 // TSR recognises table structure from a cropped image.
-func (c *InferenceClient) TSR(ctx context.Context, cropped image.Image) ([]pdf.TSRCell, error) {
+func (c *Client) TSR(ctx context.Context, cropped image.Image) ([]pdf.TSRCell, error) {
 	data, err := util.EncodeJPEG(cropped)
 	if err != nil {
 		return nil, fmt.Errorf("tsr: encode: %w", err)
@@ -119,9 +122,6 @@ func (c *InferenceClient) TSR(ctx context.Context, cropped image.Image) ([]pdf.T
 			continue
 		}
 		tlabels := c.TSRLabels
-		if tlabels == nil {
-			tlabels = DefaultTSRLabels()
-		}
 		label := ""
 		if len(b) >= 6 {
 			if cls := int(b[5]); cls >= 0 && cls < len(tlabels) {
@@ -152,7 +152,7 @@ type ocrRecognizeResponse struct {
 
 // OCRDetect detects text regions (bounding boxes) in an image.
 // DeepDoc /predict/ocr with operator=det returns quad boxes: [[[x0,y0],[x1,y1],[x2,y2],[x3,y3]], ...]
-func (c *InferenceClient) OCRDetect(ctx context.Context, cropped image.Image) ([]pdf.OCRBox, error) {
+func (c *Client) OCRDetect(ctx context.Context, cropped image.Image) ([]pdf.OCRBox, error) {
 	data, err := util.EncodeJPEG(cropped)
 	if err != nil {
 		return nil, fmt.Errorf("ocr detect: encode: %w", err)
@@ -197,7 +197,7 @@ func (c *InferenceClient) OCRDetect(ctx context.Context, cropped image.Image) ([
 
 // OCRRecognize recognizes text in a cropped image region.
 // DeepDoc /predict/ocr with operator=rec returns [[["text", confidence], ...]]
-func (c *InferenceClient) OCRRecognize(ctx context.Context, cropped image.Image) ([]pdf.OCRText, error) {
+func (c *Client) OCRRecognize(ctx context.Context, cropped image.Image) ([]pdf.OCRText, error) {
 	data, err := util.EncodeJPEG(cropped)
 	if err != nil {
 		return nil, fmt.Errorf("ocr rec: encode: %w", err)
@@ -224,7 +224,7 @@ func (c *InferenceClient) OCRRecognize(ctx context.Context, cropped image.Image)
 // OCRRecognizeBatch recognizes text in multiple cropped image regions.
 // Returns a slice of results and a parallel slice of errors (nil on success).
 // A nil cropped image in the input produces nil results and a non-nil error.
-func (c *InferenceClient) OCRRecognizeBatch(ctx context.Context, cropped []image.Image) ([][]pdf.OCRText, []error) {
+func (c *Client) OCRRecognizeBatch(ctx context.Context, cropped []image.Image) ([][]pdf.OCRText, []error) {
 	results := make([][]pdf.OCRText, len(cropped))
 	errs := make([]error, len(cropped))
 
@@ -255,7 +255,7 @@ func (c *InferenceClient) OCRRecognizeBatch(ctx context.Context, cropped []image
 }
 
 // Health checks whether the DeepDoc service is reachable.
-func (c *InferenceClient) Health() bool {
+func (c *Client) Health() bool {
 	resp, err := c.httpClient.Get(c.baseURL + "/health")
 	if err != nil {
 		return false
@@ -264,7 +264,7 @@ func (c *InferenceClient) Health() bool {
 	return resp.StatusCode == 200
 }
 
-func (c *InferenceClient) post(ctx context.Context, endpoint string, imgData []byte, filename string, result interface{}, extraFields ...string) error {
+func (c *Client) post(ctx context.Context, endpoint string, imgData []byte, filename string, result interface{}, extraFields ...string) error {
 	// Build multipart body once — the image data is idempotent.
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)

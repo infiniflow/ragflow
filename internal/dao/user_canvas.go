@@ -275,7 +275,7 @@ func (dao *UserCanvasDAO) GetByUserAndTitle(userID, title, canvasCategory string
 
 // GetList get canvases list with pagination and filtering
 // Similar to Python UserCanvasService.get_list
-func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int, orderby string, desc bool, id, title string, canvasCategory string) ([]*entity.UserCanvas, error) {
+func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int, orderby string, desc bool, id, title string, canvasCategory, canvasType string) ([]*entity.UserCanvas, error) {
 
 	query := DB.Model(&entity.UserCanvas{}).
 		Where("user_id = ?", tenantID)
@@ -291,6 +291,10 @@ func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int,
 	} else {
 		// Default to agent category
 		query = query.Where("canvas_category = ?", "agent_canvas")
+	}
+
+	if canvasType != "" {
+		query = query.Where("canvas_type = ?", canvasType)
 	}
 
 	// Order by
@@ -348,7 +352,7 @@ type UserCanvasListItem struct {
 // ListByTenantIDs lists agent canvases accessible to the given owner IDs with optional
 // keyword filter, tag filter, pagination, and ordering.
 // Mirrors Python UserCanvasService.get_by_tenant_ids (list route only).
-func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string, canvasCategory string, tags []string) ([]*UserCanvasListItem, int64, error) {
+func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords, canvasCategory, canvasType string, tags []string) ([]*UserCanvasListItem, int64, error) {
 	if len(ownerIDs) == 0 {
 		return nil, 0, nil
 	}
@@ -383,6 +387,10 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page
 		base = base.Where("user_canvas.canvas_category = ?", canvasCategory)
 	} else {
 		base = base.Where("user_canvas.canvas_category = ?", "agent_canvas")
+	}
+
+	if canvasType != "" {
+		base = base.Where("canvas_type = ?", canvasType)
 	}
 
 	if keywords != "" {
@@ -483,6 +491,12 @@ func (dao *UserCanvasDAO) GetAllCanvasIDsByUserID(userID string) ([]string, erro
 // UpdateDSL updates a canvas DSL by canvas ID.
 func (dao *UserCanvasDAO) UpdateDSL(canvasID string, dsl entity.JSONMap) (int64, error) {
 	result := DB.Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Update("dsl", dsl)
+	return result.RowsAffected, result.Error
+}
+
+// UpdateFields updates only the supplied user_canvas columns.
+func (dao *UserCanvasDAO) UpdateFields(canvasID string, fields map[string]interface{}) (int64, error) {
+	result := DB.Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Updates(fields)
 	return result.RowsAffected, result.Error
 }
 
