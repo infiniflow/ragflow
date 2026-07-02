@@ -556,17 +556,19 @@ func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDo
 // CreateDocument create document
 func (s *DocumentService) CreateDocument(req *CreateDocumentRequest) (*entity.Document, error) {
 	document := &entity.Document{
-		Name:       &req.Name,
-		KbID:       req.KbID,
-		ParserID:   req.ParserID,
-		CreatedBy:  req.CreatedBy,
-		Type:       req.Type,
-		SourceType: req.Source,
-		Suffix:     ".doc",
-		Status:     func() *string { s := "0"; return &s }(),
+		ID:           common.GenerateUUID(),
+		Name:         &req.Name,
+		KbID:         req.KbID,
+		ParserID:     req.ParserID,
+		ParserConfig: entity.JSONMap{},
+		CreatedBy:    req.CreatedBy,
+		Type:         req.Type,
+		SourceType:   req.Source,
+		Suffix:       ".doc",
+		Status:       func() *string { s := "0"; return &s }(),
 	}
 
-	if err := s.documentDAO.Create(document); err != nil {
+	if err := s.InsertDocument(document); err != nil {
 		return nil, fmt.Errorf("failed to create document: %w", err)
 	}
 
@@ -772,18 +774,28 @@ func (s *DocumentService) deleteDocRecordWithCounters(doc *entity.Document, kbID
 			return nil // already deleted by a concurrent request — skip counters
 		}
 
-		decErr := tx.Model(&entity.Knowledgebase{}).
+		result = tx.Model(&entity.Knowledgebase{}).
 			Where("id = ?", kbID).
 			Updates(map[string]interface{}{
 				"doc_num":   gorm.Expr("doc_num - 1"),
 				"chunk_num": gorm.Expr("chunk_num - ?", doc.ChunkNum),
 				"token_num": gorm.Expr("token_num - ?", doc.TokenNum),
-			}).Error
-		if decErr != nil {
-			common.Logger.Warn(fmt.Sprintf("deleteDocRecordWithCounters: failed to decrement KB %s: %v", kbID, decErr))
+			})
+		if result.Error != nil {
+			return fmt.Errorf("failed to decrement counters for KB %s: %w", kbID, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("knowledgebase %s not found", kbID)
 		}
 		return nil
 	})
+}
+
+func (s *DocumentService) rollbackAddFileFromKBError(doc *entity.Document, kbID string, err error) error {
+	if cleanupErr := s.deleteDocRecordWithCounters(doc, kbID); cleanupErr != nil {
+		return fmt.Errorf("%w; rollback cleanup failed: %w", err, cleanupErr)
+	}
+	return err
 }
 
 // cleanupFileReferences deletes file2document mappings for docID, and for each
@@ -2993,7 +3005,7 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 		}
 
 		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), merged, "local", int64(len(blob)), blob)
-		if err := s.documentDAO.Create(doc); err != nil {
+		if err := s.InsertDocument(doc); err != nil {
 			// Roll back the orphaned blob so a failed insert doesn't leak storage.
 			_ = storageImpl.Remove(kb.ID, location)
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
@@ -3002,7 +3014,7 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 		if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
 			// Linkage failed: roll back the document row and blob so the partial
 			// state doesn't leave an invisible (unlisted) document behind.
-			_, _ = s.documentDAO.Delete(doc.ID)
+			err = s.rollbackAddFileFromKBError(doc, kb.ID, err)
 			_ = storageImpl.Remove(kb.ID, location)
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
@@ -3035,12 +3047,11 @@ func (s *DocumentService) UploadEmptyDocument(kb *entity.Knowledgebase, tenantID
 	}
 
 	doc := s.newDatasetDocument(kb, tenantID, name, "", "virtual", kb.ParserConfig, "local", 0, nil)
-	if err := s.documentDAO.Create(doc); err != nil {
+	if err := s.InsertDocument(doc); err != nil {
 		return nil, common.CodeServerError, err
 	}
 	if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
-		_, _ = s.documentDAO.Delete(doc.ID)
-		return nil, common.CodeServerError, err
+		return nil, common.CodeServerError, s.rollbackAddFileFromKBError(doc, kb.ID, err)
 	}
 	return docToRawMap(doc), common.CodeSuccess, nil
 }
@@ -3178,12 +3189,12 @@ func (s *DocumentService) UploadWebDocument(kb *entity.Knowledgebase, tenantID, 
 	}
 
 	doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), kb.ParserConfig, "web", int64(len(blob)), blob)
-	if err := s.documentDAO.Create(doc); err != nil {
+	if err := s.InsertDocument(doc); err != nil {
 		_ = storageImpl.Remove(kb.ID, location)
 		return nil, common.CodeServerError, err
 	}
 	if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
-		_, _ = s.documentDAO.Delete(doc.ID)
+		err = s.rollbackAddFileFromKBError(doc, kb.ID, err)
 		_ = storageImpl.Remove(kb.ID, location)
 		return nil, common.CodeServerError, err
 	}
