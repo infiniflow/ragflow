@@ -396,9 +396,7 @@ func TestEnterprise_ConcurrentStream(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for i := 0; i < numStreams; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			outputCh, errCh := cg.Stream(ctx, map[string]any{"value": "concurrent"}, types.StreamModeValues)
@@ -407,7 +405,7 @@ func TestEnterprise_ConcurrentStream(t *testing.T) {
 			if err := <-errCh; err != nil {
 				t.Errorf("Stream error: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
