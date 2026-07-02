@@ -385,7 +385,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
             model_records = model_record_map.get(model_record_key, [])
             if not model_records:
                 continue
-            provider_id, instance_id, model_name = model_record_key.split("@")
+            provider_id, instance_id, model_name = model_record_key.split("@", 2)
             model_types = [model.model_type for model in model_records if model.status == ActiveStatusEnum.ACTIVE.value]
             if not model_types:
                 continue
