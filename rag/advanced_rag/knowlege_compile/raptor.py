@@ -628,11 +628,11 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         leaves = [
             _PsiTreeNode(
                 index=i,
-                text=text,
-                embedding=np.asarray(embd),
-                source_chunk_ids=list(src or []),
+                text=item[0],
+                embedding=np.asarray(item[1]),
+                source_chunk_ids=list(item[2] if len(item) > 2 else []),
             )
-            for i, (text, embd, src, _) in enumerate(chunks)
+            for i, item in enumerate(chunks)
         ]
         if len(leaves) == 1:
             return leaves[0], leaves
