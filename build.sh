@@ -141,28 +141,10 @@ check_go_deps() {
     echo "✓ Required tools are available"
 }
 
-# Download and extract a tar.gz from a URL to a target directory
-_download_and_extract() {
-    local url="$1" target_dir="$2"
-    echo "Downloading ${url} ..."
-    local tmpfile
-    tmpfile="$(mktemp)"
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$url" -o "$tmpfile"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q "$url" -O "$tmpfile"
-    else
-        echo -e "${RED}Error: need curl or wget to download office_oxide${NC}"
-        exit 1
-    fi
-    tar xzf "$tmpfile" -C "$target_dir"
-    rm -f "$tmpfile"
-}
-
-# Check / install office_oxide native library (Rust → C FFI library)
+# Check office_oxide native library
 check_office_oxide_deps() {
     print_section "Checking office_oxide native library"
-    _seed_from_system "office_oxide"
+    _seed_from_system "office_oxide" || true
 
     local lib_file="liboffice_oxide.a"
     local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
@@ -175,14 +157,14 @@ check_office_oxide_deps() {
 
     echo -e "${RED}Error: office_oxide native library not found${NC}"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run download_deps.py"
+    echo "  Run: uv run ragflow_deps/download_deps.py"
     echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
     exit 1
 }
 
-# Check pdfium static library (must be pre-installed via download_deps.py or CI image).
+# Check pdfium static library.
 check_pdfium_deps() {
-    _seed_from_system "pdfium-static"
+    _seed_from_system "pdfium-static" || true
     local lib_path="${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
 
     if [ -f "$lib_path" ]; then
@@ -192,14 +174,14 @@ check_pdfium_deps() {
 
     echo "  pdfium (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run download_deps.py"
+    echo "  Run: uv run ragflow_deps/download_deps.py"
     echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/pdfium-linux-x64-static.tgz | tar xz -C ${PDFIUM_STATIC_PREFIX}"
     return 1
 }
 
-# Check / install pdf_oxide static library (go-ffi tarball from GitHub Release).
+# Check pdf_oxide static library.
 check_pdf_oxide_deps() {
-    _seed_from_system "pdf_oxide"
+    _seed_from_system "pdf_oxide" || true
     # Map platform to tarball-internal subdirectory.
     local platform_subdir
     case "$(uname -s)" in
@@ -229,7 +211,7 @@ check_pdf_oxide_deps() {
 
     echo "  pdf_oxide (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run download_deps.py"
+    echo "  Run: uv run ragflow_deps/download_deps.py"
     echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz | tar xz -C ${PDF_OXIDE_PREFIX}"
     return 1
 }
@@ -370,7 +352,7 @@ setup_cgo_env() {
     # duplicate rust_eh_personality symbols.
     if [ "$(uname -s)" = "Linux" ]; then
         if ! command -v ld.lld >/dev/null 2>&1; then
-            echo -e "${RED}Error: ld.lld not found. Install with: sudo apt install lld-20${NC}"
+            echo -e "${RED}Error: ld.lld not found. Install with: sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld${NC}"
             echo "  lld is required to static-link Chromium-built pdfium (.eh_frame format)"
             return 1
         fi
@@ -522,7 +504,8 @@ DEPENDENCIES:
     - cmake >= 4.0
     - go >= 1.24
     - g++ with C++17/23 support
-    - office_oxide native library (auto-downloaded on first build)
+    - office_oxide native library (download with: uv run ragflow_deps/download_deps.py)
+    - lld (Linux only): sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
     - pcre2 development files
         - Debian/Ubuntu: libpcre2-dev
         - openSUSE/RHEL/Fedora: pcre2-devel
