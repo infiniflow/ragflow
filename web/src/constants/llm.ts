@@ -74,6 +74,7 @@ export enum LLMFactory {
   RAGcon = 'RAGcon',
   Perplexity = 'Perplexity',
   NewAPI = 'New API',
+  FunASR = 'FunASR',
 }
 
 // Please lowercase the file name
@@ -147,6 +148,7 @@ export const IconMap = {
   [LLMFactory.Perplexity]: 'perplexity',
   [LLMFactory.SoMark]: 'somark',
   [LLMFactory.NewAPI]: 'new-api',
+  [LLMFactory.FunASR]: 'funasr',
 };
 
 export const ModelTypeToField: Record<string, string> = {

@@ -443,3 +443,39 @@ class NewAPISeq2txt(GPTSeq2txt):
             raise ValueError("url cannot be None")
         model_name = model_name.split("___")[0]
         super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
+
+
+class FunASRSeq2txt(GPTSeq2txt):
+    """
+    FunASR / SenseVoice (self-hosted) Speech-to-Text provider.
+
+    FunASR (https://github.com/modelscope/FunASR) exposes an
+    OpenAI-compatible HTTP server at ``/v1/audio/transcriptions`` —
+    typical local launch is::
+
+        funasr-server --device cuda  # serves http://localhost:8000/v1
+
+    So the wire format is identical to OpenAI Whisper; this class is
+    just a thin GPTSeq2txt subclass that accepts a local base_url and
+    a model_name (the default ``sensevoice`` matches FunASR's
+    out-of-the-box OpenAI API model alias).
+
+    FunASR does not require authentication. The project's LLM bundle
+    plumbing nonetheless needs a non-empty key string for the
+    OpenAI-compatible client to construct, so ``__init__`` substitutes
+    the placeholder ``"funasr"`` when the supplied key is falsy; a
+    user-supplied key is forwarded unchanged.
+
+    Closes #15449.
+    """
+
+    _FACTORY_NAME = "FunASR"
+
+    def __init__(self, key, model_name="sensevoice", base_url="http://localhost:8000/v1", **kwargs):
+        """Initialize an OpenAI-compatible client for a local FunASR server."""
+        if not base_url:
+            base_url = "http://localhost:8000/v1"
+        # FunASR doesn't require auth; OpenAI client refuses empty key
+        # strings, so substitute a stable placeholder.
+        super().__init__(key=key or "funasr", model_name=model_name, base_url=base_url, **kwargs)
+        logging.info("[FunASR] Speech2Text initialized with model %s at %s", model_name, base_url)

@@ -1930,6 +1930,13 @@
             "llm": []
         },
         {
+            "name": "FunASR",
+            "logo": "",
+            "tags": "SPEECH2TEXT",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "DeepSeek",
             "logo": "",
             "tags": "LLM",
