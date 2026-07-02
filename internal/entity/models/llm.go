@@ -124,9 +124,22 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	// Reset stale per-call usage before the call so that a response
+	// without a usage block doesn't leak the previous call's data.
+	// Mirrors Python's LLMBundle._reset_last_usage().
+	m.inner.LastUsage = nil
 	resp, err := m.inner.ModelDriver.ChatWithMessages(*m.inner.ModelName, internal, m.inner.APIConfig, m.chatCfg)
 	if err != nil {
 		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *m.inner.ModelName, err)
+	}
+	// Record the per-call token usage so the canvas-level aggregator (and
+	// Langfuse) can compute the run total. Mirrors Python's
+	// LLMBundle._report_usage() / self.mdl.last_usage pattern.
+	if resp != nil && resp.Usage != nil {
+		m.inner.LastUsage = &ChatUsage{
+			PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens, TotalTokens: resp.Usage.TotalTokens,
+		}
+		recordUsageFromResponse(ctx, m.inner)
 	}
 	return fromInternalResponse(resp), nil
 }
