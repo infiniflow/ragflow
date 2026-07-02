@@ -254,7 +254,21 @@ def build_error_result(code=RetCode.FORBIDDEN, message="success"):
     response = {"code": code, "message": message}
     response = _safe_jsonify(response)
     if hasattr(response, "status_code"):
-        response.status_code = code
+        # `code` is a RetCode whose value (e.g. ARGUMENT_ERROR=101, EXCEPTION_ERROR=100)
+        # is NOT necessarily a valid HTTP status. Assigning 101 produces an HTTP 101
+        # "Switching Protocols" response, which makes Hypercorn/h11 raise
+        # `_SWITCH_UPGRADE event without a pending proposal` and reset the connection
+        # (observed as a 502 by clients, e.g. the Dify external-knowledge connection test
+        # which POSTs to /api/v1/dify/retrieval without a body). Clamp to a valid range.
+        try:
+            http_status = int(code)
+        except (TypeError, ValueError):
+            logger.warning("build_error_result: could not convert code=%r to int; defaulting to 400", code)
+            http_status = 400
+        if not (200 <= http_status <= 599):
+            logger.warning("build_error_result: code=%r (http_status=%d) out of valid HTTP range; defaulting to 400", code, http_status)
+            http_status = 400
+        response.status_code = http_status
     return response
 
 
