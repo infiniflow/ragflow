@@ -395,7 +395,8 @@ const DatasetFolderName = ".knowledgebase"
 // concurrent race conditions (TOCTOU).
 func (dao *FileDAO) InitDatasetDocs(rootID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
 	var existing []*entity.File
-	err := DB.Where("name = ? AND parent_id = ?", DatasetFolderName, rootID).
+	err := DB.Where("name = ? AND parent_id = ? AND tenant_id = ?", DatasetFolderName, rootID, tenantID).
+		Order("create_time ASC").
 		Find(&existing).Error
 	if err != nil {
 		return err
@@ -454,7 +455,7 @@ func (dao *FileDAO) InitDatasetDocs(rootID, tenantID string, file2DocumentDAO *F
 // Deduplicates duplicate entries that may have been created by race conditions.
 func (dao *FileDAO) newAFileFromDataset(tenantID, name, parentID string) (*entity.File, error) {
 	var existingFiles []*entity.File
-	err := DB.Where("tenant_id = ? AND parent_id = ? AND name = ?", tenantID, parentID, name).Find(&existingFiles).Error
+	err := DB.Where("tenant_id = ? AND parent_id = ? AND name = ?", tenantID, parentID, name).Order("create_time ASC").Find(&existingFiles).Error
 	if err != nil {
 		return nil, err
 	}

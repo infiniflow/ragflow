@@ -280,7 +280,7 @@ class FileService(CommonService):
         #     location: File location
         # Returns:
         #     Created or existing file dictionary
-        existing = list(cls.query(tenant_id=tenant_id, parent_id=parent_id, name=name))
+        existing = list(cls.query(tenant_id=tenant_id, parent_id=parent_id, name=name).order_by(cls.model.create_time.asc()))
         if existing:
             if len(existing) > 1:
                 logger.warning(
@@ -290,9 +290,10 @@ class FileService(CommonService):
                     parent_id,
                 )
                 keep_id = existing[0].id
-                for dup in existing[1:]:
-                    File.update(parent_id=keep_id).where(File.parent_id == dup.id).execute()
-                    cls.delete_by_id(dup.id)
+                with DB.atomic():
+                    for dup in existing[1:]:
+                        File.update(parent_id=keep_id).where(File.parent_id == dup.id).execute()
+                        cls.delete_by_id(dup.id)
             return existing[0].to_dict()
         file = {
             "id": get_uuid(),
@@ -317,7 +318,7 @@ class FileService(CommonService):
         # Args:
         #     root_id: Root folder ID
         #     tenant_id: Tenant ID
-        existing = list(cls.model.select().where((cls.model.name == SKILLS_FOLDER_NAME) & (cls.model.parent_id == root_id)))
+        existing = list(cls.model.select().where((cls.model.name == SKILLS_FOLDER_NAME) & (cls.model.parent_id == root_id) & (cls.model.tenant_id == tenant_id)).order_by(cls.model.create_time.asc()))
         if existing:
             if len(existing) > 1:
                 logger.warning(
@@ -327,9 +328,10 @@ class FileService(CommonService):
                     root_id,
                 )
                 keep_id = existing[0].id
-                for dup in existing[1:]:
-                    cls.model.update(parent_id=keep_id).where(cls.model.parent_id == dup.id).execute()
-                    cls.delete_by_id(dup.id)
+                with DB.atomic():
+                    for dup in existing[1:]:
+                        cls.model.update(parent_id=keep_id).where(cls.model.parent_id == dup.id).execute()
+                        cls.delete_by_id(dup.id)
             return
         file_id = get_uuid()
         file = {
@@ -353,7 +355,9 @@ class FileService(CommonService):
         # Args:
         #     root_id: Root folder ID
         #     tenant_id: Tenant ID
-        existing = list(cls.model.select().where((cls.model.name == KNOWLEDGEBASE_FOLDER_NAME) & (cls.model.parent_id == root_id)))
+        existing = list(
+            cls.model.select().where((cls.model.name == KNOWLEDGEBASE_FOLDER_NAME) & (cls.model.parent_id == root_id) & (cls.model.tenant_id == tenant_id)).order_by(cls.model.create_time.asc())
+        )
         if existing:
             if len(existing) > 1:
                 logger.warning(
@@ -363,9 +367,10 @@ class FileService(CommonService):
                     root_id,
                 )
                 keep_id = existing[0].id
-                for dup in existing[1:]:
-                    cls.model.update(parent_id=keep_id).where(cls.model.parent_id == dup.id).execute()
-                    cls.delete_by_id(dup.id)
+                with DB.atomic():
+                    for dup in existing[1:]:
+                        cls.model.update(parent_id=keep_id).where(cls.model.parent_id == dup.id).execute()
+                        cls.delete_by_id(dup.id)
             return
         folder = cls.new_a_file_from_kb(tenant_id, KNOWLEDGEBASE_FOLDER_NAME, root_id)
 
