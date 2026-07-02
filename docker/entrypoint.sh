@@ -287,12 +287,14 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx
 
-    while true; do
-        echo "Attempt to start RAGFlow server..."
-        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
-        echo "RAGFlow python server started."
-        sleep 1;
-    done &
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+        while true; do
+            echo "Attempt to start RAGFlow python server..."
+            "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
+            echo "RAGFlow python server started."
+            sleep 1;
+        done &
+    fi
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         while true; do
@@ -307,12 +309,14 @@ fi
 
 
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
-    while true; do
-        echo "Attempt to start Admin python server..."
-        "$PY" admin/server/admin_server.py
-        echo "Admin python server started"
-        sleep 1;
-    done &
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+        while true; do
+            echo "Attempt to start Admin python server..."
+            "$PY" admin/server/admin_server.py
+            echo "Admin python server started"
+            sleep 1;
+        done &
+    fi
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         while true; do
@@ -341,11 +345,13 @@ fi
 
 if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
     if [[ "${CONSUMER_NO_END}" -gt "${CONSUMER_NO_BEG}" ]]; then
-        echo "Starting task executors on host '${HOST_ID}' for IDs in [${CONSUMER_NO_BEG}, ${CONSUMER_NO_END})..."
-        for (( i=CONSUMER_NO_BEG; i<CONSUMER_NO_END; i++ ))
-        do
-          task_exe "${i}" "${HOST_ID}" &
-        done
+        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+            echo "Starting python task executors on host '${HOST_ID}' for IDs in [${CONSUMER_NO_BEG}, ${CONSUMER_NO_END})..."
+            for (( i=CONSUMER_NO_BEG; i<CONSUMER_NO_END; i++ ))
+            do
+              task_exe "${i}" "${HOST_ID}" &
+            done
+        fi
 
         if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
             while true; do
@@ -359,7 +365,11 @@ if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
         echo "Starting ${WORKERS} task executor(s) on host '${HOST_ID}'..."
         for (( i=0; i<WORKERS; i++ ))
         do
-          task_exe "${i}" "${HOST_ID}" &
+          if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+              echo "Starting python task executor..."
+              task_exe "${i}" "${HOST_ID}" &
+              sleep 1;
+          fi
 
           if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
               while true; do
