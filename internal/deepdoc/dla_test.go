@@ -404,32 +404,51 @@ func TestDLA_OutOfRangeTypeIdxMapsToEmptyString(t *testing.T) {
 }
 
 func TestDLA_ContextCancelDuringBackoff(t *testing.T) {
+	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
 		http.Error(w, "down", http.StatusServiceUnavailable)
 	}))
 	defer srv.Close()
 
 	// 5s backoff × 5 attempts = 25s of pure sleep if cancel is
-	// ignored. Assert the call returns in well under that — the
-	// meaningful property here is "ctx cancel short-circuits the
-	// retry loop", not the specific error value, because DLA
-	// collapses per-image failures into empty slots by design
-	// (matches the Python contract from layout_recognizer.py:74-76).
+	// ignored. The semantic property under test is "ctx cancel
+	// short-circuits the retry loop". The load-bearing assertions are:
+	//  1. DLA returns promptly from a watchdog-bounded goroutine.
+	//  2. The server is hit exactly once — no second retry attempt
+	//     starts after ctx cancellation lands during the first backoff.
 	c := NewClientWithURL(srv.URL, WithBackoff(5*time.Second), WithMaxAttempts(5))
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
 	}()
-	start := time.Now()
-	_, err := c.DLA(ctx, [][]byte{[]byte("img")})
-	elapsed := time.Since(start)
-	if err != nil {
-		t.Logf("DLA err=%v (acceptable)", err)
+
+	type result struct {
+		res []DLAResult
+		err error
 	}
-	// Allow generous slack for CI scheduling jitter — 2s is still
-	// 12× shorter than the unsuppressed 25s total backoff.
-	if elapsed > 2*time.Second {
-		t.Errorf("DLA took %v with ctx cancelled at 50ms; retry loop ignored cancel", elapsed)
+	done := make(chan result, 1)
+	go func() {
+		res, err := c.DLA(ctx, [][]byte{[]byte("img")})
+		done <- result{res: res, err: err}
+	}()
+
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Logf("DLA err=%v (acceptable — per-image failures map to empty slots)", r.err)
+		}
+		if got := atomic.LoadInt32(&hits); got != 1 {
+			t.Fatalf("server hits = %d, want 1 (ctx cancel during backoff must suppress retries)", got)
+		}
+		if len(r.res) != 1 {
+			t.Fatalf("len(res)=%d, want 1 empty result slot", len(r.res))
+		}
+		if r.res[0] != (DLAResult{}) {
+			t.Fatalf("result=%+v, want empty slot on cancelled image", r.res[0])
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("DLA did not return within 3s — ctx cancel did not short-circuit backoff")
 	}
 }

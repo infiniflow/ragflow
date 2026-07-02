@@ -42,6 +42,10 @@ type fakeDocumentService struct {
 	err             error
 	stopResult      map[string]interface{}
 	stopErr         error
+	thumbnails      map[string]string
+	thumbnailErr    error
+	thumbnailUserID string
+	thumbnailDocIDs []string
 	metadataSummary map[string]interface{}
 	metadataErr     error
 	metadataKBID    string
@@ -145,8 +149,10 @@ func (f *fakeDocumentService) ListDocumentsByDatasetID(kbID string, page, pageSi
 func (f *fakeDocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
 	return map[string]interface{}{}, common.CodeSuccess, nil
 }
-func (f *fakeDocumentService) GetThumbnail(docID string) (*service.ThumbnailResponse, error) {
-	return nil, nil
+func (f *fakeDocumentService) GetThumbnails(userID string, docIDs []string) (map[string]string, error) {
+	f.thumbnailUserID = userID
+	f.thumbnailDocIDs = append([]string(nil), docIDs...)
+	return f.thumbnails, f.thumbnailErr
 }
 func (f *fakeDocumentService) GetDocumentImage(imageID string) ([]byte, error) {
 	return nil, nil
@@ -905,6 +911,48 @@ func TestMetadataSummaryByDataset_Success(t *testing.T) {
 	author := summary["author"].(map[string]interface{})
 	if author["type"] != "string" {
 		t.Fatalf("expected author type string, got %v", author["type"])
+	}
+}
+
+func TestGetThumbnail_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeDocumentService{
+		thumbnails: map[string]string{
+			"doc-1": "/api/v1/documents/images/kb-1-thumb-1.png",
+			"doc-2": "",
+		},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+	}
+
+	c, w := setupGinContextWithUser("GET", "/api/v1/thumbnails?doc_ids=doc-1&doc_ids=doc-2", "")
+
+	h.GetThumbnail(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(fake.thumbnailDocIDs) != 2 || fake.thumbnailDocIDs[0] != "doc-1" || fake.thumbnailDocIDs[1] != "doc-2" {
+		t.Fatalf("unexpected docIDs: %#v", fake.thumbnailDocIDs)
+	}
+	if fake.thumbnailUserID != "user-1" {
+		t.Fatalf("unexpected userID: %s", fake.thumbnailUserID)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v", common.CodeSuccess, resp["code"])
+	}
+	data := resp["data"].(map[string]interface{})
+	if data["doc-1"] != "/api/v1/documents/images/kb-1-thumb-1.png" {
+		t.Fatalf("unexpected thumbnail for doc-1: %v", data["doc-1"])
+	}
+	if data["doc-2"] != "" {
+		t.Fatalf("unexpected thumbnail for doc-2: %v", data["doc-2"])
 	}
 }
 

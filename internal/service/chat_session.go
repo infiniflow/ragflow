@@ -22,8 +22,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
 	"ragflow/internal/storage"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,14 +64,15 @@ type chatPipelineRunner interface {
 // (api/db/services/chunk_feedback_service.py) call site at
 // api/apps/restful_apis/chat_api.py — that handler records the thumb
 // vote against every chunk that produced the assistant message, in
-// addition to the session-level thumbup field. The Go stack does not
-// yet have a chunk-feedback DAO, so this interface is the seam where
-// one will plug in. Production uses *ChatSessionService itself via
-// applyChunkFeedback (which currently no-ops with a debug log) so the
-// handler can still update the session-level thumbup without crashing;
-// tests can swap in a fake by setting ChatSessionService.chunkFeedbackApplier.
+// addition to the session-level thumbup field. Production uses
+// *ChatSessionService itself via applyChunkFeedback; tests can swap
+// in a fake by setting ChatSessionService.chunkFeedbackApplier.
 type chunkFeedbackApplier interface {
-	applyChunkFeedback(tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error)
+	applyChunkFeedback(ctx context.Context, tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error)
+}
+
+type chunkPagerankAdjuster interface {
+	AdjustChunkPagerank(ctx context.Context, indexName, chunkID, kbID string, delta, minWeight, maxWeight float64) error
 }
 
 // ChatSessionService chat session (conversation) service.
@@ -78,6 +82,7 @@ type ChatSessionService struct {
 	userTenantDAO        userTenantStore
 	pipeline             chatPipelineRunner
 	chunkFeedbackApplier chunkFeedbackApplier
+	docEngine            engine.DocEngine
 }
 
 // NewChatSessionService create chat session service
@@ -86,7 +91,129 @@ func NewChatSessionService() *ChatSessionService {
 		chatSessionDAO: dao.NewChatSessionDAO(),
 		userTenantDAO:  dao.NewUserTenantDAO(),
 		pipeline:       NewChatPipelineService(),
+		docEngine:      engine.Get(),
 	}
+}
+
+// SetChatSessionRequest set chat session request.
+type SetChatSessionRequest struct {
+	SessionID string `json:"conversation_id,omitempty"`
+	DialogID  string `json:"dialog_id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	IsNew     bool   `json:"is_new"`
+}
+
+// SetChatSessionResponse set chat session response.
+type SetChatSessionResponse struct {
+	*entity.ChatSession
+}
+
+// SetChatSession creates or updates a chat session.
+// Kept as a compatibility entrypoint for older chat-session callers.
+func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRequest) (*SetChatSessionResponse, error) {
+	name := req.Name
+	if name == "" {
+		name = "New chat session"
+	}
+	if len(name) > 255 {
+		name = name[:255]
+	}
+
+	if !req.IsNew {
+		updates := map[string]interface{}{
+			"name":    name,
+			"user_id": userID,
+		}
+		if err := s.chatSessionDAO.UpdateByID(req.SessionID, updates); err != nil {
+			return nil, errors.New("Chat session not found")
+		}
+		session, err := s.chatSessionDAO.GetByID(req.SessionID)
+		if err != nil {
+			return nil, errors.New("Fail to update a chat session")
+		}
+		return &SetChatSessionResponse{ChatSession: session}, nil
+	}
+
+	dialog, err := s.chatSessionDAO.GetDialogByID(req.DialogID)
+	if err != nil {
+		return nil, errors.New("Dialog not found")
+	}
+
+	prologue := "Hi! I'm your assistant. What can I do for you?"
+	if dialog.PromptConfig != nil {
+		if p, ok := dialog.PromptConfig["prologue"].(string); ok && p != "" {
+			prologue = p
+		}
+	}
+	messagesJSON, _ := json.Marshal([]map[string]interface{}{
+		{
+			"role":    "assistant",
+			"content": prologue,
+		},
+	})
+	referenceJSON, _ := json.Marshal([]interface{}{})
+
+	session := &entity.ChatSession{
+		ID:        common.GenerateUUID(),
+		DialogID:  req.DialogID,
+		Name:      &name,
+		Message:   messagesJSON,
+		UserID:    &userID,
+		Reference: referenceJSON,
+	}
+	if err := s.chatSessionDAO.Create(session); err != nil {
+		return nil, errors.New("Fail to create a chat session")
+	}
+
+	return &SetChatSessionResponse{ChatSession: session}, nil
+}
+
+// RemoveChatSessions removes chat sessions.
+// Kept as a compatibility entrypoint for older chat-session callers.
+func (s *ChatSessionService) RemoveChatSessions(userID string, chatSessions []string) error {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return err
+	}
+
+	tenantIDSet := make(map[string]bool)
+	for _, tid := range tenantIDs {
+		tenantIDSet[tid] = true
+	}
+	tenantIDSet[userID] = true
+
+	for _, convID := range chatSessions {
+		session, err := s.chatSessionDAO.GetByID(convID)
+		if err != nil {
+			return fmt.Errorf("Chat session not found: %s", convID)
+		}
+
+		isOwner := false
+		for tenantID := range tenantIDSet {
+			exists, err := s.chatSessionDAO.CheckDialogExists(tenantID, session.DialogID)
+			if err != nil {
+				return err
+			}
+			if exists {
+				isOwner = true
+				break
+			}
+		}
+		if !isOwner {
+			return errors.New("Only owner of chat session authorized for this operation")
+		}
+
+		if err := s.chatSessionDAO.DeleteByID(convID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ListChatSessionsRequest list chat sessions request.
+type ListChatSessionsRequest struct {
+	DialogID string `json:"dialog_id" binding:"required"`
 }
 
 // ListChatSessionsResponse list chat sessions response
@@ -542,7 +669,10 @@ func (s *ChatSessionService) DeleteSessionMessage(userID, chatID, sessionID, msg
 	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }
 
-func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, msgID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
+func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, chatID, sessionID, msgID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	ownerTenantID := ""
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 	if err != nil {
@@ -654,7 +784,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 			applier = s
 		}
 		if priorThumbBool, ok := priorThumb.(bool); ok && priorThumbBool != thumbup {
-			result, _ := applier.applyChunkFeedback(ownerTenantID, feedbackReference, !priorThumbBool)
+			result, _ := applier.applyChunkFeedback(ctx, ownerTenantID, feedbackReference, !priorThumbBool)
 			if result != nil {
 				common.Debug("Chunk feedback undo applied",
 					zap.Any("success_count", result["success_count"]),
@@ -662,7 +792,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 				)
 			}
 		}
-		result, _ := applier.applyChunkFeedback(ownerTenantID, feedbackReference, thumbup)
+		result, _ := applier.applyChunkFeedback(ctx, ownerTenantID, feedbackReference, thumbup)
 		if result != nil {
 			common.Debug("Chunk feedback applied",
 				zap.Any("success_count", result["success_count"]),
@@ -674,30 +804,306 @@ func (s *ChatSessionService) UpdateMessageFeedback(userID, chatID, sessionID, ms
 	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }
 
-// applyChunkFeedback records a thumb vote against the chunks that
-// produced a session message. Mirrors Python's
-// ChunkFeedbackService.apply_feedback side effect (called from
-// api/apps/restful_apis/chat_api.py when a user toggles a thumb on
-// an assistant message). The Go persistence port for chunk feedback
-// is intentionally not yet landed — the call here is a documented
-// no-op so the session-level thumbup flow (the user-visible behavior)
-// keeps working while a future PR ports the Python DAO. The returned
-// counts let the caller log a "Chunk feedback applied: N succeeded,
-// M failed" line consistent with the Python equivalent, so log
-// scrapers don't see a regression in success/fail rates.
-//
-// Production callers should always go through the chunkFeedbackApplier
-// field; this method is the default implementation used when that
-// field is nil.
-func (s *ChatSessionService) applyChunkFeedback(tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error) {
-	common.Debug("chunk feedback persistence not yet ported; dropping vote",
-		zap.String("tenant_id", tenantID),
+const (
+	upvoteWeightIncrement   = 1
+	downvoteWeightDecrement = 1
+	minPagerankWeight       = 0.0
+	maxPagerankWeight       = 100.0
+	chunkFeedbackTimeout    = 30 * time.Second
+)
+
+type feedbackChunkRow struct {
+	chunkID string
+	kbID    string
+	chunk   map[string]interface{}
+}
+
+// applyChunkFeedback records a thumb vote against the chunks that produced a
+// session message. It mirrors Python's ChunkFeedbackService.apply_feedback:
+// feature-flagged by CHUNK_FEEDBACK_ENABLED, split by relevance unless
+// CHUNK_FEEDBACK_WEIGHTING=uniform, and clamped through the document engine.
+func (s *ChatSessionService) applyChunkFeedback(ctx context.Context, tenantID string, reference map[string]interface{}, isPositive bool) (map[string]interface{}, error) {
+	if !chunkFeedbackEnabled() {
+		common.Debug("Chunk feedback feature is disabled")
+		return map[string]interface{}{
+			"success_count": 0,
+			"fail_count":    0,
+			"chunk_ids":     []string{},
+			"disabled":      true,
+		}, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, chunkFeedbackTimeout)
+		defer cancel()
+	}
+
+	rows := feedbackRowsFromReference(reference)
+	chunkIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		chunkIDs = append(chunkIDs, row.chunkID)
+	}
+	if len(rows) == 0 {
+		common.Debug("No chunk IDs found in reference for feedback")
+		return map[string]interface{}{
+			"success_count": 0,
+			"fail_count":    0,
+			"chunk_ids":     chunkIDs,
+		}, nil
+	}
+
+	signedBudget := float64(upvoteWeightIncrement)
+	if !isPositive {
+		signedBudget = -float64(downvoteWeightDecrement)
+	}
+	deltas := allocateFeedbackDeltas(rows, signedBudget, chunkFeedbackWeighting())
+
+	successCount := 0
+	failCount := 0
+	for _, delta := range deltas {
+		if delta.delta == 0 {
+			continue
+		}
+		if s.updateChunkWeight(ctx, tenantID, delta.chunkID, delta.kbID, delta.delta) {
+			successCount++
+		} else {
+			failCount++
+		}
+	}
+
+	common.Info("Applied chunk feedback",
 		zap.Bool("is_positive", isPositive),
+		zap.String("weighting", chunkFeedbackWeighting()),
+		zap.Int("success_count", successCount),
+		zap.Int("chunk_count", len(chunkIDs)),
 	)
 	return map[string]interface{}{
-		"success_count": 0,
-		"fail_count":    0,
+		"success_count": successCount,
+		"fail_count":    failCount,
+		"chunk_ids":     chunkIDs,
 	}, nil
+}
+
+type feedbackDelta struct {
+	chunkID string
+	kbID    string
+	delta   float64
+}
+
+func chunkFeedbackEnabled() bool {
+	return strings.ToLower(os.Getenv("CHUNK_FEEDBACK_ENABLED")) == "true"
+}
+
+func chunkFeedbackWeighting() string {
+	weighting := strings.ToLower(strings.TrimSpace(os.Getenv("CHUNK_FEEDBACK_WEIGHTING")))
+	if weighting == "uniform" || weighting == "relevance" {
+		return weighting
+	}
+	return "relevance"
+}
+
+func feedbackRowsFromReference(reference map[string]interface{}) []feedbackChunkRow {
+	if len(reference) == 0 {
+		return nil
+	}
+	rawChunks, ok := reference["chunks"].([]interface{})
+	if !ok {
+		if chunks, ok := reference["chunks"].([]map[string]interface{}); ok {
+			rows := make([]feedbackChunkRow, 0, len(chunks))
+			for _, chunk := range chunks {
+				if row, ok := feedbackRowFromChunk(chunk); ok {
+					rows = append(rows, row)
+				}
+			}
+			return rows
+		}
+		return nil
+	}
+	rows := make([]feedbackChunkRow, 0, len(rawChunks))
+	for _, raw := range rawChunks {
+		chunk, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if row, ok := feedbackRowFromChunk(chunk); ok {
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+
+func feedbackRowFromChunk(chunk map[string]interface{}) (feedbackChunkRow, bool) {
+	chunkID := stringValue(chunk["id"])
+	if chunkID == "" {
+		chunkID = stringValue(chunk["chunk_id"])
+	}
+	kbID := stringValue(chunk["dataset_id"])
+	if kbID == "" {
+		kbID = stringValue(chunk["kb_id"])
+	}
+	if chunkID == "" || kbID == "" {
+		return feedbackChunkRow{}, false
+	}
+	return feedbackChunkRow{chunkID: chunkID, kbID: kbID, chunk: chunk}, true
+}
+
+func allocateFeedbackDeltas(rows []feedbackChunkRow, signedBudget float64, weighting string) []feedbackDelta {
+	if len(rows) == 0 {
+		return nil
+	}
+	if weighting == "uniform" {
+		step := signedBudget / float64(len(rows))
+		deltas := make([]feedbackDelta, 0, len(rows))
+		for _, row := range rows {
+			deltas = append(deltas, feedbackDelta{chunkID: row.chunkID, kbID: row.kbID, delta: step})
+		}
+		return deltas
+	}
+
+	magnitudes := make([]float64, 0, len(rows))
+	for _, row := range rows {
+		signal := retrievalSignal(row.chunk)
+		if signal <= 0 {
+			signal = 1
+		}
+		magnitudes = append(magnitudes, signal)
+	}
+	parts := splitFloatBudget(magnitudes, math.Abs(signedBudget))
+	sign := math.Copysign(1, signedBudget)
+	deltas := make([]feedbackDelta, 0, len(rows))
+	for i, row := range rows {
+		deltas = append(deltas, feedbackDelta{chunkID: row.chunkID, kbID: row.kbID, delta: sign * parts[i]})
+	}
+	return deltas
+}
+
+func retrievalSignal(chunk map[string]interface{}) float64 {
+	best := 0.0
+	for _, key := range []string{"similarity", "vector_similarity", "term_similarity"} {
+		val, ok := floatValue(chunk[key])
+		if ok && !math.IsInf(val, 0) && !math.IsNaN(val) && val > best {
+			best = val
+		}
+	}
+	return best
+}
+
+func splitFloatBudget(magnitudes []float64, budget float64) []float64 {
+	n := len(magnitudes)
+	out := make([]float64, n)
+	if n == 0 || budget == 0 {
+		return out
+	}
+	total := 0.0
+	for _, magnitude := range magnitudes {
+		total += magnitude
+	}
+	if total <= 0 {
+		base := budget / float64(n)
+		for i := range out {
+			out[i] = base
+		}
+		return out
+	}
+
+	for i, magnitude := range magnitudes {
+		out[i] = budget * magnitude / total
+	}
+	return out
+}
+
+func (s *ChatSessionService) updateChunkWeight(ctx context.Context, tenantID, chunkID, kbID string, delta float64) bool {
+	docEngine := s.docEngine
+	if docEngine == nil {
+		docEngine = engine.Get()
+	}
+	if docEngine == nil {
+		common.Warn("Document engine is not initialized; chunk feedback skipped",
+			zap.String("chunk_id", chunkID),
+			zap.String("kb_id", kbID),
+		)
+		return false
+	}
+
+	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	if adjuster, ok := docEngine.(chunkPagerankAdjuster); ok {
+		if err := adjuster.AdjustChunkPagerank(ctx, indexName, chunkID, kbID, delta, minPagerankWeight, maxPagerankWeight); err != nil {
+			common.Warn("Failed atomic pagerank adjust for chunk",
+				zap.String("chunk_id", chunkID),
+				zap.Error(err),
+			)
+			return false
+		}
+		return true
+	}
+
+	rawChunk, err := docEngine.GetChunk(ctx, indexName, chunkID, []string{kbID})
+	if err != nil {
+		common.Warn("Chunk not found for feedback",
+			zap.String("chunk_id", chunkID),
+			zap.String("index", indexName),
+			zap.Error(err),
+		)
+		return false
+	}
+	chunk, ok := rawChunk.(map[string]interface{})
+	if !ok {
+		common.Warn("Unexpected chunk shape for feedback",
+			zap.String("chunk_id", chunkID),
+			zap.String("kb_id", kbID),
+			zap.String("index", indexName),
+			zap.String("chunk_type", fmt.Sprintf("%T", rawChunk)),
+		)
+		return false
+	}
+
+	currentWeight, _ := floatValue(chunk[common.PAGERANK_FLD])
+	nextWeight := currentWeight + delta
+	if nextWeight < minPagerankWeight {
+		nextWeight = minPagerankWeight
+	}
+	if nextWeight > maxPagerankWeight {
+		nextWeight = maxPagerankWeight
+	}
+
+	newValue := map[string]interface{}{common.PAGERANK_FLD: nextWeight}
+	if nextWeight <= 0 && strings.ToLower(docEngine.GetType()) == string(engine.EngineElasticsearch) {
+		newValue = map[string]interface{}{"remove": common.PAGERANK_FLD}
+	}
+	if err := docEngine.UpdateChunks(ctx, map[string]interface{}{"id": chunkID}, newValue, indexName, kbID); err != nil {
+		common.Warn("Failed to update chunk pagerank",
+			zap.String("chunk_id", chunkID),
+			zap.Error(err),
+		)
+		return false
+	}
+	return true
+}
+
+func floatValue(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case json.Number:
+		f, err := v.Float64()
+		return f, err == nil
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func (s *ChatSessionService) ensureOwnedChat(userID, chatID string) (bool, error) {
@@ -849,6 +1255,180 @@ func formatReferenceChunks(reference map[string]interface{}) []FormattedChunk {
 
 func isChatSessionNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
+}
+
+// Completion performs chat completion with full RAG support via ChatPipelineService.
+// Kept as a compatibility entrypoint for callers that still use the pre-ChatCompletions API.
+func (s *ChatSessionService) Completion(userID string, conversationID string, messages []map[string]interface{}, llmID string, chatModelConfig map[string]interface{}, messageID string) (map[string]interface{}, error) {
+	if len(messages) == 0 {
+		return nil, errors.New("messages cannot be empty")
+	}
+	lastRole, _ := messages[len(messages)-1]["role"].(string)
+	if lastRole != "user" {
+		return nil, errors.New("the last content of this conversation is not from user")
+	}
+
+	session, err := s.chatSessionDAO.GetByID(conversationID)
+	if err != nil {
+		return nil, errors.New("Conversation not found")
+	}
+
+	dialog, err := s.chatSessionDAO.GetDialogByID(session.DialogID)
+	if err != nil {
+		return nil, errors.New("Dialog not found")
+	}
+
+	sessionMessages := s.buildSessionMessages(session, messages)
+	reference := s.initializeReference(session)
+
+	isEmbedded := llmID != ""
+	if llmID != "" {
+		hasKey, err := s.checkTenantLLMAPIKey(dialog.TenantID, llmID)
+		if err != nil || !hasKey {
+			return nil, fmt.Errorf("Cannot use specified model %s", llmID)
+		}
+		dialog.LLMID = llmID
+		if chatModelConfig != nil {
+			dialog.LLMSetting = chatModelConfig
+		}
+	}
+
+	kwargs := chatModelConfig
+	if kwargs == nil {
+		kwargs = map[string]interface{}{}
+	}
+	resultChan, err := s.pipeline.AsyncChat(context.Background(), dialog, messages, false, kwargs)
+	if err != nil {
+		return nil, err
+	}
+
+	var answer strings.Builder
+	var finalRef map[string]interface{}
+	for result := range resultChan {
+		if result.Answer != "" {
+			answer.WriteString(result.Answer)
+		}
+		if result.Reference != nil {
+			finalRef = result.Reference
+		}
+	}
+
+	ans := map[string]interface{}{
+		"answer":    answer.String(),
+		"reference": finalRef,
+		"final":     true,
+	}
+	result := s.structureAnswerWithConv(session, ans, messageID, session.ID, reference)
+
+	if !isEmbedded {
+		sessionMessages = append(sessionMessages, map[string]interface{}{
+			"role":       "assistant",
+			"content":    answer.String(),
+			"id":         messageID,
+			"created_at": float64(time.Now().Unix()),
+		})
+		s.updateSessionMessages(session, sessionMessages, reference)
+	}
+
+	return result, nil
+}
+
+// CompletionStream performs streaming chat completion with full RAG support via ChatPipelineService.
+// Kept as a compatibility entrypoint for callers that still use the pre-ChatCompletions API.
+func (s *ChatSessionService) CompletionStream(ctx context.Context, userID string, conversationID string, messages []map[string]interface{}, llmID string, chatModelConfig map[string]interface{}, messageID string, streamChan chan<- string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if len(messages) == 0 {
+		streamChan <- fmt.Sprintf("data: %s\n\n", `{"code": 500, "message": "messages cannot be empty", "data": {"answer": "**ERROR**: messages cannot be empty", "reference": []}}`)
+		return errors.New("messages cannot be empty")
+	}
+	lastRole, _ := messages[len(messages)-1]["role"].(string)
+	if lastRole != "user" {
+		streamChan <- fmt.Sprintf("data: %s\n\n", `{"code": 500, "message": "the last content of this conversation is not from user", "data": {"answer": "**ERROR**: the last content of this conversation is not from user", "reference": []}}`)
+		return errors.New("the last content of this conversation is not from user")
+	}
+
+	session, err := s.chatSessionDAO.GetByID(conversationID)
+	if err != nil {
+		streamChan <- fmt.Sprintf("data: %s\n\n", `{"code": 500, "message": "Conversation not found", "data": {"answer": "**ERROR**: Conversation not found", "reference": []}}`)
+		return errors.New("Conversation not found")
+	}
+
+	dialog, err := s.chatSessionDAO.GetDialogByID(session.DialogID)
+	if err != nil {
+		streamChan <- fmt.Sprintf("data: %s\n\n", `{"code": 500, "message": "Dialog not found", "data": {"answer": "**ERROR**: Dialog not found", "reference": []}}`)
+		return errors.New("Dialog not found")
+	}
+
+	sessionMessages := s.buildSessionMessages(session, messages)
+	reference := s.initializeReference(session)
+
+	isEmbedded := llmID != ""
+	if llmID != "" {
+		hasKey, err := s.checkTenantLLMAPIKey(dialog.TenantID, llmID)
+		if err != nil || !hasKey {
+			errMsg := fmt.Sprintf(`{"code": 500, "message": "Cannot use specified model %s", "data": {"answer": "**ERROR**: Cannot use specified model", "reference": []}}`, llmID)
+			streamChan <- fmt.Sprintf("data: %s\n\n", errMsg)
+			return fmt.Errorf("Cannot use specified model %s", llmID)
+		}
+		dialog.LLMID = llmID
+		if chatModelConfig != nil {
+			dialog.LLMSetting = chatModelConfig
+		}
+	}
+
+	kwargs := chatModelConfig
+	if kwargs == nil {
+		kwargs = map[string]interface{}{}
+	}
+	resultChan, err := s.pipeline.AsyncChat(ctx, dialog, messages, true, kwargs)
+	if err != nil {
+		streamChan <- fmt.Sprintf("data: %s\n\n", fmt.Sprintf(`{"code": 500, "message": "%s", "data": {"answer": "**ERROR**: %s", "reference": []}}`, err.Error(), err.Error()))
+		return err
+	}
+
+	var fullAnswer strings.Builder
+	for result := range resultChan {
+		if result.Reference != nil && len(reference) > 0 {
+			reference[len(reference)-1] = result.Reference
+		}
+		if result.Final {
+			if result.Answer != "" {
+				fullAnswer.Reset()
+				fullAnswer.WriteString(result.Answer)
+			}
+		} else if result.Answer != "" {
+			fullAnswer.WriteString(result.Answer)
+		}
+		ans := s.structureAnswer(session, fullAnswer.String(), messageID, session.ID, reference)
+		data, _ := json.Marshal(map[string]interface{}{
+			"code":    0,
+			"message": "",
+			"data":    ans,
+		})
+		streamChan <- fmt.Sprintf("data: %s\n\n", string(data))
+	}
+
+	finalData, _ := json.Marshal(map[string]interface{}{
+		"code":    0,
+		"message": "",
+		"data":    true,
+	})
+	streamChan <- fmt.Sprintf("data: %s\n\n", string(finalData))
+
+	if !isEmbedded {
+		sessionMessages = append(sessionMessages, map[string]interface{}{
+			"role":       "assistant",
+			"content":    fullAnswer.String(),
+			"id":         messageID,
+			"created_at": float64(time.Now().Unix()),
+		})
+		s.updateSessionMessages(session, sessionMessages, reference)
+	}
+
+	return nil
 }
 
 // ChatCompletions handles chat completion matching Python's session_completion.
