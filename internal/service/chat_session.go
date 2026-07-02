@@ -1586,6 +1586,8 @@ func (s *ChatSessionService) ChatCompletions(
 					fullAnswer.WriteString("<think>")
 				} else if result.EndToThink {
 					fullAnswer.WriteString("</think>")
+				} else if result.Reasoning != "" {
+					fullAnswer.WriteString(result.Reasoning)
 				} else if result.Answer != "" {
 					fullAnswer.WriteString(result.Answer)
 				}
@@ -1616,13 +1618,19 @@ func (s *ChatSessionService) ChatCompletions(
 					fullAnswer.WriteString("<think>")
 				} else if result.EndToThink {
 					fullAnswer.WriteString("</think>")
+				} else if result.Reasoning != "" {
+					fullAnswer.WriteString(result.Reasoning)
 				} else if result.Answer != "" {
 					fullAnswer.WriteString(result.Answer)
 				}
 				if session != nil {
 					s.appendAssistantToSession(session, fullAnswer.String(), messageID)
 				}
-				ans := s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
+				deltaText := result.Answer
+				if deltaText == "" {
+					deltaText = result.Reasoning
+				}
+				ans := s.structureAnswer(session, deltaText, messageID, sessionID, reference)
 				if chatID != "" {
 					ans["chat_id"] = chatID
 				}

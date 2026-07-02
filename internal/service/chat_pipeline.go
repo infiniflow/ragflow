@@ -1042,8 +1042,35 @@ func (s *ChatPipelineService) AsyncChat(
 				// Wraps reasoning in <think></think> markers.
 				// inThink tracks local state to route reasoning vs answer.
 				var inThink bool
+				var thinkViaReason bool
 				_, driverErr = chatDriver.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg,
 					func(answerDelta *string, reason *string) error {
+						// Reasoning content from the driver — route to the
+						// Reasoning field so it never leaks into Answer.
+						if reason != nil && *reason != "" {
+							if !inThink {
+								inThink = true
+								thinkViaReason = true
+								thinkState.fullText += "<think>"
+								out <- AsyncChatResult{
+									Answer:       "",
+									Reference:    map[string]interface{}{},
+									AudioBinary:  nil,
+									CreatedAt:    float64(time.Now().Unix()),
+									Final:        false,
+									StartToThink: true,
+								}
+							}
+							thinkState.fullText += *reason
+							out <- AsyncChatResult{
+								Reasoning:   *reason,
+								Reference:   map[string]interface{}{},
+								AudioBinary: nil,
+								CreatedAt:   float64(time.Now().Unix()),
+								Final:       false,
+							}
+							return nil
+						}
 						if answerDelta == nil || *answerDelta == "" {
 							return nil
 						}
@@ -1052,6 +1079,8 @@ func (s *ChatPipelineService) AsyncChat(
 
 						if text == "<think>" {
 							inThink = true
+							thinkViaReason = false
+							thinkState.fullText += text
 							out <- AsyncChatResult{
 								Answer:       "",
 								Reference:    map[string]interface{}{},
@@ -1064,6 +1093,8 @@ func (s *ChatPipelineService) AsyncChat(
 						}
 						if text == "</think>" {
 							inThink = false
+							thinkViaReason = false
+							thinkState.fullText += text
 							out <- AsyncChatResult{
 								Answer:      "",
 								Reference:   map[string]interface{}{},
@@ -1074,10 +1105,23 @@ func (s *ChatPipelineService) AsyncChat(
 							}
 							return nil
 						}
+						// Transition from reason-based think to answer content.
+						if inThink && thinkViaReason {
+							inThink = false
+							thinkViaReason = false
+							thinkState.fullText += "</think>"
+							out <- AsyncChatResult{
+								Answer:      "",
+								Reference:   map[string]interface{}{},
+								AudioBinary: nil,
+								CreatedAt:   float64(time.Now().Unix()),
+								Final:       false,
+								EndToThink:  true,
+							}
+						}
+						thinkState.fullText += text
 						if inThink {
-							// Reasoning text — route to Reasoning field so
-							// the SSE handler maps it to
-							// `delta.reasoning_content`.
+							// Inline reasoning text — route to Reasoning field.
 							out <- AsyncChatResult{
 								Reasoning:   text,
 								Reference:   map[string]interface{}{},
@@ -1097,65 +1141,61 @@ func (s *ChatPipelineService) AsyncChat(
 						}
 						return nil
 					})
+				// Sync local think state so the shared post-loop code can
+				// close any open think block.
+				thinkState.inThink = inThink
 			} else {
 				driverErr = chatDriver.ModelDriver.ChatStreamlyWithSender(
 					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg,
 					func(answer *string, reason *string) error {
+						// Reasoning content from the driver (e.g. OpenAI
+						// reasoning_content).  Route to the Reasoning field so
+						// it never leaks into Answer.  Wrap in <think>…</think>
+						// in fullText so extractVisibleAnswer can strip it.
 						if reason != nil && *reason != "" {
-							deltas := NextThinkDelta(thinkState, *reason, 16)
-							for _, d := range deltas {
-								if d.Kind == ThinkDeltaMarker && d.Value == "<think>" {
-									out <- AsyncChatResult{
-										Answer:       "",
-										Reference:    map[string]interface{}{},
-										AudioBinary:  nil,
-										CreatedAt:    float64(time.Now().Unix()),
-										Final:        false,
-										StartToThink: true,
-									}
-								} else if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
-									out <- AsyncChatResult{
-										Answer:      "",
-										Reference:   map[string]interface{}{},
-										AudioBinary: nil,
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-										EndToThink:  true,
-									}
-								} else if d.Kind == ThinkDeltaText && d.Value != "" {
-									fullAnswer += d.Value
-									out <- AsyncChatResult{
-										Answer:      d.Value,
-										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-									}
+							if !thinkState.inThink {
+								thinkState.inThink = true
+								thinkState.fullText += "<think>"
+								out <- AsyncChatResult{
+									Answer:       "",
+									Reference:    map[string]interface{}{},
+									AudioBinary:  nil,
+									CreatedAt:    float64(time.Now().Unix()),
+									Final:        false,
+									StartToThink: true,
 								}
 							}
+							thinkState.fullText += *reason
+							out <- AsyncChatResult{
+								Reasoning:   *reason,
+								Reference:   map[string]interface{}{},
+								AudioBinary: nil,
+								CreatedAt:   float64(time.Now().Unix()),
+								Final:       false,
+							}
 						}
+						// Answer content: close any open think block first.
 						if isContentDelta(answer) {
-							fullAnswer += *answer
-							deltas := BufferAnswerDelta(thinkState, *answer, 16)
-							for _, d := range deltas {
-								if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
-									out <- AsyncChatResult{
-										Answer:      "",
-										Reference:   map[string]interface{}{},
-										AudioBinary: nil,
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-										EndToThink:  true,
-									}
-								} else if d.Kind == ThinkDeltaText && d.Value != "" {
-									out <- AsyncChatResult{
-										Answer:      d.Value,
-										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-									}
+							if thinkState.inThink {
+								thinkState.inThink = false
+								thinkState.fullText += "</think>"
+								out <- AsyncChatResult{
+									Answer:      "",
+									Reference:   map[string]interface{}{},
+									AudioBinary: nil,
+									CreatedAt:   float64(time.Now().Unix()),
+									Final:       false,
+									EndToThink:  true,
 								}
+							}
+							fullAnswer += *answer
+							thinkState.fullText += *answer
+							out <- AsyncChatResult{
+								Answer:      *answer,
+								Reference:   map[string]interface{}{},
+								AudioBinary: s.synthesizeTTS(ttsModel, *answer),
+								CreatedAt:   float64(time.Now().Unix()),
+								Final:       false,
 							}
 						}
 						return nil
@@ -1170,18 +1210,32 @@ func (s *ChatPipelineService) AsyncChat(
 				return
 			}
 
+			// Close any still-open think block so extractVisibleAnswer can
+			// strip the reasoning from the final answer.
+			if thinkState.inThink {
+				thinkState.inThink = false
+				thinkState.fullText += "</think>"
+				out <- AsyncChatResult{
+					Answer:      "",
+					Reference:   map[string]interface{}{},
+					AudioBinary: nil,
+					CreatedAt:   float64(time.Now().Unix()),
+					Final:       false,
+					EndToThink:  true,
+				}
+			}
 			// Flush remaining state matching Python's final flush order
 			// (dialog_service.py:1601-1612): think_buffer → marker → answer_buffer → pending_after_close
 			// Python has no Reasoning field — all text is Answer.
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
 					out <- AsyncChatResult{
-						Answer:       "",
-						Reference:    map[string]interface{}{},
-						AudioBinary:  nil,
-						CreatedAt:    float64(time.Now().Unix()),
-						Final:        false,
-						EndToThink:   true,
+						Answer:      "",
+						Reference:   map[string]interface{}{},
+						AudioBinary: nil,
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+						EndToThink:  true,
 					}
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
 					out <- AsyncChatResult{
@@ -1398,44 +1452,36 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			driverErr := chatModel.ModelDriver.ChatStreamlyWithSender(
 				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg,
 				func(answer *string, reason *string) error {
+					// Reasoning content: route to Reasoning field so it
+					// never leaks into Answer.  Wrap in <think>…</think>
+					// in fullText so ExtractVisibleAnswer can strip it.
 					if reason != nil && *reason != "" {
-						deltas := NextThinkDelta(thinkState, *reason, 16)
-						for _, d := range deltas {
-							if d.Kind == ThinkDeltaMarker && d.Value == "<think>" {
-								out <- AsyncChatResult{
-									Answer:       "",
-									Reference:    map[string]interface{}{},
-									AudioBinary:  nil,
-									CreatedAt:    float64(time.Now().Unix()),
-									Final:        false,
-									StartToThink: true,
-								}
-							} else if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
-								out <- AsyncChatResult{
-									Answer:      "",
-									Reference:   map[string]interface{}{},
-									AudioBinary: nil,
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
-									EndToThink:  true,
-								}
-							} else if d.Kind == ThinkDeltaText && d.Value != "" {
-								fullAnswer += d.Value
-								out <- AsyncChatResult{
-									Answer:      d.Value,
-									Reference:   map[string]interface{}{},
-									AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
-								}
+						if !thinkState.inThink {
+							thinkState.inThink = true
+							thinkState.fullText += "<think>"
+							out <- AsyncChatResult{
+								Answer:       "",
+								Reference:    map[string]interface{}{},
+								AudioBinary:  nil,
+								CreatedAt:    float64(time.Now().Unix()),
+								Final:        false,
+								StartToThink: true,
 							}
 						}
+						thinkState.fullText += *reason
+						out <- AsyncChatResult{
+							Reasoning:   *reason,
+							Reference:   map[string]interface{}{},
+							AudioBinary: nil,
+							CreatedAt:   float64(time.Now().Unix()),
+							Final:       false,
+						}
 					}
-				if isContentDelta(answer) {
-					fullAnswer += *answer
-					deltas := BufferAnswerDelta(thinkState, *answer, 16)
-					for _, d := range deltas {
-						if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+					// Answer content: close any open think block first.
+					if isContentDelta(answer) {
+						if thinkState.inThink {
+							thinkState.inThink = false
+							thinkState.fullText += "</think>"
 							out <- AsyncChatResult{
 								Answer:      "",
 								Reference:   map[string]interface{}{},
@@ -1444,17 +1490,17 @@ func (s *ChatPipelineService) AsyncChatSolo(
 								Final:       false,
 								EndToThink:  true,
 							}
-						} else if d.Kind == ThinkDeltaText && d.Value != "" {
-							out <- AsyncChatResult{
-								Answer:      d.Value,
-								Reference:   map[string]interface{}{},
-								AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
-							}
+						}
+						fullAnswer += *answer
+						thinkState.fullText += *answer
+						out <- AsyncChatResult{
+							Answer:      *answer,
+							Reference:   map[string]interface{}{},
+							AudioBinary: s.synthesizeTTS(ttsModel, *answer),
+							CreatedAt:   float64(time.Now().Unix()),
+							Final:       false,
 						}
 					}
-				}
 					return nil
 				},
 			)
@@ -1466,15 +1512,29 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				return
 			}
 			timer.Exit(common.PhaseGenerateAnswer)
+			// Close any still-open think block so ExtractVisibleAnswer can
+			// strip the reasoning from the final answer.
+			if thinkState.inThink {
+				thinkState.inThink = false
+				thinkState.fullText += "</think>"
+				out <- AsyncChatResult{
+					Answer:      "",
+					Reference:   map[string]interface{}{},
+					AudioBinary: nil,
+					CreatedAt:   float64(time.Now().Unix()),
+					Final:       false,
+					EndToThink:  true,
+				}
+			}
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
 					out <- AsyncChatResult{
-						Answer:       "",
-						Reference:    map[string]interface{}{},
-						AudioBinary:  nil,
-						CreatedAt:    float64(time.Now().Unix()),
-						Final:        false,
-						EndToThink:   true,
+						Answer:      "",
+						Reference:   map[string]interface{}{},
+						AudioBinary: nil,
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+						EndToThink:  true,
 					}
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
 					out <- AsyncChatResult{
