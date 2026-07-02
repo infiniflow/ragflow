@@ -11,11 +11,11 @@ import (
 	"testing"
 )
 
-// mustNewDeepDocClient wraps NewInferenceClient for test convenience.
+// mustNewDeepDocClient wraps NewClient for test convenience.
 // Fails the test if the URL is empty.
-func mustNewDeepDocClient(t *testing.T, baseURL string) *InferenceClient {
+func mustNewDeepDocClient(t *testing.T, baseURL string) *Client {
 	t.Helper()
-	client, err := NewInferenceClient(baseURL)
+	client, err := NewClient(baseURL)
 	if err != nil {
 		t.Fatalf("NewDeepDocClient(%q): %v", baseURL, err)
 	}

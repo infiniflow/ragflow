@@ -1,6 +1,6 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"context"
@@ -51,12 +51,12 @@ func TestBatchResults(t *testing.T) {
 	}
 	pdfs := all[:min(count, len(all))]
 
-	ddClient, err := inf.NewInferenceClient(os.Getenv("DEEPDOC_URL"))
+	ddClient, err := inf.NewClient(os.Getenv("DEEPDOC_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !ddClient.Health() {
-		t.Fatalf("DeepDoc service not available at %s (DLA+TSR required)", ddClient.baseURL)
+		t.Fatalf("DeepDoc service not available at %s (DLA+TSR required)", ddClient.BaseURL())
 	}
 	deepDoc := pdf.DocAnalyzer(ddClient)
 
@@ -238,9 +238,9 @@ func parseOne(pdfDir, name string, deepDoc pdf.DocAnalyzer, skipOCR bool) (*pars
 
 	cfg := pdf.DefaultParserConfig()
 	cfg.SkipOCR = skipOCR
-	p := NewParser(cfg, deepDoc)
+	p := NewParser(cfg)
 	t0 := time.Now()
-	parsed, err := p.Parse(context.Background(), eng)
+	parsed, err := p.ParseRaw(context.Background(), eng, deepDoc)
 	elapsed := time.Since(t0).Seconds()
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
