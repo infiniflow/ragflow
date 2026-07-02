@@ -297,9 +297,9 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         while true; do
             echo "Attempt to start RAGFlow go server..."
-            wait_for_server "http://127.0.0.1:9380/api/v1/system/healthz" "ragflow_server"
+            wait_for_server "http://127.0.0.1:9384/api/v1/system/healthz" "ragflow_main"
             echo "Starting RAGFlow go server..."
-            bin/ragflow_server
+            bin/ragflow_main --api
             sleep 1;
         done &
     fi
@@ -317,9 +317,9 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         while true; do
             echo "Attempt to starting Admin go server..."
-            wait_for_server "http://127.0.0.1:9381/api/v1/admin/ping" "admin_server"
+            wait_for_server "http://127.0.0.1:9383/api/v1/admin/ping" "ragflow_main"
             echo "Starting Admin go server..."
-            bin/admin_server
+            bin/ragflow_main --admin
             sleep 1;
         done &
     fi
@@ -346,12 +346,28 @@ if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
         do
           task_exe "${i}" "${HOST_ID}" &
         done
+
+        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+            while true; do
+                echo "Starting go ingestor..."
+                bin/ragflow_main --ingestor
+                sleep 1;
+            done &
+        fi
     else
         # Otherwise, start a fixed number of workers
         echo "Starting ${WORKERS} task executor(s) on host '${HOST_ID}'..."
         for (( i=0; i<WORKERS; i++ ))
         do
           task_exe "${i}" "${HOST_ID}" &
+
+          if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+              while true; do
+                  echo "Starting go ingestor..."
+                  bin/ragflow_main --ingestor
+                  sleep 1;
+              done &
+          fi
         done
     fi
 fi
