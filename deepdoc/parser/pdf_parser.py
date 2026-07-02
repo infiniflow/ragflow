@@ -772,7 +772,7 @@ class RAGFlowPdfParser:
                 b["text"] = ""
 
         # logging.info(f"__ocr sorting {len(chars)} chars cost {timer() - start}s")
-        start = timer()
+        # start = timer()
         boxes_to_reg = []
         img_np = None
         for b in bxs:
