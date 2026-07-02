@@ -31,6 +31,7 @@ type Factory func(params map[string]any) (einotool.BaseTool, error)
 var registry = map[string]Factory{
 	"akshare":           noConfig("akshare", func() einotool.BaseTool { return NewAkShareTool() }),
 	"arxiv":             noConfig("arxiv", func() einotool.BaseTool { return NewArxivTool() }),
+	"bgpt":              noConfig("bgpt", func() einotool.BaseTool { return NewBGPTTool() }),
 	"code_exec":         noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
 	"crawler":           noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
 	"deepl":             noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),

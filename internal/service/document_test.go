@@ -268,7 +268,10 @@ func (m *metadataDocEngine) SearchMetadata(_ context.Context, req *types.SearchM
 }
 
 func (m *metadataDocEngine) UpdateMetadata(_ context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
-	dup := make(map[string]interface{}, len(metaFields))
+	dup := make(map[string]interface{}, len(m.records[docID])+len(metaFields))
+	for k, v := range m.records[docID] {
+		dup[k] = v
+	}
 	for k, v := range metaFields {
 		dup[k] = v
 	}
@@ -277,6 +280,24 @@ func (m *metadataDocEngine) UpdateMetadata(_ context.Context, docID string, data
 		m.docKBs[docID] = datasetID
 	}
 	return nil
+}
+
+func (m *metadataDocEngine) InsertMetadata(_ context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
+	for _, doc := range metadata {
+		docID, _ := doc["id"].(string)
+		kbID, _ := doc["kb_id"].(string)
+		metaFields, _ := doc["meta_fields"].(map[string]interface{})
+		if docID == "" || kbID == "" {
+			continue
+		}
+		dup := make(map[string]interface{}, len(metaFields))
+		for k, v := range metaFields {
+			dup[k] = v
+		}
+		m.records[docID] = dup
+		m.docKBs[docID] = kbID
+	}
+	return []string{}, nil
 }
 
 func (m *metadataDocEngine) DeleteMetadata(_ context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
@@ -289,6 +310,33 @@ func (m *metadataDocEngine) DeleteMetadata(_ context.Context, condition map[stri
 		return 1, nil
 	}
 	return 0, nil
+}
+
+func (m *metadataDocEngine) DeleteMetadataKeys(_ context.Context, docID string, datasetID string, keys []string, tenantID string) error {
+	meta, ok := m.records[docID]
+	if !ok {
+		return nil
+	}
+	for _, key := range keys {
+		delete(meta, key)
+	}
+	if len(meta) == 0 {
+		delete(m.records, docID)
+		return nil
+	}
+	m.records[docID] = meta
+	if _, ok := m.docKBs[docID]; !ok {
+		m.docKBs[docID] = datasetID
+	}
+	return nil
+}
+
+type staleSearchMetadataDocEngine struct {
+	*metadataDocEngine
+}
+
+func (m *staleSearchMetadataDocEngine) SearchMetadata(context.Context, *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
+	return &types.SearchMetadataResult{MetadataRecords: []map[string]interface{}{}}, nil
 }
 
 func (f *failingDeleteMetadataEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
@@ -400,6 +448,17 @@ func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum 
 	}
 }
 
+func assertKBDocNum(t *testing.T, kbID string, want int64) {
+	t.Helper()
+	var got int64
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Select("doc_num").Where("id = ?", kbID).Scan(&got).Error; err != nil {
+		t.Fatalf("get kb doc_num %s: %v", kbID, err)
+	}
+	if got != want {
+		t.Fatalf("kb %s doc_num=%d, want %d", kbID, got, want)
+	}
+}
+
 func insertTestDoc(t *testing.T, id, kbID string, tokenNum, chunkNum int64) {
 	t.Helper()
 	doc := &entity.Document{
@@ -456,6 +515,29 @@ func insertTestFile(t *testing.T, id, parentID, name string, location *string) {
 	if err := dao.DB.Create(f).Error; err != nil {
 		t.Fatalf("insert test file: %v", err)
 	}
+}
+
+func TestCreateDocumentIncrementsKBDocNum(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-create", "tenant-1", 0, 0, 0)
+
+	svc := testDocumentService(t)
+	doc, err := svc.CreateDocument(&CreateDocumentRequest{
+		Name:      "created.txt",
+		KbID:      "kb-create",
+		ParserID:  "naive",
+		CreatedBy: "tenant-1",
+		Type:      "doc",
+		Source:    "local",
+	})
+	if err != nil {
+		t.Fatalf("CreateDocument failed: %v", err)
+	}
+	if doc == nil || doc.KbID != "kb-create" {
+		t.Fatalf("unexpected doc: %+v", doc)
+	}
+	assertKBDocNum(t, "kb-create", 1)
 }
 
 func TestDeleteDocumentFull_Basic(t *testing.T) {
@@ -644,6 +726,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		ParserConfig: entity.JSONMap{
 			"existing": "value",
 		},
+		DocNum: 1,
 	}
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert kb: %v", err)
@@ -695,6 +778,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	if string(storedBlob) != "abc" {
 		t.Fatalf("stored blob=%q, want abc", storedBlob)
 	}
+	assertKBDocNum(t, kb.ID, 2)
 }
 
 func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
@@ -742,6 +826,7 @@ func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
 	if linkCount != 1 {
 		t.Fatalf("link count=%d, want 1", linkCount)
 	}
+	assertKBDocNum(t, kb.ID, 1)
 }
 
 func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
@@ -1254,6 +1339,24 @@ func TestDeleteDocRecordWithCounters_DocAlreadyDeleted(t *testing.T) {
 	}
 }
 
+func TestDeleteDocRecordWithCounters_KBUpdateFailureRollsBackDocumentDelete(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestDoc(t, "doc-1", "missing-kb", 10, 5)
+
+	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	svc := testDocumentService(t)
+
+	if err := svc.deleteDocRecordWithCounters(doc, "missing-kb"); err == nil {
+		t.Fatal("expected missing KB counter update to return an error")
+	}
+
+	if _, err := dao.NewDocumentDAO().GetByID("doc-1"); err != nil {
+		t.Fatalf("expected document delete to roll back, got: %v", err)
+	}
+}
+
 func TestCleanupFileReferences_NoMappings(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -1611,6 +1714,39 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	}
 }
 
+func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 0, 0)
+
+	engine := newMetadataDocEngine(map[string]map[string]interface{}{
+		"doc-1": {
+			"author": "alice",
+			"year":   2025,
+		},
+	}, map[string]string{"doc-1": "kb-1"})
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = &MetadataService{kbDAO: dao.NewKnowledgebaseDAO(), docEngine: engine}
+
+	if err := svc.SetDocumentMetadata("doc-1", map[string]interface{}{"category": "tech", "year": 2026}); err != nil {
+		t.Fatalf("SetDocumentMetadata failed: %v", err)
+	}
+	if got := engine.records["doc-1"]["author"]; got != "alice" {
+		t.Fatalf("author = %#v, want alice", got)
+	}
+	if got := engine.records["doc-1"]["category"]; got != "tech" {
+		t.Fatalf("category = %#v, want tech", got)
+	}
+	if got := engine.records["doc-1"]["year"]; got != 2026 {
+		t.Fatalf("year = %#v, want 2026", got)
+	}
+	if got := engine.docKBs["doc-1"]; got != "kb-1" {
+		t.Fatalf("kb_id = %q, want kb-1", got)
+	}
+}
+
 func TestChunkImageStorageKeyUsesImgIDWithDatasetPrefix(t *testing.T) {
 	key, ok := chunkImageStorageKey("kb-1", map[string]interface{}{
 		"id":     "chunk-1",
@@ -1709,6 +1845,42 @@ func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
 	}
 	if _, ok := got3["tags"]; ok {
 		t.Fatalf("doc-3 tags should not be created by match-only update: %#v", got3)
+	}
+}
+
+func TestBatchUpdateDocumentMetadatasDoesNotReplaceWhenCurrentSearchIsStale(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc1.txt", 0, 0)
+
+	baseEngine := newMetadataDocEngine(map[string]map[string]interface{}{
+		"doc-1": {"author": "alice"},
+	}, map[string]string{"doc-1": "kb-1"})
+	engine := &staleSearchMetadataDocEngine{metadataDocEngine: baseEngine}
+
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = &MetadataService{kbDAO: dao.NewKnowledgebaseDAO(), docEngine: engine}
+
+	resp, code, err := svc.BatchUpdateDocumentMetadatas("kb-1", &DocumentMetadataSelector{
+		DocumentIDs: []string{"doc-1"},
+	}, []DocumentMetadataUpdate{
+		{Key: "category", Value: "paper"},
+	}, nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("batch update failed: code=%v err=%v", code, err)
+	}
+	if resp.Updated != 1 || resp.MatchedDocs != 1 {
+		t.Fatalf("resp = %#v, want updated=1 matched=1", resp)
+	}
+
+	got := baseEngine.records["doc-1"]
+	if got["author"] != "alice" {
+		t.Fatalf("author should be preserved, got metadata %#v", got)
+	}
+	if got["category"] != "paper" {
+		t.Fatalf("category = %#v, want paper", got["category"])
 	}
 }
 
