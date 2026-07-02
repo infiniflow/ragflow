@@ -80,8 +80,8 @@ class ActiveEnum(Enum):
 class LLMType(StrEnum):
     CHAT = "chat"
     EMBEDDING = "embedding"
-    SPEECH2TEXT = "speech2text"
-    IMAGE2TEXT = "image2text"
+    SPEECH2TEXT = "asr"
+    IMAGE2TEXT = "vision"
     RERANK = "rerank"
     TTS = "tts"
     OCR = "ocr"

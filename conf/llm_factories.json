@@ -194,7 +194,7 @@
                     "llm_name": "whisper-1",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 26214400,
-                    "model_type": "speech2text",
+                    "model_type": "asr",
                     "is_tools": false
                 },
                 {
@@ -274,7 +274,7 @@
                     "tags": "LLM,IMAGE2TEXT,32k",
                     "max_tokens": 32768,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -430,14 +430,14 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "qwen3-asr-flash-realtime-2025-10-27",
                     "model_type": [
-                        "speech2text"
+                        "asr"
                     ],
                     "is_tools": false
                 },
@@ -454,7 +454,7 @@
                     "max_tokens": 32768,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -463,7 +463,7 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -504,7 +504,7 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -536,8 +536,8 @@
                     "max_tokens": 49152,
                     "model_type": [
                         "chat",
-                        "speech2text",
-                        "image2text"
+                        "asr",
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -546,7 +546,7 @@
                     "max_tokens": 128000,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -569,7 +569,7 @@
                     "llm_name": "qwen3-livetranslate-flash-2025-12-01",
                     "max_tokens": 49152,
                     "model_type": [
-                        "speech2text"
+                        "asr"
                     ],
                     "is_tools": false
                 },
@@ -609,7 +609,7 @@
                     "max_tokens": 1000000,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -657,7 +657,7 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -704,7 +704,7 @@
                     "max_tokens": 30720,
                     "model_type": [
                         "ocr",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -713,7 +713,7 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -722,7 +722,7 @@
                     "max_tokens": 1000000,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -731,7 +731,7 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -740,7 +740,7 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -764,7 +764,7 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -773,8 +773,8 @@
                     "max_tokens": 65536,
                     "model_type": [
                         "chat",
-                        "speech2text",
-                        "image2text"
+                        "asr",
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -783,8 +783,8 @@
                     "max_tokens": 65536,
                     "model_type": [
                         "chat",
-                        "speech2text",
-                        "image2text"
+                        "asr",
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -792,7 +792,7 @@
                     "llm_name": "qwen3-livetranslate-flash-realtime",
                     "max_tokens": 49152,
                     "model_type": [
-                        "speech2text"
+                        "asr"
                     ],
                     "is_tools": false
                 },
@@ -801,7 +801,7 @@
                     "max_tokens": 30720,
                     "model_type": [
                         "ocr",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -810,15 +810,15 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "speech2text",
-                        "image2text"
+                        "asr",
+                        "vision"
                     ],
                     "is_tools": false
                 },
                 {
                     "llm_name": "qwen3-asr-flash-realtime",
                     "model_type": [
-                        "speech2text"
+                        "asr"
                     ],
                     "is_tools": false
                 },
@@ -827,7 +827,7 @@
                     "max_tokens": 1000000,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -897,8 +897,8 @@
                     "max_tokens": 65536,
                     "model_type": [
                         "chat",
-                        "speech2text",
-                        "image2text"
+                        "asr",
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -914,7 +914,7 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -931,7 +931,7 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -948,8 +948,8 @@
                     "max_tokens": 65536,
                     "model_type": [
                         "chat",
-                        "speech2text",
-                        "image2text"
+                        "asr",
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -966,8 +966,8 @@
                     "max_tokens": 65536,
                     "model_type": [
                         "chat",
-                        "speech2text",
-                        "image2text"
+                        "asr",
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -976,7 +976,7 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -993,7 +993,7 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -1002,7 +1002,7 @@
                     "max_tokens": 1000000,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -1019,8 +1019,8 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "speech2text",
-                        "image2text"
+                        "asr",
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -1037,7 +1037,7 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -1054,7 +1054,7 @@
                     "max_tokens": 1000000,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -1064,7 +1064,7 @@
                     "model_type": [
                         "chat",
                         "ocr",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -1080,8 +1080,8 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "speech2text",
-                        "image2text"
+                        "asr",
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -1097,8 +1097,8 @@
                     "max_tokens": 32768,
                     "model_type": [
                         "chat",
-                        "speech2text",
-                        "image2text"
+                        "asr",
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -1106,7 +1106,7 @@
                     "llm_name": "qwen3-livetranslate-flash-realtime-2025-09-22",
                     "max_tokens": 49152,
                     "model_type": [
-                        "speech2text"
+                        "asr"
                     ],
                     "is_tools": false
                 },
@@ -1130,21 +1130,21 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "qwen3-asr-flash-2026-02-10",
                     "model_type": [
-                        "speech2text"
+                        "asr"
                     ],
                     "is_tools": false
                 },
                 {
                     "llm_name": "qwen3-asr-flash-realtime-2026-02-10",
                     "model_type": [
-                        "speech2text"
+                        "asr"
                     ],
                     "is_tools": false
                 },
@@ -1175,7 +1175,7 @@
                     "llm_name": "qwen3-livetranslate-flash",
                     "max_tokens": 49152,
                     "model_type": [
-                        "speech2text"
+                        "asr"
                     ],
                     "is_tools": false
                 },
@@ -1184,7 +1184,7 @@
                     "max_tokens": 1000000,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -1193,7 +1193,7 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -1209,8 +1209,8 @@
                     "max_tokens": 262144,
                     "model_type": [
                         "chat",
-                        "speech2text",
-                        "image2text"
+                        "asr",
+                        "vision"
                     ],
                     "is_tools": true
                 },
@@ -1219,7 +1219,7 @@
                     "max_tokens": 30720,
                     "model_type": [
                         "ocr",
-                        "image2text"
+                        "vision"
                     ],
                     "is_tools": false
                 },
@@ -1389,7 +1389,7 @@
                     "tags": "LLM,IMAGE2TEXT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -1399,7 +1399,7 @@
                     "tags": "LLM,IMAGE2TEXT,128k",
                     "max_tokens": 128000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -1409,7 +1409,7 @@
                     "tags": "LLM,IMAGE2TEXT,128k",
                     "max_tokens": 128000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -1547,7 +1547,7 @@
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 765,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": false
@@ -1557,7 +1557,7 @@
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 765,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": false
@@ -1572,13 +1572,13 @@
                     "llm_name": "qwen3-asr-flash",
                     "tags": "SPEECH2TEXT,8k",
                     "max_tokens": 8000,
-                    "model_type": "speech2text"
+                    "model_type": "asr"
                 },
                 {
                     "llm_name": "qwen3-asr-flash-2025-09-08",
                     "tags": "SPEECH2TEXT,8k",
                     "max_tokens": 8000,
-                    "model_type": "speech2text"
+                    "model_type": "asr"
                 },
                 {
                     "llm_name": "gte-rerank-v2",
@@ -1649,7 +1649,7 @@
                     "tags": "LLM,IMAGE2TEXT,64",
                     "max_tokens": 64000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": false
@@ -1722,7 +1722,7 @@
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 2000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -1750,7 +1750,7 @@
                     "llm_name": "glm-asr",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 4096,
-                    "model_type": "speech2text"
+                    "model_type": "asr"
                 }
             ]
         },
@@ -1881,7 +1881,7 @@
                     "tags": "LLM,IMAGE2TEXT,8k",
                     "max_tokens": 8192,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -1891,7 +1891,7 @@
                     "tags": "LLM,IMAGE2TEXT,32k",
                     "max_tokens": 32768,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -1901,7 +1901,7 @@
                     "tags": "LLM,IMAGE2TEXT,128k",
                     "max_tokens": 131072,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2205,7 +2205,7 @@
                     "tags": "LLM,IMAGE2TEXT,131k",
                     "max_tokens": 131000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2248,7 +2248,7 @@
                     "tags": "LLM,IMAGE2TEXT,131k",
                     "max_tokens": 131000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 },
@@ -2257,7 +2257,7 @@
                     "tags": "LLM,IMAGE2TEXT,131k",
                     "max_tokens": 131000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 },
@@ -2287,7 +2287,7 @@
                     "tags": "LLM,128K",
                     "max_tokens": 128000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2297,7 +2297,7 @@
                     "tags": "LLM,128K",
                     "max_tokens": 128000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2337,7 +2337,7 @@
                     "llm_name": "whisper-1",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 26214400,
-                    "model_type": "speech2text"
+                    "model_type": "asr"
                 },
                 {
                     "llm_name": "gpt-4",
@@ -2363,7 +2363,7 @@
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 765,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 }
@@ -2388,7 +2388,7 @@
                     "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2398,7 +2398,7 @@
                     "tags": "LLM,1024K,IMAGE2TEXT",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2408,7 +2408,7 @@
                     "tags": "LLM,IMAGE2TEXT,1024K",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2418,7 +2418,7 @@
                     "tags": "LLM,1024K,IMAGE2TEXT",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2428,7 +2428,7 @@
                     "tags": "LLM,1024K",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2438,7 +2438,7 @@
                     "tags": "LLM,1024K",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2530,7 +2530,7 @@
                     "tags": "LLM,IMAGE2TEXT,64k",
                     "max_tokens": 65536,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2575,7 +2575,7 @@
                     "tags": "LLM,IMAGE2TEXT,100k",
                     "max_tokens": 102400,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2585,7 +2585,7 @@
                     "tags": "LLM,IMAGE2TEXT,8k",
                     "max_tokens": 8192,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2595,7 +2595,7 @@
                     "tags": "LLM,IMAGE2TEXT,32k",
                     "max_tokens": 32768,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2605,7 +2605,7 @@
                     "tags": "LLM,IMAGE2TEXT,32k",
                     "max_tokens": 32768,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2615,7 +2615,7 @@
                     "tags": "LLM,IMAGE2TEXT,32k",
                     "max_tokens": 32768,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -2638,7 +2638,7 @@
                     "llm_name": "step-asr",
                     "tags": "SPEECH2TEXT,100MB",
                     "max_tokens": 32768,
-                    "model_type": "speech2text",
+                    "model_type": "asr",
                     "is_tools": false
                 }
             ]
@@ -3326,7 +3326,7 @@
                     "tags": "IMAGE2TEXT,1K",
                     "max_tokens": 1024,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 },
@@ -3335,7 +3335,7 @@
                     "tags": "IMAGE2TEXT,8K",
                     "max_tokens": 8192,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 },
@@ -3344,7 +3344,7 @@
                     "tags": "IMAGE2TEXT,256K",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 },
@@ -3353,7 +3353,7 @@
                     "tags": "IMAGE2TEXT,128K",
                     "max_tokens": 131072,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 },
@@ -3362,7 +3362,7 @@
                     "tags": "IMAGE2TEXT,128K",
                     "max_tokens": 131072,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 },
@@ -3371,7 +3371,7 @@
                     "tags": "IMAGE2TEXT,1K",
                     "max_tokens": 1024,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 },
@@ -3380,7 +3380,7 @@
                     "tags": "IMAGE2TEXT,4K",
                     "max_tokens": 4096,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 },
@@ -3389,7 +3389,7 @@
                     "tags": "IMAGE2TEXT,128K",
                     "max_tokens": 131072,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 },
@@ -3398,7 +3398,7 @@
                     "tags": "IMAGE2TEXT,128K",
                     "max_tokens": 131072,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 },
@@ -3407,7 +3407,7 @@
                     "tags": "IMAGE2TEXT,1K",
                     "max_tokens": 1024,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 }
@@ -3545,7 +3545,7 @@
                     "llm_name": "cohere-transcribe-03-2026",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 8192,
-                    "model_type": "speech2text"
+                    "model_type": "asr"
                 }
             ]
         },
@@ -3742,7 +3742,7 @@
                     "tags": "LLM,IMAGE2TEXT,CHAT,262k",
                     "max_tokens": 262000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3759,7 +3759,7 @@
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3811,7 +3811,7 @@
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3821,7 +3821,7 @@
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3831,7 +3831,7 @@
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3841,7 +3841,7 @@
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3851,7 +3851,7 @@
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3861,7 +3861,7 @@
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3871,7 +3871,7 @@
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3881,7 +3881,7 @@
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3926,7 +3926,7 @@
                     "tags": "LLM,IMAGE2TEXT,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3936,7 +3936,7 @@
                     "tags": "LLM,IMAGE2TEXT,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3946,7 +3946,7 @@
                     "tags": "LLM,IMAGE2TEXT,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3956,7 +3956,7 @@
                     "tags": "LLM,IMAGE2TEXT,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3966,7 +3966,7 @@
                     "tags": "LLM,IMAGE2TEXT,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3976,7 +3976,7 @@
                     "tags": "LLM,IMAGE2TEXT,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3986,7 +3986,7 @@
                     "tags": "LLM,IMAGE2TEXT,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -3996,7 +3996,7 @@
                     "tags": "LLM,IMAGE2TEXT,CHAT,64k",
                     "max_tokens": 64000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -4006,7 +4006,7 @@
                     "tags": "LLM,IMAGE2TEXT,CHAT,64k",
                     "max_tokens": 64000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -4044,7 +4044,7 @@
                     "tags": "LLM,IMAGE2TEXT,CHAT,64k",
                     "max_tokens": 64000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -4925,7 +4925,7 @@
                     "tags": "LLM,IMAGE2TEXT,8k",
                     "max_tokens": 8192,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ]
                 }
@@ -5460,7 +5460,7 @@
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 4096,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": false
@@ -5470,7 +5470,7 @@
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 32768,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -5480,7 +5480,7 @@
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 4096,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": false
@@ -5490,7 +5490,7 @@
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 4096,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": false
@@ -5500,7 +5500,7 @@
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 32768,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": false
@@ -5510,7 +5510,7 @@
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 32768,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": false
@@ -5520,7 +5520,7 @@
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 32768,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": false
@@ -5530,7 +5530,7 @@
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 16384,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": false
@@ -5540,7 +5540,7 @@
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 8192,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": false
@@ -5549,42 +5549,42 @@
                     "llm_name": "Qwen2-Audio-7B-Instruct",
                     "tags": "LLM,SPEECH2TEXT,IMAGE2TEXT",
                     "max_tokens": 8192,
-                    "model_type": "speech2text",
+                    "model_type": "asr",
                     "is_tools": false
                 },
                 {
                     "llm_name": "whisper-base",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 512,
-                    "model_type": "speech2text",
+                    "model_type": "asr",
                     "is_tools": false
                 },
                 {
                     "llm_name": "whisper-large",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 512,
-                    "model_type": "speech2text",
+                    "model_type": "asr",
                     "is_tools": false
                 },
                 {
                     "llm_name": "whisper-large-v3-turbo",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 512,
-                    "model_type": "speech2text",
+                    "model_type": "asr",
                     "is_tools": false
                 },
                 {
                     "llm_name": "whisper-large-v3",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 512,
-                    "model_type": "speech2text",
+                    "model_type": "asr",
                     "is_tools": false
                 },
                 {
                     "llm_name": "SenseVoiceSmall",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 512,
-                    "model_type": "speech2text",
+                    "model_type": "asr",
                     "is_tools": false
                 },
                 {
@@ -5744,12 +5744,12 @@
                 {
                     "llm_name": "mistralai/Voxtral-Small-24B-2507",
                     "tags": "SPEECH2TEXT",
-                    "model_type": "speech2text"
+                    "model_type": "asr"
                 },
                 {
                     "llm_name": "mistralai/Voxtral-Mini-3B-2507",
                     "tags": "SPEECH2TEXT",
-                    "model_type": "speech2text"
+                    "model_type": "asr"
                 },
                 {
                     "llm_name": "deepseek-ai/DeepSeek-R1-0528-Turbo",
@@ -5909,7 +5909,7 @@
                 {
                     "llm_name": "openai/whisper-large-v3-turbo",
                     "tags": "SPEECH2TEXT",
-                    "model_type": "speech2text"
+                    "model_type": "asr"
                 },
                 {
                     "llm_name": "BAAI/bge-base-en-v1.5",
@@ -6069,7 +6069,7 @@
                     "tags": "LLM",
                     "max_tokens": 1000000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6170,7 +6170,7 @@
                     "tags": "LLM",
                     "max_tokens": 200000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6180,7 +6180,7 @@
                     "tags": "LLM",
                     "max_tokens": 1000000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6289,7 +6289,7 @@
                     "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6299,7 +6299,7 @@
                     "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6309,7 +6309,7 @@
                     "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6319,7 +6319,7 @@
                     "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6343,7 +6343,7 @@
                     "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6353,7 +6353,7 @@
                     "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6363,7 +6363,7 @@
                     "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6373,7 +6373,7 @@
                     "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6404,7 +6404,7 @@
                     "tags": "LLM,32k,IMAGE2TEXT",
                     "max_tokens": 32768,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6483,7 +6483,7 @@
                     "llm_name": "whisper-1",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 26214400,
-                    "model_type": "speech2text",
+                    "model_type": "asr",
                     "is_tools": false
                 },
                 {
@@ -6606,7 +6606,7 @@
                     "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6616,7 +6616,7 @@
                     "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6626,7 +6626,7 @@
                     "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6636,7 +6636,7 @@
                     "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6660,7 +6660,7 @@
                     "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6670,7 +6670,7 @@
                     "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6680,7 +6680,7 @@
                     "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6690,7 +6690,7 @@
                     "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6721,7 +6721,7 @@
                     "tags": "LLM,32k,IMAGE2TEXT",
                     "max_tokens": 32768,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6800,7 +6800,7 @@
                     "llm_name": "whisper-1",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 26214400,
-                    "model_type": "speech2text",
+                    "model_type": "asr",
                     "is_tools": false
                 },
                 {
@@ -6879,7 +6879,7 @@
                     "tags": "LLM,20K,IMAGE2TEXT",
                     "max_tokens": 20000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6910,7 +6910,7 @@
                     "tags": "LLM,200K,IMAGE2TEXT",
                     "max_tokens": 200000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -6990,7 +6990,7 @@
                     "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -7084,7 +7084,7 @@
                     "tags": "LLM,400K,IMAGE2TEXT",
                     "max_tokens": 400000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -7108,7 +7108,7 @@
                     "tags": "LLM,400K,IMAGE2TEXT",
                     "max_tokens": 400000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -7160,7 +7160,7 @@
                     "tags": "LLM,2M,IMAGE2TEXT",
                     "max_tokens": 2000000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -7170,7 +7170,7 @@
                     "tags": "LLM,2M,IMAGE2TEXT",
                     "max_tokens": 2000000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -7757,7 +7757,7 @@
                     "tags": "IMAGE2TEXT,128k",
                     "max_tokens": 128000,
                     "model_type": [
-                        "image2text",
+                        "vision",
                         "chat"
                     ],
                     "is_tools": true
@@ -7794,7 +7794,7 @@
                     "llm_name": "whisper-1",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 25000000,
-                    "model_type": "speech2text",
+                    "model_type": "asr",
                     "is_tools": false
                 },
                 {

@@ -212,7 +212,7 @@ class TenantLLMService(CommonService):
 
         elif model_config["model_type"] == LLMType.SPEECH2TEXT.value:
             if model_config["llm_factory"] not in Seq2txtModel:
-                logging.error("Factory not in speech2text model. Supported factories: %s", list(Seq2txtModel.keys()))
+                logging.error("Factory not in ASR model. Supported factories: %s", list(Seq2txtModel.keys()))
                 return None
             return Seq2txtModel[model_config["llm_factory"]](key=api_key, model_name=model_config["llm_name"], lang=lang, base_url=model_config["api_base"])
         elif model_config["model_type"] == LLMType.TTS.value:
