@@ -1186,15 +1186,6 @@ func (s *ChatService) GetChat(userID string, chatID string) (*GetChatResponse, e
 	// Resolve kb_ids to kb_names
 	kbNames, datasetIDs := s.getDatasetNamesAndIDs(chat.KBIDs)
 
-	// Build dataset_ids from kb_ids (same as Python _resolve_kb_names returns ids)
-	for _, kbID := range chat.KBIDs {
-		datasetID, ok := kbID.(string)
-		if !ok {
-			continue
-		}
-		datasetIDs = append(datasetIDs, datasetID)
-	}
-
 	return &GetChatResponse{
 		Chat:       chat,
 		DatasetIDs: datasetIDs,

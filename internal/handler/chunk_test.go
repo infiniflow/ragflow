@@ -169,19 +169,22 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 	}
 }
 
-func TestChunkHandlerListChunksAcceptsAvailableFalse(t *testing.T) {
+func TestChunkHandlerListChunksMapsAvailableFalse(t *testing.T) {
 	mock := &mockChunkSvc{}
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.GET("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.ListChunks)
 
 	mock.listFn = func(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
+		if userID != "user-1" {
+			t.Fatalf("userID = %q, want user-1", userID)
+		}
 		if req.AvailableInt == nil || *req.AvailableInt != 0 {
 			t.Fatalf("available_int = %v, want 0", req.AvailableInt)
 		}
 		return &service.ListChunksResponse{
-			Total:  0,
+			Total: 0,
 			Chunks: []map[string]interface{}{},
-			Doc:    map[string]interface{}{"id": "doc-1"},
+			Doc: map[string]interface{}{"id": "doc-1"},
 		}, nil
 	}
 
