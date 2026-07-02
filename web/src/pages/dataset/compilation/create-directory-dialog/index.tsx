@@ -4,10 +4,8 @@ import { Form } from '@/components/ui/form';
 import { Modal } from '@/components/ui/modal/modal';
 import { UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import {
-  CreateDirectoryFormFields,
-  type CreateDirectoryFormValues,
-} from './create-directory-form';
+import { CreateDirectoryFormValues } from '../interface';
+import { CreateDirectoryFormFields } from './create-directory-form';
 
 export interface CreateDirectoryDialogProps {
   open: boolean;

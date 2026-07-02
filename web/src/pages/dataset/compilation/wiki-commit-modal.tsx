@@ -2,9 +2,9 @@ import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Form } from '@/components/ui/form';
 import { Modal } from '@/components/ui/modal/modal';
 import { Textarea } from '@/components/ui/textarea';
-import { CommitFormValues } from '@/pages/dataset/compilation/use-commit-artifact';
 import { UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { CommitFormValues } from './interface';
 
 type WikiCommitModalProps = {
   open: boolean;

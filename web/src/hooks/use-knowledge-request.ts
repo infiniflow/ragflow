@@ -12,6 +12,9 @@ import {
   INextTestingResult,
   IRenameTag,
   ITestingResult,
+  IWikiCommit,
+  IWikiCommitDetail,
+  IWikiCommitListResponse,
 } from '@/interfaces/database/dataset';
 import {
   IFetchArtifactGraphRequestParams,
@@ -25,9 +28,11 @@ import kbService, {
   getArtifactPage,
   getKbDetail,
   getKnowledgeGraph,
+  getWikiCommit,
   listArtifacts,
   listDataset,
   listTag,
+  listWikiCommits,
   removeTag,
   renameTag,
   updateArtifactPage,
@@ -63,6 +68,8 @@ export const enum KnowledgeApiAction {
   FetchArtifactPage = 'fetchArtifactPage',
   FetchArtifactGraph = 'fetchArtifactGraph',
   UpdateArtifactPage = 'updateArtifactPage',
+  FetchWikiCommits = 'fetchWikiCommits',
+  FetchWikiCommit = 'fetchWikiCommit',
   FetchMetadata = 'fetchMetadata',
   FetchMetadataKeys = 'fetchMetadataKeys',
   FetchKnowledgeList = 'fetchKnowledgeList',
@@ -346,6 +353,66 @@ const artifactKeys = {
   detail: (datasetId: string, pageType: string, slug: string) =>
     [KnowledgeApiAction.FetchArtifactPage, datasetId, pageType, slug] as const,
 };
+
+const wikiCommitKeys = {
+  list: (datasetId: string, pageType: string, slug: string) =>
+    [KnowledgeApiAction.FetchWikiCommits, datasetId, pageType, slug] as const,
+  detail: (datasetId: string, commitId: string) =>
+    [KnowledgeApiAction.FetchWikiCommit, datasetId, commitId] as const,
+};
+
+export const useFetchWikiCommits = (
+  artifact: IArtifact | null,
+  enabled = true,
+) => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const pageType = artifact?.page_type ?? '';
+  const slug = artifact?.slug ?? '';
+
+  const { data, isFetching: loading } =
+    useQuery<IWikiCommitListResponse | null>({
+      queryKey: wikiCommitKeys.list(knowledgeBaseId, pageType, slug),
+      enabled:
+        !!knowledgeBaseId && !!artifact && !!pageType && !!slug && enabled,
+      gcTime: 0,
+      queryFn: async () => {
+        const { data } = await listWikiCommits(knowledgeBaseId, pageType, slug);
+        // The merged file-commit endpoint returns {total, page, page_size, commits},
+        // while the existing components expect {total, items}. Normalize here.
+        const raw = (data?.data ?? {}) as {
+          total?: number;
+          items?: IWikiCommit[];
+          commits?: IWikiCommit[];
+        };
+        return {
+          total: raw.total ?? 0,
+          items: raw.items ?? raw.commits ?? [],
+        };
+      },
+    });
+
+  return {
+    commits: data?.items ?? [],
+    total: data?.total ?? 0,
+    loading,
+  };
+};
+
+export function useFetchWikiCommit(commitId: string | null) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<IWikiCommitDetail | null>({
+    queryKey: wikiCommitKeys.detail(knowledgeBaseId, commitId ?? ''),
+    enabled: !!knowledgeBaseId && !!commitId,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getWikiCommit(knowledgeBaseId, commitId!);
+      return data?.data ?? null;
+    },
+  });
+
+  return { data, loading };
+}
 
 export const useFetchArtifactList = () => {
   const knowledgeBaseId = useKnowledgeBaseId();

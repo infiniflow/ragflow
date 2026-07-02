@@ -410,6 +410,22 @@ export const updateArtifactPage = (
   data: IUpdateArtifactPageRequestBody,
 ) => request.put(api.getArtifactPage(datasetId, pageType, slug), { data });
 
+export const listWikiCommits = (
+  datasetId: string,
+  pageType: string,
+  slug: string,
+  params?: { page?: number; page_size?: number },
+) =>
+  request.get(api.listWikiCommits(datasetId), {
+    params: {
+      ...params,
+      slug: slug.startsWith(`${pageType}/`) ? slug : `${pageType}/${slug}`,
+    },
+  });
+
+export const getWikiCommit = (datasetId: string, commitId: string) =>
+  request.get(api.getWikiCommit(datasetId, commitId));
+
 export const checkEmbedding = (datasetId: string, data: Record<string, any>) =>
   request.post(api.checkEmbedding(datasetId), { data });
 

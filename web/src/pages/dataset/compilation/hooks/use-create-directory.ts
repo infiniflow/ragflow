@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
-import type { CreateDirectoryFormValues } from './create-directory-dialog/create-directory-form';
+import type { CreateDirectoryFormValues } from '../interface';
 
 export function useCreateDirectory() {
   const [open, setOpen] = useState(false);

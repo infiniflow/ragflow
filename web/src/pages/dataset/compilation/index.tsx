@@ -8,11 +8,6 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
-import { WikiDetailContent } from '@/pages/dataset/compilation/wiki-detail-content';
-import {
-  LeftPanelTab,
-  WikiLeftPanel,
-} from '@/pages/dataset/compilation/wiki-left-panel';
 import { Routes } from '@/routes';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -25,14 +20,12 @@ import {
   useFetchKnowledgeGraph,
 } from '@/hooks/use-knowledge-request';
 import { IArtifact } from '@/interfaces/database/dataset';
-import KnowledgeForceGraph from '@/pages/dataset/compilation/knowledge-force-graph';
-import { SkillsLeftPanel } from '@/pages/dataset/compilation/skills-left-panel';
-
-enum ViewMode {
-  Graph = 'graph',
-  LlmWiki = 'llm-wiki',
-  Skills = 'skills',
-}
+import { LeftPanelTab, ViewMode } from './constants';
+import { useWikiVersion } from './hooks/use-wiki-version';
+import KnowledgeForceGraph from './knowledge-force-graph';
+import { SkillsLeftPanel } from './skills-left-panel';
+import { WikiDetailContent } from './wiki-detail-content';
+import { WikiLeftPanel } from './wiki-left-panel';
 
 export default function Compilation() {
   const { t } = useTranslation();
@@ -45,6 +38,7 @@ export default function Compilation() {
   const [selectedArtifact, setSelectedArtifact] = useState<IArtifact | null>(
     null,
   );
+  const { selectedVersion, selectVersion, clearVersion } = useWikiVersion();
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
   const { data: skillPage } = useFetchDatasetSkillPage(selectedSkill);
 
@@ -64,9 +58,13 @@ export default function Compilation() {
     setLeftTab(value as LeftPanelTab);
   }, []);
 
-  const handleSelectArtifact = useCallback((artifact: IArtifact) => {
-    setSelectedArtifact(artifact);
-  }, []);
+  const handleSelectArtifact = useCallback(
+    (artifact: IArtifact) => {
+      setSelectedArtifact(artifact);
+      clearVersion();
+    },
+    [clearVersion],
+  );
 
   return (
     <section className="flex flex-col p-4 gap-4 h-full">
@@ -134,7 +132,11 @@ export default function Compilation() {
             </ResizablePanel>
             <ResizableHandle withHandle />
             <ResizablePanel>
-              <WikiDetailContent selectedArtifact={selectedArtifact} />
+              <WikiDetailContent
+                selectedArtifact={selectedArtifact}
+                selectedVersion={selectedVersion}
+                onSelectVersion={selectVersion}
+              />
             </ResizablePanel>
           </ResizablePanelGroup>
         </Card>

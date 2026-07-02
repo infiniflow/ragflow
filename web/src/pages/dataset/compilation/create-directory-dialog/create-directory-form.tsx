@@ -5,11 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from 'react-i18next';
 
-export interface CreateDirectoryFormValues {
-  name: string;
-  rule: string;
-}
-
 export function CreateDirectoryFormFields() {
   const { t } = useTranslation();
 

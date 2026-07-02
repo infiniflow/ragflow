@@ -19,13 +19,9 @@ import {
   useFetchArtifactGraph,
   useFetchArtifactList,
 } from '@/hooks/use-knowledge-request';
+import { LeftPanelTab } from './constants';
 import { CreateDirectoryDialog } from './create-directory-dialog';
-import { useCreateDirectory } from './use-create-directory';
-
-export enum LeftPanelTab {
-  Contents = 'contents',
-  Graph = 'graph',
-}
+import { useCreateDirectory } from './hooks/use-create-directory';
 
 type LeftPanelProps = {
   tab: LeftPanelTab;

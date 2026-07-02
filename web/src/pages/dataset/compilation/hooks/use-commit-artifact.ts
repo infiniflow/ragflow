@@ -1,24 +1,23 @@
 import { useUpdateArtifactPage } from '@/hooks/use-knowledge-request';
-import { IArtifactPage } from '@/interfaces/database/dataset';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
-export type CommitFormValues = {
-  comments: string;
-};
+import type { CommitFormValues } from '../interface';
 
 type UseCommitArtifactParams = {
   editedContent: string;
-  page: IArtifactPage | null | undefined;
+  pageType: string;
+  slug: string;
   onSuccess?: () => void;
 };
 
 export function useCommitArtifact({
   editedContent,
-  page,
+  pageType,
+  slug,
   onSuccess,
 }: UseCommitArtifactParams) {
   const { t } = useTranslation();
@@ -51,11 +50,11 @@ export function useCommitArtifact({
 
   const handleConfirm = useCallback(
     async (values: CommitFormValues) => {
-      if (!page) return;
+      if (!pageType || !slug) return;
 
       const result = await updateArtifactPage({
-        pageType: page.page_type,
-        slug: page.slug,
+        pageType,
+        slug,
         body: {
           content_md: editedContent,
           comments: values.comments,
@@ -67,7 +66,7 @@ export function useCommitArtifact({
         setIsOpen(false);
       }
     },
-    [editedContent, onSuccess, page, updateArtifactPage],
+    [editedContent, onSuccess, pageType, slug, updateArtifactPage],
   );
 
   return {

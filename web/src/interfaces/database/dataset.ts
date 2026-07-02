@@ -243,6 +243,26 @@ export interface IArtifactPage {
   source_doc_ids: string[];
 }
 
+export interface IWikiCommit {
+  id: string;
+  title: string;
+  comments: string;
+  user_id: string;
+  create_time: number;
+  create_date: string;
+  user_nickname: string;
+}
+
+export interface IWikiCommitDetail extends IWikiCommit {
+  diff: string;
+  content_after: string;
+}
+
+export interface IWikiCommitListResponse {
+  total: number;
+  items: IWikiCommit[];
+}
+
 export interface IArtifactGraphEntity {
   slug: string;
   name: string;
