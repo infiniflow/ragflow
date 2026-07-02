@@ -26,6 +26,9 @@ import (
 // GetProjectRoot returns the project root directory
 func GetProjectRoot() string {
 	// Try environment variable first
+	if confDir := os.Getenv("RAGFLOW_CONF_DIR"); confDir != "" {
+		return confDir
+	}
 	if d := os.Getenv("RAG_PROJECT_BASE"); d != "" {
 		return d
 	}
@@ -33,8 +36,23 @@ func GetProjectRoot() string {
 		return d
 	}
 
-	// The binary is always at <project_root>/bin/, so going up 2 levels from
-	// the executable path gives the project root.
+	// Find project root by looking for go.mod from this source file.
+	_, curFile, _, ok := runtime.Caller(0)
+	if ok {
+		dir := filepath.Dir(curFile)
+		for {
+			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+				return dir
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+
+	// Deployment binaries are normally at <project_root>/bin/.
 	exe, err := os.Executable()
 	if err != nil {
 		return "."
