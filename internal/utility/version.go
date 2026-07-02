@@ -51,7 +51,8 @@ func getRAGFlowVersionInternal() string {
 	dir := filepath.Dir(exePath)
 	for i := 0; i < 5; i++ { // Try up to 5 levels up
 		versionPath := filepath.Join(dir, "VERSION")
-		if data, err := os.ReadFile(versionPath); err == nil {
+		var data []byte
+		if data, err = os.ReadFile(versionPath); err == nil {
 			return strings.TrimSpace(string(data))
 		}
 		parent := filepath.Dir(dir)
