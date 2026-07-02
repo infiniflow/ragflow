@@ -41,6 +41,7 @@ class BlobType(str, Enum):
 class DocumentSource(str, Enum):
     """Document sources"""
     RSS = "rss"
+    SITEMAP = "sitemap"
     S3 = "s3"
     NOTION = "notion"
     REST_API = "rest_api"

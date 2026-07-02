@@ -25,6 +25,7 @@ SOFTWARE.
 
 from .blob_connector import BlobStorageConnector
 from .rss_connector import RSSConnector
+from .sitemap_connector import SitemapConnector
 from .slack_connector import SlackConnector
 from .gmail_connector import GmailConnector
 from .notion_connector import NotionConnector
@@ -63,6 +64,7 @@ from .exceptions import (
 __all__ = [
     "BlobStorageConnector",
     "RSSConnector",
+    "SitemapConnector",
     "SlackConnector",
     "GmailConnector",
     "NotionConnector",
