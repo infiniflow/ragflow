@@ -1,11 +1,13 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"context"
 	"image/png"
 	"os"
+	inf "ragflow/internal/deepdoc/parser/pdf/inference"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 	"strings"
 	"testing"
 )
@@ -19,7 +21,7 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 	if url == "" {
 		t.Skip("DEEPDOC_URL not set")
 	}
-	dd, err := inf.NewInferenceClient(url)
+	dd, err := inf.NewClient(url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +43,7 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("pdf_oxide chars: %d", len(chars))
+	t.Logf("pdf_oxide Chars: %d", len(chars))
 
 	var sample strings.Builder
 	for i, c := range chars {

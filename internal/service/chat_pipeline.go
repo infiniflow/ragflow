@@ -213,8 +213,10 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 		modelMaxTokens := 8192
 		if llmModelConfig != nil {
-			if mt, ok := llmModelConfig["max_tokens"].(float64); ok {
-				modelMaxTokens = int(mt)
+			// Treat max_tokens=0 as unset (default 8192) — mirrors
+			// PR #16413 Python fix: model_extra.get("max_tokens") or 8192
+			if mt, ok := llmModelConfig["max_tokens"].(int); ok && mt > 0 {
+				modelMaxTokens = mt
 			}
 		}
 		timer.Exit(common.PhaseCheckLLM)
@@ -2385,38 +2387,81 @@ func (s *ChatPipelineService) formatPrompt(template string, kwargs map[string]in
 
 // messageFitIn trims messages to fit within a token budget.
 // Mirrors Python's message_fit_in() in rag/prompts/generator.py.
+//
+// Strategy:
+//  1. If everything fits → return as-is.
+//  2. Keep all system messages + the last user/assistant message.
+//  3. If still too large, trim content proportionally:
+//     - System dominates (>80%) → preserve last message first.
+//     - Otherwise → preserve system first.
 func (s *ChatPipelineService) messageFitIn(messages []map[string]interface{}, maxTokens int) (int, []map[string]interface{}) {
-	totalTokens := 0
-	var result []map[string]interface{}
-
-	// Always keep the system message first.
-	if len(messages) > 0 {
-		if role, _ := messages[0]["role"].(string); role == "system" {
-			if content, ok := messages[0]["content"].(string); ok {
-				sysTokens := kg.NumTokensFromString(content)
-				if sysTokens <= maxTokens {
-					totalTokens = sysTokens
-					result = append(result, messages[0])
-				}
-			}
-		}
+	if maxTokens <= 0 {
+		maxTokens = 8192
 	}
 
-	// Add user/assistant messages from the end, working backwards.
-	rest := messages[1:]
-	for i := len(rest) - 1; i >= 0; i-- {
-		m := rest[i]
-		content, _ := m["content"].(string)
-		tokens := kg.NumTokensFromString(content)
-		if totalTokens+tokens > maxTokens {
-			break
-		}
-		totalTokens += tokens
-		// Prepend to maintain order.
-		result = append([]map[string]interface{}{m}, result...)
+	// Step 1: everything fits.
+	totalTokens := s.countAllTokens(messages)
+	if totalTokens < maxTokens {
+		return totalTokens, messages
 	}
 
-	return totalTokens, result
+	// Step 2: keep all system messages + the last message.
+	result := make([]map[string]interface{}, 0)
+	for _, m := range messages {
+		if role, _ := m["role"].(string); role == "system" {
+			result = append(result, m)
+		}
+	}
+	if len(messages) > 1 {
+		result = append(result, messages[len(messages)-1])
+	}
+
+	totalTokens = s.countAllTokens(result)
+	if totalTokens < maxTokens {
+		return totalTokens, result
+	}
+
+	// Step 3: trim content to fit.
+	ll := kg.NumTokensFromString(s.stringContent(result[0]))
+	ll2 := kg.NumTokensFromString(s.stringContent(result[len(result)-1]))
+	total := ll + ll2
+	if total <= 0 {
+		return 0, result
+	}
+
+	if len(result) == 1 {
+		result[0]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[0]), maxTokens)
+		return s.countAllTokens(result), result
+	}
+
+	if float64(ll)/float64(total) > 0.8 {
+		preservedLast := min(ll2, maxTokens)
+		result[len(result)-1]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), preservedLast)
+		remaining := max(0, maxTokens-preservedLast)
+		result[0]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[0]), remaining)
+	} else {
+		preservedSystem := min(ll, maxTokens)
+		result[0]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[0]), preservedSystem)
+		remaining := max(0, maxTokens-preservedSystem)
+		result[len(result)-1]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), remaining)
+	}
+
+	return s.countAllTokens(result), result
+}
+
+// countAllTokens returns the total token count across all messages.
+func (s *ChatPipelineService) countAllTokens(messages []map[string]interface{}) int {
+	total := 0
+	for _, m := range messages {
+		total += kg.NumTokensFromString(s.stringContent(m))
+	}
+	return total
+}
+
+// stringContent extracts the "content" string from a message map, or "".
+func (s *ChatPipelineService) stringContent(m map[string]interface{}) string {
+	c, _ := m["content"].(string)
+	return c
 }
 
 // buildChatMessages converts the internal message representation to

@@ -1,6 +1,6 @@
 //go:build manual
 
-package parser
+package pdf
 
 import (
 	"encoding/json"
@@ -16,7 +16,7 @@ import (
 	"testing"
 )
 
-// TestSnapshotStageComparison verifies Go's TextMerge output
+// TestSnapshotStageComparison verifies Go's lyt.TextMerge output
 // matches Python's _text_merge sample boxes using synthetic input.
 func TestSnapshotStageComparison(t *testing.T) {
 	snapDir := filepath.Join("testdata", "snapshots")
@@ -47,19 +47,19 @@ func TestSnapshotStageComparison(t *testing.T) {
 			// Convert sample boxes to Go pdf.TextBox format
 			goBoxes := snapshotBoxesToGo(s1.SampleBoxesPage0)
 
-			// Run Go TextMerge with default params
+			// Run Go lyt.TextMerge with default params
 			meanH := map[int]float64{0: avg(s1.MeanHeight)}
 			merged := lyt.TextMerge(goBoxes, meanH, 3)
 
 			// Compare counts
 			if len(merged) > 0 {
-				t.Logf("  Go TextMerge: %d -> %d boxes", len(goBoxes), len(merged))
+				t.Logf("  Go lyt.TextMerge: %d -> %d boxes", len(goBoxes), len(merged))
 				mergeRatio := float64(len(merged)) / float64(len(goBoxes))
 				pyRatio := float64(s4.BoxesAfter) / float64(s4.BoxesBefore)
 				t.Logf("  Merge ratios: Go=%.0f%% Python=%.0f%%", mergeRatio*100, pyRatio*100)
 			}
 
-			// Run Go NaiveVerticalMerge
+			// Run Go lyt.NaiveVerticalMerge
 			meanW := map[int]float64{0: avg(s1.MeanWidth)}
 			vm := lyt.NaiveVerticalMerge(merged, meanH, meanW, s1.IsEnglish)
 			if s6, ok := snap.Stages["_naive_vertical_merge"]; ok {

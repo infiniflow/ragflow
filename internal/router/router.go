@@ -43,6 +43,7 @@ type Router struct {
 	fileHandler          *handler.FileHandler
 	memoryHandler        *handler.MemoryHandler
 	mcpHandler           *handler.MCPHandler
+	mcpServerHandler     *handler.MCPServerHandler
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
 	agentHandler         *handler.AgentHandler
@@ -75,6 +76,7 @@ func NewRouter(
 	fileHandler *handler.FileHandler,
 	memoryHandler *handler.MemoryHandler,
 	mcpHandler *handler.MCPHandler,
+	mcpServerHandler *handler.MCPServerHandler,
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
@@ -107,6 +109,7 @@ func NewRouter(
 		fileHandler:          fileHandler,
 		memoryHandler:        memoryHandler,
 		mcpHandler:           mcpHandler,
+		mcpServerHandler:     mcpServerHandler,
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
 		agentHandler:         agentHandler,
@@ -208,6 +211,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
 		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
+
+		// MCP server endpoint — exposes RAGFlow capabilities as MCP tools.
+		// Uses BetaAuthMiddleware to resolve the user from the
+		// Authorization header.
+		if r.mcpServerHandler != nil {
+			apiBetaAuth.POST("/mcp", r.mcpServerHandler.HandleMCP)
+		}
 	}
 
 	// Protected routes
