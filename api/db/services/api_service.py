@@ -85,7 +85,16 @@ class API4ConversationService(CommonService):
         sessions = sessions.paginate(page_number, items_per_page)
 
         return count, list(sessions.dicts())
-    
+
+    @classmethod
+    @DB.connection_context()
+    def get_workflow_conversations_by_message_id(cls, user_id, message_id):
+        return cls.model.select().where(
+            cls.model.user_id == user_id,
+            cls.model.source == "workflow",
+            peewee.fn.LOWER(cls.model.message).contains(str(message_id).lower()),
+        )
+
     @classmethod
     @DB.connection_context()
     def get_names(cls, dialog_id, exp_user_id):
