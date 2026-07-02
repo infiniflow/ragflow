@@ -35,8 +35,7 @@ func GetProjectRoot() string {
 		return d
 	}
 
-	// Find project root by looking for go.mod from this source file. This is
-	// stable when IDEs run a temporary binary outside the repository.
+	// Find project root by looking for go.mod from this source file.
 	_, curFile, _, ok := runtime.Caller(0)
 	if ok {
 		dir := filepath.Dir(curFile)
