@@ -54,6 +54,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DocumentService document service
@@ -234,7 +235,7 @@ var artifactUnsafeFilenameChars = regexp.MustCompile(`[^\pL\pN_.-]`)
 
 // GetDocumentImage retrieves an image object from storage.
 func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
-	parts := strings.Split(imageID, "-")
+	parts := strings.SplitN(imageID, "-", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return nil, fmt.Errorf("Image not found.")
 	}
@@ -1010,9 +1011,23 @@ func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status st
 }
 
 // ListDocumentsByDatasetID list documents by knowledge base ID
-func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
-	offset := (page - 1) * pageSize
-	documents, total, err := s.documentDAO.ListByKBID(kbID, offset, pageSize)
+func (s *DocumentService) ListDocumentsByDatasetID(kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+	return s.ListDocumentsByDatasetIDWithOptions(dao.DocumentListOptions{
+		KbID:     kbID,
+		Keywords: keywords,
+		OrderBy:  "create_time",
+		Desc:     true,
+	}, page, pageSize)
+}
+
+// ListDocumentsByDatasetIDWithOptions lists documents by knowledge base ID with filters.
+func (s *DocumentService) ListDocumentsByDatasetIDWithOptions(opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+	opts.Offset = (page - 1) * pageSize
+	opts.Limit = pageSize
+	if opts.OrderBy == "" {
+		opts.OrderBy = "create_time"
+	}
+	documents, total, err := s.documentDAO.ListByKBIDWithOptions(opts)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1023,6 +1038,64 @@ func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize i
 	}
 
 	return responses, total, nil
+}
+
+// GetDocumentFiltersByDatasetID returns aggregate filter values for documents in a dataset.
+func (s *DocumentService) GetDocumentFiltersByDatasetID(opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
+	filters, total, err := s.documentDAO.GetFilterByKBID(opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	docIDs, err := s.documentDAO.ListIDsByKBIDWithOptions(opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	metadataFilter, err := s.getDocumentMetadataFilter(opts.KbID, docIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	filters["metadata"] = metadataFilter
+	return filters, total, nil
+}
+
+func (s *DocumentService) getDocumentMetadataFilter(kbID string, docIDs []string) (map[string]interface{}, error) {
+	metadataByKey, err := s.GetMetadataByKBs([]string{kbID})
+	if err != nil {
+		return nil, err
+	}
+	candidateSet := make(map[string]bool, len(docIDs))
+	for _, docID := range docIDs {
+		candidateSet[docID] = true
+	}
+
+	metadataCounter := map[string]interface{}{}
+	docIDsWithMetadata := map[string]bool{}
+	for key, rawValues := range metadataByKey {
+		values, ok := rawValues.(map[string][]string)
+		if !ok {
+			continue
+		}
+		valueCounter := map[string]int64{}
+		for value, valueDocIDs := range values {
+			for _, docID := range valueDocIDs {
+				if !candidateSet[docID] {
+					continue
+				}
+				valueCounter[value]++
+				docIDsWithMetadata[docID] = true
+			}
+		}
+		if len(valueCounter) > 0 {
+			metadataCounter[key] = valueCounter
+		}
+	}
+	metadataCounter["empty_metadata"] = map[string]int64{"true": int64(len(docIDs) - len(docIDsWithMetadata))}
+	return metadataCounter, nil
+}
+
+// ListDocumentIDsByDatasetIDWithOptions lists matching document IDs without pagination.
+func (s *DocumentService) ListDocumentIDsByDatasetIDWithOptions(opts dao.DocumentListOptions) ([]string, error) {
+	return s.documentDAO.ListIDsByKBIDWithOptions(opts)
 }
 
 // GetDocumentsByAuthorID get documents by author ID
@@ -1235,8 +1308,8 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 			}
 		}
 
-		if rerunWithDelete && doc.Run != nil && *doc.Run == string(entity.TaskStatusDone) {
-			if err := s.clearKBChunkNumWhenRerun(doc); err != nil {
+		if rerunWithDelete {
+			if err := s.prepareDocumentRerunWithDelete(doc, kb.TenantID); err != nil {
 				return common.CodeExceptionError, err
 			}
 		}
@@ -1245,7 +1318,7 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 			return common.CodeExceptionError, err
 		}
 
-		if req.Delete {
+		if req.Delete && !rerunWithDelete {
 			_, _ = s.taskDAO.DeleteByDocIDs([]string{doc.ID})
 			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 			if s.docEngine != nil {
@@ -1323,6 +1396,100 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 	}
 
 	return common.CodeSuccess, nil
+}
+
+func (s *DocumentService) prepareDocumentRerunWithDelete(doc *entity.Document, tenantID string) error {
+	if doc == nil {
+		return fmt.Errorf("document is nil")
+	}
+
+	s.cancelExistingParseTasksBestEffort(doc.ID)
+
+	if _, err := s.taskDAO.DeleteByDocIDs([]string{doc.ID}); err != nil {
+		return err
+	}
+
+	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {
+		return err
+	}
+
+	if s.docEngine == nil {
+		return nil
+	}
+
+	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, doc.KbID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *DocumentService) cancelExistingParseTasksBestEffort(docID string) {
+	tasks, err := s.taskDAO.GetByDocID(docID)
+	if err != nil {
+		common.Logger.Warn(fmt.Sprintf("cancelExistingParseTasksBestEffort: failed to get tasks for %s: %v", docID, err))
+		return
+	}
+	redisClient := redis.Get()
+	if redisClient == nil {
+		return
+	}
+	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
+		redisClient.Set(fmt.Sprintf("%s-cancel", task.ID), "x", 24*time.Hour)
+	}
+}
+
+func (s *DocumentService) clearDocumentAndKBCountersForRerun(docID, kbID string) error {
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		var current entity.Document
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND kb_id = ?", docID, kbID).
+			First(&current).Error; err != nil {
+			return err
+		}
+
+		if current.TokenNum == 0 && current.ChunkNum == 0 && current.ProcessDuration == 0 {
+			return nil
+		}
+
+		result := tx.Model(&entity.Document{}).
+			Where("id = ? AND kb_id = ?", docID, kbID).
+			Updates(map[string]interface{}{
+				"token_num":        0,
+				"chunk_num":        0,
+				"process_duration": 0,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if current.TokenNum == 0 && current.ChunkNum == 0 {
+			return nil
+		}
+
+		result = tx.Model(&entity.Knowledgebase{}).
+			Where("id = ?", kbID).
+			Updates(map[string]interface{}{
+				"token_num": gorm.Expr("token_num - ?", current.TokenNum),
+				"chunk_num": gorm.Expr("chunk_num - ?", current.ChunkNum),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("knowledgebase not found")
+		}
+		return nil
+	})
 }
 
 func (s *DocumentService) countDoneDocuments(datasetID string) (int64, error) {
