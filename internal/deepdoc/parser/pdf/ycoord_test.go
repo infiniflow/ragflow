@@ -1,6 +1,6 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"math"
@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // ── Y-coordinate tests ──────────────────────────────────────────────────
@@ -16,7 +18,7 @@ import (
 // openTestingPDF opens a real PDF by name from testdata/real_pdfs/.
 // Missing fixtures are skipped (soft) rather than failing — these tests
 // require the "manual" build tag and rely on optional fixture files.
-func openTestingPDF(t *testing.T, name string) (PDFEngine, *pdfoxide.Document) {
+func openTestingPDF(t *testing.T, name string) (pdf.PDFEngine, *pdfoxide.Document) {
 	t.Helper()
 	dir := filepath.Join("testdata", "real_pdfs")
 	if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {
@@ -40,7 +42,7 @@ func TestYCoord_SameLineCharsHaveEqualBottom(t *testing.T) {
 		t.Fatal("no chars")
 	}
 
-	lines := groupCharsToLines(chars, false)
+	lines := lyt.GroupCharsToLines(chars, false)
 	for li, line := range lines {
 		if len(line) <= 1 {
 			continue

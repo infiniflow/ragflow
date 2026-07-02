@@ -736,7 +736,7 @@ func (c *CLI) Run() error {
 			// the command handlers. Don't echo that back to the operator
 			// verbatim — log the full error server-side for debugging, and
 			// show only the error type/message via a sanitized wrapper.
-			fmt.Printf("CLI error: %s\n", sanitizeCLIError(err))
+			fmt.Printf("ragflow-cli error: %s\n", sanitizeCLIError(err))
 		}
 	}
 
@@ -834,6 +834,8 @@ Commands (User Mode):
   CHAT 'provider/instance/model' 'message';              - Chat with specified model
   OPENAI_CHAT 'chat_id' 'message' [options] ;            - OpenAI-compatible chat 
                                                            (run openai_chat -h for detailed options)
+  CHAT COMPLETIONS 'question' [options] ;                - Chat completions via /api/v1/chat/completions
+                                                           (run chat completions -h for detailed options)
 
 Filesystem Commands (no quotes):
   ls [path]                    - List resources
@@ -1038,6 +1040,53 @@ Examples:
   OPENAI_CHAT 'cid' 'Hello' stream true;
   OPENAI_CHAT 'cid' 'next' system 'You are concise.' history 'user:q1;assistant:a1';
   OPENAI_CHAT 'cid' 'Hello' extra_body '{"reference":true,"metadata_condition":{"logic":"and","conditions":[{"key":"doc_type","operator":"is","value":"faq"}]}}';
+`
+	fmt.Println(help)
+}
+
+// printChatCompletionsHelp prints help for the CHAT COMPLETIONS command.
+func printChatCompletionsHelp() {
+	help := `CHAT COMPLETIONS — hit POST /api/v1/chat/completions
+
+Syntax:
+  CHAT COMPLETIONS 'question'
+       chat_id '...'
+       [session "..."] [llm "..."]
+       [system "..."] [history "..."] [history_delimiter "<char>"]
+       [temperature <float>] [max_tokens <int>] [stream <bool>]
+       [top_p <float>] [frequency_penalty <float>] [presence_penalty <float>]
+       [pass_all_history <bool>] [legacy <bool>] ;
+
+Required positional:
+  'question'  the user question
+
+Named options (any order; all optional with defaults):
+  chat_id           '...'  the dialog id (optional)
+  session           '...'  existing session/conversation id
+  llm               '...'  override the dialog's LLM
+  system            '...'  override the system prompt
+  history           '...'  prior turns: user:...;assistant:...;user:...
+  history_delimiter '...'  turn separator for history (default ';')
+  temperature       <float>  0..2  (default 0)
+  max_tokens        <int>    (default 0 = server/model default)
+  stream            <bool>   true|false  (default false)
+  top_p             <float>  0..1
+  frequency_penalty <float>  -2..2
+  presence_penalty  <float>  -2..2
+  pass_all_history  <bool>   pass all history messages
+  legacy            <bool>   use legacy SSE format
+
+Defaults:
+  stream            false
+  temperature       0
+  history_delimiter ';'
+
+Examples:
+  CHAT COMPLETIONS 'Hello, how are you?' chat_id 'cid';
+  CHAT COMPLETIONS 'Explain quantum computing' chat_id 'cid' stream true;
+  CHAT COMPLETIONS 'Next question' chat_id 'cid' session 'sess-abc123';
+  CHAT COMPLETIONS 'What about X?' chat_id 'cid' system 'You are a helpful assistant.' history 'user:Tell me about Y;assistant:Y is...';
+  CHAT COMPLETIONS 'Summarize' chat_id 'cid' llm 'Qwen/Qwen3-8B@ling@SILICONFLOW' temperature 0.7 max_tokens 512;
 `
 	fmt.Println(help)
 }

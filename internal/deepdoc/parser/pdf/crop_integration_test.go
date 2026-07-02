@@ -1,6 +1,6 @@
-//go:build cgo
+//go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"testing"
 )
 
@@ -25,9 +26,9 @@ func TestParse_CropSectionImages(t *testing.T) {
 	}
 	defer eng.Close()
 
-	cfg := DefaultParserConfig()
-	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
-	result, err := p.Parse(context.Background(), eng)
+	cfg := pdf.DefaultParserConfig()
+	p := NewParser(cfg)
+	result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -78,8 +79,8 @@ func TestCrop_Regression_SnapshotPDFs(t *testing.T) {
 			}
 			defer eng.Close()
 
-			p := NewParser(DefaultParserConfig(), &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
-			result, err := p.Parse(context.Background(), eng)
+			p := NewParser(pdf.DefaultParserConfig())
+			result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}

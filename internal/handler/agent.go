@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/engine/redis"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -68,12 +69,38 @@ type chatAgentService interface {
 	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error)
 }
 
+// documentAccessChecker is the minimal surface RerunAgent needs
+// from DocumentService. Defined as an interface (instead of taking
+// the concrete *service.DocumentService) so handler tests can
+// inject a deny-all stub without spinning up the full service
+// (DB DAOs, storage clients, …). The production *service.DocumentService
+// satisfies this interface because its Accessible signature
+// matches.
+type documentAccessChecker interface {
+	Accessible(docID, userID string) bool
+}
+
 // AgentHandler agent handler
 type AgentHandler struct {
 	agentService *service.AgentService
 	chatRunner   chatAgentService
 	fileService  agentFileService
 	loader       canvasLoader
+	// documentService is optional. Wired in cmd/server_main.go after
+	// NewAgentHandler (which doesn't take it to preserve the existing
+	// test-friendly signature). When nil, RerunAgent falls back to
+	// tenant-only authorization (i.e. cannot verify the doc, so the
+	// check is skipped — same shape as the pre-port behaviour).
+	documentService documentAccessChecker
+}
+
+// WithDocumentService injects the document service used by
+// RerunAgent to enforce DocumentService.accessible(docID, tenantID)
+// before re-running. Returns the receiver for chaining in
+// server_main wiring.
+func (h *AgentHandler) WithDocumentService(s documentAccessChecker) *AgentHandler {
+	h.documentService = s
+	return h
 }
 
 // NewAgentHandler create agent handler
@@ -110,6 +137,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 
 	keywords := c.Query("keywords")
 	canvasCategory := c.Query("canvas_category")
+	canvasType := c.Query("canvas_type")
 
 	page := 0
 	if v := c.Query("page"); v != "" {
@@ -141,6 +169,15 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 			}
 		}
 	}
+	var tags []string
+	if raw := c.Query("tags"); raw != "" {
+		for _, tag := range strings.Split(raw, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag != "" {
+				tags = append(tags, tag)
+			}
+		}
+	}
 
 	result, code, err := h.agentService.ListAgents(
 		user.ID,
@@ -151,6 +188,8 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		desc,
 		ownerIDs,
 		canvasCategory,
+		canvasType,
+		tags,
 	)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -267,17 +306,15 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 }
 
 // updateAgentRequest is the wire shape for PUT /api/v1/agents/:canvas_id.
-type updateAgentRequest struct {
-	DSL entity.JSONMap `json:"dsl"`
-}
+type updateAgentRequest map[string]interface{}
 
-// UpdateAgent writes a new draft DSL to the canvas (no version created).
-// @Summary Update Agent (Draft)
+// UpdateAgent applies a partial update to the canvas draft.
+// @Summary Update Agent
 // @Tags agents
 // @Accept json
 // @Produce json
 // @Param canvas_id path string true "canvas id"
-// @Param request body updateAgentRequest true "draft DSL payload"
+// @Param request body updateAgentRequest true "agent update payload"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id} [put]
 func (h *AgentHandler) UpdateAgent(c *gin.Context) {
@@ -292,7 +329,10 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
 		return
 	}
-	if err := h.agentService.UpdateAgent(c.Request.Context(), user.ID, canvasID, req.DSL); err != nil {
+	if req == nil {
+		req = updateAgentRequest{}
+	}
+	if err := h.agentService.UpdateAgent(c.Request.Context(), user.ID, canvasID, map[string]interface{}(req)); err != nil {
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)
 		return
@@ -656,16 +696,23 @@ func (h *AgentHandler) Prompts(c *gin.Context) {
 	})
 }
 
-// ListAgentTags GET /api/v1/agents/tags — out of scope (no test depends on
-// it); return 501 to keep the surface honest.
+// ListAgentTags list agent tags.
 func (h *AgentHandler) ListAgentTags(c *gin.Context) {
-	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
 		jsonError(c, code, msg)
 		return
 	}
+
+	rows, errCode, err := h.agentService.ListAgentTags(user.ID, strings.TrimSpace(c.Query("canvas_category")))
+	if err != nil {
+		jsonError(c, errCode, err.Error())
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
-		"data":    []string{},
+		"data":    rows,
 		"message": "success",
 	})
 }
@@ -1060,7 +1107,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// parser feeds each `data:` line directly into JSON.parse and
 	// breaks on the `e` of `event:` (browser console: "SyntaxError:
 	// Unexpected token 'e', \"event: mes\"…").
+	emitted := false
 	for ev := range events {
+		emitted = true
 		common.Debug("agent chat completions: streaming event",
 			zap.String("agent_id", req.AgentID),
 			zap.String("session_id", req.SessionID),
@@ -1076,6 +1125,29 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 			return
 		}
 	}
+	if !emitted {
+		// Canvas produced no events (e.g. empty query). Echo the
+		// session_id so the client can resume the conversation
+		// (fixes #15169). The [DONE] terminator must be emitted
+		// here explicitly because the canvas never sends a
+		// "done" event on this path.
+		common.Info("empty agent output - returning session_id",
+			zap.String("agent_id", req.AgentID),
+			zap.String("session_id", req.SessionID),
+		)
+		event := canvas.RunEvent{
+			Type:      "",
+			Data:      "{}",
+			CreatedAt: time.Now().Unix(),
+			SessionID: req.SessionID,
+		}
+		_ = service.WriteChatbotRunEvent(c.Writer, event)
+		if _, err := c.Writer.Write([]byte("data: [DONE]\n\n")); err != nil {
+			common.Debug("agent chat completions: failed to write [DONE]",
+				zap.Error(err),
+			)
+		}
+	}
 	common.Debug("agent chat completions: stream closed",
 		zap.String("agent_id", req.AgentID),
 		zap.String("session_id", req.SessionID),
@@ -1088,8 +1160,19 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 // yet; we keep the validation envelope (101 with the "required
 // argument are missing" message) so the test contract is satisfied,
 // and accept the request when all three fields are present.
+//
+// Tenant / document ownership gate (PR #15145, review round 6):
+// body.id is treated as a document ID and
+// `DocumentService.accessible(docID, user.ID)` is enforced BEFORE
+// the rerun. The gate is REQUIRED: a nil documentService turns a
+// wiring miss into an auth bypass (any caller could rerun an
+// arbitrary doc id without an ownership check), so we fail closed
+// with 500 instead of accepting the request. On denial we return
+// "Document not found." so a caller cannot probe whether a
+// document exists in another tenant.
 func (h *AgentHandler) RerunAgent(c *gin.Context) {
-	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
 		jsonError(c, code, msg)
 		return
 	}
@@ -1115,6 +1198,20 @@ func (h *AgentHandler) RerunAgent(c *gin.Context) {
 	if len(missing) > 0 {
 		jsonError(c, common.CodeArgumentError,
 			"required argument are missing: "+strings.Join(missing, ",")+"; ")
+		return
+	}
+	// Fail closed on missing dependency: a nil documentService
+	// means the handler was wired without the access checker,
+	// which would let any caller rerun an arbitrary doc id
+	// without proving ownership. Surface as a 500 so a missing
+	// dependency is loud, not silent.
+	if h.documentService == nil {
+		zap.L().Error("RerunAgent: documentService is nil; refusing request to prevent auth bypass")
+		jsonError(c, common.CodeServerError, "server misconfiguration: document service not wired")
+		return
+	}
+	if !h.documentService.Accessible(body.ID, user.ID) {
+		jsonError(c, common.CodeDataError, "Document not found.")
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

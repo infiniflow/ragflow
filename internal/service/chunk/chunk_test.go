@@ -77,6 +77,55 @@ func TestHydrateChunkVectors_NoDim(t *testing.T) {
 	// Empty vectors have dim=0 → early return. No crash.
 }
 
+func TestKnowledgebaseEmbeddingKey(t *testing.T) {
+	tenantEmbdID := int64(42)
+
+	tests := []struct {
+		name     string
+		kb       *entity.Knowledgebase
+		tenantID string
+		want     string
+	}{
+		{
+			name: "uses tenant embedding id before embd id",
+			kb: &entity.Knowledgebase{
+				EmbdID:       "shared-model",
+				TenantEmbdID: &tenantEmbdID,
+			},
+			want: "tenant:42",
+		},
+		{
+			name: "uses embd id without tenant embedding id",
+			kb: &entity.Knowledgebase{
+				EmbdID: "shared-model",
+			},
+			want: "embd:shared-model",
+		},
+		{
+			name:     "uses tenant default when embedding id is empty",
+			kb:       &entity.Knowledgebase{},
+			tenantID: "tenant-1",
+			want:     "default:tenant-1",
+		},
+		{
+			name: "ignores non-positive tenant embedding id",
+			kb: &entity.Knowledgebase{
+				EmbdID:       "shared-model",
+				TenantEmbdID: new(int64),
+			},
+			want: "embd:shared-model",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := knowledgebaseEmbeddingKey(tt.kb, tt.tenantID); got != tt.want {
+				t.Fatalf("knowledgebaseEmbeddingKey() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)

@@ -22,9 +22,41 @@ RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 # Strip symbols from Go binaries (set via --strip / -s)
 STRIP_SYMBOLS=""
 
-# office_oxide native library settings
-OFFICE_OXIDE_PREFIX="${HOME}/.office_oxide"
+# Native static library settings. These are the user-cache paths (~/ragflow-native-libs/).
+# If /opt/ragflow-native-libs/ exists (pre-seeded in CI runner image), it takes priority
+# and skips the network (download_deps.py) fallback.
+SYSTEM_DEPS="/opt/ragflow-native-libs"
+
+# office_oxide native library settings — static linking
+OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
 OFFICE_OXIDE_VERSION="0.1.2"
+
+# pdfium native library settings — static linking (kognitos/pdfium-static)
+PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"
+PDFIUM_STATIC_VERSION="7809"
+
+# pdf_oxide native library settings — static linking (go-ffi tarball)
+PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide"
+PDF_OXIDE_VERSION="0.3.67"
+
+# Copy a dependency from the system pre-seed directory to the user cache.
+# Returns 0 if the dep was copied or already exists in cache, 1 otherwise.
+_seed_from_system() {
+    local dep_name="$1"  # e.g. "pdfium-static", "pdf_oxide", "office_oxide"
+    local dep_dir="${HOME}/ragflow-native-libs/${dep_name}"
+    local sys_dir="${SYSTEM_DEPS}/${dep_name}"
+
+    if [ -d "$dep_dir" ]; then
+        return 0  # already cached
+    fi
+    if [ -d "$sys_dir" ]; then
+        echo "  ${dep_name} → ${sys_dir} (system)"
+        mkdir -p "$(dirname "$dep_dir")"
+        cp -r "$sys_dir" "$dep_dir"
+        return 0
+    fi
+    return 1
+}
 
 echo -e "${GREEN}=== RAGFlow Go Server Build Script ===${NC}"
 
@@ -103,7 +135,7 @@ check_cpp_deps() {
 
 check_go_deps() {
     print_section "Checking go dependencies"
-    
+
     command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
 
     echo "✓ Required tools are available"
@@ -130,14 +162,9 @@ _download_and_extract() {
 # Check / install office_oxide native library (Rust → C FFI library)
 check_office_oxide_deps() {
     print_section "Checking office_oxide native library"
+    _seed_from_system "office_oxide"
 
-    local lib_file header_path
-    case "$(uname -s)" in
-        Linux)  lib_file="liboffice_oxide.so" ;;
-        Darwin) lib_file="liboffice_oxide.dylib" ;;
-        *)      echo -e "${RED}Unsupported OS for office_oxide${NC}"; exit 1 ;;
-    esac
-
+    local lib_file="liboffice_oxide.a"
     local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
     local header_path="${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
 
@@ -146,60 +173,87 @@ check_office_oxide_deps() {
         return 0
     fi
 
-    echo "office_oxide native library not found. Installing..."
+    echo -e "${RED}Error: office_oxide native library not found${NC}"
+    echo "  Expected: ${lib_path}"
+    echo "  Run: uv run download_deps.py"
+    echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
+    exit 1
+}
 
-    # Map platform to the release asset name. Note: the GitHub release archives
-    # omit the version number from the native-* asset filenames.
-    local asset_name
+# Check pdfium static library (must be pre-installed via download_deps.py or CI image).
+check_pdfium_deps() {
+    _seed_from_system "pdfium-static"
+    local lib_path="${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
+
+    if [ -f "$lib_path" ]; then
+        echo "  pdfium (static) → ${PDFIUM_STATIC_PREFIX}"
+        return 0
+    fi
+
+    echo "  pdfium (static) not found"
+    echo "  Expected: ${lib_path}"
+    echo "  Run: uv run download_deps.py"
+    echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/pdfium-linux-x64-static.tgz | tar xz -C ${PDFIUM_STATIC_PREFIX}"
+    return 1
+}
+
+# Check / install pdf_oxide static library (go-ffi tarball from GitHub Release).
+check_pdf_oxide_deps() {
+    _seed_from_system "pdf_oxide"
+    # Map platform to tarball-internal subdirectory.
+    local platform_subdir
     case "$(uname -s)" in
         Linux)
             case "$(uname -m)" in
-                x86_64)  asset_name="native-linux-x86_64" ;;
-                aarch64|arm64) asset_name="native-linux-aarch64" ;;
-                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; exit 1 ;;
+                x86_64)  platform_subdir="linux_amd64" ;;
+                aarch64|arm64) platform_subdir="linux_arm64" ;;
+                *) echo "  pdf_oxide (static) → unsupported arch"; return 1 ;;
             esac
             ;;
         Darwin)
             case "$(uname -m)" in
-                x86_64)  asset_name="native-macos-x86_64" ;;
-                aarch64|arm64) asset_name="native-macos-aarch64" ;;
-                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; exit 1 ;;
+                x86_64)  platform_subdir="darwin_amd64" ;;
+                arm64)   platform_subdir="darwin_arm64" ;;
+                *) echo "  pdf_oxide (static) → unsupported arch"; return 1 ;;
             esac
             ;;
+        *) echo "  pdf_oxide (static) → unsupported OS"; return 1 ;;
     esac
 
-    local release_url="https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/${asset_name}.tar.gz"
+    local lib_path="${PDF_OXIDE_PREFIX}/lib/${platform_subdir}/libpdf_oxide.a"
 
-    mkdir -p "${OFFICE_OXIDE_PREFIX}"
-    _download_and_extract "$release_url" "${OFFICE_OXIDE_PREFIX}"
-
-    if [ ! -f "$lib_path" ]; then
-        echo -e "${RED}Error: Failed to install office_oxide native library (missing ${lib_path})${NC}"
-        echo "  Try: curl -fsSL ${release_url} | tar xzf - -C ${OFFICE_OXIDE_PREFIX}"
-        exit 1
+    if [ -f "$lib_path" ]; then
+        echo "  pdf_oxide (static) → ${PDF_OXIDE_PREFIX}"
+        return 0
     fi
 
-    echo -e "${GREEN}✓ office_oxide native library installed${NC}"
+    echo "  pdf_oxide (static) not found"
+    echo "  Expected: ${lib_path}"
+    echo "  Run: uv run download_deps.py"
+    echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz | tar xz -C ${PDF_OXIDE_PREFIX}"
+    return 1
 }
 
 # Build C++ static library
 build_cpp() {
     print_section "Building C++ static library"
-    
+
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR"
-    
+
     echo "Running cmake..."
     cmake .. -DCMAKE_BUILD_TYPE=Release
-    
+
     echo "Building librag_tokenizer_c_api.a..."
-    make rag_tokenizer_c_api -j$(nproc)
-    
+    local jobs
+    jobs="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
+    make rag_tokenizer_c_api -j"$jobs"
+
     if [ ! -f "$BUILD_DIR/librag_tokenizer_c_api.a" ]; then
         echo -e "${RED}Error: Failed to build C++ static library${NC}"
         exit 1
     fi
-    
+
     echo -e "${GREEN}✓ C++ static library built successfully${NC}"
 }
 
@@ -217,7 +271,9 @@ build_cpp_test() {
     fi
 
     echo "Building rag_analyzer_c_test..."
-    make rag_analyzer_c_test -j$(nproc)
+    local jobs
+    jobs="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
+    make rag_analyzer_c_test -j"$jobs"
 
     if [ ! -f "$BUILD_DIR/rag_analyzer_c_test" ]; then
         echo -e "${RED}Error: Failed to build rag_analyzer_c_test${NC}"
@@ -296,17 +352,70 @@ build_go() {
     echo -e "${GREEN}✓ Go ingestor built successfully: $INGESTOR_BINARY${NC}"
 }
 
-# Configure CGO flags for the office_oxide native library and the runtime
-# rpath used by test binaries. Call before any `go build` / `go test` step
-# that links against office_oxide.
+# Configure CGO flags for native libraries (office_oxide, pdfium, pdf_oxide).
+# All three are statically linked — no LD_LIBRARY_PATH or -Wl,-rpath needed.
 setup_cgo_env() {
+    # ── office_oxide ──────────────────────────────────────────────────
     check_office_oxide_deps
     export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
-    echo "Exporting CGO_CFLAGS: $CGO_CFLAGS"
-    export CGO_LDFLAGS="-L${OFFICE_OXIDE_PREFIX}/lib -loffice_oxide -Wl,-rpath,${OFFICE_OXIDE_PREFIX}/lib${CGO_LDFLAGS:+ $CGO_LDFLAGS}"
-    echo "Exporting CGO_LDFLAGS: $CGO_LDFLAGS"
-    # Make the .so discoverable to test binaries spawned without rpath.
-    export LD_LIBRARY_PATH="${OFFICE_OXIDE_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export CGO_LDFLAGS="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+
+    # ── pdfium ────────────────────────────────────────────────────────
+    check_pdfium_deps || return 1
+    export CGO_LDFLAGS="$CGO_LDFLAGS ${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
+    # Linux: Chromium-built objects use Clang's .eh_frame format which GNU ld
+    # cannot merge. Use lld (LLVM linker) which handles them correctly.
+    # --allow-multiple-definition: pdf_oxide and office_oxide are both Rust
+    # staticlibs that embed the Rust runtime; linking them together produces
+    # duplicate rust_eh_personality symbols.
+    if [ "$(uname -s)" = "Linux" ]; then
+        if ! command -v ld.lld >/dev/null 2>&1; then
+            echo -e "${RED}Error: ld.lld not found. Install with: sudo apt install lld-20${NC}"
+            echo "  lld is required to static-link Chromium-built pdfium (.eh_frame format)"
+            return 1
+        fi
+        export CGO_LDFLAGS="$CGO_LDFLAGS \
+            ${PDFIUM_STATIC_PREFIX}/lib/libc++.a \
+            ${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a \
+            -fuse-ld=lld -Wl,--allow-multiple-definition"
+    fi
+
+    # ── pdf_oxide ─────────────────────────────────────────────────────
+    check_pdf_oxide_deps || return 1
+    # The go-ffi tarball places the .a under lib/<platform_subdir>/.
+    local pdf_oxide_subdir
+    case "$(uname -s)" in
+        Linux)
+            case "$(uname -m)" in
+                x86_64)  pdf_oxide_subdir="linux_amd64" ;;
+                aarch64|arm64) pdf_oxide_subdir="linux_arm64" ;;
+                *) echo "pdf_oxide: unsupported arch"; return 1 ;;
+            esac
+            ;;
+        Darwin)
+            case "$(uname -m)" in
+                x86_64)  pdf_oxide_subdir="darwin_amd64" ;;
+                arm64)   pdf_oxide_subdir="darwin_arm64" ;;
+                *) echo "pdf_oxide: unsupported arch"; return 1 ;;
+            esac
+            ;;
+    esac
+    export CGO_LDFLAGS="$CGO_LDFLAGS ${PDF_OXIDE_PREFIX}/lib/${pdf_oxide_subdir}/libpdf_oxide.a"
+
+    # ── platform-specific system libraries ────────────────────────────
+    case "$(uname -s)" in
+        Linux)
+            export CGO_LDFLAGS="$CGO_LDFLAGS -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
+            ;;
+        Darwin)
+            export CGO_LDFLAGS="$CGO_LDFLAGS \
+                -framework CoreFoundation -framework Security \
+                -framework SystemConfiguration -liconv -lresolv"
+            ;;
+    esac
+
+    echo "CGO_CFLAGS:   $CGO_CFLAGS"
+    echo "CGO_LDFLAGS:  $CGO_LDFLAGS"
 }
 
 # Run Go unit tests with the same CGO env as `build_go`. Pass any extra args
@@ -328,7 +437,7 @@ run_go_tests() {
 # Clean build artifacts
 clean() {
     print_section "Cleaning build artifacts"
-    
+
     rm -rf "$BUILD_DIR"
     rm -f "$RAGFLOW_SERVER_BINARY"
     rm -f "$ADMIN_SERVER_BINARY"

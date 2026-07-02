@@ -9,6 +9,28 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.26.3
+
+Released on July 2, 2026.
+
+### New features
+
+- Data source connector: Introduces Google BigQuery as a data source connector for document ingestion and incremental syncing. [#15871](https://github.com/infiniflow/ragflow/pull/15871)
+- MCP: Adds two MCP tools `ragflow_list_datasets` and `ragflow_list_chats` to the RAGFlow MCP server. [#15384](https://github.com/infiniflow/ragflow/pull/15384)
+- File ingestion
+  - Integrates the layout-aware SoMark OCR parser into the system for extracting and indexing complex document elements like tables and figures. [#16482](https://github.com/infiniflow/ragflow/pull/16482)
+  - API: Exposes the [Ingest documents](./references/http_api_reference.md#ingest-documents) endpoint for processing documents using a customized pipeline. [#16395](https://github.com/infiniflow/ragflow/pull/16395)
+
+### Improvements
+
+- Backend: Introduces partial success handling for batch document uploads, ensuring that a single failed file no longer causes the entire batch to be discarded. [#16438](https://github.com/infiniflow/ragflow/pull/16438)
+- UI/UX: Refactors the global header to dynamically switch between a full desktop navigation bar and a mobile-friendly side drawer based on available screen space, resolving overlapping issues and significantly improving the mobile user experience. [#15984](https://github.com/infiniflow/ragflow/pull/15984)
+
+### Bug fixes
+
+- After setting up the Ollama provider, the system returned the error: 'Failed to access model(name) using this api key'. [#16519](https://github.com/infiniflow/ragflow/pull/16519)
+- Deleting a user/assistant chat message pair mistakenly removed the previous conversation turn's reference due to an index misalignment. [#16436](https://github.com/infiniflow/ragflow/pull/16436)
+
 ## v0.26.2
 
 Released on June 29, 2026.
@@ -46,7 +68,7 @@ Released on June 29, 2026.
 - Dataflow
   - Restores the dataflow rerun endpoint and ensures the ingestion response includes the DSL payload to reliably render the timeline and parser views. [#16292](https://github.com/infiniflow/ragflow/pull/16292)
   - Restores dataflow parser defaults and returns the actual SSE payload, ensuring pipeline runs correctly surface message IDs and log updates. [#16290](https://github.com/infiniflow/ragflow/pull/16290)
-- LLM: Failed to use the new `gemini-3.5-flash` model via the Google Cloud (Vertex AI) provider using `eu` or `us` region endpoint. This is resolved by explicitly multi-region routing requests to the required `aiplatform.<region>.rep.googleapis.com` domains instead of synthesized `<region>-aiplatform.googleapis.com` hosts. [#15990](https://github.com/infiniflow/ragflow/pull/15990)
+- LLM: Failed to use the new `gemini-3.5-flash` model via the Google Cloud (Vertex AI) provider using `eu` or `us` region endpoint. This is resolved by explicitly routing multi-region requests to the required `aiplatform.<region>.rep.googleapis.com` domains instead of the synthesized `<region>-aiplatform.googleapis.com` hosts. [#15990](https://github.com/infiniflow/ragflow/pull/15990)
 - UI/UX: The metadata add modal sent empty values to the backend. [#15229](https://github.com/infiniflow/ragflow/pull/15229)
 
 ## v0.26.1
