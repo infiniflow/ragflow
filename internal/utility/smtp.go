@@ -14,16 +14,6 @@
 //  limitations under the License.
 //
 
-// Minimal SMTP sender for transactional email (forgot-password OTP, etc).
-// Mirrors api/utils/web_utils.py:send_email_html on the Python side and
-// uses the same conf/service_conf.yaml `smtp` block so a single config
-// powers both backends.
-//
-// The config is passed in as a parameter rather than read via
-// server.GetConfig() — internal/server already imports internal/utility
-// (via variable.go), so importing server from here would close an
-// import cycle. The SMTPConfig type lives in internal/common for the
-// same reason.
 package utility
 
 import (
@@ -44,7 +34,7 @@ import (
 type SMTPNotConfiguredError struct{}
 
 func (SMTPNotConfiguredError) Error() string {
-	return "smtp is not configured"
+	return "SMTP is not configured"
 }
 
 // SMTPInsecureAuthError is returned when authentication is requested over
@@ -53,7 +43,7 @@ func (SMTPNotConfiguredError) Error() string {
 type SMTPInsecureAuthError struct{}
 
 func (SMTPInsecureAuthError) Error() string {
-	return "smtp authentication refused over plaintext connection (set mail_use_ssl or mail_use_tls)"
+	return "SMTP authentication refused over plaintext connection (set mail_use_ssl or mail_use_tls)"
 }
 
 // SendResetCodeEmail delivers the password-reset OTP email. It is the Go
@@ -92,7 +82,7 @@ func SendResetCodeEmail(cfg common.SMTPConfig, toEmail, otp string, ttlMinutes i
 
 	msg := buildPlainEmail(fromHeader, toEmail, subject, body)
 	if err := sendMail(cfg, fromAddr, toEmail, msg); err != nil {
-		common.Warn("smtp send failed",
+		common.Warn("SMTP send failed",
 			zap.String("to", toEmail),
 			zap.String("server", cfg.MailServer),
 			zap.Int("port", cfg.MailPort),
@@ -140,17 +130,17 @@ func sendMail(cfg common.SMTPConfig, from, to string, msg []byte) error {
 		}
 		conn, err := tls.Dial("tcp", addr, tlsCfg)
 		if err != nil {
-			return fmt.Errorf("smtp tls dial: %w", err)
+			return fmt.Errorf("SMTP tls dial: %w", err)
 		}
 		client, err := smtp.NewClient(conn, cfg.MailServer)
 		if err != nil {
 			conn.Close()
-			return fmt.Errorf("smtp client init: %w", err)
+			return fmt.Errorf("SMTP client init: %w", err)
 		}
 		defer client.Quit()
 		if cfg.MailUsername != "" {
-			if err := client.Auth(auth); err != nil {
-				return fmt.Errorf("smtp auth: %w", err)
+			if err = client.Auth(auth); err != nil {
+				return fmt.Errorf("SMTP auth: %w", err)
 			}
 		}
 		return deliverMail(client, from, to, msg)
@@ -159,7 +149,7 @@ func sendMail(cfg common.SMTPConfig, from, to string, msg []byte) error {
 	// STARTTLS (typical port 587) or plain (auth refused above).
 	client, err := smtp.Dial(addr)
 	if err != nil {
-		return fmt.Errorf("smtp dial: %w", err)
+		return fmt.Errorf("SMTP dial: %w", err)
 	}
 	defer client.Quit()
 	if cfg.MailUseTLS {
@@ -167,12 +157,12 @@ func sendMail(cfg common.SMTPConfig, from, to string, msg []byte) error {
 			ServerName: cfg.MailServer,
 			MinVersion: tls.VersionTLS12,
 		}
-		if err := client.StartTLS(tlsCfg); err != nil {
-			return fmt.Errorf("smtp starttls: %w", err)
+		if err = client.StartTLS(tlsCfg); err != nil {
+			return fmt.Errorf("SMTP starttls: %w", err)
 		}
 		if cfg.MailUsername != "" {
-			if err := client.Auth(auth); err != nil {
-				return fmt.Errorf("smtp auth: %w", err)
+			if err = client.Auth(auth); err != nil {
+				return fmt.Errorf("SMTP auth: %w", err)
 			}
 		}
 	}
@@ -182,26 +172,26 @@ func sendMail(cfg common.SMTPConfig, from, to string, msg []byte) error {
 
 func deliverMail(client *smtp.Client, from, to string, msg []byte) error {
 	if err := client.Mail(from); err != nil {
-		return fmt.Errorf("smtp mail-from: %w", err)
+		return fmt.Errorf("SMTP mail-from: %w", err)
 	}
 	if err := client.Rcpt(to); err != nil {
-		return fmt.Errorf("smtp rcpt-to: %w", err)
+		return fmt.Errorf("SMTP rcpt-to: %w", err)
 	}
 	w, err := client.Data()
 	if err != nil {
-		return fmt.Errorf("smtp data: %w", err)
+		return fmt.Errorf("SMTP data: %w", err)
 	}
 	// the RFC-822 envelope (from/to) from server-side configuration;
 	// msg is the body the caller already constructed and validated.
 	// Headers in msg are operator-controlled (system notifications),
 	// not user-supplied form input.
 	// codeql[go/email-injection] False positive: deliverMail builds
-	if _, err := w.Write(msg); err != nil {
+	if _, err = w.Write(msg); err != nil {
 		w.Close()
-		return fmt.Errorf("smtp write: %w", err)
+		return fmt.Errorf("SMTP write: %w", err)
 	}
-	if err := w.Close(); err != nil {
-		return fmt.Errorf("smtp close: %w", err)
+	if err = w.Close(); err != nil {
+		return fmt.Errorf("SMTP close: %w", err)
 	}
 	return nil
 }

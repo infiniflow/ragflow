@@ -320,7 +320,7 @@ type fakeAgentService struct {
 
 // agentServiceIface is the minimum interface the handler depends on.
 type agentServiceIface interface {
-	ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*service.ListAgentsResponse, common.ErrorCode, error)
+	ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*service.ListAgentsResponse, common.ErrorCode, error)
 	ListTemplates() ([]*entity.CanvasTemplate, error)
 }
 
@@ -335,7 +335,7 @@ func (h *agentHandlerTestable) listAgents(c *gin.Context) {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
-	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "")
+	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "", nil)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": code, "data": false, "message": err.Error()})
 		return
@@ -359,7 +359,7 @@ func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": templates, "message": "success"})
 }
 
-func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*service.ListAgentsResponse, common.ErrorCode, error) {
+func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
 	return f.result, f.code, f.err
 }
 
@@ -429,7 +429,7 @@ type fullFakeAgentService struct {
 	versions []*entity.UserCanvasVersion
 }
 
-func (f *fullFakeAgentService) ListAgents(string, string, int, int, string, bool, []string, string) (*service.ListAgentsResponse, common.ErrorCode, error) {
+func (f *fullFakeAgentService) ListAgents(string, string, int, int, string, bool, []string, string, []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
 	return &service.ListAgentsResponse{}, common.CodeSuccess, nil
 }
 func (f *fullFakeAgentService) CreateAgent(context.Context, *service.CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
@@ -441,7 +441,7 @@ func (f *fullFakeAgentService) GetAgent(context.Context, string, string) (*entit
 	}
 	return f.getRow, nil
 }
-func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, entity.JSONMap) error {
+func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, map[string]interface{}) error {
 	return nil
 }
 func (f *fullFakeAgentService) DeleteAgent(context.Context, string, string) error {
