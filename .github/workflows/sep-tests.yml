@@ -307,7 +307,7 @@ jobs:
           uv pip install -e sdk/python
 
       - name: Prepare function test environment
-        if: env.HAS_PYTHON == 'true'
+        if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
         working-directory: docker
         run: |
           set -euo pipefail
@@ -764,7 +764,7 @@ jobs:
           uv pip install -e sdk/python
 
       - name: Prepare function test environment
-        if: env.HAS_PYTHON == 'true'
+        if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
         working-directory: docker
         run: |
           set -euo pipefail
