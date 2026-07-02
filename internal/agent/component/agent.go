@@ -396,7 +396,10 @@ func (c *AgentComponent) Name() string { return "Agent" }
 // the output map.
 func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	p := mergeAgentParam(c.param, inputs)
-	hasRuntimeUserPrompt := hasNonEmptyString(inputs, "user_prompt")
+	hasRuntimeUserPrompt := false
+	if v, ok := stringFrom(inputs, "user_prompt"); ok {
+		hasRuntimeUserPrompt = !shouldFallbackToSysQuery(v)
+	}
 
 	// v3.6.1: derive the driver and bare model name from the
 	// composite llm_id when the Agent DSL didn't set `driver`. The
@@ -829,9 +832,11 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	}
 	if promptSystem, promptUser, ok := promptMessagesFromParams(inputs); ok {
 		p.SystemPrompt = appendPromptText(p.SystemPrompt, promptSystem)
-		p.UserPrompt = promptUser
+		if strings.TrimSpace(promptUser) != "" {
+			p.UserPrompt = promptUser
+		}
 	}
-	if v, ok := stringFrom(inputs, "user_prompt"); ok {
+	if v, ok := stringFrom(inputs, "user_prompt"); ok && !shouldFallbackToSysQuery(v) {
 		p.UserPrompt = v
 	}
 	if v, ok := floatFrom(inputs, "top_p"); ok {
