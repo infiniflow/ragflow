@@ -51,9 +51,10 @@ def set_llm_request_context(session_id: str | None = None, user_id: str | None =
 def reset_llm_request_context(token) -> None:
     try:
         llm_request_context.reset(token)
-    except ValueError:
+    except (ValueError, RuntimeError):
         # The context may be reset from a different context (e.g. an async generator
-        # closed on client disconnect); fall back to clearing the value.
+        # closed on client disconnect -> ValueError) or with an already-consumed
+        # token (Python 3.13+ -> RuntimeError); fall back to clearing the value.
         logging.debug("LLM request context reset failed; clearing active context", exc_info=True)
         llm_request_context.set(None)
 
