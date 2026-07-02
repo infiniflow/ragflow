@@ -20,16 +20,36 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"ragflow/internal/dao"
-	"ragflow/internal/engine"
-	"ragflow/internal/entity"
+	"strings"
 	"sync"
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	doctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/engine"
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/parser"
+	"ragflow/internal/storage"
 
 	"google.golang.org/grpc"
 )
+
+// pdfParser is the interface for PDF parsing, made injectable for tests.
+type pdfParser interface {
+	ParseWithDeepDoc(ctx context.Context, filename string, data []byte, config doctype.ParserConfig) ([]map[string]any, error)
+}
+
+// DAO interfaces — injectable for tests.
+type docGetter interface {
+	GetByID(id string) (*entity.Document, error)
+}
+type f2dGetter interface {
+	GetByDocumentID(docID string) ([]*entity.File2Document, error)
+}
+type fileGetter interface {
+	GetByID(id string) (*entity.File, error)
+}
 
 type Ingestor struct {
 	id          string
@@ -61,6 +81,13 @@ type Ingestor struct {
 	ingestionTaskLogDAO    *dao.IngestionTaskLogDAO
 	ingestionTaskletDAO    *dao.IngestionTaskletDAO
 	ingestionTaskletLogDAO *dao.IngestionTaskletLogDAO
+
+	// Injected dependencies for parseDocument (overridable in tests)
+	documentDAO docGetter
+	f2dDAO      f2dGetter
+	fileDAO     fileGetter
+	storageImpl storage.Storage
+	pdfParser   pdfParser
 }
 
 type TaskLog struct {
@@ -550,29 +577,24 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 		common.Fatal(fmt.Sprintf("Failed to get current step from task log for task %s", task.ID))
 		return
 	}
-	for i := currentStep; i < totalStep; i++ {
-		select {
-		case <-ctx.Done():
-			// Task canceled
-			common.Info(fmt.Sprintf("Task %s stopped", task.ID))
-			return
-		case <-time.After(5000 * time.Millisecond):
-			common.Info(fmt.Sprintf("Task %s is running step %d", task.ID, i))
-			checkpointMap["current_step"] = i + 1
-			latestLog.Checkpoint = checkpointMap
-			latestLog.ID++
-			err = latestLog.UpdateCreateDateAndTime()
-			if err != nil {
-				common.Error(fmt.Sprintf("Failed to update date and time of task log for task %s", task.ID), err)
-				return
-			}
+	// Bump checkpoint to signal we started processing
+	checkpointMap["current_step"] = currentStep + 1
+	latestLog.Checkpoint = checkpointMap
+	_ = totalStep // unused in this temporary integration
 
-			err = e.ingestionTaskLogDAO.Create(latestLog)
-			if err != nil {
-				common.Error(fmt.Sprintf("Failed to create task log for task %s", task.ID), err)
-				return
-			}
+	// Run parseDocument (temporary hardcode, replaces sleep loop)
+	select {
+	case <-ctx.Done():
+		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
+		return
+	default:
+	}
+	if err := e.parseDocument(ctx, task); err != nil {
+		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
+		if uErr := e.ingestionTaskDAO.UpdateStatus(task.ID, common.FAILED); uErr != nil {
+			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
 		}
+		return
 	}
 
 	err = e.ingestionTaskDAO.UpdateStatus(task.ID, common.COMPLETED)
@@ -582,6 +604,99 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 	}
 
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
+}
+
+// parseDocument is a temporary hardcoded method that loads a document from
+// storage and runs PDF parsing via ParseWithDeepDoc, logging the results.
+// Will be replaced by the proper chunking pipeline.
+func (e *Ingestor) parseDocument(ctx context.Context, task *entity.IngestionTask) error {
+	// 1. Load document record
+	docDAO := e.documentDAO
+	if docDAO == nil {
+		docDAO = dao.NewDocumentDAO()
+	}
+	doc, err := docDAO.GetByID(task.DocumentID)
+	if err != nil {
+		return fmt.Errorf("load document %s: %w", task.DocumentID, err)
+	}
+	if doc.Name == nil || doc.Location == nil {
+		return fmt.Errorf("document %s has no name or location", task.DocumentID)
+	}
+	common.Info(fmt.Sprintf("Processing: %s (type=%s parser=%s)", *doc.Name, doc.Type, doc.ParserID))
+
+	// 2. Resolve storage path: prefer File2Document → File chain, fall back to doc.Location
+	bucket, objectName := "", *doc.Location
+	f2dDAO := e.f2dDAO
+	if f2dDAO == nil {
+		f2dDAO = dao.NewFile2DocumentDAO()
+	}
+	mappings, f2dErr := f2dDAO.GetByDocumentID(doc.ID)
+	if f2dErr == nil && len(mappings) > 0 && mappings[0].FileID != nil {
+		fileDAO := e.fileDAO
+		if fileDAO == nil {
+			fileDAO = dao.NewFileDAO()
+		}
+		file, fErr := fileDAO.GetByID(*mappings[0].FileID)
+		if fErr == nil && file.Location != nil && *file.Location != "" {
+			bucket = file.ParentID
+			objectName = *file.Location
+		}
+	}
+
+	// 3. Fetch binary from storage
+	storageImpl := e.storageImpl
+	if storageImpl == nil {
+		storageImpl = storage.GetStorageFactory().GetStorage()
+	}
+	if storageImpl == nil {
+		return fmt.Errorf("storage not initialized")
+	}
+	data, err := storageImpl.Get(bucket, objectName)
+	if err != nil {
+		return fmt.Errorf("get file from storage (%s/%s): %w", bucket, objectName, err)
+	}
+	common.Info(fmt.Sprintf("Fetched %d bytes from storage", len(data)))
+
+	// 4. Only PDF parsing for now (hardcoded)
+	if !strings.EqualFold(doc.Type, "pdf") && !strings.HasSuffix(strings.ToLower(doc.Suffix), ".pdf") {
+		common.Info(fmt.Sprintf("Skipping non-PDF: type=%s suffix=%s", doc.Type, doc.Suffix))
+		return nil
+	}
+
+	// FIXME: change hardcoded PDF parser to actual implement
+	p := e.pdfParser
+	if p == nil {
+		p = parser.NewPDFParser()
+	}
+	// TODO: use p.Parse instead of ParseWithDeepDoc when p.Parse is ready
+	sections, err := p.ParseWithDeepDoc(ctx, *doc.Name, data, doctype.DefaultParserConfig())
+	if err != nil {
+		return fmt.Errorf("pdf parse: %w", err)
+	}
+	common.Info(fmt.Sprintf("PDF parsed: %d sections", len(sections)))
+
+	// 5. Convert parsed sections to chunks
+	chunks := prepareDocs(sections, doc.ID, doc.KbID, *doc.Name, 0)
+
+	// 6. Upload chunk images to storage
+	putFn := func(bucket, fnm string, binary []byte) error {
+		return storageImpl.Put(bucket, fnm, binary)
+	}
+	if err := UploadChunkImages(sections, chunks, doc.KbID, putFn); err != nil {
+		return fmt.Errorf("upload chunk images: %w", err)
+	}
+
+	// 7. Log chunk summary
+	common.Info(fmt.Sprintf("Generated %d chunks", len(chunks)))
+	for i, c := range chunks {
+		common.Info(fmt.Sprintf("  [%d] %s", i, c.String()))
+		if i >= 5 {
+			common.Info(fmt.Sprintf("  ... and %d more chunks", len(chunks)-i-1))
+			break
+		}
+	}
+
+	return nil
 }
 
 func (e *Ingestor) executeTasklet(taskCtx *TaskContext) {

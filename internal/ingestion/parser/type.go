@@ -16,40 +16,6 @@
 
 package parser
 
-import (
-	"fmt"
-	"ragflow/internal/utility"
-)
-
-func GetParser(fileType utility.FileType, config map[string]string) (FileParser, error) {
-	libType, ok := config["lib_type"]
-	if !ok {
-		return nil, fmt.Errorf("missing lib_type config")
-	}
-	switch fileType {
-	case utility.FileTypePPTX:
-		return NewPPTXParser(libType)
-	case utility.FileTypePPT:
-		return NewPPTParser(libType)
-	case utility.FileTypeXLSX:
-		return NewXLSXParser(libType)
-	case utility.FileTypeXLS:
-		return NewXLSParser(libType)
-	case utility.FileTypeDOCX:
-		return NewDOCXParser(libType)
-	case utility.FileTypeDOC:
-		return NewDOCParser(libType)
-	case utility.FileTypePDF:
-		return NewPDFParser(), nil
-	case utility.FileTypeHTML:
-		return NewHTMLParser(Official)
-	case utility.FileTypeMarkdown:
-		return NewMarkdownParser(GoMarkdown)
-	default:
-		return nil, fmt.Errorf("unsupported file type: %s", fileType)
-	}
-}
-
 // FileParser defines the interface for all file parsers.
 type FileParser interface {
 	// Parse parses the input text.
