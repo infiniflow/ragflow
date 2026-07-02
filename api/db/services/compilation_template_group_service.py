@@ -14,8 +14,6 @@
 #  limitations under the License.
 #
 
-import logging
-
 from peewee import fn
 
 from api.db.db_models import DB, CompilationTemplate, CompilationTemplateGroup

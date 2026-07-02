@@ -708,7 +708,8 @@ class FileCommitService(CommonService):
         if not diff_text:
             return None
 
-        final_title = (title or "").strip() or f"Edit {slug}"
+        title_ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        final_title = f"{(title or '').strip() or f'Edit {slug}'} {title_ts}"
         commit_id = get_uuid()
         item_id = get_uuid()
         file_id = _artifact_file_id(kb_id, slug)

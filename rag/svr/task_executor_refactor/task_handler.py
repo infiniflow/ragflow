@@ -23,12 +23,7 @@ for handling document processing tasks with refactored, testable methods.
 import asyncio
 import logging
 import json
-import re
 
-import numpy as np
-
-from common.token_utils import num_tokens_from_string
-from api.apps.restful_apis.chunk_api import _compilation_template_kind
 # Wiki / artifact compilation pipeline lives in
 # ``rag.svr.task_executor_refactor.dataset_wiki_generator`` — see the
 # ``task_type == "artifact"`` branch of ``TaskHandler.run`` for the
@@ -41,9 +36,8 @@ import xxhash
 from timeit import default_timer as timer
 from typing import AsyncIterator, Callable, Dict, List, Optional
 
-from api.db.services.document_service import DocumentService, queue_per_doc_raptor_task
+from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.compilation_template_service import CompilationTemplateService
 from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
 from api.db.joint_services.tenant_model_service import (
@@ -51,7 +45,7 @@ from api.db.joint_services.tenant_model_service import (
     get_model_config_from_provider_instance
 )
 from api.db.services.llm_service import LLMBundle
-from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, clear_doc_chunking_counter, credit_doc_chunking_task
+from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, clear_doc_chunking_counter
 from common.constants import LLMType
 from common.exceptions import TaskCanceledException
 from common.connection_utils import timeout

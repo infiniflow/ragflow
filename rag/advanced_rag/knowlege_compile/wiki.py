@@ -39,7 +39,7 @@ import re
 from typing import Callable, Optional
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
-from rag.prompts.generator import gen_json, message_fit_in, split_chunks
+from rag.prompts.generator import gen_json, message_fit_in
 
 import xxhash as _xxhash
 
@@ -373,6 +373,24 @@ def _wiki_colon_join(fields: list, left_key: str, right_key: str) -> str:
     return "\n".join(values)
 
 
+def _wiki_named_field_description(fields: list, name: str) -> str:
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        field_name = field.get("name")
+        field_name = field_name.strip().lower() if isinstance(field_name, str) else ""
+        if field_name == name:
+            description = field.get("description")
+            description = description.strip() if isinstance(description, str) else ""
+            if description:
+                return description
+        legacy = field.get(name)
+        legacy = legacy.strip() if isinstance(legacy, str) else ""
+        if legacy:
+            return legacy
+    return ""
+
+
 def _wiki_template_custom_rules(parser_config) -> str:
     if not isinstance(parser_config, dict):
         return ""
@@ -399,8 +417,8 @@ def _wiki_build_user_prompt(
     relation_type_rules = _wiki_type_rules(rel_fields)
     concept_term = _wiki_pipe_join(concept_fields, "term")
     concept_definition_excerpt = _wiki_colon_join(concept_fields, "term", "definition_excerpt")
-    claim_statement = _wiki_pipe_join(claim_fields, "subject")
-    claim_subject = _wiki_colon_join(claim_fields, "subject", "subject")
+    claim_statement = _wiki_named_field_description(claim_fields, "statement")
+    claim_subject = _wiki_named_field_description(claim_fields, "subject")
     custom_rules = _wiki_template_custom_rules(parser_config)
 
     if isinstance(parser_config, dict):

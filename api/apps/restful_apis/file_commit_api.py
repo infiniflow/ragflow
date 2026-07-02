@@ -16,19 +16,11 @@
 
 import logging
 from functools import wraps
-
 from quart import request
-
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_json_result, get_data_error_result, get_request_json, server_error_response, validate_request
-
-# manager is injected dynamically by api.apps.register_page() before this
-# module is exec'd. DO NOT assign manager = None here — it would overwrite
-# the Blueprint that register_page set on the module.
 from api.db.services.file_commit_service import FileCommitService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.file_service import FileService
-from common.constants import FileSource
 
 logger = logging.getLogger(__name__)
 
