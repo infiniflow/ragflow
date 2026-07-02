@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 )
@@ -58,7 +59,7 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 	if mappingFileName == "" {
 		mappingFileName = "infinity_mapping.json"
 	}
-	confPath := filepath.Join(projectBaseDir(), "conf", mappingFileName)
+	confPath := filepath.Join(utility.GetProjectRoot(), "conf", mappingFileName)
 	data, err := os.ReadFile(confPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -94,24 +95,6 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 		}
 	}
 	return aliasToActual, actualToFirstAlias, nil
-}
-
-// projectBaseDir returns the project root. Honors RAG_PROJECT_BASE and
-// RAG_DEPLOY_BASE env vars; falls back to working directory.
-func projectBaseDir() string {
-	if v := os.Getenv("RAG_PROJECT_BASE"); v != "" {
-		return v
-	}
-	if v := os.Getenv("RAG_DEPLOY_BASE"); v != "" {
-		return v
-	}
-	// Fall back to the repository root. The Go engine package lives at
-	// internal/engine/infinity/; the repo root is three levels up.
-	wd, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	return wd
 }
 
 // preprocessSQL collapses spaces/backticks and strips '%'.
