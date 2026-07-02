@@ -4,13 +4,20 @@
 # that parallel `git add` calls would hit). In CI, set LEFTHOOK_CHECK_ONLY=1
 # to skip --fix on every fix-capable job. With no files modified, `stage_fixed`
 # becomes a no-op, so CI only verifies and exits non-zero on issues.
+#
+# NOTE: every `run:` block is written in POSIX-sh-compatible syntax
+# (`[` ... `]` with `=` for string compare) instead of bash `[[` ...
+# `]]`. Lefthook executes scripts via `/bin/sh`, which is `dash` on
+# most Linux CI runners and would otherwise fail with
+# `sh: 1: [[: not found`. Keeping the hooks POSIX avoids pinning
+# lefthook to bash and keeps them portable to macOS/Linux/containers.
 pre-commit:
   parallel: true
   jobs:
     - name: end-of-file-fixer
       stage_fixed: true
       run: |
-        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
           python3 tools/hooks/check_files.py eof
         else
           python3 tools/hooks/check_files.py eof --fix
@@ -18,7 +25,7 @@ pre-commit:
     - name: trailing-whitespace
       stage_fixed: true
       run: |
-        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
           python3 tools/hooks/check_files.py trailing-whitespace
         else
           python3 tools/hooks/check_files.py trailing-whitespace --fix
@@ -26,7 +33,7 @@ pre-commit:
     - name: mixed-line-ending
       stage_fixed: true
       run: |
-        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
           python3 tools/hooks/check_files.py mixed-line-ending
         else
           python3 tools/hooks/check_files.py mixed-line-ending --fix
@@ -35,7 +42,7 @@ pre-commit:
       glob: "*.py"
       stage_fixed: true
       run: |
-        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
           ruff check {staged_files}
         else
           ruff check --fix {staged_files}
@@ -44,7 +51,7 @@ pre-commit:
       glob: "*.py"
       stage_fixed: true
       run: |
-        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
           ruff format --check {staged_files}
         else
           ruff format {staged_files}
@@ -53,9 +60,9 @@ pre-commit:
       glob: "*.go"
       stage_fixed: true
       run: |
-        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
           unformatted=$(gofmt -l {staged_files})
-          if [[ -n "$unformatted" ]]; then
+          if [ -n "$unformatted" ]; then
             echo "The following Go files are not gofmt'd:"
             echo "$unformatted"
             exit 1
@@ -83,7 +90,7 @@ pre-commit:
           npm ci --prefix web --no-audit --no-fund || { rm -rf "$LOCKDIR"; exit 1; }
         fi
         rm -rf "$LOCKDIR"
-        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
           cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --check --ignore-unknown
         else
           cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --write --ignore-unknown
@@ -101,7 +108,7 @@ pre-commit:
           npm ci --prefix web --no-audit --no-fund || { rm -rf "$LOCKDIR"; exit 1; }
         fi
         rm -rf "$LOCKDIR"
-        if [[ "${LEFTHOOK_CHECK_ONLY:-}" == "1" ]]; then
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
           cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint
         else
           cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint --fix
