@@ -466,14 +466,12 @@ func TestGraphChannel_Race_ConcurrentGraphInvocations(t *testing.T) {
 	errs := make(chan error, concurrency)
 
 	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := cg.Invoke(context.Background(), map[string]interface{}{"val": ""})
 			if err != nil {
 				errs <- err
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)

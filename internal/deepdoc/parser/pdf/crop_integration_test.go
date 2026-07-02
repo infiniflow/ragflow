@@ -1,6 +1,6 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"bytes"
@@ -27,8 +27,8 @@ func TestParse_CropSectionImages(t *testing.T) {
 	defer eng.Close()
 
 	cfg := pdf.DefaultParserConfig()
-	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true})
-	result, err := p.Parse(context.Background(), eng)
+	p := NewParser(cfg)
+	result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -79,8 +79,8 @@ func TestCrop_Regression_SnapshotPDFs(t *testing.T) {
 			}
 			defer eng.Close()
 
-			p := NewParser(pdf.DefaultParserConfig(), &MockDocAnalyzer{Healthy: true})
-			result, err := p.Parse(context.Background(), eng)
+			p := NewParser(pdf.DefaultParserConfig())
+			result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}

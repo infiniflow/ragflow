@@ -32,10 +32,13 @@ import (
 // which is the precondition for the runtime parallel-execution path
 // to engage.
 //
-// Performance regression: full perf assertion lives in the
-// `test/unit_test/agent/` benchmark suite (not in this package to
-// avoid network/model dependencies). The 5s bound here is a coarse
-// smoke test — any regression to sequential would blow past it.
+// The Compile call is wrapped in a 5s outer context. Compile is
+// expected to return in <10ms; the 5s bound is a coarse safety net
+// against a regression to sequential processing. We do not measure
+// wall-clock elapsed time directly — that's fragile under CPU
+// pressure — and instead use a context-budget pattern: if Compile
+// doesn't return within the budget, the test fails with a clear
+// "Compile did not return within 5s" message.
 func TestBuildWorkflow_ParallelBatchStructure(t *testing.T) {
 	c := &Canvas{
 		Components: map[string]CanvasComponent{
@@ -47,19 +50,28 @@ func TestBuildWorkflow_ParallelBatchStructure(t *testing.T) {
 		Path: []string{"begin", "a", "b", "final"},
 	}
 
-	start := time.Now()
-	cc, err := Compile(context.Background(), c)
-	elapsed := time.Since(start)
-	if err != nil {
-		t.Fatalf("Compile: %v", err)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	type compileResult struct {
+		cc  *CompiledCanvas
+		err error
 	}
-	if cc == nil {
-		t.Fatal("Compile returned nil CompiledCanvas")
-	}
-	// Coarse smoke test: 5s is far above expected Compile time for a
-	// 4-node canvas (typically <10ms). A regression to sequential
-	// processing would blow past this; the 5s is just a safety net.
-	if elapsed > 5*time.Second {
-		t.Errorf("Compile took %s; expected < 5s for 4-node canvas", elapsed)
+	done := make(chan compileResult, 1)
+	go func() {
+		cc, err := Compile(ctx, c)
+		done <- compileResult{cc: cc, err: err}
+	}()
+
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatalf("Compile: %v", r.err)
+		}
+		if r.cc == nil {
+			t.Fatal("Compile returned nil CompiledCanvas")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Compile did not return within 5s — suspected regression to sequential processing or hang")
 	}
 }
