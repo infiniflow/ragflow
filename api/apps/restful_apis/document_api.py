@@ -1253,6 +1253,9 @@ def list_thumbnails():
         return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
 
     try:
+        # Only expose thumbnails for documents the caller can access. Unauthorized or
+        # unknown ids are dropped silently so they can't be enumerated across tenants.
+        doc_ids = [doc_id for doc_id in doc_ids if DocumentService.accessible(doc_id, current_user.id)]
         docs = DocumentService.get_thumbnails(doc_ids)
 
         for doc_item in docs:
@@ -1760,6 +1763,10 @@ async def get_document_image(image_id):
         if not parsed:
             return get_data_error_result(message="Image not found.")
         bkt, nm = parsed
+        # bkt is the owning dataset (kb) id; verify access before any storage read so a
+        # caller can't fetch another tenant's image bytes by guessing the composite id.
+        if not KnowledgebaseService.accessible(kb_id=bkt, user_id=current_user.id):
+            return get_data_error_result(message="Image not found.")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         if not data:
             return get_data_error_result(message="Image not found.")
