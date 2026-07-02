@@ -457,7 +457,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 	return nil
 }
 
-
 // DeleteAgent removes the canvas and cascades to its user_canvas_version
 // rows in a single transaction so a mid-flight failure cannot leave
 // orphan version rows (Phase 5 §2.9; review follow-up M2).
