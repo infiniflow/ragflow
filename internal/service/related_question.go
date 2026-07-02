@@ -27,7 +27,7 @@ import (
 )
 
 // GenerateRelatedQuestions generates related search questions for chat/searchbot endpoints.
-func GenerateRelatedQuestions(tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, modelProviderSvc ChatModelProvider) ([]string, error) {
+func GenerateRelatedQuestions(tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, modelProviderSvc *ModelProviderService) ([]string, error) {
 	if modelProviderSvc == nil {
 		return nil, fmt.Errorf("model provider service not configured")
 	}

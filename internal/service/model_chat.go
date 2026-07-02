@@ -26,10 +26,6 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-type ChatModelProvider interface {
-	Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error)
-}
-
 func (m *ModelProviderService) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
 	chatModel, err := m.GetChatModel(tenantID, modelID)
 	if err != nil {

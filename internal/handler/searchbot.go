@@ -103,7 +103,7 @@ type SearchBotRequest struct {
 type SearchBotHandler struct {
 	searchSvc *service.SearchService
 	tenantSvc *service.TenantService
-	llm       service.ChatModelProvider
+	llm       *service.ModelProviderService
 	streamLLM *service.ModelProviderService
 	chunkSvc  service.Retriever
 	askSvc    *service.AskService
@@ -111,7 +111,7 @@ type SearchBotHandler struct {
 }
 
 // NewSearchBotHandler creates a new SearchBotHandler.
-func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm service.ChatModelProvider, chunkSvc service.Retriever) *SearchBotHandler {
+func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm *service.ModelProviderService, chunkSvc service.Retriever) *SearchBotHandler {
 	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc, sseWriter: &ginSSEWriter{}}
 }
 

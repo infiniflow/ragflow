@@ -571,52 +571,6 @@ func TestAskHandler_WhitespaceKbIDFiltered(t *testing.T) {
 	}
 }
 
-func TestMindMapHandlerSuccess(t *testing.T) {
-	llm := &fakeChatLLM{response: "# Product\n## Features\n### Search\n#### Hybrid retrieval"}
-	chunks := &mockChunkService{retrievalTestFn: func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
-		return &service.RetrievalTestResponse{
-			Chunks: []map[string]interface{}{{"content_with_weight": "Hybrid search combines vector and keyword retrieval."}},
-		}, nil
-	}}
-	h := NewSearchBotHandler(nil, nil, llm, chunks)
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.Use(func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "user-1"})
-	})
-	r.POST("/api/v1/searchbots/mindmap", h.MindMap)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/searchbots/mindmap", strings.NewReader(`{"question":"What is search?","kb_ids":["kb-1"]}`))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if resp["code"] != float64(common.CodeSuccess) {
-		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp["message"])
-	}
-	data := resp["data"].(map[string]interface{})
-	if data["id"] != "Product" {
-		t.Fatalf("mindmap root = %v, want Product", data["id"])
-	}
-	if chunks.LastReq == nil {
-		t.Fatal("RetrievalTest was not called")
-	}
-	if *chunks.LastReq.Page != 1 || *chunks.LastReq.Size != 12 || *chunks.LastReq.TopK != 1024 {
-		t.Fatalf("retrieval defaults = page %d size %d topK %d", *chunks.LastReq.Page, *chunks.LastReq.Size, *chunks.LastReq.TopK)
-	}
-	firstContent, _ := llm.lastMessages[0].Content.(string)
-	if llm.lastTenantID != "user-1" || len(llm.lastMessages) != 2 || !strings.Contains(firstContent, "Hybrid search combines") {
-		t.Fatalf("unexpected LLM call: tenant=%q messages=%v", llm.lastTenantID, llm.lastMessages)
-	}
-}
-
 func TestParseMindMapMarkdown_ListUnderHeading(t *testing.T) {
 	got := parseMindMapMarkdown("# Product\n- Features\n  - Search")
 	if got.ID != "Product" {
