@@ -196,7 +196,11 @@ def check_comment_ascii(paths: list[Path], fix: bool = False) -> int:
         except SyntaxError:
             continue
         for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.Module)):
+            # AsyncFunctionDef is included alongside FunctionDef so that
+            # `async def` docstrings are also validated; without it, a
+            # non-ASCII docstring on an async function would slip past
+            # the scan silently.
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)):
                 continue
             doc = ast.get_docstring(node)
             if not doc or _PRINTABLE_ASCII.fullmatch(doc):
