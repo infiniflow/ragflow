@@ -133,15 +133,11 @@ class RaptorService:
         # Determine scope
         if raptor_config.get("scope", "file") == "file":
             res, tk_count = await self._run_file_level_raptor(
-                raptor_config, tree_builder, clustering_method,
-                chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id,
-                max_errors, res, tk_count, cleanup_raptor_chunks
+                raptor_config, tree_builder, clustering_method, chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id, max_errors, res, tk_count, cleanup_raptor_chunks
             )
         else:
             res, tk_count = await self._run_dataset_level_raptor(
-                raptor_config, tree_builder, clustering_method,
-                chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id,
-                max_errors, res, tk_count, cleanup_raptor_chunks
+                raptor_config, tree_builder, clustering_method, chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id, max_errors, res, tk_count, cleanup_raptor_chunks
             )
 
         return res, tk_count, cleanup_raptor_chunks
@@ -162,15 +158,11 @@ class RaptorService:
             }
         return doc_info_by_id
 
-    async def _run_file_level_raptor(
-        self, raptor_config, tree_builder, clustering_method,
-        chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id,
-        max_errors, res, tk_count, cleanup_raptor_chunks
-    ):
+    async def _run_file_level_raptor(self, raptor_config, tree_builder, clustering_method, chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id, max_errors, res, tk_count, cleanup_raptor_chunks):
         """Run RAPTOR at file level (per document)."""
         ctx = self._task_context
         fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
-        if self._task_context.write_interceptor: # dry run mode
+        if self._task_context.write_interceptor:  # dry run mode
             dataset_methods = set()
         else:
             dataset_methods = await self._get_raptor_chunk_methods(fake_doc_id, ctx.tenant_id, ctx.kb_id)
@@ -182,7 +174,7 @@ class RaptorService:
 
         for x, doc_id in enumerate(doc_ids):
             if self._should_skip_raptor(doc_id, doc_info_by_id, raptor_config):
-                self._task_context.progress_cb(prog=(x + 1.) / len(doc_ids))
+                self._task_context.progress_cb(prog=(x + 1.0) / len(doc_ids))
                 continue
             if self._task_context.write_interceptor:
                 existing_methods = set()
@@ -191,12 +183,10 @@ class RaptorService:
             if tree_builder in existing_methods:
                 has_file_level_target = True
                 if existing_methods != {tree_builder}:
-                    self._schedule_raptor_cleanup(
-                        doc_id, tree_builder, cleanup_raptor_chunks
-                    )
+                    self._schedule_raptor_cleanup(doc_id, tree_builder, cleanup_raptor_chunks)
                     self._task_context.progress_cb(msg=f"[RAPTOR] doc:{doc_id} will remove old RAPTOR summaries after insert.")
                 self._task_context.progress_cb(msg=f"[RAPTOR] doc:{doc_id} already has {tree_builder} RAPTOR chunks, skipping.")
-                self._task_context.progress_cb(prog=(x + 1.) / len(doc_ids))
+                self._task_context.progress_cb(prog=(x + 1.0) / len(doc_ids))
                 continue
 
             if existing_methods:
@@ -207,36 +197,25 @@ class RaptorService:
                 continue
 
             before_generate = len(res)
-            new_chunks, new_tk_count = await self._generate_raptor(
-                chunks, doc_id, raptor_config, chat_mdl, embd_mdl,
-                tree_builder, clustering_method, max_errors, doc_info_by_id
-            )
+            new_chunks, new_tk_count = await self._generate_raptor(chunks, doc_id, raptor_config, chat_mdl, embd_mdl, tree_builder, clustering_method, max_errors, doc_info_by_id)
             res.extend(new_chunks)
             tk_count += new_tk_count
 
             if len(res) > before_generate:
                 has_file_level_target = True
                 if existing_methods:
-                    self._schedule_raptor_cleanup(
-                        doc_id, tree_builder, cleanup_raptor_chunks
-                    )
-            self._task_context.progress_cb(prog=(x + 1.) / len(doc_ids))
+                    self._schedule_raptor_cleanup(doc_id, tree_builder, cleanup_raptor_chunks)
+            self._task_context.progress_cb(prog=(x + 1.0) / len(doc_ids))
 
         if remove_dataset_summaries:
             if has_file_level_target:
-                self._schedule_raptor_cleanup(
-                    fake_doc_id, None, cleanup_raptor_chunks
-                )
+                self._schedule_raptor_cleanup(fake_doc_id, None, cleanup_raptor_chunks)
             else:
                 self._task_context.progress_cb(msg="[RAPTOR] kept dataset-level summaries because no file-level summaries were built.")
 
         return res, tk_count
 
-    async def _run_dataset_level_raptor(
-        self, raptor_config, tree_builder, clustering_method,
-        chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id,
-        max_errors, res, tk_count, cleanup_raptor_chunks
-    ):
+    async def _run_dataset_level_raptor(self, raptor_config, tree_builder, clustering_method, chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id, max_errors, res, tk_count, cleanup_raptor_chunks):
         """Run RAPTOR at dataset level (all documents combined)."""
         ctx = self._task_context
         fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
@@ -257,9 +236,7 @@ class RaptorService:
                 migrated_file_docs += 1
 
         if migrated_file_docs:
-            self._task_context.progress_cb(
-                msg=f"[RAPTOR] will remove file-level summaries for {migrated_file_docs} docs after dataset-level build succeeds."
-            )
+            self._task_context.progress_cb(msg=f"[RAPTOR] will remove file-level summaries for {migrated_file_docs} docs after dataset-level build succeeds.")
 
         if self._task_context.write_interceptor:
             existing_methods = set()
@@ -267,9 +244,7 @@ class RaptorService:
             existing_methods = await self._get_raptor_chunk_methods(fake_doc_id, ctx.tenant_id, ctx.kb_id)
         if tree_builder in existing_methods:
             if existing_methods != {tree_builder}:
-                self._schedule_raptor_cleanup(
-                    fake_doc_id, tree_builder, cleanup_raptor_chunks
-                )
+                self._schedule_raptor_cleanup(fake_doc_id, tree_builder, cleanup_raptor_chunks)
                 self._task_context.progress_cb(msg="[RAPTOR] will remove old dataset-level RAPTOR summaries after insert.")
             for doc_id in file_cleanup_doc_ids:
                 self._schedule_raptor_cleanup(doc_id, None, cleanup_raptor_chunks)
@@ -289,10 +264,7 @@ class RaptorService:
             return res, tk_count
 
         before_generate = len(res)
-        new_chunks, new_tk_count = await self._generate_raptor(
-            chunks, fake_doc_id, raptor_config, chat_mdl, embd_mdl,
-            tree_builder, clustering_method, max_errors, doc_info_by_id
-        )
+        new_chunks, new_tk_count = await self._generate_raptor(chunks, fake_doc_id, raptor_config, chat_mdl, embd_mdl, tree_builder, clustering_method, max_errors, doc_info_by_id)
         res.extend(new_chunks)
         tk_count += new_tk_count
 
@@ -300,15 +272,11 @@ class RaptorService:
             for doc_id in file_cleanup_doc_ids:
                 self._schedule_raptor_cleanup(doc_id, None, cleanup_raptor_chunks)
             if migrate_dataset_summaries:
-                self._schedule_raptor_cleanup(
-                    fake_doc_id, tree_builder, cleanup_raptor_chunks
-                )
+                self._schedule_raptor_cleanup(fake_doc_id, tree_builder, cleanup_raptor_chunks)
 
         return res, tk_count
 
-    def _should_skip_raptor(
-        self, doc_id: str, doc_info_by_id: Dict, raptor_config: Dict
-    ) -> bool:
+    def _should_skip_raptor(self, doc_id: str, doc_info_by_id: Dict, raptor_config: Dict) -> bool:
         """Check if RAPTOR should be skipped for a document."""
         ctx = self._task_context
         doc_info = doc_info_by_id.get(doc_id, {})
@@ -340,11 +308,7 @@ class RaptorService:
         # through summarization; the retriever otherwise drops it when
         # ``fields`` is provided.
         fields = ["id", "content_with_weight", vctr_nm]
-        for d in settings.retriever.chunk_list(
-            doc_id, ctx.tenant_id, [str(ctx.kb_id)],
-            fields=fields,
-            sort_by_position=True
-        ):
+        for d in settings.retriever.chunk_list(doc_id, ctx.tenant_id, [str(ctx.kb_id)], fields=fields, sort_by_position=True):
             if vctr_nm not in d or d[vctr_nm] is None:
                 skipped_chunks += 1
                 logging.warning(f"RAPTOR: Chunk missing vector field '{vctr_nm}' in doc {doc_id}, skipping")
@@ -352,18 +316,14 @@ class RaptorService:
             chunks.append((d["content_with_weight"], np.array(d[vctr_nm]), str(d.get("id") or "")))
 
         if skipped_chunks > 0:
-            self._task_context.progress_cb(
-                msg=f"[WARN] Skipped {skipped_chunks} chunks without vector field '{vctr_nm}' for doc {doc_id}."
-            )
+            self._task_context.progress_cb(msg=f"[WARN] Skipped {skipped_chunks} chunks without vector field '{vctr_nm}' for doc {doc_id}.")
         if not chunks:
             logging.warning(f"RAPTOR: No valid chunks with vectors found for doc {doc_id}")
             self._task_context.progress_cb(msg=f"[WARN] No valid chunks with vectors found for doc {doc_id}, skipping")
 
         return chunks
 
-    def _load_all_doc_chunks(
-        self, doc_ids: List[str], vctr_nm: str, skipped_doc_ids: Set[str]
-    ) -> List[Tuple[str, np.ndarray, str]]:
+    def _load_all_doc_chunks(self, doc_ids: List[str], vctr_nm: str, skipped_doc_ids: Set[str]) -> List[Tuple[str, np.ndarray, str]]:
         """Load chunks for all documents — returns provenance-carrying
         ``(content, vector, chunk_id)`` triples. See ``_load_doc_chunks``
         for the per-doc variant."""
@@ -375,11 +335,7 @@ class RaptorService:
         for doc_id in doc_ids:
             if doc_id in skipped_doc_ids:
                 continue
-            for d in settings.retriever.chunk_list(
-                doc_id, ctx.tenant_id, [str(ctx.kb_id)],
-                fields=fields,
-                sort_by_position=True
-            ):
+            for d in settings.retriever.chunk_list(doc_id, ctx.tenant_id, [str(ctx.kb_id)], fields=fields, sort_by_position=True):
                 if vctr_nm not in d or d[vctr_nm] is None:
                     skipped_chunks += 1
                     logging.warning(f"RAPTOR: Chunk missing vector field '{vctr_nm}' in doc {doc_id}, skipping")
@@ -387,9 +343,7 @@ class RaptorService:
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm]), str(d.get("id") or "")))
 
         if skipped_chunks > 0:
-            self._task_context.progress_cb(
-                msg=f"[WARN] Skipped {skipped_chunks} chunks without vector field '{vctr_nm}'."
-            )
+            self._task_context.progress_cb(msg=f"[WARN] Skipped {skipped_chunks} chunks without vector field '{vctr_nm}'.")
 
         return chunks
 
@@ -440,10 +394,7 @@ class RaptorService:
         # ``source_chunk_ids`` provenance trail. The id may be empty
         # for malformed retriever rows; ``Raptor.__call__`` filters
         # those out of the union on the inbound normalize step.
-        raptor_input = [
-            (content, vctr, [chunk_id] if chunk_id else [])
-            for content, vctr, chunk_id in chunks
-        ]
+        raptor_input = [(content, vctr, [chunk_id] if chunk_id else []) for content, vctr, chunk_id in chunks]
 
         effective_doc_name = ctx.name if doc_id == GRAPH_RAPTOR_FAKE_DOC_ID else doc_info_by_id.get(doc_id, {}).get("name") or ctx.name
 
@@ -464,8 +415,13 @@ class RaptorService:
             )
         except NotImplementedError:
             return await self._generate_raptor_legacy_rows(
-                raptor, raptor_input, raptor_config, doc_id,
-                effective_doc_name, tree_builder, vctr_nm,
+                raptor,
+                raptor_input,
+                raptor_config,
+                doc_id,
+                effective_doc_name,
+                tree_builder,
+                vctr_nm,
             )
 
         if processed_chunks is None:
@@ -556,10 +512,7 @@ class RaptorService:
             psi_bucket_size=raptor_ext_config.get("psi_bucket_size", 1024),
         )
 
-        raptor_input = [
-            (content, vctr, [chunk_id] if chunk_id else [])
-            for content, vctr, chunk_id in chunks
-        ]
+        raptor_input = [(content, vctr, [chunk_id] if chunk_id else []) for content, vctr, chunk_id in chunks]
         try:
             tree, _ = await raptor(
                 raptor_input,
@@ -578,8 +531,14 @@ class RaptorService:
         return tree if isinstance(tree, dict) else None
 
     async def _generate_raptor_legacy_rows(
-        self, raptor, raptor_input, raptor_config, doc_id,
-        effective_doc_name, tree_builder, vctr_nm,
+        self,
+        raptor,
+        raptor_input,
+        raptor_config,
+        doc_id,
+        effective_doc_name,
+        tree_builder,
+        vctr_nm,
     ) -> Tuple[List[Dict], int]:
         """Legacy per-summary materialization, kept only for PSI builds.
 
@@ -592,8 +551,10 @@ class RaptorService:
         ctx = self._task_context
         original_length = len(raptor_input)
         processed_chunks, layers = await raptor(
-            raptor_input, raptor_config["random_seed"],
-            self._task_context.progress_cb, ctx.id,
+            raptor_input,
+            raptor_config["random_seed"],
+            self._task_context.progress_cb,
+            ctx.id,
         )
 
         doc = {
@@ -651,11 +612,7 @@ class RaptorService:
         from common.doc_store.doc_store_base import OrderByExpr
 
         async def search_fields(fields: list, condition: dict, order_by=None):
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                fields, [], condition, [], order_by or OrderByExpr(),
-                0, 10000, search.index_name(tenant_id), [kb_id]
-            )
+            res = await thread_pool_exec(settings.docStoreConn.search, fields, [], condition, [], order_by or OrderByExpr(), 0, 10000, search.index_name(tenant_id), [kb_id])
             return settings.docStoreConn.get_fields(res, fields)
 
         try:
@@ -783,15 +740,22 @@ class RaptorService:
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                select_fields, [],
+                select_fields,
+                [],
                 {"raptor_kwd": ["raptor"], "doc_id": [doc_id]},
-                [], OrderByExpr(),
-                0, 10000, index_nm, [kb_id_str],
+                [],
+                OrderByExpr(),
+                0,
+                10000,
+                index_nm,
+                [kb_id_str],
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
             logging.exception(
-                "raptor_graph: load failed for kb=%s doc=%s", kb_id_str, doc_id,
+                "raptor_graph: load failed for kb=%s doc=%s",
+                kb_id_str,
+                doc_id,
             )
             return
 
@@ -799,7 +763,8 @@ class RaptorService:
         if not rows:
             logging.info(
                 "raptor_graph: no summaries to render for kb=%s doc=%s",
-                kb_id_str, doc_id,
+                kb_id_str,
+                doc_id,
             )
             return
 
@@ -807,7 +772,8 @@ class RaptorService:
         if not graph["entities"]:
             logging.info(
                 "raptor_graph: projection produced no entities for kb=%s doc=%s",
-                kb_id_str, doc_id,
+                kb_id_str,
+                doc_id,
             )
             return
 
@@ -827,22 +793,32 @@ class RaptorService:
             await thread_pool_exec(
                 settings.docStoreConn.delete,
                 {"compile_kwd": "raptor_graph", "doc_id": [doc_id]},
-                index_nm, ctx.kb_id,
+                index_nm,
+                ctx.kb_id,
             )
         except Exception:
             logging.debug(
                 "raptor_graph: prior delete failed for kb=%s doc=%s; relying on id-upsert",
-                kb_id_str, doc_id,
+                kb_id_str,
+                doc_id,
             )
         try:
             await thread_pool_exec(
-                settings.docStoreConn.insert, [row], index_nm, ctx.kb_id,
+                settings.docStoreConn.insert,
+                [row],
+                index_nm,
+                ctx.kb_id,
             )
             logging.info(
                 "raptor_graph: stored %d entities / %d relations for kb=%s doc=%s",
-                len(graph["entities"]), len(graph["relations"]), kb_id_str, doc_id,
+                len(graph["entities"]),
+                len(graph["relations"]),
+                kb_id_str,
+                doc_id,
             )
         except Exception:
             logging.exception(
-                "raptor_graph: insert failed for kb=%s doc=%s", kb_id_str, doc_id,
+                "raptor_graph: insert failed for kb=%s doc=%s",
+                kb_id_str,
+                doc_id,
             )

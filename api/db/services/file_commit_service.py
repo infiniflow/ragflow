@@ -101,7 +101,8 @@ def _store_content_after(kb_id: str, content: str) -> tuple[str, str]:
         except Exception:
             logging.exception(
                 "record_page_edit: MinIO put failed for kb=%s hash=%s",
-                kb_id, content_hash,
+                kb_id,
+                content_hash,
             )
         return "minio", location
 
@@ -109,6 +110,7 @@ def _store_content_after(kb_id: str, content: str) -> tuple[str, str]:
         # Store as a single doc-store row so the same connector serves
         # reads. The row is not retrievable (available_int=0).
         from rag.nlp import search as _rag_search
+
         index = _rag_search.index_name(kb_id)  # kb-scoped index namespace
         payload = {
             "id": content_hash,
@@ -123,7 +125,8 @@ def _store_content_after(kb_id: str, content: str) -> tuple[str, str]:
         except Exception:
             logging.exception(
                 "record_page_edit: ES insert failed for kb=%s hash=%s",
-                kb_id, content_hash,
+                kb_id,
+                content_hash,
             )
         return "es", content_hash
 
@@ -155,6 +158,7 @@ def _read_content_after(kb_id: str, storage_kind: str, location: str) -> str:
             return str(raw or "")
         if storage_kind == "es":
             from rag.nlp import search as _rag_search
+
             index = _rag_search.index_name(kb_id)
             row = settings.docStoreConn.get(location, index, [kb_id])
             if isinstance(row, dict):
@@ -163,7 +167,9 @@ def _read_content_after(kb_id: str, storage_kind: str, location: str) -> str:
     except Exception:
         logging.exception(
             "get_page_commit: content read failed kb=%s storage=%s loc=%s",
-            kb_id, storage_kind, location,
+            kb_id,
+            storage_kind,
+            location,
         )
     return ""
 
@@ -295,11 +301,13 @@ class FileCommitService(CommonService):
                     item["new_location"] = obj_key
 
                     # Update file record in DB
-                    File.update({
-                        "location": obj_key,
-                        "size": len(content_bytes),
-                        "update_time": current_timestamp(),
-                    }).where(File.id == file_id).execute()
+                    File.update(
+                        {
+                            "location": obj_key,
+                            "size": len(content_bytes),
+                            "update_time": current_timestamp(),
+                        }
+                    ).where(File.id == file_id).execute()
 
                     # Update tree state
                     file_parent = _get_file_parent_id(file_id)
@@ -335,11 +343,13 @@ class FileCommitService(CommonService):
                     item["new_location"] = obj_key
 
                     # Update file record
-                    File.update({
-                        "location": obj_key,
-                        "size": len(content_bytes),
-                        "update_time": current_timestamp(),
-                    }).where(File.id == file_id).execute()
+                    File.update(
+                        {
+                            "location": obj_key,
+                            "size": len(content_bytes),
+                            "update_time": current_timestamp(),
+                        }
+                    ).where(File.id == file_id).execute()
 
                     # Update tree state
                     file_parent = _get_file_parent_id(file_id)
@@ -361,9 +371,7 @@ class FileCommitService(CommonService):
                         item["old_location"] = old_location
 
                     # Soft-delete the file record
-                    File.update(status="0", update_time=current_timestamp()).where(
-                        File.id == file_id
-                    ).execute()
+                    File.update(status="0", update_time=current_timestamp()).where(File.id == file_id).execute()
 
                     # Remove from tree state (mark deleted)
                     if file_id in tree_state:
@@ -376,9 +384,7 @@ class FileCommitService(CommonService):
                     item["new_name"] = new_name
 
                     # Update the file record name
-                    File.update(name=new_name, update_time=current_timestamp()).where(
-                        File.id == file_id
-                    ).execute()
+                    File.update(name=new_name, update_time=current_timestamp()).where(File.id == file_id).execute()
 
                     # Update tree state
                     if file_id in tree_state:
@@ -398,9 +404,7 @@ class FileCommitService(CommonService):
     def _get_latest_commit(cls, folder_id):
         """Get the latest (chain head) commit for a folder."""
         try:
-            return cls.model.select().where(
-                cls.model.folder_id == folder_id
-            ).order_by(cls.model.create_time.desc()).first()
+            return cls.model.select().where(cls.model.folder_id == folder_id).order_by(cls.model.create_time.desc()).first()
         except Exception:
             return None
 
@@ -498,27 +502,31 @@ class FileCommitService(CommonService):
 
             if from_entry is not None and to_entry is None:
                 # Present in from, absent in to → deleted
-                diff.append({
-                    "file_id": fid,
-                    "file_name": from_name,
-                    "operation": "delete",
-                    "old_hash": from_hash or (from_item.new_hash if from_item else None),
-                    "old_location": from_entry.get("location", "") if isinstance(from_entry, dict) else None,
-                    "new_hash": None,
-                    "new_location": None,
-                })
+                diff.append(
+                    {
+                        "file_id": fid,
+                        "file_name": from_name,
+                        "operation": "delete",
+                        "old_hash": from_hash or (from_item.new_hash if from_item else None),
+                        "old_location": from_entry.get("location", "") if isinstance(from_entry, dict) else None,
+                        "new_hash": None,
+                        "new_location": None,
+                    }
+                )
 
             elif from_entry is None and to_entry is not None:
                 # Present in to, absent in from → added
-                diff.append({
-                    "file_id": fid,
-                    "file_name": to_name,
-                    "operation": "add",
-                    "old_hash": None,
-                    "old_location": None,
-                    "new_hash": to_hash or (to_item.new_hash if to_item else None),
-                    "new_location": to_entry.get("location", "") if isinstance(to_entry, dict) else None,
-                })
+                diff.append(
+                    {
+                        "file_id": fid,
+                        "file_name": to_name,
+                        "operation": "add",
+                        "old_hash": None,
+                        "old_location": None,
+                        "new_hash": to_hash or (to_item.new_hash if to_item else None),
+                        "new_location": to_entry.get("location", "") if isinstance(to_entry, dict) else None,
+                    }
+                )
 
             else:
                 # Both exist — check for changes
@@ -542,15 +550,17 @@ class FileCommitService(CommonService):
                 if changed:
                     old_loc = from_entry.get("location", "") if isinstance(from_entry, dict) else None
                     new_loc = to_entry.get("location", "") if isinstance(to_entry, dict) else None
-                    diff.append({
-                        "file_id": fid,
-                        "file_name": to_name or from_name,
-                        "operation": operation,
-                        "old_hash": from_hash or (from_item.new_hash if from_item else None),
-                        "old_location": old_loc or (from_item.new_location if from_item else None),
-                        "new_hash": to_hash or (to_item.new_hash if to_item else None),
-                        "new_location": new_loc or (to_item.new_location if to_item else None),
-                    })
+                    diff.append(
+                        {
+                            "file_id": fid,
+                            "file_name": to_name or from_name,
+                            "operation": operation,
+                            "old_hash": from_hash or (from_item.new_hash if from_item else None),
+                            "old_location": old_loc or (from_item.new_location if from_item else None),
+                            "new_hash": to_hash or (to_item.new_hash if to_item else None),
+                            "new_location": new_loc or (to_item.new_location if to_item else None),
+                        }
+                    )
 
         return diff
 
@@ -588,27 +598,33 @@ class FileCommitService(CommonService):
                 live_hash = _compute_file_hash(folder_id, fid)
                 committed_hash = committed_entry.get("hash", "")
                 if live_hash and live_hash != committed_hash:
-                    changes.append({
-                        "file_id": fid,
-                        "file_name": committed_entry.get("name", ""),
-                        "operation": "modify",
-                    })
+                    changes.append(
+                        {
+                            "file_id": fid,
+                            "file_name": committed_entry.get("name", ""),
+                            "operation": "modify",
+                        }
+                    )
             else:
                 if FileService.get_or_none(id=fid) is None:
-                    changes.append({
-                        "file_id": fid,
-                        "file_name": committed_entry.get("name", ""),
-                        "operation": "delete",
-                    })
+                    changes.append(
+                        {
+                            "file_id": fid,
+                            "file_name": committed_entry.get("name", ""),
+                            "operation": "delete",
+                        }
+                    )
 
         # Check for newly added files
         for fid, live_file in current_files.items():
             if fid not in processed:
-                changes.append({
-                    "file_id": fid,
-                    "file_name": live_file.name,
-                    "operation": "add",
-                })
+                changes.append(
+                    {
+                        "file_id": fid,
+                        "file_name": live_file.name,
+                        "operation": "add",
+                    }
+                )
 
         return changes
 
@@ -659,10 +675,14 @@ class FileCommitService(CommonService):
         visited = set()
         while current_id and current_id not in visited:
             visited.add(current_id)
-            item = FileCommitItem.select().where(
-                FileCommitItem.commit_id == current_id,
-                FileCommitItem.file_id == file_id,
-            ).first()
+            item = (
+                FileCommitItem.select()
+                .where(
+                    FileCommitItem.commit_id == current_id,
+                    FileCommitItem.file_id == file_id,
+                )
+                .first()
+            )
             if item and item.new_hash:
                 obj_path = f".objects/{item.new_hash}"
                 storage_impl = settings.STORAGE_IMPL
@@ -729,10 +749,7 @@ class FileCommitService(CommonService):
                 FileCommitItem,
                 on=(FileCommitItem.commit_id == FileCommit.id),
             )
-            .where(
-                (FileCommit.folder_id == kb_id)
-                & (FileCommitItem.file_id == file_id)
-            )
+            .where((FileCommit.folder_id == kb_id) & (FileCommitItem.file_id == file_id))
             .order_by(FileCommit.create_time.desc())
             .first()
         )
@@ -777,7 +794,8 @@ class FileCommitService(CommonService):
         except Exception:
             logging.exception(
                 "record_page_edit: insert failed for kb=%s slug=%s",
-                kb_id, slug,
+                kb_id,
+                slug,
             )
             return None
 
@@ -813,18 +831,10 @@ class FileCommitService(CommonService):
                 FileCommit.create_date,
             )
             .join(FileCommitItem, on=(FileCommitItem.commit_id == FileCommit.id))
-            .where(
-                (FileCommit.folder_id == kb_id)
-                & (FileCommitItem.file_id == file_id)
-                & (FileCommitItem.slug_kwd == slug)
-            )
+            .where((FileCommit.folder_id == kb_id) & (FileCommitItem.file_id == file_id) & (FileCommitItem.slug_kwd == slug))
         )
         total = base.count()
-        rows = list(
-            base.order_by(FileCommit.create_time.desc())
-            .paginate(page, page_size)
-            .dicts()
-        )
+        rows = list(base.order_by(FileCommit.create_time.desc()).paginate(page, page_size).dicts())
         # Preserve the previous response key so callers only re-key once.
         for r in rows:
             r["user_id"] = r.pop("author_id", None)
@@ -833,9 +843,7 @@ class FileCommitService(CommonService):
         nickname_by_id: dict[str, str] = {}
         if user_ids:
             try:
-                for u in User.select(User.id, User.nickname).where(
-                    User.id.in_(list(user_ids))
-                ).dicts():
+                for u in User.select(User.id, User.nickname).where(User.id.in_(list(user_ids))).dicts():
                     nickname_by_id[u["id"]] = u.get("nickname") or ""
             except Exception:
                 logging.exception(
@@ -848,7 +856,10 @@ class FileCommitService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_page_commit_detail(
-        cls, tenant_id: str, kb_id: str, commit_id: str,
+        cls,
+        tenant_id: str,
+        kb_id: str,
+        commit_id: str,
     ) -> Optional[dict]:
         """Return one artifact commit including ``diff`` +
         ``content_after`` (resolved from storage), or ``None`` when not
@@ -865,7 +876,9 @@ class FileCommitService(CommonService):
             return None
 
         content_after = _read_content_after(
-            kb_id, item.content_after_storage or "", item.content_after_location or "",
+            kb_id,
+            item.content_after_storage or "",
+            item.content_after_location or "",
         )
 
         nickname = ""
@@ -900,20 +913,21 @@ class FileCommitService(CommonService):
 
         Returns list of dicts: [{"commit_id", "operation", "hash", "create_time", "message"}]
         """
-        items = FileCommitItem.select().where(FileCommitItem.file_id == file_id).order_by(
-            FileCommitItem.create_time.desc())
+        items = FileCommitItem.select().where(FileCommitItem.file_id == file_id).order_by(FileCommitItem.create_time.desc())
 
         versions = []
         for item in items:
             commit = cls.get_commit(item.commit_id)
             if commit:
-                versions.append({
-                    "commit_id": item.commit_id,
-                    "operation": item.operation,
-                    "hash": item.new_hash or item.old_hash or "",
-                    "create_time": item.create_time,
-                    "message": commit.message,
-                })
+                versions.append(
+                    {
+                        "commit_id": item.commit_id,
+                        "operation": item.operation,
+                        "hash": item.new_hash or item.old_hash or "",
+                        "create_time": item.create_time,
+                        "message": commit.message,
+                    }
+                )
 
         return versions
 
@@ -975,9 +989,7 @@ def _build_hierarchical_tree(tree_state, root_folder_id):
         }
         # File children
         for fid, entry in files_by_parent.get(node_id, []):
-            fn = {"id": fid, "name": entry.get("name", fid), "type": "file",
-                  "hash": entry.get("hash", ""), "size": entry.get("size", 0),
-                  "status": entry.get("status", "1")}
+            fn = {"id": fid, "name": entry.get("name", fid), "type": "file", "hash": entry.get("hash", ""), "size": entry.get("size", 0), "status": entry.get("status", "1")}
             if entry.get("location"):
                 fn["location"] = entry["location"]
             node["children"].append(fn)

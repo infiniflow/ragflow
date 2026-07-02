@@ -74,8 +74,7 @@ async def extract_keywords(docs: List[Dict], ctx: TaskContext) -> None:
 
         tasks = []
         for doc in docs:
-            tasks.append(
-                asyncio.create_task(doc_keyword_extraction(chat_model, doc, ctx.parser_config["auto_keywords"])))
+            tasks.append(asyncio.create_task(doc_keyword_extraction(chat_model, doc, ctx.parser_config["auto_keywords"])))
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
@@ -116,8 +115,7 @@ async def generate_questions(docs: List[Dict], ctx: TaskContext) -> None:
 
         tasks = []
         for doc in docs:
-            tasks.append(
-                asyncio.create_task(doc_question_proposal(chat_model, doc, ctx.parser_config["auto_questions"])))
+            tasks.append(asyncio.create_task(doc_question_proposal(chat_model, doc, ctx.parser_config["auto_questions"])))
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
@@ -184,18 +182,14 @@ async def generate_metadata(docs: List[Dict], ctx: TaskContext) -> None:
         metadata_conf = build_metadata_config(ctx.parser_config)
 
         async def gen_metadata_task(chat_mdl, d):
-            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata",
-                                   metadata_conf)
+            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata", metadata_conf)
             if not cached:
                 if ctx.has_canceled_func(ctx.id):
                     ctx.progress_cb(-1, msg="Task has been canceled.")
                     return
                 async with chat_limiter:
-                    cached = await gen_metadata(chat_mdl,
-                                                turn2jsonschema(metadata_conf),
-                                                d["content_with_weight"])
-                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata",
-                              metadata_conf)
+                    cached = await gen_metadata(chat_mdl, turn2jsonschema(metadata_conf), d["content_with_weight"])
+                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata", metadata_conf)
             if cached:
                 d["metadata_obj"] = cached
 
@@ -256,8 +250,7 @@ async def apply_tags(docs: List[Dict], ctx: TaskContext) -> None:
             if ctx.has_canceled_func(ctx.id):
                 ctx.progress_cb(-1, msg="Task has been canceled.")
                 return
-            if settings.retriever.tag_content(tenant_id, kb_ids, doc, all_tags, topn_tags=topn_tags, S=S) and len(
-                    doc.get(TAG_FLD, [])) > 0:
+            if settings.retriever.tag_content(tenant_id, kb_ids, doc, all_tags, topn_tags=topn_tags, S=S) and len(doc.get(TAG_FLD, [])) > 0:
                 examples.append({"content": doc["content_with_weight"], TAG_FLD: doc[TAG_FLD]})
             else:
                 docs_to_tag.append(doc)
@@ -270,7 +263,7 @@ async def apply_tags(docs: List[Dict], ctx: TaskContext) -> None:
                     return
                 picked_examples = random.choices(examples, k=2) if len(examples) > 2 else examples
                 if not picked_examples:
-                    picked_examples.append({"content": "This is an example", TAG_FLD: {'example': 1}})
+                    picked_examples.append({"content": "This is an example", TAG_FLD: {"example": 1}})
                 async with chat_limiter:
                     cached = await content_tagging(
                         chat_mdl,
@@ -417,7 +410,8 @@ def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> li
     seen: set[str] = set()
     for group_id in _parser_config_compilation_template_group_ids(parser_config):
         for template_id in CompilationTemplateGroupService.resolve_template_ids(
-            group_id, tenant_id,
+            group_id,
+            tenant_id,
         ):
             if template_id in seen:
                 continue
@@ -451,6 +445,7 @@ def cap_done_progress(progress_cb: Callable) -> Callable:
     """Wrap a progress callback so any ``prog >= 1`` gets clamped to
     ``0.99`` — the final ``1.0`` is reserved for the caller who owns
     the task's terminal state."""
+
     def capped_progress(*args, **kwargs):
         args = list(args)
         if args:
@@ -501,7 +496,10 @@ def raptor_tree_to_graph(tree: Dict) -> Dict:
 
 
 async def load_chunks_with_vec(
-    tenant_id: str, kb_id: str, doc_id: str, vctr_nm: str,
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    vctr_nm: str,
 ) -> list[tuple[str, "np.ndarray", str]]:
     """Page through this doc's chunks pulling content + vector +
     chunk_id, in the shape ``RaptorService.build_doc_tree`` expects.
@@ -524,14 +522,21 @@ async def load_chunks_with_vec(
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                select_fields, [], {"doc_id": [doc_id], "available_int": 1},
-                [], order_by, offset, PAGE,
-                index_nm, [kb_id],
+                select_fields,
+                [],
+                {"doc_id": [doc_id], "available_int": 1},
+                [],
+                order_by,
+                offset,
+                PAGE,
+                index_nm,
+                [kb_id],
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
             logging.exception(
-                "tree-template: failed to load chunks for doc=%s", doc_id,
+                "tree-template: failed to load chunks for doc=%s",
+                doc_id,
             )
             break
         if not field_map:
@@ -585,11 +590,11 @@ async def rechunk_doc_by_tree(
             src_ids: list[str] = []
             seen: set[str] = set()
             for c in children:
-                for cid in (c.get("source_chunk_ids") or []):
+                for cid in c.get("source_chunk_ids") or []:
                     if isinstance(cid, str) and cid and cid not in seen:
                         seen.add(cid)
                         src_ids.append(cid)
-            for cid in (node.get("source_chunk_ids") or []):
+            for cid in node.get("source_chunk_ids") or []:
                 if isinstance(cid, str) and cid and cid not in seen:
                     seen.add(cid)
                     src_ids.append(cid)
@@ -613,32 +618,43 @@ async def rechunk_doc_by_tree(
 
     vctr_nm = "q_%d_vec" % len(embedding_model.encode(["x"])[0][0])
     select_fields = [
-        "id", "doc_id", "kb_id", "content_with_weight",
-        "page_num_int", "top_int", "position_int",
-        "docnm_kwd", "title_tks", "title_sm_tks",
+        "id",
+        "doc_id",
+        "kb_id",
+        "content_with_weight",
+        "page_num_int",
+        "top_int",
+        "position_int",
+        "docnm_kwd",
+        "title_tks",
+        "title_sm_tks",
         "available_int",
     ]
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
-            select_fields, [],
+            select_fields,
+            [],
             {"id": all_source_ids, "available_int": 1},
-            [], OrderByExpr(), 0, len(all_source_ids) + 16,
-            index_nm, [ctx.kb_id],
+            [],
+            OrderByExpr(),
+            0,
+            len(all_source_ids) + 16,
+            index_nm,
+            [ctx.kb_id],
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
         logging.exception(
             "rechunk: failed to load source chunks for doc=%s template=%s",
-            ctx.doc_id, template_id,
+            ctx.doc_id,
+            template_id,
         )
         return
     if not field_map:
         return
 
-    chunks_by_id: dict[str, dict] = {
-        str(rid): {**row, "id": str(rid)} for rid, row in field_map.items()
-    }
+    chunks_by_id: dict[str, dict] = {str(rid): {**row, "id": str(rid)} for rid, row in field_map.items()}
 
     merged_rows: list[dict] = []
     cluster_new_id: dict[int, str] = {}
@@ -656,38 +672,35 @@ async def rechunk_doc_by_tree(
                 min(tops) if tops else 0,
                 c.get("id") or "",
             )
+
         cluster_chunks.sort(key=_sort_key)
 
-        merged_content = "\n\n".join(
-            (c.get("content_with_weight") or "") for c in cluster_chunks
-        ).strip()
+        merged_content = "\n\n".join((c.get("content_with_weight") or "") for c in cluster_chunks).strip()
         if not merged_content:
             continue
-        page_union = sorted({
-            p for c in cluster_chunks for p in (c.get("page_num_int") or [])
-        })
-        top_union = sorted({
-            t for c in cluster_chunks for t in (c.get("top_int") or [])
-        })
+        page_union = sorted({p for c in cluster_chunks for p in (c.get("page_num_int") or [])})
+        top_union = sorted({t for c in cluster_chunks for t in (c.get("top_int") or [])})
 
         base = dict(cluster_chunks[0])
         new_id = get_uuid()
         cluster_new_id[node_id_int] = new_id
 
-        base.update({
-            "id": new_id,
-            "content_with_weight": merged_content,
-            "content_ltks": rag_tokenizer.tokenize(merged_content),
-            "page_num_int": page_union,
-            "top_int": top_union,
-            "available_int": 1,
-            "rechunk_kwd": "tree",
-            "rechunked_from_template_id": template_id,
-            "rechunked_from_chunk_ids": [c.get("id") for c in cluster_chunks if c.get("id")],
-            "token_num": num_tokens_from_string(merged_content),
-            "create_time": str(datetime.now()).replace("T", " ")[:19],
-            "create_timestamp_flt": datetime.now().timestamp(),
-        })
+        base.update(
+            {
+                "id": new_id,
+                "content_with_weight": merged_content,
+                "content_ltks": rag_tokenizer.tokenize(merged_content),
+                "page_num_int": page_union,
+                "top_int": top_union,
+                "available_int": 1,
+                "rechunk_kwd": "tree",
+                "rechunked_from_template_id": template_id,
+                "rechunked_from_chunk_ids": [c.get("id") for c in cluster_chunks if c.get("id")],
+                "token_num": num_tokens_from_string(merged_content),
+                "create_time": str(datetime.now()).replace("T", " ")[:19],
+                "create_timestamp_flt": datetime.now().timestamp(),
+            }
+        )
         base["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(base["content_ltks"])
         merged_rows.append(base)
 
@@ -700,7 +713,8 @@ async def rechunk_doc_by_tree(
     except Exception:
         logging.exception(
             "rechunk: embedding failed for doc=%s template=%s",
-            ctx.doc_id, template_id,
+            ctx.doc_id,
+            template_id,
         )
         return
     for row, vec in zip(merged_rows, vectors):
@@ -708,7 +722,8 @@ async def rechunk_doc_by_tree(
             row[vctr_nm] = np.asarray(vec, dtype=np.float32).tolist()
         except Exception:
             logging.exception(
-                "rechunk: vector cast failed; skipping row %s", row.get("id"),
+                "rechunk: vector cast failed; skipping row %s",
+                row.get("id"),
             )
             row[vctr_nm] = None
     merged_rows = [r for r in merged_rows if r.get(vctr_nm) is not None]
@@ -717,19 +732,23 @@ async def rechunk_doc_by_tree(
 
     try:
         await thread_pool_exec(
-            settings.docStoreConn.insert, merged_rows, index_nm, ctx.kb_id,
+            settings.docStoreConn.insert,
+            merged_rows,
+            index_nm,
+            ctx.kb_id,
         )
     except Exception:
         logging.exception(
             "rechunk: insert failed for doc=%s template=%s",
-            ctx.doc_id, template_id,
+            ctx.doc_id,
+            template_id,
         )
         return
 
     for node_id_int, new_chunk_id in cluster_new_id.items():
         node, _ = cluster_id_map[node_id_int]
         node["source_chunk_ids"] = [new_chunk_id]
-        for child in (node.get("children") or []):
+        for child in node.get("children") or []:
             if isinstance(child, dict):
                 child["source_chunk_ids"] = [new_chunk_id]
 
@@ -750,7 +769,8 @@ async def rechunk_doc_by_tree(
             except Exception:
                 logging.exception(
                     "rechunk: soft-delete failed for chunk=%s (merged=%s)",
-                    cid, new_chunk_id,
+                    cid,
+                    new_chunk_id,
                 )
 
 
@@ -780,7 +800,10 @@ async def run_tree_templates(
 
     vctr_nm = "q_%d_vec" % len(embedding_model.encode(["x"])[0][0])
     chunks = await load_chunks_with_vec(
-        ctx.tenant_id, ctx.kb_id, doc_id, vctr_nm,
+        ctx.tenant_id,
+        ctx.kb_id,
+        doc_id,
+        vctr_nm,
     )
     if not chunks:
         progress_cb(msg=f"tree-template: doc {doc_id} has no chunks; skipping")
@@ -799,8 +822,7 @@ async def run_tree_templates(
             "ext": raptor_cfg.get("ext") or {},
         }
         progress_cb(
-            msg=f"tree-template ({idx + 1}/{len(templates)}): "
-                f"building tree for doc={doc_id}",
+            msg=f"tree-template ({idx + 1}/{len(templates)}): building tree for doc={doc_id}",
         )
         try:
             tree = await raptor_service.build_doc_tree(
@@ -815,13 +837,15 @@ async def run_tree_templates(
         except Exception:
             logging.exception(
                 "tree-template %s: RAPTOR build failed for doc %s",
-                template_id, doc_id,
+                template_id,
+                doc_id,
             )
             continue
         if tree is None:
             logging.info(
                 "tree-template %s: no tree produced for doc %s",
-                template_id, doc_id,
+                template_id,
+                doc_id,
             )
             continue
 
@@ -835,9 +859,9 @@ async def run_tree_templates(
                 )
             except Exception:
                 logging.exception(
-                    "tree-template %s: re-chunking failed for doc %s; "
-                    "persisting tree with original chunk ids",
-                    template_id, doc_id,
+                    "tree-template %s: re-chunking failed for doc %s; persisting tree with original chunk ids",
+                    template_id,
+                    doc_id,
                 )
 
         graph = raptor_tree_to_graph(tree)
@@ -853,7 +877,8 @@ async def run_tree_templates(
         except Exception:
             logging.exception(
                 "tree-template %s: graph upsert failed for doc %s",
-                template_id, doc_id,
+                template_id,
+                doc_id,
             )
             continue
 
@@ -861,19 +886,22 @@ async def run_tree_templates(
             from rag.advanced_rag.knowlege_compile.dataset_nav import (
                 upsert_dataset_nav_doc,
             )
+
             await upsert_dataset_nav_doc(
-                ctx.tenant_id, ctx.kb_id, doc_id, tree,
+                ctx.tenant_id,
+                ctx.kb_id,
+                doc_id,
+                tree,
             )
         except Exception:
             logging.exception(
                 "tree-template %s: dataset_nav upsert failed for doc %s",
-                template_id, doc_id,
+                template_id,
+                doc_id,
             )
 
         progress_cb(
-            msg=f"tree-template ({idx + 1}/{len(templates)}): "
-                f"persisted {len(graph['entities'])} node(s), "
-                f"{len(graph['relations'])} edge(s) for doc {doc_id}",
+            msg=f"tree-template ({idx + 1}/{len(templates)}): persisted {len(graph['entities'])} node(s), {len(graph['relations'])} edge(s) for doc {doc_id}",
         )
 
 
@@ -894,7 +922,8 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
         template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
         if not template:
             logging.warning(
-                "document_structure_compile: template %s not found", template_id,
+                "document_structure_compile: template %s not found",
+                template_id,
             )
             continue
         parser_cfg = template.get("config") or {}
@@ -920,15 +949,20 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
         if chat_llm_id not in llm_bundle_cache:
             try:
                 cfg = get_model_config_from_provider_instance(
-                    ctx.tenant_id, LLMType.CHAT, chat_llm_id,
+                    ctx.tenant_id,
+                    LLMType.CHAT,
+                    chat_llm_id,
                 )
                 llm_bundle_cache[chat_llm_id] = LLMBundle(
-                    ctx.tenant_id, cfg, lang=ctx.language,
+                    ctx.tenant_id,
+                    cfg,
+                    lang=ctx.language,
                 )
             except Exception:
                 logging.exception(
                     "document_structure_compile: cannot resolve chat model %s for template %s; skipping",
-                    chat_llm_id, template_id,
+                    chat_llm_id,
+                    template_id,
                 )
                 continue
         chat_mdl_by_tid[template_id] = llm_bundle_cache[chat_llm_id]
@@ -948,7 +982,10 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
 
     if tree_templates:
         await run_tree_templates(
-            handler, tree_templates, chat_mdl_by_tid, embedding_model,
+            handler,
+            tree_templates,
+            chat_mdl_by_tid,
+            embedding_model,
         )
 
     if not non_tree_templates:
@@ -959,14 +996,8 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
     total = len(active_templates)
 
     accumulators: dict[str, list[dict]] = {tid: [] for tid, _ in active_templates}
-    template_kinds: dict[str, str] = {
-        tid: _compilation_template_kind((cfg or {}).get("kind"))
-        for tid, cfg in active_templates
-    }
-    agg_infos: dict[str, dict] = {
-        tid: {"inserted": 0, "updated": 0, "duplicates_dropped": 0}
-        for tid, _ in active_templates
-    }
+    template_kinds: dict[str, str] = {tid: _compilation_template_kind((cfg or {}).get("kind")) for tid, cfg in active_templates}
+    agg_infos: dict[str, dict] = {tid: {"inserted": 0, "updated": 0, "duplicates_dropped": 0} for tid, _ in active_templates}
     chunks_by_id: dict[str, str] = {}
 
     async def _flush(template_id: str) -> None:
@@ -990,7 +1021,8 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
             except asyncio.TimeoutError:
                 logging.warning(
                     "chain validate: timed out after %ss for template %s; using uncorrected docs",
-                    STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S, template_id,
+                    STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S,
+                    template_id,
                 )
             except Exception:
                 logging.exception(
@@ -1016,7 +1048,9 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
 
     batch_no = 0
     async for batch in handler._load_chunks_for_doc(
-        ctx.tenant_id, ctx.kb_id, ctx.doc_id,
+        ctx.tenant_id,
+        ctx.kb_id,
+        ctx.doc_id,
         batch_size=DOC_STRUCTURE_COMPILE_BATCH_CHUNKS,
     ):
         batch_no += 1
@@ -1026,9 +1060,7 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
                 text = chunk.get("content_with_weight") or ""
                 chunks_by_id[cid] = text if isinstance(text, str) else ""
         for idx, (template_id, parser_cfg) in enumerate(active_templates):
-            progress_cb(
-                msg=f"  compile batch {batch_no} ({len(batch)} chunks) for template ({idx + 1}/{total})"
-            )
+            progress_cb(msg=f"  compile batch {batch_no} ({len(batch)} chunks) for template ({idx + 1}/{total})")
             docs = await compile_structure_from_text(
                 batch,
                 parser_cfg,
@@ -1042,16 +1074,12 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
             if docs:
                 accumulators[template_id].extend(docs)
             if len(accumulators[template_id]) >= DOC_STRUCTURE_MERGE_MAX_DOCS:
-                progress_cb(
-                    msg=f"  merge flush ({len(accumulators[template_id])} docs) for template ({idx + 1}/{total})"
-                )
+                progress_cb(msg=f"  merge flush ({len(accumulators[template_id])} docs) for template ({idx + 1}/{total})")
                 await _flush(template_id)
 
     for idx, (template_id, _parser_cfg) in enumerate(active_templates):
         if ctx.has_canceled_func(ctx.id):
-            raise TaskCanceledException(
-                f"Task {ctx.id} was cancelled during document knowledge compilation"
-            )
+            raise TaskCanceledException(f"Task {ctx.id} was cancelled during document knowledge compilation")
         await _flush(template_id)
         agg = agg_infos[template_id]
         ctx.recording_context.record(f"document_structure_compile:{template_id}", agg)
@@ -1083,22 +1111,17 @@ async def run_document_post_chunking_if_last(
         ctx.progress_cb(-1, msg="Task has been canceled.")
         return False
 
-    remaining_chunking_tasks = (
-        0 if ctx.write_interceptor
-        else credit_doc_chunking_task(task_doc_id, task_id)
-    )
+    remaining_chunking_tasks = 0 if ctx.write_interceptor else credit_doc_chunking_task(task_doc_id, task_id)
     if remaining_chunking_tasks != 0:
         if remaining_chunking_tasks is not None and remaining_chunking_tasks < 0:
             logging.warning(
-                "Chunking counter for doc %s is missing or expired after task %s; "
-                "skip post-processing to avoid duplicate finalizers.",
+                "Chunking counter for doc %s is missing or expired after task %s; skip post-processing to avoid duplicate finalizers.",
                 task_doc_id,
                 task_id,
             )
         else:
             logging.info(
-                "Chunk doc(%s), page(%s-%s), chunks(%s), token(%s), elapsed:%.2f; "
-                "waiting for %s chunking task(s) before post-processing",
+                "Chunk doc(%s), page(%s-%s), chunks(%s), token(%s), elapsed:%.2f; waiting for %s chunking task(s) before post-processing",
                 ctx.name,
                 ctx.from_page,
                 ctx.to_page,
@@ -1120,11 +1143,13 @@ async def run_document_post_chunking_if_last(
                 await handler._run_raptor(embedding_model, vector_size, mark_done=False)
             else:
                 logging.warning(
-                    "raptor: cannot resolve doc %s to queue per-doc task", task_doc_id,
+                    "raptor: cannot resolve doc %s to queue per-doc task",
+                    task_doc_id,
                 )
         except Exception:
             logging.exception(
-                "raptor: failed to queue per-doc task for doc %s", task_doc_id,
+                "raptor: failed to queue per-doc task for doc %s",
+                task_doc_id,
             )
 
     original_progress_cb = getattr(ctx, "_progress_cb", None)

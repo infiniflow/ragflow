@@ -162,8 +162,7 @@ async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = F
                 # A missing row usually means stale/partial data (e.g. link removed earlier,
                 # failed post-insert file linkage, or legacy rows). Deletion still proceeds.
                 logging.warning(
-                    "delete_datasets: document %s in dataset %s has no File2Document row; "
-                    "skipping linked file delete",
+                    "delete_datasets: document %s in dataset %s has no File2Document row; skipping linked file delete",
                     doc.id,
                     kb_id,
                 )
@@ -466,8 +465,8 @@ def delete_knowledge_graph(dataset_id: str, tenant_id: str):
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
     from rag.nlp import search
     from rag.graphrag.phase_markers import clear_phase_markers
-    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation", "community_report"]},
-                                 search.index_name(kb.tenant_id), dataset_id)
+
+    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation", "community_report"]}, search.index_name(kb.tenant_id), dataset_id)
     # Wiping the graph invalidates any phase-completion markers used to
     # short-circuit resolution / community detection on resume.
     clear_phase_markers(dataset_id)
@@ -849,8 +848,8 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = 
     if wipe and index_type == "graph":
         from rag.nlp import search
         from rag.graphrag.phase_markers import clear_phase_markers
-        settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation", "community_report"]},
-                                     search.index_name(kb.tenant_id), dataset_id)
+
+        settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation", "community_report"]}, search.index_name(kb.tenant_id), dataset_id)
         # Wiping the graph invalidates any phase-completion markers used to
         # short-circuit resolution / community detection on resume.
         clear_phase_markers(dataset_id)
@@ -1001,8 +1000,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         use_kg = search_config.get("use_kg", use_kg)
         langs = search_config.get("cross_languages", langs)
         logging.debug(
-            "Dataset search loaded Search config: search_id=%s dataset_id=%s "
-            "vector_similarity_weight=%s full_text_weight=%s similarity_threshold=%s top_k=%s",
+            "Dataset search loaded Search config: search_id=%s dataset_id=%s vector_similarity_weight=%s full_text_weight=%s similarity_threshold=%s top_k=%s",
             search_id,
             dataset_id,
             vector_similarity_weight,
@@ -1156,11 +1154,15 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
         index_nm = search.index_name(tenant_id)
 
         res0 = docStoreConn.search(
-            select_fields=[], highlight_fields=[],
+            select_fields=[],
+            highlight_fields=[],
             condition={"kb_id": kb_id, "available_int": 1},
-            match_expressions=[], order_by=OrderByExpr(),
-            offset=0, limit=1,
-            index_names=index_nm, knowledgebase_ids=[kb_id],
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=1,
+            index_names=index_nm,
+            knowledgebase_ids=[kb_id],
         )
         total = docStoreConn.get_total(res0)
         if total <= 0:
@@ -1175,9 +1177,12 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
                 select_fields=list(base_fields),
                 highlight_fields=[],
                 condition={"kb_id": kb_id, "available_int": 1},
-                match_expressions=[], order_by=OrderByExpr(),
-                offset=off, limit=1,
-                index_names=index_nm, knowledgebase_ids=[kb_id],
+                match_expressions=[],
+                order_by=OrderByExpr(),
+                offset=off,
+                limit=1,
+                index_names=index_nm,
+                knowledgebase_ids=[kb_id],
             )
             ids = docStoreConn.get_doc_ids(res1)
             if not ids:
@@ -1188,20 +1193,22 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
             vec_field = _guess_vec_field(full_doc)
             vec = _as_float_vec(full_doc.get(vec_field))
 
-            out.append({
-                "chunk_id": cid,
-                "kb_id": kb_id,
-                "doc_id": full_doc.get("doc_id"),
-                "doc_name": full_doc.get("docnm_kwd"),
-                "vector_field": vec_field,
-                "vector_dim": len(vec),
-                "vector": vec,
-                "page_num_int": full_doc.get("page_num_int"),
-                "position_int": full_doc.get("position_int"),
-                "top_int": full_doc.get("top_int"),
-                "content_with_weight": full_doc.get("content_with_weight") or "",
-                "question_kwd": full_doc.get("question_kwd") or [],
-            })
+            out.append(
+                {
+                    "chunk_id": cid,
+                    "kb_id": kb_id,
+                    "doc_id": full_doc.get("doc_id"),
+                    "doc_name": full_doc.get("docnm_kwd"),
+                    "vector_field": vec_field,
+                    "vector_dim": len(vec),
+                    "vector": vec,
+                    "page_num_int": full_doc.get("page_num_int"),
+                    "position_int": full_doc.get("position_int"),
+                    "top_int": full_doc.get("top_int"),
+                    "content_with_weight": full_doc.get("content_with_weight") or "",
+                    "question_kwd": full_doc.get("question_kwd") or [],
+                }
+            )
         return out
 
     def _clean(s: str):
@@ -1251,9 +1258,7 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
 
         try:
             v, _ = emb_mdl.encode([title, txt_in])
-            assert len(v[1]) == len(ck["vector"]), (
-                f"The dimension ({len(v[1])}) of given embedding model is different from the original ({len(ck['vector'])})"
-            )
+            assert len(v[1]) == len(ck["vector"]), f"The dimension ({len(v[1])}) of given embedding model is different from the original ({len(ck['vector'])})"
             sim_content = _cos_sim(v[1], ck["vector"])
             title_w = 0.1
             qv_mix = title_w * v[0] + (1 - title_w) * v[1]
@@ -1267,14 +1272,16 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
             return False, f"Embedding failure. {e}"
 
         eff_sims.append(sim)
-        results.append({
-            "chunk_id": ck["chunk_id"],
-            "doc_id": ck["doc_id"],
-            "doc_name": ck["doc_name"],
-            "vector_field": ck["vector_field"],
-            "vector_dim": ck["vector_dim"],
-            "cos_sim": round(sim, 6),
-        })
+        results.append(
+            {
+                "chunk_id": ck["chunk_id"],
+                "doc_id": ck["doc_id"],
+                "doc_name": ck["doc_name"],
+                "vector_field": ck["vector_field"],
+                "vector_dim": ck["vector_dim"],
+                "cos_sim": round(sim, 6),
+            }
+        )
 
     summary = {
         "kb_id": dataset_id,
@@ -1295,7 +1302,11 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
         logging.info("check_embedding: dataset=%s compatible avg_cos_sim=%s valid=%d", dataset_id, summary["avg_cos_sim"], len(eff_sims))
         return True, data
     logging.warning("check_embedding: dataset=%s not_effective avg_cos_sim=%s valid=%d", dataset_id, summary["avg_cos_sim"], len(eff_sims))
-    return "not_effective", {"code": RetCode.NOT_EFFECTIVE, "message": "Embedding model switch failed: the average similarity between old and new vectors is below 0.9, indicating incompatible vector spaces.", "data": data}
+    return "not_effective", {
+        "code": RetCode.NOT_EFFECTIVE,
+        "message": "Embedding model switch failed: the average similarity between old and new vectors is below 0.9, indicating incompatible vector spaces.",
+        "data": data,
+    }
 
 
 async def search_datasets(tenant_id: str, req: dict):
@@ -1370,8 +1381,7 @@ async def search_datasets(tenant_id: str, req: dict):
         use_kg = search_config.get("use_kg", use_kg)
         langs = search_config.get("cross_languages", langs)
         logging.debug(
-            "Dataset search loaded Search config: search_id=%s dataset_ids=%s "
-            "vector_similarity_weight=%s full_text_weight=%s similarity_threshold=%s top_k=%s",
+            "Dataset search loaded Search config: search_id=%s dataset_ids=%s vector_similarity_weight=%s full_text_weight=%s similarity_threshold=%s top_k=%s",
             search_id,
             kb_ids,
             vector_similarity_weight,
@@ -1393,8 +1403,7 @@ async def search_datasets(tenant_id: str, req: dict):
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
     if meta_data_filter:
-        logging.debug("Metadata filter applied: %s, question length: %d, chat_mdl=%s",
-                      meta_data_filter, len(question), 'None' if chat_mdl is None else 'configured')
+        logging.debug("Metadata filter applied: %s, question length: %d, chat_mdl=%s", meta_data_filter, len(question), "None" if chat_mdl is None else "configured")
         local_doc_ids = await apply_meta_data_filter(
             meta_data_filter,
             None,
@@ -1525,11 +1534,15 @@ async def has_any_wiki(dataset_id: str, tenant_id: str):
 
     try:
         res = settings.docStoreConn.search(
-            select_fields=["id"], highlight_fields=[],
+            select_fields=["id"],
+            highlight_fields=[],
             condition={"compile_kwd": [_WIKI_COMPILE_KWD]},
-            match_expressions=[], order_by=OrderByExpr(),
-            offset=0, limit=1,
-            index_names=index_nm, knowledgebase_ids=[dataset_id],
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=1,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
         )
     except Exception:
         logging.exception("has_any_wiki: docStore search failed for kb=%s", dataset_id)
@@ -1540,8 +1553,11 @@ async def has_any_wiki(dataset_id: str, tenant_id: str):
 
 
 async def list_wiki_pages(
-    dataset_id: str, tenant_id: str,
-    page: int = 1, page_size: int = 200, page_type: str | None = None,
+    dataset_id: str,
+    tenant_id: str,
+    page: int = 1,
+    page_size: int = 200,
+    page_type: str | None = None,
 ):
     """List artifact pages for the left-hand 2-column list.
 
@@ -1579,16 +1595,24 @@ async def list_wiki_pages(
         order_by = OrderByExpr()
 
     select_fields = [
-        "id", "slug_kwd", "title_kwd", "page_type_kwd", "outlinks_int",
+        "id",
+        "slug_kwd",
+        "title_kwd",
+        "page_type_kwd",
+        "outlinks_int",
         "summary_with_weight",
     ]
     try:
         res = settings.docStoreConn.search(
-            select_fields=select_fields, highlight_fields=[],
+            select_fields=select_fields,
+            highlight_fields=[],
             condition=condition,
-            match_expressions=[], order_by=order_by,
-            offset=offset, limit=page_size,
-            index_names=index_nm, knowledgebase_ids=[dataset_id],
+            match_expressions=[],
+            order_by=order_by,
+            offset=offset,
+            limit=page_size,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
@@ -1601,18 +1625,23 @@ async def list_wiki_pages(
         slug = row.get("slug_kwd")
         if not isinstance(slug, str) or not slug:
             continue
-        items.append({
-            "slug": slug,
-            "title": row.get("title_kwd") or slug,
-            "page_type": row.get("page_type_kwd") or "concept",
-            "summary": row.get("summary_with_weight") or "",
-        })
+        items.append(
+            {
+                "slug": slug,
+                "title": row.get("title_kwd") or slug,
+                "page_type": row.get("page_type_kwd") or "concept",
+                "summary": row.get("summary_with_weight") or "",
+            }
+        )
 
     return True, {"total": int(total or 0), "items": items}
 
 
 async def get_wiki_page(
-    dataset_id: str, tenant_id: str, page_type: str, slug: str,
+    dataset_id: str,
+    tenant_id: str,
+    page_type: str,
+    slug: str,
 ):
     """Fetch a single artifact page for the right-hand markdown viewer.
 
@@ -1636,28 +1665,40 @@ async def get_wiki_page(
 
     full_slug = f"{page_type}/{slug}" if "/" not in slug else slug
     select_fields = [
-        "id", "slug_kwd", "title_kwd", "page_type_kwd",
-        "content_with_weight", "summary_with_weight",
-        "entity_names_kwd", "outlinks_kwd", "related_kb_pages_kwd",
-        "source_chunk_ids", "source_doc_ids",
+        "id",
+        "slug_kwd",
+        "title_kwd",
+        "page_type_kwd",
+        "content_with_weight",
+        "summary_with_weight",
+        "entity_names_kwd",
+        "outlinks_kwd",
+        "related_kb_pages_kwd",
+        "source_chunk_ids",
+        "source_doc_ids",
     ]
     try:
         res = settings.docStoreConn.search(
-            select_fields=select_fields, highlight_fields=[],
+            select_fields=select_fields,
+            highlight_fields=[],
             condition={
                 "compile_kwd": [_WIKI_COMPILE_KWD],
                 "page_type_kwd": [page_type],
                 "slug_kwd": [full_slug],
             },
-            match_expressions=[], order_by=OrderByExpr(),
-            offset=0, limit=1,
-            index_names=index_nm, knowledgebase_ids=[dataset_id],
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=1,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
         logging.exception(
             "get_wiki_page: search failed for kb=%s slug=%s",
-            dataset_id, full_slug,
+            dataset_id,
+            full_slug,
         )
         return True, None
 
@@ -1696,11 +1737,15 @@ async def has_any_skill(dataset_id: str, tenant_id: str):
 
     try:
         res = settings.docStoreConn.search(
-            select_fields=["id"], highlight_fields=[],
+            select_fields=["id"],
+            highlight_fields=[],
             condition={"compile_kwd": [_SKILL_ALL_COMPILE_KWD]},
-            match_expressions=[], order_by=OrderByExpr(),
-            offset=0, limit=1,
-            index_names=index_nm, knowledgebase_ids=[dataset_id],
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=1,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
         )
     except Exception:
         logging.exception("has_any_skill: docStore search failed for kb=%s", dataset_id)
@@ -1726,11 +1771,15 @@ async def get_skill_tree(dataset_id: str, tenant_id: str):
     select_fields = ["id", "kb_id", "doc_id", "compile_kwd", "skill_with_weight"]
     try:
         res = settings.docStoreConn.search(
-            select_fields=select_fields, highlight_fields=[],
+            select_fields=select_fields,
+            highlight_fields=[],
             condition={"compile_kwd": [_SKILL_ALL_COMPILE_KWD]},
-            match_expressions=[], order_by=OrderByExpr(),
-            offset=0, limit=1,
-            index_names=index_nm, knowledgebase_ids=[dataset_id],
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=1,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
@@ -1764,25 +1813,37 @@ async def get_skill_page(dataset_id: str, tenant_id: str, skill_kwd: str):
     from common.doc_store.doc_store_base import OrderByExpr
 
     select_fields = [
-        "id", "kb_id", "doc_id", "compile_kwd", "skill_kwd",
-        "depth_int", "children_kwd", "source_doc_ids", "md_with_weight",
+        "id",
+        "kb_id",
+        "doc_id",
+        "compile_kwd",
+        "skill_kwd",
+        "depth_int",
+        "children_kwd",
+        "source_doc_ids",
+        "md_with_weight",
     ]
     try:
         res = settings.docStoreConn.search(
-            select_fields=select_fields, highlight_fields=[],
+            select_fields=select_fields,
+            highlight_fields=[],
             condition={
                 "compile_kwd": [_SKILL_COMPILE_KWD],
                 "skill_kwd": [skill_kwd],
             },
-            match_expressions=[], order_by=OrderByExpr(),
-            offset=0, limit=1,
-            index_names=index_nm, knowledgebase_ids=[dataset_id],
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=1,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
         logging.exception(
             "get_skill_page: docStore search failed for kb=%s skill=%s",
-            dataset_id, skill_kwd,
+            dataset_id,
+            skill_kwd,
         )
         return True, None
 
@@ -1804,7 +1865,11 @@ async def get_skill_page(dataset_id: str, tenant_id: str, skill_kwd: str):
 
 
 async def update_wiki_page(
-    dataset_id: str, tenant_id: str, page_type: str, slug: str, content_md: str,
+    dataset_id: str,
+    tenant_id: str,
+    page_type: str,
+    slug: str,
+    content_md: str,
     *,
     user_id: str | None = None,
     title: str | None = None,
@@ -1859,6 +1924,7 @@ async def update_wiki_page(
     # ``condition`` selects the fast partial-update branch which preserves
     # the JSON value verbatim.
     from common.doc_store.doc_store_base import OrderByExpr
+
     row_id: str | None = None
     content_before = ""
     try:
@@ -1872,11 +1938,14 @@ async def update_wiki_page(
             },
             match_expressions=[],
             order_by=OrderByExpr(),
-            offset=0, limit=1,
-            index_names=index_nm, knowledgebase_ids=[dataset_id],
+            offset=0,
+            limit=1,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
         )
         field_map = settings.docStoreConn.get_fields(
-            res, ["id", "content_with_weight"],
+            res,
+            ["id", "content_with_weight"],
         )
         if field_map:
             row_id, row = next(iter(field_map.items()))
@@ -1884,7 +1953,8 @@ async def update_wiki_page(
     except Exception:
         logging.exception(
             "update_wiki_page: lookup failed for kb=%s slug=%s",
-            dataset_id, full_slug,
+            dataset_id,
+            full_slug,
         )
     if not row_id:
         return True, None
@@ -1904,12 +1974,14 @@ async def update_wiki_page(
                 "summary_with_weight": summary,
                 "outlinks_kwd": list(outlinks),
             },
-            index_nm, dataset_id,
+            index_nm,
+            dataset_id,
         )
     except Exception:
         logging.exception(
             "update_wiki_page: docStore update failed for kb=%s slug=%s",
-            dataset_id, full_slug,
+            dataset_id,
+            full_slug,
         )
         return True, None
 
@@ -1933,7 +2005,8 @@ async def update_wiki_page(
     except Exception:
         logging.exception(
             "update_wiki_page: file_commit record failed for kb=%s slug=%s",
-            dataset_id, full_slug,
+            dataset_id,
+            full_slug,
         )
 
     # Re-read the row so the dialog gets the canonical post-update state.
@@ -2023,7 +2096,10 @@ def _wiki_relation_payload(row: dict) -> dict | None:
 
 
 async def _wiki_search_entity_page(
-    index_nm, dataset_id: str, offset: int, limit: int,
+    index_nm,
+    dataset_id: str,
+    offset: int,
+    limit: int,
 ):
     """One page of artifact_entity rows, ordered by weight_int DESC."""
     from common.doc_store.doc_store_base import OrderByExpr
@@ -2035,22 +2111,31 @@ async def _wiki_search_entity_page(
         order_by = OrderByExpr()
 
     select_fields = [
-        "id", "slug_kwd", "weight_int", "source_chunk_ids",
+        "id",
+        "slug_kwd",
+        "weight_int",
+        "source_chunk_ids",
         "content_with_weight",
     ]
     res = await thread_pool_exec(
         settings.docStoreConn.search,
-        select_fields, [],
+        select_fields,
+        [],
         {"compile_kwd": [_WIKI_GRAPH_ENTITY_KWD]},
-        [], order_by,
-        offset, limit,
-        index_nm, [dataset_id],
+        [],
+        order_by,
+        offset,
+        limit,
+        index_nm,
+        [dataset_id],
     )
     return settings.docStoreConn.get_fields(res, select_fields)
 
 
 async def _wiki_search_entities_by_slugs(
-    index_nm, dataset_id: str, slugs: list[str],
+    index_nm,
+    dataset_id: str,
+    slugs: list[str],
 ):
     """Fetch entity rows whose ``slug_kwd`` is in ``slugs``. Unordered."""
     if not slugs:
@@ -2059,25 +2144,34 @@ async def _wiki_search_entities_by_slugs(
     from common.doc_store.doc_store_base import OrderByExpr
 
     select_fields = [
-        "id", "slug_kwd", "weight_int", "source_chunk_ids",
+        "id",
+        "slug_kwd",
+        "weight_int",
+        "source_chunk_ids",
         "content_with_weight",
     ]
     res = await thread_pool_exec(
         settings.docStoreConn.search,
-        select_fields, [],
+        select_fields,
+        [],
         {
             "compile_kwd": [_WIKI_GRAPH_ENTITY_KWD],
             "slug_kwd": list(slugs),
         },
-        [], OrderByExpr(),
-        0, max(len(slugs), 1),
-        index_nm, [dataset_id],
+        [],
+        OrderByExpr(),
+        0,
+        max(len(slugs), 1),
+        index_nm,
+        [dataset_id],
     )
     return settings.docStoreConn.get_fields(res, select_fields)
 
 
 async def _wiki_search_relations_from(
-    index_nm, dataset_id: str, from_slugs: list[str],
+    index_nm,
+    dataset_id: str,
+    from_slugs: list[str],
 ):
     """Fetch all relation rows with ``from_kwd`` in ``from_slugs``."""
     if not from_slugs:
@@ -2090,20 +2184,26 @@ async def _wiki_search_relations_from(
     # once rather than paging.
     res = await thread_pool_exec(
         settings.docStoreConn.search,
-        select_fields, [],
+        select_fields,
+        [],
         {
             "compile_kwd": [_WIKI_GRAPH_RELATION_KWD],
             "from_kwd": list(from_slugs),
         },
-        [], OrderByExpr(),
-        0, 10000,
-        index_nm, [dataset_id],
+        [],
+        OrderByExpr(),
+        0,
+        10000,
+        index_nm,
+        [dataset_id],
     )
     return settings.docStoreConn.get_fields(res, select_fields)
 
 
 async def get_wiki_graph(
-    dataset_id: str, tenant_id: str, node: str | None = None,
+    dataset_id: str,
+    tenant_id: str,
+    node: str | None = None,
 ):
     """Load the canvas graph payload incrementally from per-row data.
 
@@ -2170,12 +2270,15 @@ async def get_wiki_graph(
         center_slug = node.strip()
         try:
             field_map = await _wiki_search_entities_by_slugs(
-                index_nm, dataset_id, [center_slug],
+                index_nm,
+                dataset_id,
+                [center_slug],
             )
         except Exception:
             logging.exception(
                 "get_wiki_graph: centre lookup failed kb=%s node=%s",
-                dataset_id, center_slug,
+                dataset_id,
+                center_slug,
             )
             return True, empty
 
@@ -2193,12 +2296,15 @@ async def get_wiki_graph(
         # Outgoing edges from the centre, capped by MAX_LOADING_ENTITY.
         try:
             rel_map = await _wiki_search_relations_from(
-                index_nm, dataset_id, [center_slug],
+                index_nm,
+                dataset_id,
+                [center_slug],
             )
         except Exception:
             logging.exception(
                 "get_wiki_graph: relation lookup failed kb=%s node=%s",
-                dataset_id, center_slug,
+                dataset_id,
+                center_slug,
             )
             return True, {"entities": list(entities.values()), "relations": []}
 
@@ -2211,10 +2317,7 @@ async def get_wiki_graph(
                 continue
             # Hub-node cap: stop accepting more relations once the
             # to-target set would push us over the entity budget.
-            if (
-                payload["to"] not in entities
-                and len(entities) + len(to_slugs) >= cap
-            ):
+            if payload["to"] not in entities and len(entities) + len(to_slugs) >= cap:
                 continue
             _add_relation(payload)
             if payload["to"] != center_slug and payload["to"] not in entities:
@@ -2224,12 +2327,15 @@ async def get_wiki_graph(
         if to_slugs:
             try:
                 to_map = await _wiki_search_entities_by_slugs(
-                    index_nm, dataset_id, to_slugs,
+                    index_nm,
+                    dataset_id,
+                    to_slugs,
                 )
             except Exception:
                 logging.exception(
                     "get_wiki_graph: neighbour lookup failed kb=%s node=%s",
-                    dataset_id, center_slug,
+                    dataset_id,
+                    center_slug,
                 )
                 to_map = {}
             for row in (to_map or {}).values():
@@ -2249,12 +2355,16 @@ async def get_wiki_graph(
         offset = (page - 1) * page_size
         try:
             field_map = await _wiki_search_entity_page(
-                index_nm, dataset_id, offset, page_size,
+                index_nm,
+                dataset_id,
+                offset,
+                page_size,
             )
         except Exception:
             logging.exception(
                 "get_wiki_graph: entity page fetch failed kb=%s page=%d",
-                dataset_id, page,
+                dataset_id,
+                page,
             )
             break
         if not field_map:
@@ -2278,7 +2388,7 @@ async def get_wiki_graph(
             # If even the first entity on a page can't fit, we exit the
             # outer loop below; this preserves the "least-weight first
             # excluded" semantics.
-            #if cumulative_weight + w > cap and len(entities) + len(e_sub) > 0:
+            # if cumulative_weight + w > cap and len(entities) + len(e_sub) > 0:
             #    break
             cumulative_weight += w
             e_sub.append(payload)
@@ -2295,7 +2405,9 @@ async def get_wiki_graph(
         sub_slugs = [p["slug"] for p in e_sub]
         try:
             rel_map = await _wiki_search_relations_from(
-                index_nm, dataset_id, sub_slugs,
+                index_nm,
+                dataset_id,
+                sub_slugs,
             )
         except Exception:
             logging.exception(
@@ -2310,17 +2422,16 @@ async def get_wiki_graph(
             if payload is None:
                 continue
             _add_relation(payload)
-            if (
-                payload["to"] not in entities
-                and payload["to"] not in missing_to
-            ):
+            if payload["to"] not in entities and payload["to"] not in missing_to:
                 missing_to.append(payload["to"])
 
         # Step 4: hydrate the to-targets (they count toward the cap).
         if missing_to:
             try:
                 to_map = await _wiki_search_entities_by_slugs(
-                    index_nm, dataset_id, missing_to,
+                    index_nm,
+                    dataset_id,
+                    missing_to,
                 )
             except Exception:
                 logging.exception(
@@ -2371,14 +2482,18 @@ async def clear_wiki(dataset_id: str, tenant_id: str):
     for kwd in _WIKI_COMPILE_KWDS:
         try:
             res = settings.docStoreConn.delete(
-                {"compile_kwd": kwd}, index_nm, dataset_id,
+                {"compile_kwd": kwd},
+                index_nm,
+                dataset_id,
             )
             # Different backends return different shapes (int count, dict,
             # bool). Surface whatever we got so the caller can log it.
             deleted[kwd] = res if res is not None else True
         except Exception:
             logging.exception(
-                "clear_wiki: delete failed for kwd=%s kb=%s", kwd, dataset_id,
+                "clear_wiki: delete failed for kwd=%s kb=%s",
+                kwd,
+                dataset_id,
             )
             deleted[kwd] = False
 

@@ -32,6 +32,7 @@ shape between the two pipelines (e.g. pairwise-cosine dedup, LLM "are these
 the same?" batching) intentionally stays in each pipeline file for now —
 extract those only when their shapes converge.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -168,14 +169,17 @@ def ensure_llm_bundle(mdl, method: str, *, label: str = "model"):
         return mdl
     if isinstance(mdl, tuple) and mdl and hasattr(mdl[0], method):
         logging.warning(
-            "%s arrived as a %s; unwrapping to first element (check the call "
-            "site — was %s()'s return value passed instead of the LLMBundle?)",
-            label, type(mdl).__name__, method,
+            "%s arrived as a %s; unwrapping to first element (check the call site — was %s()'s return value passed instead of the LLMBundle?)",
+            label,
+            type(mdl).__name__,
+            method,
         )
         return mdl[0]
     logging.error(
         "%s has no .%s method (type=%s); aborting",
-        label, method, type(mdl).__name__,
+        label,
+        method,
+        type(mdl).__name__,
     )
     return None
 
@@ -210,8 +214,15 @@ async def es_search(
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
-            select_fields, [], condition, match_expressions or [],
-            OrderByExpr(), offset, limit, index, kb_ids,
+            select_fields,
+            [],
+            condition,
+            match_expressions or [],
+            OrderByExpr(),
+            offset,
+            limit,
+            index,
+            kb_ids,
         )
         return settings.docStoreConn.get_fields(res, select_fields) or {}
     except Exception:
@@ -357,8 +368,7 @@ def build_chunk_batches(
     Returns ``(batches, info)`` where ``info`` is a small stats dict.
     """
     if not chunks:
-        return [], {"total": 0, "kept": 0, "skipped_resume": 0, "skipped_empty": 0,
-                    "input_budget": 0, "n_batches": 0}
+        return [], {"total": 0, "kept": 0, "skipped_resume": 0, "skipped_empty": 0, "input_budget": 0, "n_batches": 0}
 
     picker = chunk_text_picker or _default_chunk_text
     resume_set = resume_chunk_ids or set()
@@ -390,9 +400,12 @@ def build_chunk_batches(
 
     if not chunk_texts:
         return [], {
-            "total": len(chunks), "kept": 0,
-            "skipped_resume": skipped_resume, "skipped_empty": skipped_empty,
-            "input_budget": 0, "n_batches": 0,
+            "total": len(chunks),
+            "kept": 0,
+            "skipped_resume": skipped_resume,
+            "skipped_empty": skipped_empty,
+            "input_budget": 0,
+            "n_batches": 0,
         }
 
     batches: list[list[dict]] = []
@@ -409,18 +422,18 @@ def build_chunk_batches(
         for idx, text in enumerate(chunk_texts):
             tks = num_tokens_from_string(text)
             would_overflow_count = len(current) >= batch_size_cap
-            would_overflow_tokens = (
-                current and (current_tks + tks > token_cap)
-            )
+            would_overflow_tokens = current and (current_tks + tks > token_cap)
             if would_overflow_count or would_overflow_tokens:
                 batches.append(current)
                 current = []
                 current_tks = 0
-            current.append({
-                "label": label_fn(len(current)),
-                "chunk_id": chunk_ids[idx],
-                "text": text,
-            })
+            current.append(
+                {
+                    "label": label_fn(len(current)),
+                    "chunk_id": chunk_ids[idx],
+                    "text": text,
+                }
+            )
             current_tks += tks
         if current:
             batches.append(current)
@@ -435,11 +448,13 @@ def build_chunk_batches(
             packed: list[dict] = []
             for position, item in enumerate(batch):
                 for idx, text in item.items():
-                    packed.append({
-                        "label": label_fn(position),
-                        "chunk_id": chunk_ids[idx],
-                        "text": text,
-                    })
+                    packed.append(
+                        {
+                            "label": label_fn(position),
+                            "chunk_id": chunk_ids[idx],
+                            "text": text,
+                        }
+                    )
             if packed:
                 batches.append(packed)
 
@@ -483,6 +498,7 @@ async def run_chunked_pipeline(
     async def _one(idx: int, entries: list[dict]) -> Any:
         async def _do() -> Any:
             return await process_batch(entries, idx, total)
+
         if semaphore is not None:
             async with semaphore:
                 return await _do()
@@ -523,9 +539,7 @@ async def run_chunked_pipeline(
 _PUNCT_TABLE = str.maketrans("", "", string.punctuation)
 
 
-DEFAULT_DISAMBIGUATE_SYSTEM = (
-    "You are a named-entity resolution assistant. Return only JSON."
-)
+DEFAULT_DISAMBIGUATE_SYSTEM = "You are a named-entity resolution assistant. Return only JSON."
 
 
 def normalize_key(name) -> str:
@@ -582,7 +596,7 @@ def _exact_dedup_by_key(
             n = it.get(name_key, "")
             if isinstance(n, str) and n:
                 aliases.add(n)
-            for a in (it.get("aliases") or []):
+            for a in it.get("aliases") or []:
                 if isinstance(a, str) and a:
                     aliases.add(a)
             chunk_id_lists.append(it.get("chunk_ids") or [])
@@ -643,6 +657,7 @@ async def _embedding_dedup(
     try:
         from sklearn.metrics.pairwise import cosine_similarity
         import numpy as np
+
         matrix = np.asarray([list(v) for v in vectors], dtype=float)
         sims = cosine_similarity(matrix)
     except Exception:
@@ -704,7 +719,7 @@ async def _resolve_ambiguous_pairs(
         return i
 
     for start in range(0, len(ambiguous_pairs), batch_size):
-        batch = ambiguous_pairs[start:start + batch_size]
+        batch = ambiguous_pairs[start : start + batch_size]
         batch = [(i, j) for i, j in batch if _root(i) != _root(j)]
         if not batch:
             continue
@@ -713,10 +728,7 @@ async def _resolve_ambiguous_pairs(
         for k, (i, j) in enumerate(batch):
             a_type = f" ({canonical[i].get(type_key, '')})" if type_key else ""
             b_type = f" ({canonical[j].get(type_key, '')})" if type_key else ""
-            lines.append(
-                f"{k + 1}. \"{canonical[i].get(name_key, '')}\"{a_type} vs "
-                f"\"{canonical[j].get(name_key, '')}\"{b_type}"
-            )
+            lines.append(f'{k + 1}. "{canonical[i].get(name_key, "")}"{a_type} vs "{canonical[j].get(name_key, "")}"{b_type}')
 
         user_prompt = (
             "For each pair below, determine if they refer to the same real-world entity.\n"
@@ -772,6 +784,7 @@ def _apply_dedup_merges(
 ) -> list[dict]:
     """Union-find collapse: sum ``mention_count``, union ``aliases`` and
     ``chunk_ids`` per canonical."""
+
     def _root(i: int) -> int:
         while i in merged_into:
             i = merged_into[i]
@@ -849,7 +862,8 @@ async def bulk_dedup_items(
 
     if len(canonical) > 1 and embd_mdl is not None:
         merged_into, ambig, vectors = await _embedding_dedup(
-            canonical, embd_mdl,
+            canonical,
+            embd_mdl,
             name_key=name_key,
             type_key=type_key,
             merge_threshold=merge_threshold,
@@ -860,7 +874,10 @@ async def bulk_dedup_items(
         else:
             if chat_mdl is not None and ambig:
                 merged_into = await _resolve_ambiguous_pairs(
-                    canonical, ambig, merged_into, chat_mdl,
+                    canonical,
+                    ambig,
+                    merged_into,
+                    chat_mdl,
                     name_key=name_key,
                     type_key=type_key,
                     batch_size=ambiguous_batch_size,

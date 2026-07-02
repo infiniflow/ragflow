@@ -41,7 +41,7 @@ def validate_template_payload(req: dict, require_all: bool = True) -> str:
         if len(str(config.get("global_rules") or "")) > 4096:
             return "Global compilation rules is too long."
         for section in ["entity", "relation"]:
-            fields = ((config.get(section) or {}).get("fields") or [])
+            fields = (config.get(section) or {}).get("fields") or []
             seen_types = set()
             for field in fields:
                 field_type = str((field or {}).get("type") or "").strip()
@@ -57,7 +57,7 @@ def validate_template_payload(req: dict, require_all: bool = True) -> str:
                 if len(str((field or {}).get("rule") or "")) > 1024:
                     return f"{section.capitalize()} field rule is too long."
         if config.get("kind") == "artifacts" or req.get("kind") == "artifacts":
-            for field in ((config.get("claim") or {}).get("fields") or []):
+            for field in (config.get("claim") or {}).get("fields") or []:
                 if not str((field or {}).get("statement") or "").strip():
                     return "Claim statement is required."
                 if not str((field or {}).get("subject") or "").strip():
@@ -66,7 +66,7 @@ def validate_template_payload(req: dict, require_all: bool = True) -> str:
                     return "Claim statement is too long."
                 if len(str((field or {}).get("subject") or "")) > 1024:
                     return "Claim subject is too long."
-            for field in ((config.get("concept") or {}).get("fields") or []):
+            for field in (config.get("concept") or {}).get("fields") or []:
                 if not str((field or {}).get("term") or "").strip():
                     return "Concept term is required."
                 if not str((field or {}).get("definition_excerpt") or "").strip():

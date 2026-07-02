@@ -46,6 +46,7 @@ class KnowledgebaseService(CommonService):
     Attributes:
         model: The Knowledgebase model class for database operations.
     """
+
     model = Knowledgebase
 
     @classmethod
@@ -59,13 +60,7 @@ class KnowledgebaseService(CommonService):
         - KBs owned by the current user (`tenant_id == user_id`)
         Always constrained to `StatusEnum.VALID`.
         """
-        return (
-            (
-                (cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.permission == TenantPermission.TEAM.value))
-                | (cls.model.tenant_id == user_id)
-            )
-            & (cls.model.status == StatusEnum.VALID.value)
-        )
+        return ((cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.tenant_id == user_id)) & (cls.model.status == StatusEnum.VALID.value)
 
     @classmethod
     @DB.connection_context()
@@ -94,8 +89,7 @@ class KnowledgebaseService(CommonService):
                 2. The user is not the creator of the dataset
         """
         # Check if a dataset can be deleted by a user
-        docs = cls.model.select(
-            cls.model.id).where(cls.model.id == kb_id, cls.model.created_by == user_id).paginate(0, 1)
+        docs = cls.model.select(cls.model.id).where(cls.model.id == kb_id, cls.model.created_by == user_id).paginate(0, 1)
         docs = docs.dicts()
         if not docs:
             return False
@@ -127,10 +121,10 @@ class KnowledgebaseService(CommonService):
         # Check parsing status of each document
         for doc in docs:
             # If document is being parsed, don't allow chat creation
-            if doc['run'] == TaskStatus.RUNNING.value or doc['run'] == TaskStatus.CANCEL.value or doc['run'] == TaskStatus.FAIL.value:
+            if doc["run"] == TaskStatus.RUNNING.value or doc["run"] == TaskStatus.CANCEL.value or doc["run"] == TaskStatus.FAIL.value:
                 return False, f"Document '{doc['name']}' in dataset '{kb.name}' is still being parsed. Please wait until all documents are parsed before starting a chat."
             # If document is not yet parsed and has no chunks, don't allow chat creation
-            if doc['run'] == TaskStatus.UNSTART.value and doc['chunk_num'] == 0:
+            if doc["run"] == TaskStatus.UNSTART.value and doc["chunk_num"] == 0:
                 return False, f"Document '{doc['name']}' in dataset '{kb.name}' has not been parsed yet. Please parse all documents before starting a chat."
 
         return True, None
@@ -143,20 +137,14 @@ class KnowledgebaseService(CommonService):
         #     kb_ids: List of dataset IDs
         # Returns:
         #     List of document IDs
-        doc_ids = cls.model.select(Document.id.alias("document_id")).join(Document, on=(cls.model.id == Document.kb_id)).where(
-            cls.model.id.in_(kb_ids)
-        )
+        doc_ids = cls.model.select(Document.id.alias("document_id")).join(Document, on=(cls.model.id == Document.kb_id)).where(cls.model.id.in_(kb_ids))
         doc_ids = list(doc_ids.dicts())
         doc_ids = [doc["document_id"] for doc in doc_ids]
         return doc_ids
 
     @classmethod
     @DB.connection_context()
-    def get_by_tenant_ids(cls, joined_tenant_ids, user_id,
-                          page_number, items_per_page,
-                          orderby, desc, keywords,
-                          parser_id=None
-                          ):
+    def get_by_tenant_ids(cls, joined_tenant_ids, user_id, page_number, items_per_page, orderby, desc, keywords, parser_id=None):
         # Get knowledge bases by tenant IDs with pagination and filtering
         # Args:
         #     joined_tenant_ids: List of tenant IDs
@@ -183,17 +171,25 @@ class KnowledgebaseService(CommonService):
             cls.model.parser_id,
             cls.model.embd_id,
             User.nickname,
-            User.avatar.alias('tenant_avatar'),
-            cls.model.update_time
+            User.avatar.alias("tenant_avatar"),
+            cls.model.update_time,
         ]
         if keywords:
-            kbs = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id)).where(
-                cls._visibility_and_status_filter(joined_tenant_ids, user_id),
-                fn.LOWER(cls.model.name).contains(keywords.lower()),
+            kbs = (
+                cls.model.select(*fields)
+                .join(User, on=(cls.model.tenant_id == User.id))
+                .where(
+                    cls._visibility_and_status_filter(joined_tenant_ids, user_id),
+                    fn.LOWER(cls.model.name).contains(keywords.lower()),
+                )
             )
         else:
-            kbs = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id)).where(
-                cls._visibility_and_status_filter(joined_tenant_ids, user_id),
+            kbs = (
+                cls.model.select(*fields)
+                .join(User, on=(cls.model.tenant_id == User.id))
+                .where(
+                    cls._visibility_and_status_filter(joined_tenant_ids, user_id),
+                )
             )
         if parser_id:
             kbs = kbs.where(cls.model.parser_id == parser_id)
@@ -223,7 +219,7 @@ class KnowledgebaseService(CommonService):
             cls.model.chunk_num,
             cls.model.status,
             cls.model.create_date,
-            cls.model.update_date
+            cls.model.update_date,
         ]
         # find team kb and owned kb
         kbs = cls.model.select(*fields).where(cls._visibility_and_status_filter(tenant_ids, user_id))
@@ -292,14 +288,14 @@ class KnowledgebaseService(CommonService):
             cls.model.skill_task_id,
             cls.model.skill_task_finish_at,
             cls.model.create_time,
-            cls.model.update_time
-            ]
-        kbs = cls.model.select(*fields)\
-                .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
-            .where(
-            (cls.model.id == kb_id),
-            (cls.model.status == StatusEnum.VALID.value)
-        ).dicts()
+            cls.model.update_time,
+        ]
+        kbs = (
+            cls.model.select(*fields)
+            .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)
+            .where((cls.model.id == kb_id), (cls.model.status == StatusEnum.VALID.value))
+            .dicts()
+        )
         if not kbs:
             return None
         return kbs[0]
@@ -366,11 +362,7 @@ class KnowledgebaseService(CommonService):
         #     tenant_id: Tenant ID
         # Returns:
         #     Tuple of (exists, knowledge_base)
-        kb = cls.model.select().where(
-            (cls.model.name == kb_name)
-            & (cls.model.tenant_id == tenant_id)
-            & (cls.model.status == StatusEnum.VALID.value)
-        )
+        kb = cls.model.select().where((cls.model.name == kb_name) & (cls.model.tenant_id == tenant_id) & (cls.model.status == StatusEnum.VALID.value))
         if kb:
             return True, kb[0]
         return False, None
@@ -383,17 +375,9 @@ class KnowledgebaseService(CommonService):
         #     List of all dataset IDs
         return [m["id"] for m in cls.model.select(cls.model.id).dicts()]
 
-
     @classmethod
     @DB.connection_context()
-    def create_with_name(
-        cls,
-        *,
-        name: str,
-        tenant_id: str,
-        parser_id: str | None = None,
-        **kwargs
-    ):
+    def create_with_name(cls, *, name: str, tenant_id: str, parser_id: str | None = None, **kwargs):
         """Create a dataset (knowledgebase) by name with kb_app defaults.
 
         This encapsulates the creation logic used in kb_app.create so other callers
@@ -433,7 +417,7 @@ class KnowledgebaseService(CommonService):
             "tenant_id": tenant_id,
             "created_by": tenant_id,
             "parser_id": (parser_id or "naive"),
-            **kwargs # Includes optional fields such as description, language, permission, avatar, parser_config, etc.
+            **kwargs,  # Includes optional fields such as description, language, permission, avatar, parser_config, etc.
         }
 
         # Update parser_config (always override with validated default/merged config)
@@ -442,11 +426,9 @@ class KnowledgebaseService(CommonService):
 
         return True, payload
 
-
     @classmethod
     @DB.connection_context()
-    def get_list(cls, joined_tenant_ids, user_id,
-                 page_number, items_per_page, orderby, desc, id, name, keywords, parser_id=None):
+    def get_list(cls, joined_tenant_ids, user_id, page_number, items_per_page, orderby, desc, id, name, keywords, parser_id=None):
         # Get list of knowledge bases with filtering and pagination
         # Args:
         #     joined_tenant_ids: List of tenant IDs
@@ -570,7 +552,7 @@ class KnowledgebaseService(CommonService):
             kb.save(only=dirty_fields)
         except ValueError as e:
             if str(e) == "no data to save!":
-                pass # that's OK
+                pass  # that's OK
             else:
                 raise e
 
@@ -581,21 +563,17 @@ class KnowledgebaseService(CommonService):
         if not kb_row:
             raise RuntimeError(f"kb_id {kb_id} does not exist")
         update_dict = {
-            'doc_num': kb_row.doc_num - doc_num_info['doc_num'],
-            'chunk_num': kb_row.chunk_num - doc_num_info['chunk_num'],
-            'token_num': kb_row.token_num - doc_num_info['token_num'],
-            'update_time': current_timestamp(),
-            'update_date': datetime_format(datetime.now())
+            "doc_num": kb_row.doc_num - doc_num_info["doc_num"],
+            "chunk_num": kb_row.chunk_num - doc_num_info["chunk_num"],
+            "token_num": kb_row.token_num - doc_num_info["token_num"],
+            "update_time": current_timestamp(),
+            "update_date": datetime_format(datetime.now()),
         }
         return cls.model.update(update_dict).where(cls.model.id == kb_id).execute()
 
     @classmethod
     @DB.connection_context()
     def get_null_tenant_embd_id_row(cls):
-        fields = [
-            cls.model.id,
-            cls.model.tenant_id,
-            cls.model.embd_id
-        ]
+        fields = [cls.model.id, cls.model.tenant_id, cls.model.embd_id]
         objs = cls.model.select(*fields).where(cls.model.tenant_embd_id.is_null())
         return list(objs)

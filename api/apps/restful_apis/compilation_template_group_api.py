@@ -77,9 +77,7 @@ def list_groups() -> Response:
     desc = request.args.get("desc", "true").lower() != "false"
 
     try:
-        groups = CompilationTemplateGroupService.list_saved(
-            current_user.id, keywords, scope, orderby, desc
-        )
+        groups = CompilationTemplateGroupService.list_saved(current_user.id, keywords, scope, orderby, desc)
         total = len(groups)
         if page_number and items_per_page:
             groups = groups[(page_number - 1) * items_per_page : page_number * items_per_page]

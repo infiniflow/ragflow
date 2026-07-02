@@ -520,7 +520,7 @@ async def search(tenant_id, dataset_id):
     req, err = await validate_and_parse_json_request(request, SearchDatasetReq)
     if err is not None:
         return get_error_argument_result(err)
-    req['dataset_ids'] = [dataset_id]
+    req["dataset_ids"] = [dataset_id]
     try:
         success, result = await dataset_api_service.search_datasets(tenant_id, req)
         if success:
@@ -595,7 +595,11 @@ async def list_wiki_pages(tenant_id, dataset_id):
 
     try:
         success, result = await dataset_api_service.list_wiki_pages(
-            dataset_id, tenant_id, page=page, page_size=page_size, page_type=page_type,
+            dataset_id,
+            tenant_id,
+            page=page,
+            page_size=page_size,
+            page_type=page_type,
         )
         if success:
             return get_result(data=result)
@@ -624,7 +628,9 @@ async def get_wiki_graph(tenant_id, dataset_id):
         if isinstance(node, str):
             node = node.strip() or None
         success, result = await dataset_api_service.get_wiki_graph(
-            dataset_id, tenant_id, node=node,
+            dataset_id,
+            tenant_id,
+            node=node,
         )
         if success:
             return get_result(data=result)
@@ -647,7 +653,8 @@ async def clear_wiki(tenant_id, dataset_id):
     """
     try:
         success, result = await dataset_api_service.clear_wiki(
-            dataset_id, tenant_id,
+            dataset_id,
+            tenant_id,
         )
         if success:
             return get_result(data=result)
@@ -671,7 +678,10 @@ async def get_wiki_page(tenant_id, dataset_id, page_type, slug):
     """
     try:
         success, result = await dataset_api_service.get_wiki_page(
-            dataset_id, tenant_id, page_type, slug,
+            dataset_id,
+            tenant_id,
+            page_type,
+            slug,
         )
         if success:
             return get_result(data=result)
@@ -711,7 +721,8 @@ async def get_skill_tree(tenant_id, dataset_id):
     """
     try:
         success, result = await dataset_api_service.get_skill_tree(
-            dataset_id, tenant_id,
+            dataset_id,
+            tenant_id,
         )
         if success:
             return get_result(data=result)
@@ -732,7 +743,9 @@ async def get_skill_page(tenant_id, dataset_id, skill_kwd):
     """
     try:
         success, result = await dataset_api_service.get_skill_page(
-            dataset_id, tenant_id, skill_kwd,
+            dataset_id,
+            tenant_id,
+            skill_kwd,
         )
         if success:
             return get_result(data=result)
@@ -783,7 +796,11 @@ async def update_wiki_page(tenant_id, dataset_id, page_type, slug):
         if comments is not None and not isinstance(comments, str):
             return get_error_argument_result("'comments' must be a string.")
         success, result = await dataset_api_service.update_wiki_page(
-            dataset_id, tenant_id, page_type, slug, content_md,
+            dataset_id,
+            tenant_id,
+            page_type,
+            slug,
+            content_md,
             user_id=getattr(current_user, "id", None),
             title=title,
             comments=comments,
