@@ -1972,9 +1972,7 @@ func (s *DocumentService) SetDocumentMetadata(docID string, meta map[string]inte
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
 
-	// Update metadata using the document engine (merges with existing)
-	err = s.docEngine.UpdateMetadata(nil, docID, doc.KbID, meta, tenantID)
-	if err != nil {
+	if err := s.docEngine.UpdateMetadata(context.Background(), docID, doc.KbID, meta, tenantID); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
 
@@ -2650,6 +2648,35 @@ func (s *DocumentService) replaceDocumentMetadata(docID string, meta map[string]
 		return err
 	}
 	return s.SetDocumentMetadata(docID, map[string]interface{}(meta))
+}
+
+func (s *DocumentService) patchDocumentMetadata(docID string, before, after map[string]interface{}) error {
+	if s.docEngine == nil || s.metadataSvc == nil {
+		return nil
+	}
+
+	deleteKeys := make([]string, 0)
+	for key := range before {
+		if _, ok := after[key]; !ok {
+			deleteKeys = append(deleteKeys, key)
+		}
+	}
+	if len(deleteKeys) > 0 {
+		if err := s.DeleteDocumentMetadata(docID, deleteKeys); err != nil {
+			return err
+		}
+	}
+
+	updateFields := make(map[string]interface{})
+	for key, value := range after {
+		if !reflect.DeepEqual(before[key], value) {
+			updateFields[key] = value
+		}
+	}
+	if len(updateFields) == 0 {
+		return nil
+	}
+	return s.SetDocumentMetadata(docID, updateFields)
 }
 
 func (s *DocumentService) updateDocumentNameOnly(doc *entity.Document, tenantID, newName string) error {
@@ -3458,18 +3485,8 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 			continue
 		}
 
-		if len(meta) == 0 {
-			if err := s.DeleteDocumentAllMetadata(docID); err != nil {
-				common.Warn("BatchUpdateDocumentMetadata: delete all metadata failed",
-					zap.String("docID", docID), zap.Error(err))
-				continue
-			}
-			updated++
-			continue
-		}
-
-		if err := s.replaceDocumentMetadata(docID, meta); err != nil {
-			common.Warn("BatchUpdateDocumentMetadata: replace metadata failed",
+		if err := s.patchDocumentMetadata(docID, originalMeta, meta); err != nil {
+			common.Warn("BatchUpdateDocumentMetadata: patch metadata failed",
 				zap.String("docID", docID), zap.Error(err))
 			continue
 		}
