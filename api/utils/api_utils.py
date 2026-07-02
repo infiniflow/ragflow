@@ -438,7 +438,7 @@ def get_data_openai(id=None, created=None, model=None, prompt_tokens=0, completi
     return {
         "id": f"{id}",
         "object": object,
-        "created": int(time.time()) if created else None,
+        "created": created if created is not None else int(time.time()),
         "model": model,
         "param": param,
         "usage": {
