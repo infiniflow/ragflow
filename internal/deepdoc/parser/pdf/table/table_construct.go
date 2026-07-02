@@ -2,6 +2,7 @@ package table
 
 import (
 	"fmt"
+	"html"
 	"math"
 	"regexp"
 	"sort"
@@ -698,7 +699,47 @@ func RowsToHTML(rows [][]pdf.TSRCell, caption string, headerRows map[int]bool, s
 	return b.String()
 }
 
-// ── Span computation (Python: __cal_spans) ──
+// SimpleRowsToHTML converts plain string-based table data to an HTML table.
+// The first row is treated as a header (<th>).  Used by DOCX, XLSX, PPTX,
+// and HTML parsers that produce [][]string directly.
+func SimpleRowsToHTML(rows [][]string) string {
+	if len(rows) == 0 {
+		return "<table></table>"
+	}
+	nCols := 0
+	for _, row := range rows {
+		if len(row) > nCols {
+			nCols = len(row)
+		}
+	}
+	var b strings.Builder
+	b.WriteString("<table>")
+	for ri, row := range rows {
+		b.WriteString("<tr>")
+		tag := "td"
+		if ri == 0 {
+			tag = "th"
+		}
+		for ci := 0; ci < nCols; ci++ {
+			text := ""
+			if ci < len(row) {
+				text = row[ci]
+			}
+			b.WriteString("<")
+			b.WriteString(tag)
+			b.WriteString(" >")
+			b.WriteString(html.EscapeString(text))
+			b.WriteString("</")
+			b.WriteString(tag)
+			b.WriteString(">")
+		}
+		b.WriteString("</tr>")
+	}
+	b.WriteString("</table>")
+	return b.String()
+}
+
+// Span computation (Python: __cal_spans) ──
 
 // calSpans computes colspan and rowspan for spanning cells in the grid.
 // Returns spanInfo (row,col → colspan,rowspan) and covered (cells hidden by spans).

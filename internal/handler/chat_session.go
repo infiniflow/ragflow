@@ -398,3 +398,60 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 	}
 	jsonResponse(c, common.CodeSuccess, result, "success")
 }
+
+func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	userID := user.ID
+	chatID, sessionID, msgID := c.Param("chat_id"), c.Param("session_id"), c.Param("msg_id")
+
+	result, code, err := h.chatSessionService.DeleteSessionMessage(userID, chatID, sessionID, msgID)
+	if err != nil {
+		if code == common.CodeAuthenticationError {
+			jsonResponse(c, code, false, err.Error())
+			return
+		}
+		jsonError(c, code, err.Error())
+		return
+	}
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := user.ID
+	chatID, sessionID, msgID := c.Param("chat_id"), c.Param("session_id"), c.Param("msg_id")
+
+	req := map[string]interface{}{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			jsonError(c, common.CodeArgumentError, "Request body cannot be empty")
+			return
+		}
+		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		return
+	}
+	if len(req) == 0 {
+		jsonError(c, common.CodeArgumentError, "Request body cannot be empty")
+		return
+	}
+
+	result, code, err := h.chatSessionService.UpdateMessageFeedback(c.Request.Context(), userID, chatID, sessionID, msgID, req)
+	if err != nil {
+		if code == common.CodeAuthenticationError {
+			jsonResponse(c, code, false, err.Error())
+			return
+		}
+		jsonError(c, code, err.Error())
+		return
+	}
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}

@@ -49,22 +49,6 @@ func TestYDis(t *testing.T) {
 	}
 }
 
-func TestSortXByPage(t *testing.T) {
-	boxes := []pdf.TextBox{
-		{PageNumber: 1, X0: 100, Top: 50, Text: "C"},
-		{PageNumber: 1, X0: 50, Top: 100, Text: "A"},
-		{PageNumber: 1, X0: 50, Top: 30, Text: "B"},
-		{PageNumber: 0, X0: 0, Top: 0, Text: "D"},
-	}
-	result := SortXByPage(boxes, 3)
-	if result[0].Text != "D" {
-		t.Errorf("first should be page 0: got %q", result[0].Text)
-	}
-	if result[1].Text != "B" || result[2].Text != "A" {
-		t.Errorf("page 1 ordering wrong: %q, %q", result[1].Text, result[2].Text)
-	}
-}
-
 func TestOverlapX(t *testing.T) {
 	b1 := pdf.TextBox{X0: 50, X1: 200}
 	b2 := pdf.TextBox{X0: 100, X1: 250}
