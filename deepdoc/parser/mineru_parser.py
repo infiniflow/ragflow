@@ -661,6 +661,8 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.TEXT:
                     section = output.get("text", "")
                 case MinerUContentType.TABLE:
+                    if table_enable:
+                        continue
                     section = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(
                         output.get("table_footnote", []))
                     if not section.strip():
@@ -691,7 +693,7 @@ class MinerUParser(RAGFlowPdfParser):
                     self.logger.debug("[MinerU] Skip unsupported section type=%s", output.get("type"))
                     continue
 
-            if not table_enable:
+            if output.get("type") != MinerUContentType.TABLE or not table_enable:
                 section = self._sanitize_section_text(section)
             if not section:
                 self.logger.debug("[MinerU] Skip section after sanitization: type=%s", output.get("type"))
@@ -705,8 +707,39 @@ class MinerUParser(RAGFlowPdfParser):
                 sections.append((section, self._line_tag(output)))
         return sections
 
-    def _transfer_to_tables(self, outputs: list[dict[str, Any]]):
-        return []
+    def _transfer_to_tables(self, outputs: list[dict[str, Any]], table_enable: bool = False):
+        if not table_enable:
+            return []
+
+        tables = []
+        for output in outputs:
+            if output.get("type") != MinerUContentType.TABLE:
+                continue
+
+            html_table = output.get("table_body", "")
+            if not html_table.strip():
+                self.logger.warning(
+                    "[MinerU] Skip table with empty table_body: page=%s bbox=%s",
+                    output.get("page_idx"),
+                    output.get("bbox"),
+                )
+                continue
+
+            caption = "\n".join(output.get("table_caption", []))
+            footnote = "\n".join(output.get("table_footnote", []))
+            html_table = "\n".join([part for part in (html_table, caption, footnote) if part])
+
+            img = None
+            img_path = output.get("table_img_path")
+            if img_path and os.path.exists(img_path):
+                try:
+                    with Image.open(img_path) as table_img:
+                        img = table_img.copy()
+                except Exception as e:
+                    self.logger.warning(f"[MinerU] table image load failed: {e}")
+
+            tables.append(((img, html_table), self._line_tag(output)))
+        return tables
 
     def _enhance_images_with_vlm(self, outputs: list[dict[str, Any]], vision_model, callback: Optional[Callable] = None):
         """Generate semantic descriptions for image blocks via the tenant's
@@ -838,7 +871,7 @@ class MinerUParser(RAGFlowPdfParser):
                 except Exception as e:
                     self.logger.warning(f"[MinerU] VLM image enhancement failed: {e}. Continuing without descriptions.")
 
-            return self._transfer_to_sections(outputs, parse_method, enable_table), self._transfer_to_tables(outputs)
+            return self._transfer_to_sections(outputs, parse_method, enable_table), self._transfer_to_tables(outputs, enable_table)
         finally:
             if temp_pdf and temp_pdf.exists():
                 try:

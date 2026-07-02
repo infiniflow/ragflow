@@ -1,0 +1,22 @@
+[
+  {
+    "type": "text",
+    "text": "Section <b>before</b> table",
+    "page_idx": 0,
+    "bbox": [10, 20, 30, 40]
+  },
+  {
+    "type": "table",
+    "table_body": "<table><tr><td rowspan=\"1\" colspan=\"1\">Geodynamics</td><td>Category</td><td>Environmental factor</td></tr><tr><td rowspan=\"2\">Exogenic</td><td>Coastal zone</td><td>Coastal erosion</td></tr></table>",
+    "table_caption": ["Table 1. Environmental factors"],
+    "table_footnote": ["Source: sample"],
+    "page_idx": 0,
+    "bbox": [100, 200, 500, 700]
+  },
+  {
+    "type": "text",
+    "text": "Section after table",
+    "page_idx": 0,
+    "bbox": [60, 70, 80, 90]
+  }
+]

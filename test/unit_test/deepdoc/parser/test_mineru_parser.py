@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import logging
 import sys
 from pathlib import Path
@@ -113,3 +114,42 @@ def test_transfer_to_sections_skips_unknown_types_without_duplicating_text(monke
 
     assert [section[0] for section in sections] == ["Primary content", "Next content"]
     assert "Skip unsupported section type=sidebar" in caplog.text
+
+
+def test_transfer_to_tables_preserves_html_when_enabled(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    fixture_path = Path(__file__).resolve().parents[3] / "fixtures" / "mineru" / "table_content_list.json"
+    outputs = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    tables = parser._transfer_to_tables(outputs, table_enable=True)
+
+    assert len(tables) == 1
+    (img, html), positions = tables[0]
+    assert img is None
+    assert "<table>" in html
+    assert "<tr>" in html
+    assert "Table 1. Environmental factors" in html
+    assert "Source: sample" in html
+    assert positions == "@@1\t100.0\t500.0\t200.0\t700.0##"
+
+
+def test_transfer_to_tables_returns_empty_when_disabled(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    fixture_path = Path(__file__).resolve().parents[3] / "fixtures" / "mineru" / "table_content_list.json"
+    outputs = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    assert parser._transfer_to_tables(outputs, table_enable=False) == []
+
+
+def test_transfer_to_sections_skips_tables_when_table_enable_true(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    fixture_path = Path(__file__).resolve().parents[3] / "fixtures" / "mineru" / "table_content_list.json"
+    outputs = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    sections = parser._transfer_to_sections(outputs, parse_method="raw", table_enable=True)
+
+    assert [section[0] for section in sections] == ["Section before table", "Section after table"]
+    assert "<b>" not in sections[0][0]
