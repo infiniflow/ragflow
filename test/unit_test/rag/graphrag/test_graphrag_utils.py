@@ -39,6 +39,7 @@ from rag.graphrag.utils import (
     n_neighbor,
     pack_user_ass_to_openai_messages,
     perform_variable_replacements,
+    set_graph,
     split_string_by_multi_markers,
     tidy_graph,
 )
@@ -214,6 +215,52 @@ class TestGraphChange:
         c2 = GraphChange()
         c1.removed_nodes.add("A")
         assert "A" not in c2.removed_nodes
+
+
+class TestSetGraphCheckpointPersistence:
+    """Tests for GraphRAG graph write-back checkpoint safety."""
+
+    @pytest.mark.p1
+    @pytest.mark.asyncio
+    async def test_set_graph_does_not_delete_unmerged_subgraph_checkpoints(self, monkeypatch):
+        graph = nx.Graph()
+        graph.graph["source_id"] = ["doc_merged_1", "doc_merged_2"]
+        graph.add_node(
+            "A",
+            description="node A",
+            entity_type="standard",
+            source_id=["doc_merged_1"],
+        )
+        graph.add_node(
+            "B",
+            description="node B",
+            entity_type="standard",
+            source_id=["doc_merged_2"],
+        )
+
+        delete_conditions = []
+        inserted_chunks = []
+
+        async def fake_thread_pool_exec(_fn, condition, *_args):
+            delete_conditions.append(condition)
+            return 0
+
+        async def fake_insert_chunks_bounded(chunks, *_args, **_kwargs):
+            inserted_chunks.extend(chunks)
+
+        monkeypatch.setattr(graphrag_utils, "thread_pool_exec", fake_thread_pool_exec)
+        monkeypatch.setattr(graphrag_utils, "insert_chunks_bounded", fake_insert_chunks_bounded)
+        monkeypatch.setattr(graphrag_utils.search, "index_name", lambda tenant_id: f"idx_{tenant_id}")
+
+        await set_graph("tenant_1", "kb_1", None, graph, GraphChange(), callback=None)
+
+        assert {"knowledge_graph_kwd": ["graph"]} in delete_conditions
+        assert {
+            "knowledge_graph_kwd": ["subgraph"],
+            "source_id": ["doc_merged_1", "doc_merged_2"],
+        } in delete_conditions
+        assert {"knowledge_graph_kwd": ["graph", "subgraph"]} not in delete_conditions
+        assert {chunk["knowledge_graph_kwd"] for chunk in inserted_chunks} == {"graph", "subgraph"}
 
 
 class TestHandleSingleEntityExtraction:

@@ -569,25 +569,29 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     """
     global chat_limiter
     start = asyncio.get_running_loop().time()
+    graph_source_ids = list(dict.fromkeys(graph.graph.get("source_id", [])))
 
     # Build all new chunks first (graph, subgraphs, node/edge embeddings) before
     # deleting anything.  This ensures that if embedding generation or any other
-    # step crashes, the old graph and per-doc subgraph checkpoints remain intact
-    # so the pipeline can resume without re-running earlier phases.
+    # step crashes, the old graph and per-doc subgraph checkpoints remain intact.
+    # Keep extracted-but-not-yet-merged subgraphs out of this rewrite; they are
+    # expensive LLM checkpoints used for GraphRAG resume.
     chunks = [
         {
             "id": get_uuid(),
             "content_with_weight": json.dumps(nx.node_link_data(graph, edges="edges"), ensure_ascii=False),
             "knowledge_graph_kwd": "graph",
             "kb_id": kb_id,
-            "source_id": graph.graph.get("source_id", []),
+            "source_id": graph_source_ids,
             "available_int": 0,
             "removed_kwd": "N",
         }
     ]
 
-    # generate updated subgraphs
-    for source in graph.graph["source_id"]:
+    # Generate updated subgraphs only for documents already merged into this
+    # global graph.  Subgraphs for other documents may be raw extraction
+    # checkpoints from the current run and must survive merge failure.
+    for source in graph_source_ids:
         subgraph = graph.subgraph([n for n in graph.nodes if source in graph.nodes[n]["source_id"]]).copy()
         subgraph.graph["source_id"] = [source]
         for n in subgraph.nodes:
@@ -728,13 +732,23 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
 
     # All new chunks are ready.  Now delete old data and insert the new data.
     # Deleting only after chunks are built ensures that a crash during embedding
-    # generation above does not destroy the old graph/subgraph checkpoints.
+    # generation above does not destroy checkpoints.  Delete the global graph
+    # record, then only the per-doc subgraphs being rewritten here; never wipe
+    # every subgraph in the dataset, because later extracted-but-unmerged docs
+    # must remain resumable after a merge timeout.
     await thread_pool_exec(
         settings.docStoreConn.delete,
-        {"knowledge_graph_kwd": ["graph", "subgraph"]},
+        {"knowledge_graph_kwd": ["graph"]},
         search.index_name(tenant_id),
         kb_id
     )
+    if graph_source_ids:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {"knowledge_graph_kwd": ["subgraph"], "source_id": graph_source_ids},
+            search.index_name(tenant_id),
+            kb_id
+        )
 
     if change.removed_nodes:
         BATCH_SIZE = 100
