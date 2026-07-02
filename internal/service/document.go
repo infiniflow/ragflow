@@ -1328,7 +1328,7 @@ func (s *DocumentService) cancelExistingParseTasksBestEffort(docID string) {
 		if task == nil {
 			continue
 		}
-		redisClient.Set(fmt.Sprintf("%s-cancel", task.ID), "x", 0)
+		redisClient.Set(fmt.Sprintf("%s-cancel", task.ID), "x", 24*time.Hour)
 	}
 }
 
