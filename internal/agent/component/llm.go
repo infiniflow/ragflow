@@ -1385,7 +1385,7 @@ func init() {
 // This removes DeepSeek-R1-style thinking blocks and JSON-fence
 // prefixes/suffixes from the raw model response.
 var (
-	reThinkPrefix    = regexp.MustCompile(`(?s)^.*</think>`)
+	reThinkPrefix     = regexp.MustCompile(`(?s)^.*</think>`)
 	reJSONFencePrefix = regexp.MustCompile(`(?s)^.*` + "```json")
 	reJSONFenceSuffix = regexp.MustCompile("```\n*$")
 )
