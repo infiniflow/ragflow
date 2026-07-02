@@ -701,11 +701,11 @@ class RAGFlowPdfParser:
             logging.info(f"Added {added} OCR results from rotated table {table_index}")
 
     def __ocr(self, pagenum, img, chars, ZM=3, device_id: int | None = None):
-        start = timer()
+        # start = timer()
         bxs = self.ocr.detect(np.array(img), device_id)
         # logging.info(f"__ocr detecting boxes of an image cost ({timer() - start}s)")
 
-        start = timer()
+        # start = timer()
         if not bxs:
             self.boxes.append([])
             return
