@@ -25,9 +25,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const pubmedToolName = "pubmed"
@@ -91,23 +88,23 @@ func NewPubMedToolWith(h *HTTPHelper) *PubMedTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (p *PubMedTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: pubmedToolName,
-		Desc: pubmedToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (p *PubMedTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        pubmedToolName,
+		Description: pubmedToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "PubMed search query (full PubMed query syntax supported).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "PubMed search query (full PubMed query syntax supported).",
+				Required:    true,
 			},
 			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of records to return. Defaults to 5 (max 100 per request).",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of records to return. Defaults to 5 (max 100 per request).",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildPubMedESearchURL composes the esearch URL. Centralized for
@@ -203,7 +200,7 @@ func decodePubMedESummary(body []byte) (map[string]pubmedESummaryArticle, error)
 }
 
 // InvokableRun performs the two-step PubMed lookup.
-func (p *PubMedTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (p *PubMedTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var params pubmedParams
 	if err := json.Unmarshal([]byte(argsJSON), &params); err != nil {
 		return pubmedErrJSON(fmt.Errorf("pubmed: parse arguments: %w", err)),

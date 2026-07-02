@@ -21,9 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const akshareToolName = "akshare"
@@ -74,30 +71,30 @@ type AkShareTool struct{}
 func NewAkShareTool() *AkShareTool { return &AkShareTool{} }
 
 // Info returns the tool's metadata for the chat model.
-func (a *AkShareTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: akshareToolName,
-		Desc: akshareToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (a *AkShareTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        akshareToolName,
+		Description: akshareToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"symbol": {
-				Type:     schema.String,
-				Desc:     "Stock or asset symbol (e.g. 000001, sh600000, bj920566).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Stock or asset symbol (e.g. 000001, sh600000, bj920566).",
+				Required:    true,
 			},
 			"indicator": {
-				Type:     schema.String,
-				Desc:     "AkShare indicator function name (e.g. stock_zh_a_hist, stock_zh_a_spot_em).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "AkShare indicator function name (e.g. stock_zh_a_hist, stock_zh_a_spot_em).",
+				Required:    true,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // InvokableRun validates the input shape and returns a clear "use Python
 // Canvas" error. The model receives a JSON envelope with the message in
 // the `_ERROR` field so it can present a useful message back to the user
 // without surfacing a Go stack trace.
-func (a *AkShareTool) InvokableRun(_ context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (a *AkShareTool) InvokableRun(_ context.Context, argsJSON string) (string, error) {
 	var p akshareParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return akshareErrJSON(errors.New(akshareUnsupportedMessage)),

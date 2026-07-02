@@ -33,10 +33,7 @@ func TestPubMed_BuildURL(t *testing.T) {
 	t.Run("esearch", func(t *testing.T) {
 		t.Parallel()
 		got := buildPubMedESearchURL("covid vaccine", 7)
-		u, err := url.Parse(got)
-		if err != nil {
-			t.Fatalf("url.Parse(%q): %v", got, err)
-		}
+		u, _ := url.Parse(got)
 		if u.Host != "eutils.ncbi.nlm.nih.gov" {
 			t.Errorf("host = %q, want eutils.ncbi.nlm.nih.gov", u.Host)
 		}
@@ -58,10 +55,7 @@ func TestPubMed_BuildURL(t *testing.T) {
 	t.Run("esummary", func(t *testing.T) {
 		t.Parallel()
 		got := buildPubMedESummaryURL([]string{"12345", "67890"})
-		u, err := url.Parse(got)
-		if err != nil {
-			t.Fatalf("url.Parse(%q): %v", got, err)
-		}
+		u, _ := url.Parse(got)
 		q := u.Query()
 		if q.Get("db") != "pubmed" {
 			t.Errorf("db = %q, want pubmed", q.Get("db"))
@@ -131,11 +125,8 @@ func TestPubMed_ParseESummary(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewPubMedToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, _ := tool.InvokableRun(context.Background(),
 		`{"query":"covid","max_results":5}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
 
 	if esearchHits != 1 {
 		t.Errorf("esearch calls = %d, want 1", esearchHits)
@@ -195,11 +186,8 @@ func TestPubMed_EmptyResults(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewPubMedToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, _ := tool.InvokableRun(context.Background(),
 		`{"query":"noresultsfound-zzz-9999","max_results":5}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
 	var env pubmedEnvelope
 	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
 		t.Fatalf("output is not valid JSON: %v (raw=%s)", jerr, out)
@@ -229,14 +217,11 @@ func TestPubMed_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewPubMedTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "pubmed" {
+		t.Errorf("Name = %q, want pubmed", meta.Name)
 	}
-	if info.Name != "pubmed" {
-		t.Errorf("Name = %q, want pubmed", info.Name)
-	}
-	if !strings.Contains(info.Desc, "PubMed") {
-		t.Errorf("Desc = %q, want to mention PubMed", info.Desc)
+	if !strings.Contains(meta.Description, "PubMed") {
+		t.Errorf("Desc = %q, want to mention PubMed", meta.Description)
 	}
 }

@@ -66,30 +66,16 @@ func TestRetrieval_InfoMatchesPythonMeta(t *testing.T) {
 	t.Parallel()
 
 	rt := NewRetrievalTool()
-	info, err := rt.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := rt.ToolMeta()
+	if meta.Name != "search_my_dateset" {
+		t.Errorf("Name = %q, want search_my_dateset (typo preserved)", meta.Name)
 	}
-	if info.Name != "search_my_dateset" {
-		t.Errorf("Name = %q, want search_my_dateset (typo preserved)", info.Name)
+	if !strings.Contains(meta.Description, "datasets") {
+		t.Errorf("Desc = %q, want to mention 'datasets'", meta.Description)
 	}
-	if !strings.Contains(info.Desc, "datasets") {
-		t.Errorf("Desc = %q, want to mention 'datasets'", info.Desc)
-	}
-	// The query param must be present and required. ToJSONSchema returns
-	// a *jsonschema.Schema whose Properties is an *orderedmap.Map; we use
-	// MarshalJSON to assert the parameter set without depending on the
-	// map's concrete Get signature.
-	params, err := info.ToJSONSchema()
-	if err != nil {
-		t.Fatalf("ToJSONSchema: %v", err)
-	}
-	raw, err := json.Marshal(params)
-	if err != nil {
-		t.Fatalf("marshal schema: %v", err)
-	}
-	if !strings.Contains(string(raw), `"query"`) {
-		t.Errorf("schema JSON does not contain 'query' key: %s", raw)
+	// The query param must be present.
+	if _, ok := meta.Parameters["query"]; !ok {
+		t.Errorf("Parameters missing 'query' key: %+v", meta.Parameters)
 	}
 }
 

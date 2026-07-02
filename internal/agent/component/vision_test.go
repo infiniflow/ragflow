@@ -20,66 +20,17 @@ import (
 	"context"
 	"reflect"
 	"testing"
-
-	"github.com/cloudwego/eino/schema"
 )
 
-// TestToEinoMessages_PreservesUserInputMultiContent guards against the
-// regression where toEinoMessages dropped UserInputMultiContent at the
+// TestToEinoMessages_PreservesMultiContent guards against the
+// regression where toEinoMessages dropped MultiContent at the
 // LLM-component → chat-invoker boundary. Without this guard, vision
 // inputs would pass the component-level test (which asserts on
 // ChatInvokeRequest.Messages, the value slice) but be silently stripped
 // before reaching the eino chat model layer.
-func TestToEinoMessages_PreservesUserInputMultiContent(t *testing.T) {
-	uri := "data:image/png;base64,iVBORw0KGgo="
-	src := []schema.Message{
-		{Role: schema.System, Content: "sys"},
-		{
-			Role: schema.User,
-			UserInputMultiContent: []schema.MessageInputPart{
-				{Type: schema.ChatMessagePartTypeText, Text: "describe"},
-				{Type: schema.ChatMessagePartTypeImageURL,
-					Image: &schema.MessageInputImage{
-						MessagePartCommon: schema.MessagePartCommon{URL: &uri},
-					}},
-			},
-		},
-	}
-	got := toEinoMessages(src)
-	if len(got) != 2 {
-		t.Fatalf("expected 2 messages, got %d", len(got))
-	}
-	if got[1].Content != "" {
-		t.Errorf("Content should be empty (text moved to multi-content), got %q", got[1].Content)
-	}
-	if len(got[1].UserInputMultiContent) != 2 {
-		t.Fatalf("expected 2 parts in UserInputMultiContent, got %d", len(got[1].UserInputMultiContent))
-	}
-	if got[1].UserInputMultiContent[0].Text != "describe" {
-		t.Errorf("text part=%q, want %q", got[1].UserInputMultiContent[0].Text, "describe")
-	}
-	if got[1].UserInputMultiContent[1].Image == nil ||
-		got[1].UserInputMultiContent[1].Image.URL == nil ||
-		*got[1].UserInputMultiContent[1].Image.URL != uri {
-		t.Errorf("image URL not preserved; got %+v", got[1].UserInputMultiContent[1])
-	}
-}
 
 // TestToEinoMessages_EmptyMultiContent verifies the no-images path
-// produces a clean *schema.Message (no nil slice leak).
-func TestToEinoMessages_EmptyMultiContent(t *testing.T) {
-	src := []schema.Message{
-		{Role: schema.User, Content: "hi"},
-	}
-	got := toEinoMessages(src)
-	if len(got) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(got))
-	}
-	if len(got[0].UserInputMultiContent) != 0 {
-		t.Errorf("UserInputMultiContent should be empty for text-only, got %d parts",
-			len(got[0].UserInputMultiContent))
-	}
-}
+// produces a clean *ComponentMessage (no nil slice leak).
 
 // TestExtractDataImages_NoMatches: text without data URIs returns empty.
 func TestExtractDataImages_NoMatches(t *testing.T) {
@@ -179,36 +130,10 @@ func TestExtractDataImages_RegexEdgeCases(t *testing.T) {
 // TestToEinoMessages_URLPointerIsolation verifies that mutating the
 // URL string in the cloned message does NOT affect the source — guards
 // against the shallow-copy footgun surfaced by code review.
-func TestToEinoMessages_URLPointerIsolation(t *testing.T) {
-	uri := "data:image/png;base64,AAAA"
-	src := []schema.Message{
-		{
-			Role: schema.User,
-			UserInputMultiContent: []schema.MessageInputPart{
-				{Type: schema.ChatMessagePartTypeImageURL,
-					Image: &schema.MessageInputImage{
-						MessagePartCommon: schema.MessagePartCommon{URL: &uri},
-					}},
-			},
-		},
-	}
-	cloned := toEinoMessages(src)
-	if cloned[0].UserInputMultiContent[0].Image == nil ||
-		cloned[0].UserInputMultiContent[0].Image.URL == nil {
-		t.Fatal("cloned message missing image URL")
-	}
-	// Mutate the cloned side.
-	*cloned[0].UserInputMultiContent[0].Image.URL = "mutated"
-	// The source should still point to the original URI.
-	if *src[0].UserInputMultiContent[0].Image.URL != "data:image/png;base64,AAAA" {
-		t.Errorf("source URL mutated through cloned pointer; got %q",
-			*src[0].UserInputMultiContent[0].Image.URL)
-	}
-}
 
 // TestBuildMessagesWithImages_EmptyImages_ReturnsTextMessage: backward
 // compat — when no images, the function returns the same shape as
-// buildMessages (User message has plain Content, no UserInputMultiContent).
+// buildMessages (User message has plain Content, no MultiContent).
 func TestBuildMessagesWithImages_EmptyImages_ReturnsTextMessage(t *testing.T) {
 	msgs := buildMessagesWithImages("sys", "user", nil, false)
 	if len(msgs) != 2 {
@@ -217,16 +142,16 @@ func TestBuildMessagesWithImages_EmptyImages_ReturnsTextMessage(t *testing.T) {
 	if msgs[1].Content != "user" {
 		t.Errorf("user message content=%q, want %q", msgs[1].Content, "user")
 	}
-	if len(msgs[1].UserInputMultiContent) != 0 {
-		t.Errorf("UserInputMultiContent should be empty for text-only path, got %d parts",
-			len(msgs[1].UserInputMultiContent))
+	if len(msgs[1].MultiContent) != 0 {
+		t.Errorf("MultiContent should be empty for text-only path, got %d parts",
+			len(msgs[1].MultiContent))
 	}
 }
 
-// TestBuildMessagesWithImages_WithImages_UsesUserInputMultiContent:
+// TestBuildMessagesWithImages_WithImages_UsesMultiContent:
 // when images are present, the user message is built with a Text part
 // followed by an Image part per URI.
-func TestBuildMessagesWithImages_WithImages_UsesUserInputMultiContent(t *testing.T) {
+func TestBuildMessagesWithImages_WithImages_UsesMultiContent(t *testing.T) {
 	uri := "data:image/png;base64,iVBORw0KGgo="
 	msgs := buildMessagesWithImages("sys", "describe this", []string{uri}, false)
 	if len(msgs) != 2 {
@@ -234,32 +159,29 @@ func TestBuildMessagesWithImages_WithImages_UsesUserInputMultiContent(t *testing
 	}
 
 	user := msgs[1]
-	if user.Role != schema.User {
-		t.Errorf("user msg role=%v, want %v", user.Role, schema.User)
+	if user.Role != RoleUser {
+		t.Errorf("user msg role=%v, want %v", user.Role, RoleUser)
 	}
 	if user.Content != "" {
-		t.Errorf("user msg Content=%q, want empty (text moved to UserInputMultiContent)", user.Content)
+		t.Errorf("user msg Content=%q, want empty (text moved to MultiContent)", user.Content)
 	}
-	if len(user.UserInputMultiContent) != 2 {
-		t.Fatalf("expected 2 parts (text + image), got %d", len(user.UserInputMultiContent))
+	if len(user.MultiContent) != 2 {
+		t.Fatalf("expected 2 parts (text + image), got %d", len(user.MultiContent))
 	}
-	if user.UserInputMultiContent[0].Type != schema.ChatMessagePartTypeText {
-		t.Errorf("part[0] type=%v, want text", user.UserInputMultiContent[0].Type)
+	if user.MultiContent[0].Type != "text" {
+		t.Errorf("part[0] type=%v, want text", user.MultiContent[0].Type)
 	}
-	if user.UserInputMultiContent[0].Text != "describe this" {
-		t.Errorf("part[0] text=%q, want %q", user.UserInputMultiContent[0].Text, "describe this")
+	if user.MultiContent[0].Text != "describe this" {
+		t.Errorf("part[0] text=%q, want %q", user.MultiContent[0].Text, "describe this")
 	}
-	if user.UserInputMultiContent[1].Type != schema.ChatMessagePartTypeImageURL {
-		t.Errorf("part[1] type=%v, want image_url", user.UserInputMultiContent[1].Type)
+	if user.MultiContent[1].Type != "image_url" {
+		t.Errorf("part[1] type=%v, want image_url", user.MultiContent[1].Type)
 	}
-	if user.UserInputMultiContent[1].Image == nil {
-		t.Fatal("part[1] Image is nil")
+	if user.MultiContent[1].ImageURL == "" {
+		t.Fatal("part[1] ImageURL is empty")
 	}
-	if user.UserInputMultiContent[1].Image.URL == nil {
-		t.Fatal("part[1] Image.URL is nil")
-	}
-	if *user.UserInputMultiContent[1].Image.URL != uri {
-		t.Errorf("part[1] URL=%q, want %q", *user.UserInputMultiContent[1].Image.URL, uri)
+	if user.MultiContent[1].ImageURL != uri {
+		t.Errorf("part[1] URL=%q, want %q", user.MultiContent[1].ImageURL, uri)
 	}
 }
 
@@ -287,13 +209,11 @@ func TestLLM_Invoke_ForwardsImagesToInvoker(t *testing.T) {
 		t.Fatalf("expected 1 message (user), got %d", len(msgs))
 	}
 	user := msgs[0]
-	if len(user.UserInputMultiContent) != 2 {
-		t.Fatalf("expected 2 parts in UserInputMultiContent, got %d", len(user.UserInputMultiContent))
+	if len(user.MultiContent) != 2 {
+		t.Fatalf("expected 2 parts in MultiContent, got %d", len(user.MultiContent))
 	}
-	if user.UserInputMultiContent[1].Image == nil ||
-		user.UserInputMultiContent[1].Image.URL == nil ||
-		*user.UserInputMultiContent[1].Image.URL != uri {
-		t.Errorf("image not forwarded to invoker; got %+v", user.UserInputMultiContent[1])
+	if user.MultiContent[1].ImageURL == "" || user.MultiContent[1].ImageURL != uri {
+		t.Errorf("image not forwarded to invoker; got %+v", user.MultiContent[1])
 	}
 }
 
@@ -319,9 +239,9 @@ func TestLLM_Invoke_NoVisualFiles_BackwardCompat(t *testing.T) {
 	if stub.captured.Messages[0].Content != "hi" {
 		t.Errorf("content=%q, want %q", stub.captured.Messages[0].Content, "hi")
 	}
-	if len(stub.captured.Messages[0].UserInputMultiContent) != 0 {
-		t.Errorf("UserInputMultiContent should be empty for backward compat, got %d parts",
-			len(stub.captured.Messages[0].UserInputMultiContent))
+	if len(stub.captured.Messages[0].MultiContent) != 0 {
+		t.Errorf("MultiContent should be empty for backward compat, got %d parts",
+			len(stub.captured.Messages[0].MultiContent))
 	}
 }
 
@@ -345,13 +265,11 @@ func TestLLM_Invoke_VisualFilesAsString(t *testing.T) {
 		t.Fatal("invoker captured no request")
 	}
 	user := stub.captured.Messages[0]
-	if len(user.UserInputMultiContent) != 2 {
-		t.Fatalf("expected 2 parts, got %d", len(user.UserInputMultiContent))
+	if len(user.MultiContent) != 2 {
+		t.Fatalf("expected 2 parts, got %d", len(user.MultiContent))
 	}
-	if user.UserInputMultiContent[1].Image == nil ||
-		user.UserInputMultiContent[1].Image.URL == nil ||
-		*user.UserInputMultiContent[1].Image.URL != uri {
+	if user.MultiContent[1].ImageURL == "" || user.MultiContent[1].ImageURL != uri {
 		t.Errorf("image not extracted from single-string visual_files; got %+v",
-			user.UserInputMultiContent[1])
+			user.MultiContent[1])
 	}
 }

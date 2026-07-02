@@ -22,9 +22,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const tavilyToolName = "tavily"
@@ -110,33 +107,33 @@ func NewTavilyToolWithEnvKey(h *HTTPHelper, envKey func() string) *TavilyTool {
 func defaultTavilyEnvKey() string { return os.Getenv("TAVILY_API_KEY") }
 
 // Info returns the tool's metadata for the chat model.
-func (t *TavilyTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: tavilyToolName,
-		Desc: tavilyToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (t *TavilyTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        tavilyToolName,
+		Description: tavilyToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Search query",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Search query",
+				Required:    true,
 			},
 			"api_key": {
-				Type:     schema.String,
-				Desc:     "Tavily API key. Falls back to TAVILY_API_KEY env var.",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "Tavily API key. Falls back to TAVILY_API_KEY env var.",
+				Required:    false,
 			},
 			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of results to return. Defaults to 5.",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of results to return. Defaults to 5.",
+				Required:    false,
 			},
 			"search_depth": {
-				Type:     schema.String,
-				Desc:     `Tavily search depth: "basic" (default) or "advanced".`,
-				Required: false,
+				Type:        ParamTypeString,
+				Description: `Tavily search depth: "basic" (default) or "advanced".`,
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // tavilyEndpoint is the Tavily /search URL. Exposed as a package var so
@@ -146,7 +143,7 @@ var tavilyEndpoint = "https://api.tavily.com/search"
 
 // InvokableRun performs the Tavily search. The api_key may come from the
 // argument or the TAVILY_API_KEY env var.
-func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p tavilyParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return tavilyErrJSON(fmt.Errorf("tavily: parse arguments: %w", err)),

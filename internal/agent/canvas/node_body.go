@@ -1,17 +1,17 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//   http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 // node_body.go — per-node lambda body construction.
@@ -38,14 +38,16 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 )
 
-// nodeBodyFn is the plain function shape compose.InvokableLambda accepts.
-// We avoid a named type alias because compose.InvokableLambda's generic
-// inference only accepts the underlying func literal type, not a named
-// alias on top of it.
-type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, error)
+// nodeBodyFn is the plain function shape for a canvas node body.
+// It matches types.NodeFunc = func(ctx, any) (any, error) so it
+// can be passed directly to sg.AddNode.
+type nodeBodyFn = func(ctx context.Context, in any) (any, error)
 
 // buildNodeBody returns the lambda body for a single canvas node.
 //
@@ -55,7 +57,7 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 //     DSL v1 sentinels like "ExitLoop" land here.
 //  2. name is "UserFillUp" (case-insensitive) → UserFillUpNodeBody.
 //     This route takes precedence over the regular factory path so
-//     the eino interrupt semantics replace the legacy
+//     the interrupt semantics replace the legacy
 //     UserFillUpComponent.Invoke body. UserFillUpNodeBody calls
 //     compose.Interrupt on first execution and reads the resume
 //     payload via compose.GetResumeContext on subsequent runs.
@@ -78,7 +80,7 @@ func buildNodeBody(cpnID, name string, params map[string]any) (nodeBodyFn, error
 	if isLegacyNoOp(name) {
 		return legacyNoOpBody(cpnID), nil
 	}
-	// UserFillUp routes to the eino interrupt-based node body
+	// UserFillUp routes to the harness interrupt-based node body
 	// regardless of whether the legacy UserFillUpComponent is
 	// registered. The component's Invoke path renders tips / fields
 	// but never emits an interrupt signal — it was the missing
@@ -90,6 +92,9 @@ func buildNodeBody(cpnID, name string, params map[string]any) (nodeBodyFn, error
 		return UserFillUpNodeBody(cpnID, params), nil
 	}
 	if factory := runtime.DefaultFactory(); factory != nil {
+		common.Debug("buildNodeBody: using real factory",
+			zap.String("cpn_id", cpnID),
+			zap.String("name", name))
 		comp, err := factory(name, params)
 		if err != nil {
 			return nil, fmt.Errorf("canvas: component %q (%s): factory: %w", cpnID, name, err)
@@ -105,6 +110,9 @@ func buildNodeBody(cpnID, name string, params map[string]any) (nodeBodyFn, error
 		// ComponentBase.Name() would have returned.
 		return realComponentBody(cpnID, name, comp), nil
 	}
+	common.Debug("buildNodeBody: no factory, using placeholder",
+		zap.String("cpn_id", cpnID),
+		zap.String("name", name))
 	// Fallback: no factory registered. This path is only exercised by
 	// canvas-only unit tests; production wiring always installs a
 	// factory via component.init().
@@ -119,9 +127,10 @@ func buildNodeBody(cpnID, name string, params map[string]any) (nodeBodyFn, error
 // __legacy_noop__ so downstream debuggers can tell the node fired but
 // did nothing.
 func legacyNoOpBody(cpnID string) nodeBodyFn {
-	return func(_ context.Context, in map[string]any) (map[string]any, error) {
-		out := make(map[string]any, len(in)+2)
-		for k, v := range in {
+	return func(_ context.Context, in any) (any, error) {
+		inMap, _ := in.(map[string]any)
+		out := make(map[string]any, len(inMap)+2)
+		for k, v := range inMap {
 			out[k] = v
 		}
 		out["__cpn_id__"] = cpnID
@@ -166,12 +175,17 @@ func componentTimeout() time.Duration {
 // key it is overwritten with the canvas-controlled value to keep
 // attribution authoritative.
 func realComponentBody(cpnID, componentClass string, comp runtime.Component) nodeBodyFn {
-	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
+	return func(ctx context.Context, in any) (any, error) {
+		inMap, _ := in.(map[string]any)
 		timeout := resolveTimeout(componentClass)
 		cctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		out, err := comp.Invoke(cctx, in)
+		out, err := comp.Invoke(cctx, inMap)
 		if err != nil {
+			common.Debug("invoke error",
+				zap.String("cpn_id", cpnID),
+				zap.String("class", componentClass),
+				zap.Error(err))
 			switch {
 			case errors.Is(err, context.DeadlineExceeded):
 				return nil, fmt.Errorf("canvas: component %q invoke: timeout after %s: %w",
@@ -184,6 +198,14 @@ func realComponentBody(cpnID, componentClass string, comp runtime.Component) nod
 		if out == nil {
 			out = make(map[string]any, 1)
 		}
+		outputKeys := make([]string, 0, len(out))
+		for k := range out {
+			outputKeys = append(outputKeys, k)
+		}
+		common.Debug("invoke ok",
+			zap.String("cpn_id", cpnID),
+			zap.String("class", componentClass),
+			zap.Strings("keys", outputKeys))
 		out["__cpn_id__"] = cpnID
 		return out, nil
 	}
@@ -194,8 +216,9 @@ func realComponentBody(cpnID, componentClass string, comp runtime.Component) nod
 // the __cpn_id__ tag) so canvas unit tests can exercise topology
 // wiring without depending on any real component implementation.
 func placeholderBody(cpnID string) nodeBodyFn {
-	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
-		out, err := placeholderLambda(ctx, in)
+	return func(ctx context.Context, in any) (any, error) {
+		inMap, _ := in.(map[string]any)
+		out, err := placeholderLambda(ctx, inMap)
 		if err != nil {
 			return nil, err
 		}
@@ -205,9 +228,9 @@ func placeholderBody(cpnID string) nodeBodyFn {
 }
 
 // withStateBracket wraps body so that it performs the same pre/post
-// state work as the outer-graph's eino StatePreHandler / StatePostHandler
+// state work as the outer-graph's StatePreHandler / StatePostHandler
 // pair, but reads the state from the request context (attached via
-// runtime.WithState) instead of an eino-managed graph-local state.
+// runtime.WithState) instead of a harness-managed channel state.
 //
 // This is the path used by the Loop sub-graph: its nodes do not have
 // access to the outer graph's WithGenLocalState, but they do inherit
@@ -221,37 +244,39 @@ func placeholderBody(cpnID string) nodeBodyFn {
 // the body still runs, its output is still tagged with __cpn_id__,
 // but no state snapshot is injected and no result is persisted.
 func withStateBracket(body nodeBodyFn) nodeBodyFn {
-	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
+	return func(ctx context.Context, in any) (any, error) {
 		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		inMap, _ := in.(map[string]any)
 		if state != nil {
-			if in == nil {
-				in = map[string]any{}
+			if inMap == nil {
+				inMap = map[string]any{}
 			}
 			snapshot := state.Snapshot()
-			wrapped := make(map[string]any, len(in)+1)
-			for k, v := range in {
+			wrapped := make(map[string]any, len(inMap)+1)
+			for k, v := range inMap {
 				wrapped[k] = v
 			}
 			wrapped["state"] = snapshot
-			in = wrapped
+			inMap = wrapped
 		}
-		out, err := body(ctx, in)
+		out, err := body(ctx, inMap)
 		if err != nil {
 			return nil, err
 		}
-		if state == nil || out == nil {
+		outMap, ok := out.(map[string]any)
+		if !ok || state == nil || outMap == nil {
 			return out, nil
 		}
-		cpnID, _ := out["__cpn_id__"].(string)
+		cpnID, _ := outMap["__cpn_id__"].(string)
 		if cpnID == "" {
-			return out, nil
+			return outMap, nil
 		}
-		for k, v := range out {
+		for k, v := range outMap {
 			if k == "__cpn_id__" || k == "state" || k == "__legacy_noop__" {
 				continue
 			}
 			state.SetVar(cpnID, k, v)
 		}
-		return out, nil
+		return outMap, nil
 	}
 }

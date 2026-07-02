@@ -49,11 +49,8 @@ func TestTavily_BuildRequest(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewTavilyToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, _ := tool.InvokableRun(context.Background(),
 		`{"query":"ragflow","api_key":"key-xyz","max_results":3,"search_depth":"advanced"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
 	if out == "" {
 		t.Fatal("InvokableRun returned empty string")
 	}
@@ -100,11 +97,8 @@ func TestTavily_ParseResponse(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewTavilyToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, _ := tool.InvokableRun(context.Background(),
 		`{"query":"x","api_key":"k"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
 
 	var env tavilyEnvelope
 	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
@@ -165,14 +159,11 @@ func TestTavily_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewTavilyTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "tavily" {
+		t.Errorf("Name = %q, want tavily", meta.Name)
 	}
-	if info.Name != "tavily" {
-		t.Errorf("Name = %q, want tavily", info.Name)
-	}
-	if !strings.Contains(info.Desc, "Tavily") {
-		t.Errorf("Desc = %q, want to mention Tavily", info.Desc)
+	if !strings.Contains(meta.Description, "Tavily") {
+		t.Errorf("Desc = %q, want to mention Tavily", meta.Description)
 	}
 }

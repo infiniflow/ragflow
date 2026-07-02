@@ -43,7 +43,7 @@ import (
 	// exercise real component invocation.
 	_ "ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
-	"ragflow/internal/agent/workflowx"
+	graphpkg "ragflow/internal/harness/graph/graph"
 )
 
 // runLoopCanvas is the common harness for the e2e loop tests. It
@@ -58,7 +58,7 @@ func runLoopCanvas(t *testing.T, dsl *Canvas) (*CanvasState, error) {
 	}
 	state := NewCanvasState("run-loop", "task-loop")
 	ctx := withState(context.Background(), state)
-	_, runErr := cc.Workflow.Invoke(ctx, map[string]any{"query": "go"})
+	_, runErr := cc.Graph.Invoke(ctx, map[string]any{"query": "go"})
 	return state, runErr
 }
 
@@ -160,7 +160,7 @@ func TestLoop_MaxCount(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected ErrLoopMaxIterationsExceeded, got nil")
 	}
-	if !errors.Is(err, workflowx.ErrLoopMaxIterationsExceeded) {
+	if !errors.Is(err, graphpkg.ErrLoopMaxIterationsExceeded) {
 		t.Fatalf("want ErrLoopMaxIterationsExceeded, got: %v", err)
 	}
 	v, err := state.GetVar("loop@counter")

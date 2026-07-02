@@ -124,15 +124,12 @@ func TestArxiv_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewArxivTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "arxiv" {
+		t.Errorf("Name = %q, want arxiv", meta.Name)
 	}
-	if info.Name != "arxiv" {
-		t.Errorf("Name = %q, want arxiv", info.Name)
-	}
-	if !strings.Contains(info.Desc, "arXiv") {
-		t.Errorf("Desc = %q, want to mention arXiv", info.Desc)
+	if !strings.Contains(meta.Description, "arXiv") {
+		t.Errorf("Desc = %q, want to mention arXiv", meta.Description)
 	}
 }
 

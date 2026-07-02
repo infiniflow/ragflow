@@ -22,9 +22,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const wikipediaToolName = "wikipedia"
@@ -84,28 +81,28 @@ func NewWikipediaToolWith(h *HTTPHelper) *WikipediaTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (w *WikipediaTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: wikipediaToolName,
-		Desc: wikipediaToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (w *WikipediaTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        wikipediaToolName,
+		Description: wikipediaToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Search query",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Search query",
+				Required:    true,
 			},
 			"lang": {
-				Type:     schema.String,
-				Desc:     `Language subdomain. Defaults to "en".`,
-				Required: false,
+				Type:        ParamTypeString,
+				Description: `Language subdomain. Defaults to "en".`,
+				Required:    false,
 			},
 			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of results to return. Defaults to 5.",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of results to return. Defaults to 5.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildWikipediaURL constructs the MediaWiki action=query URL. Centralized
@@ -126,7 +123,7 @@ func buildWikipediaURL(lang, query string, maxResults int) string {
 }
 
 // InvokableRun performs the Wikipedia search.
-func (w *WikipediaTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (w *WikipediaTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p wikipediaParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return wikipediaErrJSON(fmt.Errorf("wikipedia: parse arguments: %w", err)),

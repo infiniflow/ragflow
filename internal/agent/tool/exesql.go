@@ -56,9 +56,6 @@ import (
 	_ "github.com/denisenkom/go-mssqldb"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 // ExeSQL-specific errors. ErrExeSQLDAOMissing is surfaced when
@@ -79,7 +76,7 @@ var (
 		"ExeSQL: connection params not configured (db_type/host/port/database/username/password)",
 	)
 	ErrExeSQLUnsupportedDB = errors.New(
-		"ExeSQL: db_type not yet supported in Go port (trino, IBM DB2 are pending)",
+		"ExeSQL: db_type not yet supported in Go port (trino, oracle, sqlite, IBM DB2 are pending)",
 	)
 )
 
@@ -96,7 +93,7 @@ const (
 // to the LLM at function-call time), matching the Python ExeSQLParam
 // fields. The LLM only sees `sql` and optional `database` in args.
 type exesqlConnParams struct {
-	DBType     string // mysql | postgres | mariadb | mssql | oceanbase
+	DBType     string // mysql | postgres | mariadb | mssql | oceanbase | sqlserver
 	Database   string
 	Username   string
 	Host       string
@@ -223,23 +220,23 @@ func (e *ExeSQLTool) WithExeSQLDialer(d exesqlDialer) *ExeSQLTool {
 // they're set on the tool instance, matching the Python convention
 // where ExeSQLParam fields like `db_type` / `host` are tool
 // configuration, not function-call arguments.
-func (e *ExeSQLTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: exesqlToolName,
-		Desc: exesqlToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (e *ExeSQLTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        exesqlToolName,
+		Description: exesqlToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"sql": {
-				Type:     schema.String,
-				Desc:     "The SQL statement to execute. Must be a SELECT (read-only).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "The SQL statement to execute. Must be a SELECT (read-only).",
+				Required:    true,
 			},
 			"database": {
-				Type:     schema.String,
-				Desc:     "Optional target database / schema name. Overrides the tool's configured DB.",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "Optional target database / schema name. Overrides the tool's configured DB.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // InvokableRun validates the SQL, opens a fresh connection scoped to
@@ -247,7 +244,7 @@ func (e *ExeSQLTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 // returns the rows. Per-statement errors do not abort the node: they
 // are accumulated in the `Errors` slice of the response (the Python
 // tool does the same — `sql_res.append({"content": msg})`).
-func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string) (string, error) {
 	if argumentsInJSON == "" {
 		return exesqlErrorResult(errors.New("exesql: empty arguments")), errors.New("exesql: empty arguments")
 	}
@@ -521,6 +518,10 @@ func exesqlDriverAndDSN(c exesqlConnParams) (driver, dsn string, err error) {
 		return "trino", trinoDSN(c), nil
 	case "ibm db2":
 		return "", "", fmt.Errorf("%w: ibm db2", ErrExeSQLUnsupportedDB)
+	case "oracle":
+		return "", "", fmt.Errorf("%w: oracle", ErrExeSQLUnsupportedDB)
+	case "sqlite", "sqlite3":
+		return "", "", fmt.Errorf("%w: sqlite", ErrExeSQLUnsupportedDB)
 	default:
 		return "", "", fmt.Errorf("ExeSQL: unknown db_type %q", c.DBType)
 	}

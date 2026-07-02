@@ -85,17 +85,14 @@ func TestJin10_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewJin10Tool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "jin10" {
+		t.Errorf("Name = %q, want jin10", meta.Name)
 	}
-	if info.Name != "jin10" {
-		t.Errorf("Name = %q, want jin10", info.Name)
+	if !strings.Contains(meta.Description, "Jin10") {
+		t.Errorf("Desc = %q, want to mention Jin10", meta.Description)
 	}
-	if !strings.Contains(info.Desc, "Jin10") {
-		t.Errorf("Desc = %q, want to mention Jin10", info.Desc)
-	}
-	if !strings.Contains(info.Desc, "STUB") && !strings.Contains(info.Desc, "Python") {
-		t.Errorf("Desc = %q, want to flag stub status", info.Desc)
+	if !strings.Contains(meta.Description, "STUB") && !strings.Contains(meta.Description, "Python") {
+		t.Errorf("Desc = %q, want to flag stub status", meta.Description)
 	}
 }

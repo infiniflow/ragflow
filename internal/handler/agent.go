@@ -62,7 +62,7 @@ type agentFileService interface {
 // chatAgentService is the subset of AgentService used by the chat-completion
 // endpoints (AgentChatCompletions, RunAgent). Kept as a separate interface so
 // handler tests can inject a fake RunAgent without standing up the full
-// AgentService (DB DAOs, eino runner, etc.). The production wiring in
+// AgentService (DB DAOs, harness runner, etc.). The production wiring in
 // NewAgentHandler assigns the concrete *service.AgentService — which
 // satisfies this interface because its RunAgent signature matches.
 type chatAgentService interface {
@@ -291,10 +291,6 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 		jsonError(c, ec, em)
 		return
 	}
-	// Defensive: any historical v1 / Go-v2-only row in user_canvas.dsl
-	// is rendered as a missing graph by the front-end. Normalize in
-	// place (NormalizeForCanvas is a no-op when graph.nodes is set) so
-	// the response is always renderable without a migration.
 	if row != nil {
 		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
 	}
@@ -390,7 +386,6 @@ func (h *AgentHandler) ListTemplates(c *gin.Context) {
 		return
 	}
 	if templates == nil {
-		// Ensure the JSON payload is always a list, never null.
 		templates = []*entity.CanvasTemplate{}
 	}
 
@@ -401,9 +396,7 @@ func (h *AgentHandler) ListTemplates(c *gin.Context) {
 	})
 }
 
-// RunAgent returns an SSE stream of execution events. The Phase 5 stub emits
-// a single "Phase 5 wiring pending" event and closes; the real eino run
-// loop will replace the channel source in service.AgentService.RunAgent.
+// RunAgent returns an SSE stream of execution events.
 // @Summary Run Agent (SSE)
 // @Tags agents
 // @Produce text/event-stream
@@ -431,6 +424,9 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	if rc := http.NewResponseController(c.Writer); rc != nil {
+		rc.SetWriteDeadline(time.Time{})
+	}
 	for ev := range events {
 		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
 			common.Debug("agent run: client disconnected",
@@ -444,9 +440,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 }
 
 // readUserInput extracts the user_input field from the JSON body if
-// present, otherwise from the ?user_input= query string. An empty body
-// (no body sent) is treated as "" so the resume cycle still works
-// when the client only passes ?session_id=...&user_input=... on the URL.
+// present, otherwise from the ?user_input= query string.
 func readUserInput(c *gin.Context) string {
 	if c.Request.ContentLength > 0 {
 		var body struct {
@@ -467,23 +461,6 @@ func readUserInput(c *gin.Context) string {
 		}
 	}
 	return c.Query("user_input")
-}
-
-// sanitiseRunEventError passes through the error event payload
-// unchanged. The runner serialises canvas.ErrorEvent ({"message": ...})
-// before push, so when the payload round-trips through JSON the
-// message field is already preserved. Heuristic sanitisation is
-// disabled until the runner tags error events with a "kind"
-// field — without that, blanket rewriting every error to
-// "Internal storage error while accessing the agent." hides the
-// real failure from the front-end and the user (v3.6.1 diagnostic
-// regression: every canvas run failure surfaced as the same opaque
-// string).
-func sanitiseRunEventError(data string) string {
-	if data == "" {
-		return `{"message":"Unknown agent runtime error"}`
-	}
-	return data
 }
 
 // CancelAgent signals the in-flight run to stop.
@@ -550,12 +527,37 @@ func (h *AgentHandler) PublishAgent(c *gin.Context) {
 		jsonError(c, ec, em)
 		return
 	}
-	if row != nil {
-		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
-	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"data":    row,
+		"message": "success",
+	})
+}
+
+// ResetAgent clears the per-run state of a canvas (history, retrieval,
+// memory, path) and zeroes every "sys.*" / "env.*" global.
+// @Summary Reset Agent
+// @Tags agents
+// @Produce json
+// @Param canvas_id path string true "canvas id"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{canvas_id}/reset [post]
+func (h *AgentHandler) ResetAgent(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		jsonError(c, code, msg)
+		return
+	}
+	canvasID := c.Param("canvas_id")
+	dsl, err := h.agentService.ResetAgent(c.Request.Context(), user.ID, canvasID)
+	if err != nil {
+		ec, em := mapAgentError(err)
+		jsonError(c, ec, em)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    dsl,
 		"message": "success",
 	})
 }
@@ -582,12 +584,6 @@ func (h *AgentHandler) ListVersions(c *gin.Context) {
 	}
 	if rows == nil {
 		rows = []*entity.UserCanvasVersion{}
-	}
-	for _, row := range rows {
-		if row == nil {
-			continue
-		}
-		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
@@ -617,9 +613,6 @@ func (h *AgentHandler) GetVersion(c *gin.Context) {
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)
 		return
-	}
-	if row != nil {
-		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
@@ -676,9 +669,7 @@ func (h *AgentHandler) ListAgentTemplates(c *gin.Context) {
 	})
 }
 
-// Prompts GET /api/v1/agents/prompts — returns the four hardcoded
-// authoring guidelines the agent UI surfaces. The Python agent API
-// returns these from a module-level constant; we keep the same shape.
+// Prompts GET /api/v1/agents/prompts
 func (h *AgentHandler) Prompts(c *gin.Context) {
 	if _, code, msg := GetUser(c); code != common.CodeSuccess {
 		jsonError(c, code, msg)
@@ -696,7 +687,7 @@ func (h *AgentHandler) Prompts(c *gin.Context) {
 	})
 }
 
-// ListAgentTags list agent tags.
+// ListAgentTags GET /api/v1/agents/tags
 func (h *AgentHandler) ListAgentTags(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -844,10 +835,6 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 }
 
 // DeleteAgentSession DELETE /api/v1/agents/:canvas_id/sessions[/:session_id]
-//
-// Path parameter disambiguation:
-//   - /sessions/:session_id   -> single item delete
-//   - /sessions?ids=a,b       -> batch delete (delete_all when ids is empty)
 func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -892,25 +879,10 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 }
 
 // AgentChatCompletions POST /api/v1/agents/chat/completions
-//
-// Runs the canvas against `agent_id` and streams the result as SSE.
-//
-// Behaviour matches the Python reference at
-// api/db/services/canvas_service.py:313 (`completion()`):
-//
-//   - Non-openai path: always streams SSE — one `data: {...}\n\n` frame per
-//     canvas RunEvent, terminated by `data: [DONE]\n\n`. The `stream` field
-//     is ignored on this path because Python's `completion()` always yields
-//     SSE frames regardless of the flag.
-//   - Openai-compatible path: requires `messages` (a non-empty list with at
-//     least one user message is needed to derive the question). The full
-//     OpenAI wire framing (delta + reference + token counts — see
-//     `completion_openai` at api/db/services/canvas_service.py:378-479) is
-//     still a Phase 5 TODO; until then the openai-compat branches return a
-//     hardcoded "hello" stub so the validation contracts keep passing.
 type agentChatCompletionsRequest struct {
 	AgentID      string                   `json:"agent_id"`
 	Query        string                   `json:"query"`
+	Question     string                   `json:"question"`
 	Inputs       map[string]interface{}   `json:"inputs"`
 	SessionID    string                   `json:"session_id"`
 	Stream       bool                     `json:"stream"`
@@ -918,13 +890,9 @@ type agentChatCompletionsRequest struct {
 	Model        string                   `json:"model"`
 	Messages     []map[string]interface{} `json:"messages"`
 	ReturnTrace  bool                     `json:"return_trace"`
+	UserID       string                   `json:"user_id"`
 }
 
-// extractLastUserContent returns the content of the last message in
-// `messages` whose role is "user", or "" if none is found. Mirrors the
-// Python derivation in api/apps/restful_apis/agent_api.py:1258 that drives
-// `completion_openai` when the request uses the openai-compatible wire
-// format but no top-level `query` is supplied.
 func extractLastUserContent(messages []map[string]interface{}) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		role, _ := messages[i]["role"].(string)
@@ -938,10 +906,6 @@ func extractLastUserContent(messages []map[string]interface{}) string {
 	return ""
 }
 
-// extractUserInputFromFormInputs mirrors the front-end's wait-for-user submit
-// shape: `inputs` is an object keyed by form field name, and each entry carries
-// a nested `value`. The current chat-completion resume path consumes a single
-// string payload, so we lift the first field's value and stringify it.
 func extractUserInputFromFormInputs(inputs map[string]interface{}) interface{} {
 	if len(inputs) == 0 {
 		return nil
@@ -1040,13 +1004,6 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		zap.Int("messages_count", len(req.Messages)),
 	)
 
-	// TODO(phase5-openai-framing): the openai-compat branches below are
-	// stubs. They keep the existing "choices"-shape contract for the
-	// openai-compat tests, but the production wire format must mirror
-	// api/db/services/canvas_service.py:378-479 (`completion_openai`):
-	// per-token `delta.content`, cumulative token counts, `[DONE]`
-	// terminator, `reference` attached to the final choice. Land that
-	// once the chat path needs to interop with OpenAI clients.
 	if req.OpenAICompat {
 		c.JSON(http.StatusOK, gin.H{
 			"code": common.CodeSuccess,
@@ -1058,12 +1015,12 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		return
 	}
 
-	// Real canvas run — derive userInput from `query` first, then fall
-	// back to the last user message (covers the front-end that posts
-	// running_hint_text without a top-level `query`).
+	// Real canvas run — derive userInput from query, question, form inputs, or messages.
 	var userInput any = req.Query
 	if req.Query == "" {
-		if extracted := extractUserInputFromFormInputs(req.Inputs); extracted != nil {
+		if req.Question != "" {
+			userInput = req.Question
+		} else if extracted := extractUserInputFromFormInputs(req.Inputs); extracted != nil {
 			userInput = extracted
 		} else if extracted := extractLastUserContent(req.Messages); extracted != "" {
 			userInput = extracted
@@ -1094,22 +1051,10 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	// SSE wire format is the unified python envelope used by both
-	// /api/v1/agents/chat/completions and /api/v1/agentbots/<id>/completions.
-	// One frame per canvas event, all routed through
-	// service.WriteChatbotRunEvent so the two paths share one writer
-	// and one shape — see internal/service/bot_completion.go for the
-	// frame definition. The same unified envelope is used by the
-	// /api/v1/agents/{canvas_id}/run and /api/v1/agentbots/<id>/completions
-	// endpoints, all going through service.WriteChatbotRunEvent. The
-	// channel close is signalled by `data: [DONE]\n\n`. We do NOT emit
-	// an SSE `event:` line — the front-end's `use-send-message.ts`
-	// parser feeds each `data:` line directly into JSON.parse and
-	// breaks on the `e` of `event:` (browser console: "SyntaxError:
-	// Unexpected token 'e', \"event: mes\"…").
-	emitted := false
+	if rc := http.NewResponseController(c.Writer); rc != nil {
+		rc.SetWriteDeadline(time.Time{})
+	}
 	for ev := range events {
-		emitted = true
 		common.Debug("agent chat completions: streaming event",
 			zap.String("agent_id", req.AgentID),
 			zap.String("session_id", req.SessionID),
@@ -1125,29 +1070,6 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 			return
 		}
 	}
-	if !emitted {
-		// Canvas produced no events (e.g. empty query). Echo the
-		// session_id so the client can resume the conversation
-		// (fixes #15169). The [DONE] terminator must be emitted
-		// here explicitly because the canvas never sends a
-		// "done" event on this path.
-		common.Info("empty agent output - returning session_id",
-			zap.String("agent_id", req.AgentID),
-			zap.String("session_id", req.SessionID),
-		)
-		event := canvas.RunEvent{
-			Type:      "",
-			Data:      "{}",
-			CreatedAt: time.Now().Unix(),
-			SessionID: req.SessionID,
-		}
-		_ = service.WriteChatbotRunEvent(c.Writer, event)
-		if _, err := c.Writer.Write([]byte("data: [DONE]\n\n")); err != nil {
-			common.Debug("agent chat completions: failed to write [DONE]",
-				zap.Error(err),
-			)
-		}
-	}
 	common.Debug("agent chat completions: stream closed",
 		zap.String("agent_id", req.AgentID),
 		zap.String("session_id", req.SessionID),
@@ -1155,21 +1077,8 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 }
 
 // RerunAgent POST /api/v1/agents/rerun — requires id, dsl, and
-// component_id. The Python agent API uses PipelineOperationLogService
-// and the dataflow queue, none of which the Go port has implemented
-// yet; we keep the validation envelope (101 with the "required
-// argument are missing" message) so the test contract is satisfied,
-// and accept the request when all three fields are present.
-//
-// Tenant / document ownership gate (PR #15145, review round 6):
-// body.id is treated as a document ID and
-// `DocumentService.accessible(docID, user.ID)` is enforced BEFORE
-// the rerun. The gate is REQUIRED: a nil documentService turns a
-// wiring miss into an auth bypass (any caller could rerun an
-// arbitrary doc id without an ownership check), so we fail closed
-// with 500 instead of accepting the request. On denial we return
-// "Document not found." so a caller cannot probe whether a
-// document exists in another tenant.
+// component_id. Enforces DocumentService.accessible() ownership gate
+// via h.documentService before accepting the rerun.
 func (h *AgentHandler) RerunAgent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -1246,11 +1155,6 @@ func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 }
 
 // GetAgentLogs GET /api/v1/agents/:canvas_id/logs/:message_id
-//
-// Reads "{agent_id}-{message_id}-logs" from Redis (same key format
-// used by the Python agent API in api/apps/restful_apis/agent_api.py
-// line 920). Missing key returns an empty dict so the test contract
-// `data is dict` and `code == 0` are both satisfied.
 func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -1267,7 +1171,7 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 
 	key := fmt.Sprintf("%s-%s-logs", canvasID, messageID)
 	payload, rerr := redis.Get().Get(key)
-	data := map[string]interface{}{}
+	var data interface{}
 	if rerr == nil && payload != "" {
 		_ = json.Unmarshal([]byte(payload), &data)
 	}
@@ -1279,12 +1183,6 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 }
 
 // GetAgentWebhookLogs GET /api/v1/agents/:canvas_id/webhook/logs
-//
-// The Python agent API returns 102 "Canvas not found." when the agent
-// id does not resolve to a canvas owned by the caller (see
-// api/apps/restful_apis/agent_api.py webhook_trace). We replicate
-// that envelope here so the front-end poll does not surface a 500
-// for unknown / foreign canvas ids.
 func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -1294,10 +1192,6 @@ func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	ok, err := h.agentService.CheckCanvasAccess(user.ID, canvasID)
 	if err != nil || !ok {
-		// CheckCanvasAccess now surfaces ErrUserCanvasNotFound when
-		// the canvas row is missing; the Python envelope is
-		// indistinguishable for missing vs foreign, so collapse
-		// both into 102 "Canvas not found." here.
 		if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
 			jsonError(c, common.CodeServerError, err.Error())
 			return
@@ -1316,19 +1210,10 @@ func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 	})
 }
 
-// checkCanvasAccessForHandler is the shared 103 envelope helper for
-// PR2 routes that need to call service.CheckCanvasAccess and surface
-// the access-denied envelope with the same shape the existing
-// loadCanvasForUser-based handlers use.
+// checkCanvasAccessForHandler is the shared 103 envelope helper
 func (h *AgentHandler) checkCanvasAccessForHandler(c *gin.Context, userID, canvasID string) (bool, common.ErrorCode, string) {
 	ok, err := h.agentService.CheckCanvasAccess(userID, canvasID)
 	if err != nil {
-		// The Python agent API uses @_require_canvas_access_async on
-		// /sessions and /logs/:message_id, which folds "canvas does
-		// not exist" into the same 103 access envelope as a
-		// permission mismatch. Surface the same shape here so
-		// callers probing unknown ids do not get a 500 record not
-		// found that breaks the front-end.
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			return false, common.CodeOperatingError, "Make sure you have permission to access the agent."
 		}
@@ -1338,48 +1223,4 @@ func (h *AgentHandler) checkCanvasAccessForHandler(c *gin.Context, userID, canva
 		return false, common.CodeOperatingError, "Make sure you have permission to access the agent."
 	}
 	return true, common.CodeSuccess, ""
-}
-
-// ResetAgent clears the per-run state of a canvas (history, retrieval,
-// memory, path) and zeroes every "sys.*" / "env.*" global. Mirrors
-// POST /api/v1/agents/:canvas_id/reset from the Python backend at
-// api/apps/restful_apis/agent_api.py:992 — but unlike the Python
-// implementation this handler does not sync a Canvas replica.
-// `api.apps.services.canvas_replica_service.CanvasReplicaService` is
-// the Python Redis-backed runtime replica (distributed lock + 3h TTL);
-// it is intentionally NOT ported to Go. The Go agent port runs every
-// agent through eino's compose.Workflow.Invoke, which is reconstructed
-// from the DSL on each run, so the replica's read-side acceleration
-// is unnecessary and its write-side adds an out-of-band DB/cache sync
-// for no benefit. UpdateAgent / CreateAgent / RerunAgent follow the
-// same convention — DSL write only, no Redis replica. See the
-// "canvas-replica-not-porting" project memory for the design rationale.
-//
-// The reset DSL is returned in the response body so the front-end
-// can render the new state without an extra GET, matching the
-// Python handler's `return get_json_result(data=dsl)` line.
-// @Summary Reset Agent
-// @Tags agents
-// @Produce json
-// @Param canvas_id path string true "canvas id"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/agents/{canvas_id}/reset [post]
-func (h *AgentHandler) ResetAgent(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
-		return
-	}
-	canvasID := c.Param("canvas_id")
-	dsl, err := h.agentService.ResetAgent(c.Request.Context(), user.ID, canvasID)
-	if err != nil {
-		ec, em := mapAgentError(err)
-		jsonError(c, ec, em)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    dsl,
-		"message": "success",
-	})
 }

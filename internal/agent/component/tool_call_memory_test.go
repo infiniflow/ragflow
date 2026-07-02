@@ -21,18 +21,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/agent/runtime"
 )
 
-// TestAddToolCallMemory_NoToolCalls: when msg has no ToolCalls, the
+// TestAddToolCallMemory_No// ToolCalls: when msg has no ToolCalls, the
 // function returns ("", nil) — caller skips appending to history.
 func TestAddToolCallMemory_NoToolCalls(t *testing.T) {
 	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo"}}
 	withStubInvoker(t, stub)
 
-	got, err := addToolCallMemory(context.Background(), AgentParam{ModelID: "echo"}, &schema.Message{Content: "no tools"})
+	got, err := addToolCallMemory(context.Background(), AgentParam{ModelID: "echo"}, &ComponentMessage{Content: "no tools"})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -53,13 +51,13 @@ func TestAddToolCallMemory_SummarizesAndAppendsToState(t *testing.T) {
 	}}
 	withStubInvoker(t, stub)
 
-	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*ComponentMessage, error) {
 		// Final message with one tool call.
-		return &schema.Message{
-			Role: schema.Assistant,
-			ToolCalls: []schema.ToolCall{{
+		return &ComponentMessage{
+			Role: RoleAssistant,
+			ToolCalls: []ComponentToolCall{{
 				ID: "1", Type: "function",
-				Function: schema.FunctionCall{
+				Function: ComponentFunctionCall{
 					Name:      "search",
 					Arguments: `{"q":"what is X"}`,
 				},
@@ -95,12 +93,12 @@ func TestAddToolCallMemory_LLMFailure(t *testing.T) {
 	stub := &stubInvoker{err: context.DeadlineExceeded}
 	withStubInvoker(t, stub)
 
-	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
-		return &schema.Message{
-			Role: schema.Assistant,
-			ToolCalls: []schema.ToolCall{{
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*ComponentMessage, error) {
+		return &ComponentMessage{
+			Role: RoleAssistant,
+			ToolCalls: []ComponentToolCall{{
 				ID: "1", Type: "function",
-				Function: schema.FunctionCall{Name: "search"},
+				Function: ComponentFunctionCall{Name: "search"},
 			}},
 		}, nil
 	})

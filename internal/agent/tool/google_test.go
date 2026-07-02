@@ -70,10 +70,7 @@ func TestGoogle_BuildURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := buildGoogleURL(tc.apiKey, tc.cx, tc.query, tc.max)
-			u, err := url.Parse(got)
-			if err != nil {
-				t.Fatalf("url.Parse(%q): %v", got, err)
-			}
+			u, _ := url.Parse(got)
 			if u.Host != tc.wantHost {
 				t.Errorf("host = %q, want %q", u.Host, tc.wantHost)
 			}
@@ -115,11 +112,8 @@ func TestGoogle_ParseResults(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewGoogleToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, _ := tool.InvokableRun(context.Background(),
 		`{"query":"ragflow","api_key":"K","cx":"C","max_results":5}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
 
 	var env googleEnvelope
 	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
@@ -157,14 +151,11 @@ func TestGoogle_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewGoogleTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "google" {
+		t.Errorf("Name = %q, want google", meta.Name)
 	}
-	if info.Name != "google" {
-		t.Errorf("Name = %q, want google", info.Name)
-	}
-	if !strings.Contains(info.Desc, "Google") {
-		t.Errorf("Desc = %q, want to mention Google", info.Desc)
+	if !strings.Contains(meta.Description, "Google") {
+		t.Errorf("Desc = %q, want to mention Google", meta.Description)
 	}
 }

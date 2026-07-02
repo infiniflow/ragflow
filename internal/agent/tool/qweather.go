@@ -23,9 +23,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const qweatherToolName = "qweather"
@@ -103,28 +100,28 @@ func NewQWeatherToolWith(h *HTTPHelper) *QWeatherTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (q *QWeatherTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: qweatherToolName,
-		Desc: qweatherToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (q *QWeatherTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        qweatherToolName,
+		Description: qweatherToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"api_key": {
-				Type:     schema.String,
-				Desc:     "QWeather API key (Console → 项目 → 凭据).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "QWeather API key (Console → 项目 → 凭据).",
+				Required:    true,
 			},
 			"location": {
-				Type:     schema.String,
-				Desc:     "Location code (e.g. 101010100 for Beijing) or \"lat,lon\" (e.g. \"39.904,116.405\").",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Location code (e.g. 101010100 for Beijing) or \"lat,lon\" (e.g. \"39.904,116.405\").",
+				Required:    true,
 			},
 			"lang": {
-				Type:     schema.String,
-				Desc:     "Language for `text` and `windDir`. Defaults to \"zh\".",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "Language for `text` and `windDir`. Defaults to \"zh\".",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildQWeatherURL composes the devapi.qweather.com URL. Centralized
@@ -141,7 +138,7 @@ func buildQWeatherURL(p qweatherParams) string {
 }
 
 // InvokableRun performs the QWeather current-conditions GET.
-func (q *QWeatherTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (q *QWeatherTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p qweatherParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return qweatherErrJSON(fmt.Errorf("qweather: parse arguments: %w", err)),

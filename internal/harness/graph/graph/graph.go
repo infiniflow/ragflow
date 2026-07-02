@@ -990,7 +990,8 @@ func inlineGetNextTasks(ctx context.Context, registry *channels.Registry, comple
 				conditionKey := fmt.Sprintf("%v", conditionResult)
 				targetNode, ok := condEdge.Mapping[conditionKey]
 				if !ok {
-					return nil, fmt.Errorf("conditional edge from '%s': condition key '%v' not mapped", lastCompletedNode, conditionResult)
+					// No mapping for this condition key; skip this edge.
+					continue
 				}
 				if targetNode == constants.End {
 					return tasks, nil

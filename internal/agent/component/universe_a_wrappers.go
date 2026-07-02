@@ -1,23 +1,23 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//   http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 // Universe A delegation wrappers. Canvas-facing components that
-// delegate to their corresponding Universe B eino tool
+// delegate to their corresponding Universe B tool
 // implementations. The delegation pattern keeps the canvas
-// scheduler's Component contract thin and the eino tool's
+// scheduler's Component contract thin and the tool's
 // InvokableRun interface as the actual implementation seam.
 //
 // Primary registration: TavilySearch, Retrieval (incl. the
@@ -37,9 +37,6 @@ import (
 	"strconv"
 	"strings"
 
-	einotool "github.com/cloudwego/eino/components/tool"
-
-	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -47,6 +44,7 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"ragflow/internal/agent/runtime"
 )
 
 // tavilySearchComponent delegates to internal/agent/tool/TavilyTool.
@@ -452,15 +450,15 @@ func newExeSQLComponent(params map[string]any) (Component, error) {
 //
 // Field map:
 //
-//	v1 surface          → tool surface
-//	-------------------   --------------
-//	db_type (optional)  → db_type        (defaults to "mysql")
-//	database            → database
-//	username            → username
-//	host                → host
-//	port (float64)      → port           (coerced to int)
-//	password            → password
-//	top_n (numeric)     → max_records    (and dropped from out)
+//	v1 surface     → tool surface
+//	-------------------  --------------
+//	db_type (optional) → db_type    (defaults to "mysql")
+//	database      → database
+//	username      → username
+//	host        → host
+//	port (float64)   → port      (coerced to int)
+//	password      → password
+//	top_n (numeric)   → max_records  (and dropped from out)
 //
 // Returns a fresh map; the input is not mutated.
 func translateExeSQLParamsToToolShape(v1Params map[string]any) map[string]any {
@@ -538,95 +536,148 @@ func (c *exesqlComponent) Stream(_ context.Context, _ map[string]any) (<-chan ma
 	return nil, nil
 }
 
-// codeExecComponent delegates to internal/agent/tool/CodeExecTool.
-// The node-level params map carries the legacy v1 DSL surface
-// (`lang`, `script`, `arguments`, optional `timeout`). Per-call inputs
-// override those defaults so resolved canvas refs win at invocation
-// time, while static DSL-provided literals still flow through.
-type codeExecComponent struct {
-	inner   *agenttool.CodeExecTool
-	params  map[string]any
-	outputs map[string]any
+// codeExecComponentDelegate wraps the CodeExec tool as a Component.
+// It delegates to agenttool.CodeExecTool.InvokableRun which handles
+// sandbox dispatch, argument resolution (including {{ref}} templates),
+// result normalization, and contract validation — matching the full
+// Python tool surface.
+type codeExecComponentDelegate struct {
+	params map[string]any // default DSL params (lang, script, arguments, outputs)
 }
 
-func newCodeExecComponent(params map[string]any) (Component, error) {
-	cloned := make(map[string]any, len(params))
-	for k, v := range params {
-		cloned[k] = v
-	}
-	return &codeExecComponent{
-		inner:   agenttool.NewCodeExecTool(),
-		params:  cloned,
-		outputs: cloneAnyMap(asAnyMap(params["outputs"])),
-	}, nil
-}
+func (c *codeExecComponentDelegate) Name() string { return componentNameCodeExec }
 
-func (c *codeExecComponent) Name() string { return "CodeExec" }
-
-func (c *codeExecComponent) Inputs() map[string]string {
+func (c *codeExecComponentDelegate) Inputs() map[string]string {
 	return map[string]string{
-		"lang":      "Programming language: python/python3/javascript/nodejs.",
-		"script":    "Code to execute. Should define main(...).",
-		"arguments": "Arguments passed to main(...) as keyword args / object fields.",
-		"timeout":   "Optional per-execution timeout in seconds.",
+		"lang":      "Programming language (python / nodejs).",
+		"script":    "Code to execute. Must define a main function.",
+		"arguments": "Arguments passed to the code (key-value map).",
+		"outputs":   "Expected output schema (e.g. {\"result\": {\"type\": \"Number\"}}).",
 	}
 }
 
-func (c *codeExecComponent) Outputs() map[string]string {
+func (c *codeExecComponentDelegate) Outputs() map[string]string {
 	return map[string]string{
-		"result":      "The main(...) return value rendered as the legacy CodeExec result field.",
-		"content":     "Raw CodeExec tool content field.",
-		"_ERROR":      "Execution or sandbox error message.",
-		"actual_type": "Runtime type inferred by the sandbox bridge.",
-		"stdout":      "Captured stdout.",
-		"stderr":      "Captured stderr.",
-		"exit_code":   "Process exit code.",
+		"result":      "Normalized return value of the executed code.",
+		"content":     "String representation of the result.",
+		"actual_type": "Detected type of the result (Number / String / List / …).",
+		"_ERROR":      "Error message when execution fails.",
 	}
 }
 
-func (c *codeExecComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	merged := make(map[string]any, len(c.params)+len(inputs))
+func (c *codeExecComponentDelegate) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	// Resolve {{ref}} template patterns in argument values against
+	// the state snapshot passed via inputs["state"].  The snapshot
+	// maps cpn_id → param_name → value; a value like
+	// "UserFillUp:CodeInput@x" is resolved against it.
+	args := c.resolveArguments(inputs)
+
+	// Merge resolved arguments into the merged input map.
+	merged := make(map[string]any, len(c.params)+2)
 	for k, v := range c.params {
 		merged[k] = v
 	}
 	for k, v := range inputs {
 		merged[k] = v
 	}
+	merged["arguments"] = args
+
+	// Resolve code-exec-specific argument references against merged state.
 	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
 		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged)
 	}
+
 	common.Debug("CodeExec wrapper invoke",
 		zap.Int("params_keys", len(c.params)),
 		zap.Int("inputs_keys", len(inputs)),
 		zap.Int("merged_keys", len(merged)),
 		zap.Bool("has_arguments", merged["arguments"] != nil))
-	argsJSON, _ := json.Marshal(merged)
-	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
-	decoded := parseToolEnvelope(out)
-	if c.outputs != nil {
-		applyCodeExecBusinessOutputs(decoded, c.outputs)
-	} else if rawResult, ok := decoded["raw_result"]; ok {
-		decoded["result"] = rawResult
-		if _, ok := decoded["_ERROR"]; !ok {
-			decoded["_ERROR"] = ""
+
+	tool := agenttool.NewCodeExecTool()
+	argsJSON, mErr := json.Marshal(merged)
+	if mErr != nil {
+		return nil, fmt.Errorf("CodeExec: marshal: %w", mErr)
+	}
+
+	raw, err := tool.InvokableRun(ctx, string(argsJSON))
+	parsed := parseToolEnvelope(raw)
+
+	if outputs, _ := c.params["outputs"].(map[string]any); outputs != nil {
+		applyCodeExecBusinessOutputs(parsed, outputs)
+	} else {
+		if rawResult, ok := parsed["raw_result"]; ok {
+			parsed["result"] = rawResult
 		}
-	} else if content, ok := decoded["content"]; ok {
-		decoded["result"] = content
-		if _, ok := decoded["_ERROR"]; !ok {
-			decoded["_ERROR"] = ""
+		if _, has := parsed["_ERROR"]; !has {
+			parsed["_ERROR"] = ""
 		}
 	}
+
 	if err != nil {
-		return decoded, fmt.Errorf("canvas: CodeExec: %w", err)
+		return parsed, fmt.Errorf("CodeExec: %w", err)
 	}
-	return decoded, nil
+	return parsed, nil
 }
 
-func (c *codeExecComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+// resolveArguments resolves bare refs (e.g. "UserFillUp:CodeInput@x")
+// in argument values against the state snapshot carried in
+// inputs["state"].  The snapshot shape is map[cpnID]map[param]value —
+// same as what statePre passes to component bodies.
+func (c *codeExecComponentDelegate) resolveArguments(inputs map[string]any) map[string]any {
+	defaults, _ := c.params["arguments"].(map[string]any)
+	runtime, _ := inputs["arguments"].(map[string]any)
+
+	// Build a flat lookup: cpn_id@param → value.
+	// inputs["state"] can be map[string]any (pre-statePre snapshot) or
+	// map[string]map[string]any (from tests that pass state directly).
+	lookup := make(map[string]any)
+	if stateRaw, ok := inputs["state"].(map[string]any); ok {
+		for cpnID, paramsAny := range stateRaw {
+			switch p := paramsAny.(type) {
+			case map[string]any:
+				for param, val := range p {
+					lookup[cpnID+"@"+param] = val
+				}
+			}
+		}
+	} else if stateRaw, ok := inputs["state"].(map[string]map[string]any); ok {
+		for cpnID, params := range stateRaw {
+			for param, val := range params {
+				lookup[cpnID+"@"+param] = val
+			}
+		}
+	}
+
+	out := make(map[string]any, len(defaults))
+	for k, v := range defaults {
+		out[k] = v
+	}
+	for k, v := range runtime {
+		out[k] = v
+	}
+	// Resolve bare ref strings against the lookup.
+	for k, v := range out {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		if resolved, found := lookup[s]; found {
+			out[k] = resolved
+		}
+	}
+	return out
+}
+
+func (c *codeExecComponentDelegate) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
 }
 
-// parseToolEnvelope decodes the JSON envelope returned by eino tool
+// newCodeExecComponent is the factory registered in fixture_stubs.go.
+func newCodeExecComponent(params map[string]any) (Component, error) {
+	return &codeExecComponentDelegate{params: params}, nil
+}
+
+// parseToolEnvelope decodes the JSON envelope returned by tool
 // InvokableRun into a map[string]any. The result has whatever keys
 // the tool's result type carries (rows/columns/chunks/etc.).
 func parseToolEnvelope(jsonStr string) map[string]any {
@@ -826,9 +877,7 @@ var (
 	_ Component = (*retrievalComponent)(nil)
 	_ Component = (*tavilySearchComponent)(nil)
 	_ Component = (*exesqlComponent)(nil)
-	_ Component = (*codeExecComponent)(nil)
 )
 
-// Compile-time check that the eino InvokableTool methods we call
+// Compile-time check that the InvokableTool methods we call
 // are reachable (catches a future refactor that renames them).
-var _ einotool.InvokableTool = (*agenttool.TavilyTool)(nil)

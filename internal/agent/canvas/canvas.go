@@ -43,7 +43,7 @@ func NewCanvasState(runID, taskID string) *CanvasState {
 }
 
 // Canvas is the in-memory DSL representation loaded from a user_canvas row.
-// It is the input to compile.go which builds the eino Workflow.
+// It is the input to compile.go which builds the Workflow.
 type Canvas struct {
 	Components map[string]CanvasComponent `json:"components"`
 	Path       []string                   `json:"path"`

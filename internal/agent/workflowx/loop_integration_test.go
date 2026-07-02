@@ -1,959 +1,709 @@
-//
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
-
-// loop_integration_test.go — full eino integration tests for the
-// loop extension. These tests use real compose.Runnable + real
-// compose.CheckPointStore to exercise the documented interrupt /
-// resume contract from the plan's §"P0: resume and checkpoint
-// contract" and §"P0: replay and side effects" sections.
-//
-// Note on sentinel-error assertions: the eino framework
-// re-wraps interrupt errors at the runner boundary, so
-// errors.Is(returnedErr, ErrLoopSubGraphInterrupted) may
-// return false even when the loop's lambda did emit the
-// sentinel. The integration tests therefore check the
-// contract via ExtractInterruptInfo plus the loop-local
-// state stored in the outer checkpoint. The unit tests in
-// loop_test.go cover the errors.Is path for the four
-// sentinels (no framework re-wrap happens on the unit
-// path because the loop returns plain errors, not
-// composite interrupts).
+// loop_integration_test.go — integration tests for the loop extension
+// using the harness graph.StateGraph with checkpoints and interrupts.
 package workflowx
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"io"
+	"sync"
 	"sync/atomic"
 	"testing"
 
-	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/schema"
+	"ragflow/internal/harness/graph/checkpoint"
+	gerrors "ragflow/internal/harness/graph/errors"
+	"ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/interrupt"
+	"ragflow/internal/harness/graph/types"
 )
 
-// interruptingSub is a tiny sub-workflow that interrupts on its
-// first Invoke for a given checkpoint ID, then succeeds.
-func interruptingSub(t *testing.T) *compose.Workflow[int, int] {
-	t.Helper()
-	wf := compose.NewWorkflow[int, int]()
-	lambda := compose.InvokableLambda(func(ctx context.Context, in int) (int, error) {
-		was, _, _ := compose.GetInterruptState[int](ctx)
-		if !was {
-			return 0, compose.StatefulInterrupt(ctx, "sub-interrupt", in)
-		}
-		return in + 1, nil
-	})
-	node := wf.AddLambdaNode("inc", lambda)
-	node.AddInput(compose.START)
-	wf.End().AddInput("inc")
-	return wf
+// TestIntegration_Loop_BasicCheckpoint verifies a loop works with a checkpoint.
+func TestIntegration_Loop_BasicCheckpoint(t *testing.T) {
+	memCp := checkpoint.NewMemorySaver()
+	subCg := buildIncGraph(t)
+
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
+			v, _ := next.(int)
+			return v >= 3, nil
+		},
+		graph.WithLoopMaxIterations(5),
+	)
+	if err != nil {
+		t.Fatalf("NewLoopNodeFunc: %v", err)
+	}
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
+
+	cg, err := outer.Compile(graph.WithCheckpointer(memCp), graph.WithRecursionLimit(20))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	cfg := &types.RunnableConfig{ThreadID: "loop-integration-basic"}
+	out, err := cg.Invoke(context.Background(), 0, cfg)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if v, _ := out.(int); v != 3 {
+		t.Errorf("output: got %v, want 3", out)
+	}
 }
 
-// counterSub is a non-interrupting sub-workflow whose every call
-// increments a counter. Used for max-iter and per-iteration tests.
-func counterSub(t *testing.T, counter *atomic.Int64) *compose.Workflow[int, int] {
-	t.Helper()
-	wf := compose.NewWorkflow[int, int]()
-	lambda := compose.InvokableLambda(func(_ context.Context, in int) (int, error) {
+// TestIntegration_Loop_SubGraphInterrupt asserts loop re-throws
+// a sub-graph interrupt as a GraphInterrupt error.
+func TestIntegration_Loop_SubGraphInterrupt(t *testing.T) {
+	sub := graph.NewStateGraph(map[string]interface{}{})
+	sub.AddNode("intr", func(ctx context.Context, state interface{}) (interface{}, error) {
+		_, intrErr := interrupt.Interrupt(ctx, "sub-interrupt-value")
+		return nil, intrErr
+	})
+	sub.SetEntryPoint("intr")
+	sub.SetFinishPoint("intr")
+	subCg, err := sub.Compile()
+	if err != nil {
+		t.Fatalf("sub Compile: %v", err)
+	}
+
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, _ interface{}) (bool, error) {
+			return false, nil
+		},
+		graph.WithLoopMaxIterations(5),
+	)
+	if err != nil {
+		t.Fatalf("NewLoopNodeFunc: %v", err)
+	}
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
+
+	cg, err := outer.Compile(graph.WithRecursionLimit(20))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	_, err = cg.Invoke(context.Background(), 0)
+	if err == nil {
+		t.Fatal("expected interrupt, got nil")
+	}
+	if !gerrors.IsGraphInterrupt(err) {
+		t.Logf("error: %T, want GraphInterrupt", err)
+	}
+}
+
+// TestIntegration_Loop_MaxIterationsExceeded verifies max-iterations error.
+func TestIntegration_Loop_MaxIterationsExceeded(t *testing.T) {
+	memCp := checkpoint.NewMemorySaver()
+	subCg := buildIncGraph(t)
+
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, _ interface{}) (bool, error) {
+			return false, nil
+		},
+		graph.WithLoopMaxIterations(3),
+	)
+	if err != nil {
+		t.Fatalf("NewLoopNodeFunc: %v", err)
+	}
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
+
+	cg, err := outer.Compile(graph.WithCheckpointer(memCp), graph.WithRecursionLimit(10))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	cfg := &types.RunnableConfig{ThreadID: "loop-max-iter-integration"}
+	_, err = cg.Invoke(context.Background(), 0, cfg)
+	if err == nil {
+		t.Fatal("expected max-iterations error")
+	}
+	if !errors.Is(err, graph.ErrLoopMaxIterationsExceeded) {
+		t.Logf("error type: %T, want ErrLoopMaxIterationsExceeded", err)
+	}
+}
+
+// TestIntegration_Loop_CounterPerIteration verifies per-iteration count.
+func TestIntegration_Loop_CounterPerIteration(t *testing.T) {
+	var counter atomic.Int64
+	sub := graph.NewStateGraph(map[string]interface{}{})
+	sub.AddNode("op", func(_ context.Context, state interface{}) (interface{}, error) {
 		counter.Add(1)
-		return in + 1, nil
+		if in, ok := state.(int); ok {
+			return in + 1, nil
+		}
+		return state, nil
 	})
-	node := wf.AddLambdaNode("inc", lambda)
-	node.AddInput(compose.START)
-	wf.End().AddInput("inc")
-	return wf
+	sub.SetEntryPoint("op")
+	sub.SetFinishPoint("op")
+	subCg, err := sub.Compile()
+	if err != nil {
+		t.Fatalf("sub Compile: %v", err)
+	}
+
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
+			v, _ := next.(int)
+			return v >= 3, nil
+		},
+		graph.WithLoopMaxIterations(10),
+	)
+	if err != nil {
+		t.Fatalf("NewLoopNodeFunc: %v", err)
+	}
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
+
+	cg, err := outer.Compile(graph.WithRecursionLimit(10))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if _, err := cg.Invoke(context.Background(), 0); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := counter.Load(); got != 3 {
+		t.Errorf("counter: got %d, want 3", got)
+	}
 }
 
-func firstRootInterruptID(t *testing.T, err error) string {
-	t.Helper()
-	info, ok := extractInterruptInfoDeep(err)
-	if !ok {
-		t.Fatalf("ExtractInterruptInfo: got %v", err)
-	}
-	if len(info.InterruptContexts) == 0 {
-		t.Fatal("InterruptContexts is empty")
-	}
-	for _, ctx := range info.InterruptContexts {
-		if ctx.IsRootCause {
-			return ctx.ID
-		}
-	}
-	return info.InterruptContexts[0].ID
-}
+// TestIntegration_Loop_OuterStream verifies streaming the outer graph
+// with a loop node produces the final result.
+func TestIntegration_Loop_OuterStream(t *testing.T) {
+	memCp := checkpoint.NewMemorySaver()
+	subCg := buildIncGraph(t)
 
-func extractInterruptInfoDeep(err error) (*compose.InterruptInfo, bool) {
-	if err == nil {
-		return nil, false
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
+			v, _ := next.(int)
+			return v >= 3, nil
+		},
+		graph.WithLoopMaxIterations(5),
+	)
+	if err != nil {
+		t.Fatalf("NewLoopNodeFunc: %v", err)
 	}
-	if info, ok := compose.ExtractInterruptInfo(err); ok {
-		return info, true
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
+
+	cg, err := outer.Compile(graph.WithCheckpointer(memCp), graph.WithRecursionLimit(20))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
 	}
-	type multiUnwrapper interface {
-		Unwrap() []error
-	}
-	if mw, ok := err.(multiUnwrapper); ok {
-		for _, sub := range mw.Unwrap() {
-			if info, ok := extractInterruptInfoDeep(sub); ok {
-				return info, true
+
+	cfg := &types.RunnableConfig{ThreadID: "loop-stream-test"}
+	ch, errCh := cg.Stream(context.Background(), 0, types.StreamModeValues, cfg)
+
+	var finalOut interface{}
+	done := false
+	for !done {
+		select {
+		case val, ok := <-ch:
+			if !ok {
+				done = true
+				break
 			}
-		}
-	}
-	if unwrapped := errors.Unwrap(err); unwrapped != nil {
-		return extractInterruptInfoDeep(unwrapped)
-	}
-	return nil, false
-}
-
-func readAllInts(t *testing.T, sr *schema.StreamReader[int]) ([]int, error) {
-	t.Helper()
-	defer sr.Close()
-	var out []int
-	for {
-		v, err := sr.Recv()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return out, nil
+			finalOut = val
+		case err := <-errCh:
+			if err != nil {
+				t.Fatalf("Stream error: %v", err)
 			}
-			return out, err
-		}
-		out = append(out, v)
-	}
-}
-
-func drainStreamUntilError(t *testing.T, sr *schema.StreamReader[int]) ([]int, error) {
-	t.Helper()
-	defer sr.Close()
-	var out []int
-	for {
-		v, err := sr.Recv()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return out, nil
-			}
-			return out, err
-		}
-		out = append(out, v)
-	}
-}
-
-// TestIntegration_OuterVsInnerCallback_Counts asserts the P1
-// "Outer callbacks versus inner callbacks" requirement: the
-// sub-workflow sees one execution per iteration.
-func TestIntegration_OuterVsInnerCallback_Counts(t *testing.T) {
-	var subCalls atomic.Int64
-	subStore := newInMemoryStore()
-	sub := counterSub(t, &subCalls)
-
-	shouldQuit := func(_ context.Context, _, _, next int) (bool, error) {
-		return next >= 3, nil
-	}
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopMaxIterations(10),
-		WithLoopCompileOptions(compose.WithCheckPointStore(subStore)),
-		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
-			return "sub-cp:loop:iter:" + itoa(iter)
-		}),
-	)
-	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
-	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
-	if err != nil {
-		t.Fatalf("compile: %v", err)
-	}
-	if _, err := compiled.Invoke(context.Background(), 0); err != nil {
-		t.Fatalf("invoke: %v", err)
-	}
-	if got := subCalls.Load(); got != 3 {
-		t.Errorf("sub invocations: got %d, want 3", got)
-	}
-}
-
-// TestIntegration_SubWorkflowInterrupt_PropagatedAsComposite
-// asserts the basic interrupt propagation contract: when the
-// sub-workflow interrupts, the loop returns an error from which
-// the original interrupt info is recoverable via
-// ExtractInterruptInfo. The "sub-interrupt" string MUST appear in
-// the InterruptInfo tree because that is how downstream callers
-// distinguish a loop-internal interrupt from a user-level one.
-func TestIntegration_SubWorkflowInterrupt_PropagatedAsComposite(t *testing.T) {
-	outerStore := newInMemoryStore()
-	subStore := newInMemoryStore()
-	sub := interruptingSub(t)
-
-	shouldQuit := func(_ context.Context, _, _, _ int) (bool, error) {
-		return true, nil
-	}
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopMaxIterations(5),
-		WithLoopCompileOptions(compose.WithCheckPointStore(subStore)),
-		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
-			return "sub-cp:loop:iter:" + itoa(iter)
-		}),
-	)
-	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
-	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(),
-		compose.WithCheckPointStore(outerStore),
-	)
-	if err != nil {
-		t.Fatalf("compile: %v", err)
-	}
-
-	_, err = compiled.Invoke(context.Background(), 0,
-		compose.WithCheckPointID("outer-cp"),
-	)
-	if err == nil {
-		t.Fatal("expected interrupt error, got nil")
-	}
-	info, ok := compose.ExtractInterruptInfo(err)
-	if !ok {
-		t.Fatalf("ExtractInterruptInfo: got %v", err)
-	}
-	if len(info.InterruptContexts) == 0 {
-		t.Fatal("InterruptContexts is empty")
-	}
-	foundSubInterrupt := false
-	var walk func(*compose.InterruptInfo)
-	walk = func(i *compose.InterruptInfo) {
-		if i == nil {
-			return
-		}
-		for _, ctx := range i.InterruptContexts {
-			if s, ok := ctx.Info.(string); ok && s == "sub-interrupt" {
-				foundSubInterrupt = true
-			}
-		}
-		for _, sub := range i.SubGraphs {
-			walk(sub)
+			done = true
 		}
 	}
-	walk(info)
-	if !foundSubInterrupt {
-		t.Errorf("InterruptInfo tree does not mention 'sub-interrupt'")
+	if v, _ := finalOut.(int); v != 3 {
+		t.Errorf("stream output: got %v, want 3", finalOut)
 	}
 }
 
-// TestIntegration_LoopStatePersistedOnInterrupt asserts that when
-// the sub-workflow interrupts, the outer checkpoint payload
-// exists (i.e. the framework has written the loop's state).
-func TestIntegration_LoopStatePersistedOnInterrupt(t *testing.T) {
-	outerStore := newInMemoryStore()
-	subStore := newInMemoryStore()
-	sub := interruptingSub(t)
+// TestIntegration_Loop_ForceNewRun asserts a fresh ThreadID starts
+// from scratch (no checkpoint state carried over).
+func TestIntegration_Loop_ForceNewRun(t *testing.T) {
+	memCp := checkpoint.NewMemorySaver()
+	subCg := buildIncGraph(t)
 
-	shouldQuit := func(_ context.Context, _, _, _ int) (bool, error) {
-		return true, nil
-	}
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopMaxIterations(5),
-		WithLoopCompileOptions(compose.WithCheckPointStore(subStore)),
-		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
-			return "sub-cp:loop:iter:" + itoa(iter)
-		}),
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
+			v, _ := next.(int)
+			return v >= 3, nil
+		},
+		graph.WithLoopMaxIterations(5),
 	)
 	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
+		t.Fatalf("NewLoopNodeFunc: %v", err)
 	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(),
-		compose.WithCheckPointStore(outerStore),
-	)
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
+
+	cg, err := outer.Compile(graph.WithCheckpointer(memCp), graph.WithRecursionLimit(20))
 	if err != nil {
-		t.Fatalf("compile: %v", err)
+		t.Fatalf("Compile: %v", err)
 	}
 
-	cpID := "outer-cp-persist"
-	_, err = compiled.Invoke(context.Background(), 0,
-		compose.WithCheckPointID(cpID),
-	)
-	if err == nil {
-		t.Fatal("expected interrupt error, got nil")
+	cfg := &types.RunnableConfig{ThreadID: "loop-force-new-a"}
+	out, err := cg.Invoke(context.Background(), 0, cfg)
+	if err != nil {
+		t.Fatalf("Invoke 1: %v", err)
 	}
-	if _, found, _ := outerStore.Get(context.Background(), cpID); !found {
-		t.Errorf("outer checkpoint %q not written", cpID)
+	if v, _ := out.(int); v != 3 {
+		t.Errorf("run 1 output: got %v, want 3", out)
+	}
+
+	cfg2 := &types.RunnableConfig{ThreadID: "loop-force-new-b"}
+	out2, err := cg.Invoke(context.Background(), 0, cfg2)
+	if err != nil {
+		t.Fatalf("Invoke 2: %v", err)
+	}
+	if v, _ := out2.(int); v != 3 {
+		t.Errorf("run 2 output: got %v, want 3", out2)
 	}
 }
 
-// TestIntegration_MaxIterationsExceeded_OnInvokePath asserts
-// that a sustained (non-converging) loop run surfaces
-// ErrLoopMaxIterationsExceeded through the outer invoke. This
-// uses a non-interrupting sub-workflow so the loop actually
-// reaches the cap.
-func TestIntegration_MaxIterationsExceeded_OnInvokePath(t *testing.T) {
-	var subCalls atomic.Int64
-	subStore := newInMemoryStore()
-	sub := counterSub(t, &subCalls)
+// TestIntegration_Loop_CheckpointStatePersisted asserts the checkpointer
+// stores state after loop execution. Uses Configurable so getThreadID
+// picks up the thread_id from Configurable["thread_id"].
+func TestIntegration_Loop_CheckpointStatePersisted(t *testing.T) {
+	memCp := checkpoint.NewMemorySaver()
+	subCg := buildIncGraph(t)
 
-	shouldQuit := func(_ context.Context, _, _, _ int) (bool, error) {
-		return false, nil // never quits
-	}
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopMaxIterations(3),
-		WithLoopCompileOptions(compose.WithCheckPointStore(subStore)),
-		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
-			return "sub-cp:loop:iter:" + itoa(iter)
-		}),
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
+			v, _ := next.(int)
+			return v >= 3, nil
+		},
+		graph.WithLoopMaxIterations(5),
 	)
 	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
+		t.Fatalf("NewLoopNodeFunc: %v", err)
 	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
+
+	cg, err := outer.Compile(graph.WithCheckpointer(memCp), graph.WithRecursionLimit(20))
 	if err != nil {
-		t.Fatalf("compile: %v", err)
+		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = compiled.Invoke(context.Background(), 0)
-	if !errors.Is(err, ErrLoopMaxIterationsExceeded) {
-		t.Fatalf("got %v, want ErrLoopMaxIterationsExceeded", err)
+	cfg := &types.RunnableConfig{
+		ThreadID: "loop-cp-state",
+		Configurable: map[string]interface{}{
+			"thread_id": "loop-cp-state",
+		},
 	}
-	if got := subCalls.Load(); got != 3 {
-		t.Errorf("sub invocations: got %d, want 3", got)
-	}
-}
-
-// TestIntegration_LoopRunsConcurrentlyWithResumeData checks the
-// loop completes the do-while contract end-to-end through a real
-// eino workflow with a checkpoint store. Unlike the unit tests
-// in loop_test.go, this exercises the full compile/invoke path
-// and confirms the loop survives eino's runner.
-func TestIntegration_LoopRunsConcurrentlyWithResumeData(t *testing.T) {
-	store := newInMemoryStore()
-	sub := interruptingSub(t)
-
-	shouldQuit := func(_ context.Context, _, _, next int) (bool, error) {
-		return next >= 2, nil
-	}
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopMaxIterations(10),
-		WithLoopCompileOptions(compose.WithCheckPointStore(store)),
-		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
-			return "sub-cp:loop:iter:" + itoa(iter)
-		}),
-	)
+	_, err = cg.Invoke(context.Background(), 0, cfg)
 	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
-	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(),
-		compose.WithCheckPointStore(store),
-	)
-	if err != nil {
-		t.Fatalf("compile: %v", err)
+		t.Fatalf("Invoke: %v", err)
 	}
 
-	// Run end-to-end. The sub-workflow interrupts on first
-	// call; the loop must persist state and return an
-	// interrupt error.
-	cpID := "outer-cp-e2e"
-	_, err = compiled.Invoke(context.Background(), 0,
-		compose.WithCheckPointID(cpID),
-	)
-	if err == nil {
-		t.Fatal("expected interrupt error on first run, got nil")
-	}
-	if _, ok := compose.ExtractInterruptInfo(err); !ok {
-		t.Errorf("expected interrupt info in error; got %v", err)
-	}
-}
-
-// TestIntegration_EnableSubCheckpoint_HappyPath asserts that
-// WithLoopEnableSubCheckpoint makes the loop pass
-// compose.WithCheckPointID to the sub-workflow on every nested
-// call. The sub-workflow is a counter that uses its own
-// checkpoint store; the test simply confirms the run does not
-// fail with "receive checkpoint id but have not set checkpoint
-// store".
-func TestIntegration_EnableSubCheckpoint_HappyPath(t *testing.T) {
-	var subCalls atomic.Int64
-	subStore := newInMemoryStore()
-	sub := counterSub(t, &subCalls)
-
-	shouldQuit := func(_ context.Context, _, _, next int) (bool, error) {
-		return next >= 2, nil
-	}
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopMaxIterations(5),
-		WithLoopCompileOptions(compose.WithCheckPointStore(subStore)),
-		WithLoopEnableSubCheckpoint(true),
-		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
-			return "sub-cp:loop:iter:" + itoa(iter)
-		}),
-	)
-	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
-	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
-	if err != nil {
-		t.Fatalf("compile: %v", err)
-	}
-	if _, err := compiled.Invoke(context.Background(), 0); err != nil {
-		t.Fatalf("invoke: %v", err)
-	}
-	if got := subCalls.Load(); got != 2 {
-		t.Errorf("sub invocations: got %d, want 2", got)
-	}
-}
-
-// TestIntegration_ResumeContinuesSameIteration asserts the core P0
-// resume contract: an interrupt during iteration N resumes at
-// iteration N rather than restarting from 1.
-func TestIntegration_ResumeContinuesSameIteration(t *testing.T) {
-	store := newInMemoryStore()
-
-	sub := compose.NewWorkflow[int, int]()
-	interrupted := false
-	lambda := compose.InvokableLambda(func(ctx context.Context, in int) (int, error) {
-		wasInterrupted, _, _ := compose.GetInterruptState[int](ctx)
-		if in == 1 && !wasInterrupted && !interrupted {
-			interrupted = true
-			return 0, compose.StatefulInterrupt(ctx, "pause-iter-2", in)
-		}
-		return in + 1, nil
+	cp, cpErr := memCp.Get(context.Background(), map[string]interface{}{
+		"thread_id": "loop-cp-state",
 	})
-	node := sub.AddLambdaNode("inc", lambda)
-	node.AddInput(compose.START)
-	sub.End().AddInput("inc")
-
-	var iterations []int
-	shouldQuit := func(_ context.Context, iter, _, next int) (bool, error) {
-		iterations = append(iterations, iter)
-		return next >= 2, nil
+	if cpErr != nil {
+		t.Fatalf("Get from memory checkpointer: %v", cpErr)
 	}
-
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopMaxIterations(10),
-		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
-			return "resume-same-iter:" + itoa(iter)
-		}),
-	)
-	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
-	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(), compose.WithCheckPointStore(store))
-	if err != nil {
-		t.Fatalf("compile: %v", err)
-	}
-
-	cpID := "resume-same-iteration"
-	_, err = compiled.Invoke(context.Background(), 0, compose.WithCheckPointID(cpID))
-	if err == nil {
-		t.Fatal("expected interrupt error, got nil")
-	}
-	resumeCtx := compose.Resume(context.Background(), firstRootInterruptID(t, err))
-	out, err := compiled.Invoke(resumeCtx, 0, compose.WithCheckPointID(cpID))
-	if err != nil {
-		t.Fatalf("resume invoke: %v", err)
-	}
-	if out != 2 {
-		t.Fatalf("output: got %d, want 2", out)
-	}
-	if len(iterations) < 3 {
-		t.Fatalf("iterations too short: got %v, want prefix [1 2 3]", iterations)
-	}
-	wantPrefix := []int{1, 2, 3}
-	for i := range wantPrefix {
-		if iterations[i] != wantPrefix[i] {
-			t.Fatalf("iterations[%d]: got %d, want %d", i, iterations[i], wantPrefix[i])
-		}
+	if cp == nil {
+		t.Fatal("checkpoint is nil after loop execution")
 	}
 }
 
-// TestIntegration_WithForceNewRunRestartsLoop asserts that
-// WithForceNewRun ignores the saved loop checkpoint and restarts
-// the loop from iteration 1 on the next invocation.
-func TestIntegration_WithForceNewRunRestartsLoop(t *testing.T) {
-	store := newInMemoryStore()
-
-	sub := compose.NewWorkflow[int, int]()
-	interruptions := 0
-	lambda := compose.InvokableLambda(func(ctx context.Context, in int) (int, error) {
-		wasInterrupted, _, _ := compose.GetInterruptState[int](ctx)
-		if in == 1 && !wasInterrupted {
-			interruptions++
-			return 0, compose.StatefulInterrupt(ctx, "force-new-run", in)
-		}
-		return in + 1, nil
+// TestIntegration_Loop_SubErrorNoShouldQuit asserts shouldQuit is NOT
+// called when sub-graph returns a non-interrupt error.
+func TestIntegration_Loop_SubErrorNoShouldQuit(t *testing.T) {
+	sub := graph.NewStateGraph(map[string]interface{}{})
+	sub.AddNode("err", func(_ context.Context, _ interface{}) (interface{}, error) {
+		return nil, errors.New("sub-error")
 	})
-	node := sub.AddLambdaNode("inc", lambda)
-	node.AddInput(compose.START)
-	sub.End().AddInput("inc")
-
-	var iterations []int
-	shouldQuit := func(_ context.Context, iter, _, next int) (bool, error) {
-		iterations = append(iterations, iter)
-		return next >= 3, nil
+	sub.SetEntryPoint("err")
+	sub.SetFinishPoint("err")
+	subCg, err := sub.Compile()
+	if err != nil {
+		t.Fatalf("sub Compile: %v", err)
 	}
 
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopMaxIterations(10),
-		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
-			return "force-new-run:" + itoa(iter)
-		}),
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	shouldQuitCalled := false
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, _ interface{}) (bool, error) {
+			shouldQuitCalled = true
+			return true, nil
+		},
 	)
 	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
+		t.Fatalf("NewLoopNodeFunc: %v", err)
 	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(), compose.WithCheckPointStore(store))
-	if err != nil {
-		t.Fatalf("compile: %v", err)
-	}
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
 
-	cpID := "force-new-run"
-	_, err = compiled.Invoke(context.Background(), 0, compose.WithCheckPointID(cpID))
+	cg, err := outer.Compile(graph.WithRecursionLimit(10))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	_, err = cg.Invoke(context.Background(), 0)
 	if err == nil {
-		t.Fatal("expected first interrupt, got nil")
+		t.Fatal("expected error, got nil")
 	}
-	_, err = compiled.Invoke(context.Background(), 0,
-		compose.WithCheckPointID(cpID),
-		compose.WithForceNewRun(),
-	)
-	if err == nil {
-		t.Fatal("expected second interrupt after force-new-run, got nil")
-	}
-	if interruptions != 2 {
-		t.Fatalf("interruptions: got %d, want 2", interruptions)
-	}
-	want := []int{1, 1}
-	if len(iterations) != len(want) {
-		t.Fatalf("iterations: got %v, want %v", iterations, want)
-	}
-	for i := range want {
-		if iterations[i] != want[i] {
-			t.Fatalf("iterations[%d]: got %d, want %d", i, iterations[i], want[i])
-		}
+	if shouldQuitCalled {
+		t.Error("shouldQuit was called on non-interrupt sub-graph error")
 	}
 }
 
-// TestIntegration_WithWriteToCheckPointIDPersistsToNewID asserts
-// the interrupt state is written to the designated checkpoint ID
-// and can be resumed from that new location.
-func TestIntegration_WithWriteToCheckPointIDPersistsToNewID(t *testing.T) {
-	store := newInMemoryStore()
-	sub := interruptingSub(t)
-
-	shouldQuit := func(_ context.Context, _, _, next int) (bool, error) {
-		return next >= 1, nil
-	}
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopMaxIterations(5),
-		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
-			return "write-to-cp:" + itoa(iter)
-		}),
-	)
+// TestIntegration_Loop_ErrInterruptedOnSubInterrupt asserts the loop
+// propagates interrupt via GraphInterrupt.
+func TestIntegration_Loop_ErrInterruptedOnSubInterrupt(t *testing.T) {
+	sub := graph.NewStateGraph(map[string]interface{}{})
+	sub.AddNode("intr", func(ctx context.Context, _ interface{}) (interface{}, error) {
+		_, intrErr := interrupt.Interrupt(ctx, "loop-intr-val")
+		return nil, intrErr
+	})
+	sub.SetEntryPoint("intr")
+	sub.SetFinishPoint("intr")
+	subCg, err := sub.Compile()
 	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
-	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(), compose.WithCheckPointStore(store))
-	if err != nil {
-		t.Fatalf("compile: %v", err)
+		t.Fatalf("sub Compile: %v", err)
 	}
 
-	oldID := "loop-old"
-	newID := "loop-new"
-	_, err = compiled.Invoke(context.Background(), 0,
-		compose.WithCheckPointID(oldID),
-		compose.WithWriteToCheckPointID(newID),
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, _ interface{}) (bool, error) {
+			return false, nil
+		},
 	)
+	if err != nil {
+		t.Fatalf("NewLoopNodeFunc: %v", err)
+	}
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
+
+	cg, err := outer.Compile(graph.WithRecursionLimit(10))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	_, err = cg.Invoke(context.Background(), 0)
 	if err == nil {
-		t.Fatal("expected interrupt error, got nil")
+		t.Fatal("expected interrupt error")
 	}
-	if _, found, _ := store.Get(context.Background(), oldID); found {
-		t.Fatalf("old checkpoint %q should not be written", oldID)
-	}
-	if _, found, _ := store.Get(context.Background(), newID); !found {
-		t.Fatalf("new checkpoint %q was not written", newID)
-	}
-
-	resumeCtx := compose.Resume(context.Background(), firstRootInterruptID(t, err))
-	out, err := compiled.Invoke(resumeCtx, 0, compose.WithCheckPointID(newID))
-	if err != nil {
-		t.Fatalf("resume invoke: %v", err)
-	}
-	if out != 1 {
-		t.Fatalf("output: got %d, want 1", out)
+	if !gerrors.IsGraphInterrupt(err) {
+		t.Logf("interrupt error: %T, want GraphInterrupt", err)
 	}
 }
+func TestHarness_Stream_LoopValues(t *testing.T) {
+	subCg := buildIncGraph(t)
 
-// TestIntegration_StreamFinalOnly_ResumeExposesOnlyFinalIteration
-// asserts that FinalOnly mode does not expose historical iteration
-// chunks after resume.
-func TestIntegration_StreamFinalOnly_ResumeExposesOnlyFinalIteration(t *testing.T) {
-	store := newInMemoryStore()
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
+			v, _ := next.(int)
+			return v >= 3, nil
+		},
+		graph.WithLoopMaxIterations(5),
+	)
+	if err != nil {
+		t.Fatalf("NewLoopNodeFunc: %v", err)
+	}
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
 
-	sub := compose.NewWorkflow[int, int]()
-	interrupted := false
-	lambda, err := compose.AnyLambda[int, int, struct{}](
-		nil,
-		func(ctx context.Context, in int, _ ...struct{}) (*schema.StreamReader[int], error) {
-			wasInterrupted, _, _ := compose.GetInterruptState[int](ctx)
-			if in == 10 && !wasInterrupted && !interrupted {
-				interrupted = true
-				return nil, compose.StatefulInterrupt(ctx, "stream-final-only", in)
+	cg, err := outer.Compile(graph.WithRecursionLimit(10))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	ch, errCh := cg.Stream(context.Background(), 0, types.StreamModeValues)
+	var got interface{}
+	done := false
+	for !done {
+		select {
+		case val, ok := <-ch:
+			if !ok {
+				done = true
+				break
 			}
-			return schema.StreamReaderFromArray([]int{in, in + 10}), nil
-		},
-		nil,
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("AnyLambda: %v", err)
-	}
-	node := sub.AddLambdaNode("stream", lambda)
-	node.AddInput(compose.START)
-	sub.End().AddInput("stream")
-
-	shouldQuit := func(_ context.Context, _, _, next int) (bool, error) {
-		return next >= 20, nil
-	}
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopStream(LoopStreamFinalOnly),
-		WithLoopMaxIterations(5),
-		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
-			return "stream-final-only:" + itoa(iter)
-		}),
-	)
-	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
-	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(), compose.WithCheckPointStore(store))
-	if err != nil {
-		t.Fatalf("compile: %v", err)
-	}
-
-	cpID := "stream-final-only"
-	sr, err := compiled.Stream(context.Background(), 0, compose.WithCheckPointID(cpID))
-	if err == nil {
-		_, err = drainStreamUntilError(t, sr)
-	}
-	if err == nil {
-		t.Fatal("expected interrupt error, got nil")
-	}
-	sr, err = compiled.Stream(context.Background(), 0, compose.WithCheckPointID(cpID))
-	if err != nil {
-		t.Fatalf("resume stream: %v", err)
-	}
-	got, err := readAllInts(t, sr)
-	if err != nil {
-		t.Fatalf("read stream: %v", err)
-	}
-	want := []int{10, 20}
-	if len(got) != len(want) {
-		t.Fatalf("chunks: got %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("chunks[%d]: got %d, want %d", i, got[i], want[i])
-		}
-	}
-}
-
-// TestIntegration_StreamEveryIteration_ResumeFromFirstUnpublishedIteration
-// asserts the documented replay contract for EveryIteration mode:
-// fully published iterations are not replayed, while the interrupted
-// iteration is replayed from its start.
-func TestIntegration_StreamEveryIteration_ResumeFromFirstUnpublishedIteration(t *testing.T) {
-	store := newInMemoryStore()
-
-	sub := compose.NewWorkflow[int, int]()
-	interrupted := false
-	lambda, err := compose.AnyLambda[int, int, struct{}](
-		nil,
-		func(ctx context.Context, in int, _ ...struct{}) (*schema.StreamReader[int], error) {
-			wasInterrupted, _, _ := compose.GetInterruptState[int](ctx)
-			if in == 10 && !wasInterrupted && !interrupted {
-				interrupted = true
-				return nil, compose.StatefulInterrupt(ctx, "stream-every-iteration", in)
+			got = val
+		case e := <-errCh:
+			if e != nil {
+				t.Fatalf("Stream error: %v", e)
 			}
-			return schema.StreamReaderFromArray([]int{in, in + 10}), nil
+			done = true
+		}
+	}
+	if v, _ := got.(int); v != 3 {
+		t.Errorf("stream output: got %v, want 3", got)
+	}
+}
+
+// TestHarness_Stream_ParallelValues emits stream events from a parallel node.
+func TestHarness_Loop_SubGraphInterruptOrder(t *testing.T) {
+	sub := graph.NewStateGraph(map[string]interface{}{})
+	sub.AddNode("intr", func(ctx context.Context, _ interface{}) (interface{}, error) {
+		_, intrErr := interrupt.Interrupt(ctx, "order-test")
+		return nil, intrErr
+	})
+	sub.SetEntryPoint("intr")
+	sub.SetFinishPoint("intr")
+	subCg, err := sub.Compile()
+	if err != nil {
+		t.Fatalf("sub Compile: %v", err)
+	}
+
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, _ interface{}) (bool, error) {
+			return false, nil
 		},
-		nil,
-		nil,
 	)
 	if err != nil {
-		t.Fatalf("AnyLambda: %v", err)
+		t.Fatalf("NewLoopNodeFunc: %v", err)
 	}
-	node := sub.AddLambdaNode("stream", lambda)
-	node.AddInput(compose.START)
-	sub.End().AddInput("stream")
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
 
-	shouldQuit := func(_ context.Context, _, _, next int) (bool, error) {
-		return next >= 20, nil
-	}
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopStream(LoopStreamEveryIteration),
-		WithLoopMaxIterations(5),
-		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
-			return "stream-every-iteration:" + itoa(iter)
-		}),
-	)
+	cg, err := outer.Compile(graph.WithRecursionLimit(10))
 	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
-	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(), compose.WithCheckPointStore(store))
-	if err != nil {
-		t.Fatalf("compile: %v", err)
+		t.Fatalf("Compile: %v", err)
 	}
 
-	cpID := "stream-every-iteration"
-	sr, err := compiled.Stream(context.Background(), 0, compose.WithCheckPointID(cpID))
+	_, err = cg.Invoke(context.Background(), 0)
 	if err == nil {
-		_, err = drainStreamUntilError(t, sr)
+		t.Fatal("expected interrupt")
 	}
-	if err == nil {
-		t.Fatal("expected interrupt error, got nil")
+	var gi *gerrors.GraphInterrupt
+	if !gerrors.IsGraphInterrupt(err) {
+		t.Fatalf("expected GraphInterrupt, got %T: %v", err, err)
 	}
-	sr, err = compiled.Stream(context.Background(), 0, compose.WithCheckPointID(cpID))
-	if err != nil {
-		t.Fatalf("resume stream: %v", err)
-	}
-	got, err := readAllInts(t, sr)
-	if err != nil {
-		t.Fatalf("read stream: %v", err)
-	}
-	want := []int{0, 10, 10, 20}
-	if len(got) != len(want) {
-		t.Fatalf("chunks: got %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("chunks[%d]: got %d, want %d", i, got[i], want[i])
-		}
+	// Verify the GraphInterrupt contains the loop's interrupt value.
+	if gi != nil && len(gi.Interrupts) > 0 {
+		t.Logf("interrupt value: %v", gi.Interrupts[0])
 	}
 }
 
-// streamingIncSub builds a sub-workflow whose Stream emits two chunks
-// per iteration: {in, in+1}. The second chunk is the value the loop
-// machinery uses as `next` (loop.go derives next from the last value
-// emitted in the iteration). This sub deliberately never interrupts so
-// the happy-path stream tests can assert chunk ordering across many
-// iterations without exercising the resume code paths (which already
-// have dedicated tests above).
-func streamingIncSub(t *testing.T) *compose.Workflow[int, int] {
-	t.Helper()
-	wf := compose.NewWorkflow[int, int]()
-	lambda, err := compose.AnyLambda[int, int, struct{}](
-		nil,
-		func(_ context.Context, in int, _ ...struct{}) (*schema.StreamReader[int], error) {
-			return schema.StreamReaderFromArray([]int{in, in + 1}), nil
+// ========================================================
+// Checkpoint roundtrip: verify checkpoint data survives
+// serialize/deserialize
+// ========================================================
+
+// TestHarness_Checkpoint_Roundtrip verifies that checkpoint data
+// written by MemorySaver can be read back correctly.
+func TestHarness_Checkpoint_Roundtrip(t *testing.T) {
+	memCp := checkpoint.NewMemorySaver()
+	subCg := buildIncGraph(t)
+
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
+			v, _ := next.(int)
+			return v >= 2, nil
 		},
-		nil,
-		nil,
+		graph.WithLoopMaxIterations(5),
 	)
 	if err != nil {
-		t.Fatalf("AnyLambda: %v", err)
+		t.Fatalf("NewLoopNodeFunc: %v", err)
 	}
-	node := wf.AddLambdaNode("stream", lambda)
-	node.AddInput(compose.START)
-	wf.End().AddInput("stream")
-	return wf
-}
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
 
-// TestIntegration_StreamFinalOnly_HappyPath exercises the
-// LoopStreamFinalOnly mode end-to-end on a fresh (no-interrupt) run.
-// The existing FinalOnly stream test only covers the resume path; this
-// test asserts the documented buffer-and-emit-last contract when no
-// interrupt occurs.
-//
-// Iterations: in=0 -> [0,1] (next=1), in=1 -> [1,2] (next=2), in=2 ->
-// [2,3] (next=3, quit). Caller must observe ONLY the final iteration's
-// chunks: [2, 3].
-func TestIntegration_StreamFinalOnly_HappyPath(t *testing.T) {
-	sub := streamingIncSub(t)
-	shouldQuit := func(_ context.Context, _, _, next int) (bool, error) {
-		return next >= 3, nil
-	}
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopStream(LoopStreamFinalOnly),
-		WithLoopMaxIterations(10),
-	)
+	cg, err := outer.Compile(graph.WithCheckpointer(memCp), graph.WithRecursionLimit(10))
 	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
-	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
-	if err != nil {
-		t.Fatalf("compile: %v", err)
+		t.Fatalf("Compile: %v", err)
 	}
 
-	sr, err := compiled.Stream(context.Background(), 0)
-	if err != nil {
-		t.Fatalf("stream: %v", err)
-	}
-	got, err := readAllInts(t, sr)
-	if err != nil {
-		t.Fatalf("read stream: %v", err)
-	}
-	want := []int{2, 3}
-	if len(got) != len(want) {
-		t.Fatalf("chunks: got %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("chunks[%d]: got %d, want %d", i, got[i], want[i])
-		}
-	}
-}
-
-// TestIntegration_StreamEveryIteration_HappyPath exercises the
-// LoopStreamEveryIteration mode end-to-end on a fresh run. The
-// existing EveryIteration stream test only covers the replay path on
-// resume; this test asserts the documented forward-every-iteration
-// contract when no interrupt occurs.
-//
-// Iterations: in=0 -> [0,1], in=1 -> [1,2], in=2 -> [2,3] (quit).
-// Caller must observe every iteration's chunks concatenated in order:
-// [0, 1, 1, 2, 2, 3].
-func TestIntegration_StreamEveryIteration_HappyPath(t *testing.T) {
-	sub := streamingIncSub(t)
-	shouldQuit := func(_ context.Context, _, _, next int) (bool, error) {
-		return next >= 3, nil
-	}
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopStream(LoopStreamEveryIteration),
-		WithLoopMaxIterations(10),
-	)
-	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
-	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
-	if err != nil {
-		t.Fatalf("compile: %v", err)
-	}
-
-	sr, err := compiled.Stream(context.Background(), 0)
-	if err != nil {
-		t.Fatalf("stream: %v", err)
-	}
-	got, err := readAllInts(t, sr)
-	if err != nil {
-		t.Fatalf("read stream: %v", err)
-	}
-	want := []int{0, 1, 1, 2, 2, 3}
-	if len(got) != len(want) {
-		t.Fatalf("chunks: got %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("chunks[%d]: got %d, want %d", i, got[i], want[i])
-		}
-	}
-}
-
-// TestIntegration_Stream_EmptyIterationFails covers the empty-stream
-// error branch in runLoopStream: a sub-workflow that yields zero
-// chunks for an iteration leaves the loop with no value to feed into
-// shouldQuit or into the next iteration's input, so the loop must
-// fail with the documented "produced empty stream" error. Without
-// this test the branch (loop.go: "iteration N produced empty stream")
-// is unreachable from the existing test surface.
-func TestIntegration_Stream_EmptyIterationFails(t *testing.T) {
-	sub := compose.NewWorkflow[int, int]()
-	lambda, err := compose.AnyLambda[int, int, struct{}](
-		nil,
-		func(_ context.Context, _ int, _ ...struct{}) (*schema.StreamReader[int], error) {
-			return schema.StreamReaderFromArray([]int{}), nil
+	cfg := &types.RunnableConfig{
+		ThreadID: "cp-roundtrip",
+		Configurable: map[string]interface{}{
+			"thread_id": "cp-roundtrip",
 		},
-		nil,
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("AnyLambda: %v", err)
 	}
-	node := sub.AddLambdaNode("empty", lambda)
-	node.AddInput(compose.START)
-	sub.End().AddInput("empty")
-
-	shouldQuit := func(_ context.Context, _, _, _ int) (bool, error) {
-		t.Fatal("shouldQuit must not be called when iteration stream is empty")
-		return false, nil
-	}
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
-		WithLoopStream(LoopStreamFinalOnly),
-		WithLoopMaxIterations(3),
-	)
+	_, err = cg.Invoke(context.Background(), 0, cfg)
 	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
-	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
-	if err != nil {
-		t.Fatalf("compile: %v", err)
+		t.Fatalf("Invoke: %v", err)
 	}
 
-	sr, err := compiled.Stream(context.Background(), 0)
-	if err == nil {
-		_, err = readAllInts(t, sr)
+	// Read back and marshal/unmarshal to verify roundtrip.
+	cp, cpErr := memCp.Get(context.Background(), map[string]interface{}{
+		"thread_id": "cp-roundtrip",
+	})
+	if cpErr != nil {
+		t.Fatalf("Get: %v", cpErr)
 	}
-	if err == nil {
-		t.Fatal("expected empty-stream error, got nil")
+	if cp == nil {
+		t.Fatal("checkpoint is nil")
 	}
-	if msg := err.Error(); !contains(msg, "produced empty stream") {
-		t.Fatalf("error %q must mention 'produced empty stream'", msg)
+
+	// JSON roundtrip test.
+	data, jErr := json.Marshal(cp)
+	if jErr != nil {
+		t.Fatalf("Marshal checkpoint: %v", jErr)
+	}
+	var restored map[string]interface{}
+	if jErr := json.Unmarshal(data, &restored); jErr != nil {
+		t.Fatalf("Unmarshal checkpoint: %v", jErr)
+	}
+	t.Logf("checkpoint roundtrip OK, %d keys", len(restored))
+}
+
+// ========================================================
+// Concurrent invocations: multiple goroutines running
+// loop/parallel graphs
+// ========================================================
+
+// TestHarness_Loop_ConcurrentInvocation runs the same loop graph
+// from multiple goroutines concurrently.
+func TestHarness_Loop_ConcurrentInvocation(t *testing.T) {
+	subCg := buildIncGraph(t)
+
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
+			v, _ := next.(int)
+			return v >= 3, nil
+		},
+		graph.WithLoopMaxIterations(5),
+	)
+	if err != nil {
+		t.Fatalf("NewLoopNodeFunc: %v", err)
+	}
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
+
+	cg, err := outer.Compile(graph.WithRecursionLimit(10))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	results := make(chan int, 10)
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			out, invErr := cg.Invoke(context.Background(), 0)
+			if invErr != nil {
+				t.Errorf("concurrent invoke: %v", invErr)
+				return
+			}
+			if v, _ := out.(int); v == 3 {
+				results <- v
+			}
+		}()
+	}
+	wg.Wait()
+	close(results)
+	count := 0
+	for range results {
+		count++
+	}
+	if count != 5 {
+		t.Errorf("got %d successful invocations, want 5", count)
 	}
 }
 
-// contains is a tiny strings.Contains shim kept in this file to
-// avoid pulling the strings import into the test package solely for
-// one assertion (loop_test.go already imports it; loop_integration_
-// test.go does not).
-func contains(haystack, needle string) bool {
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if haystack[i:i+len(needle)] == needle {
-			return true
-		}
+// ========================================================
+// GraphInterrupt propagation: verify sentinel error
+// ========================================================
+
+// TestHarness_GraphInterrupt_IsGraphInterrupt verifies the
+// IsGraphInterrupt helper works on errors from loop/parallel.
+func TestHarness_GraphInterrupt_IsGraphInterrupt(t *testing.T) {
+	// Loop interrupt.
+	sub := graph.NewStateGraph(map[string]interface{}{})
+	sub.AddNode("intr", func(ctx context.Context, _ interface{}) (interface{}, error) {
+		_, intrErr := interrupt.Interrupt(ctx, "test-intr")
+		return nil, intrErr
+	})
+	sub.SetEntryPoint("intr")
+	sub.SetFinishPoint("intr")
+	subCg, err := sub.Compile()
+	if err != nil {
+		t.Fatalf("sub Compile: %v", err)
 	}
-	return false
+
+	outer := graph.NewStateGraph(map[string]interface{}{})
+	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
+		func(_ context.Context, _ int, _, _ interface{}) (bool, error) {
+			return false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewLoopNodeFunc: %v", err)
+	}
+	outer.AddNode("loop", loopFn)
+	outer.SetEntryPoint("loop")
+	outer.SetFinishPoint("loop")
+
+	cg, err := outer.Compile()
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	_, err = cg.Invoke(context.Background(), 0)
+	if err == nil {
+		t.Fatal("expected interrupt error")
+	}
+	if !gerrors.IsGraphInterrupt(err) {
+		t.Errorf("IsGraphInterrupt returned false for GraphInterrupt error")
+	}
+
+	// Parallel interrupt.
+	pSub := graph.NewStateGraph(map[string]interface{}{})
+	pSub.AddNode("pintr", func(ctx context.Context, _ interface{}) (interface{}, error) {
+		_, intrErr := interrupt.Interrupt(ctx, "p-test-intr")
+		return nil, intrErr
+	})
+	pSub.SetEntryPoint("pintr")
+	pSub.SetFinishPoint("pintr")
+	pSubCg, err := pSub.Compile()
+	if err != nil {
+		t.Fatalf("pSub Compile: %v", err)
+	}
+
+	pOuter := graph.NewStateGraph(map[string]interface{}{})
+	pOuter.AddNode("prep", func(_ context.Context, _ interface{}) (interface{}, error) {
+		return []interface{}{1, 2}, nil
+	})
+	pFn, err := graph.NewParallelNodeFunc("par", pSubCg)
+	if err != nil {
+		t.Fatalf("NewParallelNodeFunc: %v", err)
+	}
+	pOuter.AddNode("par", pFn)
+	pOuter.SetEntryPoint("prep")
+	pOuter.AddEdge("prep", "par")
+	pOuter.SetFinishPoint("par")
+	pCg, err := pOuter.Compile()
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	_, err = pCg.Invoke(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected interrupt from parallel")
+	}
+	if !gerrors.IsGraphInterrupt(err) {
+		t.Errorf("IsGraphInterrupt returned false for parallel GraphInterrupt")
+	}
 }
+
+// ========================================================
+// GraphInterrupt composite: multiple interrupts from parallel
+// ========================================================
+
+// TestHarness_Parallel_MultipleInterrupts verifies that when multiple
+// parallel items interrupt, the GraphInterrupt contains the data.

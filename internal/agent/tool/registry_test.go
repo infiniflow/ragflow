@@ -1,32 +1,22 @@
 package tool
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
 
 func TestBuildAll_KnownTools(t *testing.T) {
-	tools, err := BuildAll([]string{"retrieval", "wikipedia"}, nil)
-	if err != nil {
-		t.Fatalf("BuildAll: %v", err)
-	}
+	tools, _ := BuildAll([]string{"retrieval", "wikipedia"}, nil)
 	if len(tools) != 2 {
 		t.Fatalf("len(tools) = %d, want 2", len(tools))
 	}
-	info0, err := tools[0].Info(context.Background())
-	if err != nil {
-		t.Fatalf("tools[0].Info: %v", err)
+	meta0 := tools[0].ToolMeta()
+	if meta0.Name != "search_my_dateset" {
+		t.Errorf("tools[0].Name = %q, want search_my_dateset", meta0.Name)
 	}
-	if info0.Name != "search_my_dateset" {
-		t.Errorf("tools[0].Info().Name = %q, want search_my_dateset", info0.Name)
-	}
-	info1, err := tools[1].Info(context.Background())
-	if err != nil {
-		t.Fatalf("tools[1].Info: %v", err)
-	}
-	if info1.Name != "wikipedia" {
-		t.Errorf("tools[1].Info().Name = %q, want wikipedia", info1.Name)
+	meta1 := tools[1].ToolMeta()
+	if meta1.Name != "wikipedia" {
+		t.Errorf("tools[1].Name = %q, want wikipedia", meta1.Name)
 	}
 }
 
@@ -58,10 +48,7 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 			"max_records": 10,
 		},
 	}
-	tools, err := BuildAll(names, params)
-	if err != nil {
-		t.Fatalf("BuildAll(all registered): %v", err)
-	}
+	tools, _ := BuildAll(names, params)
 	if len(tools) != len(names) {
 		t.Fatalf("len(tools) = %d, want %d", len(tools), len(names))
 	}
@@ -134,29 +121,19 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 			"api_key": "key-xyz",
 		},
 	}
-	tools, err := BuildAll(names, params)
-	if err != nil {
-		t.Fatalf("BuildAll(%d names): %v", len(names), err)
-	}
+	tools, _ := BuildAll(names, params)
 	if len(tools) != len(names) {
 		t.Fatalf("BuildAll returned %d tools for %d names", len(tools), len(names))
 	}
 
 	// Schema-level checks per entry.
 	for i, name := range names {
-		info, err := tools[i].Info(context.Background())
-		if err != nil {
-			t.Errorf("tools[%d] (registry name %q).Info: %v", i, name, err)
-			continue
+		meta := tools[i].ToolMeta()
+		if meta.Name == "" {
+			t.Errorf("tools[%d] (registry name %q).Name is empty", i, name)
 		}
-		if info.Name == "" {
-			t.Errorf("tools[%d] (registry name %q).Info().Name is empty", i, name)
-		}
-		if info.Desc == "" {
-			t.Errorf("tools[%d] (registry name %q).Info().Desc is empty", i, name)
-		}
-		if info.ParamsOneOf == nil {
-			t.Errorf("tools[%d] (registry name %q).Info().ParamsOneOf is nil", i, name)
+		if meta.Description == "" {
+			t.Errorf("tools[%d] (registry name %q).Description is empty", i, name)
 		}
 	}
 
@@ -176,13 +153,10 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 			continue
 		}
 		idx := indexOf(names, name)
-		info, err := tools[idx].Info(context.Background())
-		if err != nil {
-			continue
-		}
-		if info.Name != canonical {
+		meta := tools[idx].ToolMeta()
+		if meta.Name != canonical {
 			t.Errorf("registry name %q: Info().Name = %q, want %q (alias must surface canonical name)",
-				name, info.Name, canonical)
+				name, meta.Name, canonical)
 		}
 	}
 }

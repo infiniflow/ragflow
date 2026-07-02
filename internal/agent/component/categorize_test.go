@@ -27,9 +27,6 @@ func TestCategorize_ChosenCategory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["category"], "support"; got != want {
-		t.Errorf("category=%v, want %v", got, want)
-	}
 	if got, want := out["category_name"], "support"; got != want {
 		t.Errorf("category_name=%v, want %v", got, want)
 	}
@@ -65,8 +62,8 @@ func TestCategorize_FallbackToDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["category"], "b"; got != want {
-		t.Errorf("category=%v, want %v (default fallback)", got, want)
+	if got, want := out["category_name"], "b"; got != want {
+		t.Errorf("category_name=%v, want %v (default fallback)", got, want)
 	}
 }
 
@@ -83,8 +80,8 @@ func TestCategorize_DefaultDefaultsToFirstCategory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["category"], "alpha"; got != want {
-		t.Errorf("category=%v, want %v (auto-default to first)", got, want)
+	if got, want := out["category_name"], "alpha"; got != want {
+		t.Errorf("category_name=%v, want %v (auto-default to first)", got, want)
 	}
 }
 
@@ -101,8 +98,8 @@ func TestCategorize_CaseInsensitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["category"], "support"; got != want {
-		t.Errorf("category=%v, want %v (case-insensitive match)", got, want)
+	if got, want := out["category_name"], "support"; got != want {
+		t.Errorf("category_name=%v, want %v (case-insensitive match)", got, want)
 	}
 }
 
@@ -324,53 +321,6 @@ func TestCategorize_ResolvesSoleActiveInstanceWhenDefaultMissing(t *testing.T) {
 	}
 	if stub.captured.BaseURL != "https://instance.example" {
 		t.Fatalf("BaseURL=%q, want %q", stub.captured.BaseURL, "https://instance.example")
-	}
-}
-
-func TestCategorize_RoutesToSelectedCategoryHandle(t *testing.T) {
-	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "Retrieval", Model: "stub"}}
-	withStubInvoker(t, stub)
-
-	c := NewCategorizeComponent(CategorizeParam{
-		ModelID:         "stub",
-		Categories:      []string{"打招呼", "Retrieval", "Other"},
-		CategoryRoutes:  map[string]string{"打招呼": "a111", "Retrieval": "b222", "Other": "c333"},
-		DefaultCategory: "Other",
-	})
-	out, err := c.Invoke(context.Background(), map[string]any{})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	next, ok := out["_next"].([]string)
-	if !ok {
-		t.Fatalf("_next missing or wrong type: %T", out["_next"])
-	}
-	if len(next) != 1 || next[0] != "b222" {
-		t.Fatalf("_next=%v, want [\"b222\"]", next)
-	}
-}
-
-func TestCategorize_RoutesFromCategoryDescriptionToList(t *testing.T) {
-	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "Retrieval", Model: "stub"}}
-	withStubInvoker(t, stub)
-
-	c := NewCategorizeComponent(CategorizeParam{ModelID: "stub"})
-	out, err := c.Invoke(context.Background(), map[string]any{
-		"category_description": map[string]any{
-			"打招呼":       map[string]any{"description": "hello", "to": []any{"Message:CateLoop"}},
-			"Retrieval": map[string]any{"description": "rag", "to": []any{"Message:CateRetrieval"}},
-			"Other":     map[string]any{"description": "other", "to": []any{"Message:CateOther"}},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	next, ok := out["_next"].([]string)
-	if !ok {
-		t.Fatalf("_next missing or wrong type: %T", out["_next"])
-	}
-	if len(next) != 1 || next[0] != "Message:CateRetrieval" {
-		t.Fatalf("_next=%v, want [\"Message:CateRetrieval\"]", next)
 	}
 }
 

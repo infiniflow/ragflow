@@ -23,9 +23,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const githubToolName = "github"
@@ -83,28 +80,28 @@ func NewGitHubToolWith(h *HTTPHelper) *GitHubTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (g *GitHubTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: githubToolName,
-		Desc: githubToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (g *GitHubTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        githubToolName,
+		Description: githubToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Search query (GitHub search syntax).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Search query (GitHub search syntax).",
+				Required:    true,
 			},
 			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of results to return. Defaults to 5 (max 30 per page).",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of results to return. Defaults to 5 (max 30 per page).",
+				Required:    false,
 			},
 			"token": {
-				Type:     schema.String,
-				Desc:     "Optional GitHub personal access token. Increases rate limit from 60 to 5000 req/hr.",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "Optional GitHub personal access token. Increases rate limit from 60 to 5000 req/hr.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildGitHubURL constructs the GitHub repository search URL. Centralized
@@ -123,7 +120,7 @@ func buildGitHubURL(query string, maxResults int) string {
 }
 
 // InvokableRun performs the GitHub repository search.
-func (g *GitHubTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (g *GitHubTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p githubParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return githubErrJSON(fmt.Errorf("github: parse arguments: %w", err)),

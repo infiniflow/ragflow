@@ -25,8 +25,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 	"golang.org/x/net/html"
 )
 
@@ -83,23 +81,23 @@ func NewGoogleScholarToolWith(h *HTTPHelper) *GoogleScholarTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (g *GoogleScholarTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: googleScholarToolName,
-		Desc: googleScholarToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (g *GoogleScholarTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        googleScholarToolName,
+		Description: googleScholarToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Search query.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Search query.",
+				Required:    true,
 			},
 			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of results to return. Defaults to 5 (max 20 per page).",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of results to return. Defaults to 5 (max 20 per page).",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildGoogleScholarURL composes the Scholar query URL. Centralized
@@ -119,7 +117,7 @@ func buildGoogleScholarURL(query string, maxResults int) string {
 }
 
 // InvokableRun performs the Google Scholar search.
-func (g *GoogleScholarTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (g *GoogleScholarTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p googleScholarParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return googleScholarErrJSON(fmt.Errorf("google_scholar: parse arguments: %w", err)),

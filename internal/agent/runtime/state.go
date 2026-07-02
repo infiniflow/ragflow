@@ -1,17 +1,17 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+// http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 // runtime — per-run shared state for canvas components.
@@ -36,23 +36,21 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-
-	"github.com/cloudwego/eino/compose"
 )
 
 // CanvasState is the per-run shared state bag that all components read/write
-// through eino's StatePreHandler / StatePostHandler (compose/state.go).
+// through StatePreHandler / StatePostHandler (compose/state.go).
 //
 // Fields mirror Python agent/canvas.py:43-95 with these mappings:
-//   - Outputs     : cpn_id -> param_name -> resolved value (variable source)
-//   - Sys         : sys.* namespace (query, user_id, conversation_turns, files)
-//   - Env         : env.* namespace (deployment-time constants)
-//   - Path        : entry-point sequence (Begin nodes)
-//   - History     : conversation history (chat-flow agents)
-//   - Retrieval   : aggregate retrieval result (chunks, doc_aggs)
-//   - Globals     : cross-canvas-instance globals
-//   - CancelFlag  : set when cancel signal received; nodes may poll
-//   - RunID       : unique per-run identifier (used by RunTracker + CheckPointStore)
+// - Outputs : cpn_id -> param_name -> resolved value (variable source)
+// - Sys : sys.* namespace (query, user_id, conversation_turns, files)
+// - Env : env.* namespace (deployment-time constants)
+// - Path : entry-point sequence (Begin nodes)
+// - History : conversation history (chat-flow agents)
+// - Retrieval : aggregate retrieval result (chunks, doc_aggs)
+// - Globals : cross-canvas-instance globals
+// - CancelFlag : set when cancel signal received; nodes may poll
+// - RunID : unique per-run identifier (used by RunTracker + CheckPointStore)
 type CanvasState struct {
 	mu         sync.RWMutex
 	Outputs    map[string]map[string]any
@@ -85,19 +83,8 @@ func NewCanvasState(runID, taskID string) *CanvasState {
 	}
 }
 
-// init registers CanvasState with eino's internal type registry so
-// that eino's StatePre/Post handler chain (which uses its own
-// InternalSerializer, NOT stdlib encoding/json) recognises the
-// type during the deepCopyState call that fires on every interrupt
-// boundary. eino's serialization registry requires the type to
-// implement both json.Marshaler AND json.Unmarshaler; CanvasState
-// has both (below). Without this init, the interrupt path surfaces
-// "failed to marshal state: unknown type: runtime.CanvasState"
-// and the resume cycle is blocked at the eino layer.
-func init() {
-	_ = compose.RegisterSerializableType[CanvasState]("runtime.CanvasState")
-}
-
+// init registers CanvasState with harness internal type registry so
+// that the StatePre/Post handler chain (which uses its own
 // canvasStateJSON is the wire shape used by MarshalJSON / UnmarshalJSON.
 // Defined so the field tags and omitempty semantics are pinned in one
 // place. The CancelFlag is round-tripped as a bool (atomic.Bool can't
@@ -115,12 +102,12 @@ type canvasStateJSON struct {
 	TaskID     string                    `json:"task_id"`
 }
 
-// MarshalJSON serialises the CanvasState for eino's StatePre/Post
+// MarshalJSON serialises the CanvasState for StatePre/Post
 // handler chain (which JSON-encodes the state on every node boundary
 // when a StateSerializer is wired) and for Redis-backed CheckPointStore
 // payloads.
 //
-// Eino's interrupt path hit "failed to marshal state: unknown
+// interrupt path hit "failed to marshal state: unknown
 // type: runtime.CanvasState"
 // because the struct had no MarshalJSON and contained a sync.RWMutex
 // (unexported) + atomic.Bool (indirected; serialises as 8 bytes
@@ -194,14 +181,14 @@ func (s *CanvasState) UnmarshalJSON(b []byte) error {
 //
 // Supported forms (matches plan §2.5 + agent/canvas.py:168-239):
 //
-//	"cpn_id@param"        — Outputs[cpn_id][param]
-//	"cpn_id@param.path"   — dot-path traversal on Outputs[cpn_id][param]
-//	"sys.x"               — Sys["x"]   (also "sys.x.path")
-//	"env.x"               — Env["x"]   (also "env.x.path")
-//	"item"                — iteration alias (nil if unset)
-//	"index"               — iteration alias (nil if unset)
+//	"cpn_id@param" — Outputs[cpn_id][param]
+//	"cpn_id@param.path" — dot-path traversal on Outputs[cpn_id][param]
+//	"sys.x" — Sys["x"] (also "sys.x.path")
+//	"env.x" — Env["x"] (also "env.x.path")
+//	"item" — iteration alias (nil if unset)
+//	"index" — iteration alias (nil if unset)
 //
-// An unknown cpn_id returns (nil, nil) — mirrors Python's "treat as literal"
+// An unknown cpn_id returns (nil, nil) — mirrors Python "treat as literal"
 // fallback (canvas.py:494-495).
 func (s *CanvasState) GetVar(ref string) (any, error) {
 	if ref == "" {
@@ -213,7 +200,7 @@ func (s *CanvasState) GetVar(ref string) (any, error) {
 }
 
 // SetVar writes Outputs[cpnID][param] = v. Nested keys separated by "." are
-// auto-created (mirrors Python's set_variable_param_value at
+// auto-created (mirrors Python set_variable_param_value at
 // canvas.py:261-271). The lock is held for the entire walk to keep
 // "walk + assign" atomic under concurrent writers.
 func (s *CanvasState) SetVar(cpnID, param string, v any) {
@@ -244,7 +231,7 @@ func (s *CanvasState) ReadVars(refs []string) (map[string]any, error) {
 	return out, nil
 }
 
-// Snapshot returns a shallow copy of every cpn's outputs map. It is the
+// Snapshot returns a shallow copy of every cpn outputs map. It is the
 // snapshot that StatePreHandler exposes to component bodies. Shallow is
 // fine: components only re-read primitive values from this snapshot
 // during one execution; a deeper copy would just cost allocations.
@@ -288,7 +275,7 @@ func (s *CanvasState) SnapshotNamespaces() (sys map[string]any, env map[string]a
 }
 
 // RecordOutput stores payload under Outputs[cpnID][bucket]. Used by the
-// StatePostHandler to persist a node's result so downstream nodes can
+// StatePostHandler to persist a node result so downstream nodes can
 // resolve {{cpnID@bucket.x}} references against it.
 func (s *CanvasState) RecordOutput(cpnID, bucket string, payload any) {
 	if cpnID == "" {
@@ -342,7 +329,7 @@ func (s *CanvasState) GetRetrievalChunks() []map[string]any {
 // SetRetrievalChunks records the supplied chunks into
 // state.Retrieval["chunks"]. Existing entries are replaced
 // (last-writer-wins) so a multi-tool canvas reflects the most
-// recent retrieval pass when the Agent's grounding call reads the
+// recent retrieval pass when the Agent grounding call reads the
 // state.
 func (s *CanvasState) SetRetrievalChunks(chunks []map[string]any) {
 	if s == nil {
@@ -412,11 +399,11 @@ func setVarLocked(outputs map[string]map[string]any, cpnID, param string, v any)
 // on "." and dispatched by intermediate type, mirroring Python's
 // get_variable_param_value precedence (canvas.py:212-239):
 //
-//  1. nil  → return nil
-//  2. string → try json.Unmarshal, then continue on the parsed value
-//  3. map[string]any → index by key
-//  4. []any → index by int (cast failure → nil)
-//  5. else → return nil
+// 1. nil → return nil
+// 2. string → try json.Unmarshal, then continue on the parsed value
+// 3. map[string]any → index by key
+// 4. []any → index by int (cast failure → nil)
+// 5. else → return nil
 //
 // The empty path returns the root value as-is.
 func dotTraverse(root any, path string) any {

@@ -89,17 +89,14 @@ func TestWencai_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewWencaiTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "wencai" {
+		t.Errorf("Name = %q, want wencai", meta.Name)
 	}
-	if info.Name != "wencai" {
-		t.Errorf("Name = %q, want wencai", info.Name)
+	if !strings.Contains(meta.Description, "Wencai") {
+		t.Errorf("Desc = %q, want to mention Wencai", meta.Description)
 	}
-	if !strings.Contains(info.Desc, "Wencai") {
-		t.Errorf("Desc = %q, want to mention Wencai", info.Desc)
-	}
-	if !strings.Contains(info.Desc, "STUB") && !strings.Contains(info.Desc, "Python") {
-		t.Errorf("Desc = %q, want to flag stub status", info.Desc)
+	if !strings.Contains(meta.Description, "STUB") && !strings.Contains(meta.Description, "Python") {
+		t.Errorf("Desc = %q, want to flag stub status", meta.Description)
 	}
 }

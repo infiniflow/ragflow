@@ -116,11 +116,18 @@ func TestRealComponentBody_NoTimeoutWhenFast(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if out["__cpn_id__"] != "test-cpn" {
-		t.Errorf("expected __cpn_id__=test-cpn, got %v", out["__cpn_id__"])
+	if out == nil {
+		t.Fatal("expected non-nil output")
 	}
-	if out["x"] != 1 {
-		t.Errorf("expected input to pass through, got x=%v", out["x"])
+	outMap, ok := out.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map output, got %T", out)
+	}
+	if outMap["__cpn_id__"] != "test-cpn" {
+		t.Errorf("expected __cpn_id__=test-cpn, got %v", outMap["__cpn_id__"])
+	}
+	if outMap["x"] != 1 {
+		t.Errorf("expected input to pass through, got x=%v", outMap["x"])
 	}
 }
 

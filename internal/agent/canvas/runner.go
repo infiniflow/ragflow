@@ -1,17 +1,17 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//   http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 // runner.go — Canvas execution runtime. Drives a Canvas invocation
@@ -27,11 +27,11 @@
 //
 // Run outcomes — four paths on a single Run() call:
 //
-//  1. Normal completion (runErr == nil): the buildRunFunc already
-//     emitted all workflow events (workflow_started, node_started,
-//     node_finished, message, message_end, workflow_finished) during
-//     execution. The Runner just sends the `done` terminator.
-//  2. Eino interrupt (runErr is an *InterruptSignal or wrapped
+//  1. Normal completion (runErr == nil): emit `message` + `done`.
+//     The answer is extracted from the post-run state via
+//     extractAnswerFromState (catches "answer" / "result" / "content"
+//     keys — matches Python's v1 surface for legacy SSE consumers).
+//  2. harness interrupt (runErr is an *InterruptSignal or wrapped
 //     variant): emit `waiting_for_user` with the first interrupt
 //     id. Persist the id so the next call can resume via
 //     compose.ResumeWithData (signalled through root:
@@ -41,10 +41,10 @@
 //  4. Other errors: emit `error` event with the err.Error() string.
 //
 // SSE wire contract (matches the handler envelope):
-//   - RunEvent.Type == "message"          → {data: <string>}
+//   - RunEvent.Type == "message"     → {data: <string>}
 //   - RunEvent.Type == "waiting_for_user" → {cpn_id: <string>}
-//   - RunEvent.Type == "error"            → {message: <string>}
-//   - RunEvent.Type == "done"             → final terminator frame
+//   - RunEvent.Type == "error"      → {message: <string>}
+//   - RunEvent.Type == "done"       → final terminator frame
 package canvas
 
 import (
@@ -53,11 +53,9 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/runtime"
@@ -65,58 +63,29 @@ import (
 )
 
 // RunEvent is the unit the Runner pushes onto its output channel.
-// The handler converts each RunEvent into one SSE frame in the
-// Python-shaped envelope:
+// The handler converts each RunEvent into one SSE frame
+// (`data: {...}\n\n`). Type is the event tag; Data is the JSON
+// payload (already serialised — handler does not re-marshal).
 //
-//	data:{"event":"<Type>","message_id":"<MessageID>","created_at":<CreatedAt>,"task_id":"<TaskID>","session_id":"<SessionID>","data":<Data>}
-//
-// Type is the event tag; Data is the JSON payload string (already
-// serialised — handler does not re-marshal). The handler wraps Data
-// into the "data" field of the outer envelope so the front-end's
-// use-send-message.ts parser sees a flat {event, message_id,
-// created_at, task_id, session_id, data} object on every frame.
+// SessionID / MessageID / TaskID are populated by the runner for
+// the chatbot/agentbot completion paths (SSE envelope metadata).
+// They are empty on the /agents/{canvas_id}/run path.
 type RunEvent struct {
 	Type      string
 	Data      string
-	MessageID string
-	CreatedAt int64
-	TaskID    string
 	SessionID string
-}
-
-// NodeStartedData is the "data" payload for "node_started" events.
-type NodeStartedData struct {
-	Inputs        interface{} `json:"inputs"`
-	CreatedAt     float64     `json:"created_at"`
-	ComponentID   string      `json:"component_id"`
-	ComponentName string      `json:"component_name"`
-	ComponentType string      `json:"component_type"`
-	Thoughts      string      `json:"thoughts"`
-}
-
-// NodeFinishedData is the "data" payload for "node_finished" events.
-type NodeFinishedData struct {
-	Inputs        interface{} `json:"inputs"`
-	Outputs       interface{} `json:"outputs"`
-	ComponentID   string      `json:"component_id"`
-	ComponentName string      `json:"component_name"`
-	ComponentType string      `json:"component_type"`
-	Error         interface{} `json:"error"`
-	ElapsedTime   float64     `json:"elapsed_time"`
-	CreatedAt     float64     `json:"created_at"`
+	MessageID string
+	TaskID    string
 }
 
 // MessageEvent is the JSON payload for Type=="message" frames.
+// The Python agent API streams arbitrary strings; we mirror that
+// shape so the existing front-end parses the events the same way.
 type MessageEvent struct {
-	Content   string        `json:"content"`
-	Reference []interface{} `json:"reference,omitempty"`
-}
-
-// MessageEndEvent is the JSON payload for Type=="message_end" frames.
-type MessageEndEvent struct {
-	Status     *string       `json:"status,omitempty"`
-	Attachment []interface{} `json:"attachment,omitempty"`
-	Reference  []interface{} `json:"reference,omitempty"`
+	Content      string        `json:"content,omitempty"`
+	Reference    []interface{} `json:"reference,omitempty"`
+	StartToThink bool          `json:"start_to_think,omitempty"`
+	EndToThink   bool          `json:"end_to_think,omitempty"`
 }
 
 // WaitingForUserEvent is the JSON payload for Type=="waiting_for_user"
@@ -136,13 +105,13 @@ type ErrorEvent struct {
 
 // RunFunc is the canvas execution contract the Runner depends on.
 // Service-layer code supplies an implementation that compiles the
-// DSL and invokes the eino Workflow; the Runner is agnostic to
+// DSL and invokes the harness graph; the Runner is agnostic to
 // that machinery.
 //
 // Return contract:
 //
 //   - nil error, non-nil state: run completed normally.
-//   - non-nil error that is an eino interrupt signal: the run paused
+//   - non-nil error that is a harness interrupt signal: the run paused
 //     on a wait-for-user node. The Runner extracts the InterruptCtx
 //     list via ExtractInterruptContexts and emits a `waiting_for_user`
 //     event. state may be nil in this branch (the engine does not
@@ -160,7 +129,7 @@ type RunFunc func(ctx context.Context, root map[string]any) (*CanvasState, error
 // channel that the RunFunc is expected to observe.
 type Runner struct {
 	mu           sync.Mutex
-	interruptIDs map[string]string // key = canvasID + "|" + sessionID; value = eino interrupt id
+	interruptIDs map[string]string // key = canvasID + "|" + sessionID; value = harness interrupt id
 	runCancels   map[string]chan struct{}
 }
 
@@ -181,7 +150,7 @@ func sessionKey(canvasID, sessionID string) string {
 	return canvasID + "|" + sessionID
 }
 
-// saveInterruptID stores the eino interrupt id for a (canvasID,
+// saveInterruptID stores the interrupt id for a (canvasID,
 // sessionID) pair. Called when the RunFunc returns an interrupt
 // error; the next RunAgent call with the same session id reads it
 // back via getInterruptID and forwards it to the RunFunc so the
@@ -211,14 +180,6 @@ func (r *Runner) getInterruptID(canvasID, sessionID string) string {
 // Run drives one canvas invocation. See package docstring for the
 // four-outcome flow. The channel is always closed on return so the
 // handler's for-range loop terminates.
-//
-// Metadata injection: the output channel, message_id, task_id, and
-// session_id are injected into root so the RunFunc (buildRunFunc in
-// service/agent.go) can emit intermediate events (workflow_started,
-// node_started, node_finished, workflow_finished) during execution
-// rather than only after the invoke completes. The key names follow
-// the __<name>__ sentinel convention to avoid collisions with
-// runtime DSL keys.
 func (r *Runner) Run(
 	ctx context.Context,
 	run RunFunc,
@@ -226,7 +187,7 @@ func (r *Runner) Run(
 	userInput any,
 	root map[string]any,
 ) <-chan RunEvent {
-	out := make(chan RunEvent, 8)
+	out := make(chan RunEvent, 4)
 
 	if run == nil {
 		pushErr(out, "canvas: nil RunFunc")
@@ -246,27 +207,6 @@ func (r *Runner) Run(
 	r.runCancels[canvasID] = cancel
 	r.mu.Unlock()
 
-	// Generate the identifiers the RunFunc and SSE envelope need.
-	// message_id is generated per-run so the front-end can correlate
-	// all events for a single user turn. task_id is the published
-	// version id (if available) or a per-run UUID.
-	messageID := strings.ReplaceAll(uuid.New().String(), "-", "")
-	taskID := ""
-	if v, ok := root["version_id"].(string); ok && v != "" {
-		taskID = v
-	}
-	if taskID == "" {
-		taskID = strings.ReplaceAll(uuid.New().String(), "-", "")
-	}
-
-	// Inject the output channel + metadata so the RunFunc can emit
-	// events during execution (workflow_started, node_started,
-	// node_finished, etc.).
-	root["__events__"] = out
-	root["__message_id__"] = messageID
-	root["__task_id__"] = taskID
-	root["__session_id__"] = sessionID
-
 	go func() {
 		defer close(out)
 		defer func() {
@@ -276,8 +216,7 @@ func (r *Runner) Run(
 			}
 			r.mu.Unlock()
 		}()
-		// Panic sentinel (temporary diagnostic — see plan):
-		// a panic anywhere in the run goroutine used to silently
+		// Panic recovery: a panic anywhere in the run goroutine used to silently
 		// propagate, leaving the events channel closed-empty so the
 		// SSE handler streamed a 200 OK with an empty body. We now
 		// log the panic value + stack trace so the next failing run
@@ -304,68 +243,211 @@ func (r *Runner) Run(
 			}
 		}
 
-		_, runErr := safeInvoke(ctx, cancel, run, root)
+		// Create a progress channel so the RunFunc can stream content
+		// chunks during the LLM call. The channel is passed through
+		// root so the agent component can send to it.
+		progCh := make(chan runtime.ProgEvent, 256)
+		root[ProgressCh] = progCh
+
+		// Emit workflow_started so the frontend log panel has context.
+		push(out, RunEvent{Type: "workflow_started", Data: "{}"})
+
+		// Emit node_started for every known component BEFORE the canvas
+		// runs, so the log panel shows a spinning (waiting) indicator
+		// while the LLM is generating. Component metadata is injected
+		// into root by service.RunAgent under __comp_types__ /
+		// __comp_names__; both are optional and safe to be absent.
+		emitNodeStarted(out, root)
+
+		// Start the canvas in a goroutine and stream progress chunks
+		// while it runs.
+		type runResult struct {
+			state *CanvasState
+			err   error
+		}
+		resultCh := make(chan runResult, 1)
+		go func() {
+			state, runErr := safeInvoke(ctx, cancel, run, root)
+			resultCh <- runResult{state, runErr}
+		}()
+
+		// Simple approach: IsThink=true events open/keep thinking open.
+		// IsThink=false events close thinking and go to main output.
+		var state *CanvasState
+		var runErr error
+		var thinkActive bool
+	loop:
+		for {
+			select {
+			case pe, ok := <-progCh:
+				if !ok || (pe.Text == "" && !pe.IsNodeEvent) {
+					continue
+				}
+				if pe.IsNodeEvent {
+					thoughts := ""
+					nodeInputs := map[string]any{}
+					nodeOutputs := map[string]any{}
+					if pe.NodeEventType == "finished" {
+						thoughts = pe.Thoughts
+						if pe.NodeInputs != nil {
+							nodeInputs = pe.NodeInputs
+						}
+						if pe.NodeOutputs != nil {
+							nodeOutputs = pe.NodeOutputs
+						}
+					}
+					eventType := "node_finished"
+					if pe.NodeEventType == "started" {
+						eventType = "node_started"
+					}
+					nodeData, _ := json.Marshal(map[string]any{
+						"component_id":   pe.NodeCPNID,
+						"component_name": pe.NodeDisplayName,
+						"component_type": pe.NodeClassName,
+						"inputs":         nodeInputs,
+						"outputs":        nodeOutputs,
+						"error":          nil,
+						"elapsed_time":   0,
+						"created_at":     time.Now().Unix(),
+						"thoughts":       thoughts,
+					})
+					push(out, RunEvent{Type: eventType, Data: string(nodeData)})
+					continue
+				}
+				msg := MessageEvent{Content: pe.Text}
+				if pe.IsThink && !thinkActive {
+					thinkActive = true
+					msg.StartToThink = true
+				} else if !pe.IsThink && thinkActive {
+					thinkActive = false
+					msg.EndToThink = true
+				}
+				payload, _ := json.Marshal(msg)
+				push(out, RunEvent{Type: "message", Data: string(payload)})
+			case res := <-resultCh:
+				state, runErr = res.state, res.err
+				break loop
+			}
+		}
+	drain:
+		for {
+			select {
+			case pe, ok := <-progCh:
+				if !ok || (pe.Text == "" && !pe.IsNodeEvent) {
+					continue
+				}
+				if pe.IsNodeEvent {
+					thoughts := ""
+					if pe.NodeEventType == "finished" {
+						thoughts = pe.Thoughts
+					}
+					nodeData, _ := json.Marshal(map[string]any{
+						"component_id":   pe.NodeCPNID,
+						"component_name": pe.NodeDisplayName,
+						"component_type": pe.NodeClassName,
+						"inputs":         map[string]any{},
+						"outputs":        map[string]any{},
+						"error":          nil,
+						"elapsed_time":   0,
+						"created_at":     time.Now().Unix(),
+						"thoughts":       thoughts,
+					})
+					eventType := "node_started"
+					if pe.NodeEventType == "finished" {
+						eventType = "node_finished"
+					}
+					push(out, RunEvent{Type: eventType, Data: string(nodeData)})
+					continue
+				}
+				msg := MessageEvent{Content: pe.Text}
+				if pe.IsThink && !thinkActive {
+					thinkActive = true
+					msg.StartToThink = true
+				} else if !pe.IsThink && thinkActive {
+					thinkActive = false
+					msg.EndToThink = true
+				}
+				payload, _ := json.Marshal(msg)
+				push(out, RunEvent{Type: "message", Data: string(payload)})
+			default:
+				break drain
+			}
+		}
+		delete(root, ProgressCh)
 		if runErr != nil {
 			if errors.Is(runErr, context.Canceled) || errors.Is(runErr, errCancelled) {
 				return
 			}
-			if ctxs := ExtractInterruptContexts(runErr); len(ctxs) > 0 {
-				// Wait-for-user: persist the real root-cause interrupt id for
-				// compose.ResumeWithData, but keep exposing the leaf
-				// user_fill_up interrupt id to the front-end so it can attach
-				// the prompt to the visible waiting node.
-				displayID := FirstInterruptID(ctxs)
-				resumeID := RootInterruptID(ctxs)
+			if ctxs := MustExtractInterruptContexts(runErr); len(ctxs) > 0 {
+				cpnID := FirstInterruptID(ctxs)
+				r.saveInterruptID(canvasID, sessionID, cpnID)
 				common.Info("canvas runner interrupt",
 					zap.String("canvas", canvasID),
 					zap.String("session", sessionID),
-					zap.String("task", taskID),
-					zap.String("contexts", formatInterruptContexts(ctxs)),
-					zap.String("display", displayID),
-					zap.String("resume", resumeID))
-				r.saveInterruptID(canvasID, sessionID, resumeID)
-				waiting := WaitingForUserEvent{CpnID: displayID}
-				if ctx := FirstUserFillUpInterrupt(ctxs); ctx != nil {
-					if info, ok := ctx.Info.(map[string]any); ok {
-						if tips, _ := info["tips"].(string); tips != "" {
-							waiting.Tips = tips
-						}
-						if inputs, ok := info["inputs"].(map[string]any); ok && len(inputs) > 0 {
-							waiting.Inputs = inputs
-						}
-					}
+					zap.String("cpn_id", cpnID))
+				evt := WaitingForUserEvent{CpnID: cpnID}
+				if ctxs[0].Tips != "" {
+					evt.Tips = ctxs[0].Tips
 				}
-			push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(waiting), MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
-			// Always close a RunAgent call with the `done`
-			// terminator so the front-end can rely on a
-			// channel-end sentinel regardless of whether the run
-			// completed, errored, or paused for user input.
-			push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
-			return
+				if len(ctxs[0].Inputs) > 0 {
+					evt.Inputs = ctxs[0].Inputs
+				}
+				payload, _ := json.Marshal(evt)
+				push(out, RunEvent{Type: "waiting_for_user", Data: string(payload)})
+				push(out, RunEvent{Type: "done", Data: ""})
+				return
 			}
 			if IsInterruptError(runErr) {
-				// Raw InterruptSignal (no wrapped InterruptCtx list
-				// available). Emit a generic waiting_for_user event
-				// without a cpn id — the front-end falls back to
-				// the first paused session it knows about.
 				r.saveInterruptID(canvasID, sessionID, runErr.Error())
-				push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(WaitingForUserEvent{CpnID: runErr.Error()}), MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
-				push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
+				payload, _ := json.Marshal(WaitingForUserEvent{CpnID: runErr.Error()})
+				push(out, RunEvent{Type: "waiting_for_user", Data: string(payload)})
+				push(out, RunEvent{Type: "done", Data: ""})
 				return
 			}
 			pushErr(out, runErr.Error())
-			// Close the channel with the `done` terminator so the
-			// front-end sees a channel-end sentinel on the error
-			// path too — matches the contract for completed and
-			// waiting-for-user paths above.
-			push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
 			return
 		}
 
-		// Normal completion — the buildRunFunc already emitted the
-		// workflow events during execution. Runner just sends the
-		// terminator.
-		push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
+		if snap := state.Snapshot(); snap != nil {
+			ctype, _ := root["__comp_types__"].(map[string]string)
+			cname, _ := root["__comp_names__"].(map[string]string)
+			now := time.Now().Unix()
+			for cpnID, outputs := range snap {
+				typeName := ctype[cpnID]
+				displayName := cname[cpnID]
+				if displayName == "" {
+					displayName = cpnID
+				}
+				if outputs == nil {
+					outputs = map[string]any{}
+				}
+				finishData, _ := json.Marshal(map[string]any{
+					"component_id":   cpnID,
+					"component_name": displayName,
+					"component_type": typeName,
+					"inputs":         map[string]any{},
+					"outputs":        outputs,
+					"error":          nil,
+					"elapsed_time":   0,
+					"created_at":     now,
+					"thoughts":       "",
+				})
+				push(out, RunEvent{Type: "node_finished", Data: string(finishData)})
+			}
+		}
+
+		// Redundant EndToThink event removed here. The final answer
+		// streaming via streamContentToProgCh already closes the
+		// thinking section (IsThink:false when thinkActive is true
+		// triggers EndToThink).  An extra EndToThink with empty
+		// Content would cause Content to be omitted by omitempty,
+		// resulting in data.content===undefined in the front-end
+		// and appending the string "undefined" to the answer.
+		answer, reference := extractAnswerFromState(state)
+		payload, _ := json.Marshal(MessageEvent{Content: answer, Reference: reference})
+		push(out, RunEvent{Type: "message", Data: string(payload)})
+		push(out, RunEvent{Type: "workflow_finished", Data: "{}"})
+		push(out, RunEvent{Type: "done", Data: ""})
 	}()
 
 	return out
@@ -436,15 +518,6 @@ func safeInvoke(ctx context.Context, cancel chan struct{}, run RunFunc, root map
 	}
 }
 
-// PushEvent sends an event to the channel, dropping it if the consumer
-// has gone away (handler cancelled). Exported so the service layer's
-// buildRunFunc can emit intermediate workflow events through the
-// same channel during execution.
-func PushEvent(ch chan<- RunEvent, ev RunEvent) {
-	defer func() { _ = recover() }()
-	ch <- ev
-}
-
 // push sends an event to the channel, dropping it if the consumer
 // has gone away (handler cancelled). Errors on send are intentional
 // and ignored — the handler is the only consumer and its
@@ -452,6 +525,46 @@ func PushEvent(ch chan<- RunEvent, ev RunEvent) {
 func push(out chan<- RunEvent, ev RunEvent) {
 	defer func() { _ = recover() }()
 	out <- ev
+}
+
+// ProgressCh is the key used in root to pass a streaming-content
+// channel from the RunFunc to the runner. The Runner reads from this
+// channel during safeInvoke and emits incremental message events.
+const ProgressCh = "__progress__"
+
+// emitNodeStarted reads component metadata from root and emits a
+// node_started RunEvent for every known component in the order
+// specified by __comp_ids__ (a []string, populated by
+// service.extractComponentInfo). Map iteration is NOT used because
+// Go map iteration order is random.
+func emitNodeStarted(out chan<- RunEvent, root map[string]any) {
+	ctype, _ := root["__comp_types__"].(map[string]string)
+	cname, _ := root["__comp_names__"].(map[string]string)
+	ids, _ := root["__comp_ids__"].([]string)
+	if len(ids) == 0 {
+		// Fallback: if no ordered list, walk types map (unordered).
+		for cpnID := range ctype {
+			ids = append(ids, cpnID)
+		}
+	}
+	for _, cpnID := range ids {
+		displayName := cname[cpnID]
+		if displayName == "" {
+			displayName = cpnID
+		}
+		startData, _ := json.Marshal(map[string]any{
+			"component_id":   cpnID,
+			"component_name": displayName,
+			"component_type": ctype[cpnID],
+			"inputs":         map[string]any{},
+			"outputs":        map[string]any{},
+			"error":          nil,
+			"elapsed_time":   0,
+			"created_at":     time.Now().Unix(),
+			"thoughts":       "",
+		})
+		push(out, RunEvent{Type: "node_started", Data: string(startData)})
+	}
 }
 
 // pushErr serialises an ErrorEvent and pushes it on the channel.
@@ -467,33 +580,24 @@ func pushErr(out chan<- RunEvent, msg string) {
 	push(out, RunEvent{Type: "error", Data: string(payload)})
 }
 
-// safeEventJSON marshals v to a JSON string, falling back to
-// runtime.SafeJSONMarshal when the value contains non-serializable
-// types (funcs, channels). Mirrors the Python PR #14210
-// _canvas_json_default fallback for SSE event serialization.
-func safeEventJSON(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		common.Warn("runner: json.Marshal event payload failed, trying SafeJSONMarshal",
-			zap.Error(err))
-		b, err = runtime.SafeJSONMarshal(v)
-		if err != nil {
-			common.Error("runner: SafeJSONMarshal also failed, using fallback",
-				err)
-			b = []byte(`{"message":"event serialization failed"}`)
-		}
-	}
-	return string(b)
-}
-
-// nowUnix returns the current Unix timestamp in seconds.
-func nowUnix() int64 {
-	return time.Now().Unix()
-}
-
-// extractAnswerFromState is kept for reference but is no longer called
-// by the Runner — answer extraction now happens in buildRunFunc.
-// Remove in a follow-up cleanup pass once all tests pass.
+// extractAnswerFromState scans the post-run state for the
+// surfaceable answer and any reference chunks. The walk is
+// cpn-agnostic: it inspects every cpn's output map for an
+// "answer", "result", or "content" key with a non-empty value.
+//
+// Precedence:
+//  1. A cpn whose output has an "answer" key — that's the
+//     "this cpn is the answer producer" marker Answer
+//     components emit.
+//  2. A cpn whose output has a "result" key with a string value
+//     — the V1 service.RunAgent synthesises this when no full
+//     canvas compile/invoke has run yet (see service/agent.go's
+//     buildRunFunc).
+//  3. The first non-empty "content" key.
+//
+// Reference is whatever the state carries under "reference" or
+// "chunks" — front-ends use this to render citation links. V1
+// state has no references yet; an empty slice is fine.
 func extractAnswerFromState(state *CanvasState) (string, []interface{}) {
 	if state == nil {
 		return "", nil

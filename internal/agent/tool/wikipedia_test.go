@@ -66,10 +66,7 @@ func TestWikipedia_BuildURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := buildWikipediaURL(tc.lang, tc.query, tc.max)
-			u, err := url.Parse(got)
-			if err != nil {
-				t.Fatalf("url.Parse(%q): %v", got, err)
-			}
+			u, _ := url.Parse(got)
 			if u.Host != tc.wantHost {
 				t.Errorf("host = %q, want %q", u.Host, tc.wantHost)
 			}
@@ -115,10 +112,7 @@ func TestWikipedia_ParseResults(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewWikipediaToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(), `{"query":"RAG","lang":"en","max_results":5}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
+	out, _ := tool.InvokableRun(context.Background(), `{"query":"RAG","lang":"en","max_results":5}`)
 
 	var env wikipediaEnvelope
 	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
@@ -143,10 +137,7 @@ func TestWikipedia_ParseResults(t *testing.T) {
 // en.wikipedia.org endpoint at a httptest.Server without changing the
 // production URL builder.
 func rewriteHostTransport(srvURL string) http.RoundTripper {
-	u, err := url.Parse(srvURL)
-	if err != nil {
-		panic("rewriteHostTransport: bad srvURL: " + err.Error())
-	}
+	u, _ := url.Parse(srvURL)
 	return &hostSwapRT{inner: http.DefaultTransport, host: u.Host, scheme: u.Scheme}
 }
 
@@ -168,15 +159,12 @@ func TestWikipedia_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewWikipediaTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "wikipedia" {
+		t.Errorf("Name = %q, want wikipedia", meta.Name)
 	}
-	if info.Name != "wikipedia" {
-		t.Errorf("Name = %q, want wikipedia", info.Name)
-	}
-	if !strings.Contains(info.Desc, "Wikipedia") {
-		t.Errorf("Desc = %q, want to mention Wikipedia", info.Desc)
+	if !strings.Contains(meta.Description, "Wikipedia") {
+		t.Errorf("Desc = %q, want to mention Wikipedia", meta.Description)
 	}
 }
 

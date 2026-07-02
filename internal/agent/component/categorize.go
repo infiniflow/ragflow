@@ -10,11 +10,14 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
-	"github.com/cloudwego/eino/schema"
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 )
 
 // CategorizeComponent is an LLM classifier.
@@ -27,7 +30,6 @@ type CategorizeParam struct {
 	ModelID         string
 	Items           []string
 	Categories      []string
-	CategoryRoutes  map[string]string
 	SysPrompt       string
 	DefaultCategory string
 	Driver          string
@@ -60,16 +62,21 @@ func (c *CategorizeComponent) Name() string { return "Categorize" }
 // something outside the configured set).
 func (c *CategorizeComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	p := mergeCategorizeParam(c.param, inputs)
-	originalModelID := p.ModelID
-	if p.Driver == "" && p.ModelID != "" {
-		if modelID, driver, ok := splitCompositeLLMID(p.ModelID); ok {
-			p.Driver = driver
-			p.ModelID = modelID
-		}
-	}
-	p.APIKey, p.BaseURL = resolveTenantLLMConfig(ctx, p.Driver, p.ModelID, p.APIKey, p.BaseURL, originalModelID)
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
+	}
+	// Split composite llm_id (e.g. "model@provider" or
+	// "model@instance@provider") into bare model name + driver.
+	if modelName, driver, hasDriver := splitCompositeLLMID(p.ModelID); hasDriver {
+		p.ModelID = modelName
+		if p.Driver == "" {
+			p.Driver = driver
+		}
+	}
+	// Resolve missing APIKey / BaseURL from the tenant DB when
+	// credentials were not provided directly in the DSL params.
+	if p.APIKey == "" && p.Driver != "" {
+		p = resolveCategorizeCredentials(ctx, p)
 	}
 	if len(p.Categories) == 0 {
 		return nil, &ParamError{Field: "categories", Reason: "at least one category is required"}
@@ -86,9 +93,9 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, inputs map[string]any)
 		sysPrompt = "You are a strict classifier."
 	}
 	userPrompt := buildCategorizePrompt(p)
-	msgs := []schema.Message{
-		{Role: schema.System, Content: sysPrompt},
-		{Role: schema.User, Content: userPrompt},
+	msgs := []ComponentMessage{
+		{Role: RoleSystem, Content: sysPrompt},
+		{Role: RoleUser, Content: userPrompt},
 	}
 	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
 		Driver:    p.Driver,
@@ -102,15 +109,10 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, inputs map[string]any)
 	}
 
 	chosen, score := pickCategory(resp.Content, p.Categories, p.DefaultCategory)
-	next := []string{}
-	if route := p.CategoryRoutes[chosen]; route != "" {
-		next = []string{route}
-	}
 	return map[string]any{
-		"category":      chosen,
 		"category_name": chosen,
 		"scores":        score,
-		"_next":         next,
+		"_next":         []string{},
 	}, nil
 }
 
@@ -145,10 +147,9 @@ func (c *CategorizeComponent) Inputs() map[string]string {
 // Outputs returns output metadata.
 func (c *CategorizeComponent) Outputs() map[string]string {
 	return map[string]string{
-		"category":      "Chosen category name (one of the configured list, or the default)",
-		"category_name": "Alias of category for v1 canvas templates",
+		"category_name": "Chosen category name (one of the configured list, or the default)",
 		"scores":        "Score map (1.0 for the chosen category, 0.0 for the rest)",
-		"_next":         "Downstream route handle(s) selected from categorize item uuids",
+		"_next":         "Reserved for canvas/multibranch.go routing; currently empty",
 	}
 }
 
@@ -244,9 +245,6 @@ func mergeCategorizeParam(base CategorizeParam, inputs map[string]any) Categoriz
 		sort.Strings(keys)
 		p.Categories = keys
 	}
-	if routes, ok := categoryRoutesFrom(inputs, "category_description"); ok {
-		p.CategoryRoutes = routes
-	}
 	if v, ok := stringFrom(inputs, "sys_prompt"); ok {
 		p.SysPrompt = v
 	} else if v, ok := stringFrom(inputs, "system_prompt"); ok {
@@ -298,30 +296,64 @@ func stringMapFrom(inputs map[string]any, name string) (map[string]string, bool)
 	return out, true
 }
 
-func categoryRoutesFrom(inputs map[string]any, name string) (map[string]string, bool) {
-	raw, ok := inputs[name]
-	if !ok {
-		return nil, false
+// resolveCategorizeCredentials tries to populate APIKey and BaseURL from
+// the tenant's LLM configuration in the database when the DSL params did
+// not provide them directly.  Mirrors the server_main.go modelLocator
+// logic so unit tests without a boot-time modelLocator also work.
+func resolveCategorizeCredentials(ctx context.Context, p CategorizeParam) CategorizeParam {
+	if p.Driver == "" {
+		return p
 	}
-	src, ok := raw.(map[string]any)
-	if !ok || len(src) == 0 {
-		return nil, false
-	}
-	out := make(map[string]string, len(src))
-	for category, child := range src {
-		nested, ok := child.(map[string]any)
-		if !ok {
-			continue
-		}
-		if s, ok := firstRouteTarget(nested["to"]); ok {
-			out[category] = s
-			continue
-		}
-		if s, ok := nested["uuid"].(string); ok && s != "" {
-			out[category] = s
+	tenantID := ""
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		if tid, ok := state.Sys["tenant_id"].(string); ok {
+			tenantID = tid
 		}
 	}
-	return out, len(out) > 0
+	if tenantID == "" {
+		return p
+	}
+	// 1) Try TenantLLM: unique index on (tenant_id, llm_factory, llm_name).
+	if dao.DB != nil {
+		var rec entity.TenantLLM
+		if err := dao.DB.Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?",
+			tenantID, p.Driver, p.ModelID).First(&rec).Error; err == nil {
+			if rec.APIKey != nil {
+				p.APIKey = *rec.APIKey
+			}
+			if p.BaseURL == "" && rec.APIBase != nil {
+				p.BaseURL = *rec.APIBase
+			}
+			return p
+		}
+	}
+	// 2) Fall back to TenantModelInstance (provider-based).
+	if dao.DB != nil {
+		var provider entity.TenantModelProvider
+		if err := dao.DB.Where("tenant_id = ? AND provider_name = ?",
+			tenantID, p.Driver).First(&provider).Error; err == nil {
+			var inst entity.TenantModelInstance
+			// Try matching instance_name first, then any active instance.
+			err = dao.DB.Where("provider_id = ? AND instance_name = ?",
+				provider.ID, "default").First(&inst).Error
+			if err != nil {
+				err = dao.DB.Where("provider_id = ? AND status = ?",
+					provider.ID, "active").First(&inst).Error
+			}
+			if err == nil {
+				p.APIKey = inst.APIKey
+				if p.BaseURL == "" && inst.Extra != "" {
+					var extra struct {
+						BaseURL string `json:"base_url"`
+					}
+					if json.Unmarshal([]byte(inst.Extra), &extra) == nil && extra.BaseURL != "" {
+						p.BaseURL = extra.BaseURL
+					}
+				}
+			}
+		}
+	}
+	return p
 }
 
 // init registers CategorizeComponent with the orchestrator-owned registry.
@@ -333,46 +365,7 @@ func init() {
 		} else if v, ok := stringFrom(params, "llm_id"); ok {
 			p.ModelID = v
 		}
-		// Check the object-style []any of maps first. sliceFrom would
-		// otherwise match the same []any input and return (empty, true)
-		// for non-string elements, making the object branch unreachable.
-		if items, ok := params["items"].([]any); ok && len(items) > 0 {
-			names := make([]string, 0, len(items))
-			routes := make(map[string]string, len(items))
-			for _, item := range items {
-				m, ok := item.(map[string]any)
-				if !ok {
-					continue
-				}
-				name, _ := m["name"].(string)
-				if name == "" {
-					continue
-				}
-				names = append(names, name)
-				if route, ok := firstRouteTarget(m["to"]); ok {
-					routes[name] = route
-				} else if uuid, _ := m["uuid"].(string); uuid != "" {
-					routes[name] = uuid
-				}
-				if examples, ok := m["examples"].([]any); ok {
-					for _, example := range examples {
-						em, ok := example.(map[string]any)
-						if !ok {
-							continue
-						}
-						if v, _ := em["value"].(string); v != "" {
-							p.Items = append(p.Items, v)
-						}
-					}
-				}
-			}
-			if len(names) > 0 {
-				p.Categories = names
-			}
-			if len(routes) > 0 {
-				p.CategoryRoutes = routes
-			}
-		} else if v, ok := sliceFrom(params, "items"); ok {
+		if v, ok := sliceFrom(params, "items"); ok {
 			p.Items = v
 		}
 		if v, ok := sliceFrom(params, "categories"); ok {
@@ -384,21 +377,6 @@ func init() {
 			}
 			sort.Strings(keys)
 			p.Categories = keys
-			routes := make(map[string]string, len(m))
-			for k, child := range m {
-				nested, ok := child.(map[string]any)
-				if !ok {
-					continue
-				}
-				if route, ok := firstRouteTarget(nested["to"]); ok {
-					routes[k] = route
-				} else if uuid, _ := nested["uuid"].(string); uuid != "" {
-					routes[k] = uuid
-				}
-			}
-			if len(routes) > 0 {
-				p.CategoryRoutes = routes
-			}
 		}
 		if v, ok := stringFrom(params, "sys_prompt"); ok {
 			p.SysPrompt = v
@@ -419,19 +397,4 @@ func init() {
 		}
 		return NewCategorizeComponent(p), nil
 	})
-}
-
-func firstRouteTarget(v any) (string, bool) {
-	if s, ok := v.(string); ok && s != "" {
-		return s, true
-	}
-	items, ok := v.([]any)
-	if !ok || len(items) == 0 {
-		return "", false
-	}
-	s, ok := items[0].(string)
-	if !ok || s == "" {
-		return "", false
-	}
-	return s, true
 }

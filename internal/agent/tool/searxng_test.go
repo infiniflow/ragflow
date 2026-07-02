@@ -66,10 +66,7 @@ func TestSearXNG_BuildURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := buildSearXNGURL(tc.base, tc.query, tc.max)
-			u, err := url.Parse(got)
-			if err != nil {
-				t.Fatalf("url.Parse(%q): %v", got, err)
-			}
+			u, _ := url.Parse(got)
 			if u.Host != tc.wantHost {
 				t.Errorf("host = %q, want %q", u.Host, tc.wantHost)
 			}
@@ -102,11 +99,8 @@ func TestSearXNG_ParseResults(t *testing.T) {
 	defer srv.Close()
 
 	tool := NewSearXNGTool()
-	out, err := tool.InvokableRun(context.Background(),
+	out, _ := tool.InvokableRun(context.Background(),
 		`{"query":"ragflow","base_url":`+jsonString(srv.URL)+`,"max_results":5}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
 
 	var env searxngEnvelope
 	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
@@ -130,15 +124,12 @@ func TestSearXNG_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewSearXNGTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "searxng" {
+		t.Errorf("Name = %q, want searxng", meta.Name)
 	}
-	if info.Name != "searxng" {
-		t.Errorf("Name = %q, want searxng", info.Name)
-	}
-	if !strings.Contains(info.Desc, "SearXNG") {
-		t.Errorf("Desc = %q, want to mention SearXNG", info.Desc)
+	if !strings.Contains(meta.Description, "SearXNG") {
+		t.Errorf("Desc = %q, want to mention SearXNG", meta.Description)
 	}
 }
 

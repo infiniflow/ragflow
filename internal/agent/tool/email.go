@@ -22,9 +22,6 @@ import (
 	"fmt"
 	"net/smtp"
 	"strings"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const emailToolName = "email"
@@ -63,53 +60,53 @@ func NewEmailTool() *EmailTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (e *EmailTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: emailToolName,
-		Desc: emailToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (e *EmailTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        emailToolName,
+		Description: emailToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"smtp_host": {
-				Type:     schema.String,
-				Desc:     "SMTP server hostname (e.g. smtp.gmail.com).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "SMTP server hostname (e.g. smtp.gmail.com).",
+				Required:    true,
 			},
 			"smtp_port": {
-				Type:     schema.Integer,
-				Desc:     "SMTP server port (e.g. 587 for STARTTLS, 465 for implicit TLS).",
-				Required: true,
+				Type:        ParamTypeInteger,
+				Description: "SMTP server port (e.g. 587 for STARTTLS, 465 for implicit TLS).",
+				Required:    true,
 			},
 			"username": {
-				Type:     schema.String,
-				Desc:     "SMTP authentication username. Empty for unauthenticated relay.",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "SMTP authentication username. Empty for unauthenticated relay.",
+				Required:    false,
 			},
 			"password": {
-				Type:     schema.String,
-				Desc:     "SMTP authentication password (or app password for Gmail/Yahoo).",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "SMTP authentication password (or app password for Gmail/Yahoo).",
+				Required:    false,
 			},
 			"from_addr": {
-				Type:     schema.String,
-				Desc:     "Sender email address (RFC 5322).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Sender email address (RFC 5322).",
+				Required:    true,
 			},
 			"to_addrs": {
-				Type:     schema.Array,
-				Desc:     "Recipient email addresses.",
-				Required: true,
+				Type:        ParamTypeArray,
+				Description: "Recipient email addresses.",
+				Required:    true,
 			},
 			"subject": {
-				Type:     schema.String,
-				Desc:     "Email subject line.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Email subject line.",
+				Required:    true,
 			},
 			"body": {
-				Type:     schema.String,
-				Desc:     "Email body (plain text).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Email body (plain text).",
+				Required:    true,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildEmailMessage composes the RFC 822 wire format: headers + blank
@@ -131,7 +128,7 @@ func buildEmailMessage(from string, to []string, subject, body string) []byte {
 // InvokableRun sends the email. We delegate to smtp.SendMail which
 // handles EHLO, STARTTLS, and AUTH transparently when an *smtp.Auth is
 // supplied; with nil auth it sends unauthenticated.
-func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p emailParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return emailErrJSON(fmt.Errorf("email: parse arguments: %w", err)),

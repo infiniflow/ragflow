@@ -20,14 +20,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/agent/runtime"
 )
 
 // TestPrependHistory_EmptyHistory: no history → no prepend.
 func TestPrependHistory_EmptyHistory(t *testing.T) {
-	current := []schema.Message{{Role: schema.User, Content: "hi"}}
+	current := []ComponentMessage{{Role: RoleUser, Content: "hi"}}
 	out := prependHistory(current, nil, 5)
 	if len(out) != 1 {
 		t.Errorf("expected 1 message, got %d", len(out))
@@ -36,7 +34,7 @@ func TestPrependHistory_EmptyHistory(t *testing.T) {
 
 // TestPrependHistory_WindowZero: window=0 → no prepend.
 func TestPrependHistory_WindowZero(t *testing.T) {
-	current := []schema.Message{{Role: schema.User, Content: "hi"}}
+	current := []ComponentMessage{{Role: RoleUser, Content: "hi"}}
 	hist := []map[string]any{
 		{"role": "user", "content": "older"},
 	}
@@ -48,7 +46,7 @@ func TestPrependHistory_WindowZero(t *testing.T) {
 
 // TestPrependHistory_AllWithinWindow: history shorter than window → all kept.
 func TestPrependHistory_AllWithinWindow(t *testing.T) {
-	current := []schema.Message{{Role: schema.User, Content: "now"}}
+	current := []ComponentMessage{{Role: RoleUser, Content: "now"}}
 	hist := []map[string]any{
 		{"role": "user", "content": "turn 1"},
 		{"role": "assistant", "content": "reply 1"},
@@ -71,7 +69,7 @@ func TestPrependHistory_AllWithinWindow(t *testing.T) {
 
 // TestPrependHistory_TruncatesToWindow: history longer than window → keep last N.
 func TestPrependHistory_TruncatesToWindow(t *testing.T) {
-	current := []schema.Message{{Role: schema.User, Content: "now"}}
+	current := []ComponentMessage{{Role: RoleUser, Content: "now"}}
 	hist := []map[string]any{
 		{"role": "user", "content": "turn 1"},
 		{"role": "assistant", "content": "reply 1"},
@@ -97,7 +95,7 @@ func TestPrependHistory_TruncatesToWindow(t *testing.T) {
 
 // TestPrependHistory_SkipsInvalidEntries: entries missing role or content are skipped.
 func TestPrependHistory_SkipsInvalidEntries(t *testing.T) {
-	current := []schema.Message{{Role: schema.User, Content: "now"}}
+	current := []ComponentMessage{{Role: RoleUser, Content: "now"}}
 	hist := []map[string]any{
 		{"role": "user"},       // missing content
 		{"content": "no role"}, // missing role
