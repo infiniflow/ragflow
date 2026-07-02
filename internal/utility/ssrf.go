@@ -63,39 +63,39 @@ func allowAnyHost() bool {
 //
 // Mirrors common/ssrf_guard.py:assert_url_is_safe.
 func AssertURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
-	parsed, perr := url.Parse(strings.TrimSpace(rawURL))
-	if perr != nil {
-		return "", "", fmt.Errorf("Invalid url.")
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", "", fmt.Errorf("invalid url")
 	}
 
 	scheme := strings.ToLower(parsed.Scheme)
 	if !schemeAllowed(scheme) {
 		sorted := append([]string(nil), AllowedURLSchemes...)
 		sort.Strings(sorted)
-		return "", "", fmt.Errorf("Disallowed URL scheme: '%s'. Only %v are allowed.", scheme, sorted)
+		return "", "", fmt.Errorf("disallowed URL scheme: '%s'. Only %v are allowed", scheme, sorted)
 	}
 
 	hostname = parsed.Hostname()
 	if hostname == "" {
-		return "", "", fmt.Errorf("URL is missing a host.")
+		return "", "", fmt.Errorf("URL is missing a host")
 	}
 
 	allowAny := allowAnyHost()
-	addrs, err := LookupHost(hostname)
+	addresses, err := LookupHost(hostname)
 	if err != nil {
-		return "", "", fmt.Errorf("Could not resolve hostname '%s': %v", hostname, err)
+		return "", "", fmt.Errorf("could not resolve hostname '%s': %v", hostname, err)
 	}
-	if len(addrs) == 0 {
-		return "", "", fmt.Errorf("Hostname '%s' resolved to no addresses.", hostname)
+	if len(addresses) == 0 {
+		return "", "", fmt.Errorf("hostname '%s' resolved to no addresses", hostname)
 	}
 
-	for _, addr := range addrs {
+	for _, addr := range addresses {
 		ip := net.ParseIP(addr)
 		if ip == nil {
-			return "", "", fmt.Errorf("Could not parse resolved address '%s' for hostname '%s'.", addr, hostname)
+			return "", "", fmt.Errorf("could not parse resolved address '%s' for hostname '%s'", addr, hostname)
 		}
 		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
-			return "", "", fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed.", ip.String())
+			return "", "", fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed", ip.String())
 		}
 		if resolvedIP == "" {
 			resolvedIP = ip.String()
