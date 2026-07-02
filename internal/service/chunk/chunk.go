@@ -108,6 +108,7 @@ type ChunkService struct {
 	deleteTasksByDocIDsFunc       func([]string) (int64, error)
 	getEmbeddingModelFunc         func(string, string) (*models.EmbeddingModel, error)
 	incrementChunkStatsFunc       func(string, string, int64, int64, float64) error
+	decrementChunkStatsFunc       func(string, string, int64, int64, float64) error
 	storeChunkImageFunc           func(string, string, []byte) error
 	tokenizeFunc                  func(string) (string, error)
 	fineGrainedTokenizeFunc       func(string) (string, error)
@@ -1766,6 +1767,12 @@ func (s *ChunkService) RemoveChunks(req *service.RemoveChunksRequest, userID str
 		return 0, fmt.Errorf("failed to delete chunks: %w", err)
 	}
 
+	if deletedCount > 0 {
+		if err := s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
+			return 0, fmt.Errorf("failed to update chunk stats: %w", err)
+		}
+	}
+
 	return deletedCount, nil
 }
 
@@ -2060,6 +2067,41 @@ func (s *ChunkService) incrementChunkStats(docID, kbID string, tokenNum, chunkNu
 			Updates(map[string]interface{}{
 				"token_num": gorm.Expr("token_num + ?", tokenNum),
 				"chunk_num": gorm.Expr("chunk_num + ?", chunkNum),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("knowledgebase not found")
+		}
+		return nil
+	})
+}
+
+func (s *ChunkService) decrementChunkStats(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {
+	if s.decrementChunkStatsFunc != nil {
+		return s.decrementChunkStatsFunc(docID, kbID, tokenNum, chunkNum, duration)
+	}
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&entity.Document{}).
+			Where("id = ? AND kb_id = ?", docID, kbID).
+			Updates(map[string]interface{}{
+				"token_num":        gorm.Expr("token_num - ?", tokenNum),
+				"chunk_num":        gorm.Expr("chunk_num - ?", chunkNum),
+				"process_duration": gorm.Expr("process_duration + ?", duration),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("document not found")
+		}
+
+		result = tx.Model(&entity.Knowledgebase{}).
+			Where("id = ?", kbID).
+			Updates(map[string]interface{}{
+				"token_num": gorm.Expr("token_num - ?", tokenNum),
+				"chunk_num": gorm.Expr("chunk_num - ?", chunkNum),
 			})
 		if result.Error != nil {
 			return result.Error

@@ -18,7 +18,12 @@ package service
 
 import (
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"testing"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestNewSourcedChunks_Empty(t *testing.T) {
@@ -218,6 +223,70 @@ func TestSourcedChunk_ZeroValue(t *testing.T) {
 	}
 	if ck.DocumentMetadata != nil {
 		t.Error("zero SourcedChunk should have nil DocumentMetadata")
+	}
+}
+
+func TestChunkTypesDecrementChunkStats(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.Document{}); err != nil {
+		t.Fatalf("migrate sqlite: %v", err)
+	}
+	previousDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = previousDB })
+
+	status := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.Knowledgebase{
+		ID:           "kb-1",
+		TenantID:     "tenant-1",
+		Name:         "kb-1",
+		EmbdID:       "embed",
+		Permission:   string(entity.TenantPermissionMe),
+		CreatedBy:    "user-1",
+		ParserConfig: entity.JSONMap{},
+		TokenNum:     20,
+		ChunkNum:     5,
+		Status:       &status,
+	}).Error; err != nil {
+		t.Fatalf("create kb: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     string(entity.ParserTypeNaive),
+		ParserConfig: entity.JSONMap{},
+		SourceType:   string(entity.FileSourceLocal),
+		Type:         "txt",
+		CreatedBy:    "user-1",
+		TokenNum:     10,
+		ChunkNum:     3,
+		Suffix:       ".txt",
+		Status:       &status,
+	}).Error; err != nil {
+		t.Fatalf("create doc: %v", err)
+	}
+
+	svc := &ChunkService{}
+	if err := svc.decrementChunkStats("doc-1", "kb-1", 0, 2, 0); err != nil {
+		t.Fatalf("decrementChunkStats() error = %v", err)
+	}
+
+	var doc entity.Document
+	if err := dao.DB.First(&doc, "id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("get doc: %v", err)
+	}
+	if doc.TokenNum != 10 || doc.ChunkNum != 1 {
+		t.Fatalf("document stats token=%d chunk=%d, want token=10 chunk=1", doc.TokenNum, doc.ChunkNum)
+	}
+	var kb entity.Knowledgebase
+	if err := dao.DB.First(&kb, "id = ?", "kb-1").Error; err != nil {
+		t.Fatalf("get kb: %v", err)
+	}
+	if kb.TokenNum != 20 || kb.ChunkNum != 3 {
+		t.Fatalf("knowledgebase stats token=%d chunk=%d, want token=20 chunk=3", kb.TokenNum, kb.ChunkNum)
 	}
 }
 
