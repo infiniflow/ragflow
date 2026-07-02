@@ -1341,6 +1341,10 @@ func (s *DocumentService) clearDocumentAndKBCountersForRerun(docID, kbID string)
 			return err
 		}
 
+		if current.TokenNum == 0 && current.ChunkNum == 0 && current.ProcessDuration == 0 {
+			return nil
+		}
+
 		result := tx.Model(&entity.Document{}).
 			Where("id = ? AND kb_id = ?", docID, kbID).
 			Updates(map[string]interface{}{
@@ -1350,9 +1354,6 @@ func (s *DocumentService) clearDocumentAndKBCountersForRerun(docID, kbID string)
 			})
 		if result.Error != nil {
 			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return fmt.Errorf("document not found")
 		}
 		if current.TokenNum == 0 && current.ChunkNum == 0 {
 			return nil
