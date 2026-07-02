@@ -3,7 +3,7 @@
 ## 1. Start Dependencies
 
 ```bash
-docker compose -f docker/docker-compose-base.yml up -d
+docker compose -f docker/docker-compose-base.yml --profile ragflow-go --profile infinity up -d
 ```
 
 ## 2. Build Go Version RAGFlow
