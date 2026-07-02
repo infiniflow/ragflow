@@ -75,7 +75,7 @@ func newWaitFakeAgentService(stub func(call int, root map[string]any) (*runtime.
 	}
 }
 
-func (f *waitFakeAgentService) ListAgents(string, string, int, int, string, bool, []string, string) (*service.ListAgentsResponse, common.ErrorCode, error) {
+func (f *waitFakeAgentService) ListAgents(string, string, int, int, string, bool, []string, string, []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
 	return &service.ListAgentsResponse{}, common.CodeSuccess, nil
 }
 func (f *waitFakeAgentService) CreateAgent(context.Context, *service.CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
@@ -84,7 +84,7 @@ func (f *waitFakeAgentService) CreateAgent(context.Context, *service.CreateAgent
 func (f *waitFakeAgentService) GetAgent(context.Context, string, string) (*entity.UserCanvas, error) {
 	return &entity.UserCanvas{ID: "canvas-wait"}, nil
 }
-func (f *waitFakeAgentService) UpdateAgent(context.Context, string, string, entity.JSONMap) error {
+func (f *waitFakeAgentService) UpdateAgent(context.Context, string, string, map[string]interface{}) error {
 	return nil
 }
 func (f *waitFakeAgentService) DeleteAgent(context.Context, string, string) error {

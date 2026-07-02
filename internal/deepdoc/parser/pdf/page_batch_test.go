@@ -1,6 +1,6 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"context"
@@ -31,8 +31,8 @@ func TestParse_BatchEquivalence(t *testing.T) {
 		defer eng.Close()
 		cfg := pdf.DefaultParserConfig()
 		cfg.BatchSize = batchSize
-		p := NewParser(cfg, &MockDocAnalyzer{Healthy: true})
-		result, err := p.Parse(context.Background(), eng)
+		p := NewParser(cfg)
+		result, err := p.ParseRaw(context.Background(), eng, mockDLA)
 		if err != nil {
 			t.Fatal(err)
 		}

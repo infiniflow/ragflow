@@ -133,7 +133,10 @@ func (s *CanvasState) MarshalJSON() ([]byte, error) {
 		RunID:      s.RunID,
 		TaskID:     s.TaskID,
 	}
-	return json.Marshal(snap)
+	// Use SafeJSONMarshal to handle non-serializable values (funcs,
+	// channels) that may have leaked into state maps. Mirrors the
+	// Python PR #14210 _serialize_default fallback in Graph.__str__.
+	return SafeJSONMarshal(snap)
 }
 
 // UnmarshalJSON restores the wire shape produced by MarshalJSON.

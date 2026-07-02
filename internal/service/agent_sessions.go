@@ -101,9 +101,9 @@ func parseAgentSessionDate(value string, isEnd bool) (*time.Time, error) {
 		return nil, nil
 	}
 
+	// Try flexible ISO 8601 / RFC3339 parsing first (PR #16483).
 	if strings.Contains(value, "T") {
-		normalized := strings.ReplaceAll(value, "Z", "+00:00")
-		parsed, err := time.Parse(time.RFC3339, normalized)
+		parsed, err := common.ParseISO8601(value)
 		if err != nil {
 			return nil, err
 		}
@@ -509,6 +509,41 @@ func (s *AgentService) DeleteAgentSessions(userID, agentID string, ids []string,
 	}
 
 	return &DeleteAgentSessionsResult{}, common.CodeSuccess, nil
+}
+
+// ListAgentTags list agent tags
+func (s *AgentService) ListAgentTags(userID, canvasCategory string) ([]AgentTagCount, common.ErrorCode, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	ownerSet := make(map[string]struct{}, len(tenantIDs)+1)
+	ownerSet[userID] = struct{}{}
+	for _, id := range tenantIDs {
+		ownerSet[id] = struct{}{}
+	}
+	ownerIDs := make([]string, 0, len(ownerSet))
+	for id := range ownerSet {
+		ownerIDs = append(ownerIDs, id)
+	}
+
+	counts, err := s.canvasDAO.ListTags(ownerIDs, userID, canvasCategory)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	tags := make([]AgentTagCount, 0, len(counts))
+	for tag, count := range counts {
+		tags = append(tags, AgentTagCount{Tag: tag, Count: count})
+	}
+	sort.Slice(tags, func(i, j int) bool {
+		if tags[i].Count == tags[j].Count {
+			return tags[i].Tag < tags[j].Tag
+		}
+		return tags[i].Count > tags[j].Count
+	})
+	return tags, common.CodeSuccess, nil
 }
 
 // normalizeAgentTags returns an error for unsupported tag payload types.

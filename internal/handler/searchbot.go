@@ -17,40 +17,20 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
 
 	"go.uber.org/zap"
 )
-
-// chatLLM is the interface for LLM calls used by chat-style handlers.
-type chatLLM interface {
-	Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error)
-}
-
-// ChunkRetriever abstracts chunk retrieval for the searchbots handler.
-type ChunkRetriever interface {
-	RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
-}
-
-// streamingLLM abstracts streaming chat for the Ask endpoint.
-// The returned channel delivers raw text deltas from the LLM.
-// Implementations should respect ctx cancellation to prevent goroutine leaks.
-type streamingLLM interface {
-	ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error)
-}
 
 // SearchBotAskRequest is the request body for POST /api/v1/searchbots/ask.
 type SearchBotAskRequest struct {
@@ -64,55 +44,6 @@ type SearchBotMindMapRequest struct {
 	Question string             `json:"question" binding:"required"`
 	KbIDs    common.StringSlice `json:"kb_ids" binding:"required"`
 	SearchID string             `json:"search_id,omitempty"`
-}
-
-// ModelProviderLLM wraps ModelProviderService to implement chatLLM.
-type ModelProviderLLM struct {
-	Svc *service.ModelProviderService
-}
-
-func (r *ModelProviderLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
-	chatModel, err := r.Svc.GetChatModel(tenantID, modelID)
-	if err != nil {
-		return nil, err
-	}
-	return chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, config)
-}
-
-// ChatStream implements streamingLLM.
-func (r *ModelProviderLLM) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
-	chatModel, err := r.Svc.GetChatModel(tenantID, modelID)
-	if err != nil {
-		return nil, err
-	}
-	return chatStreamWithContext(ctx, chatModel, messages, config), nil
-}
-
-// chatStreamWithContext creates a streaming LLM channel that stops sending
-// when ctx is cancelled, preventing goroutine leaks on client disconnect.
-func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel, messages []modelModule.Message, config *modelModule.ChatConfig) <-chan string {
-	ch := make(chan string, 256)
-	go func() {
-		defer close(ch)
-		if err := chatModel.ModelDriver.ChatStreamlyWithSender(*chatModel.ModelName, messages, chatModel.APIConfig, config,
-			func(delta *string, _ *string) error {
-				if delta == nil {
-					return nil
-				}
-				select {
-				case ch <- *delta:
-					return nil
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-			}); err != nil {
-			if err == context.Canceled || err == context.DeadlineExceeded {
-				return
-			}
-			common.Warn("ChatStreamlyWithSender returned error", zap.Error(err))
-		}
-	}()
-	return ch
 }
 
 // SearchBotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval_test.
@@ -172,37 +103,23 @@ type SearchBotRequest struct {
 type SearchBotHandler struct {
 	searchSvc *service.SearchService
 	tenantSvc *service.TenantService
-	llm       chatLLM
-	streamLLM streamingLLM
-	chunkSvc  ChunkRetriever
+	llm       *service.ModelProviderService
+	streamLLM *service.ModelProviderService
+	chunkSvc  service.Retriever
 	askSvc    *service.AskService
 	sseWriter SSEWriter
 }
 
 // NewSearchBotHandler creates a new SearchBotHandler.
-func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm chatLLM, chunkSvc ChunkRetriever) *SearchBotHandler {
+func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm *service.ModelProviderService, chunkSvc service.Retriever) *SearchBotHandler {
 	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc, sseWriter: &ginSSEWriter{}}
 }
 
 // SetStreamLLM sets the streaming LLM for the Ask endpoint.
-func (h *SearchBotHandler) SetStreamLLM(llm streamingLLM) { h.streamLLM = llm }
+func (h *SearchBotHandler) SetStreamLLM(llm *service.ModelProviderService) { h.streamLLM = llm }
 
 // SetAskService sets the AskService used by the Ask endpoint.
 func (h *SearchBotHandler) SetAskService(svc *service.AskService) { h.askSvc = svc }
-
-// askStreamAdapter adapts handler.streamingLLM to service.StreamingLLM.
-type askStreamAdapter struct {
-	llm      streamingLLM
-	tenantID string
-	modelID  string
-}
-
-func (a *askStreamAdapter) ChatStream(ctx context.Context, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
-	if a.llm == nil {
-		return nil, fmt.Errorf("streaming LLM not configured")
-	}
-	return a.llm.ChatStream(ctx, a.tenantID, a.modelID, messages, config)
-}
 
 // Handle generates related search questions based on a user query.
 // @Summary Generate Related Questions
@@ -239,36 +156,9 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 		return
 	}
 
-	// Resolve model ID from search config if provided
-	modelID := ""
-	if req.SearchID != "" && h.searchSvc != nil {
-		if detail, err := h.searchSvc.GetDetail(req.SearchID); err == nil {
-			if sc, ok := detail["search_config"].(map[string]interface{}); ok {
-				if cid, ok := sc["chat_id"].(string); ok && cid != "" {
-					modelID = cid
-				}
-			}
-		}
-	}
-	if modelID == "" && h.tenantSvc != nil {
-		defaultModel, err := h.tenantSvc.GetDefaultModelName(user.ID, entity.ModelTypeChat)
-		if err == nil && defaultModel != "" {
-			modelID = defaultModel
-		}
-	}
-
-	messages := []modelModule.Message{
-		{Role: "system", Content: relatedQuestionPrompt},
-		{Role: "user", Content: "Keywords: " + req.Question + "\nRelated search terms:\n"},
-	}
-
-	genConf := &modelModule.ChatConfig{
-		Temperature: ptrFloat64(0.9),
-	}
-
-	response, err := h.llm.Chat(user.ID, modelID, messages, genConf)
+	questions, err := service.GenerateRelatedQuestions(user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
 	if err != nil {
-		common.Warn("searchbot LLM call failed", zap.String("error", err.Error()))
+		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeOperatingError,
 			"data":    nil,
@@ -277,10 +167,6 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 		return
 	}
 
-	var questions []string
-	if response != nil && response.Answer != nil {
-		questions = parseRelatedQuestions(*response.Answer)
-	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"data":    questions,
@@ -409,8 +295,12 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		h.sseWriter.Write(c, sseError("ask service not configured"))
 		return
 	}
+	if h.streamLLM == nil {
+		h.sseWriter.Write(c, sseError("streaming LLM not configured"))
+		return
+	}
 	ctx := c.Request.Context()
-	adapter := &askStreamAdapter{llm: h.streamLLM, tenantID: user.ID, modelID: modelID}
+	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: user.ID, ModelID: modelID}
 	for delta := range h.askSvc.Stream(ctx, adapter, user.ID, req.Question, filtered) {
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
@@ -607,7 +497,6 @@ func sseMarker(marker string) string {
 	return fmt.Sprintf("data: %s\n\n", string(b))
 }
 
-// SSEWriter writes an SSE event to the client.
 type SSEWriter interface {
 	Write(c *gin.Context, data string)
 }
@@ -683,78 +572,3 @@ func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 		req.VectorSimilarityWeight = &v
 	}
 }
-
-var relatedQuestionLineRe = regexp.MustCompile(`^\d+\.\s`)
-
-// parseRelatedQuestions extracts numbered list items from an LLM response.
-// Lines matching "^N. " are extracted and the number prefix is stripped.
-func parseRelatedQuestions(text string) []string {
-	var result []string
-	for _, line := range strings.Split(text, "\n") {
-		if relatedQuestionLineRe.MatchString(line) {
-			result = append(result, relatedQuestionLineRe.ReplaceAllString(line, ""))
-		}
-	}
-	if result == nil {
-		return []string{}
-	}
-	return result
-}
-
-// relatedQuestionPrompt is the system prompt for generating related search questions.
-// Matches Python rag/prompts/related_question.md
-const relatedQuestionPrompt = `# Role
-You are an AI language model assistant tasked with generating **5-10 related questions** based on a user's original query.
-These questions should help **expand the search query scope** and **improve search relevance**.
-
----
-
-## Instructions
-
-**Input:**
-You are provided with a **user's question**.
-
-**Output:**
-Generate **5-10 alternative questions** that are **related** to the original user question.
-These alternatives should help retrieve a **broader range of relevant documents** from a vector database.
-
-**Context:**
-Focus on **rephrasing** the original question in different ways, ensuring the alternative questions are **diverse but still connected** to the topic of the original query.
-Do **not** create overly obscure, irrelevant, or unrelated questions.
-
-**Fallback:**
-If you cannot generate any relevant alternatives, do **not** return any questions.
-
----
-
-## Guidance
-
-1. Each alternative should be **unique** but still **relevant** to the original query.
-2. Keep the phrasing **clear, concise, and easy to understand**.
-3. Avoid overly technical jargon or specialized terms **unless directly relevant**.
-4. Ensure that each question **broadens** the search angle, **not narrows** it.
-
----
-
-## Example
-
-**Original Question:**
-> What are the benefits of electric vehicles?
-
-**Alternative Questions:**
-1. How do electric vehicles impact the environment?
-2. What are the advantages of owning an electric car?
-3. What is the cost-effectiveness of electric vehicles?
-4. How do electric vehicles compare to traditional cars in terms of fuel efficiency?
-5. What are the environmental benefits of switching to electric cars?
-6. How do electric vehicles help reduce carbon emissions?
-7. Why are electric vehicles becoming more popular?
-8. What are the long-term savings of using electric vehicles?
-9. How do electric vehicles contribute to sustainability?
-10. What are the key benefits of electric vehicles for consumers?
-
----
-
-## Reason
-Rephrasing the original query into multiple alternative questions helps the user explore **different aspects** of their search topic, improving the **quality of search results**.
-These questions guide the search engine to provide a **more comprehensive set** of relevant documents.`

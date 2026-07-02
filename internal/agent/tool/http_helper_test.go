@@ -24,6 +24,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -137,11 +138,31 @@ func TestHTTPHelper_NoRetryOn4xx(t *testing.T) {
 }
 
 // TestHTTPHelper_Timeout verifies that a context deadline aborts the call
-// and returns context.DeadlineExceeded promptly (no infinite retry).
+// and returns context.DeadlineExceeded, with no retry on the server
+// (context errors are not retryable per isRetryableNetError).
+//
+// This test does NOT assert on wall-clock elapsed time. A CPU-stressed
+// runner can delay the deadline timer fire and goroutine scheduling
+// arbitrarily, so absolute timing thresholds are fragile. Instead the
+// load-bearing assertions are behavioral:
+//
+//  1. err wraps context.DeadlineExceeded (the caller can branch on it).
+//  2. The server is hit exactly once — no retry loop iterates while the
+//     caller's context is already dead.
+//
+// These are the two properties downstream code actually depends on; the
+// previous "Do took < 250ms" assertion conflated them with CPU jitter
+// and flaked under load.
 func TestHTTPHelper_Timeout(t *testing.T) {
 	t.Parallel()
 
+	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		// Block well past the caller's deadline. If the helper retried
+		// (e.g. a regression that drops the isRetryableNetError
+		// short-circuit), the second attempt would land here and
+		// bump hits to 2.
 		time.Sleep(500 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -150,19 +171,21 @@ func TestHTTPHelper_Timeout(t *testing.T) {
 	h := NewHTTPHelper().WithClient(&http.Client{
 		Timeout: 30 * time.Second,
 	})
-	// Tight deadline — server takes 500ms; we expect to bail in <100ms.
+	// Tight 50ms deadline. The server takes 500ms, so this call must
+	// abort due to the context, not the server finishing.
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	start := time.Now()
 	_, err := h.Do(ctx, http.MethodGet, srv.URL, "", "", nil)
-	elapsed := time.Since(start)
 
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")
 	}
-	if elapsed > 250*time.Millisecond {
-		t.Fatalf("Do took %s, want < 250ms (timeout should abort promptly)", elapsed)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Do err = %v, want context.DeadlineExceeded (callers branch on errors.Is for this)", err)
+	}
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Errorf("server hits = %d, want 1 (context errors are not retryable — a regression to retry on ctx-deadline would show 2+)", got)
 	}
 }
 

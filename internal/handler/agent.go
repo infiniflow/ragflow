@@ -137,6 +137,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 
 	keywords := c.Query("keywords")
 	canvasCategory := c.Query("canvas_category")
+	canvasType := c.Query("canvas_type")
 
 	page := 0
 	if v := c.Query("page"); v != "" {
@@ -168,6 +169,15 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 			}
 		}
 	}
+	var tags []string
+	if raw := c.Query("tags"); raw != "" {
+		for _, tag := range strings.Split(raw, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag != "" {
+				tags = append(tags, tag)
+			}
+		}
+	}
 
 	result, code, err := h.agentService.ListAgents(
 		user.ID,
@@ -178,6 +188,8 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		desc,
 		ownerIDs,
 		canvasCategory,
+		canvasType,
+		tags,
 	)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -290,17 +302,15 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 }
 
 // updateAgentRequest is the wire shape for PUT /api/v1/agents/:canvas_id.
-type updateAgentRequest struct {
-	DSL entity.JSONMap `json:"dsl"`
-}
+type updateAgentRequest map[string]interface{}
 
-// UpdateAgent writes a new draft DSL to the canvas (no version created).
-// @Summary Update Agent (Draft)
+// UpdateAgent applies a partial update to the canvas draft.
+// @Summary Update Agent
 // @Tags agents
 // @Accept json
 // @Produce json
 // @Param canvas_id path string true "canvas id"
-// @Param request body updateAgentRequest true "draft DSL payload"
+// @Param request body updateAgentRequest true "agent update payload"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id} [put]
 func (h *AgentHandler) UpdateAgent(c *gin.Context) {
@@ -315,7 +325,10 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
 		return
 	}
-	if err := h.agentService.UpdateAgent(c.Request.Context(), user.ID, canvasID, req.DSL); err != nil {
+	if req == nil {
+		req = updateAgentRequest{}
+	}
+	if err := h.agentService.UpdateAgent(c.Request.Context(), user.ID, canvasID, map[string]interface{}(req)); err != nil {
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)
 		return
@@ -676,13 +689,21 @@ func (h *AgentHandler) Prompts(c *gin.Context) {
 
 // ListAgentTags GET /api/v1/agents/tags
 func (h *AgentHandler) ListAgentTags(c *gin.Context) {
-	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
 		jsonError(c, code, msg)
 		return
 	}
+
+	rows, errCode, err := h.agentService.ListAgentTags(user.ID, strings.TrimSpace(c.Query("canvas_category")))
+	if err != nil {
+		jsonError(c, errCode, err.Error())
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
-		"data":    []string{},
+		"data":    rows,
 		"message": "success",
 	})
 }

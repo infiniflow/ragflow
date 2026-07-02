@@ -569,7 +569,14 @@ func emitNodeStarted(out chan<- RunEvent, root map[string]any) {
 
 // pushErr serialises an ErrorEvent and pushes it on the channel.
 func pushErr(out chan<- RunEvent, msg string) {
-	payload, _ := json.Marshal(ErrorEvent{Message: msg})
+	payload, err := json.Marshal(ErrorEvent{Message: msg})
+	if err != nil {
+		common.Warn("runner: pushErr json.Marshal failed, falling back",
+			zap.Error(err))
+		// ErrorEvent only has a string field; this should never fail.
+		// Fall back to a hard-coded minimal JSON.
+		payload = []byte(`{"message":"event serialization failed"}`)
+	}
 	push(out, RunEvent{Type: "error", Data: string(payload)})
 }
 
