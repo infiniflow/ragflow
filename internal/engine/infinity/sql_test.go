@@ -376,6 +376,12 @@ func TestLoadFieldMapping_ParsesAliases(t *testing.T) {
 }
 
 func TestLoadFieldMapping_EmptyNameDefaultsToInfinityMappingJSON(t *testing.T) {
+	// Ensure the test runs in an isolated project base so any repo file
+	// named "infinity_mapping.json" doesn't get picked up.
+	dir := t.TempDir()
+	os.Setenv("RAG_PROJECT_BASE", dir)
+	defer os.Unsetenv("RAG_PROJECT_BASE")
+
 	// Empty name → defaults to "infinity_mapping.json" (line 145).
 	// We just verify the function doesn't panic and the file-not-found
 	// path is taken silently.
