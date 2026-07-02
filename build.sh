@@ -44,7 +44,10 @@ _seed_from_system() {
     local dep_dir="${HOME}/ragflow-native-libs/${dep_name}"
     local sys_dir="${SYSTEM_DEPS}/${dep_name}"
 
+    echo "check if dep ${dep_name} exists in ${dep_dir} or ${sys_dir}"
+
     if [ -d "$dep_dir" ]; then
+        echo "  ${dep_name} → ${dep_dir} (user cache)"
         return 0  # already cached
     fi
     if [ -d "$sys_dir" ]; then
@@ -53,6 +56,7 @@ _seed_from_system() {
         cp -r "$sys_dir" "$dep_dir"
         return 0
     fi
+    echo "  ${dep_name} not found in system or user cache"
     return 1
 }
 

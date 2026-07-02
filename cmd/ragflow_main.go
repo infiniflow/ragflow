@@ -309,8 +309,8 @@ func main() {
 	server.SetLogger(common.Logger)
 
 	// Print all configuration settings
-	server.PrintAll()
 	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, config.Server.Mode))
+	server.PrintAll()
 
 	// Initialize database
 	if err = dao.InitDB(); err != nil {
@@ -334,7 +334,7 @@ func main() {
 	}
 
 	if err = engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
-		common.Error("Failed to initialize message queue engine", err)
+		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
 	}
 
 	// Initialize server variables (runtime variables that can change during operation)

@@ -248,24 +248,6 @@ function ensure_db_init() {
     echo "Database tables initialized."
 }
 
-function wait_for_server() {
-    local url="$1"
-    local server_name="$2"
-    local timeout=90
-    local interval=2
-    local start_time=$(date +%s)
-
-    echo "Waiting for $server_name to be ready at $url..."
-    while ! curl -f -s -o /dev/null "$url"; do
-        if [ $(($(date +%s) - start_time)) -gt $timeout ]; then
-            echo "Timeout waiting for $server_name after $timeout seconds"
-            return 1
-        fi
-        sleep $interval
-    done
-    echo "$server_name is ready."
-}
-
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
@@ -283,6 +265,26 @@ if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
     echo "Model provider table migrations completed."
 fi
 
+if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+        while true; do
+            echo "Attempt to start Admin python server..."
+            "$PY" admin/server/admin_server.py
+            echo "Admin python server started"
+            sleep 1;
+        done &
+    fi
+
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        while true; do
+            echo "Starting Admin go server..."
+            bin/ragflow_main --admin
+            echo "Admin go server started."
+            sleep 1;
+        done &
+    fi
+fi
+
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx
@@ -298,32 +300,9 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         while true; do
-            echo "Attempt to start RAGFlow go server..."
-            wait_for_server "http://127.0.0.1:9384/api/v1/system/healthz" "ragflow_main"
             echo "Starting RAGFlow go server..."
             bin/ragflow_main --api
-            sleep 1;
-        done &
-    fi
-fi
-
-
-if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
-        while true; do
-            echo "Attempt to start Admin python server..."
-            "$PY" admin/server/admin_server.py
-            echo "Admin python server started"
-            sleep 1;
-        done &
-    fi
-
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        while true; do
-            echo "Attempt to starting Admin go server..."
-            wait_for_server "http://127.0.0.1:9383/api/v1/admin/ping" "ragflow_main"
-            echo "Starting Admin go server..."
-            bin/ragflow_main --admin
+            echo "RAGFlow go server started."
             sleep 1;
         done &
     fi
