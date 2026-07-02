@@ -204,11 +204,9 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 		// WaitGroup ensures the forward goroutine exits before we close outputCh,
 		// preventing a data race between close(outputCh) and outputCh <- event.
 		var fwWg sync.WaitGroup
-		fwWg.Add(1)
 
 		// Forward stream events to output channel
-		go func() {
-			defer fwWg.Done()
+		fwWg.Go(func() {
 			for event := range streamManager.Events() {
 				select {
 				case outputCh <- event:
@@ -216,7 +214,7 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 					return
 				}
 			}
-		}()
+		})
 
 		// Deferred cleanup: close streamManager first (unblocks forward goroutine),
 		// then wait for forward goroutine to exit, then close outputCh.

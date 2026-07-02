@@ -32,7 +32,6 @@ import (
 	"ragflow/internal/ingestion"
 	"ragflow/internal/ingestion/parser"
 	"ragflow/internal/utility"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -2128,7 +2127,7 @@ func (c *CLI) APIChatToModelCommand(cmd *Command) (ResponseIf, error) {
 	effort := cmd.Params["effort"].(string)
 	verbosity := cmd.Params["verbosity"].(string)
 
-	url := "/chat/completions"
+	url := "/chat/to_model"
 
 	payload := map[string]interface{}{
 		"messages": formattedMessages,
@@ -4133,8 +4132,6 @@ func (c *CLI) streamOpenaiChat(url string, body map[string]interface{}) (Respons
 
 	fullContent = strings.TrimLeft(fullContent, "\n\r")
 	fullReason = strings.TrimLeft(fullReason, "\n\r")
-	fullContent = stripThinkTags(fullContent)
-	fullReason = stripThinkTags(fullReason)
 	return &OpenAIChatResponse{
 		Duration:  resp.Duration,
 		Reasoning: fullReason,
@@ -4147,8 +4144,187 @@ func (c *CLI) streamOpenaiChat(url string, body map[string]interface{}) (Respons
 	}, nil
 }
 
-// stripThinkTags removes <think>…</think> wrappers from a streamed answer
-func stripThinkTags(s string) string {
-	var thinkTagRE = regexp.MustCompile(`(?s)<think>.*?</think>`)
-	return thinkTagRE.ReplaceAllString(s, "")
+// ChatCompletions dispatches the parsed CHAT COMPLETIONS command to
+// POST /api/v1/chat/completions.
+func (c *CLI) ChatCompletions(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("CHAT COMPLETIONS is only allowed in USER mode")
+	}
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	if httpClient.APIKey == nil && httpClient.LoginToken == nil {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	body, err := buildChatCompletionsRequestBody(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	url := "/chat/completions"
+
+	stream, _ := cmd.Params["stream"].(bool)
+	if stream {
+		return c.streamChatCompletions(url, body)
+	}
+	return c.oneshotChatCompletions(url, body)
+}
+
+// buildChatCompletionsRequestBody assembles the JSON payload for
+// POST /api/v1/chat/completions.
+//
+// When system or history is provided, a `messages` array is built;
+// otherwise just `question` is sent and the server normalizes it.
+func buildChatCompletionsRequestBody(cmd *Command) (map[string]interface{}, error) {
+	chatID, _ := cmd.Params["chat_id"].(string)
+	question, _ := cmd.Params["question"].(string)
+	stream, _ := cmd.Params["stream"].(bool)
+
+	body := map[string]interface{}{
+		"chat_id": chatID,
+		"stream":  stream,
+	}
+
+	// Optional session_id
+	if v, ok := cmd.Params["session"].(string); ok && v != "" {
+		body["session_id"] = v
+	}
+
+	// Optional llm_id
+	if v, ok := cmd.Params["llm"].(string); ok && v != "" {
+		body["llm_id"] = v
+	}
+
+	// Build messages from system + history when provided; otherwise send question.
+	system, hasSystem := cmd.Params["system"].(string)
+	historyRaw, hasHistory := cmd.Params["history_raw"].(string)
+
+	if hasSystem || hasHistory {
+		messages := make([]map[string]interface{}, 0, 4)
+		if hasSystem && system != "" {
+			messages = append(messages, map[string]interface{}{"role": "system", "content": system})
+		}
+		if hasHistory && historyRaw != "" {
+			delimiter, _ := cmd.Params["history_delimiter"].(string)
+			turns, err := parseHistory(historyRaw, delimiter)
+			if err != nil {
+				return nil, fmt.Errorf("CHAT COMPLETIONS history: %w", err)
+			}
+			for _, t := range turns {
+				messages = append(messages, map[string]interface{}{
+					"role":    t["role"],
+					"content": t["content"],
+				})
+			}
+		}
+		messages = append(messages, map[string]interface{}{"role": "user", "content": question})
+		body["messages"] = messages
+	} else {
+		body["question"] = question
+	}
+
+	// Optional flags — only emit when explicitly set
+	if isSet(cmd, "pass_all_history") && cmd.Params["pass_all_history"].(bool) {
+		body["pass_all_history_messages"] = true
+	}
+	if isSet(cmd, "legacy") && cmd.Params["legacy"].(bool) {
+		body["legacy"] = true
+	}
+
+	// Generation params — only emit when explicitly set
+	if isSet(cmd, "temperature") {
+		body["temperature"] = cmd.Params["temperature"]
+	}
+	if isSet(cmd, "max_tokens") {
+		body["max_tokens"] = cmd.Params["max_tokens"]
+	}
+	if isSet(cmd, "top_p") {
+		body["top_p"] = cmd.Params["top_p"]
+	}
+	if isSet(cmd, "frequency_penalty") {
+		body["frequency_penalty"] = cmd.Params["frequency_penalty"]
+	}
+	if isSet(cmd, "presence_penalty") {
+		body["presence_penalty"] = cmd.Params["presence_penalty"]
+	}
+
+	return body, nil
+}
+
+// oneshotChatCompletions performs a non-streaming POST and returns a
+// ChatCompletionsResponse parsed from the RAGFlow-internal JSON envelope.
+func (c *CLI) oneshotChatCompletions(url string, body map[string]interface{}) (ResponseIf, error) {
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	resp, err := httpClient.Request("POST", url, "web", nil, body)
+	if err != nil {
+		return nil, fmt.Errorf("chat completions request: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return &ChatCompletionsResponse{
+			Code:    resp.StatusCode,
+			Message: string(resp.Body),
+			raw:     resp.Body,
+		}, nil
+	}
+	out := &ChatCompletionsResponse{
+		Duration: resp.Duration,
+		raw:      resp.Body,
+	}
+	// RAGFlow returns {code, data: {answer, reference, ...}, message}.
+	var envelope struct {
+		Code    int                 `json:"code"`
+		Message string              `json:"message"`
+		Data    *chatCompletionData `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body, &envelope); err != nil {
+		return nil, fmt.Errorf("chat completions: invalid response JSON: %w", err)
+	}
+	out.Code = envelope.Code
+	out.Message = envelope.Message
+	out.Data = envelope.Data
+	return out, nil
+}
+
+// streamChatCompletions performs a streaming POST and collects SSE chunks.
+func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (ResponseIf, error) {
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	reader, err := httpClient.RequestStream("POST", url, "web", nil, body)
+	if err != nil {
+		return nil, fmt.Errorf("chat completions stream: %w", err)
+	}
+	defer reader.Close()
+
+	start := time.Now()
+	scanner := bufio.NewScanner(reader)
+	var fullContent string
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimPrefix(line, "data:")
+		payload = strings.TrimSpace(payload)
+		if payload == "[DONE]" {
+			continue
+		}
+		var chunk struct {
+			Code    int                `json:"code"`
+			Message string             `json:"message"`
+			Data    chatCompletionData `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			continue
+		}
+		if chunk.Data.Answer != "" {
+			fullContent += chunk.Data.Answer
+		}
+	}
+
+	fullContent = strings.TrimLeft(fullContent, "\n\r")
+	return &ChatCompletionsResponse{
+		Duration: time.Since(start).Seconds(),
+		Data: &chatCompletionData{
+			Answer: fullContent,
+		},
+		streamed: true,
+	}, nil
 }
