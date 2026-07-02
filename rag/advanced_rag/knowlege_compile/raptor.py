@@ -860,6 +860,29 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 random_state=random_state,
                 task_id=task_id,
             )
+            
+            # Loop-termination guarantee. The outer ``while end - start > 1``
+            # relies on each layer strictly shrinking the input count. If
+            # the clusterer degenerates and returns one cluster per input,
+            # every "cluster" is a single chunk, ``summarize()`` produces
+            # one summary per input, and ``produced == end - start`` —
+            # the same count carries into the next iteration and the loop
+            # spins forever, logging "Cluster one layer: N -> N".
+            #
+            # Collapse everything at this level into a single cluster so
+            # the layer produces exactly one summary. The tree gets a
+            # taller-than-usual "single trunk" segment at this depth
+            # instead of an infinite loop; downstream consumers only care
+            # that ``layers`` is monotonically shrinking.
+            if n_clusters >= len(embeddings):
+                logging.warning(
+                    "RAPTOR clustering did not reduce input count "
+                    "(%d inputs → %d clusters); collapsing this layer "
+                    "into a single summary to prevent a non-terminating loop",
+                    len(embeddings), n_clusters,
+                )
+                n_clusters = 1
+                lbls = [0] * len(embeddings)
 
             tasks = []
             for c in range(n_clusters):
