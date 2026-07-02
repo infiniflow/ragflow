@@ -101,9 +101,9 @@ func parseAgentSessionDate(value string, isEnd bool) (*time.Time, error) {
 		return nil, nil
 	}
 
+	// Try flexible ISO 8601 / RFC3339 parsing first (PR #16483).
 	if strings.Contains(value, "T") {
-		normalized := strings.ReplaceAll(value, "Z", "+00:00")
-		parsed, err := time.Parse(time.RFC3339, normalized)
+		parsed, err := common.ParseISO8601(value)
 		if err != nil {
 			return nil, err
 		}
