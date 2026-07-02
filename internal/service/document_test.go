@@ -268,7 +268,10 @@ func (m *metadataDocEngine) SearchMetadata(_ context.Context, req *types.SearchM
 }
 
 func (m *metadataDocEngine) UpdateMetadata(_ context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
-	dup := make(map[string]interface{}, len(metaFields))
+	dup := make(map[string]interface{}, len(m.records[docID])+len(metaFields))
+	for k, v := range m.records[docID] {
+		dup[k] = v
+	}
 	for k, v := range metaFields {
 		dup[k] = v
 	}
@@ -277,6 +280,24 @@ func (m *metadataDocEngine) UpdateMetadata(_ context.Context, docID string, data
 		m.docKBs[docID] = datasetID
 	}
 	return nil
+}
+
+func (m *metadataDocEngine) InsertMetadata(_ context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
+	for _, doc := range metadata {
+		docID, _ := doc["id"].(string)
+		kbID, _ := doc["kb_id"].(string)
+		metaFields, _ := doc["meta_fields"].(map[string]interface{})
+		if docID == "" || kbID == "" {
+			continue
+		}
+		dup := make(map[string]interface{}, len(metaFields))
+		for k, v := range metaFields {
+			dup[k] = v
+		}
+		m.records[docID] = dup
+		m.docKBs[docID] = kbID
+	}
+	return []string{}, nil
 }
 
 func (m *metadataDocEngine) DeleteMetadata(_ context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
@@ -289,6 +310,33 @@ func (m *metadataDocEngine) DeleteMetadata(_ context.Context, condition map[stri
 		return 1, nil
 	}
 	return 0, nil
+}
+
+func (m *metadataDocEngine) DeleteMetadataKeys(_ context.Context, docID string, datasetID string, keys []string, tenantID string) error {
+	meta, ok := m.records[docID]
+	if !ok {
+		return nil
+	}
+	for _, key := range keys {
+		delete(meta, key)
+	}
+	if len(meta) == 0 {
+		delete(m.records, docID)
+		return nil
+	}
+	m.records[docID] = meta
+	if _, ok := m.docKBs[docID]; !ok {
+		m.docKBs[docID] = datasetID
+	}
+	return nil
+}
+
+type staleSearchMetadataDocEngine struct {
+	*metadataDocEngine
+}
+
+func (m *staleSearchMetadataDocEngine) SearchMetadata(context.Context, *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
+	return &types.SearchMetadataResult{MetadataRecords: []map[string]interface{}{}}, nil
 }
 
 func (f *failingDeleteMetadataEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
@@ -1666,6 +1714,39 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	}
 }
 
+func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 0, 0)
+
+	engine := newMetadataDocEngine(map[string]map[string]interface{}{
+		"doc-1": {
+			"author": "alice",
+			"year":   2025,
+		},
+	}, map[string]string{"doc-1": "kb-1"})
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = &MetadataService{kbDAO: dao.NewKnowledgebaseDAO(), docEngine: engine}
+
+	if err := svc.SetDocumentMetadata("doc-1", map[string]interface{}{"category": "tech", "year": 2026}); err != nil {
+		t.Fatalf("SetDocumentMetadata failed: %v", err)
+	}
+	if got := engine.records["doc-1"]["author"]; got != "alice" {
+		t.Fatalf("author = %#v, want alice", got)
+	}
+	if got := engine.records["doc-1"]["category"]; got != "tech" {
+		t.Fatalf("category = %#v, want tech", got)
+	}
+	if got := engine.records["doc-1"]["year"]; got != 2026 {
+		t.Fatalf("year = %#v, want 2026", got)
+	}
+	if got := engine.docKBs["doc-1"]; got != "kb-1" {
+		t.Fatalf("kb_id = %q, want kb-1", got)
+	}
+}
+
 func TestChunkImageStorageKeyUsesImgIDWithDatasetPrefix(t *testing.T) {
 	key, ok := chunkImageStorageKey("kb-1", map[string]interface{}{
 		"id":     "chunk-1",
@@ -1764,6 +1845,42 @@ func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
 	}
 	if _, ok := got3["tags"]; ok {
 		t.Fatalf("doc-3 tags should not be created by match-only update: %#v", got3)
+	}
+}
+
+func TestBatchUpdateDocumentMetadatasDoesNotReplaceWhenCurrentSearchIsStale(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc1.txt", 0, 0)
+
+	baseEngine := newMetadataDocEngine(map[string]map[string]interface{}{
+		"doc-1": {"author": "alice"},
+	}, map[string]string{"doc-1": "kb-1"})
+	engine := &staleSearchMetadataDocEngine{metadataDocEngine: baseEngine}
+
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = &MetadataService{kbDAO: dao.NewKnowledgebaseDAO(), docEngine: engine}
+
+	resp, code, err := svc.BatchUpdateDocumentMetadatas("kb-1", &DocumentMetadataSelector{
+		DocumentIDs: []string{"doc-1"},
+	}, []DocumentMetadataUpdate{
+		{Key: "category", Value: "paper"},
+	}, nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("batch update failed: code=%v err=%v", code, err)
+	}
+	if resp.Updated != 1 || resp.MatchedDocs != 1 {
+		t.Fatalf("resp = %#v, want updated=1 matched=1", resp)
+	}
+
+	got := baseEngine.records["doc-1"]
+	if got["author"] != "alice" {
+		t.Fatalf("author should be preserved, got metadata %#v", got)
+	}
+	if got["category"] != "paper" {
+		t.Fatalf("category = %#v, want paper", got["category"])
 	}
 }
 
@@ -2111,5 +2228,90 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 	}
 	if _, err := svc.GetDocumentArtifact("result.png", "user-2"); !errors.Is(err, ErrArtifactNotFound) {
 		t.Errorf("user-2 with unrelated session: want ErrArtifactNotFound, got %v", err)
+	}
+}
+
+func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	if err := db.AutoMigrate(&entity.Document{}, &entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestKB(t, "kb-2", "tenant-1", 0, 0, 0)
+	insertTestKB(t, "kb-other", "tenant-other", 0, 0, 0)
+	if err := db.Create(&entity.UserTenant{
+		ID:        "user-1_tenant-1",
+		UserID:    "user-1",
+		TenantID:  "tenant-1",
+		Role:      "owner",
+		InvitedBy: "user-1",
+		Status:    sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("seed user tenant: %v", err)
+	}
+
+	base64Thumb := "data:image/png;base64,AAAA"
+	fileThumb := "thumb.png"
+	otherThumb := "secret.png"
+	if err := db.Create(&entity.Document{
+		ID:           "doc-file",
+		KbID:         "kb-1",
+		Thumbnail:    &fileThumb,
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "user-1",
+		Suffix:       "png",
+	}).Error; err != nil {
+		t.Fatalf("seed file thumbnail doc: %v", err)
+	}
+	if err := db.Create(&entity.Document{
+		ID:           "doc-base64",
+		KbID:         "kb-2",
+		Thumbnail:    &base64Thumb,
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "user-1",
+		Suffix:       "png",
+	}).Error; err != nil {
+		t.Fatalf("seed base64 thumbnail doc: %v", err)
+	}
+	if err := db.Create(&entity.Document{
+		ID:           "doc-other",
+		KbID:         "kb-other",
+		Thumbnail:    &otherThumb,
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "user-other",
+		Suffix:       "png",
+	}).Error; err != nil {
+		t.Fatalf("seed other tenant thumbnail doc: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	got, err := svc.GetThumbnails("user-1", []string{"doc-file", "doc-base64", "doc-other", "missing-doc"})
+	if err != nil {
+		t.Fatalf("GetThumbnails failed: %v", err)
+	}
+
+	if got["doc-file"] != "/api/v1/documents/images/kb-1-thumb.png" {
+		t.Fatalf("unexpected file thumbnail: %q", got["doc-file"])
+	}
+	if got["doc-base64"] != base64Thumb {
+		t.Fatalf("unexpected base64 thumbnail: %q", got["doc-base64"])
+	}
+	if _, ok := got["missing-doc"]; ok {
+		t.Fatalf("did not expect missing doc in result: %#v", got)
+	}
+	if _, ok := got["doc-other"]; ok {
+		t.Fatalf("did not expect other tenant doc in result: %#v", got)
 	}
 }
