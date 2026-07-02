@@ -45,8 +45,27 @@ def _doc_chunking_pending_key(doc_id: str) -> str:
     return f"doc:chunking_pending:{doc_id}"
 
 
+def _doc_chunking_aborted_key(doc_id: str) -> str:
+    return f"doc:chunking_aborted:{doc_id}"
+
+
 def _doc_chunking_done_key(task_id: str) -> str:
     return f"doc:chunking_done:{task_id}"
+
+
+def seed_doc_chunking_counter(doc_id: str, pending_count: int) -> bool:
+    if not doc_id or pending_count <= 0:
+        return False
+    try:
+        REDIS_CONN.delete(_doc_chunking_aborted_key(doc_id))
+        return REDIS_CONN.set(
+            _doc_chunking_pending_key(doc_id),
+            str(pending_count),
+            exp=DOC_CHUNKING_COUNTER_TTL_SECONDS,
+        )
+    except Exception:
+        logging.exception("Failed to seed chunking counter for doc %s", doc_id)
+        return False
 
 
 def clear_doc_chunking_counter(doc_id: str) -> None:
@@ -56,6 +75,30 @@ def clear_doc_chunking_counter(doc_id: str) -> None:
         REDIS_CONN.delete(_doc_chunking_pending_key(doc_id))
     except Exception:
         logging.exception("Failed to clear chunking counter for doc %s", doc_id)
+
+
+def abort_doc_chunking_counter(doc_id: str) -> None:
+    if not doc_id:
+        return
+    try:
+        REDIS_CONN.delete(_doc_chunking_pending_key(doc_id))
+        REDIS_CONN.set(
+            _doc_chunking_aborted_key(doc_id),
+            "1",
+            exp=DOC_CHUNKING_COUNTER_TTL_SECONDS,
+        )
+    except Exception:
+        logging.exception("Failed to abort chunking counter for doc %s", doc_id)
+
+
+def is_doc_chunking_aborted(doc_id: str) -> bool:
+    if not doc_id:
+        return False
+    try:
+        return bool(REDIS_CONN.get(_doc_chunking_aborted_key(doc_id)))
+    except Exception:
+        logging.exception("Failed to read chunking abort marker for doc %s", doc_id)
+        return False
 
 
 def credit_doc_chunking_task(doc_id: str, task_id: str) -> int | None:
@@ -75,7 +118,10 @@ def credit_doc_chunking_task(doc_id: str, task_id: str) -> int | None:
         )
         if not first_credit:
             return 1
-        return REDIS_CONN.decrby(_doc_chunking_pending_key(doc_id), 1)
+        pending_key = _doc_chunking_pending_key(doc_id)
+        if REDIS_CONN.get(pending_key) is None:
+            return -1
+        return REDIS_CONN.decrby(pending_key, 1)
     except Exception:
         logging.exception("Failed to credit chunking task %s for doc %s", task_id, doc_id)
         return None
@@ -182,6 +228,7 @@ class TaskService(CommonService):
         ).where(cls.model.id == doc["id"]).execute()
 
         if docs[0]["retry_count"] >= 3:
+            abort_doc_chunking_counter(docs[0]["doc_id"])
             DocumentService.update_by_id(docs[0]["doc_id"], {"progress": -1, "run": TaskStatus.FAIL.value, "update_time": current_timestamp(), "update_date": get_format_time()})
             return None
 
@@ -510,18 +557,14 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     unfinished_task_array = [task for task in parse_task_array if task["progress"] < 1.0]
     chunking_n = sum(1 for task in unfinished_task_array if not task.get("task_type"))
     if chunking_n > 0:
-        assert REDIS_CONN.set(
-            _doc_chunking_pending_key(doc["id"]),
-            str(chunking_n),
-            exp=DOC_CHUNKING_COUNTER_TTL_SECONDS,
-        ), "Can't access Redis. Please check the Redis' status."
+        assert seed_doc_chunking_counter(doc["id"], chunking_n), "Can't access Redis. Please check the Redis' status."
     try:
         for unfinished_task in unfinished_task_array:
             assert REDIS_CONN.queue_product(
                 settings.get_svr_queue_name(priority, suffix), message=unfinished_task
             ), "Can't access Redis. Please check the Redis' status."
     except Exception:
-        clear_doc_chunking_counter(doc["id"])
+        abort_doc_chunking_counter(doc["id"])
         raise
 
 
@@ -573,7 +616,7 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
 
 
 def cancel_all_task_of(doc_id):
-    clear_doc_chunking_counter(doc_id)
+    abort_doc_chunking_counter(doc_id)
     for t in TaskService.query(doc_id=doc_id):
         try:
             REDIS_CONN.set(f"{t.id}-cancel", "x")

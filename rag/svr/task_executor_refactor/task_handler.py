@@ -45,7 +45,7 @@ from api.db.joint_services.tenant_model_service import (
     get_model_config_from_provider_instance
 )
 from api.db.services.llm_service import LLMBundle
-from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, clear_doc_chunking_counter
+from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, abort_doc_chunking_counter
 from common.constants import LLMType
 from common.exceptions import TaskCanceledException
 from common.connection_utils import timeout
@@ -204,7 +204,7 @@ class TaskHandler:
             await self.handle()
         except Exception:
             if self._is_standard_chunking_task(self._task_context.task_type):
-                clear_doc_chunking_counter(self._task_context.doc_id)
+                abort_doc_chunking_counter(self._task_context.doc_id)
             raise
         finally:
             task_id = self._task_context.id
@@ -213,7 +213,7 @@ class TaskHandler:
             task_doc_id = self._task_context.doc_id
             if self._task_context.has_canceled_func(task_id):
                 if self._is_standard_chunking_task(self._task_context.task_type):
-                    clear_doc_chunking_counter(task_doc_id)
+                    abort_doc_chunking_counter(task_doc_id)
                     try:
                         exists = await thread_pool_exec(
                             settings.docStoreConn.index_exist,
@@ -565,7 +565,7 @@ class TaskHandler:
         try:
             await self._run_standard_chunking_impl(embedding_model, vector_size)
         except Exception:
-            clear_doc_chunking_counter(ctx.doc_id)
+            abort_doc_chunking_counter(ctx.doc_id)
             raise
 
     async def _run_standard_chunking_impl(
@@ -643,7 +643,7 @@ class TaskHandler:
         chunk_service = ChunkService(ctx=ctx)
 
         if ctx.has_canceled_func(task_id):
-            clear_doc_chunking_counter(task_doc_id)
+            abort_doc_chunking_counter(task_doc_id)
             ctx.progress_cb(-1, msg="Task has been canceled.")
             return
 
@@ -653,7 +653,7 @@ class TaskHandler:
 
         if not insert_result:
             ctx.recording_context.record("insertion_result", "failed")
-            clear_doc_chunking_counter(task_doc_id)
+            abort_doc_chunking_counter(task_doc_id)
             return
         ctx.recording_context.record("insertion_result", "success")
 
@@ -664,7 +664,7 @@ class TaskHandler:
         ctx.progress_cb(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
 
         if ctx.has_canceled_func(task_id):
-            clear_doc_chunking_counter(task_doc_id)
+            abort_doc_chunking_counter(task_doc_id)
             ctx.progress_cb(-1, msg="Task has been canceled.")
             return
 

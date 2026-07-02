@@ -348,8 +348,10 @@ from api.db.services.compilation_template_group_service import (  # noqa: E402
     CompilationTemplateGroupService,
 )
 from api.db.services.task_service import (  # noqa: E402
+    abort_doc_chunking_counter,
     clear_doc_chunking_counter,
     credit_doc_chunking_task,
+    is_doc_chunking_aborted,
 )
 from rag.advanced_rag.knowlege_compile.structure import (  # noqa: E402
     CHAIN_KINDS,
@@ -1079,16 +1081,24 @@ async def run_document_post_chunking_if_last(
     task_doc_id = ctx.doc_id
 
     if ctx.has_canceled_func(task_id):
-        clear_doc_chunking_counter(task_doc_id)
+        abort_doc_chunking_counter(task_doc_id)
         ctx.progress_cb(-1, msg="Task has been canceled.")
         return False
 
+    chunking_aborted = is_doc_chunking_aborted(task_doc_id)
     remaining_chunking_tasks = (
         0 if ctx.write_interceptor
         else credit_doc_chunking_task(task_doc_id, task_id)
     )
     if remaining_chunking_tasks != 0:
-        if remaining_chunking_tasks is not None and remaining_chunking_tasks < 0:
+        if chunking_aborted:
+            logging.info(
+                "Chunking for doc %s was aborted before task %s reached post-processing; "
+                "skip document finalizers.",
+                task_doc_id,
+                task_id,
+            )
+        elif remaining_chunking_tasks is not None and remaining_chunking_tasks < 0:
             logging.warning(
                 "Chunking counter for doc %s is missing or expired after task %s; "
                 "skip post-processing to avoid duplicate finalizers.",
@@ -1141,7 +1151,7 @@ async def run_document_post_chunking_if_last(
         clear_doc_chunking_counter(task_doc_id)
 
     if ctx.has_canceled_func(task_id):
-        clear_doc_chunking_counter(task_doc_id)
+        abort_doc_chunking_counter(task_doc_id)
         ctx.progress_cb(-1, msg="Task has been canceled.")
         return False
     return True
