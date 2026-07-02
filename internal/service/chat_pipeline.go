@@ -1098,13 +1098,11 @@ func (s *ChatPipelineService) AsyncChat(
 						return nil
 					})
 			} else {
-				var inReasoning bool
 				driverErr = chatDriver.ModelDriver.ChatStreamlyWithSender(
 					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg,
 					func(answer *string, reason *string) error {
 						if reason != nil && *reason != "" {
-							if !inReasoning {
-								inReasoning = true
+							if thinkState.EnterReasoning() {
 								out <- AsyncChatResult{
 									Answer:       "",
 									Reference:    map[string]interface{}{},
@@ -1129,8 +1127,7 @@ func (s *ChatPipelineService) AsyncChat(
 							}
 						}
 						if isContentDelta(answer) {
-							if inReasoning {
-								inReasoning = false
+							if thinkState.ExitReasoning() {
 								for _, d := range FlushRemaining(thinkState) {
 									if d.Kind == ThinkDeltaText && d.Value != "" {
 										fullAnswer += d.Value
@@ -1181,8 +1178,10 @@ func (s *ChatPipelineService) AsyncChat(
 			// Flush remaining state matching Python's final flush order
 			// (dialog_service.py:1601-1612): think_buffer → marker → answer_buffer → pending_after_close
 			// Python has no Reasoning field — all text is Answer.
+			hadThinkClose := false
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+					hadThinkClose = true
 					out <- AsyncChatResult{
 						Answer:      "",
 						Reference:   map[string]interface{}{},
@@ -1199,6 +1198,19 @@ func (s *ChatPipelineService) AsyncChat(
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 					}
+				}
+			}
+			// Close reasoning if the stream ended while still in reasoning mode
+			// (e.g. model returned only reasoning chunks with no content delta).
+			// Skip when FlushRemaining already emitted a </think> marker.
+			if !hadThinkClose && thinkState.ExitReasoning() {
+				out <- AsyncChatResult{
+					Answer:      "",
+					Reference:   map[string]interface{}{},
+					AudioBinary: nil,
+					CreatedAt:   float64(time.Now().Unix()),
+					Final:       false,
+					EndToThink:  true,
 				}
 			}
 
@@ -1403,13 +1415,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			chatCfg := BuildChatConfig(chat, nil)
 			timer.Enter(common.PhaseGenerateAnswer)
 
-			var inReasoning bool
 			driverErr := chatModel.ModelDriver.ChatStreamlyWithSender(
 				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg,
 				func(answer *string, reason *string) error {
 					if reason != nil && *reason != "" {
-						if !inReasoning {
-							inReasoning = true
+						if thinkState.EnterReasoning() {
 							out <- AsyncChatResult{
 								Answer:       "",
 								Reference:    map[string]interface{}{},
@@ -1434,8 +1444,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 						}
 					}
 					if isContentDelta(answer) {
-						if inReasoning {
-							inReasoning = false
+						if thinkState.ExitReasoning() {
 							for _, d := range FlushRemaining(thinkState) {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
 									fullAnswer += d.Value
@@ -1482,8 +1491,10 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				return
 			}
 			timer.Exit(common.PhaseGenerateAnswer)
+			hadThinkClose := false
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+					hadThinkClose = true
 					out <- AsyncChatResult{
 						Answer:      "",
 						Reference:   map[string]interface{}{},
@@ -1500,6 +1511,19 @@ func (s *ChatPipelineService) AsyncChatSolo(
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 					}
+				}
+			}
+			// Close reasoning if the stream ended while still in reasoning mode
+			// (e.g. model returned only reasoning chunks with no content delta).
+			// Skip when FlushRemaining already emitted a </think> marker.
+			if !hadThinkClose && thinkState.ExitReasoning() {
+				out <- AsyncChatResult{
+					Answer:      "",
+					Reference:   map[string]interface{}{},
+					AudioBinary: nil,
+					CreatedAt:   float64(time.Now().Unix()),
+					Final:       false,
+					EndToThink:  true,
 				}
 			}
 			finalAnswer := ExtractVisibleAnswer(thinkState.fullText)

@@ -1948,8 +1948,8 @@ type sseAnswerChunk struct {
 	ID           string                 `json:"id"`
 	SessionID    string                 `json:"session_id"`
 	ChatID       string                 `json:"chat_id,omitempty"`
-	StartToThink bool                   `json:"start_to_think"`
-	EndToThink   bool                   `json:"end_to_think"`
+	StartToThink bool                   `json:"start_to_think,omitempty"`
+	EndToThink   bool                   `json:"end_to_think,omitempty"`
 }
 
 // sseWrapper wraps the SSE response with deterministic field order matching Python:
