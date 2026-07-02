@@ -27,10 +27,26 @@ docker compose -f docker/docker-compose-base.yml up -d
 ./build.sh -s --go
 ```
 
-> **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, run `./build.sh --go` first to download native dependencies. Then set the following CGO environment variables in your run configuration or shell:
+### 2.1. Native Static Libraries
+
+Before building, you need three native static libraries (pdfium, pdf_oxide, office_oxide).
+They are **not** downloaded by `build.sh` — use the included download script:
+
+```bash
+# From the project root, download and extract to ~/ragflow-native-libs/
+uv run ragflow_deps/download_deps.py
+```
+
+This also requires `lld` on Linux (for Chromium-built pdfium):
+
+```bash
+sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
+```
+
+> **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
 > ```bash
-> RAGFLOW_DEPS="${HOME}/ragflow-native-libs"
+> RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by uv run ragflow_deps/download_deps.py
 > PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
 >
 > export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"

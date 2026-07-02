@@ -208,6 +208,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			agentbotGroup := apiBetaAuth.Group("/agentbots")
 			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
 		}
+		// Public bot endpoints (authenticated with an SDK beta token, not a session)
+		apiBetaAuth.GET("/chatbots/:dialog_id/info", r.botHandler.ChatbotInfo)
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
 		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)

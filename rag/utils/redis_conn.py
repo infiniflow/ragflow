@@ -156,15 +156,15 @@ class RedisDB:
     def info(self):
         info = self.REDIS.info()
         return {
-            'redis_version': info["redis_version"],
-            'server_mode': info["server_mode"] if "server_mode" in info else info.get("redis_mode", ""),
-            'used_memory': info["used_memory_human"],
-            'total_system_memory': info["total_system_memory_human"],
-            'mem_fragmentation_ratio': info["mem_fragmentation_ratio"],
-            'connected_clients': info["connected_clients"],
-            'blocked_clients': info["blocked_clients"],
-            'instantaneous_ops_per_sec': info["instantaneous_ops_per_sec"],
-            'total_commands_processed': info["total_commands_processed"]
+            "redis_version": info["redis_version"],
+            "server_mode": info["server_mode"] if "server_mode" in info else info.get("redis_mode", ""),
+            "used_memory": info["used_memory_human"],
+            "total_system_memory": info["total_system_memory_human"],
+            "mem_fragmentation_ratio": info["mem_fragmentation_ratio"],
+            "connected_clients": info["connected_clients"],
+            "blocked_clients": info["blocked_clients"],
+            "instantaneous_ops_per_sec": info["instantaneous_ops_per_sec"],
+            "total_commands_processed": info["total_commands_processed"],
         }
 
     def is_alive(self):
@@ -187,6 +187,16 @@ class RedisDB:
         except Exception as e:
             logging.warning("RedisDB.get got exception: %s", str(e))
             self.__open__()
+
+    def mget(self, keys):
+        if not self.REDIS:
+            return [None] * len(keys)
+        try:
+            return self.REDIS.mget(keys)
+        except Exception as e:
+            logging.warning("RedisDB.mget got exception: %s", str(e))
+            self.__open__()
+        return [None] * len(keys)
 
     def set_obj(self, k, obj, exp=3600):
         try:
@@ -229,9 +239,7 @@ class RedisDB:
             res = self.REDIS.smembers(key)
             return res
         except Exception as e:
-            logging.warning(
-                "RedisDB.smembers " + str(key) + " got exception: " + str(e)
-            )
+            logging.warning("RedisDB.smembers " + str(key) + " got exception: " + str(e))
             self.__open__()
         return None
 
@@ -267,9 +275,7 @@ class RedisDB:
             res = self.REDIS.zrangebyscore(key, min, max)
             return res
         except Exception as e:
-            logging.warning(
-                "RedisDB.zrangebyscore " + str(key) + " got exception: " + str(e)
-            )
+            logging.warning("RedisDB.zrangebyscore " + str(key) + " got exception: " + str(e))
             self.__open__()
         return None
 
@@ -278,9 +284,7 @@ class RedisDB:
             res = self.REDIS.zremrangebyscore(key, min, max)
             return res
         except Exception as e:
-            logging.warning(
-                f"RedisDB.zremrangebyscore {key} got exception: {e}"
-            )
+            logging.warning(f"RedisDB.zremrangebyscore {key} got exception: {e}")
             self.__open__()
         return 0
 
@@ -289,9 +293,7 @@ class RedisDB:
             res = self.REDIS.zcard(key)
             return res
         except Exception as e:
-            logging.warning(
-                f"RedisDB.zcard {key} got exception: {e}"
-            )
+            logging.warning(f"RedisDB.zcard {key} got exception: {e}")
             self.__open__()
         return 0
 
@@ -301,8 +303,7 @@ class RedisDB:
     def decrby(self, key: str, decrement: int):
         return self.REDIS.decrby(key, decrement)
 
-    def generate_auto_increment_id(self, key_prefix: str = "id_generator", namespace: str = "default",
-                                   increment: int = 1, ensure_minimum: int | None = None) -> int:
+    def generate_auto_increment_id(self, key_prefix: str = "id_generator", namespace: str = "default", increment: int = 1, ensure_minimum: int | None = None) -> int:
         redis_key = f"{key_prefix}:{namespace}"
 
         try:
@@ -388,9 +389,7 @@ class RedisDB:
             pipeline.execute()
             return True
         except Exception as e:
-            logging.warning(
-                "RedisDB.transaction " + str(key) + " got exception: " + str(e)
-            )
+            logging.warning("RedisDB.transaction " + str(key) + " got exception: " + str(e))
             self.__open__()
         return False
 
@@ -401,9 +400,7 @@ class RedisDB:
                 self.REDIS.xadd(queue, payload)
                 return True
             except Exception as e:
-                logging.exception(
-                    "RedisDB.queue_product " + str(queue) + " got exception: " + str(e)
-                )
+                logging.exception("RedisDB.queue_product " + str(queue) + " got exception: " + str(e))
                 self.__open__()
         return False
 
@@ -411,7 +408,6 @@ class RedisDB:
         """https://redis.io/docs/latest/commands/xreadgroup/"""
         for _ in range(3):
             try:
-
                 try:
                     group_info = self.REDIS.xinfo_groups(queue_name)
                     if not any(gi["name"] == group_name for gi in group_info):
@@ -442,15 +438,10 @@ class RedisDB:
                 res = RedisMsg(self.REDIS, queue_name, group_name, msg_id, payload)
                 return res
             except Exception as e:
-                if str(e) == 'no such key':
+                if str(e) == "no such key":
                     pass
                 else:
-                    logging.exception(
-                        "RedisDB.queue_consumer "
-                        + str(queue_name)
-                        + " got exception: "
-                        + str(e)
-                    )
+                    logging.exception("RedisDB.queue_consumer " + str(queue_name) + " got exception: " + str(e))
                     self.__open__()
         return None
 
@@ -460,7 +451,7 @@ class RedisDB:
                 try:
                     group_info = self.REDIS.xinfo_groups(queue_name)
                 except Exception as e:
-                    if str(e) == 'no such key':
+                    if str(e) == "no such key":
                         logging.warning(f"RedisDB.get_unacked_iterator queue {queue_name} doesn't exist")
                         continue
                 if not any(gi["name"] == group_name for gi in group_info):
@@ -475,20 +466,16 @@ class RedisDB:
                     logging.info(f"RedisDB.get_unacked_iterator {queue_name} {consumer_name} {current_min}")
                     yield payload
         except Exception:
-            logging.exception(
-                "RedisDB.get_unacked_iterator got exception: "
-            )
+            logging.exception("RedisDB.get_unacked_iterator got exception: ")
             self.__open__()
 
     def get_pending_msg(self, queue, group_name):
         try:
-            messages = self.REDIS.xpending_range(queue, group_name, '-', '+', 10)
+            messages = self.REDIS.xpending_range(queue, group_name, "-", "+", 10)
             return messages
         except Exception as e:
-            if 'No such key' not in (str(e) or ''):
-                logging.warning(
-                    "RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e)
-                )
+            if "No such key" not in (str(e) or ""):
+                logging.warning("RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e))
         return []
 
     def requeue_msg(self, queue: str, group_name: str, msg_id: str):
@@ -499,9 +486,7 @@ class RedisDB:
                     self.REDIS.xadd(queue, messages[0][1])
                     self.REDIS.xack(queue, group_name, msg_id)
             except Exception as e:
-                logging.warning(
-                    "RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e)
-                )
+                logging.warning("RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e))
                 self.__open__()
 
     def queue_info(self, queue, group_name) -> dict | None:
@@ -512,9 +497,7 @@ class RedisDB:
                     if group["name"] == group_name:
                         return group
             except Exception as e:
-                logging.warning(
-                    "RedisDB.queue_info " + str(queue) + " got exception: " + str(e)
-                )
+                logging.warning("RedisDB.queue_info " + str(queue) + " got exception: " + str(e))
                 self.__open__()
         return None
 
