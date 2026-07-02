@@ -120,7 +120,16 @@ class FileTestModel(BaseTestModel):
         db_table = "file"
 
 
-_TABLES = [FileCommitTestModel, FileCommitItemTestModel, FileTestModel]
+class UserTestModel(BaseTestModel):
+    id = CharField(max_length=32, primary_key=True)
+    nickname = CharField(max_length=100, null=False, index=True)
+    email = CharField(max_length=255, null=False)
+
+    class Meta:
+        db_table = "user"
+
+
+_TABLES = [FileCommitTestModel, FileCommitItemTestModel, FileTestModel, UserTestModel]
 sqlite_db.create_tables(_TABLES)
 
 
@@ -241,6 +250,7 @@ def _load_module(monkeypatch):
     db_models_mod.FileCommit = FileCommitTestModel
     db_models_mod.FileCommitItem = FileCommitItemTestModel
     db_models_mod.File = FileTestModel
+    db_models_mod.User = UserTestModel
     db_models_mod.DataBaseModel = BaseTestModel
     monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
 

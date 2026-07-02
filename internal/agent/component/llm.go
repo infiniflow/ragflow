@@ -767,8 +767,18 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
 	}
 
+	// Strip think blocks + JSON fences from the response.
+	// Mirrors Python's clean_formated_answer() exactly
+	// (re.sub(r"^.*</think>", "", ...) + ^.*```json + trailing ```).
+	// Python only cleans for structured output — keep raw content for
+	// regular responses (llm.py:483: self.set_output("content", ans)).
+	cleaned := resp.Content
+	if p.OutputStructure != nil || p.JSONOutput {
+		cleaned = cleanFormattedAnswer(resp.Content)
+	}
+
 	out := map[string]any{
-		"content": resp.Content,
+		"content": cleaned,
 		"model":   resp.Model,
 		"stopped": resp.Stopped,
 		"tokens":  resp.Tokens,
@@ -812,7 +822,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 			out["structured"] = parsed
 			// Also update content to the validated response so
 			// downstream consumers reading "content" get the JSON text.
-			out["content"] = resp.Content
+			out["content"] = cleanFormattedAnswer(resp.Content)
 		} else {
 			common.Warn("component: LLM: output_structure set but no parseable JSON after retry")
 		}
@@ -1287,4 +1297,25 @@ func init() {
 		}
 		return NewLLMComponent(p), nil
 	})
+}
+
+// cleanFormattedAnswer mirrors Python's clean_formated_answer():
+//
+//  1. Strip everything up to and including </think> (dotall).
+//  2. Strip everything up to and including ```json (dotall).
+//  3. Strip trailing ``` and optional newlines.
+//
+// This removes DeepSeek-R1-style thinking blocks and JSON-fence
+// prefixes/suffixes from the raw model response.
+var (
+	reThinkPrefix     = regexp.MustCompile(`(?s)^.*</think>`)
+	reJSONFencePrefix = regexp.MustCompile(`(?s)^.*` + "```json")
+	reJSONFenceSuffix = regexp.MustCompile("```\n*$")
+)
+
+func cleanFormattedAnswer(ans string) string {
+	ans = reThinkPrefix.ReplaceAllString(ans, "")
+	ans = reJSONFencePrefix.ReplaceAllString(ans, "")
+	ans = reJSONFenceSuffix.ReplaceAllString(ans, "")
+	return ans
 }

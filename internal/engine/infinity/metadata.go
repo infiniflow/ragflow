@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"ragflow/internal/common"
@@ -42,29 +41,32 @@ func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID strin
 	// Get database
 	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
-		return fmt.Errorf("Failed to get database: %w", err)
+		return fmt.Errorf("failed to get database: %w", err)
 	}
 
 	// Check if table already exists
 	exists, err := e.tableExists(ctx, tableName)
 	if err != nil {
-		return fmt.Errorf("Failed to check if table exists: %w", err)
+		return fmt.Errorf("failed to check if table exists: %w", err)
 	}
 	if exists {
 		return fmt.Errorf("metadata table '%s' already exists", tableName)
 	}
 
-	// Use configured doc_meta mapping file
-	fpMapping := filepath.Join(utility.GetProjectRoot(), "conf", e.docMetaMappingFileName)
-
-	schemaData, err := os.ReadFile(fpMapping)
+	fpMapping, err := utility.FindConfFileInProject(e.docMetaMappingFileName)
 	if err != nil {
-		return fmt.Errorf("Failed to read mapping file: %w", err)
+		return err
+	}
+
+	// Use configured doc_meta mapping file
+	schemaData, err := os.ReadFile(*fpMapping)
+	if err != nil {
+		return fmt.Errorf("failed to read mapping file %q: %w", *fpMapping, err)
 	}
 
 	var schema map[string]fieldInfo
-	if err := json.Unmarshal(schemaData, &schema); err != nil {
-		return fmt.Errorf("Failed to parse mapping file: %w", err)
+	if err = json.Unmarshal(schemaData, &schema); err != nil {
+		return fmt.Errorf("failed to parse mapping file %q: %w", *fpMapping, err)
 	}
 
 	// Build column definitions
@@ -81,14 +83,14 @@ func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID strin
 	// Create table
 	_, err = db.CreateTable(tableName, columns, infinity.ConflictTypeIgnore)
 	if err != nil {
-		return fmt.Errorf("Failed to create doc meta table: %w", err)
+		return fmt.Errorf("failed to create doc meta table: %w", err)
 	}
 	common.Debug("Infinity created doc meta table", zap.String("tableName", tableName))
 
 	// Get table for creating indexes
 	table, err := db.GetTable(tableName)
 	if err != nil {
-		return fmt.Errorf("Failed to get table: %w", err)
+		return fmt.Errorf("failed to get table: %w", err)
 	}
 
 	// Create secondary index on id
@@ -99,7 +101,7 @@ func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID strin
 		"",
 	)
 	if err != nil {
-		return fmt.Errorf("Failed to create secondary index on id: %w", err)
+		return fmt.Errorf("failed to create secondary index on id: %w", err)
 	}
 
 	// Create secondary index on kb_id
@@ -110,7 +112,7 @@ func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID strin
 		"",
 	)
 	if err != nil {
-		return fmt.Errorf("Failed to create secondary index on kb_id: %w", err)
+		return fmt.Errorf("failed to create secondary index on kb_id: %w", err)
 	}
 
 	// Create secondary index on meta_fields for metadata filter queries
@@ -121,7 +123,7 @@ func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID strin
 		"",
 	)
 	if err != nil {
-		return fmt.Errorf("Failed to create secondary index on meta_fields: %w", err)
+		return fmt.Errorf("failed to create secondary index on meta_fields: %w", err)
 	}
 
 	return nil
@@ -136,7 +138,7 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 
 	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to get database: %w", err)
+		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
 
 	table, err := db.GetTable(tableName)
@@ -144,17 +146,17 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 		// Table doesn't exist, try to create it
 		errMsg := strings.ToLower(err.Error())
 		if !strings.Contains(errMsg, "not found") && !strings.Contains(errMsg, "doesn't exist") {
-			return nil, fmt.Errorf("Failed to get table %s: %w", tableName, err)
+			return nil, fmt.Errorf("failed to get table %s: %w", tableName, err)
 		}
 
 		// Create metadata table
 		if createErr := e.CreateMetadataStore(ctx, tenantID); createErr != nil {
-			return nil, fmt.Errorf("Failed to create metadata table: %w", createErr)
+			return nil, fmt.Errorf("failed to create metadata table: %w", createErr)
 		}
 
 		table, err = db.GetTable(tableName)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to get table after creation: %w", err)
+			return nil, fmt.Errorf("failed to get table after creation: %w", err)
 		}
 	}
 
@@ -194,7 +196,7 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 	// Insert metadata
 	_, err = table.Insert(insertMetadata)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to insert metadata: %w", err)
+		return nil, fmt.Errorf("failed to insert metadata: %w", err)
 	}
 
 	common.Info("InfinityConnection.InsertMetadata result", zap.String("tableName", tableName), zap.Int("metaCount", len(metadata)))

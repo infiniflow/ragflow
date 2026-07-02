@@ -826,6 +826,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			s.markRunFailed(ctx, runID, "decode: "+err.Error())
 			return nil, err
 		}
+		// Close MCP tool adapters and any other closeable resources
+		// held by the canvas after execution completes. Mirrors
+		// Python's finally: canvas.close() in canvas_service.py.
+		defer c.Close()
 
 		// Pre-populate Begin node outputs from DSL defaults so
 		// template refs like {{begin@customer_review}} resolve
