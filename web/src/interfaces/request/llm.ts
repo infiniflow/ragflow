@@ -108,6 +108,13 @@ export interface IUpdateProviderInstanceRequestBody {
   base_url?: string;
   region?: string;
   model_info?: IModelInfo[];
+  verify?: boolean;
+  /**
+   * Provider-specific extra fields passed through verbatim from the
+   * dynamic form (e.g. MiniMax `group_id`). Not every provider has
+   * these, so they are typed loosely via an index signature.
+   */
+  [key: string]: unknown;
 }
 
 export interface ISetDefaultModelRequestBody {

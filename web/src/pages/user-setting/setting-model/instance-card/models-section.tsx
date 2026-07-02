@@ -52,11 +52,7 @@ import { AddCustomModelDialog } from './add-custom-model-dialog';
 import { mapModelKey, sortModelTypes } from './available-models';
 import { useCustomModelFields } from './use-custom-model-fields';
 
-type VerifyState =
-  | { status: 'idle' }
-  | { status: 'loading'; modelName: string }
-  | { status: 'success'; modelName: string }
-  | { status: 'error'; modelName: string };
+type VerifyStatus = 'idle' | 'loading' | 'success' | 'error';
 
 interface ModelsSectionProps {
   providerName: string;
@@ -92,6 +88,16 @@ interface ModelsSectionProps {
    * to false when the dialog closes.
    */
   onBlurSuppressChange?: (suppressed: boolean) => void;
+  /**
+   * Notifies the host whenever the per-instance model list changes.
+   * The list is delivered already converted to the `IModelInfo[]`
+   * shape expected by the update / add-provider-instance endpoints,
+   * so the host can forward it verbatim in its auto-save payload.
+   * Fires once on mount with `[]` (initial empty state) and again
+   * whenever the per-instance fetch resolves or an add/remove mutation
+   * settles and the cache invalidates.
+   */
+  onInstanceModelsChange?: (modelInfo: IModelInfo[]) => void;
 }
 
 /**
@@ -120,6 +126,7 @@ export function ModelsSection({
   hideIfEmpty = false,
   getFormValues,
   onBlurSuppressChange,
+  onInstanceModelsChange,
 }: ModelsSectionProps) {
   const { t } = useTranslation();
   const { t: tSetting } = useTranslate('setting');
@@ -152,7 +159,7 @@ export function ModelsSection({
   const [editingModel, setEditingModel] = useState<IProviderModelItem | null>(
     null,
   );
-  const [verify, setVerify] = useState<VerifyState>({ status: 'idle' });
+  const [verify, setVerify] = useState<Record<string, VerifyStatus>>({});
   // True only while the user is actively waiting on a click of the
   // "List Models" button. Kept independent from the mutation's own
   // `isPending` flag because the same mutation is also used by the
@@ -202,6 +209,32 @@ export function ModelsSection({
     if (instanceModels) {
       setHasFetched(true);
     }
+  }, [instanceModels]);
+
+  // Seed the per-model verify status from the backend's persisted
+  // `verify` flag on each instance model. `true` → success, `false`
+  // → error, `undefined` → not verified yet. Local user-triggered
+  // verifications (already present in `verify` state) are preserved:
+  // we only fill in models the user has not yet acted on in this
+  // session, so a fresh 'success' from `handleVerify` is not clobbered
+  // by a stale backend value after cache invalidation.
+  useEffect(() => {
+    if (!instanceModels || instanceModels.length === 0) return;
+    setVerify((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const im of instanceModels) {
+        if (im.name in next) continue;
+        if (im.verify === true) {
+          next[im.name] = 'success';
+          changed = true;
+        } else if (im.verify === false) {
+          next[im.name] = 'error';
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   }, [instanceModels]);
 
   // Auto-fetch the provider's available-models catalog when this section
@@ -260,6 +293,16 @@ export function ModelsSection({
     return Array.from(byName.values());
   }, [instanceItems, catalog]);
 
+  // Push the latest per-instance model list up to the host so its
+  // auto-save (draft watch-effect or saved-instance blur handler) can
+  // include `model_info` in the payload. The host caches the value in
+  // a ref, so it always reads the freshest list when its own debounce
+  // / blur fires — even after add/remove mutations that invalidate
+  // `useFetchInstanceModels`.
+  useEffect(() => {
+    onInstanceModelsChange?.(toModelInfo(instanceItems));
+  }, [instanceItems, onInstanceModelsChange]);
+
   // Manual "List models" handler — still hits the upstream catalog
   // endpoint. The result is merged into `catalog`; the displayed list
   // then becomes the union of catalog + instance models.
@@ -316,17 +359,27 @@ export function ModelsSection({
     if (hideActions || !instanceName || instanceName === '__draft__') {
       return;
     }
+    // Derive `is_tools` from the features switch group in the dialog
+    // (same key list as `handleEditSubmit` / `toModelInfo`). Forwarded
+    // via `extra` so the backend can persist the Tool-call flag on the
+    // freshly-added custom model.
+    const isTools =
+      Array.isArray(item.features) &&
+      item.features.some((f) =>
+        ['is_tools', 'tool_call', 'tools', 'function_call'].includes(f),
+      );
     await addInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
       model_name: item.name,
       model_type: item.model_types ?? [],
       max_tokens: item.max_tokens ?? 0,
+      extra: { is_tools: isTools },
     });
   };
 
   const handleVerify = async (model: IProviderModelItem) => {
-    setVerify({ status: 'loading', modelName: model.name });
+    setVerify((prev) => ({ ...prev, [model.name]: 'loading' }));
     try {
       const { apiKey, baseUrl } = resolveCreds();
       const ret = await verifyProviderConnection({
@@ -341,22 +394,32 @@ export function ModelsSection({
           },
         ],
       });
-      setVerify({
-        status: ret.code === 0 ? 'success' : 'error',
-        modelName: model.name,
-      });
+      setVerify((prev) => ({
+        ...prev,
+        [model.name]: ret.code === 0 ? 'success' : 'error',
+      }));
     } catch {
-      setVerify({ status: 'error', modelName: model.name });
+      setVerify((prev) => ({ ...prev, [model.name]: 'error' }));
     }
   };
 
   const handleAddModel = async (model: IProviderModelItem) => {
+    // Derive `is_tools` from the model's features (same key list used
+    // by `handleAddCustom` / `handleEditSubmit` / `toModelInfo`) so the
+    // Tool-call flag survives the round-trip when a user attaches an
+    // existing catalog model via the +/- button.
+    const isTools =
+      Array.isArray(model.features) &&
+      model.features.some((f) =>
+        ['is_tools', 'tool_call', 'tools', 'function_call'].includes(f),
+      );
     await addInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
       model_name: model.name,
       model_type: model.model_types ?? [],
       max_tokens: model.max_tokens ?? 0,
+      extra: { is_tools: isTools },
     });
   };
 
@@ -379,13 +442,14 @@ export function ModelsSection({
         model_type: m.model_types ?? [],
         max_tokens: m.max_tokens ?? 0,
       };
-      if (m.features && m.features.length) {
-        info.extra = {
-          is_tools: m.features.some((f) =>
-            ['tool_call', 'tools', 'function_call'].includes(f),
-          ),
-        };
-      }
+      // Feature-key list kept in sync with `handleAddCustom`,
+      // `handleAddModel`, and `handleEditSubmit`.
+      const isTools =
+        Array.isArray(m.features) &&
+        m.features.some((f) =>
+          ['is_tools', 'tool_call', 'tools', 'function_call'].includes(f),
+        );
+      info.extra = { is_tools: isTools };
       return info;
     });
 
@@ -624,10 +688,7 @@ export function ModelsSection({
           <ul>
             {filteredModels.map((model) => {
               const isAdded = addedSet.has(model.name);
-              const verifyStatus =
-                'modelName' in verify && verify.modelName === model.name
-                  ? verify.status
-                  : 'idle';
+              const verifyStatus: VerifyStatus = verify[model.name] ?? 'idle';
               return (
                 <li
                   key={model.name}

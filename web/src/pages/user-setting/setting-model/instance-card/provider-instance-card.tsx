@@ -15,7 +15,11 @@
  */
 
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import { DynamicForm, DynamicFormRef } from '@/components/dynamic-form';
+import {
+  DynamicForm,
+  DynamicFormRef,
+  FormFieldType,
+} from '@/components/dynamic-form';
 import { Button } from '@/components/ui/button';
 import {
   Collapsible,
@@ -33,6 +37,10 @@ import {
   useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
 import { IProviderInstance } from '@/interfaces/database/llm';
+import {
+  IModelInfo,
+  IUpdateProviderInstanceRequestBody,
+} from '@/interfaces/request/llm';
 import { ListChevronsDownUp, ListChevronsUpDown, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -142,6 +150,12 @@ function GenericProviderInstanceCard({
   // Guards against concurrent auto-save calls: while one save is in
   // flight, additional form changes shouldn't trigger another `onSaved`.
   const savingRef = useRef(false);
+  // Latest per-instance model list (already converted to the
+  // `IModelInfo[]` shape expected by the save endpoints). Populated by
+  // `ModelsSection` via `onInstanceModelsChange`. Read by both the
+  // draft watch-effect and the saved-instance blur handler when
+  // assembling the auto-save payload.
+  const modelInfoRef = useRef<IModelInfo[]>([]);
 
   useEffect(() => {
     if (isDraft) {
@@ -201,10 +215,21 @@ function GenericProviderInstanceCard({
         savingRef.current = true;
         try {
           const values = formRef.current?.getValues?.() ?? {};
-          await onSavedRef.current({
+          const payload: Record<string, any> = {
             ...values,
             instance_name: draftNameRef.current.trim(),
-          });
+          };
+          // Forward the latest per-instance model list as `model_info`
+          // when the user has attached models to the draft. The list
+          // is normally empty for drafts (the backend has nothing yet),
+          // but it can be populated once ModelsSection has fetched /
+          // received data — we only set the key when non-empty so an
+          // absent value is preserved as `undefined` rather than
+          // forcing an empty-array clear on the server.
+          if (modelInfoRef.current.length > 0) {
+            payload.model_info = modelInfoRef.current;
+          }
+          await onSavedRef.current(payload);
         } finally {
           savingRef.current = false;
         }
@@ -261,33 +286,6 @@ function GenericProviderInstanceCard({
     refetchInstanceDetails,
   ]);
 
-  // Build the form fields from the provider config. In draft mode we don't
-  // pass any initial values; otherwise we pre-fill the form with the
-  // instance's stored fields, preferring the full `showProviderInstance`
-  // payload (which includes api_key/base_url) over the list-level row.
-  const initialValues = useMemo(() => {
-    if (isDraft) {
-      return { instance_name: '' };
-    }
-    const merged: IProviderInstance = {
-      ...instance,
-      ...(instanceDetails ?? ({} as IProviderInstance)),
-    };
-    const values: Record<string, any> = {
-      instance_name: merged.instance_name,
-    };
-    if (merged.api_key) values.api_key = merged.api_key;
-    if (merged.base_url) {
-      values.base_url = merged.base_url;
-      values.api_base = merged.base_url;
-    }
-    // The /providers/<p>/instances/<i> endpoint also returns `region`
-    // for providers where it applies; surface it so the form / region
-    // submit logic can echo it back.
-    if ((merged as any).region) values.region = (merged as any).region;
-    return values;
-  }, [instance, instanceDetails, isDraft]);
-
   const buildBaseUrlOptions = useCallback(
     (urlObj?: Record<string, string | undefined>) => {
       if (!urlObj) return undefined;
@@ -327,6 +325,53 @@ function GenericProviderInstanceCard({
     [buildBaseUrlOptions, currentProvider],
   );
 
+  // Build the form fields from the provider config. In draft mode we don't
+  // pass any initial values; otherwise we pre-fill the form with the
+  // instance's stored fields, preferring the full `showProviderInstance`
+  // payload (which includes api_key/base_url) over the list-level row.
+  //
+  // When `base_url` is rendered as a dropdown (i.e., `baseUrlOptions`
+  // is populated), pre-select the option whose region tag is `default`.
+  // This covers both drafts (which have no stored base_url) and any
+  // saved instance that happens to have an empty base_url.
+  const initialValues = useMemo(() => {
+    const defaultBaseUrl = baseUrlOptions?.find(
+      (opt) => (opt as any).regionKey === 'default',
+    )?.value;
+
+    if (isDraft) {
+      const values: Record<string, any> = { instance_name: '' };
+      if (defaultBaseUrl) {
+        values.base_url = defaultBaseUrl;
+        values.api_base = defaultBaseUrl;
+      }
+      return values;
+    }
+    const merged: IProviderInstance = {
+      ...instance,
+      ...(instanceDetails ?? ({} as IProviderInstance)),
+    };
+    const values: Record<string, any> = {
+      instance_name: merged.instance_name,
+    };
+    if (merged.api_key) values.api_key = merged.api_key;
+    if (merged.base_url) {
+      values.base_url = merged.base_url;
+      values.api_base = merged.base_url;
+    } else if (defaultBaseUrl) {
+      values.base_url = defaultBaseUrl;
+      values.api_base = defaultBaseUrl;
+    }
+    // The /providers/<p>/instances/<i> endpoint also returns `region`
+    // for providers where it applies; surface it so the form / region
+    // submit logic can echo it back.
+    if ((merged as any).region) values.region = (merged as any).region;
+    // Provider-specific fields (e.g. MiniMax `group_id`) are echoed back
+    // so the form pre-fills them and the auto-save baseline matches.
+    if ((merged as any).group_id) values.group_id = (merged as any).group_id;
+    return values;
+  }, [instance, instanceDetails, isDraft, baseUrlOptions]);
+
   const { fields, defaultValues } = useProviderFields({
     llmFactory: providerName,
     editMode: !isDraft,
@@ -349,6 +394,30 @@ function GenericProviderInstanceCard({
     void _ignored;
     return rest;
   }, [defaultValues]);
+
+  // Field types whose value is committed via a click/select (not via
+  // input blur). The card's `onBlurCapture` auto-save fires before the
+  // dropdown click handler commits the new value, and the popover
+  // content is rendered in a Radix portal outside the card's blur
+  // container, so blur-based saves are unreliable for these. We watch
+  // the form values directly and trigger the same auto-save on value
+  // change.
+  const DROPDOWN_FIELD_TYPES = new Set<FormFieldType>([
+    FormFieldType.Select,
+    FormFieldType.MultiSelect,
+    FormFieldType.Segmented,
+    // `Custom` is the form-field type used by `inputSelect` in this
+    // codebase (see use-provider-fields). Every `Custom` field rendered
+    // inside the provider instance card is an `InputSelect` dropdown.
+    FormFieldType.Custom,
+  ]);
+  const dropdownFieldNames = useMemo(
+    () =>
+      formFields
+        .filter((f) => DROPDOWN_FIELD_TYPES.has(f.type))
+        .map((f) => f.name),
+    [formFields],
+  );
 
   // When the lazy `showProviderInstance` fetch resolves (or refetches
   // after the user collapses + re-expands), `formDefaultValues` will
@@ -424,6 +493,103 @@ function GenericProviderInstanceCard({
   // `onBlurSuppressChange`.
   const blurSuppressRef = useRef(false);
   const lastSavedPayloadRef = useRef<string>('');
+  // Debounce timer shared by every auto-save trigger (blur, dropdown
+  // change, etc). Coalesces rapid successive edits into a single
+  // network round-trip. Cleared on unmount.
+  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const AUTO_SAVE_DEBOUNCE_MS = 500;
+
+  // Shared auto-save routine. Triggered by:
+  //   - `handleFieldsBlur` (focus leaves a non-dropdown field), and
+  //   - the dropdown value-change watcher (a dropdown field's value
+  //     commits via click, not blur — and the popover is rendered in a
+  //     Radix portal outside the card's blur container, so blur-based
+  //     saves are unreliable for dropdowns).
+  const performAutoSave = useCallback(async () => {
+    if (isDraft) return;
+    if (blurSavingRef.current) return;
+    if (blurSuppressRef.current) return;
+
+    const isValid = await formRef.current?.trigger();
+    if (!isValid) return;
+
+    const values = formRef.current?.getValues?.() ?? {};
+    const instanceId = instanceDetails?.id || instance.id;
+    // Peel off the fields that already have dedicated payload slots (or
+    // are never persisted directly). Everything left over is a
+    // provider-specific field (e.g. MiniMax `group_id`) that must be
+    // forwarded verbatim — otherwise editing it never reaches the
+    // backend and, because it's absent from the signature below, never
+    // even triggers a save.
+    const {
+      api_key: _apiKey,
+      base_url: _baseUrl,
+      api_base: _apiBase,
+      region: _region,
+      instance_name: _instanceName,
+      model_info: _modelInfo,
+      ...extraFields
+    } = values as Record<string, any>;
+    void _apiKey;
+    void _baseUrl;
+    void _apiBase;
+    void _region;
+    void _instanceName;
+    void _modelInfo;
+    const payload: IUpdateProviderInstanceRequestBody = {
+      provider_name: providerName,
+      instance_name: instance.instance_name,
+      id: instanceId,
+      api_key: values.api_key,
+      base_url: values.base_url ?? values.api_base,
+      region: values.region || 'default',
+      model_info: [],
+      verify: false,
+      ...extraFields,
+    };
+    // Pull the latest model list from ModelsSection (via the ref it
+    // updates). Only attach when non-empty so we don't accidentally
+    // wipe the persisted model set with an empty array.
+    if (modelInfoRef.current.length > 0) {
+      payload.model_info = modelInfoRef.current;
+    }
+    // Skip if nothing actually changed since the last save (or initial
+    // mount): prevents a no-op PUT on every focus shift.
+    const signature = JSON.stringify(payload);
+    if (signature === lastSavedPayloadRef.current) return;
+
+    blurSavingRef.current = true;
+    try {
+      const ret = await updateProviderInstance(payload);
+      if (ret?.code === 0) {
+        lastSavedPayloadRef.current = signature;
+      }
+    } finally {
+      blurSavingRef.current = false;
+    }
+  }, [
+    isDraft,
+    providerName,
+    instance.instance_name,
+    instance.id,
+    instanceDetails?.id,
+    updateProviderInstance,
+  ]);
+
+  // Debounced auto-save: coalesces rapid edits (blur cascade,
+  // successive dropdown changes, typing in filterable dropdowns) into
+  // a single delayed `performAutoSave` call.
+  const scheduleAutoSave = useCallback(() => {
+    if (isDraft) return;
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      autoSaveTimeoutRef.current = null;
+      void performAutoSave();
+    }, AUTO_SAVE_DEBOUNCE_MS);
+  }, [isDraft, performAutoSave]);
+
   const handleFieldsBlur = useCallback(
     async (e: React.FocusEvent<HTMLDivElement>) => {
       if (isDraft) return;
@@ -434,47 +600,34 @@ function GenericProviderInstanceCard({
       ) {
         return;
       }
-      if (blurSavingRef.current) return;
-      if (blurSuppressRef.current) return;
-
-      const isValid = await formRef.current?.trigger();
-      if (!isValid) return;
-
-      const values = formRef.current?.getValues?.() ?? {};
-      const instanceId = instanceDetails?.id || instance.id;
-      const payload = {
-        provider_name: providerName,
-        instance_name: instance.instance_name,
-        id: instanceId,
-        api_key: values.api_key,
-        base_url: values.base_url ?? values.api_base,
-        region: values.region,
-        model_info: values.model_info,
-      };
-      // Skip if nothing actually changed since the last save (or initial
-      // mount): prevents a no-op PUT on every focus shift.
-      const signature = JSON.stringify(payload);
-      if (signature === lastSavedPayloadRef.current) return;
-
-      blurSavingRef.current = true;
-      try {
-        const ret = await updateProviderInstance(payload);
-        if (ret?.code === 0) {
-          lastSavedPayloadRef.current = signature;
-        }
-      } finally {
-        blurSavingRef.current = false;
-      }
+      scheduleAutoSave();
     },
-    [
-      isDraft,
-      providerName,
-      instance.instance_name,
-      instance.id,
-      instanceDetails?.id,
-      updateProviderInstance,
-    ],
+    [isDraft, scheduleAutoSave],
   );
+
+  // Ref so the dropdown watcher effect can invoke the latest
+  // `performAutoSave` without re-subscribing on every render (the parent
+  // passes a fresh `onBlurCapture` arrow each render, and `performAutoSave`
+  // changes whenever its deps change — e.g. when `instanceDetails` loads).
+  const performAutoSaveRef = useRef(performAutoSave);
+  useEffect(() => {
+    performAutoSaveRef.current = performAutoSave;
+  });
+  const scheduleAutoSaveRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    scheduleAutoSaveRef.current = scheduleAutoSave;
+  });
+
+  // Clear any pending debounced save when the card unmounts so we don't
+  // fire a stale request after teardown.
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+        autoSaveTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Seed the "last saved" signature once initial values are loaded so the
   // first blur after mount doesn't trigger an unnecessary save.
@@ -489,7 +642,13 @@ function GenericProviderInstanceCard({
       api_key: initialValues.api_key,
       base_url: initialValues.base_url ?? initialValues.api_base,
       region: initialValues.region,
-      model_info: undefined,
+      model_info: [] as IModelInfo[],
+      // Mirror the provider-specific fields that performAutoSave now
+      // spreads into its payload so the first blur after mount doesn't
+      // see a signature diff and fire a redundant save.
+      ...(initialValues.group_id !== undefined
+        ? { group_id: initialValues.group_id }
+        : {}),
     };
     lastSavedPayloadRef.current = JSON.stringify(baseline);
   }, [
@@ -500,6 +659,45 @@ function GenericProviderInstanceCard({
     instanceDetails?.id,
     initialValues,
   ]);
+
+  // ── Dropdown value-change auto-save (saved mode only) ───────────
+  // Watch every dropdown field's value directly and schedule an
+  // auto-save on change. A dropdown field's value commits via click,
+  // not blur — and the popover is rendered in a Radix portal outside
+  // the card's blur container, so blur-based saves are unreliable
+  // for dropdowns. The shared debounce (`scheduleAutoSave`,
+  // AUTO_SAVE_DEBOUNCE_MS) coalesces rapid successive changes with
+  // any blur-triggered save. Skipped in draft mode — draft mode has
+  // its own 200ms-debounced watch subscription that auto-saves.
+  // Also skipped until `instanceDetails` loads, so the initial form
+  // reset above doesn't fire a no-op save with the just-loaded values.
+  useEffect(() => {
+    if (isDraft) return;
+    if (dropdownFieldNames.length === 0) return;
+    if (!instanceDetails) return;
+    const ref = formRef.current;
+    if (!ref || typeof ref.watch !== 'function') return;
+
+    let cancelled = false;
+
+    const unsubscribers = dropdownFieldNames.map((name) =>
+      ref.watch(name, () => {
+        if (cancelled) return;
+        scheduleAutoSaveRef.current();
+      }),
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribers.forEach((unsub) => {
+        try {
+          unsub?.();
+        } catch {
+          // ignore cleanup errors
+        }
+      });
+    };
+  }, [isDraft, dropdownFieldNames, instanceDetails]);
 
   // Delete handler: for saved instances calls useDeleteProviderInstance;
   // for drafts calls onDelete (which maps to onCancel in the parent).
@@ -617,6 +815,9 @@ function GenericProviderInstanceCard({
                     onBlurSuppressChange={(s) => {
                       blurSuppressRef.current = s;
                     }}
+                    onInstanceModelsChange={(info) => {
+                      modelInfoRef.current = info;
+                    }}
                   />
                 </div>
               )}
@@ -719,6 +920,9 @@ function GenericProviderInstanceCard({
                 hideActions={false}
                 hideIfEmpty={false}
                 getFormValues={() => formRef.current?.getValues?.() ?? {}}
+                onInstanceModelsChange={(info) => {
+                  modelInfoRef.current = info;
+                }}
               />
             </div>
           </fieldset>
