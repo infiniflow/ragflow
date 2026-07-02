@@ -31,7 +31,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/ingestion/parser"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"regexp"

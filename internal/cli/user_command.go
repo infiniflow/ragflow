@@ -29,8 +29,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"ragflow/internal/common"
-	"ragflow/internal/ingestion"
-	"ragflow/internal/ingestion/parser"
+	"ragflow/internal/parser/chunk"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 	"strings"
 	"time"
@@ -3787,19 +3787,16 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 		explain = false
 	}
 
-	engine := ingestion.NewChunkEngine()
-	plan, err := engine.Compile(string(dsl))
-	if err != nil {
-		return nil, fmt.Errorf("compile failed: %w", err)
-	}
-
+	// Plan AD-6: drive the legacy JSON-DSL path through
+	// chunk.RunDSL / chunk.ExplainDSL rather than instantiating
+	// chunk.NewChunkEngine() directly. The DSL bridge is the one
+	// allowed entry point for user-supplied DSL (this CLI command
+	// is the only caller that reads a DSL file at run time).
 	if explain {
-
-		explanation, err := engine.Explain(plan)
+		explanation, err := chunk.ExplainDSL(string(dsl))
 		if err != nil {
 			return nil, fmt.Errorf("explain error: %w", err)
 		}
-
 		result.Message = explanation
 	} else {
 		fileToChunking, err := os.ReadFile(filename)
@@ -3807,7 +3804,7 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 			return nil, fmt.Errorf("failed to read file: %w", err)
 		}
 
-		chunkContext, err := engine.Execute(plan, string(fileToChunking))
+		chunkContext, err := chunk.RunDSL(string(dsl), string(fileToChunking))
 		if err != nil {
 			return nil, fmt.Errorf("chunking error: %w", err)
 		}

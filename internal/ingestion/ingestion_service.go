@@ -23,6 +23,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/storage"
 	"sync"
 	"time"
 
@@ -521,67 +523,145 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 	task := taskCtx.Task
 	common.Info(fmt.Sprintf("Starting task %s", task.ID))
 
-	latestLog, err := e.ingestionTaskLogDAO.LatestLogByTaskID(task.ID)
-	if err != nil {
-		latestLog = &entity.IngestionTaskLog{
-			ID:     0,
-			TaskID: task.ID,
-			Checkpoint: entity.JSONMap{
-				"current_step": 1,
-				"total_step":   5,
-			},
-		}
-		err = e.ingestionTaskLogDAO.Create(latestLog)
-		if err != nil {
-			common.Error(fmt.Sprintf("Failed to create task log for task %s", task.ID), err)
-			return
-		}
-	}
+	// Phase 3 (plan §4 task 4): replace the placeholder sleep
+	// loop with a real pipeline.Run. The DSL is taken from the
+	// task's Schema field; on missing/empty schema we fall
+	// back to a sensible 5-stage default that matches the
+	// production ingestion flow (File → Parser → Chunker →
+	// Tokenizer → Extractor).
+	dslBytes := defaultPipelineDSL(task)
+	sink := pipeline.NewTaskLogSink()
+	stg := storage.GetStorageFactory().GetStorage()
 
-	var checkpointMap map[string]interface{}
-	checkpointMap = latestLog.Checkpoint
-	currentStep, ok := common.GetInt(checkpointMap["current_step"])
-	if !ok {
-		common.Fatal(fmt.Sprintf("Failed to get current step from task log for task %s", task.ID))
+	pl, err := pipeline.NewPipelineFromDSL(dslBytes, task.ID, sink, stg, e.ingestionTaskLogDAO)
+	if err != nil {
+		common.Error(fmt.Sprintf("Failed to compile pipeline for task %s", task.ID), err)
+		e.failTask(taskCtx, err)
 		return
 	}
-	totalStep, ok := common.GetInt(checkpointMap["total_step"])
-	if !ok {
-		common.Fatal(fmt.Sprintf("Failed to get current step from task log for task %s", task.ID))
+
+	// Resume decision (plan §2 AD-5c): read the latest log
+	// row, find the last materialized boundary, and skip
+	// stages before it. RestoreFromCheckpoint returns StartAt
+	// >= 0 (0 = full re-run).
+	res, err := pl.RestoreFromCheckpoint(task.ID)
+	if err != nil {
+		common.Error(fmt.Sprintf("Failed to restore checkpoint for task %s", task.ID), err)
+		e.failTask(taskCtx, err)
 		return
 	}
-	for i := currentStep; i < totalStep; i++ {
-		select {
-		case <-ctx.Done():
-			// Task canceled
-			common.Info(fmt.Sprintf("Task %s stopped", task.ID))
-			return
-		case <-time.After(5000 * time.Millisecond):
-			common.Info(fmt.Sprintf("Task %s is running step %d", task.ID, i))
-			checkpointMap["current_step"] = i + 1
-			latestLog.Checkpoint = checkpointMap
-			latestLog.ID++
-			err = latestLog.UpdateCreateDateAndTime()
-			if err != nil {
-				common.Error(fmt.Sprintf("Failed to update date and time of task log for task %s", task.ID), err)
-				return
-			}
+	common.Info(fmt.Sprintf("Task %s resuming at stage %d (materialized=%q)", task.ID, res.StartAt, res.MaterializedFile))
 
-			err = e.ingestionTaskLogDAO.Create(latestLog)
-			if err != nil {
-				common.Error(fmt.Sprintf("Failed to create task log for task %s", task.ID), err)
-				return
-			}
+	// Phase 4 deferred-3: drive the pipeline through the canvas
+	// runner (p.Run) instead of the legacy direct-walk
+	// (Pipeline.Run). The legacy walker remains in place as a
+	// fallback for code paths that do not go through canvas;
+	// this site is the canonical entry point for production
+	// task execution.
+	_, runErr := pl.Run(ctx, res.Inputs, res.StartAt)
+	if runErr != nil {
+		if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
+			common.Info(fmt.Sprintf("Task %s cancelled: %v", task.ID, runErr))
+			// STOPPED is a terminal status — the task will not be
+			// re-attempted by the consumer. Ack the message so the
+			// queue does not redeliver it (Nack here would race
+			// with the STOPPED write and let another consumer pick
+			// up a "stopped" task).
+			_ = e.ingestionTaskDAO.UpdateStatus(task.ID, common.STOPPED)
+			_ = e.ackOrNack(taskCtx, true)
+			return
 		}
+		common.Error(fmt.Sprintf("Task %s pipeline failed", task.ID), runErr)
+		e.failTask(taskCtx, runErr)
+		return
 	}
 
-	err = e.ingestionTaskDAO.UpdateStatus(task.ID, common.COMPLETED)
-	if err != nil {
+	if err = e.ingestionTaskDAO.UpdateStatus(task.ID, common.COMPLETED); err != nil {
 		common.Error(fmt.Sprintf("Task %s update status failed", task.ID), err)
+		_ = e.ackOrNack(taskCtx, false)
 		return
 	}
 
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
+	_ = e.ackOrNack(taskCtx, true)
+}
+
+// defaultPipelineDSL returns the canonical 5-stage ingestion
+// DSL (File → Parser → TokenChunker → Tokenizer → Extractor).
+// If the task carries a custom schema with a "pipeline" key
+// (a []byte / json.RawMessage), it is used verbatim. Otherwise
+// the default is returned.
+//
+// The default is intentionally hard-coded here (not driven by
+// plan §1 "DSL schema" because that work is deferred to a §11
+// follow-up) — it gives executeTask a working pipeline today
+// while the schema-migration tool is being built.
+func defaultPipelineDSL(task *entity.IngestionTask) []byte {
+	// Schema may carry a `pipeline` key. If it does, use it
+	// verbatim. This is the test-injection point: an e2e
+	// test that wants a stub-driven pipeline stores its DSL
+	// bytes in the schema and executeTask honours them.
+	if task != nil && task.Schema != nil {
+		if raw, ok := task.Schema["pipeline"]; ok {
+			switch v := raw.(type) {
+			case []byte:
+				if len(v) > 0 {
+					return v
+				}
+			case string:
+				if v != "" {
+					return []byte(v)
+				}
+			}
+		}
+	}
+	return []byte(`{
+  "version": "1",
+  "name": "default-ingestion",
+  "description": "Default 5-stage ingestion flow: File -> Parser -> TokenChunker -> Tokenizer -> Extractor",
+  "stage_count": 5,
+  "stages": [
+    {"type": "File",          "params": {}},
+    {"type": "Parser",        "params": {}},
+    {"type": "TokenChunker",  "params": {}},
+    {"type": "Tokenizer",     "params": {}},
+    {"type": "Extractor",     "params": {}}
+  ]
+}`)
+}
+
+// failTask updates the task to FAILED and Acks the message
+// (terminal-failure path: even on error, the message must be
+// removed from the queue, otherwise the broker redelivers it
+// indefinitely). This fixes the pre-existing bug that the
+// placeholder sleep loop never called Ack at all (plan §8 Q3).
+func (e *Ingestor) failTask(taskCtx *TaskContext, runErr error) {
+	if err := e.ingestionTaskDAO.UpdateStatus(taskCtx.Task.ID, common.FAILED); err != nil {
+		common.Error(fmt.Sprintf("Task %s update status (failed) error", taskCtx.Task.ID), err)
+	}
+	_ = e.ackOrNack(taskCtx, true)
+	common.Error(fmt.Sprintf("Task %s failed: %v", taskCtx.Task.ID, runErr), runErr)
+}
+
+// ackOrNack centralises the post-execution NATS message
+// disposition. ack=true removes the message from the queue
+// (success OR terminal-failure); ack=false re-queues (rare;
+// we use it only on context cancellation to let another
+// worker pick it up).
+func (e *Ingestor) ackOrNack(taskCtx *TaskContext, ack bool) error {
+	if taskCtx == nil || taskCtx.TaskHandle == nil {
+		return nil
+	}
+	var err error
+	if ack {
+		err = taskCtx.TaskHandle.Ack()
+	} else {
+		err = taskCtx.TaskHandle.Nack()
+	}
+	if err != nil {
+		common.Error(fmt.Sprintf("Task %s ack/nack error", taskCtx.Task.ID), err)
+	}
+	return err
 }
 
 func (e *Ingestor) executeTasklet(taskCtx *TaskContext) {

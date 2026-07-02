@@ -34,6 +34,7 @@ const (
 	FileTypeXLSX     FileType = "xlsx"
 	FileTypeHTML     FileType = "html"
 	FileTypeMarkdown FileType = "md"
+	FileTypeTXT      FileType = "txt"
 	FileTypeVISUAL   FileType = "visual"
 	FileTypeAURAL    FileType = "aural"
 	FileTypeFOLDER   FileType = "folder"
@@ -88,6 +89,8 @@ func GetFileType(filename string) FileType {
 		return FileTypeHTML
 	case "md":
 		return FileTypeMarkdown
+	case "txt":
+		return FileTypeTXT
 	default:
 		return FileTypeOTHER
 	}

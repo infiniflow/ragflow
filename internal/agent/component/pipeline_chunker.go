@@ -73,8 +73,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/agent/runtime"
-	"ragflow/internal/ingestion"
-	"ragflow/internal/ingestion/chunk"
+	"ragflow/internal/parser/chunk"
 )
 
 const componentNamePipelineChunker = "PipelineChunker"
@@ -340,14 +339,19 @@ func (c *PipelineChunkerComponent) Invoke(ctx context.Context, inputs map[string
 	}
 
 	strategy := parserToSplitStrategy(c.param.ParserID)
-	dsl := buildPipelineChunkerDSL(strategy)
-	plan, err := ingestion.NewChunkEngine().Compile(dsl)
+	// Plan AD-6: the legacy chunk.NewChunkEngine().Compile/Execute +
+	// JSON-DSL path was removed from this caller in favour of the
+	// typed chunk.Run entry point — same operator sequence
+	// (preprocess normalize_newlines, split <strategy>, postprocess
+	// filter min_length=1), no DSL round-trip, no second stage
+	// runtime (port-rag-flow-pipeline-to-go.md §6.2).
+	result, err := chunk.Run(text, chunk.PipelineOptions{
+		NormalizeNewlines: true,
+		SplitStrategy:     strategy,
+		FilterMinLength:   1,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("PipelineChunker: compile (strategy=%s): %w", strategy, err)
-	}
-	result, err := ingestion.NewChunkEngine().Execute(plan, text)
-	if err != nil {
-		return nil, fmt.Errorf("PipelineChunker: execute: %w", err)
+		return nil, fmt.Errorf("PipelineChunker: run (strategy=%s): %w", strategy, err)
 	}
 	return chunkerOutputs(result, c.param.ParserID), nil
 }
@@ -485,30 +489,21 @@ func chunkerOutputs(result *chunk.ChunkContext, parserID string) map[string]any 
 	}
 }
 
-// buildPipelineChunkerDSL returns the chunk pipeline DSL the Go
-// chunk engine consumes. Strategy is the split strategy
-// (sentence/paragraph/char) selected from the parser_id. We
-// deliberately do NOT pass `params.boundaries` here — the
-// chunk engine's split operators have strategy-appropriate
-// defaults (sentence: {。, ！, ？, \n}; paragraph: \n;
-// char: rune count), and overriding them with a single hard-
-// coded \n\n boundary would silence the per-strategy
-// behaviour we are porting. The DSL shape matches
-// ingestion.ChunkEngine.Compile (see internal/ingestion/
-// chunk_engine_test.go:minimalDSL for the reference shape).
-func buildPipelineChunkerDSL(strategy string) string {
-	if strategy == "" {
-		strategy = "paragraph"
-	}
-	return fmt.Sprintf(`{
-  "pipeline": [
-    {"operator": "preprocess", "normalize_newlines": true},
-    {"operator": "split", "strategy": %q},
-    {"operator": "postprocess", "filter": {"min_length": 1}}
-  ]
-}`, strategy)
-}
-
+// init registers PipelineChunker under CategoryShared (per plan
+// §4 Phase 0 task 4). It is callable from BOTH the agent canvas
+// (where it lives physically) AND the ingestion pipeline
+// (Phase 2.3). Metadata is derived from the Inputs()/Outputs()
+// methods on PipelineChunkerComponent — see those methods for the
+// human-readable per-key descriptions.
 func init() {
-	Register(componentNamePipelineChunker, NewPipelineChunkerComponent)
+	pc := &PipelineChunkerComponent{}
+	runtime.MustRegister(componentNamePipelineChunker, runtime.CategoryShared,
+		func(_ string, params map[string]any) (runtime.Component, error) {
+			return NewPipelineChunkerComponent(params)
+		},
+		runtime.Metadata{
+			Version: "1.0.0",
+			Inputs:  pc.Inputs(),
+			Outputs: pc.Outputs(),
+		})
 }
