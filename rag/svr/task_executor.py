@@ -84,7 +84,7 @@ from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, email, tag
 from rag.nlp import search, rag_tokenizer, add_positions
-from rag.raptor import (
+from rag.advanced_rag.knowlege_compile.raptor import (
     RAPTOR_TREE_BUILDER,
 )
 from common.token_utils import num_tokens_from_string, truncate
@@ -136,6 +136,8 @@ TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
     "graphrag": PipelineTaskType.GRAPH_RAG,
     "mindmap": PipelineTaskType.MINDMAP,
     "memory": PipelineTaskType.MEMORY,
+    "artifact": PipelineTaskType.ARTIFACT,
+    "skill": PipelineTaskType.SKILL,
 }
 
 UNACKED_ITERATOR = None
@@ -250,6 +252,13 @@ async def collect():
 
     task_type = msg.get("task_type", "")
     task["task_type"] = task_type
+    # Per-doc fan-out task types (today: doc-scoped raptor) carry their
+    # participating doc id list on the Redis message but not on the DB
+    # row. The KB-scoped branch above already does this for FAKE doc
+    # tasks; mirror here so ``ctx.doc_ids`` is populated for the
+    # per-doc path too.
+    if "doc_ids" in msg and not task.get("doc_ids"):
+        task["doc_ids"] = msg.get("doc_ids", []) or []
     if task_type[:8] == "dataflow":
         task["tenant_id"] = msg["tenant_id"]
         task["dataflow_id"] = msg["dataflow_id"]
@@ -1060,7 +1069,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
         """Run RAPTOR and append generated summary chunks for one doc id."""
         nonlocal tk_count, res
         logging.info("RAPTOR: using tree_builder=%s clustering_method=%s for doc %s", tree_builder, clustering_method, did)
-        from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor  # Lazy load, save around 8s
+        from rag.advanced_rag.knowlege_compile.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor  # Lazy load, save around 8s
 
         raptor = Raptor(
             raptor_config.get("max_cluster", 64),
@@ -1532,6 +1541,9 @@ async def do_handle_task(task):
         progress_callback(1, "place holder")
         pass
         return
+    elif task_type == "skill":
+        progress_callback(-1, "Skill generation requires the refactored task executor (TE_RUN_MODE=0).")
+        return
     else:
         # Standard chunking methods
         task["llm_id"] = doc_task_llm_id
@@ -1563,6 +1575,7 @@ async def do_handle_task(task):
         progress_message = "Embedding chunks ({:.2f}s)".format(timer() - start_ts)
         logging.info(progress_message)
         progress_callback(msg=progress_message)
+
         if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", False):
             toc_thread = asyncio.create_task(asyncio.to_thread(build_TOC, task, chunks, progress_callback))
 
@@ -1739,8 +1752,11 @@ async def handle_task():
     finally:
         if not task.get("dataflow_id", ""):
             referred_document_id = None
-            if task_type in ["graphrag", "raptor", "mindmap"]:
-                referred_document_id = task["doc_ids"][0]
+            if task_type in ["graphrag", "raptor", "mindmap", "artifact", "skill"]:
+                # KB-level fan-out tasks store the participating doc list in
+                # task["doc_ids"]; the first entry is used as a referent so
+                # the pipeline operation log has something to anchor to.
+                referred_document_id = (task.get("doc_ids") or [None])[0]
             ret = PipelineOperationLogService.record_pipeline_operation(
                 document_id=task["doc_id"], pipeline_id="", task_type=pipeline_task_type, task_id=task_id, referred_document_id=referred_document_id
             )
@@ -1871,7 +1887,6 @@ async def main():
           /____/
     """)
     logging.info(f"RAGFlow ingestion version: {get_ragflow_version()}")
-    logging.info(f"ENABLE_DRY_RUN_COMPARISON: {os.environ.get('ENABLE_DRY_RUN_COMPARISON', '0')}")
     show_configs()
     settings.init_settings()
     settings.check_and_install_torch()

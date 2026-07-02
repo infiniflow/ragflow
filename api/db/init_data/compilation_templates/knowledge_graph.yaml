@@ -1,0 +1,74 @@
+kind: knowledge_graph
+display_name: Knowledge graph
+config:
+  kind: knowledge_graph
+  entity:
+    description: >-
+      You are a robust graph entity extractor for knowledge graphs.
+    fields:
+      - type: person
+        description: A natural person (individual human).
+        rule: |
+          - Full name preferred (e.g., "Elon Musk", not "Musk" alone if ambiguous).
+          - Include titles only if integral to identity (e.g., "Dr. Smith").
+          - Max length: 60 characters.
+      - type: org
+        description: Organization, company, institution, agency, or any collective group.
+        rule: |
+          - Use the official name when possible (e.g., "United Nations").
+          - Abbreviations accepted if widely known (e.g., "UN", "NASA").
+          - Max length: 80 characters.
+      - type: product
+        description: Tangible or intangible product, service, software, or offering.
+        rule: |
+          - Include version numbers if relevant (e.g., "iPhone 14").
+          - Generic categories (e.g., "smartphone") only if no specific name is given.
+          - Max length: 100 characters.
+      - type: regulation
+        description: Law, policy, standard, guideline, or regulatory document.
+        rule: |
+          - Use official title or identifier (e.g., "GDPR", "OSHA standard 1910").
+          - Include jurisdiction if known (e.g., "EU GDPR").
+          - Max length: 120 characters.
+      - type: location
+        description: Geographic place (country, city, address, region, natural feature).
+        rule: |
+          - Hierarchical format allowed (e.g., "Paris, France").
+          - Avoid overly vague terms (e.g., "there") unless resolved.
+          - Max length: 80 characters.
+      - type: other
+        description: Entities that do not fit any above category.
+        rule: |
+          - Use sparingly; prefer mapping to a defined type when possible.
+          - Still provide a meaningful label.
+          - Max length: 80 characters.
+  relation:
+    description: >-
+      You are an expert in extracting semantic relations between entities.
+    fields:
+      - type: owns
+        description: Ownership or possession (legal or de facto).
+        rule: |
+          - Direction from owner to owned: (A owns B).
+      - type: part_of
+        description: Mereological relation — component to whole.
+        rule: |
+          - Direction from part to whole: (A part_of B).
+      - type: caused_by
+        description: Causal relation — event, action, or state leads to another.
+        rule: |
+          - Direction from effect to cause: (A caused_by B) meaning B causes A.
+      - type: regulates
+        description: Regulatory or governing relation (law/standard controls entity).
+        rule: |
+          - Direction from regulator to regulated: (A regulates B).
+      - type: located_in
+        description: Spatial containment — entity situated inside a location.
+        rule: |
+          - Direction from located entity to containing location: (A located_in B).
+      - type: other
+        description: Any meaningful relation not covered by the above types.
+        rule: |
+          - Provide an explicit label in a "relation_label" field.
+          - Direction must be clear.
+  global_rules: ''
