@@ -1708,6 +1708,7 @@ type SearchDatasetsRequest struct {
 	Keyword                *bool                  `json:"keyword,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+	ForceRefresh           bool                   `json:"force_refresh"`
 }
 
 // SearchDatasetsResponse is the response structure for dataset search results.
@@ -1980,7 +1981,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	// Apply meta_data_filter to get filtered doc_ids
 	docIDs := make([]string, len(req.DocIDs))
 	copy(docIDs, req.DocIDs)
-	if metadataFilter != nil {
+	if len(metadataFilter) > 0 {
 		metadataSvc := NewMetadataService()
 		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(datasetIDs)
 		if err != nil {

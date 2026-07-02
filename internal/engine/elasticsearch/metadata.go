@@ -136,7 +136,7 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 	// Execute bulk request
 	req := esapi.BulkRequest{
 		Body:    bytes.NewReader(buf.Bytes()),
-		Refresh: "false",
+		Refresh: "wait_for",
 	}
 
 	res, err := req.Do(ctx, e.client)
@@ -193,14 +193,14 @@ func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, 
 	}
 
 	// Build the document ID for update
-	docID = strings.ReplaceAll(docID, "'", "''")
+	docIDStr := strings.ReplaceAll(docID, "'", "''")
 	datasetIDStr := strings.ReplaceAll(datasetID, "'", "''")
 
 	// Build update body - merge meta_fields with existing
 	query := map[string]interface{}{
 		"bool": map[string]interface{}{
 			"must": []map[string]interface{}{
-				{"term": map[string]interface{}{"id": docID}},
+				{"term": map[string]interface{}{"id": docIDStr}},
 				{"term": map[string]interface{}{"kb_id": datasetIDStr}},
 			},
 		},
@@ -241,6 +241,24 @@ func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, 
 	if res.IsError() {
 		common.Sugar.Errorw("Elasticsearch update by query returned error", "status", res.Status())
 		return fmt.Errorf("elasticsearch update by query returned error: %s", res.Status())
+	}
+
+	var updateResponse map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&updateResponse); err != nil {
+		common.Error("Failed to parse update response", err)
+		return fmt.Errorf("failed to parse update response: %w", err)
+	}
+	if total, ok := updateResponse["total"].(float64); ok && total == 0 {
+		_, err := e.InsertMetadata(ctx, []map[string]interface{}{
+			{
+				"id":          docID,
+				"kb_id":       datasetID,
+				"meta_fields": metaFields,
+			},
+		}, tenantID)
+		if err != nil {
+			return fmt.Errorf("failed to insert metadata: %w", err)
+		}
 	}
 
 	common.Info("ElasticsearchConnection.UpdateMetadata completes", zap.String("index_name", indexName), zap.String("docID", docID))

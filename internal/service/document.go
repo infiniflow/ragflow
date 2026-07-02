@@ -141,6 +141,8 @@ type ThumbnailResponse struct {
 	KbID      string  `json:"kb_id"`
 }
 
+const imgBase64Prefix = "data:image/png;base64,"
+
 type ArtifactResponse struct {
 	Data            []byte
 	ContentType     string
@@ -556,17 +558,19 @@ func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDo
 // CreateDocument create document
 func (s *DocumentService) CreateDocument(req *CreateDocumentRequest) (*entity.Document, error) {
 	document := &entity.Document{
-		Name:       &req.Name,
-		KbID:       req.KbID,
-		ParserID:   req.ParserID,
-		CreatedBy:  req.CreatedBy,
-		Type:       req.Type,
-		SourceType: req.Source,
-		Suffix:     ".doc",
-		Status:     func() *string { s := "0"; return &s }(),
+		ID:           common.GenerateUUID(),
+		Name:         &req.Name,
+		KbID:         req.KbID,
+		ParserID:     req.ParserID,
+		ParserConfig: entity.JSONMap{},
+		CreatedBy:    req.CreatedBy,
+		Type:         req.Type,
+		SourceType:   req.Source,
+		Suffix:       ".doc",
+		Status:       func() *string { s := "0"; return &s }(),
 	}
 
-	if err := s.documentDAO.Create(document); err != nil {
+	if err := s.InsertDocument(document); err != nil {
 		return nil, fmt.Errorf("failed to create document: %w", err)
 	}
 
@@ -772,18 +776,28 @@ func (s *DocumentService) deleteDocRecordWithCounters(doc *entity.Document, kbID
 			return nil // already deleted by a concurrent request — skip counters
 		}
 
-		decErr := tx.Model(&entity.Knowledgebase{}).
+		result = tx.Model(&entity.Knowledgebase{}).
 			Where("id = ?", kbID).
 			Updates(map[string]interface{}{
 				"doc_num":   gorm.Expr("doc_num - 1"),
 				"chunk_num": gorm.Expr("chunk_num - ?", doc.ChunkNum),
 				"token_num": gorm.Expr("token_num - ?", doc.TokenNum),
-			}).Error
-		if decErr != nil {
-			common.Logger.Warn(fmt.Sprintf("deleteDocRecordWithCounters: failed to decrement KB %s: %v", kbID, decErr))
+			})
+		if result.Error != nil {
+			return fmt.Errorf("failed to decrement counters for KB %s: %w", kbID, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("knowledgebase %s not found", kbID)
 		}
 		return nil
 	})
+}
+
+func (s *DocumentService) rollbackAddFileFromKBError(doc *entity.Document, kbID string, err error) error {
+	if cleanupErr := s.deleteDocRecordWithCounters(doc, kbID); cleanupErr != nil {
+		return fmt.Errorf("%w; rollback cleanup failed: %w", err, cleanupErr)
+	}
+	return err
 }
 
 // cleanupFileReferences deletes file2document mappings for docID, and for each
@@ -862,17 +876,48 @@ func (s *DocumentService) ListDocuments(page, pageSize int) ([]*DocumentResponse
 	return responses, total, nil
 }
 
-func (s *DocumentService) GetThumbnail(docID string) (*ThumbnailResponse, error) {
-	document, err := s.documentDAO.GetByID(docID)
-	if err != nil {
-		return nil, err
+func (s *DocumentService) GetThumbnails(userID string, docIDs []string) (map[string]string, error) {
+	if len(docIDs) == 0 {
+		return map[string]string{}, nil
 	}
 
-	var result ThumbnailResponse
-	result.ID = document.ID
-	result.Thumbnail = document.Thumbnail
-	result.KbID = document.KbID
-	return &result, nil
+	tenantIDs := []string{userID}
+	if userID != "" {
+		ids, err := dao.NewUserTenantDAO().GetTenantIDsByUserID(userID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch user tenants: %w", err)
+		}
+		tenantIDs = append(tenantIDs, ids...)
+	}
+
+	documents, err := s.documentDAO.GetByIDsAndTenantIDs(docIDs, tenantIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch document thumbnails: %w", err)
+	}
+
+	result := make(map[string]string, len(documents))
+	for _, document := range documents {
+		if document == nil {
+			continue
+		}
+
+		thumbnail := ""
+		if document.Thumbnail != nil && *document.Thumbnail != "" {
+			if strings.HasPrefix(*document.Thumbnail, imgBase64Prefix) {
+				thumbnail = *document.Thumbnail
+			} else {
+				thumbnail = fmt.Sprintf(
+					"/api/v1/documents/images/%s-%s",
+					document.KbID,
+					*document.Thumbnail,
+				)
+			}
+		}
+
+		result[document.ID] = thumbnail
+	}
+
+	return result, nil
 }
 
 func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
@@ -1960,9 +2005,7 @@ func (s *DocumentService) SetDocumentMetadata(docID string, meta map[string]inte
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
 
-	// Update metadata using the document engine (merges with existing)
-	err = s.docEngine.UpdateMetadata(nil, docID, doc.KbID, meta, tenantID)
-	if err != nil {
+	if err := s.docEngine.UpdateMetadata(context.Background(), docID, doc.KbID, meta, tenantID); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
 
@@ -2640,6 +2683,35 @@ func (s *DocumentService) replaceDocumentMetadata(docID string, meta map[string]
 	return s.SetDocumentMetadata(docID, map[string]interface{}(meta))
 }
 
+func (s *DocumentService) patchDocumentMetadata(docID string, before, after map[string]interface{}) error {
+	if s.docEngine == nil || s.metadataSvc == nil {
+		return nil
+	}
+
+	deleteKeys := make([]string, 0)
+	for key := range before {
+		if _, ok := after[key]; !ok {
+			deleteKeys = append(deleteKeys, key)
+		}
+	}
+	if len(deleteKeys) > 0 {
+		if err := s.DeleteDocumentMetadata(docID, deleteKeys); err != nil {
+			return err
+		}
+	}
+
+	updateFields := make(map[string]interface{})
+	for key, value := range after {
+		if !reflect.DeepEqual(before[key], value) {
+			updateFields[key] = value
+		}
+	}
+	if len(updateFields) == 0 {
+		return nil
+	}
+	return s.SetDocumentMetadata(docID, updateFields)
+}
+
 func (s *DocumentService) updateDocumentNameOnly(doc *entity.Document, tenantID, newName string) error {
 	if err := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"name": newName}); err != nil {
 		return errors.New("Database error (Document rename)!")
@@ -2993,7 +3065,7 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 		}
 
 		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), merged, "local", int64(len(blob)), blob)
-		if err := s.documentDAO.Create(doc); err != nil {
+		if err := s.InsertDocument(doc); err != nil {
 			// Roll back the orphaned blob so a failed insert doesn't leak storage.
 			_ = storageImpl.Remove(kb.ID, location)
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
@@ -3002,7 +3074,7 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 		if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
 			// Linkage failed: roll back the document row and blob so the partial
 			// state doesn't leave an invisible (unlisted) document behind.
-			_, _ = s.documentDAO.Delete(doc.ID)
+			err = s.rollbackAddFileFromKBError(doc, kb.ID, err)
 			_ = storageImpl.Remove(kb.ID, location)
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
@@ -3035,12 +3107,11 @@ func (s *DocumentService) UploadEmptyDocument(kb *entity.Knowledgebase, tenantID
 	}
 
 	doc := s.newDatasetDocument(kb, tenantID, name, "", "virtual", kb.ParserConfig, "local", 0, nil)
-	if err := s.documentDAO.Create(doc); err != nil {
+	if err := s.InsertDocument(doc); err != nil {
 		return nil, common.CodeServerError, err
 	}
 	if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
-		_, _ = s.documentDAO.Delete(doc.ID)
-		return nil, common.CodeServerError, err
+		return nil, common.CodeServerError, s.rollbackAddFileFromKBError(doc, kb.ID, err)
 	}
 	return docToRawMap(doc), common.CodeSuccess, nil
 }
@@ -3178,12 +3249,12 @@ func (s *DocumentService) UploadWebDocument(kb *entity.Knowledgebase, tenantID, 
 	}
 
 	doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), kb.ParserConfig, "web", int64(len(blob)), blob)
-	if err := s.documentDAO.Create(doc); err != nil {
+	if err := s.InsertDocument(doc); err != nil {
 		_ = storageImpl.Remove(kb.ID, location)
 		return nil, common.CodeServerError, err
 	}
 	if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
-		_, _ = s.documentDAO.Delete(doc.ID)
+		err = s.rollbackAddFileFromKBError(doc, kb.ID, err)
 		_ = storageImpl.Remove(kb.ID, location)
 		return nil, common.CodeServerError, err
 	}
@@ -3447,18 +3518,8 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 			continue
 		}
 
-		if len(meta) == 0 {
-			if err := s.DeleteDocumentAllMetadata(docID); err != nil {
-				common.Warn("BatchUpdateDocumentMetadata: delete all metadata failed",
-					zap.String("docID", docID), zap.Error(err))
-				continue
-			}
-			updated++
-			continue
-		}
-
-		if err := s.replaceDocumentMetadata(docID, meta); err != nil {
-			common.Warn("BatchUpdateDocumentMetadata: replace metadata failed",
+		if err := s.patchDocumentMetadata(docID, originalMeta, meta); err != nil {
+			common.Warn("BatchUpdateDocumentMetadata: patch metadata failed",
 				zap.String("docID", docID), zap.Error(err))
 			continue
 		}

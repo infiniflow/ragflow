@@ -140,3 +140,11 @@ def test_small_blocks_are_merged_unchanged():
 
     assert "Alpha Beta" in "".join(chunks)
     assert "Gamma" in "".join(chunks)
+
+
+def test_parser_txt_extracts_bodyless_html_fragment():
+    chunks = RAGFlowHtmlParser.parser_txt("<h1>Title</h1><p>Fragment text</p>", chunk_token_num=512)
+
+    joined = "\n".join(chunks)
+    assert "# Title" in joined
+    assert "Fragment text" in joined
