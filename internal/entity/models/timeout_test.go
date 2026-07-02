@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -116,9 +117,9 @@ func TestStreamNotTruncatedByNonStreamTimeout(t *testing.T) {
 func TestNonStreamHonorsShortDeadline(t *testing.T) {
 	withTestTimeouts(t, 100*time.Millisecond, 10*time.Second)
 
-	var hits int
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits++
+		hits.Add(1)
 		time.Sleep(800 * time.Millisecond) // far beyond the 100ms non-stream deadline
 		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"late"}}]}`)
 	}))
@@ -144,8 +145,8 @@ func TestNonStreamHonorsShortDeadline(t *testing.T) {
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("err=%v, want wrapped context.DeadlineExceeded", err)
 		}
-		if hits != 1 {
-			t.Fatalf("server hits=%d, want 1", hits)
+		if got := hits.Load(); got != 1 {
+			t.Fatalf("server hits=%d, want 1", got)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("non-stream call did not return within 2s — timeout wrap is broken")

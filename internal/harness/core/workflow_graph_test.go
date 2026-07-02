@@ -961,6 +961,7 @@ func TestGraph_DAG_SlowBranchMerge(t *testing.T) {
 	var mu sync.Mutex
 	var order []string
 	slowStarted := make(chan struct{})
+	fastDone := make(chan struct{})
 	releaseSlow := make(chan struct{})
 	mergeRan := make(chan struct{}, 1)
 	record := func(name string) {
@@ -982,6 +983,7 @@ func TestGraph_DAG_SlowBranchMerge(t *testing.T) {
 		s := state.(*dagState)
 		record("fast")
 		s.Messages = append(s.Messages, "fast done")
+		close(fastDone)
 		return s, nil
 	})
 	sg.AddNode("slow", func(ctx context.Context, state interface{}) (interface{}, error) {
@@ -1030,6 +1032,12 @@ func TestGraph_DAG_SlowBranchMerge(t *testing.T) {
 	case <-slowStarted:
 	case <-time.After(time.Second):
 		t.Fatal("slow branch never started")
+	}
+
+	select {
+	case <-fastDone:
+	case <-time.After(time.Second):
+		t.Fatal("fast branch never completed")
 	}
 
 	select {
