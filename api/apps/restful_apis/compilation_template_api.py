@@ -25,7 +25,6 @@ from api.utils.api_utils import get_json_result, server_error_response
 _validate_template_payload = validate_template_payload
 
 
-
 @manager.route("/compilation_templates/builtins", methods=["GET"])  # noqa: F821
 @login_required
 def list_builtin_templates() -> Response:

@@ -190,11 +190,15 @@ async def _get_existing(tenant_id: str, kb_id: str) -> dict | None:
         return None
     try:
         existing = await thread_pool_exec(
-            settings.docStoreConn.get, _nav_row_id(kb_id), index, [kb_id],
+            settings.docStoreConn.get,
+            _nav_row_id(kb_id),
+            index,
+            [kb_id],
         )
     except Exception:
         logging.exception(
-            "dataset_nav: read failed for kb=%s", kb_id,
+            "dataset_nav: read failed for kb=%s",
+            kb_id,
         )
         return None
     return _row_id_field(existing) or None
@@ -218,18 +222,25 @@ async def _write_row(tenant_id: str, kb_id: str, payload: dict) -> None:
         **payload,
     }
     existing = await thread_pool_exec(
-        settings.docStoreConn.get, row_id, index, [kb_id],
+        settings.docStoreConn.get,
+        row_id,
+        index,
+        [kb_id],
     )
     if existing:
         await thread_pool_exec(
             settings.docStoreConn.update,
             {"id": row_id},
             {k: v for k, v in payload.items() if k != "id"},
-            index, kb_id,
+            index,
+            kb_id,
         )
     else:
         await thread_pool_exec(
-            settings.docStoreConn.insert, [payload], index, kb_id,
+            settings.docStoreConn.insert,
+            [payload],
+            index,
+            kb_id,
         )
 
 
@@ -274,7 +285,8 @@ async def upsert_dataset_nav_doc(
         # to write an empty line.
         logging.info(
             "dataset_nav: skipping doc=%s (kb=%s) — no usable summary",
-            doc_id, kb_id,
+            doc_id,
+            kb_id,
         )
         return
 
@@ -307,7 +319,9 @@ async def upsert_dataset_nav_doc(
             if len(entries) >= MAX_DATASET_NAV_DOCS:
                 logging.info(
                     "dataset_nav: kb=%s already at cap (%d); skipping doc=%s",
-                    kb_id, MAX_DATASET_NAV_DOCS, doc_id,
+                    kb_id,
+                    MAX_DATASET_NAV_DOCS,
+                    doc_id,
                 )
                 return
             entries.append((doc_id, new_line))
@@ -321,7 +335,9 @@ async def upsert_dataset_nav_doc(
             await _write_row(tenant_id, kb_id, payload)
         except Exception:
             logging.exception(
-                "dataset_nav: write failed for kb=%s doc=%s", kb_id, doc_id,
+                "dataset_nav: write failed for kb=%s doc=%s",
+                kb_id,
+                doc_id,
             )
     finally:
         try:
@@ -378,7 +394,8 @@ async def remove_dataset_nav_doc(
         except Exception:
             logging.exception(
                 "dataset_nav: remove-write failed for kb=%s doc=%s",
-                kb_id, doc_id,
+                kb_id,
+                doc_id,
             )
     finally:
         try:
@@ -415,5 +432,6 @@ def remove_dataset_nav_doc_sync(
     except Exception:
         logging.exception(
             "dataset_nav: sync remove failed for kb=%s doc=%s",
-            kb_id, doc_id,
+            kb_id,
+            doc_id,
         )

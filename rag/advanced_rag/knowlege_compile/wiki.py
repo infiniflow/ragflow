@@ -32,6 +32,7 @@
 
 Public entry: ``wiki_map_from_chunks``.
 """
+
 import asyncio
 import json
 import logging
@@ -48,7 +49,7 @@ from ._common import (
     bulk_dedup_items as _bulk_dedup_items,
     ensure_llm_bundle as _ensure_llm_bundle,
     run_chunked_pipeline as _run_chunked_pipeline,
-    stable_row_id as _stable_row_id
+    stable_row_id as _stable_row_id,
 )
 
 
@@ -67,6 +68,8 @@ def _chunk_hash(content: str) -> str:
     """
     body = (content or "") + "|" + _WIKI_PIPELINE_REV
     return _xxhash.xxh64(body.encode("utf-8", "surrogatepass")).hexdigest()
+
+
 # Tiny parser_config helpers shared with the structure pipeline. Pulled in
 # here so the MAP entity/relation schemas and rules can be driven from the
 # same ``parser_config`` shape that ``compile_structure_from_text`` uses.
@@ -282,9 +285,7 @@ def _wiki_render_schema_body(fields, language: str, default_body: str, *, indent
     if not lines:
         return default_body
 
-    lines.append(
-        f'{pad}"source_chunk_id": "string — exact value from the chunk_id list above"'
-    )
+    lines.append(f'{pad}"source_chunk_id": "string — exact value from the chunk_id list above"')
     return ",\n".join(lines)
 
 
@@ -305,13 +306,9 @@ def _wiki_build_custom_rules(parser_config, language: str) -> str:
 
     sections: list[str] = []
     if rules_e:
-        sections.append(
-            "## Entity extraction rules (from knowledge base config):\n" + rules_e
-        )
+        sections.append("## Entity extraction rules (from knowledge base config):\n" + rules_e)
     if rules_r:
-        sections.append(
-            "## Relation extraction rules (from knowledge base config):\n" + rules_r
-        )
+        sections.append("## Relation extraction rules (from knowledge base config):\n" + rules_r)
 
     if not sections:
         return ""
@@ -429,11 +426,15 @@ def _wiki_build_user_prompt(
         legacy_rel_fields = _struct_get(relations_cfg, "fields", default=[]) or []
         if not entity_type_rules and legacy_ent_fields:
             entity_type_rules = _wiki_render_schema_body(
-                legacy_ent_fields, language, _DEFAULT_ENTITY_SCHEMA_BODY,
+                legacy_ent_fields,
+                language,
+                _DEFAULT_ENTITY_SCHEMA_BODY,
             )
         if not relation_type_rules and legacy_rel_fields:
             relation_type_rules = _wiki_render_schema_body(
-                legacy_rel_fields, language, _DEFAULT_RELATION_SCHEMA_BODY,
+                legacy_rel_fields,
+                language,
+                _DEFAULT_RELATION_SCHEMA_BODY,
             )
 
     if not entity_type_rules:
@@ -566,10 +567,7 @@ def _wiki_item_has_identifier_name(key: str, item: dict) -> bool:
     if key == "claims":
         return _wiki_looks_like_identifier(item.get("subject", ""))
     if key == "relations":
-        return (
-            _wiki_looks_like_identifier(item.get("from", ""))
-            or _wiki_looks_like_identifier(item.get("to", ""))
-        )
+        return _wiki_looks_like_identifier(item.get("from", "")) or _wiki_looks_like_identifier(item.get("to", ""))
     return False
 
 
@@ -588,9 +586,7 @@ def _wiki_resolve_chunk_ids(
                    for every label in ``label_to_id`` so resume knows the
                    chunk was processed even when nothing was extracted.
     """
-    per_chunk: dict[str, dict] = {
-        real_id: _wiki_empty_extract() for real_id in label_to_id.values()
-    }
+    per_chunk: dict[str, dict] = {real_id: _wiki_empty_extract() for real_id in label_to_id.values()}
     merged = _wiki_empty_extract()
     merged["topics"] = list(extract.get("topics") or [])
 
@@ -673,7 +669,9 @@ def _wiki_build_resume_doc(
 
 
 async def _wiki_load_resume_map(
-    doc_id: str, tenant_id: str, kb_id: str,
+    doc_id: str,
+    tenant_id: str,
+    kb_id: str,
 ) -> dict[str, str]:
     """Query ES for chunks that already have a artifact_map_extract row for
     this doc. Returns ``{chunk_id → chunk_hash}``.
@@ -694,8 +692,15 @@ async def _wiki_load_resume_map(
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
-            select_fields, [], condition, [], OrderByExpr(),
-            0, 10000, index, [kb_id],
+            select_fields,
+            [],
+            condition,
+            [],
+            OrderByExpr(),
+            0,
+            10000,
+            index,
+            [kb_id],
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
@@ -720,7 +725,10 @@ async def _wiki_load_resume_map(
 
 
 async def _wiki_delete_map_rows(
-    doc_id: str, chunk_ids: list[str], tenant_id: str, kb_id: str,
+    doc_id: str,
+    chunk_ids: list[str],
+    tenant_id: str,
+    kb_id: str,
 ) -> int:
     """Delete ``artifact_map_extract`` rows for ``(doc_id, chunk_id)`` pairs.
 
@@ -745,12 +753,16 @@ async def _wiki_delete_map_rows(
     }
     try:
         await thread_pool_exec(
-            settings.docStoreConn.delete, condition, index, kb_id,
+            settings.docStoreConn.delete,
+            condition,
+            index,
+            kb_id,
         )
     except Exception:
         logging.exception(
             "wiki_map: failed to delete %d stale extract row(s) for doc %s",
-            len(chunk_ids), doc_id,
+            len(chunk_ids),
+            doc_id,
         )
         return 0
     return len(chunk_ids)
@@ -779,7 +791,10 @@ async def _wiki_persist_extracts(
     hashes = chunk_hashes or {}
     docs = [
         _wiki_build_resume_doc(
-            chunk_id, doc_id, extract, chunk_hash=hashes.get(chunk_id, ""),
+            chunk_id,
+            doc_id,
+            extract,
+            chunk_hash=hashes.get(chunk_id, ""),
         )
         for chunk_id, extract in per_chunk.items()
         if chunk_id
@@ -866,11 +881,20 @@ async def _wiki_process_batch(
 
     async def _run() -> dict:
         raw_extract = await _wiki_extract_one_batch(
-            packed, doc_id, chat_mdl, language, llm_timeout, parser_config=parser_config,
+            packed,
+            doc_id,
+            chat_mdl,
+            language,
+            llm_timeout,
+            parser_config=parser_config,
         )
         merged, per_chunk = _wiki_resolve_chunk_ids(raw_extract, label_to_id)
         await _wiki_persist_extracts(
-            per_chunk, doc_id, tenant_id, kb_id, chunk_hashes=chunk_hashes,
+            per_chunk,
+            doc_id,
+            tenant_id,
+            kb_id,
+            chunk_hashes=chunk_hashes,
         )
         if callback:
             try:
@@ -951,11 +975,15 @@ async def wiki_map_from_chunks(
         prior_resume_map = await _wiki_load_resume_map(doc_id, tenant_id, kb_id)
         if prior_resume_map:
             await _wiki_delete_map_rows(
-                doc_id, list(prior_resume_map.keys()), tenant_id, kb_id,
+                doc_id,
+                list(prior_resume_map.keys()),
+                tenant_id,
+                kb_id,
             )
             logging.info(
                 "wiki_map: doc %s now has zero chunks; swept %d stale extract row(s)",
-                doc_id, len(prior_resume_map),
+                doc_id,
+                len(prior_resume_map),
             )
         out = _wiki_empty_extract()
         out["_meta"] = {
@@ -1007,13 +1035,20 @@ async def wiki_map_from_chunks(
 
     if changed_ids or deleted_ids:
         await _wiki_delete_map_rows(
-            doc_id, list(set(changed_ids) | set(deleted_ids)), tenant_id, kb_id,
+            doc_id,
+            list(set(changed_ids) | set(deleted_ids)),
+            tenant_id,
+            kb_id,
         )
 
     if unchanged_ids or changed_ids or deleted_ids or new_ids:
         logging.info(
             "wiki_map: doc %s — new=%d changed=%d unchanged=%d deleted=%d",
-            doc_id, len(new_ids), len(changed_ids), len(unchanged_ids), len(deleted_ids),
+            doc_id,
+            len(new_ids),
+            len(changed_ids),
+            len(unchanged_ids),
+            len(deleted_ids),
         )
 
     # The packer's "resume" set is the UNCHANGED ids only — NEW and
@@ -1119,9 +1154,7 @@ DEFAULT_WIKI_REDUCE_TIMEOUT = 60
 # (``_common.bulk_dedup_items``) defaults to the same wording via
 # ``_common.DEFAULT_DISAMBIGUATE_SYSTEM``; we keep the local alias so the
 # constant name stays usable by call sites and external imports.
-WIKI_REDUCE_DISAMBIGUATE_SYSTEM = (
-    "You are a named-entity resolution assistant. Return only JSON."
-)
+WIKI_REDUCE_DISAMBIGUATE_SYSTEM = "You are a named-entity resolution assistant. Return only JSON."
 
 
 # --- ES I/O ----------------------------------------------------------------
@@ -1150,8 +1183,15 @@ async def _wiki_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                select_fields, [], condition, [], OrderByExpr(),
-                offset, PAGE_SIZE, index, [kb_id],
+                select_fields,
+                [],
+                condition,
+                [],
+                OrderByExpr(),
+                offset,
+                PAGE_SIZE,
+                index,
+                [kb_id],
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
@@ -1224,14 +1264,22 @@ async def _wiki_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                select_fields, [], condition, [], OrderByExpr(),
-                offset, PAGE_SIZE, index, [kb_id],
+                select_fields,
+                [],
+                condition,
+                [],
+                OrderByExpr(),
+                offset,
+                PAGE_SIZE,
+                index,
+                [kb_id],
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
             logging.exception(
                 "wiki: failed to compute MAP input hash for kb=%s (offset=%d)",
-                kb_id, offset,
+                kb_id,
+                offset,
             )
             # Partial scan → cannot trust the resulting hash; return ""
             # so REDUCE / PLAN fall through to a full re-run rather than
@@ -1258,7 +1306,8 @@ async def _wiki_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
 
 
 async def _wiki_load_reduce_resume(
-    tenant_id: str, kb_id: str,
+    tenant_id: str,
+    kb_id: str,
 ) -> Optional[tuple[dict, str]]:
     """Return ``(cached_result, stored_input_hash)`` or None."""
     from common import settings
@@ -1271,8 +1320,15 @@ async def _wiki_load_reduce_resume(
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
-            select_fields, [], condition, [], OrderByExpr(),
-            0, 1, index, [kb_id],
+            select_fields,
+            [],
+            condition,
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index,
+            [kb_id],
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
@@ -1298,7 +1354,10 @@ async def _wiki_load_reduce_resume(
 
 
 async def _wiki_persist_reduce(
-    reduced: dict, tenant_id: str, kb_id: str, input_hash: str = "",
+    reduced: dict,
+    tenant_id: str,
+    kb_id: str,
+    input_hash: str = "",
 ) -> None:
     """Upsert the single non-searchable artifact_reduce_result row for this KB.
 
@@ -1315,7 +1374,7 @@ async def _wiki_persist_reduce(
     row_id = _stable_row_id(WIKI_REDUCE_COMPILE_KWD, kb_id_str)
     doc = {
         "id": row_id,
-        "doc_id": kb_id_str,            # sentinel — KB-scoped row, not a real document
+        "doc_id": kb_id_str,  # sentinel — KB-scoped row, not a real document
         "compile_kwd": WIKI_REDUCE_COMPILE_KWD,
         "source_id": [kb_id_str],
         "input_hash_kwd": input_hash,
@@ -1328,7 +1387,8 @@ async def _wiki_persist_reduce(
             await thread_pool_exec(
                 settings.docStoreConn.delete,
                 {"compile_kwd": WIKI_REDUCE_COMPILE_KWD},
-                index, kb_id,
+                index,
+                kb_id,
             )
         except Exception:
             logging.debug("wiki_reduce: prior result delete failed; will overwrite by id")
@@ -1541,10 +1601,10 @@ WIKI_PAGE_COMPILE_KWD = "artifact_page"
 DEFAULT_WIKI_PLAN_UPDATE_THRESHOLD = 0.95
 DEFAULT_WIKI_PLAN_MAYBE_THRESHOLD = 0.60
 DEFAULT_WIKI_PLAN_TIMEOUT = 600  # ~10 min — the planning call emits one big
-                                 # JSON plan and reasoning models can spend a
-                                 # long time thinking before emitting tokens.
-                                 # Override via the ``llm_timeout`` arg to
-                                 # ``wiki_plan_from_reduction``.
+# JSON plan and reasoning models can spend a
+# long time thinking before emitting tokens.
+# Override via the ``llm_timeout`` arg to
+# ``wiki_plan_from_reduction``.
 DEFAULT_WIKI_PLAN_RECONCILE_BATCH = 50
 
 
@@ -1556,10 +1616,7 @@ WIKI_PLAN_PLANNING_SYSTEM = (
 )
 
 
-WIKI_PLAN_RECONCILE_SYSTEM = (
-    "You are a knowledge base assistant. Return only a JSON boolean array."
-    "Keep the user's original language (Chinese/English etc.) for generated data."
-)
+WIKI_PLAN_RECONCILE_SYSTEM = "You are a knowledge base assistant. Return only a JSON boolean array.Keep the user's original language (Chinese/English etc.) for generated data."
 
 
 WIKI_PLAN_USER_TEMPLATE = """\
@@ -1660,10 +1717,7 @@ def _wiki_format_entity_for_plan(entity: dict, reconciliation: dict) -> str:
     action = rec.get("action", "CREATE")
     slug = rec.get("page_slug", "")
     kb_info = f"→ {action} {slug}".rstrip()
-    line = (
-        f"  - {entity.get('name', '')} ({entity.get('type', '')}, "
-        f"{entity.get('mention_count', 0)} mentions"
-    )
+    line = f"  - {entity.get('name', '')} ({entity.get('type', '')}, {entity.get('mention_count', 0)} mentions"
     if aliases:
         line += f", aliases: {aliases}"
     line += f") {kb_info}"
@@ -1675,10 +1729,7 @@ def _wiki_format_concept_for_plan(concept: dict, reconciliation: dict) -> str:
     action = rec.get("action", "CREATE")
     slug = rec.get("page_slug", "")
     kb_info = f"→ {action} {slug}".rstrip()
-    return (
-        f"  - {concept.get('term', '')} ({concept.get('mention_count', 0)} mentions) "
-        f"{kb_info}"
-    )
+    return f"  - {concept.get('term', '')} ({concept.get('mention_count', 0)} mentions) {kb_info}"
 
 
 async def _wiki_reconcile_with_kb(
@@ -1731,20 +1782,27 @@ async def _wiki_reconcile_with_kb(
         logging.exception("wiki_plan: reconciliation embedding failed — all items will be CREATE")
         for _, key, _ in items:
             reconciliation[key] = {
-                "action": "CREATE", "page_slug": None,
-                "page_title": None, "page_id": None, "similarity": 0.0,
+                "action": "CREATE",
+                "page_slug": None,
+                "page_title": None,
+                "page_id": None,
+                "similarity": 0.0,
             }
         return reconciliation
 
     if len(vectors) != len(items):
         logging.error(
             "wiki_plan: reconciliation embedding count mismatch (%d vs %d); CREATE all",
-            len(vectors), len(items),
+            len(vectors),
+            len(items),
         )
         for _, key, _ in items:
             reconciliation[key] = {
-                "action": "CREATE", "page_slug": None,
-                "page_title": None, "page_id": None, "similarity": 0.0,
+                "action": "CREATE",
+                "page_slug": None,
+                "page_title": None,
+                "page_id": None,
+                "similarity": 0.0,
             }
         return reconciliation
 
@@ -1756,8 +1814,11 @@ async def _wiki_reconcile_with_kb(
         vec_list = list(vec) if not hasattr(vec, "tolist") else vec.tolist()
         if not vec_list:
             reconciliation[key] = {
-                "action": "CREATE", "page_slug": None,
-                "page_title": None, "page_id": None, "similarity": 0.0,
+                "action": "CREATE",
+                "page_slug": None,
+                "page_title": None,
+                "page_id": None,
+                "similarity": 0.0,
             }
             continue
         match_expr = MatchDenseExpr(
@@ -1771,22 +1832,35 @@ async def _wiki_reconcile_with_kb(
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                select_fields, [], condition, [match_expr], OrderByExpr(),
-                0, 1, index, [kb_id],
+                select_fields,
+                [],
+                condition,
+                [match_expr],
+                OrderByExpr(),
+                0,
+                1,
+                index,
+                [kb_id],
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
             logging.exception("wiki_plan: KNN failed for %r", key)
             reconciliation[key] = {
-                "action": "CREATE", "page_slug": None,
-                "page_title": None, "page_id": None, "similarity": 0.0,
+                "action": "CREATE",
+                "page_slug": None,
+                "page_title": None,
+                "page_id": None,
+                "similarity": 0.0,
             }
             continue
 
         if not field_map:
             reconciliation[key] = {
-                "action": "CREATE", "page_slug": None,
-                "page_title": None, "page_id": None, "similarity": 0.0,
+                "action": "CREATE",
+                "page_slug": None,
+                "page_title": None,
+                "page_id": None,
+                "similarity": 0.0,
             }
             continue
 
@@ -1829,16 +1903,13 @@ async def _wiki_resolve_maybe_items(
         return
 
     for batch_start in range(0, len(maybe_items), batch_size):
-        batch = maybe_items[batch_start:batch_start + batch_size]
+        batch = maybe_items[batch_start : batch_start + batch_size]
         lines = []
         for k, (name, rec) in enumerate(batch):
             title = rec.get("page_title") or rec.get("page_slug") or ""
             slug = rec.get("page_slug") or ""
             sim = rec.get("similarity", 0.0)
-            lines.append(
-                f"{k + 1}. Entity: \"{name}\" — existing wiki page: \"{title}\" "
-                f"(slug: {slug}, similarity: {sim:.2f})"
-            )
+            lines.append(f'{k + 1}. Entity: "{name}" — existing wiki page: "{title}" (slug: {slug}, similarity: {sim:.2f})')
 
         user_prompt = (
             "For each pair below, decide whether the entity refers to the same "
@@ -1850,8 +1921,7 @@ async def _wiki_resolve_maybe_items(
 
         try:
             res = await asyncio.wait_for(
-                gen_json(WIKI_PLAN_RECONCILE_SYSTEM, user_prompt, chat_mdl,
-                         gen_conf={"temperature": 0.0}),
+                gen_json(WIKI_PLAN_RECONCILE_SYSTEM, user_prompt, chat_mdl, gen_conf={"temperature": 0.0}),
                 timeout=llm_timeout,
             )
         except asyncio.TimeoutError:
@@ -1899,26 +1969,23 @@ async def _wiki_planning_call(
     # Sort by mention count descending so the planner sees the most important
     # items first; cap to keep the prompt size reasonable.
     sorted_entities = sorted(
-        canonical_entities, key=lambda x: x.get("mention_count", 0), reverse=True,
+        canonical_entities,
+        key=lambda x: x.get("mention_count", 0),
+        reverse=True,
     )
     sorted_concepts = sorted(
-        canonical_concepts, key=lambda x: x.get("mention_count", 0), reverse=True,
+        canonical_concepts,
+        key=lambda x: x.get("mention_count", 0),
+        reverse=True,
     )
 
-    entities_summary = "\n".join(
-        _wiki_format_entity_for_plan(e, reconciliation) for e in sorted_entities[:200]
-    ) or "  (none)"
-    concepts_summary = "\n".join(
-        _wiki_format_concept_for_plan(c, reconciliation) for c in sorted_concepts[:200]
-    ) or "  (none)"
+    entities_summary = "\n".join(_wiki_format_entity_for_plan(e, reconciliation) for e in sorted_entities[:200]) or "  (none)"
+    concepts_summary = "\n".join(_wiki_format_concept_for_plan(c, reconciliation) for c in sorted_concepts[:200]) or "  (none)"
 
     kb_lines: list[str] = []
     for name, rec in reconciliation.items():
         if rec.get("action") == "UPDATE" and rec.get("page_slug"):
-            kb_lines.append(
-                f"  - UPDATE: {name} → {rec['page_slug']} "
-                f"(sim={rec.get('similarity', 0.0):.2f})"
-            )
+            kb_lines.append(f"  - UPDATE: {name} → {rec['page_slug']} (sim={rec.get('similarity', 0.0):.2f})")
     kb_reconciliation = "\n".join(kb_lines) if kb_lines else "  (all items are new)"
 
     user_prompt = WIKI_PLAN_USER_TEMPLATE.format(
@@ -1932,8 +1999,7 @@ async def _wiki_planning_call(
 
     try:
         res = await asyncio.wait_for(
-            gen_json(WIKI_PLAN_PLANNING_SYSTEM, user_prompt, chat_mdl,
-                     gen_conf={"temperature": 0.1}),
+            gen_json(WIKI_PLAN_PLANNING_SYSTEM, user_prompt, chat_mdl, gen_conf={"temperature": 0.1}),
             timeout=llm_timeout,
         )
     except asyncio.TimeoutError:
@@ -1968,8 +2034,15 @@ async def _wiki_load_reduce_result(tenant_id: str, kb_id: str) -> Optional[dict]
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
-            select_fields, [], condition, [], OrderByExpr(),
-            0, 1, index, [kb_id],
+            select_fields,
+            [],
+            condition,
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index,
+            [kb_id],
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
@@ -2002,7 +2075,8 @@ async def _wiki_load_reduce_input_hash(tenant_id: str, kb_id: str) -> str:
 
 
 async def _wiki_load_plan_resume(
-    tenant_id: str, kb_id: str,
+    tenant_id: str,
+    kb_id: str,
 ) -> Optional[tuple[dict, str]]:
     """Return ``(cached_plan, stored_input_hash)`` or None.
 
@@ -2020,8 +2094,15 @@ async def _wiki_load_plan_resume(
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
-            select_fields, [], condition, [], OrderByExpr(),
-            0, 1, index, [kb_id],
+            select_fields,
+            [],
+            condition,
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index,
+            [kb_id],
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
@@ -2047,7 +2128,10 @@ async def _wiki_load_plan_resume(
 
 
 async def _wiki_persist_plan(
-    plan: dict, tenant_id: str, kb_id: str, input_hash: str = "",
+    plan: dict,
+    tenant_id: str,
+    kb_id: str,
+    input_hash: str = "",
 ) -> None:
     """Upsert the single non-searchable artifact_compilation_plan row for this KB.
 
@@ -2063,7 +2147,7 @@ async def _wiki_persist_plan(
     row_id = _stable_row_id(WIKI_PLAN_COMPILE_KWD, kb_id_str)
     doc = {
         "id": row_id,
-        "doc_id": kb_id_str,          # sentinel — KB-scoped row, not a real document
+        "doc_id": kb_id_str,  # sentinel — KB-scoped row, not a real document
         "compile_kwd": WIKI_PLAN_COMPILE_KWD,
         "source_id": [kb_id_str],
         "input_hash_kwd": input_hash,
@@ -2075,7 +2159,8 @@ async def _wiki_persist_plan(
             await thread_pool_exec(
                 settings.docStoreConn.delete,
                 {"compile_kwd": WIKI_PLAN_COMPILE_KWD},
-                index, kb_id,
+                index,
+                kb_id,
             )
         except Exception:
             logging.debug("wiki_plan: prior plan delete failed; relying on id-based upsert")
@@ -2164,10 +2249,15 @@ async def wiki_plan_from_reduction(
     if reduced is None:
         logging.warning("wiki_plan: no wiki_reduce_result found for kb=%s — returning empty plan", kb_id)
         empty = {
-            "pages": [], "estimated_page_count": 0,
+            "pages": [],
+            "estimated_page_count": 0,
             "compilation_notes": "no REDUCE result available",
             "_status": "approved",
-            "_entities": [], "_concepts": [], "_claims": [], "_relations": [], "_topics": [],
+            "_entities": [],
+            "_concepts": [],
+            "_claims": [],
+            "_relations": [],
+            "_topics": [],
             "_reconciliation": {},
         }
         await _wiki_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash)
@@ -2182,16 +2272,23 @@ async def wiki_plan_from_reduction(
     total_items = len(canonical_entities) + len(canonical_concepts)
     logging.info(
         "wiki_plan: kb=%s reducing-input entities=%d concepts=%d (total=%d)",
-        kb_id, len(canonical_entities), len(canonical_concepts), total_items,
+        kb_id,
+        len(canonical_entities),
+        len(canonical_concepts),
+        total_items,
     )
 
     if total_items == 0:
         empty = {
-            "pages": [], "estimated_page_count": 0,
+            "pages": [],
+            "estimated_page_count": 0,
             "compilation_notes": "no canonical items",
             "_status": "approved",
-            "_entities": canonical_entities, "_concepts": canonical_concepts,
-            "_claims": raw_claims, "_relations": raw_relations, "_topics": raw_topics,
+            "_entities": canonical_entities,
+            "_concepts": canonical_concepts,
+            "_claims": raw_claims,
+            "_relations": raw_relations,
+            "_topics": raw_topics,
             "_reconciliation": {},
         }
         await _wiki_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash)
@@ -2221,7 +2318,8 @@ async def wiki_plan_from_reduction(
             pass
 
     await _wiki_resolve_maybe_items(
-        reconciliation, chat_mdl,
+        reconciliation,
+        chat_mdl,
         batch_size=reconcile_batch_size,
         llm_timeout=llm_timeout,
     )
@@ -2473,10 +2571,7 @@ def _wiki_assemble_evidence(
     over ``plan["_entities"]`` / ``plan["_concepts"]``) to enable the
     fallback.
     """
-    raw_names = [
-        n.strip() for n in (plan_item.get("entity_names") or [])
-        if isinstance(n, str) and n.strip()
-    ]
+    raw_names = [n.strip() for n in (plan_item.get("entity_names") or []) if isinstance(n, str) and n.strip()]
     if not raw_names:
         return []
 
@@ -2497,12 +2592,14 @@ def _wiki_assemble_evidence(
             continue
 
         chunk_ids = claim.get("chunk_ids") or []
-        evidence.append({
-            "statement": claim.get("statement", ""),
-            "subject": claim.get("subject", ""),
-            "confidence": claim.get("confidence", "explicit"),
-            "chunk_ids": [c for c in chunk_ids if isinstance(c, str) and c],
-        })
+        evidence.append(
+            {
+                "statement": claim.get("statement", ""),
+                "subject": claim.get("subject", ""),
+                "confidence": claim.get("confidence", "explicit"),
+                "chunk_ids": [c for c in chunk_ids if isinstance(c, str) and c],
+            }
+        )
 
     if evidence:
         return evidence
@@ -2532,13 +2629,15 @@ def _wiki_assemble_evidence(
     # Marker ``_synthetic`` keeps this item out of the writer prompt — it
     # exists only to carry chunk_ids forward for provenance and source-context
     # fetching. _wiki_format_evidence_blocks filters it out.
-    return [{
-        "statement": "",
-        "subject": matched_names[0] if matched_names else raw_names[0],
-        "confidence": "inferred",
-        "chunk_ids": fallback_chunk_ids,
-        "_synthetic": True,
-    }]
+    return [
+        {
+            "statement": "",
+            "subject": matched_names[0] if matched_names else raw_names[0],
+            "confidence": "inferred",
+            "chunk_ids": fallback_chunk_ids,
+            "_synthetic": True,
+        }
+    ]
 
 
 def _wiki_format_evidence_blocks(evidence: list[dict]) -> str:
@@ -2547,8 +2646,7 @@ def _wiki_format_evidence_blocks(evidence: list[dict]) -> str:
     # evidence checklist.
     real_evidence = [ev for ev in (evidence or []) if not ev.get("_synthetic")]
     if not real_evidence:
-        return ("(no pre-extracted evidence — extract facts directly from "
-                "the source document text above)")
+        return "(no pre-extracted evidence — extract facts directly from the source document text above)"
     lines: list[str] = []
     for i, ev in enumerate(real_evidence, 1):
         confidence = (ev.get("confidence") or "explicit").upper()
@@ -2568,7 +2666,9 @@ def _wiki_collect_evidence_chunk_ids(evidence: list[dict]) -> list[str]:
 
 
 async def _wiki_load_chunks_by_id(
-    chunk_ids: list[str], tenant_id: str, kb_id: str,
+    chunk_ids: list[str],
+    tenant_id: str,
+    kb_id: str,
 ) -> dict[str, str]:
     """Fetch chunks from ES by id. Returns ``{chunk_id: content_with_weight}``.
 
@@ -2597,13 +2697,20 @@ async def _wiki_load_chunks_by_id(
 
     BATCH = 500
     for i in range(0, len(unique_ids), BATCH):
-        batch_ids = unique_ids[i:i + BATCH]
+        batch_ids = unique_ids[i : i + BATCH]
         condition = {"id": batch_ids}
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                select_fields, [], condition, [], OrderByExpr(),
-                0, len(batch_ids), index, [kb_id],
+                select_fields,
+                [],
+                condition,
+                [],
+                OrderByExpr(),
+                0,
+                len(batch_ids),
+                index,
+                [kb_id],
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
@@ -2619,9 +2726,11 @@ async def _wiki_load_chunks_by_id(
     missing = [cid for cid in unique_ids if cid not in out]
     if missing:
         logging.warning(
-            "wiki_refine: batch chunk fetch missed %d/%d id(s) in kb=%s; "
-            "falling back to per-id get() (first missing: %s)",
-            len(missing), len(unique_ids), kb_id, missing[0],
+            "wiki_refine: batch chunk fetch missed %d/%d id(s) in kb=%s; falling back to per-id get() (first missing: %s)",
+            len(missing),
+            len(unique_ids),
+            kb_id,
+            missing[0],
         )
 
         def _get_one(cid: str):
@@ -2632,9 +2741,7 @@ async def _wiki_load_chunks_by_id(
                 return cid, None
 
         # Run the per-id gets concurrently to keep latency reasonable.
-        results = await asyncio.gather(*[
-            thread_pool_exec(_get_one, cid) for cid in missing
-        ], return_exceptions=False)
+        results = await asyncio.gather(*[thread_pool_exec(_get_one, cid) for cid in missing], return_exceptions=False)
 
         recovered = 0
         for cid, doc in results:
@@ -2648,16 +2755,17 @@ async def _wiki_load_chunks_by_id(
         if recovered:
             logging.info(
                 "wiki_refine: per-id fallback recovered %d/%d missing chunk(s)",
-                recovered, len(missing),
+                recovered,
+                len(missing),
             )
 
     final_missing = [cid for cid in unique_ids if cid not in out]
     if final_missing:
         logging.warning(
-            "wiki_refine: %d chunk(s) still unresolved after fallback in kb=%s "
-            "(first: %s) — check that the chunk_ids exist in the doc-store and "
-            "that the row's kb_id matches the request.",
-            len(final_missing), kb_id, final_missing[0],
+            "wiki_refine: %d chunk(s) still unresolved after fallback in kb=%s (first: %s) — check that the chunk_ids exist in the doc-store and that the row's kb_id matches the request.",
+            len(final_missing),
+            kb_id,
+            final_missing[0],
         )
 
     return out
@@ -2751,7 +2859,9 @@ def _wiki_transform_links(content_md: str, kb_id: str) -> tuple[str, list[str]]:
 
 
 async def _wiki_collect_doc_ids(
-    chunk_ids: list[str], tenant_id: str, kb_id: str,
+    chunk_ids: list[str],
+    tenant_id: str,
+    kb_id: str,
 ) -> list[str]:
     """Look up ``doc_id`` for each chunk by id. Returns the unique list in
     first-seen order (subset of the source chunks' parents).
@@ -2786,13 +2896,20 @@ async def _wiki_collect_doc_ids(
 
     BATCH = 500
     for i in range(0, len(chunk_ids), BATCH):
-        batch_ids = chunk_ids[i:i + BATCH]
+        batch_ids = chunk_ids[i : i + BATCH]
         condition = {"id": batch_ids}
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                select_fields, [], condition, [], OrderByExpr(),
-                0, len(batch_ids), index, [kb_id],
+                select_fields,
+                [],
+                condition,
+                [],
+                OrderByExpr(),
+                0,
+                len(batch_ids),
+                index,
+                [kb_id],
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
@@ -2804,15 +2921,19 @@ async def _wiki_collect_doc_ids(
 
     if chunk_ids and not out:
         logging.warning(
-            "wiki_refine: doc_id resolution returned 0 for %d chunk(s) (rows_found=%d, kb=%s); "
-            "first chunk_id=%s",
-            len(chunk_ids), total_rows_seen, kb_id, chunk_ids[0],
+            "wiki_refine: doc_id resolution returned 0 for %d chunk(s) (rows_found=%d, kb=%s); first chunk_id=%s",
+            len(chunk_ids),
+            total_rows_seen,
+            kb_id,
+            chunk_ids[0],
         )
     return out
 
 
 async def _wiki_get_existing_page(
-    slug: str, tenant_id: str, kb_id: str,
+    slug: str,
+    tenant_id: str,
+    kb_id: str,
 ) -> Optional[dict]:
     """Fetch a wiki_page row by slug from this KB. Returns ``{id, content_md,
     content_md_raw, title, page_type}`` or None. ``content_md_raw`` is the
@@ -2827,14 +2948,23 @@ async def _wiki_get_existing_page(
         "slug_kwd": [slug],
     }
     select_fields = [
-        "id", "content_with_weight",
-        "title_kwd", "page_type_kwd",
+        "id",
+        "content_with_weight",
+        "title_kwd",
+        "page_type_kwd",
     ]
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
-            select_fields, [], condition, [], OrderByExpr(),
-            0, 1, index, [kb_id],
+            select_fields,
+            [],
+            condition,
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index,
+            [kb_id],
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
@@ -2854,8 +2984,11 @@ async def _wiki_get_existing_page(
 
 
 async def _wiki_chat_text(
-    chat_mdl, system_prompt: str, user_prompt: str,
-    temperature: float, llm_timeout: int,
+    chat_mdl,
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float,
+    llm_timeout: int,
 ) -> str:
     """Single chat call returning the raw text. Trims to chat_mdl.max_length
     via message_fit_in and strips a leading </think> block."""
@@ -2901,16 +3034,10 @@ async def _wiki_write_page_simple(
     """
     own_slug = plan_item.get("slug") or ""
     available = [s for s in all_plan_slugs if s and s != own_slug]
-    slugs_block = (
-        "\n".join(f"- [[{s}]]" for s in available) if available
-        else "(none — this is the only page)"
-    )
+    slugs_block = "\n".join(f"- [[{s}]]" for s in available) if available else "(none — this is the only page)"
 
     if existing_md:
-        existing_section = (
-            "## Existing page content (UPDATE — integrate new evidence into this)\n\n"
-            f"{existing_md}\n"
-        )
+        existing_section = f"## Existing page content (UPDATE — integrate new evidence into this)\n\n{existing_md}\n"
     else:
         existing_section = ""
 
@@ -2927,13 +3054,19 @@ async def _wiki_write_page_simple(
     )
 
     return await _wiki_chat_text(
-        chat_mdl, _build_refine_writer_system(example), user_prompt,
-        temperature=0.15, llm_timeout=llm_timeout,
+        chat_mdl,
+        _build_refine_writer_system(example),
+        user_prompt,
+        temperature=0.15,
+        llm_timeout=llm_timeout,
     )
 
 
 async def _wiki_merge_page_content(
-    existing_md: str, new_md: str, slug: str, chat_mdl,
+    existing_md: str,
+    new_md: str,
+    slug: str,
+    chat_mdl,
     shrink_threshold: float = WIKI_MERGE_BODY_SHRINK_THRESHOLD,
     llm_timeout: int = WIKI_MERGE_TIMEOUT,
 ) -> str:
@@ -2955,8 +3088,11 @@ async def _wiki_merge_page_content(
         "Produce the merged page now. Return ONLY the markdown content."
     )
     merged = await _wiki_chat_text(
-        chat_mdl, WIKI_REFINE_MERGE_SYSTEM, user_prompt,
-        temperature=0.1, llm_timeout=llm_timeout,
+        chat_mdl,
+        WIKI_REFINE_MERGE_SYSTEM,
+        user_prompt,
+        temperature=0.1,
+        llm_timeout=llm_timeout,
     )
     if not merged:
         return new_md
@@ -2965,9 +3101,11 @@ async def _wiki_merge_page_content(
     min_acceptable = int(max_input_len * shrink_threshold)
     if len(merged) < min_acceptable:
         logging.warning(
-            "wiki_refine: merge rejected for slug=%s (merged=%d chars < %d threshold; "
-            "max input=%d). Falling back to new content.",
-            slug, len(merged), min_acceptable, max_input_len,
+            "wiki_refine: merge rejected for slug=%s (merged=%d chars < %d threshold; max input=%d). Falling back to new content.",
+            slug,
+            len(merged),
+            min_acceptable,
+            max_input_len,
         )
         return new_md
     return merged
@@ -2995,7 +3133,10 @@ def _wiki_draft_row_id(kb_id: str, slug: str) -> str:
 
 
 async def _wiki_persist_draft(
-    page: dict, tenant_id: str, kb_id: str, plan_input_hash: str = "",
+    page: dict,
+    tenant_id: str,
+    kb_id: str,
+    plan_input_hash: str = "",
 ) -> None:
     """Upsert one non-searchable wiki_page_draft row (resume cache).
 
@@ -3020,14 +3161,15 @@ async def _wiki_persist_draft(
         "source_id": [str(kb_id)],
         "input_hash_kwd": plan_input_hash,
         "content_with_weight": content_with_weight,
-        "available_int": 0,           # non-searchable
+        "available_int": 0,  # non-searchable
     }
     try:
         try:
             await thread_pool_exec(
                 settings.docStoreConn.delete,
                 {"compile_kwd": WIKI_DRAFT_COMPILE_KWD, "artifact_slug_kwd": slug},
-                index, kb_id,
+                index,
+                kb_id,
             )
         except Exception:
             logging.debug("wiki_refine: prior draft delete failed; relying on id upsert")
@@ -3037,7 +3179,8 @@ async def _wiki_persist_draft(
 
 
 async def _wiki_load_refine_resume(
-    tenant_id: str, kb_id: str,
+    tenant_id: str,
+    kb_id: str,
 ) -> dict[str, tuple[dict, str]]:
     """Load all cached wiki_page_draft rows for this KB.
 
@@ -3061,8 +3204,15 @@ async def _wiki_load_refine_resume(
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                select_fields, [], condition, [], OrderByExpr(),
-                offset, PAGE_SIZE, index, [kb_id],
+                select_fields,
+                [],
+                condition,
+                [],
+                OrderByExpr(),
+                offset,
+                PAGE_SIZE,
+                index,
+                [kb_id],
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
         except Exception:
@@ -3184,7 +3334,8 @@ async def wiki_refine_from_plan(
     if duplicates_dropped:
         logging.info(
             "wiki_refine: dropped %d duplicate slug entr(ies) from plan for kb=%s",
-            duplicates_dropped, kb_id,
+            duplicates_dropped,
+            kb_id,
         )
 
     all_claims = plan.get("_claims") or []
@@ -3237,7 +3388,9 @@ async def wiki_refine_from_plan(
         if cached or stale_drafts:
             logging.info(
                 "wiki_refine: resume — %d fresh, %d stale draft(s) for kb=%s",
-                len(cached), stale_drafts, kb_id,
+                len(cached),
+                stale_drafts,
+                kb_id,
             )
 
     pending = [p for p in pages_spec if p.get("slug") not in cached]
@@ -3264,13 +3417,17 @@ async def wiki_refine_from_plan(
             nonlocal completed
             try:
                 evidence = _wiki_assemble_evidence(
-                    plan_item, all_claims,
+                    plan_item,
+                    all_claims,
                     entity_by_name=entity_by_name,
                     concept_by_term=concept_by_term,
                 )
                 source_chunk_ids = _wiki_collect_evidence_chunk_ids(evidence)
                 source_context = await _wiki_build_source_context(
-                    evidence, tenant_id, kb_id, budget=source_budget_chars,
+                    evidence,
+                    tenant_id,
+                    kb_id,
+                    budget=source_budget_chars,
                 )
 
                 # Use the raw [[slug]] form for the writer and merger so the
@@ -3283,8 +3440,13 @@ async def wiki_refine_from_plan(
                         existing_md_raw = existing.get("content_md_raw") or existing.get("content_md")
 
                 content_md_raw = await _wiki_write_page_simple(
-                    plan_item, evidence, existing_md_raw, source_context,
-                    all_plan_slugs, chat_mdl, llm_timeout,
+                    plan_item,
+                    evidence,
+                    existing_md_raw,
+                    source_context,
+                    all_plan_slugs,
+                    chat_mdl,
+                    llm_timeout,
                     example=example,
                 )
                 if not content_md_raw:
@@ -3292,7 +3454,10 @@ async def wiki_refine_from_plan(
 
                 if existing_md_raw:
                     content_md_raw = await _wiki_merge_page_content(
-                        existing_md_raw, content_md_raw, slug, chat_mdl,
+                        existing_md_raw,
+                        content_md_raw,
+                        slug,
+                        chat_mdl,
                         shrink_threshold=merge_shrink_threshold,
                     )
 
@@ -3330,7 +3495,10 @@ async def wiki_refine_from_plan(
             # REFINE now just builds the page dict and resume cache.
             try:
                 await _wiki_persist_draft(
-                    page, tenant_id, kb_id, plan_input_hash=plan_input_hash,
+                    page,
+                    tenant_id,
+                    kb_id,
+                    plan_input_hash=plan_input_hash,
                 )
             except Exception:
                 logging.exception("wiki_refine: persist_draft failed for slug=%s", slug)
@@ -3380,7 +3548,9 @@ async def wiki_refine_from_plan(
 
     logging.info(
         "wiki_refine: kb=%s done — pages written=%d (cached=%d new=%d)",
-        kb_id, len(results), len(cached),
+        kb_id,
+        len(results),
+        len(cached),
         sum(1 for p in new_pages if p),
     )
 

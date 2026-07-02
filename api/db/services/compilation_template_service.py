@@ -89,6 +89,7 @@ class CompilationTemplateService(CommonService):
             if tenant_id:
                 try:
                     from api.db.services.user_service import TenantService
+
                     ok, tenant = TenantService.get_by_id(tenant_id)
                     if ok and getattr(tenant, "llm_id", None):
                         config = dict(config)
@@ -141,11 +142,7 @@ class CompilationTemplateService(CommonService):
     @DB.connection_context()
     def list_builtins(cls) -> list[dict]:
         cls.ensure_table()
-        query = (
-            cls.model.select()
-            .where(cls.model.is_builtin, cls.model.status == StatusEnum.VALID.value)
-            .order_by(cls.model.create_time.asc(), cls.model.name.asc())
-        )
+        query = cls.model.select().where(cls.model.is_builtin, cls.model.status == StatusEnum.VALID.value).order_by(cls.model.create_time.asc(), cls.model.name.asc())
         return cls._sort_builtins([cls._to_builtin_dict(template) for template in query])
 
     @classmethod

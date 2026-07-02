@@ -193,7 +193,9 @@ async def parse(tenant_id, dataset_id):
     if not e:
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     if kb.pipeline_id:
-        return get_error_data_result(message="Datasets configured with an ingestion pipeline cannot be parsed with `/datasets/{dataset_id}/chunks`. Use `/documents/ingest` instead.", code=RetCode.ARGUMENT_ERROR)
+        return get_error_data_result(
+            message="Datasets configured with an ingestion pipeline cannot be parsed with `/datasets/{dataset_id}/chunks`. Use `/documents/ingest` instead.", code=RetCode.ARGUMENT_ERROR
+        )
     req = await get_request_json()
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
@@ -387,9 +389,19 @@ async def retrieval_test(tenant_id):
             question += await keyword_extraction(LLMBundle(kb.tenant_id, chat_model_config), question)
 
         ranks = await settings.retriever.retrieval(
-            question, embd_mdl, tenant_ids, kb_ids, page, size, similarity_threshold,
-            vector_similarity_weight, top, doc_ids, rerank_mdl=rerank_mdl,
-            highlight=highlight, rank_feature=label_question(question, kbs),
+            question,
+            embd_mdl,
+            tenant_ids,
+            kb_ids,
+            page,
+            size,
+            similarity_threshold,
+            vector_similarity_weight,
+            top,
+            doc_ids,
+            rerank_mdl=rerank_mdl,
+            highlight=highlight,
+            rank_feature=label_question(question, kbs),
         )
         if toc_enhance:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
@@ -498,11 +510,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         for chunk_id in sres.ids:
             d = {
                 "id": chunk_id,
-                "content": (
-                    remove_redundant_spaces(sres.highlight[chunk_id])
-                    if question and chunk_id in sres.highlight
-                    else sres.field[chunk_id].get("content_with_weight", "")
-                ),
+                "content": (remove_redundant_spaces(sres.highlight[chunk_id]) if question and chunk_id in sres.highlight else sres.field[chunk_id].get("content_with_weight", "")),
                 "document_id": sres.field[chunk_id]["doc_id"],
                 "docnm_kwd": sres.field[chunk_id]["docnm_kwd"],
                 "important_keywords": sres.field[chunk_id].get("important_kwd", []),
@@ -588,6 +596,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     # Artifacts-kind templates render on the dataset Artifact tab, not
     # here, so they're filtered out.
     parser_config = docs[0].parser_config or {}
+
     def _group_ids(raw) -> list[str]:
         if isinstance(raw, str):
             raw = [raw]
@@ -626,9 +635,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             if not template_id or template_id in seen_configured_ids:
                 continue
             config = template.get("config") if isinstance(template.get("config"), dict) else {}
-            raw_kind = (
-                config.get("kind") if isinstance(config, dict) else ""
-            ) or template.get("kind") or ""
+            raw_kind = (config.get("kind") if isinstance(config, dict) else "") or template.get("kind") or ""
             kind_norm = _compilation_template_kind(raw_kind)
             if kind_norm == "artifacts":
                 continue
@@ -818,7 +825,7 @@ async def delete_document_structure_graph(tenant_id, dataset_id, document_id):
             return get_result(data={"deleted": deleted}, message=f"deleted {deleted} structure graph rows")
 
         if template_id.startswith("legacy:"):
-            compile_kwd = template_id[len("legacy:"):].strip()
+            compile_kwd = template_id[len("legacy:") :].strip()
             if not compile_kwd:
                 return get_error_data_result(message="`template_id` is invalid")
             base_condition = {"doc_id": [document_id], "compile_kwd": [compile_kwd]}
@@ -1081,6 +1088,7 @@ async def switch_chunks(tenant_id, dataset_id, document_id):
     available_int = int(req["available_int"]) if "available_int" in req else (1 if req.get("available") else 0)
 
     try:
+
         def _switch_sync():
             e, doc = DocumentService.get_by_id(document_id)
             if not e:

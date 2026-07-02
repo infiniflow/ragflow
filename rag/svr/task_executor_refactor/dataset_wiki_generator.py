@@ -127,7 +127,9 @@ def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> li
 
 
 async def persist_wiki_pages_to_es(
-    ctx: TaskContext, pages: List[Dict], embd_mdl,
+    ctx: TaskContext,
+    pages: List[Dict],
+    embd_mdl,
 ) -> None:
     """Insert one ES row per generated artifact page using the
     knowledge-compilation schema:
@@ -167,24 +169,25 @@ async def persist_wiki_pages_to_es(
     # overwrite, so the per-page commit row downstream has a real diff
     # baseline. Single batch read by slug_kwd IN [...] — one round-trip
     # regardless of page count. Failures here degrade gracefully.
-    target_slugs: list[str] = [
-        (p.get("slug") or "").strip()
-        for p in pages
-        if isinstance(p.get("slug"), str) and p.get("slug")
-    ]
+    target_slugs: list[str] = [(p.get("slug") or "").strip() for p in pages if isinstance(p.get("slug"), str) and p.get("slug")]
     prior_by_slug: dict[str, str] = {}
     if target_slugs:
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                ["id", "slug_kwd", "content_with_weight"], [],
+                ["id", "slug_kwd", "content_with_weight"],
+                [],
                 {"compile_kwd": ["artifact_page"], "slug_kwd": list(target_slugs)},
-                [], OrderByExpr(),
-                0, max(len(target_slugs), 1),
-                index, [ctx.kb_id],
+                [],
+                OrderByExpr(),
+                0,
+                max(len(target_slugs), 1),
+                index,
+                [ctx.kb_id],
             )
             field_map = settings.docStoreConn.get_fields(
-                res, ["id", "slug_kwd", "content_with_weight"],
+                res,
+                ["id", "slug_kwd", "content_with_weight"],
             )
             for row in (field_map or {}).values():
                 s = row.get("slug_kwd")
@@ -193,8 +196,7 @@ async def persist_wiki_pages_to_es(
                     prior_by_slug[s] = c
         except Exception:
             logging.exception(
-                "wiki_persist: prior-content read failed for kb=%s; commit "
-                "audit will treat all pages as creations",
+                "wiki_persist: prior-content read failed for kb=%s; commit audit will treat all pages as creations",
                 kb_id_str,
             )
 
@@ -207,7 +209,8 @@ async def persist_wiki_pages_to_es(
         embeddings, _ = await thread_pool_exec(embd_mdl.encode, embed_inputs)
     except Exception:
         logging.exception(
-            "wiki_persist: summary embedding batch failed for kb=%s", kb_id_str,
+            "wiki_persist: summary embedding batch failed for kb=%s",
+            kb_id_str,
         )
         return
     try:
@@ -217,7 +220,9 @@ async def persist_wiki_pages_to_es(
     if n_emb != len(pages):
         logging.warning(
             "artifact_persist: embedding count %d != pages %d for kb=%s; aborting",
-            n_emb, len(pages), kb_id_str,
+            n_emb,
+            len(pages),
+            kb_id_str,
         )
         return
 
@@ -228,54 +233,50 @@ async def persist_wiki_pages_to_es(
             continue
         title = page.get("title") or slug
         summary = page.get("summary") or ""
-        content_md = (
-            page.get("content_md_rendered")
-            or page.get("content_md")
-            or page.get("content_md_raw")
-            or ""
-        )
+        content_md = page.get("content_md_rendered") or page.get("content_md") or page.get("content_md_raw") or ""
 
         vec_list = vec.tolist() if hasattr(vec, "tolist") else list(vec)
         if not vec_list:
             logging.warning(
-                "artifact_persist: empty embedding for slug=%s; skipping", slug,
+                "artifact_persist: empty embedding for slug=%s; skipping",
+                slug,
             )
             continue
 
         text_for_search = (content_md + "\n\n" + summary).strip()
         content_ltks = rag_tokenizer.tokenize(text_for_search) if text_for_search else ""
-        content_sm_ltks = (
-            rag_tokenizer.fine_grained_tokenize(content_ltks) if content_ltks else ""
-        )
+        content_sm_ltks = rag_tokenizer.fine_grained_tokenize(content_ltks) if content_ltks else ""
 
         row_id = xxhash.xxh64(
             f"{kb_id_str}:{slug}".encode("utf-8", "surrogatepass"),
         ).hexdigest()
 
-        rows.append({
-            "id": row_id,
-            "kb_id": kb_id_str,
-            "doc_id": kb_id_str,  # sentinel; KB-scoped row, real provenance in source_doc_ids
-            "compile_kwd": "artifact_page",
-            "slug_kwd": slug,
-            "title_kwd": title,
-            "page_type_kwd": page.get("page_type") or "concept",
-            "entity_names_kwd": list(page.get("entity_names") or []),
-            "outlinks_kwd": list(page.get("outlinks") or []),
-            "outlinks_int": len(list(page.get("outlinks") or [])),
-            "related_kb_pages_kwd": list(page.get("related_kb_pages") or []),
-            "source_chunk_ids": list(page.get("source_chunk_ids") or []),
-            "source_doc_ids": list(page.get("source_doc_ids") or []),
-            "content_with_weight": content_md,
-            # Summary kept verbatim alongside the rendered body so the
-            # viewer can render it as a distinct (smaller) block above
-            # the main content.
-            "summary_with_weight": summary,
-            "content_ltks": content_ltks,
-            "content_sm_ltks": content_sm_ltks,
-            f"q_{len(vec_list)}_vec": vec_list,
-            "available_int": 1,
-        })
+        rows.append(
+            {
+                "id": row_id,
+                "kb_id": kb_id_str,
+                "doc_id": kb_id_str,  # sentinel; KB-scoped row, real provenance in source_doc_ids
+                "compile_kwd": "artifact_page",
+                "slug_kwd": slug,
+                "title_kwd": title,
+                "page_type_kwd": page.get("page_type") or "concept",
+                "entity_names_kwd": list(page.get("entity_names") or []),
+                "outlinks_kwd": list(page.get("outlinks") or []),
+                "outlinks_int": len(list(page.get("outlinks") or [])),
+                "related_kb_pages_kwd": list(page.get("related_kb_pages") or []),
+                "source_chunk_ids": list(page.get("source_chunk_ids") or []),
+                "source_doc_ids": list(page.get("source_doc_ids") or []),
+                "content_with_weight": content_md,
+                # Summary kept verbatim alongside the rendered body so the
+                # viewer can render it as a distinct (smaller) block above
+                # the main content.
+                "summary_with_weight": summary,
+                "content_ltks": content_ltks,
+                "content_sm_ltks": content_sm_ltks,
+                f"q_{len(vec_list)}_vec": vec_list,
+                "available_int": 1,
+            }
+        )
 
     if not rows:
         return
@@ -285,7 +286,8 @@ async def persist_wiki_pages_to_es(
     except Exception:
         logging.exception(
             "wiki_persist: bulk insert failed for kb=%s (rows=%d)",
-            kb_id_str, len(rows),
+            kb_id_str,
+            len(rows),
         )
         return
 
@@ -299,12 +301,7 @@ async def persist_wiki_pages_to_es(
             continue
         if not prior_by_slug.get(slug, ""):
             continue
-        content_md = (
-            page.get("content_md_rendered")
-            or page.get("content_md")
-            or page.get("content_md_raw")
-            or ""
-        )
+        content_md = page.get("content_md_rendered") or page.get("content_md") or page.get("content_md_raw") or ""
         action = (page.get("action") or "CREATE").upper()
         try:
             WikiCommitService.record_page_edit(
@@ -316,17 +313,19 @@ async def persist_wiki_pages_to_es(
                 content_after=content_md,
                 title=WIKI_REGEN_COMMIT_TITLE,
                 comments=WIKI_REGEN_COMMIT_COMMENTS_TEMPLATE.format(action=action),
-                user_id=None,        # system commit — no human author
+                user_id=None,  # system commit — no human author
             )
         except Exception:
             logging.exception(
                 "wiki_persist: commit record failed for kb=%s slug=%s",
-                kb_id_str, slug,
+                kb_id_str,
+                slug,
             )
 
 
 def build_wiki_page_graph(
-    pages: List[Dict], kb_id: str,
+    pages: List[Dict],
+    kb_id: str,
 ) -> tuple[List[Dict], List[Dict]]:
     """Project the REFINE-emitted page list onto per-entity and
     per-relation ES rows.
@@ -396,28 +395,30 @@ def build_wiki_page_graph(
             "type": page_type,
             "weight": weight,
         }
-        entity_rows.append({
-            "id": xxhash.xxh64(
-                f"artifact_entity:{kb_id}:{slug}".encode("utf-8", "surrogatepass"),
-            ).hexdigest(),
-            "kb_id": kb_id,
-            "doc_id": kb_id,             # KB-scoped sentinel
-            "available_int": 1,
-            "compile_kwd": "artifact_entity",
-            "type_kwd": "artifact_" + page_type,
-            "slug_kwd": slug,
-            "weight_int": int(weight),
-            "source_chunk_ids": capped_chunk_ids,
-            "content_ltks": rag_tokenizer.tokenize(content_text) if content_text else "",
-            "content_with_weight": json.dumps(entity_payload, ensure_ascii=False),
-        })
+        entity_rows.append(
+            {
+                "id": xxhash.xxh64(
+                    f"artifact_entity:{kb_id}:{slug}".encode("utf-8", "surrogatepass"),
+                ).hexdigest(),
+                "kb_id": kb_id,
+                "doc_id": kb_id,  # KB-scoped sentinel
+                "available_int": 1,
+                "compile_kwd": "artifact_entity",
+                "type_kwd": "artifact_" + page_type,
+                "slug_kwd": slug,
+                "weight_int": int(weight),
+                "source_chunk_ids": capped_chunk_ids,
+                "content_ltks": rag_tokenizer.tokenize(content_text) if content_text else "",
+                "content_with_weight": json.dumps(entity_payload, ensure_ascii=False),
+            }
+        )
 
     relation_rows: List[Dict] = []
     for p in pages or []:
         src = (p.get("slug") or "").strip()
         if not src or src not in by_slug:
             continue
-        for raw_target in (p.get("outlinks") or []):
+        for raw_target in p.get("outlinks") or []:
             if isinstance(raw_target, str):
                 tgt = raw_target.strip()
             elif isinstance(raw_target, dict):
@@ -427,25 +428,28 @@ def build_wiki_page_graph(
             if not tgt or tgt == src or tgt not in by_slug:
                 continue
             relation_payload = {"from": src, "to": tgt}
-            relation_rows.append({
-                "id": xxhash.xxh64(
-                    f"artifact_relation:{kb_id}:{src}:{tgt}".encode("utf-8", "surrogatepass"),
-                ).hexdigest(),
-                "kb_id": kb_id,
-                "doc_id": kb_id,
-                "available_int": 1,
-                "compile_kwd": "artifact_relation",
-                "type_kwd": "artifact_relation",
-                "from_kwd": src,
-                "to_kwd": tgt,
-                "content_with_weight": json.dumps(relation_payload, ensure_ascii=False),
-            })
+            relation_rows.append(
+                {
+                    "id": xxhash.xxh64(
+                        f"artifact_relation:{kb_id}:{src}:{tgt}".encode("utf-8", "surrogatepass"),
+                    ).hexdigest(),
+                    "kb_id": kb_id,
+                    "doc_id": kb_id,
+                    "available_int": 1,
+                    "compile_kwd": "artifact_relation",
+                    "type_kwd": "artifact_relation",
+                    "from_kwd": src,
+                    "to_kwd": tgt,
+                    "content_with_weight": json.dumps(relation_payload, ensure_ascii=False),
+                }
+            )
 
     return entity_rows, relation_rows
 
 
 async def persist_wiki_page_graph_to_es(
-    ctx: TaskContext, pages: List[Dict],
+    ctx: TaskContext,
+    pages: List[Dict],
 ) -> None:
     """Materialize and store the per-entity / per-relation ES rows
     derived from artifact pages.
@@ -470,21 +474,30 @@ async def persist_wiki_page_graph_to_es(
         try:
             await thread_pool_exec(
                 settings.docStoreConn.delete,
-                {"compile_kwd": kwd}, index, ctx.kb_id,
+                {"compile_kwd": kwd},
+                index,
+                ctx.kb_id,
             )
         except Exception:
             logging.debug(
-                "%s: prior delete failed; relying on id-upsert", kwd,
+                "%s: prior delete failed; relying on id-upsert",
+                kwd,
             )
         if not rows:
             return
         try:
             await thread_pool_exec(
-                settings.docStoreConn.insert, rows, index, ctx.kb_id,
+                settings.docStoreConn.insert,
+                rows,
+                index,
+                ctx.kb_id,
             )
         except Exception:
             logging.exception(
-                "%s: insert failed for kb=%s (%d rows)", kwd, kb_id_str, len(rows),
+                "%s: insert failed for kb=%s (%d rows)",
+                kwd,
+                kb_id_str,
+                len(rows),
             )
 
     async def _sweep_legacy_blob() -> None:
@@ -492,7 +505,8 @@ async def persist_wiki_page_graph_to_es(
             await thread_pool_exec(
                 settings.docStoreConn.delete,
                 {"compile_kwd": "artifact_page_graph"},
-                index, ctx.kb_id,
+                index,
+                ctx.kb_id,
             )
         except Exception:
             logging.debug(
@@ -559,9 +573,15 @@ async def run_wiki(
     # per-doc opt-in is what gates inclusion.
     all_docs, _ = await thread_pool_exec(
         DocumentService.get_by_kb_id,
-        kb_id=ctx.kb_id, page_number=0, items_per_page=0,
-        orderby="create_time", desc=False,
-        keywords="", run_status=[], types=[], suffix=[],
+        kb_id=ctx.kb_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
     )
     eligible = []
     for d in all_docs or []:
@@ -569,9 +589,7 @@ async def run_wiki(
         for template_id in _parser_config_compilation_template_ids(pc, ctx.tenant_id):
             template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
             config = template.get("config") if template else {}
-            kind = _compilation_template_kind(
-                config.get("kind") if isinstance(config, dict) else ""
-            )
+            kind = _compilation_template_kind(config.get("kind") if isinstance(config, dict) else "")
             if kind == "artifacts":
                 eligible.append((d, template_id))
                 break
@@ -595,12 +613,15 @@ async def run_wiki(
                 cfg = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
             else:
                 cfg = get_model_config_from_provider_instance(
-                    ctx.tenant_id, LLMType.CHAT, key,
+                    ctx.tenant_id,
+                    LLMType.CHAT,
+                    key,
                 )
         except Exception:
             logging.exception(
                 "wiki: chat model resolution failed for llm_id=%s (kb=%s); falling back to tenant default",
-                key, ctx.kb_id,
+                key,
+                ctx.kb_id,
             )
             cfg = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
             key = "__tenant_default__"
@@ -622,6 +643,7 @@ async def run_wiki(
                     progress(msg=f"{prefix} {msg}")
             except Exception:
                 logging.exception("wiki: progress callback failed")
+
         return _cb
 
     # 4. MAP per eligible doc. Each MAP call's own resume mechanism
@@ -649,23 +671,19 @@ async def run_wiki(
         if not template:
             logging.warning(
                 "artifact: template %s not found for doc %s; skipping",
-                template_id, doc_id,
+                template_id,
+                doc_id,
             )
             continue
         parser_cfg = template.get("config") or {}
 
-        map_llm_id = (
-            (parser_cfg.get("llm_id") or "").strip()
-            if isinstance(parser_cfg, dict) else ""
-        )
+        map_llm_id = (parser_cfg.get("llm_id") or "").strip() if isinstance(parser_cfg, dict) else ""
         map_chat_mdl = _bundle_for(map_llm_id)
         if kb_chat_llm_id is None:
             # First eligible template wins — canonical for KB-wide
             # REDUCE/PLAN/REFINE further down.
             kb_chat_llm_id = map_llm_id or None
-            tmpl_example = (
-                parser_cfg.get("example") if isinstance(parser_cfg, dict) else None
-            )
+            tmpl_example = parser_cfg.get("example") if isinstance(parser_cfg, dict) else None
             if isinstance(tmpl_example, str) and tmpl_example.strip():
                 kb_writer_example = tmpl_example
 
@@ -677,7 +695,9 @@ async def run_wiki(
         saw_any = False
         batch_no = 0
         async for batch in load_chunks_for_doc(
-            ctx.tenant_id, ctx.kb_id, doc_id,
+            ctx.tenant_id,
+            ctx.kb_id,
+            doc_id,
             batch_size=WIKI_MAP_BATCH_CHUNKS,
         ):
             saw_any = True
@@ -698,7 +718,9 @@ async def run_wiki(
                 )
             except Exception:
                 logging.exception(
-                    "wiki: MAP failed for doc %s batch %d", doc_id, batch_no,
+                    "wiki: MAP failed for doc %s batch %d",
+                    doc_id,
+                    batch_no,
                 )
                 continue
             for k in agg.keys():
@@ -714,12 +736,17 @@ async def run_wiki(
             logging.info("wiki: no chunks for doc %s; skipping", doc_id)
             continue
         logging.info(
-            "wiki: MAP doc=%s entities=%d concepts=%d claims=%d relations=%d "
-            "(batches=%d, new=%d changed=%d unchanged=%d deleted=%d, delta=%s)",
-            doc_id, agg["entities"], agg["concepts"], agg["claims"],
-            agg["relations"], batch_no,
-            agg_delta["new"], agg_delta["changed"],
-            agg_delta["unchanged"], agg_delta["deleted"],
+            "wiki: MAP doc=%s entities=%d concepts=%d claims=%d relations=%d (batches=%d, new=%d changed=%d unchanged=%d deleted=%d, delta=%s)",
+            doc_id,
+            agg["entities"],
+            agg["concepts"],
+            agg["claims"],
+            agg["relations"],
+            batch_no,
+            agg_delta["new"],
+            agg_delta["changed"],
+            agg_delta["unchanged"],
+            agg_delta["deleted"],
             doc_had_delta,
         )
 

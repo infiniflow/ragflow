@@ -105,6 +105,7 @@ class SkillNode:
     file needs the first-line title — branches inherit it as a no-op
     union so the dict is non-empty across the tree.
     """
+
     level: int
     label: str
     summary: str
@@ -130,7 +131,9 @@ def skill_safe_name(text: str, max_len: int = 50) -> str:
 
 
 async def label_skill_node_one(
-    summary: str, chat_mdl, semaphore: asyncio.Semaphore,
+    summary: str,
+    chat_mdl,
+    semaphore: asyncio.Semaphore,
 ) -> str:
     """Generate a single fs-safe label: 2–5 word lowercase
     hyphenated label, max_tokens=20, sanitized to [a-z0-9-], capped
@@ -140,11 +143,16 @@ async def label_skill_node_one(
         try:
             cnt = await chat_mdl.async_chat(
                 "You generate short filesystem-safe cluster labels. Reply with the label only.",
-                [{"role": "user", "content": (
-                    "Generate a short (2-5 word) filesystem-safe label for this cluster. "
-                    "Use lowercase(MUST be in the same language as 'Summary'), hyphens instead of spaces. No quotes.\n\n"
-                    f"Summary: {(summary or '')[:500]}"
-                )}],
+                [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Generate a short (2-5 word) filesystem-safe label for this cluster. "
+                            "Use lowercase(MUST be in the same language as 'Summary'), hyphens instead of spaces. No quotes.\n\n"
+                            f"Summary: {(summary or '')[:500]}"
+                        ),
+                    }
+                ],
                 {"max_tokens": 20, "temperature": 0.0},
             )
             raw = (cnt or "").strip().lower()
@@ -173,7 +181,10 @@ async def doc_summary_for_skill(
     accumulated: list[str] = []
     running = 0
     async for batch in load_chunks_for_doc(
-        ctx.tenant_id, ctx.kb_id, doc_id, batch_size=SKILL_CHUNK_BATCH,
+        ctx.tenant_id,
+        ctx.kb_id,
+        doc_id,
+        batch_size=SKILL_CHUNK_BATCH,
     ):
         for chunk in batch:
             text = chunk.get("content_with_weight") or ""
@@ -199,13 +210,13 @@ async def doc_summary_for_skill(
     doc_preview = accumulated[0][:600] if accumulated else ""
     return SkillNode(
         level=0,
-        label="",                                # filled in phase 5
+        label="",  # filled in phase 5
         summary=summary_text or title,
         vec=np.asarray(vec),
         doc_ids=[doc_id],
         doc_texts={doc_id: doc_preview},
         children=[],
-        folder_name="",                          # filled in phase 5
+        folder_name="",  # filled in phase 5
     )
 
 
@@ -242,9 +253,7 @@ def build_skill_md(node: "SkillNode") -> str:
         for child in node.children:
             child_name = child.folder_name or child.label or "cluster"
             summary_snip = (child.summary or "")[:200].replace("\n", " ").strip()
-            lines.append(
-                f"- **{child_name}/** ({len(child.doc_ids)} docs): {summary_snip}"
-            )
+            lines.append(f"- **{child_name}/** ({len(child.doc_ids)} docs): {summary_snip}")
         lines.append("")
     else:
         lines.append(f"### Documents ({len(node.doc_ids)} items)")
@@ -267,7 +276,7 @@ def skill_node_es_row(ctx: TaskContext, node: "SkillNode") -> Dict:
     return {
         "id": row_id,
         "kb_id": kb_id_str,
-        "doc_id": kb_id_str,                 # KB-scoped sentinel
+        "doc_id": kb_id_str,  # KB-scoped sentinel
         "compile_kwd": "skill",
         "skill_kwd": node.folder_name,
         "depth_int": int(node.level),
@@ -309,7 +318,8 @@ def skill_all_es_row(ctx: TaskContext, roots: list["SkillNode"]) -> Dict:
         "compile_kwd": "skill_all",
         "skill_with_weight": json.dumps(
             [skill_tree_node(root) for root in roots],
-            ensure_ascii=False, indent=2,
+            ensure_ascii=False,
+            indent=2,
         ),
         "available_int": 1,
     }
@@ -364,9 +374,15 @@ async def run_corpus2skill(
     # ---- Phase 1: per-doc summaries.
     all_docs, _ = await thread_pool_exec(
         DocumentService.get_by_kb_id,
-        kb_id=ctx.kb_id, page_number=0, items_per_page=0,
-        orderby="create_time", desc=False,
-        keywords="", run_status=[], types=[], suffix=[],
+        kb_id=ctx.kb_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
     )
     eligible_docs = [d for d in (all_docs or []) if d.get("id")]
     if not eligible_docs:
@@ -386,11 +402,16 @@ async def run_corpus2skill(
         async with doc_sem:
             try:
                 return await doc_summary_for_skill(
-                    d["id"], raptor, chat_mdl, ctx, load_chunks_for_doc,
+                    d["id"],
+                    raptor,
+                    chat_mdl,
+                    ctx,
+                    load_chunks_for_doc,
                 )
             except Exception:
                 logging.exception(
-                    "skill: doc summary failed for doc=%s", d.get("id"),
+                    "skill: doc summary failed for doc=%s",
+                    d.get("id"),
                 )
                 return None
 
@@ -426,7 +447,9 @@ async def run_corpus2skill(
         try:
             embeddings = np.asarray([n.vec for n in current_layer])
             n_clusters, labels = raptor.clustering(
-                embeddings, random_state=0, task_id="",
+                embeddings,
+                random_state=0,
+                task_id="",
             )
         except Exception:
             logging.exception("skill: clustering failed at level %d", level)
@@ -435,7 +458,8 @@ async def run_corpus2skill(
             # No reduction → stop to avoid an infinite loop.
             logging.warning(
                 "skill: clustering did not reduce node count (%d → %d); stopping",
-                len(current_layer), n_clusters,
+                len(current_layer),
+                n_clusters,
             )
             break
 
@@ -476,8 +500,7 @@ async def run_corpus2skill(
             )
 
         parent_results = await asyncio.gather(
-            *(_summarize_cluster(children)
-              for children in cluster_buckets.values()),
+            *(_summarize_cluster(children) for children in cluster_buckets.values()),
             return_exceptions=False,
         )
         next_layer = [p for p in parent_results if p is not None]
@@ -496,6 +519,7 @@ async def run_corpus2skill(
         all_nodes.append(node)
         for c in node.children:
             _collect(c)
+
     for r in roots:
         _collect(r)
 
@@ -517,6 +541,7 @@ async def run_corpus2skill(
         node.folder_name = f"{prefix}-{slug}" if slug else prefix
         for ci, child in enumerate(node.children):
             _assign_folders(child, ci, is_root=False)
+
     for ri, root in enumerate(roots):
         _assign_folders(root, ri, is_root=True)
 
@@ -533,7 +558,9 @@ async def run_corpus2skill(
     try:
         await thread_pool_exec(
             settings.docStoreConn.delete,
-            {"compile_kwd": ["skill", "skill_all"]}, index, ctx.kb_id,
+            {"compile_kwd": ["skill", "skill_all"]},
+            index,
+            ctx.kb_id,
         )
     except Exception:
         logging.debug("skill: prior delete failed; relying on id-upsert")
@@ -546,7 +573,10 @@ async def run_corpus2skill(
 
     try:
         await thread_pool_exec(
-            settings.docStoreConn.insert, rows, index, ctx.kb_id,
+            settings.docStoreConn.insert,
+            rows,
+            index,
+            ctx.kb_id,
         )
     except Exception:
         logging.exception("skill: bulk insert failed (rows=%d)", len(rows))
@@ -554,6 +584,5 @@ async def run_corpus2skill(
 
     progress(
         1.0,
-        f"skill: built {len(roots)} top-level skill(s), "
-        f"{len(all_nodes)} total node(s), {len(leaves)} doc(s)",
+        f"skill: built {len(roots)} top-level skill(s), {len(all_nodes)} total node(s), {len(leaves)} doc(s)",
     )

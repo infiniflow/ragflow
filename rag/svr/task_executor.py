@@ -1575,7 +1575,7 @@ async def do_handle_task(task):
         progress_message = "Embedding chunks ({:.2f}s)".format(timer() - start_ts)
         logging.info(progress_message)
         progress_callback(msg=progress_message)
-        
+
         if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", False):
             toc_thread = asyncio.create_task(asyncio.to_thread(build_TOC, task, chunks, progress_callback))
 
@@ -1757,9 +1757,9 @@ async def handle_task():
                 # task["doc_ids"]; the first entry is used as a referent so
                 # the pipeline operation log has something to anchor to.
                 referred_document_id = (task.get("doc_ids") or [None])[0]
-            ret = PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id="",
-                                                                  task_type=pipeline_task_type,
-                                                                  task_id=task_id, referred_document_id=referred_document_id)
+            ret = PipelineOperationLogService.record_pipeline_operation(
+                document_id=task["doc_id"], pipeline_id="", task_type=pipeline_task_type, task_id=task_id, referred_document_id=referred_document_id
+            )
             get_recording_context().save_func_return_value("PipelineOperationLogService.record_pipeline_operation", ret)
 
     redis_msg.ack()
@@ -1886,7 +1886,7 @@ async def main():
 /___/_/ /_/\__, /\___/____/\__/_/\____/_/ /_/  /____/\___/_/    |___/\___/_/
           /____/
     """)
-    logging.info(f'RAGFlow ingestion version: {get_ragflow_version()}')
+    logging.info(f"RAGFlow ingestion version: {get_ragflow_version()}")
     show_configs()
     settings.init_settings()
     settings.check_and_install_torch()

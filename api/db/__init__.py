@@ -21,15 +21,15 @@ from common.constants import PipelineTaskType
 
 
 class UserTenantRole(StrEnum):
-    OWNER = 'owner'
-    ADMIN = 'admin'
-    NORMAL = 'normal'
-    INVITE = 'invite'
+    OWNER = "owner"
+    ADMIN = "admin"
+    NORMAL = "normal"
+    INVITE = "invite"
 
 
 class TenantPermission(StrEnum):
-    ME = 'me'
-    TEAM = 'team'
+    ME = "me"
+    TEAM = "team"
 
 
 class SerializedType(IntEnum):
@@ -38,13 +38,14 @@ class SerializedType(IntEnum):
 
 
 class FileType(StrEnum):
-    PDF = 'pdf'
-    DOC = 'doc'
-    VISUAL = 'visual'
-    AURAL = 'aural'
-    VIRTUAL = 'virtual'
-    FOLDER = 'folder'
+    PDF = "pdf"
+    DOC = "doc"
+    VISUAL = "visual"
+    AURAL = "aural"
+    VIRTUAL = "virtual"
+    FOLDER = "folder"
     OTHER = "other"
+
 
 VALID_FILE_TYPES = {FileType.PDF, FileType.DOC, FileType.VISUAL, FileType.AURAL, FileType.VIRTUAL, FileType.FOLDER, FileType.OTHER}
 
@@ -61,7 +62,15 @@ class CanvasCategory(StrEnum):
     DataFlow = "dataflow_canvas"
 
 
-VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP, PipelineTaskType.ARTIFACT, PipelineTaskType.SKILL}
+VALID_PIPELINE_TASK_TYPES = {
+    PipelineTaskType.PARSE,
+    PipelineTaskType.DOWNLOAD,
+    PipelineTaskType.RAPTOR,
+    PipelineTaskType.GRAPH_RAG,
+    PipelineTaskType.MINDMAP,
+    PipelineTaskType.ARTIFACT,
+    PipelineTaskType.SKILL,
+}
 
 
 # KB-level fan-out task types: their Task row uses GRAPH_RAPTOR_FAKE_DOC_ID as a
@@ -70,8 +79,14 @@ VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, 
 # the join through Document → Knowledgebase → Tenant resolves and tenant_id /
 # kb_id / language are hydrated onto the task dict. Add new fan-out task types
 # here or TaskContext will raise "Task must contain 'tenant_id'".
-PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES = {PipelineTaskType.RAPTOR.lower(), PipelineTaskType.GRAPH_RAG.lower(), PipelineTaskType.MINDMAP.lower(), PipelineTaskType.ARTIFACT.lower(), PipelineTaskType.SKILL.lower()}
+PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES = {
+    PipelineTaskType.RAPTOR.lower(),
+    PipelineTaskType.GRAPH_RAG.lower(),
+    PipelineTaskType.MINDMAP.lower(),
+    PipelineTaskType.ARTIFACT.lower(),
+    PipelineTaskType.SKILL.lower(),
+}
 
 
-KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"
-SKILLS_FOLDER_NAME="skills"
+KNOWLEDGEBASE_FOLDER_NAME = ".knowledgebase"
+SKILLS_FOLDER_NAME = "skills"

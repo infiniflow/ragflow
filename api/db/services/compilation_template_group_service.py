@@ -42,9 +42,7 @@ def _derive_scope(templates: list[dict]) -> str:
     artifact_count = sum(1 for k in kinds if k == "artifacts")
     if artifact_count > 0:
         if artifact_count != 1 or len(templates) != 1:
-            raise GroupValidationError(
-                "An artifacts template cannot be combined with other templates in the same group."
-            )
+            raise GroupValidationError("An artifacts template cannot be combined with other templates in the same group.")
         return SCOPE_DATASET
 
     _enforce_single_rechunk_tree(templates)
@@ -70,9 +68,7 @@ def _enforce_single_rechunk_tree(templates: list[dict]) -> None:
         if bool(raptor.get("rechunk")):
             rechunk_trees += 1
     if rechunk_trees > 1:
-        raise GroupValidationError(
-            "Only one tree template in a group may enable re-chunking."
-        )
+        raise GroupValidationError("Only one tree template in a group may enable re-chunking.")
 
 
 class CompilationTemplateGroupService(CommonService):
@@ -195,9 +191,7 @@ class CompilationTemplateGroupService(CommonService):
         )
         by_group: dict[str, list[dict]] = {}
         for child in kid_pairs:
-            by_group.setdefault(child.group_id, []).append(
-                {"id": child.id, "kind": child.kind, "name": child.name}
-            )
+            by_group.setdefault(child.group_id, []).append({"id": child.id, "kind": child.kind, "name": child.name})
         return [
             {
                 "id": g.id,
@@ -327,9 +321,7 @@ class CompilationTemplateGroupService(CommonService):
         if not existing:
             return False
         with DB.atomic():
-            cls.model.update(status=StatusEnum.INVALID.value).where(
-                cls.model.id == group_id
-            ).execute()
+            cls.model.update(status=StatusEnum.INVALID.value).where(cls.model.id == group_id).execute()
             CompilationTemplate.update(status=StatusEnum.INVALID.value).where(
                 CompilationTemplate.group_id == group_id,
                 CompilationTemplate.status == StatusEnum.VALID.value,
@@ -349,9 +341,7 @@ class CompilationTemplateGroupService(CommonService):
         name = str((child or {}).get("name") or "").strip()
         config = (child or {}).get("config") or {}
         if not kind or not name or not isinstance(config, dict):
-            raise GroupValidationError(
-                "Each template must include a name, kind, and config object."
-            )
+            raise GroupValidationError("Each template must include a name, kind, and config object.")
         from api.db.services.compilation_template_service import CompilationTemplateService
 
         config = CompilationTemplateService.fill_config_default_llm(config, tenant_id)

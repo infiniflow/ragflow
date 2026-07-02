@@ -155,7 +155,7 @@ class _PsiUnionFind:
     @property
     def tree(self) -> list[int]:
         """Return the compact child-to-parent array for constructed nodes."""
-        return self._tree[:self._next_id]
+        return self._tree[: self._next_id]
 
 
 class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
@@ -214,7 +214,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
                 if response.find("**ERROR**") >= 0:
                     raise Exception(response)
-                await thread_pool_exec(set_llm_cache,self._llm_model.llm_name,system,response,history,gen_conf)
+                await thread_pool_exec(set_llm_cache, self._llm_model.llm_name, system, response, history, gen_conf)
                 return response
             except Exception as exc:
                 last_exc = exc
@@ -319,6 +319,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         # Degrade too much ??
         n_neighbors = int((len(embeddings) - 1) ** 0.8)
         import umap
+
         reduced_embeddings = umap.UMAP(
             n_neighbors=max(2, n_neighbors),
             n_components=min(12, len(embeddings) - 2),
@@ -465,10 +466,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             split_groups = [group[labels == center_id].tolist() for center_id in range(fanout)]
             split_groups = [bucket for bucket in split_groups if bucket]
             if len(split_groups) <= 1:
-                split_groups = [
-                    group[start:start + self._psi_bucket_size].tolist()
-                    for start in range(0, len(group), self._psi_bucket_size)
-                ]
+                split_groups = [group[start : start + self._psi_bucket_size].tolist() for start in range(0, len(group), self._psi_bucket_size)]
             groups.extend(split_groups)
 
         buckets = [bucket for bucket in buckets if bucket]
@@ -514,7 +512,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 original_children = len(node.children)
                 grouped_children = []
                 for start in range(0, len(node.children), max_children):
-                    batch = node.children[start:start + max_children]
+                    batch = node.children[start : start + max_children]
                     if len(batch) == 1:
                         grouped_children.append(batch[0])
                         batch[0].parent = node
@@ -734,7 +732,11 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         return chunks, layers
 
     async def __call__(
-        self, chunks, random_state, callback=None, task_id: str = "",
+        self,
+        chunks,
+        random_state,
+        callback=None,
+        task_id: str = "",
         is_tree: bool = False,
     ):
         """Build summary chunks and layer boundaries for RAPTOR retrieval.
@@ -939,7 +941,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             # and don't appear as tree nodes themselves (they collapse
             # into source_chunk_ids on their layer-1 parent).
             return chunks[idx][3] if len(chunks[idx]) >= 4 else ""
-        
+
         def _desc_at(idx: int) -> str:
             return chunks[idx][0] if chunks[idx] else ""
 
@@ -957,11 +959,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                             seen.add(s)
                             ids.append(s)
                 return {"title": _title_at(idx), "source_chunk_ids": ids, "description": _desc_at(idx)}
-            return {
-                "children": [_build_node(c) for c in children_idx],
-                "title": _title_at(idx),
-                "description":  _desc_at(idx)
-            }
+            return {"children": [_build_node(c) for c in children_idx], "title": _title_at(idx), "description": _desc_at(idx)}
 
         top_nodes = [_build_node(i) for i in range(top_start, top_end)]
         if len(top_nodes) == 1:
