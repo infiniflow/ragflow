@@ -135,8 +135,9 @@ func parseArgs() (*serverArgs, error) {
 			}
 			i++
 			args.name = &os.Args[i]
+		default:
+			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
-
 	}
 	return args, nil
 }
@@ -258,7 +259,6 @@ func main() {
 		if arguments.name == nil {
 			serverName = fmt.Sprintf("api_server_%d", port)
 		}
-
 	case "admin":
 		port := config.Admin.Port
 		if arguments.port != nil {
@@ -269,8 +269,10 @@ func main() {
 			serverName = fmt.Sprintf("admin_server_%d", port)
 		}
 	case "ingestor":
-		uuid := common.GenerateUUID()
-		serverName = fmt.Sprintf("ingestor_server_%s", uuid)
+		if serverName == "" {
+			uuid := common.GenerateUUID()
+			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
+		}
 	default:
 		common.Error("invalid server mode", errors.New(*arguments.mode))
 		os.Exit(1)
