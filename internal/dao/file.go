@@ -316,7 +316,7 @@ func (dao *FileDAO) IsParentFolderExist(parentID string) bool {
 }
 
 // Query retrieves files by conditions
-func (dao *FileDAO) Query(name string, parentID string) []*entity.File {
+func (dao *FileDAO) Query(name string, parentID string, tenantID string) []*entity.File {
 	var files []*entity.File
 	query := DB.Model(&entity.File{})
 	if name != "" {
@@ -324,6 +324,9 @@ func (dao *FileDAO) Query(name string, parentID string) []*entity.File {
 	}
 	if parentID != "" {
 		query = query.Where("parent_id = ?", parentID)
+	}
+	if tenantID != "" {
+		query = query.Where("tenant_id = ?", tenantID)
 	}
 	query.Find(&files)
 	return files
