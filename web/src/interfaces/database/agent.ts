@@ -266,7 +266,7 @@ export interface IAgentLogResponse {
   source: string;
   user_id: string;
   dsl: string;
-  reference: IReference;
+  reference: IReference[];
   name: string;
   version_title: string;
 }
