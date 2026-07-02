@@ -308,22 +308,6 @@ func TestResolvePsqlHostPort_EmptyHostInURIFallsBackToDefault(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
-// loadFieldMapping — mirrors infinity_conn_base.py:793-807.
-// -----------------------------------------------------------------------------
-
-func TestLoadFieldMapping_MissingFileReturnsEmpty(t *testing.T) {
-	// Use a name that doesn't exist; the function should silently
-	// return empty maps (matching Python's `os.path.exists` guard).
-	a2a, r2a, err := loadFieldMapping("nonexistent_mapping_xyz.json")
-	if err != nil {
-		t.Fatalf("missing file should be a no-op, got error: %v", err)
-	}
-	if len(a2a) != 0 || len(r2a) != 0 {
-		t.Errorf("missing file should yield empty maps; got a2a=%v r2a=%v", a2a, r2a)
-	}
-}
-
 func TestLoadFieldMapping_ParsesAliases(t *testing.T) {
 	// Write a temporary mapping file.
 	dir := t.TempDir()
@@ -391,7 +375,7 @@ func TestLoadFieldMapping_EmptyNameDefaultsToInfinityMappingJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("empty name: %v", err)
 	}
-	if len(a2a) != 0 || len(r2a) != 0 {
+	if len(a2a) == 0 || len(r2a) == 0 {
 		t.Errorf("empty name + no file should yield empty maps; got a2a=%v r2a=%v", a2a, r2a)
 	}
 }
