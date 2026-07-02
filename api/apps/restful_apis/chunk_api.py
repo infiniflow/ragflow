@@ -137,6 +137,19 @@ def _map_doc(doc):
     return renamed_doc
 
 
+def _get_query_id_list(args, name: str) -> list[str]:
+    values = args.getlist(name) if hasattr(args, "getlist") else [args.get(name)]
+    ids: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for item in str(value or "").split(","):
+            item = item.strip()
+            if item and item not in seen:
+                ids.append(item)
+                seen.add(item)
+    return ids
+
+
 def _strip_chunk_runtime_fields(chunk):
     for name in [name for name in chunk.keys() if re.search(r"(_vec$|_sm_|_tks|_ltks)", name)]:
         del chunk[name]
@@ -432,6 +445,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
     page = int(req.get("page", 1))
     size = validate_rest_api_page_size(int(req.get("page_size", 30)))
     question = req.get("keywords", "")
+    chunk_ids = _get_query_id_list(req, "chunk_ids")
     query = {
         "doc_ids": [document_id],
         "page": page,
@@ -440,6 +454,8 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         "sort": True,
         "must_not": {"exists": "compile_kwd"},
     }
+    if chunk_ids:
+        query["id"] = chunk_ids
     if "available" in req:
         query["available_int"] = 1 if req["available"] == "true" else 0
 
@@ -556,7 +572,6 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     (zero entities AND zero relations) are filtered out.
     """
     from rag.nlp import search
-    from api.db.services.compilation_template_service import CompilationTemplateService
     from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
@@ -598,29 +613,35 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
 
     configured_ids: list[str] = []
     seen_configured_ids: set[str] = set()
+    template_meta: dict[str, dict] = {}
+    template_meta_by_kind: dict[str, list[dict]] = {}
     for group_id in group_ids:
-        for template_id in CompilationTemplateGroupService.resolve_template_ids(group_id, tenant_id):
-            if template_id in seen_configured_ids:
+        group = CompilationTemplateGroupService.get_saved(group_id, tenant_id)
+        if not group:
+            continue
+        for template in group.get("templates") or []:
+            if not isinstance(template, dict):
+                continue
+            template_id = str(template.get("id") or "").strip()
+            if not template_id or template_id in seen_configured_ids:
+                continue
+            config = template.get("config") if isinstance(template.get("config"), dict) else {}
+            raw_kind = (
+                config.get("kind") if isinstance(config, dict) else ""
+            ) or template.get("kind") or ""
+            kind_norm = _compilation_template_kind(raw_kind)
+            if kind_norm == "artifacts":
                 continue
             seen_configured_ids.add(template_id)
             configured_ids.append(template_id)
-
-    # template_id → {name, kind, parser_kind_norm}
-    template_meta: dict[str, dict] = {}
-    for template_id in configured_ids:
-        template = CompilationTemplateService.get_saved(template_id, tenant_id)
-        if not template:
-            continue
-        config = template.get("config") if isinstance(template.get("config"), dict) else {}
-        raw_kind = config.get("kind") if isinstance(config, dict) else ""
-        kind_norm = _compilation_template_kind(raw_kind)
-        if kind_norm == "artifacts":
-            continue
-        template_meta[template_id] = {
-            "template_id": template_id,
-            "template_name": template.get("name") or template_id,
-            "kind": raw_kind or kind_norm,
-        }
+            meta = {
+                "template_id": template_id,
+                "template_name": template.get("name") or template_id,
+                "kind": raw_kind or kind_norm,
+                "kind_norm": kind_norm,
+            }
+            template_meta[template_id] = meta
+            template_meta_by_kind.setdefault(kind_norm, []).append(meta)
 
     # Load every graph row for this doc in one shot. Each row corresponds
     # to one (compile_kwd, template_id) tuple — written by
@@ -710,8 +731,14 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
 
         if tid:
             bucket_id = tid
-            bucket_name = template_meta.get(bucket_id, {}).get("template_name") or bucket_id
-            bucket_kind = template_meta.get(bucket_id, {}).get("kind") or kind_val
+            row_kind_norm = _compilation_template_kind(kind_val)
+            meta = template_meta.get(bucket_id)
+            if not meta:
+                kind_matches = template_meta_by_kind.get(row_kind_norm) or []
+                if len(kind_matches) == 1:
+                    meta = kind_matches[0]
+            bucket_name = (meta or {}).get("template_name") or bucket_id
+            bucket_kind = (meta or {}).get("kind") or kind_val
         elif is_raptor:
             bucket_id = "raptor"
             bucket_name = "RAPTOR Summary"

@@ -348,6 +348,22 @@ class OSConnection(DocStoreConnection):
                     bqry.filter.append(
                         Q("bool", must_not=Q("range", available_int={"lt": 1})))
                 continue
+            if k == "id":
+                if not v:
+                    continue
+                if isinstance(v, list):
+                    bqry.filter.append(
+                        Q("bool", should=[Q("terms", id=v), Q("ids", values=v)], minimum_should_match=1))
+                elif isinstance(v, str) or isinstance(v, int):
+                    bqry.filter.append(
+                        Q("bool", should=[Q("term", id=v), Q("ids", values=[v])], minimum_should_match=1))
+                continue
+            if k == "must_not":
+                if isinstance(v, dict):
+                    for kk, vv in v.items():
+                        if kk == "exists":
+                            bqry.must_not.append(Q("exists", field=vv))
+                    continue
             if not v:
                 continue
             if isinstance(v, list):
