@@ -376,14 +376,12 @@ func TestCheckpoint_100ConcurrentReaders(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := ms.Get(ctx, cfg)
 			if err != nil {
 				t.Errorf("Get: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
