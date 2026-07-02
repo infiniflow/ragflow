@@ -47,6 +47,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/handler"
+	"ragflow/internal/mcp"
 	"ragflow/internal/router"
 	"ragflow/internal/service"
 	"ragflow/internal/service/chunk"
@@ -261,6 +262,21 @@ func startServer(config *server.Config) {
 	fileHandler := handler.NewFileHandler(fileService, userService)
 	memoryHandler := handler.NewMemoryHandler(memoryService)
 	mcpHandler := handler.NewMCPHandler(mcpService)
+
+	// MCP server endpoint — exposes RAGFlow capabilities as MCP tools
+	// (ragflow_retrieval, ragflow_list_datasets, ragflow_list_chats) to
+	// external AI clients via JSON-RPC over HTTP.
+	mcpServerHandler := handler.NewMCPServerHandler(
+		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+			return handler.MCPListDatasets(datasetsService, userID, page, pageSize, orderby, desc)
+		},
+		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+			return handler.MCPListChats(chatService, userID, page, pageSize, orderby, desc)
+		},
+		func(userID string, req mcp.RetrievalRequest) (string, error) {
+			return handler.MCPRetrieval(datasetsService, userID, req)
+		},
+	)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	// Install the agent service's Redis-backed run infrastructure
@@ -277,7 +293,8 @@ func startServer(config *server.Config) {
 		agentOpts.stateSerializer,
 		agentOpts.runTracker,
 	)
-	agentHandler := handler.NewAgentHandler(agentService, fileService)
+	agentHandler := handler.NewAgentHandler(agentService, fileService).
+		WithDocumentService(documentService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
@@ -296,17 +313,17 @@ func startServer(config *server.Config) {
 	// no-op echo (the audio package contract), so this is always
 	// safe to call.
 	configureTTSSynthesizer(modelProviderService)
-	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
-		searchBotLLM,
+		modelProviderService,
 		chunkService,
 	)
-	searchBotHandler.SetStreamLLM(searchBotLLM)
+	searchBotHandler.SetStreamLLM(modelProviderService)
 	askService := service.NewAskService(chunkService, nil, 0, 0)
 	searchBotHandler.SetAskService(askService)
-	searchHandler.SetCompletionDependencies(searchBotLLM, askService)
+	chatHandler.SetMindMapDependencies(searchService, tenantService, modelProviderService, chunkService)
+	searchHandler.SetCompletionDependencies(modelProviderService, askService)
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
 	fileCommitHandler := handler.NewFileCommitHandler(service.NewFileCommitService())
@@ -339,7 +356,7 @@ func startServer(config *server.Config) {
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatChannelHandler, langfuseHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler, botHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatChannelHandler, langfuseHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, mcpServerHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler, botHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

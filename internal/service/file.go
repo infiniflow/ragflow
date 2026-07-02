@@ -377,7 +377,7 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 			return nil, fmt.Errorf("failed to store file: %w", err)
 		}
 
-		uniqueName := s.getUniqueFilename(fileObjNames[len(fileObjNames)-1], lastFolder.ID)
+		uniqueName := s.getUniqueFilename(fileObjNames[len(fileObjNames)-1], lastFolder.ID, tenantID)
 
 		fileRecord := &entity.File{
 			ID:         s.generateUUID(),
@@ -477,8 +477,8 @@ func (s *FileService) createFolderRecursive(parentFolder *entity.File, names []s
 	return s.createFolderRecursive(newFolder, names, count+1, tenantID)
 }
 
-func (s *FileService) getUniqueFilename(name, parentID string) string {
-	existingFiles := s.fileDAO.Query(name, parentID)
+func (s *FileService) getUniqueFilename(name, parentID, tenantID string) string {
+	existingFiles := s.fileDAO.Query(name, parentID, tenantID)
 	if len(existingFiles) == 0 {
 		return name
 	}
@@ -490,7 +490,7 @@ func (s *FileService) getUniqueFilename(name, parentID string) string {
 	counter := 1
 	for {
 		newName := fmt.Sprintf("%s_%d%s", nameWithoutExt, counter, ext)
-		existingFiles = s.fileDAO.Query(newName, parentID)
+		existingFiles = s.fileDAO.Query(newName, parentID, tenantID)
 		if len(existingFiles) == 0 {
 			return newName
 		}
@@ -517,7 +517,7 @@ func (s *FileService) CreateFolder(tenantID, name, parentID, fileType string) (m
 		return nil, fmt.Errorf("Parent Folder Doesn't Exist!")
 	}
 
-	existingFiles := s.fileDAO.Query(name, parentID)
+	existingFiles := s.fileDAO.Query(name, parentID, tenantID)
 	if len(existingFiles) > 0 {
 		return nil, fmt.Errorf("Duplicated folder name in the same folder.")
 	}
@@ -788,6 +788,34 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 		if !s.checkFileTeamPermission(destFolder, uid) {
 			return false, "No authorization to write to destination folder."
 		}
+
+		if destFolder.Type != FileTypeFolder {
+			return false, "Destination is not a folder."
+		}
+
+		destAncestors, err := s.fileDAO.GetAllParentFolders(destFolder.ID)
+		if err != nil {
+			return false, "Parent folder not found!"
+		}
+
+		destAncestorIDs := make(map[string]struct{}, len(destAncestors))
+		for _, folder := range destAncestors {
+			destAncestorIDs[folder.ID] = struct{}{}
+		}
+
+		for _, file := range files {
+			if file.Type != FileTypeFolder {
+				continue
+			}
+
+			if file.ID == destFolder.ID {
+				return false, "Cannot move a folder to itself."
+			}
+
+			if _, ok := destAncestorIDs[file.ID]; ok {
+				return false, "Cannot move a folder into its own subfolder."
+			}
+		}
 	}
 
 	// 5. Validate new_name if provided
@@ -811,7 +839,7 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 		if destFolder != nil {
 			targetParentID = destFolder.ID
 		}
-		existingFiles := s.fileDAO.Query(newName, targetParentID)
+		existingFiles := s.fileDAO.Query(newName, targetParentID, file.TenantID)
 		for _, f := range existingFiles {
 			if f.Name == newName {
 				return false, "Duplicated file name in the same folder."
@@ -820,7 +848,7 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 	} else if destFolder != nil {
 		// Plain move (no rename): check for duplicate names in destination folder
 		for _, file := range files {
-			existingFiles := s.fileDAO.Query(file.Name, destFolder.ID)
+			existingFiles := s.fileDAO.Query(file.Name, destFolder.ID, file.TenantID)
 			for _, f := range existingFiles {
 				// Ignore the source file itself
 				if f.ID != file.ID {
@@ -874,7 +902,7 @@ func (s *FileService) moveEntryRecursive(sourceFile *entity.File, destFolder *en
 
 	if sourceFile.Type == FileTypeFolder {
 		// Handle folder move
-		existingFolders := s.fileDAO.Query(effectiveName, destFolder.ID)
+		existingFolders := s.fileDAO.Query(effectiveName, destFolder.ID, sourceFile.TenantID)
 		var newFolder *entity.File
 		if len(existingFolders) > 0 {
 			// Prevent moving a folder into itself (self-target merge)

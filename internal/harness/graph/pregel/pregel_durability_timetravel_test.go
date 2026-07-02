@@ -442,15 +442,13 @@ func TestFaultInjection_ConcurrentCheckpointConflict(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for g := 0; g < goroutines; g++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			engine := NewEngine(sg, WithRecursionLimit(10))
 			_, err := engine.RunSync(context.Background(), map[string]any{"value": "conc"})
 			if err != nil {
 				t.Errorf("engine error: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

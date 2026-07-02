@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ type fakeConnectorService struct {
 	total     int64
 	code      common.ErrorCode
 	err       error
+	html      string
 }
 
 func (s fakeConnectorService) ListConnectors(string) (*service.ListConnectorsResponse, error) {
@@ -70,6 +72,31 @@ func (s fakeConnectorService) PollGoogleWebOAuthResult(string, string, *service.
 	return &service.PollGoogleWebOAuthResultResponse{}, common.CodeSuccess, nil
 }
 
+func (s fakeConnectorService) StartBoxWebOAuth(string, *service.StartBoxWebOAuthRequest) (*service.StartBoxWebOAuthResponse, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return &service.StartBoxWebOAuthResponse{
+		FlowID:           "flow-1",
+		AuthorizationURL: "https://account.box.com/api/oauth2/authorize?state=flow-1",
+		ExpiresIn:        900,
+	}, common.CodeSuccess, nil
+}
+
+func (s fakeConnectorService) BoxWebOAuthCallback(string, string, string, string) string {
+	if s.html != "" {
+		return s.html
+	}
+	return "<html>box</html>"
+}
+
+func (s fakeConnectorService) PollBoxWebOAuthResult(string, *service.PollBoxWebOAuthResultRequest) (*service.PollBoxWebOAuthResultResponse, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return &service.PollBoxWebOAuthResultResponse{}, common.CodeSuccess, nil
+}
+
 func (s fakeConnectorService) ListLog(string, string, int, int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, 0, s.code, s.err
@@ -89,6 +116,99 @@ func (s fakeConnectorService) RebuildConnector(string, string, string) (bool, co
 		return false, s.code, s.err
 	}
 	return true, common.CodeSuccess, nil
+}
+
+func TestConnectorHandlerStartBoxWebOAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := &ConnectorHandler{connectorService: fakeConnectorService{}}
+	router := gin.New()
+	router.POST("/api/v1/connectors/box/oauth/web/start", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "tenant-1"})
+		h.StartBoxWebOAuth(c)
+	})
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/connectors/box/oauth/web/start",
+		strings.NewReader(`{"client_id":"client-1","client_secret":"secret-1"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if body["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("code=%v want=%v body=%v", body["code"], common.CodeSuccess, body)
+	}
+	data, ok := body["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data=%#v", body["data"])
+	}
+	if data["flow_id"] != "flow-1" {
+		t.Fatalf("flow_id=%v", data["flow_id"])
+	}
+}
+
+func TestConnectorHandlerBoxWebOAuthCallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := &ConnectorHandler{connectorService: fakeConnectorService{html: "<html>box callback</html>"}}
+	router := gin.New()
+	router.GET("/api/v1/connectors/box/oauth/web/callback", h.BoxWebOAuthCallback)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/box/oauth/web/callback?state=flow-1&code=code-1", nil)
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("content-type=%q", got)
+	}
+	if resp.Body.String() != "<html>box callback</html>" {
+		t.Fatalf("body=%q", resp.Body.String())
+	}
+}
+
+func TestConnectorHandlerPollBoxWebOAuthResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := &ConnectorHandler{connectorService: fakeConnectorService{}}
+	router := gin.New()
+	router.POST("/api/v1/connectors/box/oauth/web/result", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "tenant-1"})
+		h.PollBoxWebOAuthResult(c)
+	})
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/connectors/box/oauth/web/result",
+		strings.NewReader(`{"flow_id":"flow-1"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if body["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("code=%v want=%v body=%v", body["code"], common.CodeSuccess, body)
+	}
 }
 
 func TestConnectorHandlerTestConnector(t *testing.T) {

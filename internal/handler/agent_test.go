@@ -320,7 +320,7 @@ type fakeAgentService struct {
 
 // agentServiceIface is the minimum interface the handler depends on.
 type agentServiceIface interface {
-	ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*service.ListAgentsResponse, common.ErrorCode, error)
+	ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*service.ListAgentsResponse, common.ErrorCode, error)
 	ListTemplates() ([]*entity.CanvasTemplate, error)
 }
 
@@ -335,7 +335,7 @@ func (h *agentHandlerTestable) listAgents(c *gin.Context) {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
-	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "")
+	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "", nil)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": code, "data": false, "message": err.Error()})
 		return
@@ -359,7 +359,7 @@ func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": templates, "message": "success"})
 }
 
-func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*service.ListAgentsResponse, common.ErrorCode, error) {
+func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
 	return f.result, f.code, f.err
 }
 
@@ -429,7 +429,7 @@ type fullFakeAgentService struct {
 	versions []*entity.UserCanvasVersion
 }
 
-func (f *fullFakeAgentService) ListAgents(string, string, int, int, string, bool, []string, string) (*service.ListAgentsResponse, common.ErrorCode, error) {
+func (f *fullFakeAgentService) ListAgents(string, string, int, int, string, bool, []string, string, []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
 	return &service.ListAgentsResponse{}, common.CodeSuccess, nil
 }
 func (f *fullFakeAgentService) CreateAgent(context.Context, *service.CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
@@ -441,7 +441,7 @@ func (f *fullFakeAgentService) GetAgent(context.Context, string, string) (*entit
 	}
 	return f.getRow, nil
 }
-func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, entity.JSONMap) error {
+func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, map[string]interface{}) error {
 	return nil
 }
 func (f *fullFakeAgentService) DeleteAgent(context.Context, string, string) error {
@@ -955,7 +955,12 @@ func TestRerunAgent_RequiresAllFields(t *testing.T) {
 }
 
 // TestRerunAgent_AcceptsCompleteRequest covers the happy path: all
-// three required fields present -> 200 / code 0.
+// three required fields present + documentService wired with an
+// accessible document -> 200 / code 0.
+//
+// Round 6: now that RerunAgent fails closed when documentService is
+// nil, the happy path needs an accessible stub. We use the deny-all
+// stub flipped to accessible=true so the gate passes.
 func TestRerunAgent_AcceptsCompleteRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -966,13 +971,15 @@ func TestRerunAgent_AcceptsCompleteRequest(t *testing.T) {
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	stub := &stubDocService{accessible: true}
+	h := NewAgentHandler(service.NewAgentService(), nil).
+		WithDocumentService(stub)
 	h.RerunAgent(c)
 
 	var resp map[string]interface{}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	if code, _ := resp["code"].(float64); code != float64(common.CodeSuccess) {
-		t.Errorf("code = %v, want 0", code)
+		t.Errorf("code = %v, want 0 (msg=%v)", code, resp["message"])
 	}
 }
 
@@ -1041,4 +1048,85 @@ func TestGetAgentWebhookLogsReturnsEmptyPoll(t *testing.T) {
 	if _, ok := data["next_since_ts"]; !ok {
 		t.Errorf("missing next_since_ts key")
 	}
+}
+
+// TestRerunAgent_RejectsInaccessibleDocument mirrors PR #15145:
+// POST /api/v1/agents/rerun gates on DocumentService.accessible
+// (the python "is the document reachable by this tenant" check)
+// before accepting the request. Without documentService wired,
+// the gate is skipped (existing behaviour, returns success). With
+// it wired, an inaccessible doc must return CodeDataError + "Document
+// not found." so a caller cannot probe whether a doc exists in
+// another tenant.
+func TestRerunAgent_RejectsInaccessibleDocument(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
+		strings.NewReader(`{"id":"doc-victim","dsl":{"path":[]},"component_id":"c1"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	// Wire a stub documentService that denies all access. The setter
+	// now accepts a narrow documentAccessChecker interface (PR review
+	// round 5), so the deny-all stub injects cleanly without standing
+	// up the real DocumentService (DB, storage, ...).
+	stub := &stubDocService{accessible: false}
+	h := NewAgentHandler(service.NewAgentService(), nil).
+		WithDocumentService(stub)
+	h.RerunAgent(c)
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if code, _ := resp["code"].(float64); code != float64(common.CodeDataError) {
+		t.Errorf("deny-all stub: want code %d (Document not found), got %v (msg=%v)",
+			common.CodeDataError, code, resp["message"])
+	}
+	if msg, _ := resp["message"].(string); !strings.Contains(msg, "Document not found") {
+		t.Errorf("deny-all stub: want message to contain 'Document not found', got %q", msg)
+	}
+}
+
+// TestRerunAgent_NoDocumentServiceFailsClosed pins PR review round 6,
+// Major #2: a nil documentService is now treated as a wiring
+// misconfiguration that would create an auth bypass, NOT a
+// backward-compatible "skip the gate" state. The handler must
+// return 500 / "server misconfiguration" so a missing
+// dependency is loud and gets fixed, instead of silently
+// allowing any caller to rerun an arbitrary doc id.
+func TestRerunAgent_NoDocumentServiceFailsClosed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
+		strings.NewReader(`{"id":"doc-anything","dsl":{"path":[]},"component_id":"c1"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	// Note: no WithDocumentService call → documentService is nil.
+	// Production wiring (cmd/server_main.go) always calls
+	// WithDocumentService; a nil here means the handler was
+	// constructed without its required dependency.
+	h.RerunAgent(c)
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if code, _ := resp["code"].(float64); code != float64(common.CodeServerError) {
+		t.Errorf("nil documentService: want code %d (fail closed), got %v (msg=%v)",
+			common.CodeServerError, code, resp["message"])
+	}
+	if msg, _ := resp["message"].(string); !strings.Contains(msg, "server misconfiguration") {
+		t.Errorf("nil documentService: want message to mention misconfiguration, got %q", msg)
+	}
+}
+
+type stubDocService struct {
+	accessible bool
+}
+
+func (s *stubDocService) Accessible(_, _ string) bool {
+	return s.accessible
 }

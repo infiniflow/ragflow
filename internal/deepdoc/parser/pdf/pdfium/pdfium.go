@@ -1,11 +1,11 @@
-// Package pdfium renders PDF pages using the system's libpdfium.so
-// (bundled with pypdfium2). It exists solely to replace pdf_oxide's
+// Package pdfium renders PDF pages using libpdfium (statically linked
+// at build time via CGO_LDFLAGS). It exists solely to replace pdf_oxide's
 // RenderPageRaw for use cases where image quality matters for downstream
 // OCR/DLA — pdf_oxide still handles all text/char/table extraction.
 package pdfium
 
 /*
-#cgo LDFLAGS: -lpdfium -lm -lpthread -ldl
+#cgo LDFLAGS: -lm -lpthread -ldl
 
 #include <stdint.h>
 #include <stdlib.h>

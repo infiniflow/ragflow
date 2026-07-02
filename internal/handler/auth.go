@@ -40,6 +40,7 @@ type userTokenResolver interface {
 	GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error)
 	GetUserByAPIToken(token string) (*entity.User, common.ErrorCode, error)
 	GetUserByBetaAPIToken(token string) (*entity.User, common.ErrorCode, error)
+	GetAPITokenByBeta(authorization string) (*entity.APIToken, error)
 }
 
 // NewAuthHandler create auth handler
@@ -55,9 +56,9 @@ func NewAuthHandler() *AuthHandler {
 // A beta token can also be a regular user JWT or API token. Order of
 // precedence:
 //
-//  1. JWT (regular session) → existing UserService.GetUserByToken
-//  2. API token              → GetUserByAPIToken
-//  3. Beta API token         → GetUserByBetaAPIToken
+//  1. Beta API token         → GetUserByBetaAPIToken
+//  2. JWT (regular session) → existing UserService.GetUserByToken
+//  3. API token              → GetUserByAPIToken
 //  4. Fall through           → 401
 //
 // IMPORTANT: the regular-user branch is NOT gated on a "Bearer "
@@ -70,26 +71,49 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
 		if auth == "" {
+			if cookie, err := c.Cookie(oauthAuthCookie); err == nil {
+				auth = cookie
+			}
+		}
+
+		if auth == "" {
 			jsonError(c, common.CodeUnauthorized, "Authorization required")
 			c.Abort()
 			return
 		}
-		// Try regular user session first (handles JWT, Bearer, or
-		// raw access_token — same dispatch as AuthMiddleware()).
+		// AUTH_JWT
 		if u, code, err := h.userService.GetUserByToken(auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
 			c.Next()
 			return
 		}
+		// Then try a regular API token (non-beta public bot flow).
 		if u, code, err := h.userService.GetUserByAPIToken(auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
 			c.Set("auth_via_api_token", true)
 			c.Next()
 			return
 		}
-		// Fall back to beta API token (public bot access).
+		// Fall back to beta API token (public bot access). The
+		// middleware also looks up the APIToken directly so the
+		// downstream handler can read its DialogID (the real
+		// agent_id) without re-parsing the Authorization header.
+		// Mirrors the python
+		// `APIToken.query(beta=token).dialog_id` lookup in
+		// bot_api.py:agent_bot_logs.
 		if u, code, err := h.userService.GetUserByBetaAPIToken(auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
+			if tok, terr := h.userService.GetAPITokenByBeta(auth); terr == nil && tok != nil && tok.DialogID != nil {
+				// tok.DialogID is *string (nullable in the schema), but
+				// downstream handlers (GetAgentbotLogs, GetAgentLogs)
+				// read "agent_id" with agentID.(string) — they cannot
+				// type-assert a *string. Dereference and gate on nil so a
+				// row with a NULL dialog_id still surfaces the
+				// "not bound" sentinel rather than silently leaking the
+				// pointer (which would later fail the string assertion).
+				c.Set("agent_id", *tok.DialogID)
+				c.Set("api_token", tok)
+			}
 			c.Next()
 			return
 		}

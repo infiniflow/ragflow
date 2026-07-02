@@ -403,8 +403,7 @@ func TestTurnLoop_ConcurrentPush(t *testing.T) {
 	tl := simpleTurnLoop(nil)
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() { defer wg.Done(); tl.Push("c") }()
+		wg.Go(func() { ; tl.Push("c") })
 	}
 	wg.Wait()
 	tl.Stop()
@@ -686,11 +685,9 @@ func TestTurnLoop_WaitMultipleGoroutines(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			results[i] = loop.Wait()
-		}()
+		})
 	}
 
 	wg.Wait()

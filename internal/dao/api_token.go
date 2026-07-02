@@ -58,14 +58,12 @@ func (dao *APITokenDAO) GetUserByAPIToken(token string) (*entity.APIToken, error
 	return &apiToken, nil
 }
 
-// GetByBeta gets API token by beta access key.
-func (dao *APITokenDAO) GetByBeta(beta string) (*entity.APIToken, error) {
-	var apiToken entity.APIToken
-	err := DB.Where("beta = ?", beta).First(&apiToken).Error
-	if err != nil {
-		return nil, err
-	}
-	return &apiToken, nil
+// GetByBeta gets API tokens by beta key (SDK/bot authorization token).
+// Mirrors Python's APIToken.query(beta=token), which returns a list.
+func (dao *APITokenDAO) GetByBeta(beta string) ([]*entity.APIToken, error) {
+	var tokens []*entity.APIToken
+	err := DB.Where("beta = ?", beta).Find(&tokens).Error
+	return tokens, err
 }
 
 // DeleteByDialogIDs deletes API tokens by dialog IDs (hard delete)

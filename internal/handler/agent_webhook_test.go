@@ -61,6 +61,12 @@ func (f *fakeCanvasLoader) RunAgentWithWebhook(_ context.Context, _, _ string, _
 // makeWebhookCanvas builds a minimal canvas with a Begin component
 // whose params.mode == "Webhook" and the supplied params map. The
 // `params` argument becomes webhook_cfg inside the handler.
+//
+// As of PR #14890 the webhook requires a security block — empty
+// configs are rejected. Tests that don't care about auth inject
+// an explicit anonymous-opt-in block (auth_type=none +
+// allow_anonymous=true) so the handler proceeds to the
+// schema/content-type checks under test.
 func makeWebhookCanvas(id, userID, mode string, params map[string]any) *entity.UserCanvas {
 	dsl := map[string]any{
 		"components": map[string]any{
@@ -73,6 +79,15 @@ func makeWebhookCanvas(id, userID, mode string, params map[string]any) *entity.U
 				},
 			},
 		},
+	}
+	if params == nil {
+		params = map[string]any{}
+	}
+	if _, ok := params["security"]; !ok {
+		params["security"] = map[string]any{
+			"auth_type":       "none",
+			"allow_anonymous": true,
+		}
 	}
 	for k, v := range params {
 		dsl["components"].(map[string]any)["begin"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)[k] = v
