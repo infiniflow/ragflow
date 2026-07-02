@@ -7,16 +7,10 @@ docker compose -f docker/docker-compose-base.yml up -d
 ```
 
 ## 2. Build Go Version RAGFlow
-- First build (includes C++ dependencies and office_oxide native library):
+- Build RAGFlow binary with C++ dependencies:
 
 ```bash
-./build.sh --cpp
-```
-
-- Subsequent builds (Go only):
-
-```bash
-./build.sh --go
+./build.sh
 ```
 
 - Production builds (strip debug symbols for smaller binaries):
@@ -47,20 +41,31 @@ docker compose -f docker/docker-compose-base.yml up -d
 > All three native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
 
 ## 3. Run Go Version RAGFlow
-Note: admin_server must be started first; otherwise, ragflow_server will encounter errors when sending heartbeats.
+Note: admin server must be started first; otherwise, api server will encounter errors when sending heartbeats.
 
 ```bash
 # Start admin server
-./bin/admin_server
+./bin/ragflow_main --admin
 ```
 
 ```bash
 # Start RAGFlow server
-./bin/ragflow_server
+./bin/ragflow_main --api
 ```
+
 ```bash
-# Run CLI
+# Start RAGFlow ingestor
+./bin/ragflow_main --ingestor
+```
+
+```bash
+# Run CLI in API mode
 ./bin/ragflow-cli
+```
+
+```bash
+# Run CLI in ADMIN mode
+./bin/ragflow-cli --admin
 ```
 
 ## 4. Start Frontend
@@ -69,8 +74,8 @@ cd web && export API_PROXY_SCHEME=hybrid && npm run dev
 ```
 
 ## 5. Service Ports & API Routing
-- ragflow_server listens on port 9384
-- admin_server listens on port 9383
+- api server listens on port 9384 by default
+- admin server listens on port 9383 by default
 
 After updating or implementing an API, update the frontend development environment routes in web/vite.config.ts under proxySchemes.
 
