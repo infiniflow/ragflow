@@ -630,7 +630,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
     :return: (success, result_or_error_message)
     """
     if not provider_id_or_name:
-        return False, "Provider ID or name is required"
+        return False, "Provider ID or name is required", {}
 
     provider_obj = None
     if provider_id_or_name:
@@ -647,7 +647,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
 
     factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == target_factory_name]
     if not factory_info:
-        return False, f"Provider '{provider_id_or_name}' not found"
+        return False, f"Provider '{provider_id_or_name}' not found", {}
 
     if model_info:
         factory_llms = [{
@@ -655,11 +655,11 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
             "llm_name": model.get("model_name", ""),
         } for model in model_info if model for _type in model.get("model_type", [])]
         if not factory_llms:
-            return False, f"No valid models found for provider '{provider_id_or_name}'"
+            return False, f"No valid models found for provider '{provider_id_or_name}'", {}
     else:
         factory_llms = factory_info[0]["llm"]
         if not factory_llms:
-            return False, f"No models found for provider '{provider_id_or_name}'"
+            return False, f"No models found for provider '{provider_id_or_name}'", {}
 
     model_verify_result = {}
     # test if api key works
