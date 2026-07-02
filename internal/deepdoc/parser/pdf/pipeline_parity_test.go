@@ -1,6 +1,6 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/tool"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 // TestPipelineParity verifies Go pipeline logic equivalence with Python.
@@ -53,8 +54,9 @@ func TestPipelineParity(t *testing.T) {
 		// Run Go pipeline (SKIP_OCR — no DeepDoc)
 		cfg := pdf.DefaultParserConfig()
 		cfg.SortByTop = true
-		p := NewParser(cfg, &MockDocAnalyzer{Healthy: true})
-		result, err := p.Parse(context.Background(), engine)
+		mockAnalyzer := &MockDocAnalyzer{Healthy: true}
+		p := NewParser(cfg)
+		result, err := p.ParseRaw(context.Background(), engine, mockAnalyzer)
 		if err != nil {
 			t.Errorf("%s: Parse: %v", name, err)
 			continue
@@ -151,7 +153,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 			if isWS && len(out) > 0 {
 				prev := &out[len(out)-1]
 				gap := b.Top - prev.Bottom
-				ov := OverlapX(prev, &b)
+				ov := util.OverlapX(prev, &b)
 				// Python: gap passes AND xov passes → whitespace merged
 				// into prev, extending bottom.  i advances (Go for-loop).
 				if gap <= thr && ov >= 0.3 {
@@ -169,7 +171,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 				continue
 			}
 			gap := b.Top - prev.Bottom
-			ov := OverlapX(prev, &b)
+			ov := util.OverlapX(prev, &b)
 			if gap > thr {
 				out = append(out, b)
 				continue
@@ -219,7 +221,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 				continue
 			}
 			gap := b.Top - prev.Bottom
-			ov := OverlapX(prev, &b)
+			ov := util.OverlapX(prev, &b)
 			if gap > thr {
 				out = append(out, b)
 				continue
@@ -250,18 +252,18 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 	t.Logf("Gap with bridge:    420.16 - 406.79 = %.2f < %.2f = MERGE", 420.16-406.79, thr)
 
 	// The manual vWithWS (Python-like) and vNoWS (old Go pre-filter) still
-	// differ — the mechanism is real.  But production NaiveVerticalMerge now
+	// differ — the mechanism is real.  But production lyt.NaiveVerticalMerge now
 	// handles whitespace inline (gap bridge), matching Python.
 	if nWS == nNoWS {
 		t.Error("Manual implementations should differ — the gap bridge mechanism is real")
 	}
 
-	// Verify production NaiveVerticalMerge matches vWithWS (Python behavior).
+	// Verify production lyt.NaiveVerticalMerge matches vWithWS (Python behavior).
 	mhMap := map[int]float64{1: mh}
 	mwMap := map[int]float64{1: 5}
 	vmResult := lyt.NaiveVerticalMerge(boxes, mhMap, mwMap, false)
-	t.Logf("NaiveVerticalMerge (production): %d sections", len(vmResult))
+	t.Logf("lyt.NaiveVerticalMerge (production): %d sections", len(vmResult))
 	if len(vmResult) != nWS {
-		t.Errorf("NaiveVerticalMerge produced %d sections, want %d (Python-like with gap bridge)", len(vmResult), nWS)
+		t.Errorf("lyt.NaiveVerticalMerge produced %d sections, want %d (Python-like with gap bridge)", len(vmResult), nWS)
 	}
 }
