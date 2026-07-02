@@ -844,6 +844,30 @@ def add_positions(d, poss):
     d["top_int"] = top_int
 
 
+def add_source_positions(d, poss):
+    """Copy source coordinates that already use public one-based page numbers."""
+    if not poss:
+        return
+    page_num_int = []
+    position_int = []
+    top_int = []
+    for pn, left, right, top, bottom in poss:
+        page_no = int(pn)
+        if page_no <= 0:
+            logging.warning(
+                "Clamping non-positive source page number %s to 1 for source position %s",
+                pn,
+                (pn, left, right, top, bottom),
+            )
+            page_no = 1
+        page_num_int.append(page_no)
+        top_int.append(int(top))
+        position_int.append((page_no, int(left), int(right), int(top), int(bottom)))
+    d["page_num_int"] = page_num_int
+    d["position_int"] = position_int
+    d["top_int"] = top_int
+
+
 def remove_contents_table(sections, eng=False):
     i = 0
     while i < len(sections):

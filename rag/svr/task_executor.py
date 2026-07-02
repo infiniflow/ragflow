@@ -83,7 +83,7 @@ from api.db.joint_services.tenant_model_service import get_tenant_default_model_
 from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, email, tag
-from rag.nlp import search, rag_tokenizer, add_positions
+from rag.nlp import search, rag_tokenizer, add_source_positions
 from rag.raptor import (
     RAPTOR_TREE_BUILDER,
 )
@@ -866,7 +866,7 @@ async def run_dataflow(task: dict):
             ck["content_with_weight"] = ck["text"]
         del ck["text"]
         if "positions" in ck:
-            add_positions(ck, ck["positions"])
+            add_source_positions(ck, ck["positions"])
             del ck["positions"]
 
     if metadata:
