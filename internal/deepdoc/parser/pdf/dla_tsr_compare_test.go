@@ -1,6 +1,6 @@
 //go:build cgo && integration
 
-package parser
+package pdf
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func TestDLATSRResponseCompare(t *testing.T) {
 	eng := mustOpenEngine(t, "06_table_content.pdf")
 	defer eng.Close()
 
-	pageImg, err := renderPageToImage(eng, 0)
+	pageImg, err := RenderPageToImage(eng, 0)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

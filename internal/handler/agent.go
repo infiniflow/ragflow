@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/engine/redis"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -136,6 +137,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 
 	keywords := c.Query("keywords")
 	canvasCategory := c.Query("canvas_category")
+	canvasType := c.Query("canvas_type")
 
 	page := 0
 	if v := c.Query("page"); v != "" {
@@ -186,6 +188,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		desc,
 		ownerIDs,
 		canvasCategory,
+		canvasType,
 		tags,
 	)
 	if err != nil {
@@ -1103,7 +1106,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// parser feeds each `data:` line directly into JSON.parse and
 	// breaks on the `e` of `event:` (browser console: "SyntaxError:
 	// Unexpected token 'e', \"event: mes\"…").
+	emitted := false
 	for ev := range events {
+		emitted = true
 		common.Debug("agent chat completions: streaming event",
 			zap.String("agent_id", req.AgentID),
 			zap.String("session_id", req.SessionID),
@@ -1117,6 +1122,29 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 				zap.Error(err),
 			)
 			return
+		}
+	}
+	if !emitted {
+		// Canvas produced no events (e.g. empty query). Echo the
+		// session_id so the client can resume the conversation
+		// (fixes #15169). The [DONE] terminator must be emitted
+		// here explicitly because the canvas never sends a
+		// "done" event on this path.
+		common.Info("empty agent output - returning session_id",
+			zap.String("agent_id", req.AgentID),
+			zap.String("session_id", req.SessionID),
+		)
+		event := canvas.RunEvent{
+			Type:      "",
+			Data:      "{}",
+			CreatedAt: time.Now().Unix(),
+			SessionID: req.SessionID,
+		}
+		_ = service.WriteChatbotRunEvent(c.Writer, event)
+		if _, err := c.Writer.Write([]byte("data: [DONE]\n\n")); err != nil {
+			common.Debug("agent chat completions: failed to write [DONE]",
+				zap.Error(err),
+			)
 		}
 	}
 	common.Debug("agent chat completions: stream closed",
