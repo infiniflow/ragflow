@@ -418,17 +418,40 @@ func (s *AgentService) GetAgent(ctx context.Context, userID, canvasID string) (*
 	return s.loadCanvasForUser(ctx, userID, canvasID)
 }
 
-// UpdateAgent writes a new DSL to the draft (user_canvas.dsl) and toggles
-// release=false. The call does NOT create a new user_canvas_version row —
-// versions are produced only by PublishAgent.
-func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string, dsl entity.JSONMap) error {
-	row, err := s.loadCanvasForUser(ctx, userID, canvasID)
-	if err != nil {
+// UpdateAgent applies a draft patch to user_canvas. Settings updates may omit
+// dsl; in that case the existing draft DSL must be preserved.
+func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string, patch map[string]interface{}) error {
+	if _, err := s.loadCanvasForUser(ctx, userID, canvasID); err != nil {
 		return err
 	}
-	row.DSL = dslpkg.NormalizeForCanvas(dsl)
-	row.Release = false
-	if err := s.canvasDAO.Update(row); err != nil {
+
+	updates := map[string]interface{}{
+		"release": false,
+	}
+	for _, key := range []string{"title", "avatar", "description", "permission", "canvas_type", "canvas_category"} {
+		if value, ok := patch[key]; ok && value != nil {
+			if key == "title" {
+				if title, ok := value.(string); ok {
+					value = strings.TrimSpace(title)
+				}
+			}
+			updates[key] = value
+		}
+	}
+	if dsl, ok := patch["dsl"]; ok && dsl != nil {
+		dslMap, ok := dsl.(map[string]interface{})
+		if !ok {
+			if typed, ok := dsl.(entity.JSONMap); ok {
+				dslMap = map[string]interface{}(typed)
+			} else {
+				return fmt.Errorf("update agent %s: dsl must be an object", canvasID)
+			}
+		}
+		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(entity.JSONMap(dslMap)))
+	}
+
+	_, err := s.canvasDAO.UpdateFields(canvasID, updates)
+	if err != nil {
 		return fmt.Errorf("update agent %s: %w", canvasID, err)
 	}
 	return nil
