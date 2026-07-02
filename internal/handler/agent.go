@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/engine/redis"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -136,6 +137,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 
 	keywords := c.Query("keywords")
 	canvasCategory := c.Query("canvas_category")
+	canvasType := c.Query("canvas_type")
 
 	page := 0
 	if v := c.Query("page"); v != "" {
@@ -167,6 +169,15 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 			}
 		}
 	}
+	var tags []string
+	if raw := c.Query("tags"); raw != "" {
+		for _, tag := range strings.Split(raw, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag != "" {
+				tags = append(tags, tag)
+			}
+		}
+	}
 
 	result, code, err := h.agentService.ListAgents(
 		user.ID,
@@ -177,6 +188,8 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		desc,
 		ownerIDs,
 		canvasCategory,
+		canvasType,
+		tags,
 	)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -683,16 +696,23 @@ func (h *AgentHandler) Prompts(c *gin.Context) {
 	})
 }
 
-// ListAgentTags GET /api/v1/agents/tags — out of scope (no test depends on
-// it); return 501 to keep the surface honest.
+// ListAgentTags list agent tags.
 func (h *AgentHandler) ListAgentTags(c *gin.Context) {
-	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
 		jsonError(c, code, msg)
 		return
 	}
+
+	rows, errCode, err := h.agentService.ListAgentTags(user.ID, strings.TrimSpace(c.Query("canvas_category")))
+	if err != nil {
+		jsonError(c, errCode, err.Error())
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
-		"data":    []string{},
+		"data":    rows,
 		"message": "success",
 	})
 }
@@ -1087,7 +1107,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// parser feeds each `data:` line directly into JSON.parse and
 	// breaks on the `e` of `event:` (browser console: "SyntaxError:
 	// Unexpected token 'e', \"event: mes\"…").
+	emitted := false
 	for ev := range events {
+		emitted = true
 		common.Debug("agent chat completions: streaming event",
 			zap.String("agent_id", req.AgentID),
 			zap.String("session_id", req.SessionID),
@@ -1101,6 +1123,29 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 				zap.Error(err),
 			)
 			return
+		}
+	}
+	if !emitted {
+		// Canvas produced no events (e.g. empty query). Echo the
+		// session_id so the client can resume the conversation
+		// (fixes #15169). The [DONE] terminator must be emitted
+		// here explicitly because the canvas never sends a
+		// "done" event on this path.
+		common.Info("empty agent output - returning session_id",
+			zap.String("agent_id", req.AgentID),
+			zap.String("session_id", req.SessionID),
+		)
+		event := canvas.RunEvent{
+			Type:      "",
+			Data:      "{}",
+			CreatedAt: time.Now().Unix(),
+			SessionID: req.SessionID,
+		}
+		_ = service.WriteChatbotRunEvent(c.Writer, event)
+		if _, err := c.Writer.Write([]byte("data: [DONE]\n\n")); err != nil {
+			common.Debug("agent chat completions: failed to write [DONE]",
+				zap.Error(err),
+			)
 		}
 	}
 	common.Debug("agent chat completions: stream closed",

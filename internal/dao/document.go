@@ -130,7 +130,7 @@ func (dao *DocumentDAO) GetChunkingConfig(docID string) (map[string]interface{},
 		ID           string         `gorm:"column:id"`
 		KbID         string         `gorm:"column:kb_id"`
 		ParserID     string         `gorm:"column:parser_id"`
-		ParserConfig entity.JSONMap `gorm:"column:parser_config"`
+		ParserConfig entity.JSONMap `gorm:"column:parser_config;type:longtext"`
 		Size         int64          `gorm:"column:size"`
 		ContentHash  *string        `gorm:"column:content_hash"`
 		Language     *string        `gorm:"column:language"`
@@ -220,6 +220,22 @@ func (dao *DocumentDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
 	}
 	var documents []*entity.Document
 	err := DB.Where("id IN ?", ids).Find(&documents).Error
+	if err != nil {
+		return nil, err
+	}
+	return documents, nil
+}
+
+// GetByIDsAndTenantIDs retrieves documents by IDs scoped to knowledgebase owners.
+func (dao *DocumentDAO) GetByIDsAndTenantIDs(ids, tenantIDs []string) ([]*entity.Document, error) {
+	if len(ids) == 0 || len(tenantIDs) == 0 {
+		return nil, nil
+	}
+	var documents []*entity.Document
+	err := DB.Model(&entity.Document{}).
+		Joins("JOIN knowledgebase ON document.kb_id = knowledgebase.id").
+		Where("document.id IN ? AND knowledgebase.tenant_id IN ? AND knowledgebase.status = ?", ids, tenantIDs, string(entity.StatusValid)).
+		Find(&documents).Error
 	if err != nil {
 		return nil, err
 	}

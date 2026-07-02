@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"strings"
 
 	"ragflow/internal/common"
 	modelModule "ragflow/internal/entity/models"
@@ -208,6 +209,11 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 
 	// Phase 4: Finalize — citation insertion + reference formatting.
 	visible := ExtractVisibleAnswer(fullAnswer)
+	if strings.TrimSpace(visible) == "" {
+		common.Warn("AskService LLM stream completed without visible answer")
+		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: "LLM call failed"}, ctx)
+		return
+	}
 	chunkRefs := ChunksFormat(chunks)
 
 	// Attempt citation insertion if embedder is available.
