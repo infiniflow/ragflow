@@ -978,8 +978,22 @@ func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status st
 
 // ListDocumentsByDatasetID list documents by knowledge base ID
 func (s *DocumentService) ListDocumentsByDatasetID(kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
-	offset := (page - 1) * pageSize
-	documents, total, err := s.documentDAO.ListByKBID(kbID, keywords, offset, pageSize)
+	return s.ListDocumentsByDatasetIDWithOptions(dao.DocumentListOptions{
+		KbID:     kbID,
+		Keywords: keywords,
+		OrderBy:  "create_time",
+		Desc:     true,
+	}, page, pageSize)
+}
+
+// ListDocumentsByDatasetIDWithOptions lists documents by knowledge base ID with filters.
+func (s *DocumentService) ListDocumentsByDatasetIDWithOptions(opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+	opts.Offset = (page - 1) * pageSize
+	opts.Limit = pageSize
+	if opts.OrderBy == "" {
+		opts.OrderBy = "create_time"
+	}
+	documents, total, err := s.documentDAO.ListByKBIDWithOptions(opts)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -990,6 +1004,64 @@ func (s *DocumentService) ListDocumentsByDatasetID(kbID, keywords string, page, 
 	}
 
 	return responses, total, nil
+}
+
+// GetDocumentFiltersByDatasetID returns aggregate filter values for documents in a dataset.
+func (s *DocumentService) GetDocumentFiltersByDatasetID(opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
+	filters, total, err := s.documentDAO.GetFilterByKBID(opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	docIDs, err := s.documentDAO.ListIDsByKBIDWithOptions(opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	metadataFilter, err := s.getDocumentMetadataFilter(opts.KbID, docIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	filters["metadata"] = metadataFilter
+	return filters, total, nil
+}
+
+func (s *DocumentService) getDocumentMetadataFilter(kbID string, docIDs []string) (map[string]interface{}, error) {
+	metadataByKey, err := s.GetMetadataByKBs([]string{kbID})
+	if err != nil {
+		return nil, err
+	}
+	candidateSet := make(map[string]bool, len(docIDs))
+	for _, docID := range docIDs {
+		candidateSet[docID] = true
+	}
+
+	metadataCounter := map[string]interface{}{}
+	docIDsWithMetadata := map[string]bool{}
+	for key, rawValues := range metadataByKey {
+		values, ok := rawValues.(map[string][]string)
+		if !ok {
+			continue
+		}
+		valueCounter := map[string]int64{}
+		for value, valueDocIDs := range values {
+			for _, docID := range valueDocIDs {
+				if !candidateSet[docID] {
+					continue
+				}
+				valueCounter[value]++
+				docIDsWithMetadata[docID] = true
+			}
+		}
+		if len(valueCounter) > 0 {
+			metadataCounter[key] = valueCounter
+		}
+	}
+	metadataCounter["empty_metadata"] = map[string]int64{"true": int64(len(docIDs) - len(docIDsWithMetadata))}
+	return metadataCounter, nil
+}
+
+// ListDocumentIDsByDatasetIDWithOptions lists matching document IDs without pagination.
+func (s *DocumentService) ListDocumentIDsByDatasetIDWithOptions(opts dao.DocumentListOptions) ([]string, error) {
+	return s.documentDAO.ListIDsByKBIDWithOptions(opts)
 }
 
 // GetDocumentsByAuthorID get documents by author ID
