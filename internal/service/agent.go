@@ -256,7 +256,7 @@ func toAgentItem(c *dao.UserCanvasListItem) *AgentItem {
 // ListAgents returns agent canvases visible to userID.
 // Mirrors Python agent_api.list_agents — validates owner_ids against joined tenants,
 // then delegates to the DAO.
-func (s *AgentService) ListAgents(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*ListAgentsResponse, common.ErrorCode, error) {
+func (s *AgentService) ListAgents(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory, canvasType string, tags []string) (*ListAgentsResponse, common.ErrorCode, error) {
 	// Build the set of tenant IDs the user is authorised to query.
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 	if err != nil {
@@ -292,6 +292,7 @@ func (s *AgentService) ListAgents(userID string, keywords string, page, pageSize
 		desc,
 		keywords,
 		canvasCategory,
+		canvasType,
 		tags,
 	)
 	if err != nil {

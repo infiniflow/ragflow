@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 )
 
@@ -169,6 +171,88 @@ func makeResultChan(results ...AsyncChatResult) <-chan AsyncChatResult {
 	}
 	close(ch)
 	return ch
+}
+
+type feedbackContextKey struct{}
+
+type fakeFeedbackDocEngine struct {
+	engine.DocEngine
+	adjustCalls []struct {
+		ctx       context.Context
+		indexName string
+		chunkID   string
+		kbID      string
+		delta     float64
+		minWeight float64
+		maxWeight float64
+	}
+}
+
+func (f *fakeFeedbackDocEngine) GetType() string { return "elasticsearch" }
+
+func (f *fakeFeedbackDocEngine) AdjustChunkPagerank(ctx context.Context, indexName, chunkID, kbID string, delta, minWeight, maxWeight float64) error {
+	f.adjustCalls = append(f.adjustCalls, struct {
+		ctx       context.Context
+		indexName string
+		chunkID   string
+		kbID      string
+		delta     float64
+		minWeight float64
+		maxWeight float64
+	}{ctx: ctx, indexName: indexName, chunkID: chunkID, kbID: kbID, delta: delta, minWeight: minWeight, maxWeight: maxWeight})
+	return nil
+}
+
+type fakeInfinityFeedbackDocEngine struct {
+	fakeFeedbackDocEngine
+	getChunkCalled bool
+}
+
+func (f *fakeInfinityFeedbackDocEngine) GetType() string { return string(engine.EngineInfinity) }
+
+func (f *fakeInfinityFeedbackDocEngine) GetChunk(ctx context.Context, indexName, chunkID string, datasetIDs []string) (interface{}, error) {
+	f.getChunkCalled = true
+	return nil, errors.New("fallback should not be used")
+}
+
+type fakeFallbackFeedbackDocEngine struct {
+	engine.DocEngine
+	chunks      map[string]map[string]interface{}
+	updateCalls []struct {
+		ctx       context.Context
+		condition map[string]interface{}
+		newValue  map[string]interface{}
+		indexName string
+		kbID      string
+	}
+}
+
+func (f *fakeFallbackFeedbackDocEngine) GetType() string { return "elasticsearch" }
+
+func (f *fakeFallbackFeedbackDocEngine) GetChunk(ctx context.Context, indexName, chunkID string, datasetIDs []string) (interface{}, error) {
+	chunk, ok := f.chunks[chunkID]
+	if !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return chunk, nil
+}
+
+func (f *fakeFallbackFeedbackDocEngine) UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, indexName string, kbID string) error {
+	f.updateCalls = append(f.updateCalls, struct {
+		ctx       context.Context
+		condition map[string]interface{}
+		newValue  map[string]interface{}
+		indexName string
+		kbID      string
+	}{ctx: ctx, condition: condition, newValue: newValue, indexName: indexName, kbID: kbID})
+	return nil
+}
+
+func requireFloatClose(t *testing.T, got, want float64) {
+	t.Helper()
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("got %v want %v", got, want)
+	}
 }
 
 // ===================================================================
@@ -407,6 +491,591 @@ func TestUpdateSession_NotFound(t *testing.T) {
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("code=%v", code)
+	}
+}
+
+// ===================================================================
+// Session message delete / feedback tests
+// ===================================================================
+
+func TestDeleteSessionMessage_RemovesMessagePairAndReference(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		Message: json.RawMessage(`[
+			{"role":"assistant","content":"Welcome!"},
+			{"role":"user","content":"first","id":"msg-1"},
+			{"role":"assistant","content":"answer 1","id":"msg-1"},
+			{"role":"user","content":"second","id":"msg-2"},
+			{"role":"assistant","content":"answer 2","id":"msg-2"}
+		]`),
+		Reference: json.RawMessage(`[
+			{"chunks":[{"id":"chunk-1","kb_id":"kb-1"}]},
+			{"chunks":[{"id":"chunk-2","kb_id":"kb-2"}]}
+		]`),
+	}
+	store.dialogExists["tenant-1|chat-1"] = true
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-1"}},
+		pipeline:       &fakePipeline{},
+	}
+
+	resp, code, err := svc.DeleteSessionMessage("user-1", "chat-1", "session-1", "msg-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if len(resp.Messages) != 3 {
+		t.Fatalf("messages=%#v", resp.Messages)
+	}
+	if resp.Messages[1]["id"] != "msg-2" || resp.Messages[2]["id"] != "msg-2" {
+		t.Fatalf("remaining pair=%#v", resp.Messages)
+	}
+	if len(resp.Reference) != 1 {
+		t.Fatalf("reference=%#v", resp.Reference)
+	}
+	ref, ok := resp.Reference[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("reference type=%T", resp.Reference[0])
+	}
+	chunks, ok := ref["chunks"].([]FormattedChunk)
+	if !ok || len(chunks) != 1 || chunks[0].ID != "chunk-2" {
+		t.Fatalf("remaining chunks=%#v", ref["chunks"])
+	}
+}
+
+func TestUpdateMessageFeedback_AppliesChunkFeedbackWithResolvedTenantAndContext(t *testing.T) {
+	t.Setenv("CHUNK_FEEDBACK_ENABLED", "true")
+	t.Setenv("CHUNK_FEEDBACK_WEIGHTING", "uniform")
+
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		Message: json.RawMessage(`[
+			{"role":"assistant","content":"Welcome!"},
+			{"role":"user","content":"question","id":"msg-1"},
+			{"role":"assistant","content":"answer","id":"msg-1","feedback":"old"}
+		]`),
+		Reference: json.RawMessage(`[
+			{"chunks":[{"id":"chunk-1","kb_id":"kb-1","similarity":0.9}]}
+		]`),
+	}
+	store.dialogExists["tenant-owner|chat-1"] = true
+	docEngine := &fakeFeedbackDocEngine{}
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-owner"}},
+		pipeline:       &fakePipeline{},
+		docEngine:      docEngine,
+	}
+	ctx := context.WithValue(context.Background(), feedbackContextKey{}, "request-context")
+
+	resp, code, err := svc.UpdateMessageFeedback(ctx, "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{
+		"thumbup": true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if len(docEngine.adjustCalls) != 1 {
+		t.Fatalf("adjust calls=%d", len(docEngine.adjustCalls))
+	}
+	call := docEngine.adjustCalls[0]
+	if call.indexName != "ragflow_tenant-owner" || call.chunkID != "chunk-1" || call.kbID != "kb-1" {
+		t.Fatalf("call=%#v", call)
+	}
+	if call.delta != 1 || call.minWeight != 0 || call.maxWeight != 100 {
+		t.Fatalf("weights=%#v", call)
+	}
+	if got := call.ctx.Value(feedbackContextKey{}); got != "request-context" {
+		t.Fatalf("context value=%v", got)
+	}
+	assistant := resp.Messages[2]
+	if assistant["thumbup"] != true {
+		t.Fatalf("assistant=%#v", assistant)
+	}
+	if _, ok := assistant["feedback"]; ok {
+		t.Fatalf("positive feedback should remove text feedback: %#v", assistant)
+	}
+}
+
+func TestUpdateMessageFeedback_ToggleUsesResolvedTenantForUndoAndApply(t *testing.T) {
+	t.Setenv("CHUNK_FEEDBACK_ENABLED", "true")
+	t.Setenv("CHUNK_FEEDBACK_WEIGHTING", "uniform")
+
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		Message: json.RawMessage(`[
+			{"role":"assistant","content":"Welcome!"},
+			{"role":"user","content":"question","id":"msg-1"},
+			{"role":"assistant","content":"answer","id":"msg-1","thumbup":true}
+		]`),
+		Reference: json.RawMessage(`[
+			{"chunks":[{"chunk_id":"chunk-1","dataset_id":"kb-1"}]}
+		]`),
+	}
+	store.dialogExists["tenant-owner|chat-1"] = true
+	docEngine := &fakeFeedbackDocEngine{}
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-owner"}},
+		pipeline:       &fakePipeline{},
+		docEngine:      docEngine,
+	}
+
+	resp, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{
+		"thumbup":  false,
+		"feedback": "not useful",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if len(docEngine.adjustCalls) != 2 {
+		t.Fatalf("adjust calls=%d", len(docEngine.adjustCalls))
+	}
+	for _, call := range docEngine.adjustCalls {
+		if call.indexName != "ragflow_tenant-owner" || call.delta != -1 {
+			t.Fatalf("call=%#v", call)
+		}
+	}
+	assistant := resp.Messages[2]
+	if assistant["thumbup"] != false || assistant["feedback"] != "not useful" {
+		t.Fatalf("assistant=%#v", assistant)
+	}
+}
+
+func TestApplyChunkFeedback_DisabledDoesNotTouchEngine(t *testing.T) {
+	t.Setenv("CHUNK_FEEDBACK_ENABLED", "false")
+	docEngine := &fakeFeedbackDocEngine{}
+	svc := &ChatSessionService{docEngine: docEngine}
+
+	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+		"chunks": []interface{}{map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1"}},
+	}, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["disabled"] != true {
+		t.Fatalf("result=%#v", result)
+	}
+	if len(docEngine.adjustCalls) != 0 {
+		t.Fatalf("adjust calls=%d", len(docEngine.adjustCalls))
+	}
+}
+
+func TestApplyChunkFeedback_UniformSplitsOneVoteAcrossChunks(t *testing.T) {
+	t.Setenv("CHUNK_FEEDBACK_ENABLED", "true")
+	t.Setenv("CHUNK_FEEDBACK_WEIGHTING", "uniform")
+
+	docEngine := &fakeFeedbackDocEngine{}
+	svc := &ChatSessionService{docEngine: docEngine}
+
+	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+		"chunks": []interface{}{
+			map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1"},
+			map[string]interface{}{"id": "chunk-2", "kb_id": "kb-1"},
+		},
+	}, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["success_count"] != 2 {
+		t.Fatalf("result=%#v", result)
+	}
+	if len(docEngine.adjustCalls) != 2 {
+		t.Fatalf("adjust calls=%d", len(docEngine.adjustCalls))
+	}
+	requireFloatClose(t, docEngine.adjustCalls[0].delta, 0.5)
+	requireFloatClose(t, docEngine.adjustCalls[1].delta, 0.5)
+	requireFloatClose(t, docEngine.adjustCalls[0].delta+docEngine.adjustCalls[1].delta, 1)
+}
+
+func TestApplyChunkFeedback_RelevanceDistributesOneVoteBySignals(t *testing.T) {
+	t.Setenv("CHUNK_FEEDBACK_ENABLED", "true")
+	t.Setenv("CHUNK_FEEDBACK_WEIGHTING", "relevance")
+
+	docEngine := &fakeFeedbackDocEngine{}
+	svc := &ChatSessionService{docEngine: docEngine}
+
+	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+		"chunks": []interface{}{
+			map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1", "similarity": 2.0},
+			map[string]interface{}{"id": "chunk-2", "kb_id": "kb-1", "vector_similarity": 1.0},
+			map[string]interface{}{"id": "chunk-3", "kb_id": "kb-1"},
+		},
+	}, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["success_count"] != 3 {
+		t.Fatalf("result=%#v", result)
+	}
+	if len(docEngine.adjustCalls) != 3 {
+		t.Fatalf("adjust calls=%d", len(docEngine.adjustCalls))
+	}
+	requireFloatClose(t, docEngine.adjustCalls[0].delta, -0.5)
+	requireFloatClose(t, docEngine.adjustCalls[1].delta, -0.25)
+	requireFloatClose(t, docEngine.adjustCalls[2].delta, -0.25)
+	requireFloatClose(t, docEngine.adjustCalls[0].delta+docEngine.adjustCalls[1].delta+docEngine.adjustCalls[2].delta, -1)
+}
+
+func TestUpdateChunkWeight_InfinityUsesAtomicAdjuster(t *testing.T) {
+	docEngine := &fakeInfinityFeedbackDocEngine{}
+	svc := &ChatSessionService{docEngine: docEngine}
+
+	if ok := svc.updateChunkWeight(context.Background(), "tenant-1", "chunk-1", "kb-1", 0.25); !ok {
+		t.Fatal("expected updateChunkWeight to succeed")
+	}
+	if docEngine.getChunkCalled {
+		t.Fatal("expected Infinity adjuster path, got GetChunk fallback")
+	}
+	if len(docEngine.adjustCalls) != 1 {
+		t.Fatalf("adjust calls=%d", len(docEngine.adjustCalls))
+	}
+	call := docEngine.adjustCalls[0]
+	if call.indexName != "ragflow_tenant-1" || call.chunkID != "chunk-1" || call.kbID != "kb-1" {
+		t.Fatalf("call=%#v", call)
+	}
+	requireFloatClose(t, call.delta, 0.25)
+}
+
+func TestApplyChunkFeedback_FallbackClampsAndRemovesPagerank(t *testing.T) {
+	t.Setenv("CHUNK_FEEDBACK_ENABLED", "true")
+	t.Setenv("CHUNK_FEEDBACK_WEIGHTING", "uniform")
+
+	docEngine := &fakeFallbackFeedbackDocEngine{
+		chunks: map[string]map[string]interface{}{
+			"chunk-1": {common.PAGERANK_FLD: 0},
+		},
+	}
+	svc := &ChatSessionService{docEngine: docEngine}
+
+	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+		"chunks": []interface{}{map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1"}},
+	}, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["success_count"] != 1 {
+		t.Fatalf("result=%#v", result)
+	}
+	if len(docEngine.updateCalls) != 1 {
+		t.Fatalf("update calls=%d", len(docEngine.updateCalls))
+	}
+	call := docEngine.updateCalls[0]
+	if call.indexName != "ragflow_tenant-1" || call.kbID != "kb-1" {
+		t.Fatalf("call=%#v", call)
+	}
+	if call.condition["id"] != "chunk-1" || call.newValue["remove"] != common.PAGERANK_FLD {
+		t.Fatalf("call=%#v", call)
+	}
+}
+
+// ===================================================================
+// Completion tests
+// ===================================================================
+
+func TestCompletion_Success(t *testing.T) {
+	store := newFakeSessionStore()
+	session := &entity.ChatSession{
+		ID: "session-1", DialogID: "dialog-1",
+		Message:   json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
+		Reference: json.RawMessage(`[]`),
+	}
+	store.sessions["session-1"] = session
+	store.dialogs["dialog-1"] = &entity.Chat{
+		ID: "dialog-1", TenantID: "tenant-1", LLMID: "chat@factory",
+		LLMSetting: entity.JSONMap{},
+	}
+
+	pipeline := &fakePipeline{
+		resultChan: makeResultChan(
+			AsyncChatResult{Answer: "Hello", Reference: map[string]interface{}{"chunks": []interface{}{}}},
+			AsyncChatResult{Answer: " world", Final: true, Reference: map[string]interface{}{"chunks": []interface{}{}}},
+		),
+	}
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       pipeline,
+	}
+
+	result, err := svc.Completion("user-1", "session-1", []map[string]interface{}{
+		{"role": "user", "content": "hi"},
+	}, "", nil, "msg-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ans, _ := result["answer"].(string)
+	if ans != "Hello world" {
+		t.Fatalf("expected answer 'Hello world', got %q", ans)
+	}
+
+	got := parseMessages(store.sessions["session-1"].Message)
+	if len(got) != 3 {
+		t.Fatalf("stored messages=%#v", got)
+	}
+	if got[0]["role"] != "assistant" || got[0]["content"] != "Welcome!" {
+		t.Fatalf("stored prologue=%#v", got[0])
+	}
+	if got[1]["role"] != "user" || got[1]["content"] != "hi" {
+		t.Fatalf("stored user message=%#v", got[1])
+	}
+	if got[2]["role"] != "assistant" || got[2]["content"] != "Hello world" || got[2]["id"] != "msg-1" {
+		t.Fatalf("stored assistant message=%#v", got[2])
+	}
+}
+
+func TestCompletion_EmptyMessages(t *testing.T) {
+	svc := &ChatSessionService{
+		chatSessionDAO: &fakeSessionStore{},
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	_, err := svc.Completion("user-1", "session-1", nil, "", nil, "msg-1")
+	if err == nil || err.Error() != "messages cannot be empty" {
+		t.Fatalf("expected 'messages cannot be empty', got %v", err)
+	}
+}
+
+func TestCompletion_LastMessageNotFromUser(t *testing.T) {
+	svc := &ChatSessionService{
+		chatSessionDAO: &fakeSessionStore{},
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	_, err := svc.Completion("user-1", "session-1", []map[string]interface{}{
+		{"role": "assistant", "content": "hello"},
+	}, "", nil, "msg-1")
+	if err == nil || !strings.Contains(err.Error(), "not from user") {
+		t.Fatalf("expected 'not from user' error, got %v", err)
+	}
+}
+
+func TestCompletion_ConversationNotFound(t *testing.T) {
+	store := newFakeSessionStore()
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	_, err := svc.Completion("user-1", "missing", []map[string]interface{}{
+		{"role": "user", "content": "hi"},
+	}, "", nil, "msg-1")
+	if err == nil || err.Error() != "Conversation not found" {
+		t.Fatalf("expected 'Conversation not found', got %v", err)
+	}
+}
+
+func TestCompletion_DialogNotFound(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID: "session-1", DialogID: "dialog-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	}
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{},
+	}
+
+	_, err := svc.Completion("user-1", "session-1", []map[string]interface{}{
+		{"role": "user", "content": "hi"},
+	}, "", nil, "msg-1")
+	if err == nil || err.Error() != "Dialog not found" {
+		t.Fatalf("expected 'Dialog not found', got %v", err)
+	}
+}
+
+func TestCompletion_PipelineError(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID: "session-1", DialogID: "dialog-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	}
+	store.dialogs["dialog-1"] = &entity.Chat{
+		ID: "dialog-1", TenantID: "tenant-1", LLMID: "chat@factory",
+		LLMSetting: entity.JSONMap{},
+	}
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       &fakePipeline{err: errors.New("model unavailable")},
+	}
+
+	_, err := svc.Completion("user-1", "session-1", []map[string]interface{}{
+		{"role": "user", "content": "hi"},
+	}, "", nil, "msg-1")
+	if err == nil || err.Error() != "model unavailable" {
+		t.Fatalf("expected 'model unavailable' error, got %v", err)
+	}
+}
+
+// ===================================================================
+// CompletionStream tests
+// ===================================================================
+
+func readStreamChan(ch <-chan string, n int) []string {
+	var msgs []string
+	for i := 0; i < n; i++ {
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				return msgs
+			}
+			msgs = append(msgs, msg)
+		default:
+			return msgs
+		}
+	}
+	return msgs
+}
+
+func TestCompletionStream_Success(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID: "session-1", DialogID: "dialog-1",
+		Message:   json.RawMessage(`{"messages":[{"role":"assistant","content":"Welcome!"}]}`),
+		Reference: json.RawMessage(`[]`),
+	}
+	store.dialogs["dialog-1"] = &entity.Chat{
+		ID: "dialog-1", TenantID: "tenant-1", LLMID: "chat@factory",
+		LLMSetting: entity.JSONMap{},
+	}
+
+	pipeline := &fakePipeline{
+		resultChan: makeResultChan(
+			AsyncChatResult{Answer: "stream", Reference: map[string]interface{}{"chunks": []interface{}{}}},
+			AsyncChatResult{Answer: " answer", Reference: map[string]interface{}{"chunks": []interface{}{}}},
+		),
+	}
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{},
+		pipeline:       pipeline,
+	}
+
+	streamChan := make(chan string, 10)
+	err := svc.CompletionStream(context.Background(), "user-1", "session-1", []map[string]interface{}{
+		{"role": "user", "content": "hi"},
+	}, "", nil, "msg-1", streamChan)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should receive data events and final signal
+	msgs := readStreamChan(streamChan, 5)
+	if len(msgs) < 3 {
+		t.Fatalf("expected at least 3 stream messages, got %d: %v", len(msgs), msgs)
+	}
+	// Check final signal
+	finalFound := false
+	for _, m := range msgs {
+		if strings.Contains(m, `"data":true`) {
+			finalFound = true
+			break
+		}
+	}
+	if !finalFound {
+		t.Fatal("expected final=true signal in stream")
+	}
+
+	got := parseMessages(store.sessions["session-1"].Message)
+	if len(got) != 3 {
+		t.Fatalf("stored messages=%#v", got)
+	}
+	if got[0]["role"] != "assistant" || got[0]["content"] != "Welcome!" {
+		t.Fatalf("stored prologue=%#v", got[0])
+	}
+	if got[1]["role"] != "user" || got[1]["content"] != "hi" {
+		t.Fatalf("stored user message=%#v", got[1])
+	}
+	if got[2]["role"] != "assistant" || got[2]["content"] != "stream answer" || got[2]["id"] != "msg-1" {
+		t.Fatalf("stored assistant message=%#v", got[2])
+	}
+}
+
+func TestStructureAnswerWithConv_ParsesArrayMessages(t *testing.T) {
+	session := &entity.ChatSession{
+		ID:      "session-1",
+		Message: json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
+	}
+	svc := &ChatSessionService{}
+
+	ans := svc.structureAnswerWithConv(session, map[string]interface{}{
+		"answer":    "Final answer",
+		"reference": map[string]interface{}{"chunks": []interface{}{}},
+		"final":     true,
+	}, "msg-1", "session-1", []interface{}{map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}}})
+
+	if ans["id"] != "msg-1" || ans["session_id"] != "session-1" {
+		t.Fatalf("ans=%#v", ans)
+	}
+
+	got := parseMessages(session.Message)
+	if len(got) != 1 {
+		t.Fatalf("stored messages=%#v", got)
+	}
+	if got[0]["role"] != "assistant" || got[0]["content"] != "Final answer" || got[0]["id"] != "msg-1" {
+		t.Fatalf("stored assistant message=%#v", got[0])
+	}
+}
+
+func TestParseMessages_LegacyWrappedObject(t *testing.T) {
+	got := parseMessages(json.RawMessage(`{"messages":[{"role":"assistant","content":"legacy"}]}`))
+	if !reflect.DeepEqual(got, []map[string]interface{}{{"role": "assistant", "content": "legacy"}}) {
+		t.Fatalf("messages=%#v", got)
+	}
+}
+
+func TestBuildSessionPayload_EmptyCollectionsEncodeAsEmptyArrays(t *testing.T) {
+	svc := &ChatSessionService{}
+	payload := svc.buildSessionPayload(&entity.ChatSession{
+		ID:        "session-1",
+		DialogID:  "chat-1",
+		Message:   nil,
+		Reference: json.RawMessage(`null`),
+	}, nil, false)
+
+	if payload.Messages == nil {
+		t.Fatal("messages is nil")
+	}
+	if payload.Reference == nil {
+		t.Fatal("reference is nil")
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	if !strings.Contains(string(body), `"messages":[]`) {
+		t.Fatalf("messages did not encode as empty array: %s", string(body))
+	}
+	if !strings.Contains(string(body), `"reference":[]`) {
+		t.Fatalf("reference did not encode as empty array: %s", string(body))
 	}
 }
 
