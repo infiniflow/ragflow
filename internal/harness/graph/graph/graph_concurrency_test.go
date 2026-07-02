@@ -108,14 +108,12 @@ func TestGraph_ConcurrentInvoke_ComplexGraph(t *testing.T) {
 	errs := make(chan error, concurrency)
 
 	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := cg.Invoke(context.Background(), map[string]interface{}{"idx": 0, "path": ""})
 			if err != nil {
 				errs <- err
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -172,9 +170,7 @@ func TestGraph_ConcurrentInvoke_LoopGraph(t *testing.T) {
 	errs := make(chan error, concurrency)
 
 	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			result, err := cg.Invoke(context.Background(), map[string]interface{}{})
 			if err != nil {
 				errs <- err
@@ -188,7 +184,7 @@ func TestGraph_ConcurrentInvoke_LoopGraph(t *testing.T) {
 			if v != "done" {
 				errs <- fmt.Errorf("expected done, got %s", v)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -244,9 +240,7 @@ func TestGraph_ConcurrentInvoke_DAGGraph(t *testing.T) {
 	errs := make(chan error, concurrency)
 
 	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			result, err := cg.Invoke(context.Background(), map[string]interface{}{})
 			if err != nil {
 				errs <- err
@@ -260,7 +254,7 @@ func TestGraph_ConcurrentInvoke_DAGGraph(t *testing.T) {
 			if v != "joined" {
 				errs <- fmt.Errorf("expected joined, got %s", v)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -311,9 +305,7 @@ func TestGraph_ConcurrentInvoke_MixedGraph(t *testing.T) {
 	errs := make(chan error, concurrency)
 
 	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			result, err := cg.Invoke(context.Background(), map[string]interface{}{"result": "", "order": ""})
 			if err != nil {
 				errs <- err
@@ -327,7 +319,7 @@ func TestGraph_ConcurrentInvoke_MixedGraph(t *testing.T) {
 			if r != "merged" {
 				errs <- fmt.Errorf("expected merged, got %s", r)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -365,9 +357,7 @@ func TestGraph_ConcurrentInvoke_WithChannels(t *testing.T) {
 	errs := make(chan error, concurrency)
 
 	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			result, err := cg.Invoke(context.Background(), map[string]interface{}{"val": "start"})
 			if err != nil {
 				errs <- err
@@ -381,7 +371,7 @@ func TestGraph_ConcurrentInvoke_WithChannels(t *testing.T) {
 			if v != "done" {
 				errs <- fmt.Errorf("expected done, got %s", v)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -425,15 +415,13 @@ func TestGraph_ConcurrentInvoke_InterruptRace(t *testing.T) {
 	errs := make(chan error, concurrency)
 
 	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := cg.Invoke(context.Background(), map[string]interface{}{"val": ""})
 			// Interrupt is expected — not a failure
 			if err != nil {
 				errs <- fmt.Errorf("interrupt (expected): %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -470,14 +458,12 @@ func TestGraph_ConcurrentInvoke_SharedNodeClosure(t *testing.T) {
 	errs := make(chan error, concurrency)
 
 	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := cg.Invoke(context.Background(), map[string]interface{}{"val": ""})
 			if err != nil {
 				errs <- err
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -507,16 +493,14 @@ func TestGraph_ConcurrentStream_SharedGraph(t *testing.T) {
 	errs := make(chan error, concurrency)
 
 	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			outCh, errCh := cg.Stream(context.Background(), map[string]interface{}{"val": "test"}, types.StreamModeValues)
 			for range outCh {
 			}
 			if err := <-errCh; err != nil {
 				errs <- err
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -594,14 +578,12 @@ func TestGraph_ConcurrentInvoke_HighContention(t *testing.T) {
 	errs := make(chan error, concurrency)
 
 	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := cg.Invoke(context.Background(), map[string]interface{}{"val": ""})
 			if err != nil {
 				errs <- err
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -683,14 +665,12 @@ func TestGraph_ConcurrentInvoke_ErrorPropagation(t *testing.T) {
 	errs := make(chan error, concurrency)
 
 	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := cg.Invoke(context.Background(), map[string]interface{}{"val": ""})
 			if err == nil {
 				errs <- fmt.Errorf("expected error, got nil")
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -728,28 +708,24 @@ func TestGraph_ConcurrentInvoke_GetNodesRace(t *testing.T) {
 
 	// Goroutines that invoke
 	for i := 0; i < 25; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := cg.Invoke(context.Background(), map[string]interface{}{"val": ""})
 			if err != nil {
 				errs <- err
 			}
-		}()
+		})
 	}
 
 	// Goroutines that read graph metadata
 	for i := 0; i < 25; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			g := cg.GetGraph()
 			_ = g.GetNodes()
 			_ = g.GetEdges()
 			_ = g.GetChannels()
 			_ = g.GetEntryPoint()
 			_ = g.GetConditionalEdges()
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)

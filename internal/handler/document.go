@@ -57,7 +57,7 @@ type documentServiceIface interface {
 	GetDocumentFiltersByDatasetID(opts dao.DocumentListOptions) (map[string]interface{}, int64, error)
 	GetMetadataByKBs(kbIDs []string) (map[string]interface{}, error)
 	GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*service.DocumentResponse, int64, error)
-	GetThumbnail(docID string) (*service.ThumbnailResponse, error)
+	GetThumbnails(userID string, docIDs []string) (map[string]string, error)
 	GetDocumentImage(imageID string) ([]byte, error)
 	GetMetadataSummary(kbID string, docIDs []string) (map[string]interface{}, error)
 	SetDocumentMetadata(docID string, meta map[string]interface{}) error
@@ -173,38 +173,49 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 
 // GetThumbnail Get thumbnails for documents.
 func (h *DocumentHandler) GetThumbnail(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	id := c.Query("doc_ids")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": errors.New("invalid document id"),
-		})
+	docIDs := parseThumbnailDocIDs(c)
+	if len(docIDs) == 0 {
+		jsonError(c, common.CodeArgumentError, `Lack of "Document ID"`)
 		return
 	}
 
-	result, err := h.documentService.GetThumbnail(id)
+	result, err := h.documentService.GetThumbnails(user.ID, docIDs)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": fmt.Errorf("thumbnail not found"),
-		})
+		jsonError(c, common.CodeServerError, err.Error())
 		return
-	}
-
-	if result.Thumbnail != nil && *result.Thumbnail != "" {
-		newThumbURL := fmt.Sprintf("/api/v1/documents/images/%s-%s", result.KbID, *result.Thumbnail)
-		result.Thumbnail = &newThumbURL
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
-		"data":    map[string]interface{}{result.ID: result.Thumbnail},
+		"data":    result,
 		"message": "success",
 	})
+}
+
+func parseThumbnailDocIDs(c *gin.Context) []string {
+	rawValues := c.QueryArray("doc_ids")
+	seen := make(map[string]struct{}, len(rawValues))
+	docIDs := make([]string, 0, len(rawValues))
+
+	for _, raw := range rawValues {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		docIDs = append(docIDs, id)
+	}
+
+	return docIDs
 }
 
 // GetDocumentImage returns a document image from object storage.

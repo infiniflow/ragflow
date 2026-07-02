@@ -84,7 +84,7 @@ func (f *waitFakeAgentService) CreateAgent(context.Context, *service.CreateAgent
 func (f *waitFakeAgentService) GetAgent(context.Context, string, string) (*entity.UserCanvas, error) {
 	return &entity.UserCanvas{ID: "canvas-wait"}, nil
 }
-func (f *waitFakeAgentService) UpdateAgent(context.Context, string, string, entity.JSONMap) error {
+func (f *waitFakeAgentService) UpdateAgent(context.Context, string, string, map[string]interface{}) error {
 	return nil
 }
 func (f *waitFakeAgentService) DeleteAgent(context.Context, string, string) error {

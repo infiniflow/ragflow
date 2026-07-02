@@ -141,6 +141,8 @@ type ThumbnailResponse struct {
 	KbID      string  `json:"kb_id"`
 }
 
+const imgBase64Prefix = "data:image/png;base64,"
+
 type ArtifactResponse struct {
 	Data            []byte
 	ContentType     string
@@ -874,17 +876,48 @@ func (s *DocumentService) ListDocuments(page, pageSize int) ([]*DocumentResponse
 	return responses, total, nil
 }
 
-func (s *DocumentService) GetThumbnail(docID string) (*ThumbnailResponse, error) {
-	document, err := s.documentDAO.GetByID(docID)
-	if err != nil {
-		return nil, err
+func (s *DocumentService) GetThumbnails(userID string, docIDs []string) (map[string]string, error) {
+	if len(docIDs) == 0 {
+		return map[string]string{}, nil
 	}
 
-	var result ThumbnailResponse
-	result.ID = document.ID
-	result.Thumbnail = document.Thumbnail
-	result.KbID = document.KbID
-	return &result, nil
+	tenantIDs := []string{userID}
+	if userID != "" {
+		ids, err := dao.NewUserTenantDAO().GetTenantIDsByUserID(userID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch user tenants: %w", err)
+		}
+		tenantIDs = append(tenantIDs, ids...)
+	}
+
+	documents, err := s.documentDAO.GetByIDsAndTenantIDs(docIDs, tenantIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch document thumbnails: %w", err)
+	}
+
+	result := make(map[string]string, len(documents))
+	for _, document := range documents {
+		if document == nil {
+			continue
+		}
+
+		thumbnail := ""
+		if document.Thumbnail != nil && *document.Thumbnail != "" {
+			if strings.HasPrefix(*document.Thumbnail, imgBase64Prefix) {
+				thumbnail = *document.Thumbnail
+			} else {
+				thumbnail = fmt.Sprintf(
+					"/api/v1/documents/images/%s-%s",
+					document.KbID,
+					*document.Thumbnail,
+				)
+			}
+		}
+
+		result[document.ID] = thumbnail
+	}
+
+	return result, nil
 }
 
 func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
@@ -2044,9 +2077,7 @@ func (s *DocumentService) SetDocumentMetadata(docID string, meta map[string]inte
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
 
-	// Update metadata using the document engine (merges with existing)
-	err = s.docEngine.UpdateMetadata(nil, docID, doc.KbID, meta, tenantID)
-	if err != nil {
+	if err := s.docEngine.UpdateMetadata(context.Background(), docID, doc.KbID, meta, tenantID); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
 
@@ -2722,6 +2753,35 @@ func (s *DocumentService) replaceDocumentMetadata(docID string, meta map[string]
 		return err
 	}
 	return s.SetDocumentMetadata(docID, map[string]interface{}(meta))
+}
+
+func (s *DocumentService) patchDocumentMetadata(docID string, before, after map[string]interface{}) error {
+	if s.docEngine == nil || s.metadataSvc == nil {
+		return nil
+	}
+
+	deleteKeys := make([]string, 0)
+	for key := range before {
+		if _, ok := after[key]; !ok {
+			deleteKeys = append(deleteKeys, key)
+		}
+	}
+	if len(deleteKeys) > 0 {
+		if err := s.DeleteDocumentMetadata(docID, deleteKeys); err != nil {
+			return err
+		}
+	}
+
+	updateFields := make(map[string]interface{})
+	for key, value := range after {
+		if !reflect.DeepEqual(before[key], value) {
+			updateFields[key] = value
+		}
+	}
+	if len(updateFields) == 0 {
+		return nil
+	}
+	return s.SetDocumentMetadata(docID, updateFields)
 }
 
 func (s *DocumentService) updateDocumentNameOnly(doc *entity.Document, tenantID, newName string) error {
@@ -3530,18 +3590,8 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 			continue
 		}
 
-		if len(meta) == 0 {
-			if err := s.DeleteDocumentAllMetadata(docID); err != nil {
-				common.Warn("BatchUpdateDocumentMetadata: delete all metadata failed",
-					zap.String("docID", docID), zap.Error(err))
-				continue
-			}
-			updated++
-			continue
-		}
-
-		if err := s.replaceDocumentMetadata(docID, meta); err != nil {
-			common.Warn("BatchUpdateDocumentMetadata: replace metadata failed",
+		if err := s.patchDocumentMetadata(docID, originalMeta, meta); err != nil {
+			common.Warn("BatchUpdateDocumentMetadata: patch metadata failed",
 				zap.String("docID", docID), zap.Error(err))
 			continue
 		}
