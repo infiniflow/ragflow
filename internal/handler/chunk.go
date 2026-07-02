@@ -351,6 +351,8 @@ func parseAvailableQuery(raw string) (int, bool, error) {
 		return 0, false, nil
 	case "true", "1":
 		return 1, true, nil
+	case "false", "0":
+		return 0, true, nil
 	default:
 		return 0, true, fmt.Errorf("available must be one of: true, false, 1, 0")
 	}

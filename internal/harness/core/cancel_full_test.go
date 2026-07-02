@@ -267,8 +267,7 @@ func TestBuildCancelFunc_CASFailStateDone(t *testing.T) {
 		cf := cc.buildCancelFunc()
 		var wg sync.WaitGroup
 		for j := 0; j < 100; j++ {
-			wg.Add(1)
-			go func() { defer wg.Done(); _, _ = cf() }()
+			wg.Go(func() { ; _, _ = cf() })
 		}
 		wg.Wait()
 		cc.markHandled()
@@ -1304,8 +1303,7 @@ func TestDeriveAgentToolCancelContext_ConcurrentSetRecursive(t *testing.T) {
 		child := parent.deriveAgentToolCancelContext(ctx)
 		var wg sync.WaitGroup
 		for j := 0; j < 10; j++ {
-			wg.Add(1)
-			go func() { defer wg.Done(); parent.setRecursive(true) }()
+			wg.Go(func() { ; parent.setRecursive(true) })
 		}
 		wg.Wait()
 		child.markDone()
