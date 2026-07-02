@@ -968,6 +968,13 @@ class FileCommit(DataBaseModel):
     author_id = CharField(max_length=32, null=False, help_text="user who created the commit", index=True)
     file_count = IntegerField(default=0, help_text="number of files in this commit")
     tree_state = LongTextField(null=True, help_text="JSON snapshot of the full folder tree at this commit")
+    # ---- Artifact-commit extension ----
+    # Populated only for commits recorded via
+    # ``FileCommitService.record_page_edit`` (i.e. artifact-page saves).
+    # For workspace file commits both fields stay null and the ``message``
+    # column carries the commit body.
+    title = CharField(max_length=255, null=True, help_text="commit title (artifact-page edits)")
+    comments = TextField(null=True, help_text="commit body/description (artifact-page edits)")
 
     class Meta:
         db_table = "file_commit"
@@ -984,6 +991,14 @@ class FileCommitItem(DataBaseModel):
     new_location = CharField(max_length=255, null=True, help_text="new storage location")
     old_name = CharField(max_length=255, null=True, help_text="old file name (for rename)")
     new_name = CharField(max_length=255, null=True, help_text="new file name (for rename)")
+    # ---- Artifact-commit extension ----
+    # Populated only for artifact-page saves recorded via
+    # ``FileCommitService.record_page_edit``.
+    diff = LongTextField(null=True, help_text="pre-computed unified diff (artifact-page edits)")
+    content_after_storage = CharField(max_length=16, null=True, help_text="'minio' | 'es' — where the post-save blob lives", index=True)
+    content_after_location = CharField(max_length=512, null=True, help_text="storage key/id for the post-save blob")
+    slug_kwd = CharField(max_length=512, null=True, help_text="artifact page slug (<page_type>/<name>)", index=True)
+    page_type_kwd = CharField(max_length=32, null=True, help_text="artifact page type", index=True)
 
     class Meta:
         db_table = "file_commit_item"
@@ -992,35 +1007,11 @@ class FileCommitItem(DataBaseModel):
         )
 
 
-class ArtifactCommit(DataBaseModel):
-    """One row per user-saved edit of an artifact page.
-
-    A 'commit' is created from the dataset Artifact tab when the user saves
-    the markdown editor dialog. Per the v1 contract, no-op saves (the edit
-    produced an empty unified diff) are skipped at the service layer and do
-    not appear here. Each row is self-contained: ``content_after`` snapshots
-    the full post-save markdown so history rendering / restore does not have
-    to walk a parent chain.
-    """
-    id = CharField(max_length=32, primary_key=True)
-    tenant_id = CharField(max_length=32, null=False, index=True)
-    kb_id = CharField(max_length=32, null=False, index=True)
-    page_type_kwd = CharField(max_length=32, null=False, index=True, help_text="artifact page type (entity / concept / ...)")
-    slug = CharField(max_length=512, null=False, index=True, help_text="full <page_type>/<name> slug")
-
-    user_id = CharField(max_length=32, null=True, index=True, help_text="who saved the edit; null for system / LLM commits")
-    title = CharField(max_length=255, null=False, help_text="commit title; server defaults to 'Edit <slug>' when omitted")
-    comments = TextField(null=True, default="", help_text="optional commit body / description")
-
-    diff = LongTextField(null=True, help_text="unified diff (difflib.unified_diff) between prior content and content_after")
-    content_after = LongTextField(null=True, help_text="full post-save markdown snapshot; self-contained per row")
-
-    class Meta:
-        db_table = "artifact_commit"
-        indexes = (
-            # Primary access pattern: list commits for one page newest-first.
-            (("tenant_id", "kb_id", "slug", "create_time"), False),
-        )
+# ``ArtifactCommit`` retired — artifact page history is now stored under
+# ``FileCommit`` + ``FileCommitItem`` via ``FileCommitService.record_page_edit``
+# (see the artifact-commit extension columns on those models above).
+# Pre-existing ``artifact_commit`` rows are intentionally left in place;
+# no code path reads them.
 
 
 class Task(DataBaseModel):
@@ -1851,6 +1842,14 @@ def migrate_db():
     alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
     alter_db_column_type(migrator, "chat_channel", "status", IntegerField(default=1, index=True))
     alter_db_rename_column(migrator, "chat_channel", "dialog_id", "chat_id")
+    # ---- FileCommit / FileCommitItem: artifact-page commit extension ----
+    alter_db_add_column(migrator, "file_commit", "title", CharField(max_length=255, null=True))
+    alter_db_add_column(migrator, "file_commit", "comments", TextField(null=True))
+    alter_db_add_column(migrator, "file_commit_item", "diff", LongTextField(null=True))
+    alter_db_add_column(migrator, "file_commit_item", "content_after_storage", CharField(max_length=16, null=True, index=True))
+    alter_db_add_column(migrator, "file_commit_item", "content_after_location", CharField(max_length=512, null=True))
+    alter_db_add_column(migrator, "file_commit_item", "slug_kwd", CharField(max_length=512, null=True, index=True))
+    alter_db_add_column(migrator, "file_commit_item", "page_type_kwd", CharField(max_length=32, null=True, index=True))
     # Drop both the explicit "idx_*" name from later migrations AND the
     # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
     # original TenantModelInstance definition (commit dc4b82523). Databases

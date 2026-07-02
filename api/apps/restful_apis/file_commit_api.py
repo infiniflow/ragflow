@@ -64,19 +64,24 @@ def _resolve_folder_id(entity_type, entity_id):
 
 @_register_resolver("datasets")
 def _resolve_dataset_folder(dataset_id):
-    success, kb = KnowledgebaseService.get_by_id(dataset_id)
+    """For the ``/datasets/<dataset_id>/commits`` scope we now serve
+    artifact-page history rather than workspace file commits.
+
+    Artifact commits are written via
+    :meth:`FileCommitService.record_page_edit` with ``folder_id = kb_id``,
+    so this resolver simply returns the dataset id verbatim. Workspace
+    file-commit browsing for the same KB still works via ``/workspace/*``
+    or ``/folders/*`` with the real folder id — the two commit domains
+    coexist in ``file_commit`` but never mix under the same folder_id.
+
+    A quick existence check keeps us honest: returning ``None`` for a
+    missing KB drives ``_resolve`` to reject the request before it hits
+    a query.
+    """
+    success, _kb = KnowledgebaseService.get_by_id(dataset_id)
     if not success:
         return None
-    # Find the folder with matching name, source_type, and tenant_id
-    folders = FileService.query(
-        name=kb.name,
-        source_type=FileSource.KNOWLEDGEBASE.value,
-        type="folder",
-        tenant_id=kb.tenant_id,
-    )
-    if folders:
-        return folders[0].id
-    return None
+    return dataset_id
 
 
 # ── Route registration helper ─────────────────────────────────────────────
@@ -129,6 +134,10 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             return server_error_response(e)
 
     # ── List commits ───────────────────────────────────────────────────────
+    # Accepts an optional ``?slug=<page_type>/<name>`` filter to serve
+    # per-artifact-page history. When ``slug`` is set we delegate to
+    # ``list_page_commits`` (indexed join on FileCommitItem.slug_kwd);
+    # otherwise this is the plain folder-wide commit list.
     @manager.route(f'{prefix}/commits', methods=['GET'], endpoint=f'list_commits_{_n}')  # noqa: F821
     @login_required
     async def list_commits(entity_id):
@@ -138,6 +147,23 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             page_size = int(request.args.get("page_size", 15))
             order_by = request.args.get("order_by", "create_time")
             desc = request.args.get("desc", "true").lower() != "false"
+            slug = request.args.get("slug") or ""
+
+            if slug:
+                total, items = FileCommitService.list_page_commits(
+                    tenant_id="",  # scoped implicitly via folder_id == kb_id
+                    kb_id=folder_id,
+                    slug=slug,
+                    page=page,
+                    page_size=page_size,
+                )
+                return get_json_result(data={
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "commits": items,
+                })
+
             commits, total = FileCommitService.list_commits(folder_id, page, page_size, order_by, desc)
             return get_json_result(data={
                 "total": total,
@@ -151,12 +177,19 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
                     "author_id": c.author_id,
                     "file_count": c.file_count,
                     "create_time": c.create_time,
+                    # Artifact-commit extension — null for workspace commits.
+                    "title": getattr(c, "title", None),
+                    "comments": getattr(c, "comments", None),
                 } for c in commits],
             })
         except Exception as e:
             return server_error_response(e)
 
     # ── Get commit ─────────────────────────────────────────────────────────
+    # For artifact commits (folder_id == kb_id) we route through
+    # ``get_page_commit_detail`` which resolves ``content_after`` from
+    # the configured blob store and returns the flat shape the old
+    # ``/artifacts/commits/<id>`` endpoint used to serve.
     @manager.route(f'{prefix}/commits/<commit_id>', methods=['GET'], endpoint=f'get_commit_{_n}')  # noqa: F821
     @login_required
     async def get_commit(entity_id, commit_id):
@@ -167,6 +200,19 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
                 return get_data_error_result("Commit not found")
             if commit.folder_id != folder_id:
                 return get_data_error_result("Commit not found in workspace")
+
+            # Artifact commits carry a non-null ``title``; use that as
+            # the discriminator to pick the enriched response shape.
+            if getattr(commit, "title", None):
+                detail = FileCommitService.get_page_commit_detail(
+                    tenant_id="",
+                    kb_id=folder_id,
+                    commit_id=commit_id,
+                )
+                if detail is None:
+                    return get_data_error_result("Commit not found")
+                return get_json_result(data=detail)
+
             items = FileCommitService.list_commit_files(commit_id)
             return get_json_result(data={
                 "id": commit.id,

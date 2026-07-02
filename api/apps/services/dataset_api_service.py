@@ -1845,7 +1845,7 @@ async def update_wiki_page(
         _wiki_transform_links,
         _wiki_extract_summary,
     )
-    from api.db.services.artifact_commit_service import ArtifactCommitService
+    from api.db.services.file_commit_service import FileCommitService
 
     full_slug = f"{page_type}/{slug}" if "/" not in slug else slug
 
@@ -1916,10 +1916,10 @@ async def update_wiki_page(
     if not ok:
         return True, None
 
-    # Record an artifact_commit row on every real change. ``record_edit``
+    # Record a file_commit row on every real change. ``record_page_edit``
     # returns None for empty-diff saves, which we silently swallow.
     try:
-        ArtifactCommitService.record_edit(
+        FileCommitService.record_page_edit(
             tenant_id=tenant_id,
             kb_id=dataset_id,
             page_type=page_type,
@@ -1932,7 +1932,7 @@ async def update_wiki_page(
         )
     except Exception:
         logging.exception(
-            "update_wiki_page: artifact_commit record failed for kb=%s slug=%s",
+            "update_wiki_page: file_commit record failed for kb=%s slug=%s",
             dataset_id, full_slug,
         )
 
@@ -1940,46 +1940,12 @@ async def update_wiki_page(
     return await get_wiki_page(dataset_id, tenant_id, page_type, slug)
 
 
-async def list_wiki_commits(
-    dataset_id: str, tenant_id: str, page_type: str, slug: str,
-    page: int = 1, page_size: int = 50,
-):
-    """List the commit history for one artifact page (newest first).
-
-    Returns ``(True, {"total": N, "items": [...]})`` on success;
-    ``(False, message)`` on authorization failure.
-    """
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
-
-    from api.db.services.artifact_commit_service import ArtifactCommitService
-
-    full_slug = f"{page_type}/{slug}" if "/" not in slug else slug
-    total, items = ArtifactCommitService.list_for_page(
-        tenant_id=tenant_id,
-        kb_id=dataset_id,
-        slug=full_slug,
-        page=page,
-        page_size=page_size,
-    )
-    return True, {"total": total, "items": items}
-
-
-async def get_wiki_commit(
-    dataset_id: str, tenant_id: str, commit_id: str,
-):
-    """Fetch one commit, including the (heavy) diff + content_after fields.
-
-    Returns ``(True, commit_dict | None)`` or ``(False, message)``.
-    """
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
-
-    from api.db.services.artifact_commit_service import ArtifactCommitService
-    detail = ArtifactCommitService.get_detail(
-        tenant_id=tenant_id, kb_id=dataset_id, commit_id=commit_id,
-    )
-    return True, detail
+# ``list_wiki_commits`` / ``get_wiki_commit`` retired — the two
+# ``/datasets/<id>/artifacts/.../commits`` REST endpoints now go through
+# the generic file-commit routes (``/datasets/<id>/commits`` with an
+# optional ``?slug=`` filter), backed by
+# :meth:`FileCommitService.list_page_commits` and
+# :meth:`FileCommitService.get_page_commit_detail`.
 
 
 # All six row types the artifact pipeline writes. Listed in dependency

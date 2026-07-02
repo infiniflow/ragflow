@@ -742,50 +742,16 @@ async def get_skill_page(tenant_id, dataset_id, skill_kwd):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>/commits", methods=["GET"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-async def list_wiki_commits(tenant_id, dataset_id, page_type, slug):
-    """List commit history for one artifact page (newest first).
-
-    GET /api/v1/datasets/<dataset_id>/artifacts/<page_type>/<slug>/commits
-        ?page=1&page_size=50
-
-    Heavy fields (``diff``, ``content_after``) are omitted from list items
-    — fetch them per-row via ``GET .../artifacts/commits/<commit_id>``.
-    """
-    try:
-        page = int(request.args.get("page") or 1)
-        page_size = int(request.args.get("page_size") or 50)
-        success, result = await dataset_api_service.list_wiki_commits(
-            dataset_id, tenant_id, page_type, slug,
-            page=page, page_size=page_size,
-        )
-        if success:
-            return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
-    except ValueError as e:
-        return get_error_argument_result(str(e))
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
-
-
-@manager.route("/datasets/<dataset_id>/artifacts/commits/<commit_id>", methods=["GET"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-async def get_wiki_commit(tenant_id, dataset_id, commit_id):
-    """Fetch one artifact commit including its diff + content_after."""
-    try:
-        success, result = await dataset_api_service.get_wiki_commit(
-            dataset_id, tenant_id, commit_id,
-        )
-        if success:
-            return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+# The two artifact-commit endpoints
+#   GET /datasets/<dataset_id>/artifacts/<page_type>/<path:slug>/commits
+#   GET /datasets/<dataset_id>/artifacts/commits/<commit_id>
+# were retired here — their functionality is now served by the generic
+# file-commit routes:
+#   GET /datasets/<dataset_id>/commits?slug=<page_type>/<name>
+#   GET /datasets/<dataset_id>/commits/<commit_id>
+# See ``api/apps/restful_apis/file_commit_api.py`` and
+# ``api/db/services/file_commit_service.py`` (record_page_edit /
+# list_page_commits / get_page_commit_detail).
 
 
 @manager.route("/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>", methods=["PUT"])  # noqa: F821

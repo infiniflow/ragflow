@@ -156,8 +156,8 @@ async def persist_wiki_pages_to_es(
 
     from rag.nlp import rag_tokenizer
     from common.doc_store.doc_store_base import OrderByExpr
-    from api.db.services.artifact_commit_service import (
-        ArtifactCommitService as WikiCommitService,
+    from api.db.services.file_commit_service import (
+        FileCommitService as WikiCommitService,
     )
 
     index = search.index_name(ctx.tenant_id)
@@ -307,7 +307,7 @@ async def persist_wiki_pages_to_es(
         )
         action = (page.get("action") or "CREATE").upper()
         try:
-            WikiCommitService.record_edit(
+            WikiCommitService.record_page_edit(
                 tenant_id=ctx.tenant_id,
                 kb_id=ctx.kb_id,
                 page_type=page.get("page_type") or "concept",
