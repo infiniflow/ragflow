@@ -40,10 +40,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -115,7 +115,10 @@ func WriteChatbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
 			"data":    data,
 		}
 	}
-	b, err := json.Marshal(payload)
+	// Use SafeJSONMarshal to handle non-serializable values (funcs,
+	// channels) that may have leaked into SSE payload maps. Mirrors
+	// the Python PR #14210 _canvas_json_default fallback in agent_api.py.
+	b, err := runtime.SafeJSONMarshal(payload)
 	if err != nil {
 		return err
 	}
@@ -280,7 +283,7 @@ func (s *BotService) ChatbotCompletion(
 			},
 		})
 		session = &entity.API4Conversation{
-			ID:       uuid.NewString(),
+			ID:       common.GenerateUUID(),
 			DialogID: dialogID,
 			UserID:   tenantID,
 			Message:  seedMsg,

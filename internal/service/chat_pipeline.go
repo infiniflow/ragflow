@@ -213,8 +213,10 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 		modelMaxTokens := 8192
 		if llmModelConfig != nil {
-			if mt, ok := llmModelConfig["max_tokens"].(float64); ok {
-				modelMaxTokens = int(mt)
+			// Treat max_tokens=0 as unset (default 8192) — mirrors
+			// PR #16413 Python fix: model_extra.get("max_tokens") or 8192
+			if mt, ok := llmModelConfig["max_tokens"].(int); ok && mt > 0 {
+				modelMaxTokens = mt
 			}
 		}
 		timer.Exit(common.PhaseCheckLLM)
@@ -1100,27 +1102,19 @@ func (s *ChatPipelineService) AsyncChat(
 					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg,
 					func(answer *string, reason *string) error {
 						if reason != nil && *reason != "" {
+							if thinkState.EnterReasoning() {
+								out <- AsyncChatResult{
+									Answer:       "",
+									Reference:    map[string]interface{}{},
+									AudioBinary:  nil,
+									CreatedAt:    float64(time.Now().Unix()),
+									Final:        false,
+									StartToThink: true,
+								}
+							}
 							deltas := NextThinkDelta(thinkState, *reason, 16)
 							for _, d := range deltas {
-								if d.Kind == ThinkDeltaMarker && d.Value == "<think>" {
-									out <- AsyncChatResult{
-										Answer:       "",
-										Reference:    map[string]interface{}{},
-										AudioBinary:  nil,
-										CreatedAt:    float64(time.Now().Unix()),
-										Final:        false,
-										StartToThink: true,
-									}
-								} else if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
-									out <- AsyncChatResult{
-										Answer:      "",
-										Reference:   map[string]interface{}{},
-										AudioBinary: nil,
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-										EndToThink:  true,
-									}
-								} else if d.Kind == ThinkDeltaText && d.Value != "" {
+								if d.Kind == ThinkDeltaText && d.Value != "" {
 									fullAnswer += d.Value
 									out <- AsyncChatResult{
 										Answer:      d.Value,
@@ -1133,19 +1127,32 @@ func (s *ChatPipelineService) AsyncChat(
 							}
 						}
 						if isContentDelta(answer) {
+							if thinkState.ExitReasoning() {
+								for _, d := range FlushRemaining(thinkState) {
+									if d.Kind == ThinkDeltaText && d.Value != "" {
+										fullAnswer += d.Value
+										out <- AsyncChatResult{
+											Answer:      d.Value,
+											Reference:   map[string]interface{}{},
+											AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+											CreatedAt:   float64(time.Now().Unix()),
+											Final:       false,
+										}
+									}
+								}
+								out <- AsyncChatResult{
+									Answer:      "",
+									Reference:   map[string]interface{}{},
+									AudioBinary: nil,
+									CreatedAt:   float64(time.Now().Unix()),
+									Final:       false,
+									EndToThink:  true,
+								}
+							}
 							fullAnswer += *answer
 							deltas := BufferAnswerDelta(thinkState, *answer, 16)
 							for _, d := range deltas {
-								if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
-									out <- AsyncChatResult{
-										Answer:      "",
-										Reference:   map[string]interface{}{},
-										AudioBinary: nil,
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-										EndToThink:  true,
-									}
-								} else if d.Kind == ThinkDeltaText && d.Value != "" {
+								if d.Kind == ThinkDeltaText && d.Value != "" {
 									out <- AsyncChatResult{
 										Answer:      d.Value,
 										Reference:   map[string]interface{}{},
@@ -1171,15 +1178,17 @@ func (s *ChatPipelineService) AsyncChat(
 			// Flush remaining state matching Python's final flush order
 			// (dialog_service.py:1601-1612): think_buffer → marker → answer_buffer → pending_after_close
 			// Python has no Reasoning field — all text is Answer.
+			hadThinkClose := false
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+					hadThinkClose = true
 					out <- AsyncChatResult{
-						Answer:       "",
-						Reference:    map[string]interface{}{},
-						AudioBinary:  nil,
-						CreatedAt:    float64(time.Now().Unix()),
-						Final:        false,
-						EndToThink:   true,
+						Answer:      "",
+						Reference:   map[string]interface{}{},
+						AudioBinary: nil,
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+						EndToThink:  true,
 					}
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
 					out <- AsyncChatResult{
@@ -1189,6 +1198,19 @@ func (s *ChatPipelineService) AsyncChat(
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 					}
+				}
+			}
+			// Close reasoning if the stream ended while still in reasoning mode
+			// (e.g. model returned only reasoning chunks with no content delta).
+			// Skip when FlushRemaining already emitted a </think> marker.
+			if !hadThinkClose && thinkState.ExitReasoning() {
+				out <- AsyncChatResult{
+					Answer:      "",
+					Reference:   map[string]interface{}{},
+					AudioBinary: nil,
+					CreatedAt:   float64(time.Now().Unix()),
+					Final:       false,
+					EndToThink:  true,
 				}
 			}
 
@@ -1397,27 +1419,19 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg,
 				func(answer *string, reason *string) error {
 					if reason != nil && *reason != "" {
+						if thinkState.EnterReasoning() {
+							out <- AsyncChatResult{
+								Answer:       "",
+								Reference:    map[string]interface{}{},
+								AudioBinary:  nil,
+								CreatedAt:    float64(time.Now().Unix()),
+								Final:        false,
+								StartToThink: true,
+							}
+						}
 						deltas := NextThinkDelta(thinkState, *reason, 16)
 						for _, d := range deltas {
-							if d.Kind == ThinkDeltaMarker && d.Value == "<think>" {
-								out <- AsyncChatResult{
-									Answer:       "",
-									Reference:    map[string]interface{}{},
-									AudioBinary:  nil,
-									CreatedAt:    float64(time.Now().Unix()),
-									Final:        false,
-									StartToThink: true,
-								}
-							} else if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
-								out <- AsyncChatResult{
-									Answer:      "",
-									Reference:   map[string]interface{}{},
-									AudioBinary: nil,
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
-									EndToThink:  true,
-								}
-							} else if d.Kind == ThinkDeltaText && d.Value != "" {
+							if d.Kind == ThinkDeltaText && d.Value != "" {
 								fullAnswer += d.Value
 								out <- AsyncChatResult{
 									Answer:      d.Value,
@@ -1429,11 +1443,20 @@ func (s *ChatPipelineService) AsyncChatSolo(
 							}
 						}
 					}
-				if isContentDelta(answer) {
-					fullAnswer += *answer
-					deltas := BufferAnswerDelta(thinkState, *answer, 16)
-					for _, d := range deltas {
-						if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+					if isContentDelta(answer) {
+						if thinkState.ExitReasoning() {
+							for _, d := range FlushRemaining(thinkState) {
+								if d.Kind == ThinkDeltaText && d.Value != "" {
+									fullAnswer += d.Value
+									out <- AsyncChatResult{
+										Answer:      d.Value,
+										Reference:   map[string]interface{}{},
+										AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+										CreatedAt:   float64(time.Now().Unix()),
+										Final:       false,
+									}
+								}
+							}
 							out <- AsyncChatResult{
 								Answer:      "",
 								Reference:   map[string]interface{}{},
@@ -1442,17 +1465,21 @@ func (s *ChatPipelineService) AsyncChatSolo(
 								Final:       false,
 								EndToThink:  true,
 							}
-						} else if d.Kind == ThinkDeltaText && d.Value != "" {
-							out <- AsyncChatResult{
-								Answer:      d.Value,
-								Reference:   map[string]interface{}{},
-								AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
+						}
+						fullAnswer += *answer
+						deltas := BufferAnswerDelta(thinkState, *answer, 16)
+						for _, d := range deltas {
+							if d.Kind == ThinkDeltaText && d.Value != "" {
+								out <- AsyncChatResult{
+									Answer:      d.Value,
+									Reference:   map[string]interface{}{},
+									AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+									CreatedAt:   float64(time.Now().Unix()),
+									Final:       false,
+								}
 							}
 						}
 					}
-				}
 					return nil
 				},
 			)
@@ -1464,15 +1491,17 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				return
 			}
 			timer.Exit(common.PhaseGenerateAnswer)
+			hadThinkClose := false
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+					hadThinkClose = true
 					out <- AsyncChatResult{
-						Answer:       "",
-						Reference:    map[string]interface{}{},
-						AudioBinary:  nil,
-						CreatedAt:    float64(time.Now().Unix()),
-						Final:        false,
-						EndToThink:   true,
+						Answer:      "",
+						Reference:   map[string]interface{}{},
+						AudioBinary: nil,
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+						EndToThink:  true,
 					}
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
 					out <- AsyncChatResult{
@@ -1482,6 +1511,19 @@ func (s *ChatPipelineService) AsyncChatSolo(
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 					}
+				}
+			}
+			// Close reasoning if the stream ended while still in reasoning mode
+			// (e.g. model returned only reasoning chunks with no content delta).
+			// Skip when FlushRemaining already emitted a </think> marker.
+			if !hadThinkClose && thinkState.ExitReasoning() {
+				out <- AsyncChatResult{
+					Answer:      "",
+					Reference:   map[string]interface{}{},
+					AudioBinary: nil,
+					CreatedAt:   float64(time.Now().Unix()),
+					Final:       false,
+					EndToThink:  true,
 				}
 			}
 			finalAnswer := ExtractVisibleAnswer(thinkState.fullText)
@@ -2385,38 +2427,81 @@ func (s *ChatPipelineService) formatPrompt(template string, kwargs map[string]in
 
 // messageFitIn trims messages to fit within a token budget.
 // Mirrors Python's message_fit_in() in rag/prompts/generator.py.
+//
+// Strategy:
+//  1. If everything fits → return as-is.
+//  2. Keep all system messages + the last user/assistant message.
+//  3. If still too large, trim content proportionally:
+//     - System dominates (>80%) → preserve last message first.
+//     - Otherwise → preserve system first.
 func (s *ChatPipelineService) messageFitIn(messages []map[string]interface{}, maxTokens int) (int, []map[string]interface{}) {
-	totalTokens := 0
-	var result []map[string]interface{}
-
-	// Always keep the system message first.
-	if len(messages) > 0 {
-		if role, _ := messages[0]["role"].(string); role == "system" {
-			if content, ok := messages[0]["content"].(string); ok {
-				sysTokens := kg.NumTokensFromString(content)
-				if sysTokens <= maxTokens {
-					totalTokens = sysTokens
-					result = append(result, messages[0])
-				}
-			}
-		}
+	if maxTokens <= 0 {
+		maxTokens = 8192
 	}
 
-	// Add user/assistant messages from the end, working backwards.
-	rest := messages[1:]
-	for i := len(rest) - 1; i >= 0; i-- {
-		m := rest[i]
-		content, _ := m["content"].(string)
-		tokens := kg.NumTokensFromString(content)
-		if totalTokens+tokens > maxTokens {
-			break
-		}
-		totalTokens += tokens
-		// Prepend to maintain order.
-		result = append([]map[string]interface{}{m}, result...)
+	// Step 1: everything fits.
+	totalTokens := s.countAllTokens(messages)
+	if totalTokens < maxTokens {
+		return totalTokens, messages
 	}
 
-	return totalTokens, result
+	// Step 2: keep all system messages + the last message.
+	result := make([]map[string]interface{}, 0)
+	for _, m := range messages {
+		if role, _ := m["role"].(string); role == "system" {
+			result = append(result, m)
+		}
+	}
+	if len(messages) > 1 {
+		result = append(result, messages[len(messages)-1])
+	}
+
+	totalTokens = s.countAllTokens(result)
+	if totalTokens < maxTokens {
+		return totalTokens, result
+	}
+
+	// Step 3: trim content to fit.
+	ll := kg.NumTokensFromString(s.stringContent(result[0]))
+	ll2 := kg.NumTokensFromString(s.stringContent(result[len(result)-1]))
+	total := ll + ll2
+	if total <= 0 {
+		return 0, result
+	}
+
+	if len(result) == 1 {
+		result[0]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[0]), maxTokens)
+		return s.countAllTokens(result), result
+	}
+
+	if float64(ll)/float64(total) > 0.8 {
+		preservedLast := min(ll2, maxTokens)
+		result[len(result)-1]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), preservedLast)
+		remaining := max(0, maxTokens-preservedLast)
+		result[0]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[0]), remaining)
+	} else {
+		preservedSystem := min(ll, maxTokens)
+		result[0]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[0]), preservedSystem)
+		remaining := max(0, maxTokens-preservedSystem)
+		result[len(result)-1]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), remaining)
+	}
+
+	return s.countAllTokens(result), result
+}
+
+// countAllTokens returns the total token count across all messages.
+func (s *ChatPipelineService) countAllTokens(messages []map[string]interface{}) int {
+	total := 0
+	for _, m := range messages {
+		total += kg.NumTokensFromString(s.stringContent(m))
+	}
+	return total
+}
+
+// stringContent extracts the "content" string from a message map, or "".
+func (s *ChatPipelineService) stringContent(m map[string]interface{}) string {
+	c, _ := m["content"].(string)
+	return c
 }
 
 // buildChatMessages converts the internal message representation to
@@ -2713,7 +2798,7 @@ func (s *ChatPipelineService) decorateAnswer(
 				}
 				newChunks = append(newChunks, newChunk)
 			}
-			refs["chunks"] = newChunks
+			refs["chunks"] = chunksFormat(newChunks)
 		}
 	}
 
@@ -4005,7 +4090,7 @@ func (s *ChatPipelineService) buildSQLReference(
 				"count":    d["count"],
 			})
 		}
-		ref["chunks"] = chunks
+		ref["chunks"] = chunksFormat(chunks)
 		ref["doc_aggs"] = docAggs
 		return answer, ref
 	}
@@ -4014,7 +4099,7 @@ func (s *ChatPipelineService) buildSQLReference(
 	if isAggregateSQL(originalSQL) {
 		chunks, docAggs := s.fetchAggregateChunks(ctx, docEngine, tableName, originalSQL, expectedCol, kbIDs)
 		if len(chunks) > 0 {
-			ref["chunks"] = chunks
+			ref["chunks"] = chunksFormat(chunks)
 			ref["doc_aggs"] = docAggs
 		}
 		return answer, ref
@@ -4164,4 +4249,39 @@ func kbIDStrings(kbs []*entity.Knowledgebase) []string {
 		return nil
 	}
 	return out
+}
+
+// chunksFormat normalizes raw chunk maps to the frontend-expected field names.
+// Mirrors Python's chunks_format in rag/prompts/generator.py:41-65.
+func chunksFormat(chunksRaw []map[string]interface{}) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(chunksRaw))
+	for _, chunk := range chunksRaw {
+		formatted := map[string]interface{}{
+			"id":                getChunkValue(chunk, "chunk_id", "id"),
+			"content":           getChunkValue(chunk, "content", "content_with_weight"),
+			"document_id":       getChunkValue(chunk, "doc_id", "document_id"),
+			"document_name":     getChunkValue(chunk, "docnm_kwd", "document_name"),
+			"dataset_id":        getChunkValue(chunk, "kb_id", "dataset_id"),
+			"image_id":          getChunkValue(chunk, "image_id", "img_id"),
+			"positions":         getChunkValue(chunk, "positions", "position_int"),
+			"url":               chunk["url"],
+			"similarity":        chunk["similarity"],
+			"vector_similarity": chunk["vector_similarity"],
+			"term_similarity":   chunk["term_similarity"],
+			"row_id":            chunk["row_id"],
+			"doc_type":          getChunkValue(chunk, "doc_type_kwd", "doc_type"),
+			"document_metadata": chunk["document_metadata"],
+		}
+		result = append(result, formatted)
+	}
+	return result
+}
+
+// getChunkValue returns the first non-nil value from a chunk map, trying k1 first then k2.
+// Mirrors Python's get_value helper in rag/prompts/generator.py:37-38.
+func getChunkValue(chunk map[string]interface{}, k1, k2 string) interface{} {
+	if v, ok := chunk[k1]; ok && v != nil {
+		return v
+	}
+	return chunk[k2]
 }

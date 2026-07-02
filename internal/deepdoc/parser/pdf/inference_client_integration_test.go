@@ -1,13 +1,12 @@
 //go:build cgo && integration
 
-package parser
+package pdf
 
 import (
 	"context"
 	"strings"
 	"testing"
 
-	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
@@ -15,13 +14,11 @@ import (
 // through the OSS TableBuilder produces tables with the expected row/column structure.
 func TestIntegration_DeepDoc_TableStructure(t *testing.T) {
 	client := mustConnectInferenceClient(t)
-	eng := mustOpenEngine(t, "06_table_content.pdf")
-	defer eng.Close()
+	data := mustReadPDF(t, "06_table_content.pdf")
 
 	cfg := pdf.DefaultParserConfig()
-	cfg.TableBuilder = tbl.NewDeepDocTableBuilder(client)
-	p := NewParser(cfg, client)
-	result, err := p.Parse(context.Background(), eng)
+	p := NewParser(cfg)
+	result, err := p.Parse(context.Background(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -29,7 +26,7 @@ func TestIntegration_DeepDoc_TableStructure(t *testing.T) {
 		t.Skip("DLA did not detect any tables in fixture")
 	}
 
-	t.Logf("OssDeepDoc produced %d tables", len(result.Tables))
+	t.Logf("DeepDoc produced %d tables", len(result.Tables))
 	for i, tbl := range result.Tables {
 		t.Logf("table[%d]: %d rows", i, len(tbl.Rows))
 		for ri, row := range tbl.Rows {
@@ -51,13 +48,11 @@ func TestIntegration_DeepDoc_TableStructure(t *testing.T) {
 // rows with the expected grid structure.
 func TestIntegration_DeepDoc_TableRows(t *testing.T) {
 	client := mustConnectInferenceClient(t)
-	eng := mustOpenEngine(t, "06_table_content.pdf")
-	defer eng.Close()
+	data := mustReadPDF(t, "06_table_content.pdf")
 
 	cfg := pdf.DefaultParserConfig()
-	cfg.TableBuilder = tbl.NewDeepDocTableBuilder(client)
-	p := NewParser(cfg, client)
-	result, err := p.Parse(context.Background(), eng)
+	p := NewParser(cfg)
+	result, err := p.Parse(context.Background(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -92,13 +87,11 @@ func TestIntegration_DeepDoc_Idempotency(t *testing.T) {
 	client := mustConnectInferenceClient(t)
 
 	parseOnce := func() *pdf.ParseResult {
-		eng := mustOpenEngine(t, "06_table_content.pdf")
-		defer eng.Close()
+		data := mustReadPDF(t, "06_table_content.pdf")
 
 		cfg := pdf.DefaultParserConfig()
-		cfg.TableBuilder = tbl.NewDeepDocTableBuilder(client)
-		p := NewParser(cfg, client)
-		result, err := p.Parse(context.Background(), eng)
+		p := NewParser(cfg)
+		result, err := p.Parse(context.Background(), data, client)
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -124,13 +117,11 @@ func TestIntegration_DeepDoc_Idempotency(t *testing.T) {
 // does not crash.
 func TestIntegration_DeepDoc_EmptyPage(t *testing.T) {
 	client := mustConnectInferenceClient(t)
-	eng := mustOpenEngine(t, "01_english_simple.pdf")
-	defer eng.Close()
+	data := mustReadPDF(t, "01_english_simple.pdf")
 
 	cfg := pdf.DefaultParserConfig()
-	cfg.TableBuilder = tbl.NewDeepDocTableBuilder(client)
-	p := NewParser(cfg, client)
-	_, err := p.Parse(context.Background(), eng)
+	p := NewParser(cfg)
+	_, err := p.Parse(context.Background(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
