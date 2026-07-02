@@ -239,14 +239,12 @@ func TestFault_CancelStorm(t *testing.T) {
 	before := runtime.NumGoroutine()
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(10))
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 			_, _ = engine.RunSync(ctx, map[string]any{"value": "storm"})
-		}()
+		})
 	}
 	wg.Wait()
 	time.Sleep(10 * time.Millisecond)
