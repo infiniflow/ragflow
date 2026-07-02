@@ -268,7 +268,9 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def new_a_file_from_kb(cls, tenant_id, name, parent_id, ty=FileType.FOLDER.value, size=0, location=""):
-        # Create a new file from dataset
+        # Create a new file from dataset, or return the existing one.
+        # Includes deduplication to handle race conditions where concurrent
+        # requests may have created duplicate entries.
         # Args:
         #     tenant_id: Tenant ID
         #     name: File name
@@ -277,9 +279,17 @@ class FileService(CommonService):
         #     size: File size
         #     location: File location
         # Returns:
-        #     Created file dictionary
-        for file in cls.query(tenant_id=tenant_id, parent_id=parent_id, name=name):
-            return file.to_dict()
+        #     Created or existing file dictionary
+        existing = list(cls.query(tenant_id=tenant_id, parent_id=parent_id, name=name))
+        if existing:
+            if len(existing) > 1:
+                logger.warning(
+                    "Found %d duplicate entries named '%s' under parent %s, keeping only the first",
+                    len(existing), name, parent_id,
+                )
+                for dup in existing[1:]:
+                    cls.delete_by_id(dup.id)
+            return existing[0].to_dict()
         file = {
             "id": get_uuid(),
             "parent_id": parent_id,
@@ -297,11 +307,23 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def init_skills_folder(cls, root_id, tenant_id):
-        # Initialize skills folder if not exists
+        # Initialize skills folder if not exists.
+        # Deduplicates duplicate entries that may have been created
+        # by concurrent race conditions (TOCTOU).
         # Args:
         #     root_id: Root folder ID
         #     tenant_id: Tenant ID
-        for _ in cls.model.select().where((cls.model.name == SKILLS_FOLDER_NAME) & (cls.model.parent_id == root_id)):
+        existing = list(cls.model.select().where(
+            (cls.model.name == SKILLS_FOLDER_NAME) & (cls.model.parent_id == root_id)
+        ))
+        if existing:
+            if len(existing) > 1:
+                logger.warning(
+                    "Found %d duplicate '%s' folders under root %s, keeping only the first",
+                    len(existing), SKILLS_FOLDER_NAME, root_id,
+                )
+                for dup in existing[1:]:
+                    cls.delete_by_id(dup.id)
             return
         file_id = get_uuid()
         file = {
@@ -319,11 +341,23 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def init_knowledgebase_docs(cls, root_id, tenant_id):
-        # Initialize dataset documents
+        # Initialize dataset documents.
+        # Deduplicates duplicate entries that may have been created
+        # by concurrent race conditions (TOCTOU).
         # Args:
         #     root_id: Root folder ID
         #     tenant_id: Tenant ID
-        for _ in cls.model.select().where((cls.model.name == KNOWLEDGEBASE_FOLDER_NAME) & (cls.model.parent_id == root_id)):
+        existing = list(cls.model.select().where(
+            (cls.model.name == KNOWLEDGEBASE_FOLDER_NAME) & (cls.model.parent_id == root_id)
+        ))
+        if existing:
+            if len(existing) > 1:
+                logger.warning(
+                    "Found %d duplicate '%s' folders under root %s, keeping only the first",
+                    len(existing), KNOWLEDGEBASE_FOLDER_NAME, root_id,
+                )
+                for dup in existing[1:]:
+                    cls.delete_by_id(dup.id)
             return
         folder = cls.new_a_file_from_kb(tenant_id, KNOWLEDGEBASE_FOLDER_NAME, root_id)
 

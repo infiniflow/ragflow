@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"log"
 	"ragflow/internal/entity"
 	"strings"
 
@@ -367,18 +368,26 @@ func generateUUID() string {
 // DatasetFolderName is the folder name for dataset
 const DatasetFolderName = ".knowledgebase"
 
-// InitDatasetDocs initializes dataset documents for tenant
-// This matches Python's FileService.init_dataset_docs method
+// InitDatasetDocs initializes dataset documents for tenant.
+// This matches Python's FileService.init_dataset_docs method.
+// Deduplicates duplicate entries that may have been created by
+// concurrent race conditions (TOCTOU).
 func (dao *FileDAO) InitDatasetDocs(rootID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
-	var count int64
-	err := DB.Model(&entity.File{}).
-		Where("name = ? AND parent_id = ?", DatasetFolderName, rootID).
-		Count(&count).Error
+	var existing []*entity.File
+	err := DB.Where("name = ? AND parent_id = ?", DatasetFolderName, rootID).
+		Find(&existing).Error
 	if err != nil {
 		return err
 	}
 
-	if count > 0 {
+	if len(existing) > 0 {
+		if len(existing) > 1 {
+			log.Printf("[WARN] Found %d duplicate '%s' folders under root %s, keeping only the first",
+				len(existing), DatasetFolderName, rootID)
+			for _, dup := range existing[1:] {
+				DB.Unscoped().Where("id = ?", dup.ID).Delete(&entity.File{})
+			}
+		}
 		return nil
 	}
 
@@ -417,7 +426,8 @@ func (dao *FileDAO) InitDatasetDocs(rootID, tenantID string, file2DocumentDAO *F
 	return nil
 }
 
-// newAFileFromDataset creates a new file from knowledgebase
+// newAFileFromDataset creates a new file from knowledgebase, or returns the existing one.
+// Deduplicates duplicate entries that may have been created by race conditions.
 func (dao *FileDAO) newAFileFromDataset(tenantID, name, parentID string) (*entity.File, error) {
 	var existingFiles []*entity.File
 	err := DB.Where("tenant_id = ? AND parent_id = ? AND name = ?", tenantID, parentID, name).Find(&existingFiles).Error
@@ -426,6 +436,13 @@ func (dao *FileDAO) newAFileFromDataset(tenantID, name, parentID string) (*entit
 	}
 
 	if len(existingFiles) > 0 {
+		if len(existingFiles) > 1 {
+			log.Printf("[WARN] Found %d duplicate entries named '%s' under parent %s, keeping only the first",
+				len(existingFiles), name, parentID)
+			for _, dup := range existingFiles[1:] {
+				DB.Unscoped().Where("id = ?", dup.ID).Delete(&entity.File{})
+			}
+		}
 		return existingFiles[0], nil
 	}
 
