@@ -1,3 +1,8 @@
+---
+description: 
+alwaysApply: false
+---
+
 # RAGFlow Project Instructions for GitHub Copilot
 
 This file provides context, build instructions, and coding standards for the RAGFlow project.
