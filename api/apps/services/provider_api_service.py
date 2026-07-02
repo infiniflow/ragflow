@@ -18,8 +18,6 @@ import json
 import logging
 import asyncio
 
-from biorun.convert import false
-
 from common.constants import LLMType, ActiveStatusEnum, ModelVerifyStatusEnum
 from common.settings import FACTORY_LLM_INFOS
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, delete_models_by_instance_ids, delete_instances_by_provider_ids, _decode_api_key_config
@@ -482,14 +480,6 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
     if api_key:
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
 
-    # Only verify when there are models to probe. Generic providers such as
-    # "OpenAI-API-Compatible" may start empty and receive custom models later.
-    factory_entry = next((f for f in FACTORY_LLM_INFOS if f["name"] == provider_name), None)
-    if (factory_entry and factory_entry.get("llm")) or model_info:
-        success, msg = await verify_api_key(provider_name, api_key, base_url, region, model_info)
-        if not success:
-            return False, msg
-
     # For SoMark, embed OCR config from model_info into the api_key JSON so
     # SoMarkOcrModel.__init__ can read it via the existing key → api_key_payload
     # path.  This avoids changing the deprecated LLMBundle in tenant_llm_service.py.
@@ -838,7 +828,6 @@ def show_provider_instance(tenant_id: str, provider_id_or_name: str, instance_id
         return False, f"No instance found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
 
     extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
-    api_key, _, _ = _decode_api_key_config(instance_obj.api_key)
 
     return True, {
         "id": instance_obj.id,
@@ -846,7 +835,7 @@ def show_provider_instance(tenant_id: str, provider_id_or_name: str, instance_id
         "provider_id": provider_id,
         "region": extra_fields.get("region", ""),
         "base_url": extra_fields.get("base_url", ""),
-        "api_key": api_key,
+        "api_key": instance_obj.api_key,
         "status": instance_obj.status
     }
 
@@ -936,7 +925,7 @@ def list_instance_models(tenant_id: str, provider_id_or_name: str, instance_id_o
         "model_type": get_model_type_human(model.model_type),
         "max_tokens": json.loads(model.extra).get("max_tokens", 8192) if model.extra else 8192,
         "status": model.status,
-        "verify": json.loads(model.extra).get("verify", ModelVerifyStatusEnum.UNKNOWN.value) == ModelVerifyStatusEnum.SUCCESS.value if model.extra else False
+        "verify": json.loads(model.extra).get("verify", ModelVerifyStatusEnum.UNKNOWN.value)
     } for model in model_objs]
 
 
