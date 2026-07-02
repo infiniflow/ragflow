@@ -1,6 +1,6 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 	"testing"
 )
 
@@ -32,7 +33,7 @@ func TestTableRotation_Integration(t *testing.T) {
 	if baseURL == "" {
 		baseURL = "http://localhost:9390"
 	}
-	dd, err := inf.NewInferenceClient(baseURL)
+	dd, err := inf.NewClient(baseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,10 +60,10 @@ func TestTableRotation_Integration(t *testing.T) {
 	cfg.ToPage = pageCount - 1
 	autoRotate := true
 	cfg.AutoRotateTables = &autoRotate
-	_ = NewParser(cfg, dd) // verify construction does not panic
+	_ = NewParser(cfg) // verify construction does not panic
 
 	for pg := 0; pg < pageCount; pg++ {
-		pageImg, err := renderPageToImage(eng, pg)
+		pageImg, err := RenderPageToImage(eng, pg)
 		if err != nil {
 			t.Fatalf("render page %d: %v", pg, err)
 		}
@@ -80,7 +81,7 @@ func TestTableRotation_Integration(t *testing.T) {
 			tableCount++
 
 			// Crop table region
-			cropped, err := cropImageRegion(pageImg, r)
+			cropped, err := util.CropImageRegion(pageImg, r)
 			if err != nil {
 				t.Errorf("  crop table %d: %v", tableCount, err)
 				continue
@@ -130,7 +131,7 @@ func TestTableRotation_Stability(t *testing.T) {
 	if baseURL == "" {
 		baseURL = "http://localhost:9390"
 	}
-	dd, err := inf.NewInferenceClient(baseURL)
+	dd, err := inf.NewClient(baseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +164,7 @@ func TestTableRotation_Stability(t *testing.T) {
 			continue
 		}
 
-		pageImg, err := renderPageToImage(eng, 0)
+		pageImg, err := RenderPageToImage(eng, 0)
 		eng.Close()
 		if err != nil {
 			continue
@@ -177,7 +178,11 @@ func TestTableRotation_Stability(t *testing.T) {
 				continue
 			}
 			tables++
-			cropped, _ := cropImageRegion(pageImg, r)
+			cropped, err := util.CropImageRegion(pageImg, r)
+			if err != nil {
+				t.Errorf("  %s crop table: %v", e.Name(), err)
+				continue
+			}
 			if cropped == nil {
 				continue
 			}

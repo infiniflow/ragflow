@@ -1708,6 +1708,7 @@ type SearchDatasetsRequest struct {
 	Keyword                *bool                  `json:"keyword,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+	ForceRefresh           bool                   `json:"force_refresh"`
 }
 
 // SearchDatasetsResponse is the response structure for dataset search results.

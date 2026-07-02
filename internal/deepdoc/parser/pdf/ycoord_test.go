@@ -1,6 +1,6 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"math"
@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -41,7 +42,7 @@ func TestYCoord_SameLineCharsHaveEqualBottom(t *testing.T) {
 		t.Fatal("no chars")
 	}
 
-	lines := groupCharsToLines(chars, false)
+	lines := lyt.GroupCharsToLines(chars, false)
 	for li, line := range lines {
 		if len(line) <= 1 {
 			continue
