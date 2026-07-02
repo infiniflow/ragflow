@@ -92,38 +92,6 @@ jobs:
           echo "ARTIFACTS_DIR=${ARTIFACTS_DIR}" >> ${GITHUB_ENV}
           rm -rf ${ARTIFACTS_DIR} && mkdir -p ${ARTIFACTS_DIR}
 
-#      - name: Check comments of changed Python files
-#        if: ${{ false }}
-#        run: |
-#          if [[ ${{ github.event_name }} == 'pull_request' || ${{ github.event_name }} == 'pull_request_target' ]]; then
-#            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
-#              | grep -E '\.(py)$' || true)
-#
-#            if [ -n "$CHANGED_FILES" ]; then
-#              echo "Check comments of changed Python files with check_comment_ascii.py"
-#
-#              readarray -t files <<< "$CHANGED_FILES"
-#              HAS_ERROR=0
-#
-#              for file in "${files[@]}"; do
-#                if [ -f "$file" ]; then
-#                  if python3 check_comment_ascii.py "$file"; then
-#                    echo "✅ $file"
-#                  else
-#                    echo "❌ $file"
-#                    HAS_ERROR=1
-#                  fi
-#                fi
-#              done
-#
-#              if [ $HAS_ERROR -ne 0 ]; then
-#                exit 1
-#              fi
-#            else
-#              echo "No Python files changed"
-#            fi
-#          fi
-
       - name: Run Lefthook on changed files
         run: |
           set -euo pipefail
@@ -140,7 +108,10 @@ jobs:
             else
               echo "  (none — lefthook will be a no-op)"
             fi
-            lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
+            # LEFTHOOK_CHECK_ONLY=1 makes the pre-commit jobs verify without
+            # applying --fix or `git add`, so CI only checks and reports
+            # failures instead of rewriting the working tree.
+            LEFTHOOK_CHECK_ONLY=1 lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
           fi
 
       - name: Set test level
