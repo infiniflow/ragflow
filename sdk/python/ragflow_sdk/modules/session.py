@@ -36,6 +36,33 @@ class Session(Base):
                 self.__session_type = "agent"
         super().__init__(rag, res_dict)
 
+    @staticmethod
+    def _raise_for_api_error(json_data):
+        """Raise when an API response payload reports a non-zero error code."""
+        if not isinstance(json_data, dict):
+            return
+        code = json_data.get("code")
+        if code is None or code == 0:
+            return
+        if json_data.get("message"):
+            message = json_data["message"]
+            source = "message"
+        elif json_data.get("msg"):
+            message = json_data["msg"]
+            source = "msg"
+        elif json_data.get("data"):
+            message = json_data["data"]
+            source = "data"
+        else:
+            message = f"Request failed: {code}"
+            source = "default"
+        logger.error(
+            "Session.ask API error: code=%s, source=%s, message=%s",
+            code,
+            source,
+            message,
+        )
+        raise Exception(message)
 
     def ask(
         self,
@@ -122,6 +149,8 @@ class Session(Base):
                 except json.JSONDecodeError:
                     continue  # Skip lines that are not valid JSON
 
+                self._raise_for_api_error(json_data)
+
                 event = json_data.get("event",None)
                 if event and event != "message":
                     continue
@@ -140,6 +169,14 @@ class Session(Base):
                 json_data = res.json()
             except ValueError:
                 raise Exception(f"Invalid response {res}")
+            self._raise_for_api_error(json_data)
+            if "data" not in json_data:
+                logger.error(
+                    "Session.ask missing data in response: code=%s, payload=%s",
+                    json_data.get("code"),
+                    json_data,
+                )
+                raise Exception("Missing data in response")
             yield self._structure_answer(json_data["data"])
         
 
