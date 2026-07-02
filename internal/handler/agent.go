@@ -306,17 +306,15 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 }
 
 // updateAgentRequest is the wire shape for PUT /api/v1/agents/:canvas_id.
-type updateAgentRequest struct {
-	DSL entity.JSONMap `json:"dsl"`
-}
+type updateAgentRequest map[string]interface{}
 
-// UpdateAgent writes a new draft DSL to the canvas (no version created).
-// @Summary Update Agent (Draft)
+// UpdateAgent applies a partial update to the canvas draft.
+// @Summary Update Agent
 // @Tags agents
 // @Accept json
 // @Produce json
 // @Param canvas_id path string true "canvas id"
-// @Param request body updateAgentRequest true "draft DSL payload"
+// @Param request body updateAgentRequest true "agent update payload"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id} [put]
 func (h *AgentHandler) UpdateAgent(c *gin.Context) {
@@ -331,7 +329,10 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
 		return
 	}
-	if err := h.agentService.UpdateAgent(c.Request.Context(), user.ID, canvasID, req.DSL); err != nil {
+	if req == nil {
+		req = updateAgentRequest{}
+	}
+	if err := h.agentService.UpdateAgent(c.Request.Context(), user.ID, canvasID, map[string]interface{}(req)); err != nil {
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)
 		return

@@ -441,7 +441,7 @@ func (f *fullFakeAgentService) GetAgent(context.Context, string, string) (*entit
 	}
 	return f.getRow, nil
 }
-func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, entity.JSONMap) error {
+func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, map[string]interface{}) error {
 	return nil
 }
 func (f *fullFakeAgentService) DeleteAgent(context.Context, string, string) error {
