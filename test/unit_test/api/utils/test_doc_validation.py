@@ -46,6 +46,17 @@ def test_rest_api_page_size_rejects_values_above_100():
         ListFileReq(page_size=REST_API_MAX_PAGE_SIZE + 1)
 
 
+def test_update_document_req_accepts_resume_chunk_method():
+    update_doc_req = UpdateDocumentReq(chunk_method="resume")
+
+    assert update_doc_req.chunk_method == "resume"
+
+
+def test_update_document_req_rejects_audio_chunk_method():
+    with pytest.raises(ValidationError, match="`chunk_method` audio doesn't exist"):
+        UpdateDocumentReq(chunk_method="audio")
+
+
 def test_validate_immutable_fields_no_changes():
     """Test when no immutable fields are present in request."""
     update_doc_req = UpdateDocumentReq()
