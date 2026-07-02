@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"os"
-	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
@@ -67,23 +66,26 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 		common.Info("Creating regular index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
 	}
 
-	// Use configured schema
-	fpMapping := filepath.Join(utility.GetProjectRoot(), "conf", mappingFile)
-
-	schemaData, err := os.ReadFile(fpMapping)
+	fpMapping, err := utility.FindConfFileInProject(mappingFile)
 	if err != nil {
-		return fmt.Errorf("Failed to read mapping file: %w", err)
+		return err
+	}
+
+	// Use configured schema
+	schemaData, err := os.ReadFile(*fpMapping)
+	if err != nil {
+		return fmt.Errorf("failed to read mapping file %s: %w", *fpMapping, err)
 	}
 
 	var schema orderedFields
 	if err := json.Unmarshal(schemaData, &schema); err != nil {
-		return fmt.Errorf("Failed to parse mapping file: %w", err)
+		return fmt.Errorf("failed to parse mapping file: %w", err)
 	}
 
 	// Get database
 	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
-		return fmt.Errorf("Failed to get database: %w", err)
+		return fmt.Errorf("failed to get database: %w", err)
 	}
 
 	// Determine vector column name
@@ -92,7 +94,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 	// Check if table already exists
 	exists, err := e.tableExists(ctx, tableName)
 	if err != nil {
-		return fmt.Errorf("Failed to check if table exists: %w", err)
+		return fmt.Errorf("failed to check if table exists: %w", err)
 	}
 
 	var table *infinity.Table
@@ -101,7 +103,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 		common.Info("Table already exists, checking for vector column", zap.String("tableName", tableName))
 		table, err = db.GetTable(tableName)
 		if err != nil {
-			return fmt.Errorf("Failed to open existing table %s: %w", tableName, err)
+			return fmt.Errorf("failed to open existing table %s: %w", tableName, err)
 		}
 
 		// Check if vector column exists (for embedding model changes)
@@ -121,7 +123,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 			}
 			if _, err := table.AddColumns(addColSchema); err != nil {
 				common.Error("Failed to add vector column "+vectorColName, err)
-				return fmt.Errorf("Failed to add vector column %s: %w", vectorColName, err)
+				return fmt.Errorf("failed to add vector column %s: %w", vectorColName, err)
 			}
 			common.Info("Successfully added vector column", zap.String("column", vectorColName))
 		}
@@ -159,7 +161,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 		// Create table
 		table, err = db.CreateTable(tableName, columns, infinity.ConflictTypeIgnore)
 		if err != nil {
-			return fmt.Errorf("Failed to create table: %w", err)
+			return fmt.Errorf("failed to create table: %w", err)
 		}
 		common.Debug("Infinity created table", zap.String("tableName", tableName))
 	}
@@ -179,7 +181,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 		"",
 	)
 	if err != nil {
-		return fmt.Errorf("Failed to create HNSW index %s: %w", vectorIndexName, err)
+		return fmt.Errorf("failed to create HNSW index %s: %w", vectorIndexName, err)
 	}
 	common.Info("Created vector index", zap.String("indexName", vectorIndexName), zap.String("column", vectorColName))
 
@@ -214,7 +216,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 				"",
 			)
 			if err != nil {
-				return fmt.Errorf("Failed to create fulltext index %s: %w", indexNameFt, err)
+				return fmt.Errorf("failed to create fulltext index %s: %w", indexNameFt, err)
 			}
 		}
 	}
@@ -250,7 +252,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 				"",
 			)
 			if err != nil {
-				return fmt.Errorf("Failed to create secondary index %s: %w", indexNameSec, err)
+				return fmt.Errorf("failed to create secondary index %s: %w", indexNameSec, err)
 			}
 		}
 	}
@@ -258,7 +260,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 	return nil
 }
 
-// InsertChunks inserts documents into a dataset table
+// InsertChunks inserts documents into a dataset table;
 // Table name format: {baseName}_{datasetID}
 // Auto-create the table if it doesn't exist
 // Delete existing rows with matching IDs before insert

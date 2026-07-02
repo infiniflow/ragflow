@@ -3323,7 +3323,7 @@ func (s *DocumentService) ensureKBFolder(kb *entity.Knowledgebase, tenantID stri
 // newAFileFromKB returns the existing folder named name under parentID, or
 // creates it. Mirrors Python FileService.new_a_file_from_kb.
 func (s *DocumentService) newAFileFromKB(tenantID, name, parentID string) (*entity.File, error) {
-	for _, f := range s.fileDAO.Query(name, parentID) {
+	for _, f := range s.fileDAO.Query(name, parentID, tenantID) {
 		if f.TenantID == tenantID {
 			return f, nil
 		}

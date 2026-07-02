@@ -182,7 +182,8 @@ jobs:
                 *.go|go.mod|go.sum)                      has_go=true ;;
                 *.py|pyproject.toml|requirements*.txt)    has_python=true ;;
                 web/*)                                    has_web=true ;;
-                Dockerfile|docker-compose*.yml|build.sh)  has_go=true; has_python=true ;;
+                Dockerfile|docker-compose*.yml)  has_go=true; has_python=true ;;
+                build.sh)                        has_go=true ;;
               esac
             done <<< "$CHANGED_FILES"
 
