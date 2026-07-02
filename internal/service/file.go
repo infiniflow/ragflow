@@ -177,8 +177,15 @@ func (s *FileService) initSkillsFolder(rootID, tenantID string) error {
 				"Found %d duplicate '%s' folders under root %s, keeping only the first",
 				len(existing), SkillsFolderName, rootID,
 			))
+			keepID := existing[0].ID
 			for _, dup := range existing[1:] {
-				s.fileDAO.Delete(dup.ID)
+				children, _ := s.fileDAO.ListAllFilesByParentID(dup.ID)
+				for _, child := range children {
+					s.fileDAO.UpdateByID(child.ID, map[string]interface{}{"parent_id": keepID})
+				}
+				if delErr := s.fileDAO.Delete(dup.ID); delErr != nil {
+					common.Logger.Warn(fmt.Sprintf("Failed to delete duplicate skills folder %s: %v", dup.ID, delErr))
+				}
 			}
 		}
 		return nil

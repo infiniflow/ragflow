@@ -287,7 +287,9 @@ class FileService(CommonService):
                     "Found %d duplicate entries named '%s' under parent %s, keeping only the first",
                     len(existing), name, parent_id,
                 )
+                keep_id = existing[0].id
                 for dup in existing[1:]:
+                    File.update(parent_id=keep_id).where(File.parent_id == dup.id).execute()
                     cls.delete_by_id(dup.id)
             return existing[0].to_dict()
         file = {
@@ -322,7 +324,9 @@ class FileService(CommonService):
                     "Found %d duplicate '%s' folders under root %s, keeping only the first",
                     len(existing), SKILLS_FOLDER_NAME, root_id,
                 )
+                keep_id = existing[0].id
                 for dup in existing[1:]:
+                    cls.model.update(parent_id=keep_id).where(cls.model.parent_id == dup.id).execute()
                     cls.delete_by_id(dup.id)
             return
         file_id = get_uuid()
@@ -356,7 +360,9 @@ class FileService(CommonService):
                     "Found %d duplicate '%s' folders under root %s, keeping only the first",
                     len(existing), KNOWLEDGEBASE_FOLDER_NAME, root_id,
                 )
+                keep_id = existing[0].id
                 for dup in existing[1:]:
+                    cls.model.update(parent_id=keep_id).where(cls.model.parent_id == dup.id).execute()
                     cls.delete_by_id(dup.id)
             return
         folder = cls.new_a_file_from_kb(tenant_id, KNOWLEDGEBASE_FOLDER_NAME, root_id)
