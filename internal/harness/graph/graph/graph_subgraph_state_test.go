@@ -79,6 +79,7 @@ func TestSubgraphState_GetState_NoRun(t *testing.T) {
 // TestSubgraphState_GetState_AfterExecution verifies GetState returns
 // valid state after executing the outer+inner graphs.
 func TestSubgraphState_GetState_AfterExecution(t *testing.T) {
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	inner := NewStateGraph(map[string]any{})
 	inner.AddNode("inner_set", func(ctx context.Context, state any) (any, error) {
 		m := state.(map[string]any)
@@ -151,6 +152,7 @@ func TestSubgraphState_GetState_AfterExecution(t *testing.T) {
 
 // TestSubgraphState_GetStateHistory verifies history across subgraph runs.
 func TestSubgraphState_GetStateHistory(t *testing.T) {
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	b := NewStateGraph(map[string]any{})
 	b.AddNode("echo", func(ctx context.Context, state any) (any, error) { return state, nil })
 	b.AddEdge(constants.Start, "echo")
@@ -195,6 +197,7 @@ func TestSubgraphState_GetStateHistory(t *testing.T) {
 // serialization. With inlineRun (CompiledGraph.Invoke), checkpoints are
 // serialized as flat maps.
 func TestSubgraphState_UpdateState_ParentLevel(t *testing.T) {
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	// Simple outer graph only (no inner subgraph for this test).
 	b := NewStateGraph(map[string]any{})
 	b.AddNode("writer", func(ctx context.Context, state any) (any, error) {
