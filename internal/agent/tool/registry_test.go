@@ -31,11 +31,14 @@ func TestBuildAll_UnknownTool(t *testing.T) {
 }
 
 func TestBuildAll_AllRegisteredTools(t *testing.T) {
+	// Every key in registry (27 entries, 23 unique canonical tools).
 	names := []string{
-		"akshare", "arxiv", "code_exec", "crawler", "deepl", "duckduckgo",
-		"email", "github", "google", "google_scholar", "jin10", "pubmed",
-		"qweather", "retrieval", "searxng", "tavily", "tushare", "wencai",
-		"wikipedia", "yahoo_finance", "execute_sql",
+		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
+		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
+		"google_scholar", "jin10", "keenable", "pubmed", "qweather",
+		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
+		"tavily", "tushare", "web_crawler", "wencai", "wikipedia",
+		"yahoo_finance",
 	}
 	params := map[string]map[string]any{
 		"execute_sql": {
@@ -46,6 +49,18 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 			"username":    "u",
 			"password":    "p",
 			"max_records": 10,
+		},
+		"exesql": {
+			"db_type":     "mysql",
+			"host":        "127.0.0.1",
+			"port":        3306,
+			"database":    "demo",
+			"username":    "u",
+			"password":    "p",
+			"max_records": 10,
+		},
+		"keenable": {
+			"api_key": "key-test",
 		},
 	}
 	tools, _ := BuildAll(names, params)
@@ -88,15 +103,16 @@ func TestBuildAll_KeenableRejectsEmptyNodeAPIKey(t *testing.T) {
 func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	t.Parallel()
 
-	// Every entry the registry advertises. 23 names, 22 unique
+	// Every entry the registry advertises. 27 names, 23 unique
 	// canonical tools (execute_sql == exesql, retrieval ==
-	// search_my_dateset).
+	// search_my_dataset == search_my_dateset, crawler == web_crawler).
 	names := []string{
-		"akshare", "arxiv", "code_exec", "crawler", "deepl", "duckduckgo",
-		"email", "execute_sql", "exesql", "github", "google",
-		"google_scholar", "jin10", "keenable", "pubmed", "qweather", "retrieval",
-		"search_my_dateset", "searxng", "tavily", "tushare", "wencai",
-		"wikipedia", "yahoo_finance",
+		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
+		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
+		"google_scholar", "jin10", "keenable", "pubmed", "qweather",
+		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
+		"tavily", "tushare", "web_crawler", "wencai", "wikipedia",
+		"yahoo_finance",
 	}
 	params := map[string]map[string]any{
 		"execute_sql": {
@@ -138,14 +154,17 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	}
 
 	// Alias consistency: execute_sql and exesql must surface the
-	// same canonical Info().Name; same for retrieval and
-	// search_my_dateset. A bug here would mean an alias was
-	// accidentally pointed at a different tool.
+	// same canonical Info().Name; same for retrieval/search_my_dataset/
+	// search_my_dateset and crawler/web_crawler. A bug here would mean
+	// an alias was accidentally pointed at a different tool.
 	canonicalByAlias := map[string]string{
 		"execute_sql":       "execute_sql",
 		"exesql":            "execute_sql",
 		"retrieval":         "search_my_dateset",
+		"search_my_dataset": "search_my_dateset",
 		"search_my_dateset": "search_my_dateset",
+		"crawler":           "web_crawler",
+		"web_crawler":       "web_crawler",
 	}
 	for _, name := range names {
 		canonical, ok := canonicalByAlias[name]

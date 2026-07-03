@@ -24,9 +24,6 @@ import (
 	neturl "net/url"
 	"os"
 	"strings"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const keenableToolName = "keenable"
@@ -177,40 +174,38 @@ func resolveKeenableBaseURL(raw string) (string, error) {
 	}
 }
 
-// Info returns the tool's metadata for the chat model. The description
-// is the short prose above; the parameter schema lists the model-emitted
-// fields with sane defaults documented inline.
-func (k *KeenableTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: keenableToolName,
-		Desc: keenableToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (k *KeenableTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        keenableToolName,
+		Description: keenableToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Search keywords to execute with Keenable. The most important words/terms (and synonyms) from the original request.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Search keywords to execute with Keenable. The most important words/terms (and synonyms) from the original request.",
+				Required:    true,
 			},
 			"site": {
-				Type:     schema.String,
-				Desc:     "Optional. Restrict results to a single domain, e.g. 'techcrunch.com'. Defaults to '' (no filter).",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "Optional. Restrict results to a single domain, e.g. 'techcrunch.com'. Defaults to '' (no filter).",
+				Required:    false,
 			},
 			"mode": {
-				Type:     schema.String,
-				Desc:     `Search mode: "pro" (default, deeper) or "realtime" (low latency; requires a server-configured API key).`,
-				Required: false,
+				Type:        ParamTypeString,
+				Description: `Search mode: "pro" (default, deeper) or "realtime" (low latency; requires a server-configured API key).`,
+				Required:    false,
 			},
 			"top_n": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of results to return. Defaults to 10.",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of results to return. Defaults to 10.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // InvokableRun performs the Keenable search.
-func (k *KeenableTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (k *KeenableTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p keenableParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return keenableErrJSON(fmt.Errorf("keenable: parse arguments: %w", err)),

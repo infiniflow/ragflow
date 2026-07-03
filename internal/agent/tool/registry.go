@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"fmt"
 	"strings"
 )
@@ -29,6 +28,7 @@ type Factory func(params map[string]any) (Tool, error)
 var registry = map[string]Factory{
 	"akshare":           noConfig("akshare", func() Tool { return NewAkShareTool() }),
 	"arxiv":             noConfig("arxiv", func() Tool { return NewArxivTool() }),
+	"bgpt":              noConfig("bgpt", func() Tool { return NewBGPTTool() }),
 	"code_exec":         noConfig("code_exec", func() Tool { return NewCodeExecTool() }),
 	"crawler":           noConfig("crawler", func() Tool { return NewCrawlerTool() }),
 	"deepl":             noConfig("deepl", func() Tool { return NewDeepLTool() }),
@@ -40,7 +40,7 @@ var registry = map[string]Factory{
 	"google":            noConfig("google", func() Tool { return NewGoogleTool() }),
 	"google_scholar":    noConfig("google_scholar", func() Tool { return NewGoogleScholarTool() }),
 	"jin10":             noConfig("jin10", func() Tool { return NewJin10Tool() }),
-	"keenable":          buildKeenableTool,
+	"keenable":          noConfig("keenable", func() Tool { return NewKeenableTool() }),
 	"pubmed":            noConfig("pubmed", func() Tool { return NewPubMedTool() }),
 	"qweather":          noConfig("qweather", func() Tool { return NewQWeatherTool() }),
 	"retrieval":         noConfig("retrieval", func() Tool { return NewRetrievalTool() }),
@@ -108,63 +108,6 @@ func buildExeSQLTool(params map[string]any) (Tool, error) {
 		return nil, err
 	}
 	return NewExeSQLTool(conn), nil
-}
-
-func buildKeenableTool(params map[string]any) (Tool, error) {
-	inner := NewKeenableTool()
-	if len(params) == 0 {
-		return &keenableToolAdapter{inner: inner}, nil
-	}
-	for key := range params {
-		if key != "api_key" {
-			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param api_key", "keenable")
-		}
-	}
-	apiKey, ok := params["api_key"].(string)
-	if !ok || strings.TrimSpace(apiKey) == "" {
-		return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param api_key", "keenable")
-	}
-	return &keenableToolAdapter{inner: NewKeenableToolWithAPIKey(nil, apiKey)}, nil
-}
-
-// keenableToolAdapter wraps *KeenableTool (which has an Eino-style
-// InvokableRun with variadic tool.Option) into the harness Tool
-// interface (InvokableRun with strict two-arg signature).
-type keenableToolAdapter struct {
-	inner *KeenableTool
-}
-
-func (a *keenableToolAdapter) ToolMeta() ToolMeta {
-	return ToolMeta{
-		Name:        keenableToolName,
-		Description: keenableToolDescription,
-		Parameters: map[string]ParameterInfo{
-			"query": {
-				Type:        ParamTypeString,
-				Description: "Search keywords to execute with Keenable. The most important words/terms (and synonyms) from the original request.",
-				Required:    true,
-			},
-			"site": {
-				Type:        ParamTypeString,
-				Description: "Optional. Restrict results to a single domain, e.g. 'techcrunch.com'.",
-				Required:    false,
-			},
-			"mode": {
-				Type:        ParamTypeString,
-				Description: `Search mode: "pro" (default, deeper) or "realtime" (low latency; requires a server-configured API key).`,
-				Required:    false,
-			},
-			"top_n": {
-				Type:        ParamTypeInteger,
-				Description: "Maximum number of results to return. Defaults to 10.",
-				Required:    false,
-			},
-		},
-	}
-}
-
-func (a *keenableToolAdapter) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
-	return a.inner.InvokableRun(ctx, argsJSON)
 }
 
 func decodeExeSQLConnParams(params map[string]any) (exesqlConnParams, error) {

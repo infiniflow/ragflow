@@ -9,10 +9,11 @@ import (
 	"testing"
 
 	"ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/types"
 )
 
 // incSub returns a sub-graph that increments an int input by 1.
-func incSub(t *testing.T) *graph.CompiledGraph {
+func incSub(t *testing.T) types.CompiledGraph {
 	t.Helper()
 	sub := graph.NewStateGraph(map[string]interface{}{})
 	sub.AddNode("inc", incNode())

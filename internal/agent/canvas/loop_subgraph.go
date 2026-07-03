@@ -26,8 +26,8 @@ import (
 
 // loopExpansion holds the artefacts produced by buildLoopExpansion.
 type loopExpansion struct {
-	Sub        types.CompiledGraph // compiled loop body sub-graph
-	ShouldQuit LoopConditionHarness    // terminal condition
+	Sub        types.CompiledGraph  // compiled loop body sub-graph
+	ShouldQuit LoopConditionHarness // terminal condition
 	MaxIters   int
 	Members    map[string]bool // cpn_ids consumed by the sub-graph
 }

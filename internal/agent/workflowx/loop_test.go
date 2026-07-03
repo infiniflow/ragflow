@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/types"
 )
 
 // incNode returns a nodefunc that increments the input int.
@@ -28,7 +29,7 @@ func incNode() func(context.Context, interface{}) (interface{}, error) {
 }
 
 // buildIncGraph compiles a single-node sub-graph that increments by 1.
-func buildIncGraph(t *testing.T) *graph.CompiledGraph {
+func buildIncGraph(t *testing.T) types.CompiledGraph {
 	t.Helper()
 	sub := graph.NewStateGraph(map[string]interface{}{})
 	sub.AddNode("inc", incNode())

@@ -16,6 +16,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"ragflow/internal/agent/runtime"
 )
 
 // withAgentRunner replaces the package-level agentRunner for the duration
@@ -65,9 +67,9 @@ func TestAgent_NoToolsReAct(t *testing.T) {
 
 func TestAgent_ResolvesUserPromptFromCanvasState(t *testing.T) {
 	var gotPrompt string
-	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*ComponentMessage, error) {
 		gotPrompt = p.UserPrompt
-		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+		return &ComponentMessage{Role: RoleAssistant, Content: "ok"}, nil
 	})
 
 	state := runtime.NewCanvasState("run-1", "task-1")
@@ -90,9 +92,9 @@ func TestAgent_ResolvesUserPromptFromCanvasState(t *testing.T) {
 
 func TestAgent_UsesPromptsListForSysQuery(t *testing.T) {
 	var gotPrompt string
-	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*ComponentMessage, error) {
 		gotPrompt = p.UserPrompt
-		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+		return &ComponentMessage{Role: RoleAssistant, Content: "ok"}, nil
 	})
 
 	cmp, err := New("Agent", map[string]any{
@@ -122,9 +124,9 @@ func TestAgent_UsesPromptsListForSysQuery(t *testing.T) {
 
 func TestAgent_FormatsRuntimePromptLikePython(t *testing.T) {
 	var gotPrompt string
-	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*ComponentMessage, error) {
 		gotPrompt = p.UserPrompt
-		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+		return &ComponentMessage{Role: RoleAssistant, Content: "ok"}, nil
 	})
 
 	c := NewAgentComponent(AgentParam{

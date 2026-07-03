@@ -364,29 +364,26 @@ func TestKeenable_UpstreamError(t *testing.T) {
 	}
 }
 
-// TestKeenable_Info verifies the model-facing metadata.
-func TestKeenable_Info(t *testing.T) {
+// TestKeenable_ToolMeta verifies the model-facing metadata.
+func TestKeenable_ToolMeta(t *testing.T) {
 	t.Parallel()
 
 	tool := NewKeenableTool()
-	info, err := tool.Info(context.Background())
+	meta := tool.ToolMeta()
+	if meta.Name != "keenable" {
+		t.Errorf("Name = %q, want keenable", meta.Name)
+	}
+	if !strings.Contains(meta.Description, "Keenable") {
+		t.Errorf("Description = %q, want to mention Keenable", meta.Description)
+	}
+	if meta.Parameters == nil {
+		t.Fatal("Parameters = nil, want tool metadata")
+	}
+	paramsJSON, err := json.Marshal(meta.Parameters)
 	if err != nil {
-		t.Fatalf("Info: %v", err)
-	}
-	if info.Name != "keenable" {
-		t.Errorf("Name = %q, want keenable", info.Name)
-	}
-	if !strings.Contains(info.Desc, "Keenable") {
-		t.Errorf("Desc = %q, want to mention Keenable", info.Desc)
-	}
-	if info.ParamsOneOf == nil {
-		t.Fatal("ParamsOneOf = nil, want schema definition")
-	}
-	paramsJSON, err := json.Marshal(info.ParamsOneOf)
-	if err != nil {
-		t.Fatalf("marshal ParamsOneOf: %v", err)
+		t.Fatalf("marshal Parameters: %v", err)
 	}
 	if strings.Contains(string(paramsJSON), "api_key") {
-		t.Fatalf("Info ParamsOneOf unexpectedly exposes api_key: %s", string(paramsJSON))
+		t.Fatalf("ToolMeta Parameters unexpectedly exposes api_key: %s", string(paramsJSON))
 	}
 }

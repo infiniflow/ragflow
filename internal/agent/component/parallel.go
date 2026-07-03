@@ -55,9 +55,9 @@ import (
 const componentNameParallel = "Parallel"
 
 // ParallelComponent is the canvas-level parallel parent. The runtime
-// parallel driver lives in workflowx.AddParallelNode, not in this type.
-// The component exists for registry / factory / introspection only —
-// Invoke is a no-op that returns an empty map.
+// parallel driver lives in harness graph's NewParallelNodeFunc,
+// not in this type. The component exists for registry / factory /
+// introspection only — Invoke is a no-op that returns an empty map.
 type ParallelComponent struct {
 	param ParallelParam
 }
@@ -167,8 +167,8 @@ func (c *ParallelComponent) Stream(ctx context.Context, inputs map[string]any) (
 // init registers ParallelComponent with the orchestrator-owned registry.
 //
 // ParallelComponent.Invoke is a no-op; the runtime parallel driver lives
-// in workflowx.AddParallelNode and is installed by canvas.BuildWorkflow
-// when it sees a Parallel cpn in the DSL.
+// in harness graph's NewParallelNodeFunc and is installed by
+// canvas.BuildWorkflow when it sees a Parallel cpn in the DSL.
 //
 // The former IterationItem component is NOT registered — the per-item
 // execution formerly handled by that component is now subsumed by the
