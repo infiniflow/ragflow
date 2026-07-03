@@ -61,17 +61,17 @@ Note: admin server must be started first; otherwise, api server will encounter e
 
 ```bash
 # Start admin server
-./bin/ragflow_main --admin
+./bin/ragflow_server --admin
 ```
 
 ```bash
 # Start RAGFlow server
-./bin/ragflow_main --api
+./bin/ragflow_server --api
 ```
 
 ```bash
 # Start RAGFlow ingestor
-./bin/ragflow_main --ingestor
+./bin/ragflow_server --ingestor
 ```
 
 ```bash
