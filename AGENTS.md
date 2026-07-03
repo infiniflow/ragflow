@@ -13,7 +13,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 ## Current stack
 - Backend: Python 3.13+, Quart-based API server, Peewee ORM, async workers.
 - Frontend: React + TypeScript + Vite in `web/`.
-- Go: the repository also has a Go module for CLI and service code.
+- Go: the repository also has a substantial Go module for servers, ingestion, parser/runtime, CLI, and supporting services.
 - Runtime services commonly include MySQL/PostgreSQL, Redis, MinIO, and Elasticsearch/Infinity/OpenSearch depending on configuration.
 
 ## Code layout to expect
@@ -21,10 +21,35 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - `rag/`: ingestion, retrieval, LLM integration, and graph RAG logic.
 - `deepdoc/`: parsing and OCR.
 - `agent/`: workflow canvas, components, tools, and templates.
-- `internal/` and `cmd/`: Go services, parsers, and CLIs.
+- `cmd/`: Go entrypoints. `ragflow_main` is the main server/admin/ingestor binary surface; `ragflow-cli` is the CLI entrypoint.
+- `internal/`: main Go application code. Important subtrees:
+- `internal/agent/`: Go agent runtime, canvas execution, components, tool bindings, workflow helpers.
+- `internal/cli/`: CLI parsing, HTTP transport, command execution, response formatting.
+- `internal/dao/`: Go data-access layer and persistence-facing helpers.
+- `internal/deepdoc/`: Go DeepDOC integrations, especially native-backed PDF/DOCX parsing.
+- `internal/engine/`: search/index backends such as Elasticsearch and Infinity.
+- `internal/entity/`: shared Go entities and model definitions.
+- `internal/handler/`: HTTP handlers and route-facing request logic.
+- `internal/ingestion/`: Go ingestion pipeline, canvas adapter, components, wiring, service orchestration.
+- `internal/ingestion/component/`: stage implementations such as file/parser/chunker/tokenizer/extractor.
+- `internal/ingestion/pipeline/`: DSL translation, canvas-driven execution, checkpoints, resume/run logic.
+- `internal/parser/`: parser and chunk libraries used by ingestion and other Go paths.
+- `internal/parser/parser/`: typed parse-result parsers for markdown/html/pdf/docx/xlsx/text and related families.
+- `internal/parser/chunk/`: chunk operator library and DSL/typed execution helpers.
+- `internal/service/`: higher-level business services used by handlers and server flows.
+- `internal/storage/`: storage backends and in-memory test doubles.
+- `internal/router/`: HTTP route registration.
+- `internal/server/`: server bootstrap/config wiring.
+- `internal/cpp/`: C++ sources used by native-backed Go features.
 - `web/`: frontend application.
 - `docker/`: local and production compose files.
 - `sdk/` and `test/`: SDK and automated tests.
+
+## Go-specific rules
+- Treat `internal/ingestion`, `internal/parser`, and `internal/deepdoc` as actively refactored code. Prefer collapsing duplicate paths over preserving transitional wrappers.
+- Do not add or preserve deprecated Go APIs just to ease migration inside the repo.
+- Remove commented-out Go code instead of leaving recovery notes in place.
+- Keep package comments and doc comments aligned with the current runtime path, not with migration history.
 
 ## Working rules
 - Before editing, inspect the nearest code path that actually owns the behavior.
@@ -61,15 +86,20 @@ npm run type-check
 
 ### Go
 ```bash
-go test ./...
-go build ./cmd/...
+uv run ragflow_deps/download_deps.py
+bash build.sh --test ./path/to/package/...
+bash build.sh --go
+# or build specific binaries:
+bash build.sh --all
 ```
 
 ## Validation preference
 - Run the narrowest relevant test, lint, or build command after a change.
 - For backend changes, prefer targeted pytest or ruff checks over full-suite runs.
 - For frontend changes, prefer the touched-package lint, type-check, or test command.
-- For Go changes, prefer package-scoped `go test` or `go build` first.
+- For Go changes, prefer package-scoped `bash build.sh --test ...` first.
+- Do not default to raw `go test`, `go build`, or IDE Run/Debug for Go in this repo. They often miss the required CGO flags and native static libraries (`office_oxide`, `pdfium-static`, `pdf_oxide`) that `build.sh` wires correctly.
+- If Go native builds fail, inspect `build.sh` and `internal/development.md` before changing code. Common environment issues are missing downloaded native deps and missing `lld` on Linux.
 
 ## Default review checklist
 - Remove instead of retaining `deprecated`, `legacy`, or compatibility-only code.
