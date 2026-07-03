@@ -28,10 +28,15 @@ export const useSaveGraph = (showMessage: boolean = true) => {
       },
       release?: boolean,
     ) => {
+      if (!data || !id) return;
+
+      const dsl = buildDslData(currentNodes, otherParam);
+      if (!dsl) return;
+
       const params: Record<string, any> = {
         id,
-        title: data.title,
-        dsl: buildDslData(currentNodes, otherParam),
+        title: data.title ?? '',
+        dsl,
       };
 
       if (release) {
@@ -86,7 +91,9 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   const saveAgent = useCallback(async () => {
     if (!chatDrawerVisible) {
       const ret = await saveGraph();
-      setSaveTime(ret.data.update_time);
+      if (ret?.data?.update_time) {
+        setSaveTime(ret.data.update_time);
+      }
     }
   }, [chatDrawerVisible, saveGraph, setSaveTime]);
 
