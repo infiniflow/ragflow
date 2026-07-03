@@ -1099,7 +1099,6 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
         if synthesis_cfg.get("enabled"):
             example = synthesis_cfg.get("example")
             compile_kwd = synthesis_cfg.get("compile_kwd", "artifact_page")
-            plan_cfg = synthesis_cfg.get("plan") or {}
 
             if not example:
                 logging.warning(
