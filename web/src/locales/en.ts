@@ -2018,6 +2018,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       recommended: 'Recommended',
       customerSupport: 'Customer support',
       marketing: 'Marketing',
+      visualInputFile: 'Visual input file',
       consumerApp: 'Consumer app',
       other: 'Other',
       ingestionPipeline: 'Ingestion pipeline',
