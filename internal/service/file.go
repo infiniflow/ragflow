@@ -95,6 +95,11 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 		if err := s.initDatasetDocs(pfID, tenantID); err != nil {
 			return nil, fmt.Errorf("failed to initialize dataset docs: %w", err)
 		}
+
+		// Initialize skills folder (matching Python init_skills_folder logic)
+		if err := s.initSkillsFolder(pfID, tenantID); err != nil {
+			return nil, fmt.Errorf("failed to initialize skills folder: %w", err)
+		}
 	}
 
 	// Check if parent folder exists
@@ -114,9 +119,15 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 		return nil, fmt.Errorf("File not found!")
 	}
 
-	// Process files to add additional info
+	// Process files to add additional info, deduplicating by ID as a safety net
+	// against any leftover duplicate rows (e.g. duplicate 'skills' or '.knowledgebase' folders).
 	fileResponses := make([]map[string]interface{}, 0, len(files))
+	seenIDs := make(map[string]struct{})
 	for _, file := range files {
+		if _, ok := seenIDs[file.ID]; ok {
+			continue
+		}
+		seenIDs[file.ID] = struct{}{}
 		fileInfo := s.toFileInfo(file)
 
 		// If folder, calculate size and check for child folders
@@ -157,6 +168,47 @@ func (s *FileService) initDatasetDocs(rootID, tenantID string) error {
 
 // DatasetFolderName is the folder name for dataset
 const DatasetFolderName = ".knowledgebase"
+
+// SkillsFolderName is the folder name for skills
+const SkillsFolderName = "skills"
+
+// initSkillsFolder initializes the skills folder under the root folder.
+// Deduplicates duplicate entries that may have been created by
+// concurrent race conditions (TOCTOU).
+func (s *FileService) initSkillsFolder(rootID, tenantID string) error {
+	existing := s.fileDAO.Query(SkillsFolderName, rootID, tenantID)
+	if len(existing) > 0 {
+		if len(existing) > 1 {
+			common.Logger.Warn(fmt.Sprintf(
+				"Found %d duplicate '%s' folders under root %s, keeping only the first",
+				len(existing), SkillsFolderName, rootID,
+			))
+			keepID := existing[0].ID
+			for _, dup := range existing[1:] {
+				children, _ := s.fileDAO.ListAllFilesByParentID(dup.ID)
+				for _, child := range children {
+					s.fileDAO.UpdateByID(child.ID, map[string]interface{}{"parent_id": keepID})
+				}
+				if delErr := s.fileDAO.Delete(dup.ID); delErr != nil {
+					common.Logger.Warn(fmt.Sprintf("Failed to delete duplicate skills folder %s: %v", dup.ID, delErr))
+				}
+			}
+		}
+		return nil
+	}
+
+	folder := &entity.File{
+		ID:         s.generateUUID(),
+		ParentID:   rootID,
+		TenantID:   tenantID,
+		CreatedBy:  tenantID,
+		Name:       SkillsFolderName,
+		Type:       FileTypeFolder,
+		Size:       0,
+		SourceType: "",
+	}
+	return s.fileDAO.Insert(folder)
+}
 
 // FileSourceDataset represents dataset as file source
 const FileSourceDataset = "knowledgebase"
