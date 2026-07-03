@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/tokenizer"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -835,11 +836,26 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			return nil, err
 		}
 
+		// Install a per-run token usage sink so every LLM call inside
+		// this turn records its token usage (the sink is read at the end
+		// and emitted in workflow_finished). Mirrors Python's
+		// Canvas.run() installing token_usage_sink + langfuse_run_attrs.
+		ctx = tokenizer.WithRunUsage(ctx)
+
 		// Extract the event channel + metadata injected by Runner.Run.
 		events, _ := root["__events__"].(chan canvas.RunEvent)
 		messageID, _ := root["__message_id__"].(string)
 		taskID, _ := root["__task_id__"].(string)
 		sessionID, _ := root["__session_id__"].(string)
+		userID, _ := root["user_id"].(string)
+
+		// Install per-run Langfuse correlation attrs so LLM calls inside
+		// this turn are grouped by session/user. Mirrors Python's
+		// Canvas.run() setting langfuse_run_attrs.
+		ctx = tokenizer.WithRunAttrs(ctx, &tokenizer.RunAttrs{
+			SessionID: sessionID,
+			UserID:    userID,
+		})
 
 		// Helper to build an SSE event with metadata.
 		emit := func(typ, data string) {
@@ -853,6 +869,22 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				TaskID:    taskID,
 				SessionID: sessionID,
 			})
+		}
+
+		// usagePayload returns the aggregated per-run token usage as a
+		// JSON-serializable map, or nil when no sink was installed.
+		usagePayload := func() map[string]int {
+			sink := tokenizer.GetRunUsage(ctx)
+			if sink == nil {
+				return nil
+			}
+			pt, ct, tt, calls := sink.Snapshot()
+			return map[string]int{
+				"prompt_tokens":     pt,
+				"completion_tokens": ct,
+				"total_tokens":      tt,
+				"calls":             calls,
+			}
 		}
 
 		startedAt := float64(time.Now().UnixNano()) / 1e9
@@ -883,7 +915,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			meData, _ := json.Marshal(canvas.MessageEndEvent{})
 			emit("message", string(msgData))
 			emit("message_end", string(meData))
-			wfData, _ := json.Marshal(map[string]any{"outputs": answer})
+			wfPayload := map[string]any{"outputs": answer}
+			if u := usagePayload(); u != nil {
+				wfPayload["usage"] = u
+			}
+			wfData, _ := json.Marshal(wfPayload)
 			emit("workflow_finished", string(wfData))
 			return state, nil
 		}
@@ -894,6 +930,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			s.markRunFailed(ctx, runID, "decode: "+err.Error())
 			return nil, err
 		}
+		// Close MCP tool adapters and any other closeable resources
+		// held by the canvas after execution completes. Mirrors
+		// Python's finally: canvas.close() in canvas_service.py.
+		defer c.Close()
 
 		// Store events channel + run metadata on the context so the
 		// per-node statePre/statePost wrappers (in scheduler.go) can
@@ -1080,12 +1120,16 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				})
 				emit("message_end", string(meData))
 
-				wfData, _ := json.Marshal(map[string]interface{}{
+				wfPayload := map[string]interface{}{
 					"inputs":       map[string]any{"query": userInput},
 					"outputs":      answer,
 					"elapsed_time": now - startedAt,
 					"created_at":   now,
-				})
+				}
+				if u := usagePayload(); u != nil {
+					wfPayload["usage"] = u
+				}
+				wfData, _ := json.Marshal(wfPayload)
 				emit("workflow_finished", string(wfData))
 
 				s.markRunSucceeded(ctx2, runID)
@@ -1107,13 +1151,18 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		})
 		emit("message_end", string(meData))
 
-		// Emit workflow_finished with the final outputs.
-		wfData, _ := json.Marshal(map[string]interface{}{
+		// Emit workflow_finished with the final outputs and aggregated
+		// per-run token usage across all LLM calls in this turn.
+		wfPayload := map[string]interface{}{
 			"inputs":       map[string]any{"query": userInput},
 			"outputs":      answer,
 			"elapsed_time": now - startedAt,
 			"created_at":   now,
-		})
+		}
+		if u := usagePayload(); u != nil {
+			wfPayload["usage"] = u
+		}
+		wfData, _ := json.Marshal(wfPayload)
 		emit("workflow_finished", string(wfData))
 
 		s.markRunSucceeded(ctx2, runID)

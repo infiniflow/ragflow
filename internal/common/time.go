@@ -40,10 +40,10 @@ func ParseISO8601(dateString string) (time.Time, error) {
 	}
 
 	layouts := []string{
-		time.RFC3339Nano,            // "2006-01-02T15:04:05.999999999Z07:00"
-		time.RFC3339,                // "2006-01-02T15:04:05Z07:00"
-		"2006-01-02T15:04:05",       // no timezone
-		"2006-01-02",                // date only
+		time.RFC3339Nano,      // "2006-01-02T15:04:05.999999999Z07:00"
+		time.RFC3339,          // "2006-01-02T15:04:05Z07:00"
+		"2006-01-02T15:04:05", // no timezone
+		"2006-01-02",          // date only
 	}
 	for _, layout := range layouts {
 		var t time.Time

@@ -1102,27 +1102,19 @@ func (s *ChatPipelineService) AsyncChat(
 					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg,
 					func(answer *string, reason *string) error {
 						if reason != nil && *reason != "" {
+							if thinkState.EnterReasoning() {
+								out <- AsyncChatResult{
+									Answer:       "",
+									Reference:    map[string]interface{}{},
+									AudioBinary:  nil,
+									CreatedAt:    float64(time.Now().Unix()),
+									Final:        false,
+									StartToThink: true,
+								}
+							}
 							deltas := NextThinkDelta(thinkState, *reason, 16)
 							for _, d := range deltas {
-								if d.Kind == ThinkDeltaMarker && d.Value == "<think>" {
-									out <- AsyncChatResult{
-										Answer:       "",
-										Reference:    map[string]interface{}{},
-										AudioBinary:  nil,
-										CreatedAt:    float64(time.Now().Unix()),
-										Final:        false,
-										StartToThink: true,
-									}
-								} else if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
-									out <- AsyncChatResult{
-										Answer:      "",
-										Reference:   map[string]interface{}{},
-										AudioBinary: nil,
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-										EndToThink:  true,
-									}
-								} else if d.Kind == ThinkDeltaText && d.Value != "" {
+								if d.Kind == ThinkDeltaText && d.Value != "" {
 									fullAnswer += d.Value
 									out <- AsyncChatResult{
 										Answer:      d.Value,
@@ -1135,19 +1127,32 @@ func (s *ChatPipelineService) AsyncChat(
 							}
 						}
 						if isContentDelta(answer) {
+							if thinkState.ExitReasoning() {
+								for _, d := range FlushRemaining(thinkState) {
+									if d.Kind == ThinkDeltaText && d.Value != "" {
+										fullAnswer += d.Value
+										out <- AsyncChatResult{
+											Answer:      d.Value,
+											Reference:   map[string]interface{}{},
+											AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+											CreatedAt:   float64(time.Now().Unix()),
+											Final:       false,
+										}
+									}
+								}
+								out <- AsyncChatResult{
+									Answer:      "",
+									Reference:   map[string]interface{}{},
+									AudioBinary: nil,
+									CreatedAt:   float64(time.Now().Unix()),
+									Final:       false,
+									EndToThink:  true,
+								}
+							}
 							fullAnswer += *answer
 							deltas := BufferAnswerDelta(thinkState, *answer, 16)
 							for _, d := range deltas {
-								if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
-									out <- AsyncChatResult{
-										Answer:      "",
-										Reference:   map[string]interface{}{},
-										AudioBinary: nil,
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-										EndToThink:  true,
-									}
-								} else if d.Kind == ThinkDeltaText && d.Value != "" {
+								if d.Kind == ThinkDeltaText && d.Value != "" {
 									out <- AsyncChatResult{
 										Answer:      d.Value,
 										Reference:   map[string]interface{}{},
@@ -1173,15 +1178,17 @@ func (s *ChatPipelineService) AsyncChat(
 			// Flush remaining state matching Python's final flush order
 			// (dialog_service.py:1601-1612): think_buffer → marker → answer_buffer → pending_after_close
 			// Python has no Reasoning field — all text is Answer.
+			hadThinkClose := false
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+					hadThinkClose = true
 					out <- AsyncChatResult{
-						Answer:       "",
-						Reference:    map[string]interface{}{},
-						AudioBinary:  nil,
-						CreatedAt:    float64(time.Now().Unix()),
-						Final:        false,
-						EndToThink:   true,
+						Answer:      "",
+						Reference:   map[string]interface{}{},
+						AudioBinary: nil,
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+						EndToThink:  true,
 					}
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
 					out <- AsyncChatResult{
@@ -1191,6 +1198,19 @@ func (s *ChatPipelineService) AsyncChat(
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 					}
+				}
+			}
+			// Close reasoning if the stream ended while still in reasoning mode
+			// (e.g. model returned only reasoning chunks with no content delta).
+			// Skip when FlushRemaining already emitted a </think> marker.
+			if !hadThinkClose && thinkState.ExitReasoning() {
+				out <- AsyncChatResult{
+					Answer:      "",
+					Reference:   map[string]interface{}{},
+					AudioBinary: nil,
+					CreatedAt:   float64(time.Now().Unix()),
+					Final:       false,
+					EndToThink:  true,
 				}
 			}
 
@@ -1399,27 +1419,19 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg,
 				func(answer *string, reason *string) error {
 					if reason != nil && *reason != "" {
+						if thinkState.EnterReasoning() {
+							out <- AsyncChatResult{
+								Answer:       "",
+								Reference:    map[string]interface{}{},
+								AudioBinary:  nil,
+								CreatedAt:    float64(time.Now().Unix()),
+								Final:        false,
+								StartToThink: true,
+							}
+						}
 						deltas := NextThinkDelta(thinkState, *reason, 16)
 						for _, d := range deltas {
-							if d.Kind == ThinkDeltaMarker && d.Value == "<think>" {
-								out <- AsyncChatResult{
-									Answer:       "",
-									Reference:    map[string]interface{}{},
-									AudioBinary:  nil,
-									CreatedAt:    float64(time.Now().Unix()),
-									Final:        false,
-									StartToThink: true,
-								}
-							} else if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
-								out <- AsyncChatResult{
-									Answer:      "",
-									Reference:   map[string]interface{}{},
-									AudioBinary: nil,
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
-									EndToThink:  true,
-								}
-							} else if d.Kind == ThinkDeltaText && d.Value != "" {
+							if d.Kind == ThinkDeltaText && d.Value != "" {
 								fullAnswer += d.Value
 								out <- AsyncChatResult{
 									Answer:      d.Value,
@@ -1431,11 +1443,20 @@ func (s *ChatPipelineService) AsyncChatSolo(
 							}
 						}
 					}
-				if isContentDelta(answer) {
-					fullAnswer += *answer
-					deltas := BufferAnswerDelta(thinkState, *answer, 16)
-					for _, d := range deltas {
-						if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+					if isContentDelta(answer) {
+						if thinkState.ExitReasoning() {
+							for _, d := range FlushRemaining(thinkState) {
+								if d.Kind == ThinkDeltaText && d.Value != "" {
+									fullAnswer += d.Value
+									out <- AsyncChatResult{
+										Answer:      d.Value,
+										Reference:   map[string]interface{}{},
+										AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+										CreatedAt:   float64(time.Now().Unix()),
+										Final:       false,
+									}
+								}
+							}
 							out <- AsyncChatResult{
 								Answer:      "",
 								Reference:   map[string]interface{}{},
@@ -1444,17 +1465,21 @@ func (s *ChatPipelineService) AsyncChatSolo(
 								Final:       false,
 								EndToThink:  true,
 							}
-						} else if d.Kind == ThinkDeltaText && d.Value != "" {
-							out <- AsyncChatResult{
-								Answer:      d.Value,
-								Reference:   map[string]interface{}{},
-								AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
+						}
+						fullAnswer += *answer
+						deltas := BufferAnswerDelta(thinkState, *answer, 16)
+						for _, d := range deltas {
+							if d.Kind == ThinkDeltaText && d.Value != "" {
+								out <- AsyncChatResult{
+									Answer:      d.Value,
+									Reference:   map[string]interface{}{},
+									AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+									CreatedAt:   float64(time.Now().Unix()),
+									Final:       false,
+								}
 							}
 						}
 					}
-				}
 					return nil
 				},
 			)
@@ -1466,15 +1491,17 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				return
 			}
 			timer.Exit(common.PhaseGenerateAnswer)
+			hadThinkClose := false
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+					hadThinkClose = true
 					out <- AsyncChatResult{
-						Answer:       "",
-						Reference:    map[string]interface{}{},
-						AudioBinary:  nil,
-						CreatedAt:    float64(time.Now().Unix()),
-						Final:        false,
-						EndToThink:   true,
+						Answer:      "",
+						Reference:   map[string]interface{}{},
+						AudioBinary: nil,
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+						EndToThink:  true,
 					}
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
 					out <- AsyncChatResult{
@@ -1484,6 +1511,19 @@ func (s *ChatPipelineService) AsyncChatSolo(
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 					}
+				}
+			}
+			// Close reasoning if the stream ended while still in reasoning mode
+			// (e.g. model returned only reasoning chunks with no content delta).
+			// Skip when FlushRemaining already emitted a </think> marker.
+			if !hadThinkClose && thinkState.ExitReasoning() {
+				out <- AsyncChatResult{
+					Answer:      "",
+					Reference:   map[string]interface{}{},
+					AudioBinary: nil,
+					CreatedAt:   float64(time.Now().Unix()),
+					Final:       false,
+					EndToThink:  true,
 				}
 			}
 			finalAnswer := ExtractVisibleAnswer(thinkState.fullText)
@@ -2758,7 +2798,7 @@ func (s *ChatPipelineService) decorateAnswer(
 				}
 				newChunks = append(newChunks, newChunk)
 			}
-			refs["chunks"] = newChunks
+			refs["chunks"] = chunksFormat(newChunks)
 		}
 	}
 
@@ -4050,7 +4090,7 @@ func (s *ChatPipelineService) buildSQLReference(
 				"count":    d["count"],
 			})
 		}
-		ref["chunks"] = chunks
+		ref["chunks"] = chunksFormat(chunks)
 		ref["doc_aggs"] = docAggs
 		return answer, ref
 	}
@@ -4059,7 +4099,7 @@ func (s *ChatPipelineService) buildSQLReference(
 	if isAggregateSQL(originalSQL) {
 		chunks, docAggs := s.fetchAggregateChunks(ctx, docEngine, tableName, originalSQL, expectedCol, kbIDs)
 		if len(chunks) > 0 {
-			ref["chunks"] = chunks
+			ref["chunks"] = chunksFormat(chunks)
 			ref["doc_aggs"] = docAggs
 		}
 		return answer, ref
@@ -4209,4 +4249,39 @@ func kbIDStrings(kbs []*entity.Knowledgebase) []string {
 		return nil
 	}
 	return out
+}
+
+// chunksFormat normalizes raw chunk maps to the frontend-expected field names.
+// Mirrors Python's chunks_format in rag/prompts/generator.py:41-65.
+func chunksFormat(chunksRaw []map[string]interface{}) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(chunksRaw))
+	for _, chunk := range chunksRaw {
+		formatted := map[string]interface{}{
+			"id":                getChunkValue(chunk, "chunk_id", "id"),
+			"content":           getChunkValue(chunk, "content", "content_with_weight"),
+			"document_id":       getChunkValue(chunk, "doc_id", "document_id"),
+			"document_name":     getChunkValue(chunk, "docnm_kwd", "document_name"),
+			"dataset_id":        getChunkValue(chunk, "kb_id", "dataset_id"),
+			"image_id":          getChunkValue(chunk, "image_id", "img_id"),
+			"positions":         getChunkValue(chunk, "positions", "position_int"),
+			"url":               chunk["url"],
+			"similarity":        chunk["similarity"],
+			"vector_similarity": chunk["vector_similarity"],
+			"term_similarity":   chunk["term_similarity"],
+			"row_id":            chunk["row_id"],
+			"doc_type":          getChunkValue(chunk, "doc_type_kwd", "doc_type"),
+			"document_metadata": chunk["document_metadata"],
+		}
+		result = append(result, formatted)
+	}
+	return result
+}
+
+// getChunkValue returns the first non-nil value from a chunk map, trying k1 first then k2.
+// Mirrors Python's get_value helper in rag/prompts/generator.py:37-38.
+func getChunkValue(chunk map[string]interface{}, k1, k2 string) interface{} {
+	if v, ok := chunk[k1]; ok && v != nil {
+		return v
+	}
+	return chunk[k2]
 }

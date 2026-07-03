@@ -22,6 +22,7 @@ Extracts typed relations using spaCy dependency parse with:
 - Dynamic confidence scoring
 - Multi-occurrence entity matching
 """
+
 from typing import Dict, List, Optional
 
 from .types import Entity, Relation
@@ -31,28 +32,21 @@ from .types import Entity, Relation
 # or a tuple (dep, child_dep) for compound patterns.
 # None = no standard mapping (language uses different structure)
 _LANG_DEP_RULES: Dict[str, Dict[str, object]] = {
-    "en": {"pass_subj": "nsubjpass", "subj": "nsubj",
-           "agent": ("agent", "pobj"),
-           "dobj": "dobj", "prep_obj": ("prep", "pobj")},
-    "de": {"subj": "sb",
-           "agent": ("sbp", "nk"),
-           "prep_obj": ("mo", "nk"),
-           "root_verb_child": "oc"},  # German ROOT is aux, real verb is "oc"
-    "fr": {"pass_subj": "nsubj:pass", "subj": "nsubj",
-           "agent": "obl:agent",
-           "dobj": "obj", "prep_obj": ("case", "obl")},
-    "es": {"subj": "nsubj",
-           "agent": "obj",
-           "prep_obj": ("case", "obl")},
-    "pt": {"pass_subj": "nsubj:pass", "subj": "nsubj",
-           "agent": "obl:agent",
-           "dobj": "obj", "prep_obj": ("case", "obl")},
-    "zh": {"subj": "nsubj",
-           "agent": ("nmod:prep", None, "由"),  # case "由" marks agent
-           "prep_obj": ("case", "nmod")},
-    "ja": {"subj": "nsubj",
-           "agent": ("obl", None, "によって"),  # "によって" marks agent
-           "prep_obj": ("case", "obl")},
+    "en": {"pass_subj": "nsubjpass", "subj": "nsubj", "agent": ("agent", "pobj"), "dobj": "dobj", "prep_obj": ("prep", "pobj")},
+    "de": {"subj": "sb", "agent": ("sbp", "nk"), "prep_obj": ("mo", "nk"), "root_verb_child": "oc"},  # German ROOT is aux, real verb is "oc"
+    "fr": {"pass_subj": "nsubj:pass", "subj": "nsubj", "agent": "obl:agent", "dobj": "obj", "prep_obj": ("case", "obl")},
+    "es": {"subj": "nsubj", "agent": "obj", "prep_obj": ("case", "obl")},
+    "pt": {"pass_subj": "nsubj:pass", "subj": "nsubj", "agent": "obl:agent", "dobj": "obj", "prep_obj": ("case", "obl")},
+    "zh": {
+        "subj": "nsubj",
+        "agent": ("nmod:prep", None, "由"),  # case "由" marks agent
+        "prep_obj": ("case", "nmod"),
+    },
+    "ja": {
+        "subj": "nsubj",
+        "agent": ("obl", None, "によって"),  # "によって" marks agent
+        "prep_obj": ("case", "obl"),
+    },
 }
 
 # Multi-hop inference rules: if A rel1 B and B rel2 C then A rel3 C
@@ -64,91 +58,137 @@ _MULTI_HOP: Dict[str, Dict[str, str]] = {
 
 _VERB_RELATIONS: Dict[str, str] = {
     # English
-    "found+by": "founded_by", "co-found+by": "founded_by",
-    "establish+by": "founded_by", "create+by": "founded_by",
-    "set+up": "founded_by", "start+by": "founded_by",
-    "work+for": "works_for", "employ+by": "works_for",
-    "hire+by": "works_for", "join": "works_for",
-    "lead+by": "works_for", "manage+by": "works_for",
-    "head+by": "works_for", "run+by": "works_for",
-    "own+by": "owns", "develop+by": "develops",
-    "write+by": "wrote", "publish+by": "published",
-    "invest+in": "invests_in", "partner+with": "partners_with",
+    "found+by": "founded_by",
+    "co-found+by": "founded_by",
+    "establish+by": "founded_by",
+    "create+by": "founded_by",
+    "set+up": "founded_by",
+    "start+by": "founded_by",
+    "work+for": "works_for",
+    "employ+by": "works_for",
+    "hire+by": "works_for",
+    "join": "works_for",
+    "lead+by": "works_for",
+    "manage+by": "works_for",
+    "head+by": "works_for",
+    "run+by": "works_for",
+    "own+by": "owns",
+    "develop+by": "develops",
+    "write+by": "wrote",
+    "publish+by": "published",
+    "invest+in": "invests_in",
+    "partner+with": "partners_with",
     "collaborate+with": "collaborates_with",
-    "merge+with": "merged_with", "subsidiar+y": "is_subsidiary_of",
-    "base+in": "located_in", "locate+in": "located_in",
-    "situate+in": "located_in", "headquarter+in": "located_in",
-    "bear+in": "born_in", "bear+on": "born_in",
-    "acquire+by": "acquired", "buy+by": "acquired",
+    "merge+with": "merged_with",
+    "subsidiar+y": "is_subsidiary_of",
+    "base+in": "located_in",
+    "locate+in": "located_in",
+    "situate+in": "located_in",
+    "headquarter+in": "located_in",
+    "bear+in": "born_in",
+    "bear+on": "born_in",
+    "acquire+by": "acquired",
+    "buy+by": "acquired",
     # German (de): spaCy lemmas
-    "gründen+von": "founded_by", "errichten+von": "founded_by",
-    "arbeiten+für": "works_for", "beschäftigen+bei": "works_for",
-    "anstellen+bei": "works_for", "sich+befinden": "located_in",
-    "liegen+in": "located_in", "sitzen+in": "located_in",
-    "gebären+in": "born_in", "gebären+am": "born_in",
-    "erwerben+durch": "acquired", "kaufen+durch": "acquired",
+    "gründen+von": "founded_by",
+    "errichten+von": "founded_by",
+    "arbeiten+für": "works_for",
+    "beschäftigen+bei": "works_for",
+    "anstellen+bei": "works_for",
+    "sich+befinden": "located_in",
+    "liegen+in": "located_in",
+    "sitzen+in": "located_in",
+    "gebären+in": "born_in",
+    "gebären+am": "born_in",
+    "erwerben+durch": "acquired",
+    "kaufen+durch": "acquired",
     "übernehmen+durch": "acquired",
     # French (fr): spaCy lemmas
-    "fonder+par": "founded_by", "créer+par": "founded_by",
+    "fonder+par": "founded_by",
+    "créer+par": "founded_by",
     "établir+par": "founded_by",
-    "travailler+pour": "works_for", "employer+par": "works_for",
+    "travailler+pour": "works_for",
+    "employer+par": "works_for",
     "embaucher+par": "works_for",
-    "situer+à": "located_in", "baser+à": "located_in",
+    "situer+à": "located_in",
+    "baser+à": "located_in",
     "implanter+à": "located_in",
     "naître+à": "born_in",
-    "acquérir+par": "acquired", "racheter+par": "acquired",
+    "acquérir+par": "acquired",
+    "racheter+par": "acquired",
     # Spanish + Portuguese (shared lemmas, no duplicate keys)
-    "fundar+por": "founded_by", "crear+por": "founded_by",
+    "fundar+por": "founded_by",
+    "crear+por": "founded_by",
     "criar+por": "founded_by",
-    "establecer+por": "founded_by", "estabelecer+por": "founded_by",
-    "trabajar+para": "works_for", "trabalhar+para": "works_for",
-    "emplear+por": "works_for", "empregar+por": "works_for",
+    "establecer+por": "founded_by",
+    "estabelecer+por": "founded_by",
+    "trabajar+para": "works_for",
+    "trabalhar+para": "works_for",
+    "emplear+por": "works_for",
+    "empregar+por": "works_for",
     "contratar+por": "works_for",
-    "ubicar+en": "located_in", "situar+en": "located_in",
-    "localizar+em": "located_in", "situar+em": "located_in",
-    "sediar+em": "located_in", "tener+sede": "located_in",
-    "nacer+en": "born_in", "nascer+em": "born_in",
-    "adquirir+por": "acquired", "comprar+por": "acquired",
+    "ubicar+en": "located_in",
+    "situar+en": "located_in",
+    "localizar+em": "located_in",
+    "situar+em": "located_in",
+    "sediar+em": "located_in",
+    "tener+sede": "located_in",
+    "nacer+en": "born_in",
+    "nascer+em": "born_in",
+    "adquirir+por": "acquired",
+    "comprar+por": "acquired",
     # Chinese: verb + "由" (agent marker) or "被" (passive)
-    "创立+由": "founded_by", "创建+由": "founded_by",
-    "成立+由": "founded_by", "创办+由": "founded_by",
+    "创立+由": "founded_by",
+    "创建+由": "founded_by",
+    "成立+由": "founded_by",
+    "创办+由": "founded_by",
     "设立+由": "founded_by",
-    "任职+于": "works_for", "就职+于": "works_for",
-    "工作+在": "works_for", "位于+在": "located_in",
-    "坐落+在": "located_in", "总部设+在": "located_in",
-    "出生+在": "born_in", "出生+于": "born_in",
-    "收购+由": "acquired", "并购+由": "acquired",
+    "任职+于": "works_for",
+    "就职+于": "works_for",
+    "工作+在": "works_for",
+    "位于+在": "located_in",
+    "坐落+在": "located_in",
+    "总部设+在": "located_in",
+    "出生+在": "born_in",
+    "出生+于": "born_in",
+    "收购+由": "acquired",
+    "并购+由": "acquired",
     # Japanese: verb + "によって" (agent marker)
-    "設立+によって": "founded_by", "創立+によって": "founded_by",
-    "勤務+で": "works_for", "在籍+で": "works_for",
-    "位置+に": "located_in", "所在+に": "located_in",
+    "設立+によって": "founded_by",
+    "創立+によって": "founded_by",
+    "勤務+で": "works_for",
+    "在籍+で": "works_for",
+    "位置+に": "located_in",
+    "所在+に": "located_in",
     "本社+を": "located_in",
     "出生+に": "born_in",
     "買収+によって": "acquired",
 }
 
 _COPULA_TITLE_MAP: Dict[str, List[str]] = {
-    "ceo": ["ceo_of", "works_for"], "cto": ["works_for"],
-    "cfo": ["works_for"], "coo": ["works_for"],
-    "vp": ["works_for"], "director": ["works_for"],
-    "manager": ["works_for"], "engineer": ["works_for"],
+    "ceo": ["ceo_of", "works_for"],
+    "cto": ["works_for"],
+    "cfo": ["works_for"],
+    "coo": ["works_for"],
+    "vp": ["works_for"],
+    "director": ["works_for"],
+    "manager": ["works_for"],
+    "engineer": ["works_for"],
     "employee": ["works_for"],
-    "founder": ["founded_by"], "co-founder": ["founded_by"],
+    "founder": ["founded_by"],
+    "co-founder": ["founded_by"],
 }
 
 
 class DepRelationExtractor:
     """Extract typed relations using dependency parse — semantica-aligned."""
 
-    def __init__(self, language: str = "en",
-                 confidence_threshold: float = 0.3,
-                 max_distance: int = 100):
+    def __init__(self, language: str = "en", confidence_threshold: float = 0.3, max_distance: int = 100):
         self.language = language
         self.confidence_threshold = confidence_threshold
         self.max_distance = max_distance
 
-    def extract(self, text: str, entities: List[Entity],
-                doc=None, **options) -> List[Relation]:
+    def extract(self, text: str, entities: List[Entity], doc=None, **options) -> List[Relation]:
         semantica_rels = []
         if doc is not None:
             semantica_rels = self._extract_with_dep(text, doc, entities)
@@ -180,12 +220,15 @@ class DepRelationExtractor:
                     if r2.predicate in _MULTI_HOP.get(r.predicate, {}):
                         inferred_rel = _MULTI_HOP[r.predicate][r2.predicate]
                         if inferred_rel:
-                            inferred.append(Relation(
-                                subject=r.subject, predicate=inferred_rel,
-                                obj=r2.obj, confidence=min(r.confidence, r2.confidence) * 0.9,
-                                metadata={"method": "multi_hop",
-                                          "via": f"{r.predicate}→{r2.predicate}"},
-                            ))
+                            inferred.append(
+                                Relation(
+                                    subject=r.subject,
+                                    predicate=inferred_rel,
+                                    obj=r2.obj,
+                                    confidence=min(r.confidence, r2.confidence) * 0.9,
+                                    metadata={"method": "multi_hop", "via": f"{r.predicate}→{r2.predicate}"},
+                                )
+                            )
         return relations + inferred
 
     # ------------------------------------------------------------------
@@ -221,10 +264,7 @@ class DepRelationExtractor:
                 if dep == parent_dep:
                     if case_marker:
                         # Check if any child has the expected case lemma
-                        has_case = any(
-                            gc.lemma_ == case_marker or gc.text == case_marker
-                            for gc in c.subtree
-                        )
+                        has_case = any(gc.lemma_ == case_marker or gc.text == case_marker for gc in c.subtree)
                         if not has_case:
                             continue
                     if child_dep is None:
@@ -281,6 +321,7 @@ class DepRelationExtractor:
         # Extract roles (check both the main verb and optional aux parent)
         def first(lst):
             return lst[0][0] if lst else None
+
         def get_roles(token):
             return (
                 first(self._get_by_role(token, "subj", entity_map)),
@@ -340,8 +381,7 @@ class DepRelationExtractor:
             for prep_entity, prep_l in prep_list:
                 rt = self._lookup(verb_lemma, prep_l)
                 if rt:
-                    relations.append(self._make_rel(effective_nsubj, rt, prep_entity, 0.85,
-                                                    "active_prep", verb_lemma, prep=prep_l))
+                    relations.append(self._make_rel(effective_nsubj, rt, prep_entity, 0.85, "active_prep", verb_lemma, prep=prep_l))
 
         # Passive with prep ("is based in")
         if effective_nsubjpass and prep_list and not agent_entity:
@@ -350,8 +390,7 @@ class DepRelationExtractor:
                 if not rt:
                     rt = self._lookup("be+" + verb_lemma, prep_l)
                 if rt:
-                    relations.append(self._make_rel(effective_nsubjpass, rt, prep_entity, 0.85,
-                                                    "passive_prep", verb_lemma, prep=prep_l))
+                    relations.append(self._make_rel(effective_nsubjpass, rt, prep_entity, 0.85, "passive_prep", verb_lemma, prep=prep_l))
 
         return relations
 
@@ -360,8 +399,7 @@ class DepRelationExtractor:
         m = {"method": method, "verb": verb}
         if prep:
             m["prep"] = prep
-        return Relation(subject=subj, predicate=pred, obj=obj,
-                         confidence=conf, metadata=m)
+        return Relation(subject=subj, predicate=pred, obj=obj, confidence=conf, metadata=m)
 
     @staticmethod
     def _already_has(rels, subj, pred, obj) -> bool:
@@ -401,11 +439,16 @@ class DepRelationExtractor:
         for keyword, rel_types in _COPULA_TITLE_MAP.items():
             if keyword in title_lemma:
                 for rt in rel_types:
-                    relations.append(Relation(
-                        subject=subj, predicate=rt, obj=prep_obj,
-                        confidence=0.88, context=text,
-                        metadata={"method": "copula", "title": title_lemma},
-                    ))
+                    relations.append(
+                        Relation(
+                            subject=subj,
+                            predicate=rt,
+                            obj=prep_obj,
+                            confidence=0.88,
+                            context=text,
+                            metadata={"method": "copula", "title": title_lemma},
+                        )
+                    )
                 break
         return relations
 
@@ -426,8 +469,7 @@ class DepRelationExtractor:
         return result
 
     @staticmethod
-    def _find_best_entity(key: str, entity_map: Dict[str, List[Entity]],
-                          fallback_text: str = "") -> Optional[Entity]:
+    def _find_best_entity(key: str, entity_map: Dict[str, List[Entity]], fallback_text: str = "") -> Optional[Entity]:
         """Find the best entity match. If multiple, prefer the one whose
         text is an exact match for fallback_text, or the first one."""
         entries = entity_map.get(key.lower(), [])
@@ -534,8 +576,8 @@ class DepRelationExtractor:
         if len(entities) < 2:
             return []
         import re as _re
-        spans = [(m.start(), m.end())
-                 for m in _re.finditer(r'[^.!?]+(?:[.!?](?=\s|$))+', text)]
+
+        spans = [(m.start(), m.end()) for m in _re.finditer(r"[^.!?]+(?:[.!?](?=\s|$))+", text)]
 
         def same_sent(c1, c2):
             return any(ss <= c1 < se and ss <= c2 < se for ss, se in spans)
@@ -550,9 +592,14 @@ class DepRelationExtractor:
                     continue
                 cs = max(0, min(e1.start_char, e2.start_char) - 20)
                 ce = min(len(text), max(e1.end_char, e2.end_char) + 20)
-                rels.append(Relation(
-                    subject=e1, predicate="related_to", obj=e2,
-                    confidence=0.4, context=text[cs:ce],
-                    metadata={"method": "cooccurrence"},
-                ))
+                rels.append(
+                    Relation(
+                        subject=e1,
+                        predicate="related_to",
+                        obj=e2,
+                        confidence=0.4,
+                        context=text[cs:ce],
+                        metadata={"method": "cooccurrence"},
+                    )
+                )
         return rels

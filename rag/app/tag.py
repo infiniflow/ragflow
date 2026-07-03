@@ -36,22 +36,19 @@ def beAdoc(d, q, a, eng, row_num=-1):
 
 def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     """
-        Excel and csv(txt) format files are supported.
-        If the file is in Excel format, there should be 2 column content and tags without header.
-        And content column is ahead of tags column.
-        And it's O.K if it has multiple sheets as long as the columns are rightly composed.
+    Excel and csv(txt) format files are supported.
+    If the file is in Excel format, there should be 2 column content and tags without header.
+    And content column is ahead of tags column.
+    And it's O.K if it has multiple sheets as long as the columns are rightly composed.
 
-        If it's in csv format, it should be UTF-8 encoded. Use TAB as delimiter to separate content and tags.
+    If it's in csv format, it should be UTF-8 encoded. Use TAB as delimiter to separate content and tags.
 
-        All the deformed lines will be ignored.
-        Every pair will be treated as a chunk.
+    All the deformed lines will be ignored.
+    Every pair will be treated as a chunk.
     """
     eng = lang.lower() == "english"
     res = []
-    doc = {
-        "docnm_kwd": filename,
-        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
-    }
+    doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
@@ -84,11 +81,9 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                 content = ""
             i += 1
             if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), ("Extract TAG: {}".format(len(res)) + (
-                    f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                callback(len(res) * 0.6 / len(lines), ("Extract TAG: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
-        callback(0.6, ("Extract TAG: {}".format(len(res)) + (
-            f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.6, ("Extract TAG: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         return res
 
@@ -111,20 +106,18 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                 res.append(beAdoc(deepcopy(doc), content, row[1], eng, i))
                 content = ""
             if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), ("Extract Tags: {}".format(len(res)) + (
-                    f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                callback(len(res) * 0.6 / len(lines), ("Extract Tags: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
-        callback(0.6, ("Extract TAG : {}".format(len(res)) + (
-            f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.6, ("Extract TAG : {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         return res
 
-    raise NotImplementedError(
-        "Excel, csv(txt) format files are supported.")
+    raise NotImplementedError("Excel, csv(txt) format files are supported.")
 
 
 def label_question(question, kbs):
     from api.db.services.knowledgebase_service import KnowledgebaseService
     from rag.graphrag.utils import get_tags_from_cache, set_tags_to_cache
+
     tags = None
     tag_kb_ids = []
     for kb in kbs:
@@ -140,21 +133,14 @@ def label_question(question, kbs):
         tag_kbs = KnowledgebaseService.get_by_ids(tag_kb_ids)
         if not tag_kbs:
             return tags
-        tags = settings.retriever.tag_query(question,
-                                            list(set([kb.tenant_id for kb in tag_kbs])),
-                                            tag_kb_ids,
-                                            all_tags,
-                                            kb.parser_config.get("topn_tags", 3)
-                                            )
+        tags = settings.retriever.tag_query(question, list(set([kb.tenant_id for kb in tag_kbs])), tag_kb_ids, all_tags, kb.parser_config.get("topn_tags", 3))
     return tags
 
 
 if __name__ == "__main__":
     import sys
 
-
     def dummy(prog=None, msg=""):
         pass
-
 
     chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)

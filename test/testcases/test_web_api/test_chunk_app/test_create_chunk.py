@@ -187,10 +187,7 @@ class TestAddChunk:
         chunks_count = list_chunks(WebApiAuth, dataset_id, document_id)["data"]["doc"]["chunk_count"]
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(add_chunk, WebApiAuth, dataset_id, document_id, {"content": f"chunk test {i}"})
-                for i in range(count)
-            ]
+            futures = [executor.submit(add_chunk, WebApiAuth, dataset_id, document_id, {"content": f"chunk test {i}"}) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)

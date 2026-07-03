@@ -83,9 +83,7 @@ def _load_fillup_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
 
     module_path = repo_root / "agent" / "component" / "fillup.py"
-    spec = importlib.util.spec_from_file_location(
-        "test_fillup_unit_module", module_path
-    )
+    spec = importlib.util.spec_from_file_location("test_fillup_unit_module", module_path)
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "test_fillup_unit_module", module)
     spec.loader.exec_module(module)
