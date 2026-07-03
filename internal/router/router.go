@@ -584,11 +584,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.POST("/:connector_id/test", r.connectorHandler.TestConnector)
 			}
 
-			// MCP server routes. Per-server CRUD ships via separate PRs that
-			// share the same handler/service: GET list (#15253), GET by id
-			// (#15254), POST create (#15260, merged), PUT (#15261), DELETE
-			// (#15262, merged). This PR adds only the non-overlapping
-			// endpoints: import and test.
+			// MCP server routes.
 			mcp := v1.Group("/mcp")
 			{
 				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
