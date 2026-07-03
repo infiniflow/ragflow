@@ -47,31 +47,10 @@ func NewHandler(svc *Service) *Handler {
 	}
 }
 
-// SuccessResponse success response
-type SuccessResponse struct {
-	Code    int         `json:"code"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data"`
-}
-
 // ErrorResponse error response
 type ErrorResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
-}
-
-func responseWithCode(c *gin.Context, message string, httpCode int, errorCode common.ErrorCode) {
-	if message == "" {
-		c.JSON(httpCode, ErrorResponse{
-			Code:    int(errorCode),
-			Message: errorCode.Message(),
-		})
-	} else {
-		c.JSON(httpCode, ErrorResponse{
-			Code:    int(errorCode),
-			Message: message,
-		})
-	}
 }
 
 // Health check
@@ -1261,11 +1240,11 @@ func (h *Handler) Reports(c *gin.Context) {
 	// Handle the heartbeat
 	errCode, message := h.service.HandleHeartbeat(&req)
 	if errCode != common.CodeLicenseValid {
-		responseWithCode(c, message, 500, errCode)
+		common.ErrorWithCode(c, int(errCode), message)
 		return
 	}
 
-	responseWithCode(c, message, http.StatusOK, errCode)
+	common.ErrorWithCode(c, int(errCode), message)
 }
 
 func (h *Handler) ListAllModels(c *gin.Context) {
