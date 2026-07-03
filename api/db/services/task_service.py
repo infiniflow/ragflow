@@ -107,11 +107,13 @@ class TaskService(CommonService):
             Knowledgebase.tenant_id,
             Knowledgebase.language,
             Knowledgebase.embd_id,
+            Knowledgebase.tenant_embd_id,
             Knowledgebase.pagerank,
             Knowledgebase.parser_config.alias("kb_parser_config"),
             Tenant.img2txt_id,
             Tenant.asr_id,
             Tenant.llm_id,
+            Tenant.tenant_llm_id,
             cls.model.update_time,
         ]
         docs = (

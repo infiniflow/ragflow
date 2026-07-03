@@ -282,10 +282,10 @@ if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
         --mark-database-version-on-success
 
     "$PY" tools/scripts/mysql_migration.py \
-        --stages tenant_model_seeding,model_type_merge \
+        --stages tenant_model_seeding,model_type_merge,tenant_model_id_migration \
         --config conf/service_conf.yaml \
         --execute \
-        --database-version "v0.26.1" \
+        --database-version "v0.26.3" \
         --mark-database-version-on-success
     echo "Model provider table migrations completed."
 fi

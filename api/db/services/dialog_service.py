@@ -39,7 +39,7 @@ from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
 )
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_model_type_by_name
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_model_type_by_name, get_model_config_by_id
 from common.time_utils import current_timestamp, datetime_format
 from common.text_utils import normalize_arabic_digits
 from rag.graphrag.general.mind_map_extractor import MindMapExtractor
@@ -293,11 +293,25 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
     image_files = []
 
     if dialog.llm_id:
-        llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
-        if "chat" in llm_types:
-            model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        if dialog.tenant_llm_id:
+            try:
+                llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+                if "chat" in llm_types:
+                    model_config = get_model_config_by_id(dialog.tenant_id, dialog.tenant_llm_id)
+                else:
+                    model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+            except LookupError:
+                llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+                if "chat" in llm_types:
+                    model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+                else:
+                    model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
         else:
-            model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+            llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+            if "chat" in llm_types:
+                model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+            else:
+                model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
@@ -356,14 +370,26 @@ def get_models(dialog, trace_context=None, langfuse_session_id=None):
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
     if dialog.llm_id:
-        chat_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        if dialog.tenant_llm_id:
+            try:
+                chat_model_config = get_model_config_by_id(dialog.tenant_id, dialog.tenant_llm_id)
+            except LookupError:
+                chat_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        else:
+            chat_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
     chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
 
     if dialog.rerank_id:
-        rerank_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
+        if dialog.tenant_rerank_id:
+            try:
+                rerank_model_config = get_model_config_by_id(dialog.tenant_id, dialog.tenant_rerank_id)
+            except LookupError:
+                rerank_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
+        else:
+            rerank_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
         rerank_mdl = LLMBundle(dialog.tenant_id, rerank_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
 
     if dialog.prompt_config.get("tts"):
@@ -555,11 +581,25 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     chat_start_ts = timer()
     if dialog.llm_id:
-        llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
-        if "chat" in llm_types:
-            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        if dialog.tenant_llm_id:
+            try:
+                llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+                if "chat" in llm_types:
+                    llm_model_config = get_model_config_by_id(dialog.tenant_id, dialog.tenant_llm_id)
+                else:
+                    llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+            except LookupError:
+                llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+                if "chat" in llm_types:
+                    llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+                else:
+                    llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
         else:
-            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+            llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+            if "chat" in llm_types:
+                llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+            else:
+                llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         llm_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 

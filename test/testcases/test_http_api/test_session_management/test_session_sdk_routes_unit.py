@@ -466,7 +466,7 @@ def _load_session_module(monkeypatch):
             }
 
     def _get_model_config_by_id(
-        tenant_model_id: int,
+        tenant_model_id: str,
         allowed_tenant_ids=None,
         requester_tenant_id=None,
     ) -> dict:

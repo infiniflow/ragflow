@@ -455,7 +455,7 @@ def _load_doc_module(monkeypatch, module_basename="chunk_api"):
             }
     
     def _get_model_config_by_id(
-        tenant_model_id: int,
+        tenant_model_id: str,
         allowed_tenant_ids=None,
         requester_tenant_id=None,
     ) -> dict:
@@ -998,7 +998,7 @@ class TestDocRoutesUnit:
         monkeypatch.setattr(module.rag_tokenizer, "fine_grained_tokenize", lambda text: text or "")
         monkeypatch.setattr(module.rag_tokenizer, "is_chinese", lambda _text: False)
         monkeypatch.setattr(module.DocumentService, "get_embd_id", lambda _doc_id: "embd")
-        monkeypatch.setattr(module.DocumentService, "get_tenant_embd_id", lambda _doc_id: 1)
+        monkeypatch.setattr(module.DocumentService, "get_tenant_embd_id", lambda _doc_id: "tm-embd-1")
 
         class _EmbedModel:
             def encode(self, _texts):
@@ -1088,8 +1088,8 @@ class TestDocRoutesUnit:
             "get_request_json",
             lambda: _AwaitableValue({"dataset_ids": ["ds-1"], "question": "q", "highlight": "True"}),
         )
-        monkeypatch.setattr(module.KnowledgebaseService, "get_by_ids", lambda _ids: [SimpleNamespace(embd_id="m1", tenant_id="tenant-1", tenant_embd_id=1)])
-        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, SimpleNamespace(tenant_id="tenant-1", embd_id="m1", tenant_embd_id=1)))
+        monkeypatch.setattr(module.KnowledgebaseService, "get_by_ids", lambda _ids: [SimpleNamespace(embd_id="m1", tenant_id="tenant-1", tenant_embd_id="tm-embd-1")])
+        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, SimpleNamespace(tenant_id="tenant-1", embd_id="m1", tenant_embd_id="tm-embd-1")))
 
         class _Retriever:
             async def retrieval(self, *_args, **_kwargs):
@@ -1212,7 +1212,7 @@ class TestDocRoutesUnit:
                 }
             ),
         )
-        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, SimpleNamespace(tenant_id="tenant-1", embd_id="m1", tenant_embd_id=1)))
+        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, SimpleNamespace(tenant_id="tenant-1", embd_id="m1", tenant_embd_id="tm-embd-1")))
         monkeypatch.setattr(module, "cross_languages", _cross_languages)
         monkeypatch.setattr(module, "keyword_extraction", _keyword_extraction)
         monkeypatch.setattr(module.settings, "retriever", _FeatureRetriever())

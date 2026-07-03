@@ -292,7 +292,8 @@ class SoMarkOcrModel(Base, SoMarkParser):
             else:
                 redacted_config[k] = v
         logging.info(f"Parsed SoMark config (sensitive fields redacted): {redacted_config}")
-
+        self.base_url = base_url
+        self.api_key = api_key
         SoMarkParser.__init__(
             self,
             base_url=base_url,

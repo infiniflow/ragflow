@@ -33,7 +33,8 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
 from api.db.joint_services.tenant_model_service import (
     get_tenant_default_model_by_type,
-    get_model_config_from_provider_instance
+    get_model_config_from_provider_instance,
+    get_model_config_by_id,
 )
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID
@@ -213,7 +214,16 @@ class TaskHandler:
         task_language = ctx.language
 
         try:
-            if task_embedding_id:
+            if ctx.tenant_embd_id:
+                try:
+                    embd_model_config = get_model_config_by_id(
+                        task_tenant_id, ctx.tenant_embd_id
+                    )
+                except LookupError:
+                    embd_model_config = get_model_config_from_provider_instance(
+                        task_tenant_id, LLMType.EMBEDDING, task_embedding_id
+                    )
+            elif task_embedding_id:
                 embd_model_config = get_model_config_from_provider_instance(
                     task_tenant_id, LLMType.EMBEDDING, task_embedding_id
                 )
