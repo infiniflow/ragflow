@@ -30,17 +30,17 @@ import (
 
 // TenantHandler tenant handler
 type TenantHandler struct {
-	tenantService *service.TenantService
-	userService   *service.UserService
-	kbService     *service.KnowledgebaseService
+	tenantService  *service.TenantService
+	userService    *service.UserService
+	datasetService *service.DatasetService
 }
 
 // NewTenantHandler create tenant handler
-func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService, kbService *service.KnowledgebaseService) *TenantHandler {
+func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService, datasetService *service.DatasetService) *TenantHandler {
 	return &TenantHandler{
-		tenantService: tenantService,
-		userService:   userService,
-		kbService:     kbService,
+		tenantService:  tenantService,
+		userService:    userService,
+		datasetService: datasetService,
 	}
 }
 
@@ -309,7 +309,7 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 	}
 
 	// Check authorization - user must have access to this kb
-	if !h.kbService.Accessible(req.KBID, user.ID) {
+	if !h.datasetService.Accessible(req.KBID, user.ID) {
 		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
@@ -360,7 +360,7 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	}
 
 	// Check authorization
-	if !h.kbService.Accessible(req.KBID, user.ID) {
+	if !h.datasetService.Accessible(req.KBID, user.ID) {
 		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}

@@ -3057,6 +3057,10 @@ func (s *DatasetService) Accessible(kbID, userID string) bool {
 	return s.kbDAO.Accessible(kbID, userID)
 }
 
+func (s *DatasetService) GetByID(kbID string) (*entity.Knowledgebase, error) {
+	return s.kbDAO.GetByID(kbID)
+}
+
 // GetKnowledgebaseByID resolves a dataset entity without applying permission
 // checks. Upload needs the same existence-then-auth ordering as Python.
 func (s *DatasetService) GetKnowledgebaseByID(datasetID string) (*entity.Knowledgebase, error) {

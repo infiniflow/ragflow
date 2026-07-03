@@ -48,7 +48,7 @@ import (
 type ChatPipelineService struct {
 	ModelProviderSvc *ModelProviderService
 	MetadataSvc      *MetadataService
-	KbService        *KnowledgebaseService
+	datasetService   *DatasetService
 }
 
 // NewChatPipelineService creates a new ChatPipelineService with all required dependencies.
@@ -56,7 +56,7 @@ func NewChatPipelineService() *ChatPipelineService {
 	return &ChatPipelineService{
 		ModelProviderSvc: NewModelProviderService(),
 		MetadataSvc:      NewMetadataService(),
-		KbService:        NewKnowledgebaseService(),
+		datasetService:   NewDatasetService(),
 	}
 }
 
