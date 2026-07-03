@@ -404,11 +404,7 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 		data = resp.Data
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    data,
-		"message": message,
-	})
+	common.SuccessWithData(c, data, message)
 }
 
 // List retrieves chunks for a document.
@@ -542,11 +538,7 @@ func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 func parseStringSlice(raw interface{}) ([]string, bool) {

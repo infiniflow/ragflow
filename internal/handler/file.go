@@ -601,11 +601,7 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // linkToDatasetsErrorCode maps File2DocumentService sentinel errors to

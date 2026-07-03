@@ -87,11 +87,7 @@ func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    result,
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // ListMCPServers lists MCP servers for the current user.
@@ -132,11 +128,7 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    result,
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *MCPHandler) GetMCPServer(c *gin.Context) {
@@ -230,11 +222,7 @@ func (h *MCPHandler) DeleteMCPServer(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    result,
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // mcpErrorResponse maps the import / test sentinel errors to the response

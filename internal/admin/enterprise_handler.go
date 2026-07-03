@@ -317,11 +317,7 @@ type AddProviderRequest struct {
 func (h *Handler) AddModelProvider(c *gin.Context) {
 	var req AddProviderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
 		return
 	}
 
@@ -348,10 +344,7 @@ func (h *Handler) ShowProvider(c *gin.Context) {
 
 	provider, err := dao.GetModelProviderManager().GetProviderByName(providerName)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeNotFound), err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -397,10 +390,7 @@ func (h *Handler) ListModels(c *gin.Context) {
 	}
 	models, err := dao.GetModelProviderManager().ListModels(providerName)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeNotFound), err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -429,10 +419,7 @@ func (h *Handler) ShowProviderModel(c *gin.Context) {
 	}
 	model, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeNotFound), err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -641,11 +628,7 @@ type AddModelInstanceRequest struct {
 func (h *Handler) AddModelInstance(c *gin.Context) {
 	var req AddModelInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
 		return
 	}
 
@@ -796,11 +779,7 @@ type AddModelsRequest struct {
 func (h *Handler) AddModels(c *gin.Context) {
 	var req AddModelsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
 		return
 	}
 

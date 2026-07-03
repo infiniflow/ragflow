@@ -112,11 +112,7 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // Create creates a chat.
@@ -152,11 +148,7 @@ func (h *ChatHandler) Create(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // MindMap generates a query mind map for chat search results.
@@ -262,11 +254,7 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // BulkDeleteChats soft deletes multiple chats owned by the current user.
@@ -441,11 +429,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	}
 
 	// Return success response
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // UpdateChat updates a chat by ID using REST PUT semantics.

@@ -101,11 +101,7 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	// Parse JSON request body
 	var req service.CreateMemoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -194,11 +190,7 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	}
 
 	// Return success response
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    result,
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // UpdateMemory handles PUT request for updating Memory
@@ -251,11 +243,7 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 	// Parse JSON request body
 	var req service.UpdateMemoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -293,11 +281,7 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 	}
 
 	// Return success response
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    result,
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // DeleteMemory handles DELETE request for deleting Memory
@@ -347,11 +331,7 @@ func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
 	}
 
 	// Return success response
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    nil,
-	})
+	common.SuccessNoData(c, "success")
 }
 
 // ListMemories handles GET request for listing Memories
@@ -436,11 +416,7 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	}
 
 	// Return success response
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    result,
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // GetMemoryConfig handles GET request for getting Memory configuration
@@ -490,11 +466,7 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 	}
 
 	// Return success response
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    result,
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // GetMemoryMessages handles GET request for getting Memory messages

@@ -192,19 +192,11 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		tags,
 	)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"data":    false,
-			"message": err.Error(),
-		})
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // mapAgentError normalises service-layer errors onto the existing
@@ -337,11 +329,7 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 		jsonError(c, ec, em)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // DeleteAgent removes the canvas and cascades to its versions.
@@ -363,11 +351,7 @@ func (h *AgentHandler) DeleteAgent(c *gin.Context) {
 		jsonError(c, ec, em)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // ListTemplates lists every canvas template available to authenticated users.
@@ -505,11 +489,7 @@ func (h *AgentHandler) CancelAgent(c *gin.Context) {
 		jsonError(c, ec, em)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // publishAgentRequest is the wire shape for POST /api/v1/agents/:canvas_id/publish.
@@ -649,11 +629,7 @@ func (h *AgentHandler) DeleteVersion(c *gin.Context) {
 		jsonError(c, ec, em)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // --- PR2: missing routes wired up to the existing service layer ---
@@ -737,11 +713,7 @@ func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 		jsonError(c, errCode, errMsg.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // ListAgentSessions GET /api/v1/agents/:canvas_id/sessions
@@ -884,11 +856,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 		jsonError(c, code, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // AgentChatCompletions POST /api/v1/agents/chat/completions
@@ -1209,11 +1177,7 @@ func (h *AgentHandler) RerunAgent(c *gin.Context) {
 		jsonError(c, common.CodeDataError, "Document not found.")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // TestDBConnection POST /api/v1/agents/test_db_connection
@@ -1233,11 +1197,7 @@ func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 		jsonError(c, code, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // GetAgentLogs GET /api/v1/agents/:canvas_id/logs/:message_id
@@ -1266,11 +1226,7 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	if rerr == nil && payload != "" {
 		_ = json.Unmarshal([]byte(payload), &data)
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    data,
-		"message": "success",
-	})
+	common.SuccessWithData(c, data, "success")
 }
 
 // GetAgentWebhookLogs GET /api/v1/agents/:canvas_id/webhook/logs

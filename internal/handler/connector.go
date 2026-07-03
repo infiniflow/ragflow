@@ -448,11 +448,7 @@ func (h *ConnectorHandler) StartGoogleWebOAuth(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    data,
-		"message": "success",
-	})
+	common.SuccessWithData(c, data, "success")
 }
 
 func (h *ConnectorHandler) PollGoogleWebOAuthResult(c *gin.Context) {
@@ -478,11 +474,7 @@ func (h *ConnectorHandler) PollGoogleWebOAuthResult(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    data,
-		"message": "success",
-	})
+	common.SuccessWithData(c, data, "success")
 }
 
 func (h *ConnectorHandler) GoogleWebOAuthCallback(c *gin.Context) {

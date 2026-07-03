@@ -192,11 +192,7 @@ func (h *DocumentHandler) GetThumbnail(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 func parseThumbnailDocIDs(c *gin.Context) []string {
@@ -1021,11 +1017,7 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 
 // jsonSuccess writes the standard {code:0,message:"success",data} envelope.
 func jsonSuccess(c *gin.Context, data interface{}) {
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    data,
-	})
+	common.SuccessWithData(c, data, "success")
 }
 
 // mapDocKeysWithRunStatus renames a freshly-created document's raw keys to the

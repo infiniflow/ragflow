@@ -56,11 +56,7 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 func (h *UserHandler) Register(c *gin.Context) {
 	var req service.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
 		return
 	}
 
@@ -124,21 +120,13 @@ func (h *UserHandler) Register(c *gin.Context) {
 func (h *UserHandler) Login(c *gin.Context) {
 	var req service.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
 		return
 	}
 
 	user, code, err := h.userService.Login(&req)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
 
@@ -191,11 +179,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
 		return
 	}
 
@@ -211,11 +195,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 
 	user, code, err := h.userService.LoginByEmail(&req)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
 
@@ -275,11 +255,7 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 
 	user, code, err := h.userService.GetUserByID(uint(id))
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
 
@@ -313,11 +289,7 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 
 	users, total, code, err := h.userService.ListUsers(page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
 
@@ -378,19 +350,11 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	// Logout user
 	code, err = h.userService.Logout(user)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // Info get user profile information
@@ -439,11 +403,7 @@ func (h *UserHandler) Setting(c *gin.Context) {
 	// Parse request
 	var req service.UpdateSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
 		return
 	}
 
@@ -458,11 +418,7 @@ func (h *UserHandler) Setting(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
 
@@ -493,22 +449,14 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 	// Parse request
 	var req service.ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
 		return
 	}
 
 	// Change password
 	code, err := h.userService.ChangePassword(user, &req)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
 
@@ -818,11 +766,7 @@ func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 
 	user, code, err := h.userService.ForgotResetPassword(&req)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
 

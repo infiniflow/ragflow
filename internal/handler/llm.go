@@ -72,11 +72,7 @@ func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 
 	llms, err := h.llmService.GetMyLLMs(tenantID, includeDetails)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
@@ -164,11 +160,7 @@ func (h *LLMHandler) ListApp(c *gin.Context) {
 
 	llms, err := h.llmService.ListLLMs(tenantID, modelType)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 

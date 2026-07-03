@@ -56,11 +56,7 @@ func (h *ModelHandler) ListAllModels(c *gin.Context) {
 	// list tenant models
 	models, err := h.modelProviderService.ListAllModels(page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -102,11 +98,7 @@ func (h *ModelHandler) ShowModel(c *gin.Context) {
 	// Get model
 	model, err := h.modelProviderService.ShowModel(decodedModelName)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 

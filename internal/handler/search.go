@@ -140,11 +140,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // CreateSearch create a new search app
@@ -203,11 +199,7 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 	}
 
 	// Return success response (same as Python get_json_result(data={"search_id": req["id"]}))
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // GetSearch get search app detail
@@ -277,11 +269,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	}
 
 	// Return success response
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // DeleteSearch delete a search app
@@ -335,11 +323,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	}
 
 	// Return success response (same as Python get_json_result(data=True))
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // UpdateSearch update a search app
@@ -447,11 +431,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	}
 
 	// Return success response
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *SearchHandler) Completion(c *gin.Context) {

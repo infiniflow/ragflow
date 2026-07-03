@@ -168,10 +168,7 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": result,
-	})
+	common.SuccessNoMessage(c, result)
 }
 
 // GetDataset handles GET /api/v1/datasets/:dataset_id.
@@ -189,10 +186,7 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": result,
-	})
+	common.SuccessNoMessage(c, result)
 }
 
 // UpdateDataset Update a dataset.
@@ -231,10 +225,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": result,
-	})
+	common.SuccessNoMessage(c, result)
 }
 
 func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
@@ -251,10 +242,7 @@ func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": result,
-	})
+	common.SuccessNoMessage(c, result)
 }
 
 func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
@@ -277,10 +265,7 @@ func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": result,
-	})
+	common.SuccessNoMessage(c, result)
 }
 
 // GetIngestionSummary handles GET /api/v1/datasets/:dataset_id/ingestions/summary.
@@ -398,10 +383,7 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": result,
-	})
+	common.SuccessNoMessage(c, result)
 }
 
 // GetKnowledgeGraph handles GET /api/v1/datasets/:dataset_id/graph.
@@ -859,11 +841,7 @@ func (h *DatasetsHandler) TraceIndex(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // DeleteIndex Delete an indexing task (graph/raptor/mindmap) for a dataset.

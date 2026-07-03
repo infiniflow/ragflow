@@ -80,11 +80,7 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 
 	err := h.tenantService.SetTenantDefaultModels(user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType, req.ModelID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
@@ -97,11 +93,7 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    nil,
-	})
+	common.SuccessNoData(c, "success")
 }
 
 // GetDefaultModels returns the tenant's default model selections. The
@@ -118,11 +110,7 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 
 	defaultModels, err := h.tenantService.ListTenantDefaultModels(user.ID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
@@ -158,11 +146,7 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 
 	tenantInfo, err := h.tenantService.GetTenantInfo(user.ID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
@@ -200,11 +184,7 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 
 	tenantList, err := h.tenantService.GetTenantList(user.ID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
@@ -240,11 +220,7 @@ func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    nil,
-	})
+	common.SuccessNoData(c, "success")
 }
 
 // DeleteMetadataStore handles the delete metadata store request
@@ -272,11 +248,7 @@ func (h *TenantHandler) DeleteMetadataStore(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    nil,
-	})
+	common.SuccessNoData(c, "success")
 }
 
 // CreateChunkTableRequest represents the request for creating a chunk table
@@ -324,11 +296,7 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    result,
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // DeleteChunkTableRequest represents the request for deleting a chunk table
@@ -371,11 +339,7 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    nil,
-	})
+	common.SuccessNoData(c, "success")
 }
 
 // InsertChunksFromFileRequest request for inserting chunks from file
@@ -471,11 +435,7 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // InsertMetadataFromFileRequest request for inserting metadata from file
@@ -565,11 +525,7 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // ListTenantMembers lists all non-owner members of a tenant.

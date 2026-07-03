@@ -162,11 +162,7 @@ func (h *ChatChannelHandler) UpdateChatChannel(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // DeleteChatChannel handles DELETE /chat-channels/:channel_id.
@@ -195,11 +191,7 @@ func (h *ChatChannelHandler) DeleteChatChannel(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 func unwrapChatChannelPayload(payload map[string]interface{}) map[string]interface{} {
