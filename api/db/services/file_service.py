@@ -479,8 +479,7 @@ class FileService(CommonService):
                 try:
                     if str(doc.kb_id) != str(kb.id):
                         logging.warning(
-                            "Existing document id collision detected for %s: belongs to kb_id=%s, incoming kb_id=%s. "
-                            "Skipping update to avoid cross-KB overwrite.",
+                            "Existing document id collision detected for %s: belongs to kb_id=%s, incoming kb_id=%s. Skipping update to avoid cross-KB overwrite.",
                             doc_id,
                             doc.kb_id,
                             kb.id,
@@ -522,7 +521,6 @@ class FileService(CommonService):
                 if filetype == FileType.PDF.value:
                     blob = read_potential_broken_pdf(blob)
                 settings.STORAGE_IMPL.put(kb.id, location, blob)
-
 
                 img = thumbnail_img(filename, blob)
                 thumbnail_location = ""
@@ -678,13 +676,14 @@ class FileService(CommonService):
         written to the log.
         """
         from urllib.parse import urlparse
+
         parsed = urlparse(url)
         port_suffix = f":{parsed.port}" if parsed.port else ""
         redacted = f"{parsed.scheme}://{parsed.hostname}{port_suffix}"
         return assert_url_is_safe(redacted, allowed_schemes=FileService._ALLOWED_SCHEMES)
 
     @staticmethod
-    def upload_info(user_id, file, url: str|None=None):
+    def upload_info(user_id, file, url: str | None = None):
         def structured(filename, filetype, blob, content_type):
             nonlocal user_id
             if filetype == FileType.PDF.value:
@@ -701,7 +700,7 @@ class FileService(CommonService):
                 "mime_type": content_type,
                 "created_by": user_id,
                 "created_at": time.time(),
-                "preview_url": None
+                "preview_url": None,
             }
 
         if url:
@@ -743,24 +742,17 @@ class FileService(CommonService):
                 host_pins[_next_hostname] = _next_ip
                 current_url = _next_url
             else:
-                raise ValueError(
-                    f"Exceeded {_MAX_CRAWL_REDIRECTS} redirects fetching {url!r}"
-                )
+                raise ValueError(f"Exceeded {_MAX_CRAWL_REDIRECTS} redirects fetching {url!r}")
 
             # Build a single MAP rule string covering every validated hostname
             # in the redirect chain. Chromium uses the pinned IP for each,
             # skipping DNS entirely and eliminating the rebinding window.
             _map_rules = ",".join(f"MAP {h} {ip}" for h, ip in host_pins.items())
 
-            from crawl4ai import (
-                AsyncWebCrawler,
-                BrowserConfig,
-                CrawlerRunConfig,
-                DefaultMarkdownGenerator,
-                PruningContentFilter,
-                CrawlResult
-            )
+            from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, DefaultMarkdownGenerator, PruningContentFilter, CrawlResult
+
             filename = re.sub(r"\?.*", "", url.split("/")[-1])
+
             async def adownload():
                 browser_config = BrowserConfig(
                     headless=True,
@@ -768,20 +760,12 @@ class FileService(CommonService):
                     extra_args=[f"--host-resolver-rules={_map_rules}"],
                 )
                 async with AsyncWebCrawler(config=browser_config) as crawler:
-                    crawler_config = CrawlerRunConfig(
-                        markdown_generator=DefaultMarkdownGenerator(
-                            content_filter=PruningContentFilter()
-                        ),
-                        pdf=True,
-                        screenshot=False
-                    )
+                    crawler_config = CrawlerRunConfig(markdown_generator=DefaultMarkdownGenerator(content_filter=PruningContentFilter()), pdf=True, screenshot=False)
                     # Use the final resolved URL so the browser starts at the
                     # redirect destination rather than re-following the chain.
-                    result: CrawlResult = await crawler.arun(
-                        url=current_url,
-                        config=crawler_config
-                    )
+                    result: CrawlResult = await crawler.arun(url=current_url, config=crawler_config)
                     return result
+
             page = asyncio.run(adownload())
             if page.pdf:
                 if filename.split(".")[-1].lower() != "pdf":
@@ -796,15 +780,16 @@ class FileService(CommonService):
     @staticmethod
     def get_files(files: Union[None, list[dict]], raw: bool = False, layout_recognize: str = None) -> Union[list[str], tuple[list[str], list[dict]]]:
         if not files:
-            return  []
+            return []
+
         def image_to_base64(file):
-            return "data:{};base64,{}".format(file["mime_type"],
-                                        base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
+            return "data:{};base64,{}".format(file["mime_type"], base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
+
         with ThreadPoolExecutor(max_workers=5) as exe:
             threads = []
             imgs = []
             for file in files:
-                if file["mime_type"].find("image") >=0:
+                if file["mime_type"].find("image") >= 0:
                     if raw:
                         imgs.append(FileService.get_blob(file["created_by"], file["id"]))
                     else:

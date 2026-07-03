@@ -39,7 +39,6 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_5_raw_message_func")
 class TestUpdateMessageStatus:
-
     @pytest.mark.p1
     def test_update_to_false(self, client):
         memory_id = self.memory_id

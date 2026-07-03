@@ -38,4 +38,3 @@ def split_csv(value):
 
 def unique_name(prefix):
     return f"{prefix}_{int(time.time() * 1000)}"
-

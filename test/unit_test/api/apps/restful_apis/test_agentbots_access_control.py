@@ -67,10 +67,11 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
         async def _gen():
             yield 'data: {"event":"message","data":{"content":"ok"}}\n\n'
             yield 'data: {"event":"message_end","data":{"content":"ok"}}\n\n'
+
         return _gen()
 
     _stub(monkeypatch, "quart", Response=lambda *a, **k: SimpleNamespace(headers=SimpleNamespace(add_header=lambda *aa, **kk: None)), request=SimpleNamespace())
-    _stub(monkeypatch, "api.apps", AUTH_BETA="beta", login_required=lambda *_a, **_k: (lambda func: func))
+    _stub(monkeypatch, "api.apps", AUTH_BETA="beta", login_required=lambda *_a, **_k: lambda func: func)
     _stub(monkeypatch, "agent.canvas", Canvas=lambda *a, **k: SimpleNamespace(get_component_input_form=lambda _n: {}, get_prologue=lambda: "", get_mode=lambda: "agent"))
     _stub(monkeypatch, "api.db.db_models", APIToken=SimpleNamespace(query=lambda **_k: [SimpleNamespace(tenant_id="attacker-tenant")]))
     _stub(monkeypatch, "api.db.services.api_service", API4ConversationService=SimpleNamespace())

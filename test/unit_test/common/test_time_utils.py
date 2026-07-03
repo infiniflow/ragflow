@@ -457,13 +457,16 @@ class TestDatetimeFormat:
 
         assert result == expected
 
-    @pytest.mark.parametrize("year,month,day,hour,minute,second,microsecond", [
-        (2024, 1, 1, 0, 0, 0, 0),  # Start of day
-        (2024, 12, 31, 23, 59, 59, 999999),  # End of year
-        (2000, 6, 15, 12, 30, 45, 500000),  # Random date
-        (1970, 1, 1, 0, 0, 0, 123456),  # Epoch equivalent
-        (2030, 3, 20, 6, 15, 30, 750000),  # Future date
-    ])
+    @pytest.mark.parametrize(
+        "year,month,day,hour,minute,second,microsecond",
+        [
+            (2024, 1, 1, 0, 0, 0, 0),  # Start of day
+            (2024, 12, 31, 23, 59, 59, 999999),  # End of year
+            (2000, 6, 15, 12, 30, 45, 500000),  # Random date
+            (1970, 1, 1, 0, 0, 0, 123456),  # Epoch equivalent
+            (2030, 3, 20, 6, 15, 30, 750000),  # Future date
+        ],
+    )
     def test_parametrized_datetimes(self, year, month, day, hour, minute, second, microsecond):
         """Test multiple datetime scenarios using parametrization"""
         original_dt = datetime.datetime(year, month, day, hour, minute, second, microsecond)
@@ -668,17 +671,13 @@ class TestTimestampToDateCurrentTimeFallback:
         """None input must resolve to current_timestamp() fallback."""
         fixed_ms = 1704067200123
         monkeypatch.setattr("common.time_utils.current_timestamp", lambda: fixed_ms)
-        assert timestamp_to_date(None) == time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime(fixed_ms / 1000)
-        )
+        assert timestamp_to_date(None) == time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(fixed_ms / 1000))
 
     def test_empty_string_uses_current_time(self, monkeypatch):
         """Empty-string input must resolve to current_timestamp() fallback."""
         fixed_ms = 1704067200123
         monkeypatch.setattr("common.time_utils.current_timestamp", lambda: fixed_ms)
-        assert timestamp_to_date("") == time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime(fixed_ms / 1000)
-        )
+        assert timestamp_to_date("") == time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(fixed_ms / 1000))
 
     def test_zero_timestamp_is_not_treated_as_empty(self):
         """Zero timestamp should map to Unix epoch, not fallback to current time."""

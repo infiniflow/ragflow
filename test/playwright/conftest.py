@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+
 _PW_DIR = Path(__file__).resolve().parent
 if str(_PW_DIR) not in sys.path:
     sys.path.insert(0, str(_PW_DIR))
@@ -37,15 +38,9 @@ REG_EMAIL_LOCAL_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 REG_EMAIL_BACKEND_RE = re.compile(r"^[\w\._-]{1,}@([\w_-]+\.)+[\w-]{2,}$")
 AUTH_FORM_SELECTOR = "form[data-testid='auth-form']"
 AUTH_ACTIVE_FORM_SELECTOR = "form[data-testid='auth-form'][data-active='true']"
-AUTH_EMAIL_INPUT_SELECTOR = (
-    "input[data-testid='auth-email'], [data-testid='auth-email'] input"
-)
-AUTH_PASSWORD_INPUT_SELECTOR = (
-    "input[data-testid='auth-password'], [data-testid='auth-password'] input"
-)
-AUTH_SUBMIT_SELECTOR = (
-    "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
-)
+AUTH_EMAIL_INPUT_SELECTOR = "input[data-testid='auth-email'], [data-testid='auth-email'] input"
+AUTH_PASSWORD_INPUT_SELECTOR = "input[data-testid='auth-password'], [data-testid='auth-password'] input"
+AUTH_SUBMIT_SELECTOR = "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
 
 _PUBLIC_KEY_CACHE = None
 _RSA_CIPHER_CACHE = None
@@ -103,9 +98,7 @@ def _sanitize_timeout_ms(value: int | None, fallback: int | None) -> int | None:
 
 
 def _playwright_action_timeout_ms() -> int | None:
-    raw = _env_int_with_fallback(
-        "PLAYWRIGHT_ACTION_TIMEOUT_MS", "PW_TIMEOUT_MS", DEFAULT_TIMEOUT_MS
-    )
+    raw = _env_int_with_fallback("PLAYWRIGHT_ACTION_TIMEOUT_MS", "PW_TIMEOUT_MS", DEFAULT_TIMEOUT_MS)
     return _sanitize_timeout_ms(raw, DEFAULT_TIMEOUT_MS)
 
 
@@ -119,12 +112,8 @@ def _playwright_auth_ready_timeout_ms() -> int | None:
 
 
 def _playwright_hang_timeout_s() -> int:
-    raw = _env_int_with_fallback(
-        "PLAYWRIGHT_HANG_TIMEOUT_S", "HANG_TIMEOUT_S", DEFAULT_HANG_TIMEOUT_S
-    )
+    raw = _env_int_with_fallback("PLAYWRIGHT_HANG_TIMEOUT_S", "HANG_TIMEOUT_S", DEFAULT_HANG_TIMEOUT_S)
     return raw if raw > 0 else 0
-
-
 
 
 def _failure_text(req) -> str:
@@ -316,9 +305,7 @@ def _api_request_json(
                 parsed = json.loads(body.decode("utf-8"))
             except Exception:
                 parsed = None
-        raise RuntimeError(
-            f"{method} {url} failed with HTTPError {exc.code}: {parsed or body!r}"
-        ) from exc
+        raise RuntimeError(f"{method} {url} failed with HTTPError {exc.code}: {parsed or body!r}") from exc
     except URLError as exc:
         raise RuntimeError(f"{method} {url} failed with URLError: {exc}") from exc
 
@@ -392,10 +379,7 @@ def _extract_auth_header_from_page(page) -> str:
         """
     )
     if not token:
-        raise AssertionError(
-            "Missing Authorization/Token in localStorage after login. "
-            "Cannot provision prerequisites via API."
-        )
+        raise AssertionError("Missing Authorization/Token in localStorage after login. Cannot provision prerequisites via API.")
     return str(token)
 
 
@@ -406,10 +390,7 @@ def _rsa_encrypt_password(password: str) -> str:
         from Cryptodome.PublicKey import RSA
         from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
     except Exception as exc:
-        raise RuntimeError(
-            "Cryptodome is required to encrypt passwords for API seeding. "
-            "Set RAGFLOW_SEEDING_MODE=ui to skip API seeding."
-        ) from exc
+        raise RuntimeError("Cryptodome is required to encrypt passwords for API seeding. Set RAGFLOW_SEEDING_MODE=ui to skip API seeding.") from exc
     if _PUBLIC_KEY_CACHE is None:
         public_key_path = ROOT_DIR / "conf" / "public.pem"
         if not public_key_path.exists():
@@ -513,9 +494,7 @@ def _wait_for_auth_success(page, card, form) -> None:
     status_marker = page.locator("[data-testid='auth-status']")
     if status_marker.count() > 0:
         try:
-            expect(status_marker).to_have_attribute(
-                "data-state", "success", timeout=timeout_ms
-            )
+            expect(status_marker).to_have_attribute("data-state", "success", timeout=timeout_ms)
             return
         except AssertionError:
             pass
@@ -528,13 +507,9 @@ def _wait_for_auth_success(page, card, form) -> None:
     except PlaywrightTimeoutError:
         pass
     try:
-        expect(card.locator("[data-testid='auth-nickname']")).to_have_count(
-            0, timeout=timeout_ms
-        )
+        expect(card.locator("[data-testid='auth-nickname']")).to_have_count(0, timeout=timeout_ms)
     except AssertionError as exc:
-        raise RuntimeError(
-            "Auth success marker not detected after registration."
-        ) from exc
+        raise RuntimeError("Auth success marker not detected after registration.") from exc
 
 
 def _ui_register_user(
@@ -627,8 +602,7 @@ def pytest_sessionstart(session):
             faulthandler.dump_traceback_later(hang_timeout, repeat=True)
             _HANG_WATCHDOG_INSTALLED = True
             print(
-                "Playwright hang watchdog enabled: dumps after "
-                f"{hang_timeout}s (set PLAYWRIGHT_HANG_TIMEOUT_S=0 to disable)",
+                f"Playwright hang watchdog enabled: dumps after {hang_timeout}s (set PLAYWRIGHT_HANG_TIMEOUT_S=0 to disable)",
                 flush=True,
             )
     else:
@@ -739,9 +713,7 @@ def context(browser):
     try:
         yield context_instance
     finally:
-        if getattr(context_instance, "_trace_enabled", False) and not getattr(
-            context_instance, "_trace_saved", False
-        ):
+        if getattr(context_instance, "_trace_enabled", False) and not getattr(context_instance, "_trace_saved", False):
             try:
                 context_instance.tracing.stop()
             except Exception:
@@ -927,9 +899,7 @@ def seeded_user_credentials(base_url: str, login_url: str, browser) -> tuple[str
             seeded_via = None
             if seeding_mode == "api":
                 details = "; ".join(seed_errors)
-                raise RuntimeError(
-                    f"Failed to seed user via API registration. {details}"
-                ) from exc
+                raise RuntimeError(f"Failed to seed user via API registration. {details}") from exc
 
     if seeded_via is None and seeding_mode in {"auto", "ui"}:
         seeded_via = "ui"
@@ -946,9 +916,7 @@ def seeded_user_credentials(base_url: str, login_url: str, browser) -> tuple[str
         except Exception as ui_exc:
             seed_errors.append(f"ui: {ui_exc}")
             details = "; ".join(seed_errors)
-            raise RuntimeError(
-                f"Failed to seed user via API or UI registration. {details}"
-            ) from ui_exc
+            raise RuntimeError(f"Failed to seed user via API or UI registration. {details}") from ui_exc
 
     os.environ["SEEDED_USER_EMAIL"] = email
     os.environ["SEEDED_USER_PASSWORD"] = password
@@ -1020,9 +988,7 @@ def ensure_auth_context(
 def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dict:
     headers = {"Authorization": auth_header}
 
-    _, my_llms_payload = _api_request_json(
-        _build_url(base_url, "/v1/llm/my_llms"), headers=headers
-    )
+    _, my_llms_payload = _api_request_json(_build_url(base_url, "/v1/llm/my_llms"), headers=headers)
     my_llms_data = _response_data(my_llms_payload)
     has_provider = bool(my_llms_data)
     created_provider = False
@@ -1038,17 +1004,13 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
         _response_data(set_key_payload)
         has_provider = True
         created_provider = True
-        _, my_llms_payload = _api_request_json(
-            _build_url(base_url, "/v1/llm/my_llms"), headers=headers
-        )
+        _, my_llms_payload = _api_request_json(_build_url(base_url, "/v1/llm/my_llms"), headers=headers)
         my_llms_data = _response_data(my_llms_payload)
 
     if not has_provider:
         pytest.skip("No model provider configured and ZHIPU_AI_API_KEY is not set.")
 
-    _, tenant_payload = _api_request_json(
-        _build_url(base_url, "/api/v1/users/me/models"), headers=headers
-    )
+    _, tenant_payload = _api_request_json(_build_url(base_url, "/api/v1/users/me/models"), headers=headers)
     tenant_data = _response_data(tenant_payload)
     tenant_id = tenant_data.get("tenant_id")
     if not tenant_id:
@@ -1067,9 +1029,7 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
         if not target_llm and _provider_has_model(my_llms_data, "ZHIPU-AI", "glm-4-flash"):
             target_llm = "glm-4-flash@ZHIPU-AI"
     if not target_llm:
-        pytest.skip(
-            "Provider exists but no canonical default llm_id could be inferred for tenant setup."
-        )
+        pytest.skip("Provider exists but no canonical default llm_id could be inferred for tenant setup.")
 
     target_embd = current_embd
     if not target_embd or _is_malformed_tenant_model_value(target_embd):
@@ -1104,12 +1064,7 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
     target_tts = target_tts or ""
 
     should_update_tenant_defaults = (
-        target_llm != current_llm
-        or target_embd != current_embd
-        or target_img2txt != current_img2txt
-        or target_asr != current_asr
-        or target_rerank != current_rerank
-        or target_tts != current_tts
+        target_llm != current_llm or target_embd != current_embd or target_img2txt != current_img2txt or target_asr != current_asr or target_rerank != current_rerank or target_tts != current_tts
     )
 
     if should_update_tenant_defaults:
@@ -1165,9 +1120,7 @@ def ensure_model_provider_configured(
     }
     if _env_bool("PW_FIXTURE_DEBUG", False):
         print(
-            "[prereq] provider_ready "
-            f"email={email} created_provider={payload.get('created_provider', False)} "
-            f"llm_factories={payload.get('llm_factories', [])}",
+            f"[prereq] provider_ready email={email} created_provider={payload.get('created_provider', False)} llm_factories={payload.get('llm_factories', [])}",
             flush=True,
         )
     _PROVIDER_READY_CACHE[cache_key] = payload
@@ -1185,9 +1138,7 @@ def _find_dataset_by_name(kbs_payload: dict | None, dataset_name: str) -> dict |
     return None
 
 
-def _ensure_dataset_ready_via_api(
-    base_url: str, auth_header: str, dataset_name: str
-) -> dict:
+def _ensure_dataset_ready_via_api(base_url: str, auth_header: str, dataset_name: str) -> dict:
     headers = {"Authorization": auth_header}
     list_url = _build_url(base_url, "/api/v1/datasets?page=1&page_size=100")
 
@@ -1211,14 +1162,10 @@ def _ensure_dataset_ready_via_api(
     if kb_id:
         return {"kb_id": kb_id, "kb_name": dataset_name, "reused": False}
 
-    _, list_payload_after = _api_request_json(
-        list_url, method="GET", headers=headers
-    )
+    _, list_payload_after = _api_request_json(list_url, method="GET", headers=headers)
     existing_after = _find_dataset_by_name(list_payload_after, dataset_name)
     if not existing_after:
-        raise RuntimeError(
-            f"Dataset {dataset_name!r} not found after /api/v1/datasets create response={create_payload}"
-        )
+        raise RuntimeError(f"Dataset {dataset_name!r} not found after /api/v1/datasets create response={create_payload}")
     return {
         "kb_id": existing_after.get("id"),
         "kb_name": dataset_name,
@@ -1250,9 +1197,7 @@ def ensure_dataset_ready(
     }
     if _env_bool("PW_FIXTURE_DEBUG", False):
         print(
-            "[prereq] dataset_ready "
-            f"kb_name={payload.get('kb_name')} reused={payload.get('reused')} "
-            f"kb_id={payload.get('kb_id')}",
+            f"[prereq] dataset_ready kb_name={payload.get('kb_name')} reused={payload.get('reused')} kb_id={payload.get('kb_id')}",
             flush=True,
         )
     _DATASET_READY_CACHE[cache_key] = payload
@@ -1390,6 +1335,7 @@ def _debug_dump_auth_state(page, label: str, submit_locator=None) -> None:
 def auth_debug_dump(page, request):
     if "flow_page" in request.fixturenames:
         page = request.getfixturevalue("flow_page")
+
     def _dump(label: str, submit_locator=None) -> None:
         _debug_dump_auth_state(page, label, submit_locator)
 
@@ -1432,9 +1378,7 @@ def _write_artifacts_if_failed(page, context, request) -> None:
     except Exception as exc:
         print(f"[artifact] events dump failed: {exc}", flush=True)
 
-    if getattr(context, "_trace_enabled", False) and not getattr(
-        context, "_trace_saved", False
-    ):
+    if getattr(context, "_trace_enabled", False) and not getattr(context, "_trace_saved", False):
         try:
             context.tracing.stop(path=str(trace_path))
             context._trace_saved = True
@@ -1513,10 +1457,7 @@ def _write_auth_ready_diagnostics(page, request, reason: str) -> None:
 
     try:
         summary = _auth_ready_summary(page)
-        summary_text = (
-            f"reason: {reason}\nurl: {page.url}\ntitle: {page.title()}\n"
-            + _format_auth_ready_summary(summary)
-        )
+        summary_text = f"reason: {reason}\nurl: {page.url}\ntitle: {page.title()}\n" + _format_auth_ready_summary(summary)
         summary_path.write_text(summary_text, encoding="utf-8")
         print(summary_text, flush=True)
     except Exception as exc:
@@ -1533,23 +1474,13 @@ def _wait_for_auth_ui_ready(page, request) -> None:
         expect(active_forms).to_have_count(1, timeout=timeout_ms)
     except AssertionError as exc:
         _write_auth_ready_diagnostics(page, request, "auth active form not unique")
-        raise AssertionError(
-            "Auth UI not ready within "
-            f"{timeout_ms}ms. Expected a single active auth form."
-        ) from exc
-    ready_forms = active_forms.filter(
-        has=page.locator(password_selector)
-    ).filter(has=page.locator(email_selector)).filter(
-        has=page.locator(submit_selector)
-    )
+        raise AssertionError(f"Auth UI not ready within {timeout_ms}ms. Expected a single active auth form.") from exc
+    ready_forms = active_forms.filter(has=page.locator(password_selector)).filter(has=page.locator(email_selector)).filter(has=page.locator(submit_selector))
     try:
         expect(ready_forms).not_to_have_count(0, timeout=timeout_ms)
     except AssertionError as exc:
         _write_auth_ready_diagnostics(page, request, "auth UI readiness timeout")
-        raise AssertionError(
-            "Auth UI not ready within "
-            f"{timeout_ms}ms. Expected a visible form with email-like and password inputs."
-        ) from exc
+        raise AssertionError(f"Auth UI not ready within {timeout_ms}ms. Expected a visible form with email-like and password inputs.") from exc
 
 
 def _wait_for_active_form_clickable(page, request, form) -> None:
@@ -1610,14 +1541,9 @@ def _wait_for_active_form_clickable(page, request, form) -> None:
             )
         except Exception:
             pass
-        _write_auth_ready_diagnostics(
-            page, request, "active auth form submit not clickable"
-        )
+        _write_auth_ready_diagnostics(page, request, "active auth form submit not clickable")
         _debug_dump_auth_state(page, "active_form_not_clickable", submit_buttons)
-        raise AssertionError(
-            "Active auth form submit button not clickable within "
-            f"{timeout_ms}ms. The flip animation may still be in progress."
-        ) from exc
+        raise AssertionError(f"Active auth form submit button not clickable within {timeout_ms}ms. The flip animation may still be in progress.") from exc
 
 
 def _locator_is_topmost(locator) -> bool:
@@ -1650,16 +1576,10 @@ def auth_click():
                 return
             except PlaywrightTimeoutError as exc:
                 message = str(exc).lower()
-                can_force = (
-                    "intercepts pointer events" in message
-                    or "element was detached" in message
-                    or "element is not stable" in message
-                )
+                can_force = "intercepts pointer events" in message or "element was detached" in message or "element is not stable" in message
                 if not can_force:
                     raise
-                if "intercepts pointer events" in message and not _locator_is_topmost(
-                    locator
-                ):
+                if "intercepts pointer events" in message and not _locator_is_topmost(locator):
                     if idx >= attempts - 1:
                         raise
                     time.sleep(0.15)
@@ -1681,6 +1601,7 @@ def auth_click():
 def active_auth_context(page, request):
     if "flow_page" in request.fixturenames:
         page = request.getfixturevalue("flow_page")
+
     def _mark_active_form() -> None:
         timeout_ms = _playwright_auth_ready_timeout_ms()
         try:
@@ -1789,14 +1710,9 @@ def active_auth_context(page, request):
                 timeout=timeout_ms,
             )
         except Exception as exc:
-            _write_auth_ready_diagnostics(
-                page, request, "active auth form did not become front-facing"
-            )
+            _write_auth_ready_diagnostics(page, request, "active auth form did not become front-facing")
             _debug_dump_auth_state(page, "active_form_not_front_facing")
-            raise AssertionError(
-                "Active auth form not ready within "
-                f"{timeout_ms}ms. The flip animation may not have settled."
-            ) from exc
+            raise AssertionError(f"Active auth form not ready within {timeout_ms}ms. The flip animation may not have settled.") from exc
 
     def _get():
         _wait_for_auth_ui_ready(page, request)
@@ -1806,12 +1722,8 @@ def active_auth_context(page, request):
         try:
             expect(form).to_have_count(1, timeout=timeout_ms)
         except AssertionError as exc:
-            _write_auth_ready_diagnostics(
-                page, request, "active auth form selection failed"
-            )
-            raise AssertionError(
-                "Active auth form not found. The login card may not be visible or the DOM changed."
-            ) from exc
+            _write_auth_ready_diagnostics(page, request, "active auth form selection failed")
+            raise AssertionError("Active auth form not found. The login card may not be visible or the DOM changed.") from exc
         _wait_for_active_form_clickable(page, request, form)
         return form, card
 

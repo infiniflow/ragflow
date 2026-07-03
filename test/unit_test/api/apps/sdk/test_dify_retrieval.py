@@ -1,4 +1,4 @@
-﻿#
+#
 #  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -84,6 +84,7 @@ class _FakeKGRetriever:
 
 def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, tenant_id, chunks=None):
     """Load dify_retrieval_api.py with minimum stubs to exercise the retrieval handler."""
+
     def _add_tenant_id_to_kwargs(func):
         async def wrapper(**kwargs):
             kwargs["tenant_id"] = tenant_id

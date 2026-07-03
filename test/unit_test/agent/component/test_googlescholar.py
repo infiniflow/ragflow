@@ -57,7 +57,7 @@ def _make_tool(top_n):
 
     gs._retrieve_chunks = fake_retrieve
     gs.set_output = lambda k, v: out.__setitem__(k, v)
-    gs.output = lambda k=None: (out.get(k) if k else out)
+    gs.output = lambda k=None: out.get(k) if k else out
     return gs, captured, out
 
 
