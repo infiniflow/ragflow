@@ -14,7 +14,9 @@
 #  limitations under the License.
 #
 
+import asyncio
 import contextlib
+import gc
 
 import pytest
 
@@ -24,21 +26,30 @@ pytest.importorskip("crawl4ai")
 from agent.tools.crawler import Crawler, CrawlerParam  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _close_event_loops():
+    yield
+    asyncio.set_event_loop(None)
+    for obj in gc.get_objects():
+        if isinstance(obj, asyncio.AbstractEventLoop) and not obj.is_closed() and not obj.is_running():
+            obj.close()
+
+
 def _make_tool():
-    # Bypass the canvas-bound __init__ (mirrors test_pubmed_unit.py) and stub the
-    # canvas-touching helpers so we can exercise _invoke's execution path.
+    # Bypass the canvas-bound init and stub the canvas-touching helpers so we can
+    # exercise the invoke execution path.
     crawler = Crawler.__new__(Crawler)
     crawler._param = CrawlerParam()
     crawler.check_if_canceled = lambda *a, **k: False
     out = {}
     crawler.set_output = lambda k, v: out.__setitem__(k, v)
-    crawler.output = lambda k=None: (out.get(k) if k else out)
+    crawler.output = lambda k=None: out.get(k) if k else out
     return crawler, out
 
 
 def test_param_instantiates():
-    # Regression: CrawlerParam extends ToolParamBase, whose __init__ reads
-    # self.meta["parameters"]. Without a `meta`, constructing the param raised
+    # Regression: CrawlerParam extends ToolParamBase, whose init reads
+    # self.meta["parameters"]. Without meta, constructing the param raised
     # AttributeError, so any canvas containing a Crawler node failed to load.
     CrawlerParam()
 
@@ -48,8 +59,8 @@ def test_check_passes_with_defaults():
 
 
 def test_meta_exposes_query_parameter():
-    # The tool descriptor must advertise a required `query` parameter (the URL
-    # to crawl) so an Agent's LLM can call it. `query` matches the frontend
+    # The tool descriptor must advertise a required query parameter (the URL
+    # to crawl) so an Agent LLM can call it. query matches the frontend
     # form field and the {sys.query} convention shared by the other tools.
     meta = CrawlerParam().get_meta()
     params = meta["function"]["parameters"]
