@@ -170,14 +170,7 @@ const SkillsFolderName = "skills"
 // Deduplicates duplicate entries that may have been created by
 // concurrent race conditions (TOCTOU).
 func (s *FileService) initSkillsFolder(rootID, tenantID string) error {
-	allExisting := s.fileDAO.Query(SkillsFolderName, rootID)
-	// Filter by tenant_id to ensure isolation
-	var existing []*entity.File
-	for _, f := range allExisting {
-		if f.TenantID == tenantID {
-			existing = append(existing, f)
-		}
-	}
+	existing := s.fileDAO.Query(SkillsFolderName, rootID, tenantID)
 	if len(existing) > 0 {
 		if len(existing) > 1 {
 			common.Logger.Warn(fmt.Sprintf(

@@ -280,7 +280,7 @@ class FileService(CommonService):
         #     location: File location
         # Returns:
         #     Created or existing file dictionary
-        existing = list(cls.query(tenant_id=tenant_id, parent_id=parent_id, name=name).order_by(cls.model.create_time.asc()))
+        existing = list(cls.model.select().where((cls.model.tenant_id == tenant_id) & (cls.model.parent_id == parent_id) & (cls.model.name == name)).order_by(cls.model.create_time.asc()))
         if existing:
             if len(existing) > 1:
                 logger.warning(
