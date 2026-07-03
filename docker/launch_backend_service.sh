@@ -118,7 +118,7 @@ run_server(){
     if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         prepare_for_go
         server_name="ragflow_server"
-        server_cmd=("bin/ragflow_server", "--api")
+        server_cmd=("bin/ragflow_server" "--api")
     fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
@@ -148,7 +148,7 @@ run_admin_server(){
     if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         prepare_for_go
         server_name="admin_server"
-        server_cmd=("bin/ragflow_server", "--admin")
+        server_cmd=("bin/ragflow_server" "--admin")
     fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
