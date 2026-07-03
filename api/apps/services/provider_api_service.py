@@ -920,13 +920,19 @@ def list_instance_models(tenant_id: str, provider_id_or_name: str, instance_id_o
         return False, f"No instance found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
     # Get models
     model_objs = TenantModelService.get_models_by_instance_id(instance_obj.id)
-    return True, [{
-        "name": model.model_name,
-        "model_type": get_model_type_human(model.model_type),
-        "max_tokens": json.loads(model.extra).get("max_tokens", 8192) if model.extra else 8192,
-        "status": model.status,
-        "verify": json.loads(model.extra).get("verify", ModelVerifyStatusEnum.UNKNOWN.value)
-    } for model in model_objs]
+    model_list = []
+    for model in model_objs:
+        model_extra = json.loads(model.extra)
+        model_list.append({
+            "name": model.model_name,
+            "model_type": get_model_type_human(model.model_type),
+            "max_tokens": model_extra.get("max_tokens", 8192) if model.extra else 8192,
+            "status": model.status,
+            "verify": model_extra.get("verify", ModelVerifyStatusEnum.UNKNOWN.value),
+            "features": (["is_tools"] if model_extra.get("is_tools") else []) + (["thinking"] if model_extra.get("thinking") else [])
+        })
+
+    return True, model_list
 
 
 def update_instance_models(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str, model_names: list, model_types: list):
