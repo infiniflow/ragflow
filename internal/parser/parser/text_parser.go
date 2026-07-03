@@ -43,10 +43,8 @@ import (
 
 const TextParserLibType = "text"
 
-// TextParser is the text&code family parser. It exposes the
-// legacy `Parse(filename, data) error` interface AND the optional
-// ParseResultProducer interface (port-rag-flow-pipeline-to-go.md §6.5)
-// so the dispatch seam routes it through the structured path.
+// TextParser is the text&code family parser. It implements the
+// structured ParseResultProducer contract directly.
 type TextParser struct {
 	// maxItemBytes caps each emitted item's text length. The
 	// python TxtParser uses similar paragraph-style chunking;
@@ -61,17 +59,6 @@ type TextParser struct {
 // (TextParser has no alternative backend).
 func NewTextParser(_ string) (*TextParser, error) {
 	return &TextParser{maxItemBytes: 8192}, nil
-}
-
-// Parse is the legacy interface — it just verifies the input is
-// decodable as UTF-8 (mirroring the python contract). The
-// dispatch seam prefers ParseWithResult when available; this
-// method is here for callers that still drive the legacy path.
-func (p *TextParser) Parse(_ string, data []byte) error {
-	if !utf8Valid(data) {
-		return errInvalidUTF8
-	}
-	return nil
 }
 
 // ParseWithResult emits one item per non-empty paragraph. The

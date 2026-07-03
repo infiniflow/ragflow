@@ -24,26 +24,10 @@
 //	exactly one payload family populated (matching output_format)
 //	err
 //
-// The legacy `FileParser.Parse(filename, []byte) error` interface
-// is retained for the parser-stub callers that have not yet been
-// ported. Parsers that have a real implementation satisfy the
-// optional ParseResultProducer interface and provide
-// ParseWithResult, which is the path forward.
-//
-// The migration pattern is additive and was chosen because:
-//
-//   - The 12-format parser matrix (PDF, Markdown, HTML, DOC/DOCX,
-//     XLS/XLSX, PPT/PPTX, text&code, image, …) is not all ported
-//     today; replacing Parse would break the unported stubs.
-//
-//   - Type-asserting to ParseResultProducer gives callers a typed
-//     "yes this parser is structured-output-capable, route through
-//     ParseWithResult" signal without paying for reflection in the
-//     hot path until the parser is ported.
-//
-//   - When a parser IS ported, `components.parseStage` (component /
-//     parser.go) switches to the structured path with no interface
-//     churn elsewhere.
+// Go parser callers now consume only the structured ParseResult
+// contract. The legacy `Parse(filename, []byte) error` interface has
+// been removed so parser dispatch, ingestion, and service paths all
+// share the same typed payload contract.
 
 package parser
 
@@ -97,17 +81,8 @@ type ParseResult struct {
 	Err error
 }
 
-// ParseResultProducer is the optional interface a parser
-// implements to surface a structured ParseResult. Once a parser
-// family is ported, callers type-assert to ParseResultProducer and
-// drive it through ParseWithResult — the path forward per plan
-// §6.5.
-//
-// Parsers that have not yet been ported do not satisfy this
-// interface; callers fall back to the raw-text fallback strategy
-// (see component/parser.go) until the per-format implementation
-// lands. No shim layer is required at the parser-package boundary —
-// the optional-interface check is the migration seam.
+// ParseResultProducer is the parser package's single structured-output
+// contract. Every parser returned by GetParser must implement it.
 type ParseResultProducer interface {
 	ParseWithResult(filename string, data []byte) ParseResult
 }

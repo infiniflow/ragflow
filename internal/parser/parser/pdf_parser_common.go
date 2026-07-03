@@ -50,11 +50,6 @@ func NewPDFParser() *PDFParser {
 	}
 }
 
-func (p *PDFParser) Parse(filename string, data []byte) error {
-	// Legacy path: ParseWithResult is the canonical entry point.
-	return nil
-}
-
 func (p *PDFParser) String() string {
 	return "PDFParser"
 }

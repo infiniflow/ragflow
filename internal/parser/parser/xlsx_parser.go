@@ -24,7 +24,6 @@ import (
 	"strings"
 
 	"github.com/xuri/excelize/v2"
-	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
 
 type XLSXParser struct {
@@ -40,43 +39,6 @@ func NewXLSXParser(libType string) (*XLSXParser, error) {
 	default:
 		return nil, fmt.Errorf("unsupported XLSX library type: %s", libType)
 	}
-}
-
-func (p *XLSXParser) Parse(filename string, data []byte) error {
-	switch p.libType {
-	case OfficeOxide:
-		return p.OfficeOxideParse(data)
-	default:
-		return fmt.Errorf("unsupported XLSX library type: %s", p.libType)
-	}
-}
-
-func (p *XLSXParser) OfficeOxideParse(data []byte) error {
-	doc, err := officeOxide.OpenFromBytes(data, "xlsx")
-	if err != nil {
-		return err
-	}
-	defer doc.Close()
-
-	docFormat, err := doc.Format()
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("Document format:", docFormat)
-
-	docContext, err := doc.PlainText()
-	if err != nil {
-		return err
-	}
-	fmt.Println("Document context:", docContext)
-
-	md, err := doc.ToMarkdown()
-	if err != nil {
-		return err
-	}
-	fmt.Println("Document Markdown:", md)
-	return nil
 }
 
 func (p *XLSXParser) String() string {

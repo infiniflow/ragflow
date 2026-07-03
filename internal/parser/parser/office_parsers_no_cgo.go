@@ -71,10 +71,6 @@ func NewDOCParser(libType string) (*DOCParser, error) {
 	return nil, fmt.Errorf("DOC parser requires CGO (office_oxide)")
 }
 
-func (p *DOCParser) Parse(_ string, _ []byte) error {
-	return fmt.Errorf("DOC parser requires CGO (office_oxide)")
-}
-
 func (p *DOCParser) String() string {
 	return "DOCParser(no-cgo)"
 }
@@ -85,10 +81,6 @@ type DOCXParser struct {
 
 func NewDOCXParser(libType string) (*DOCXParser, error) {
 	return nil, fmt.Errorf("DOCX parser requires CGO (office_oxide)")
-}
-
-func (p *DOCXParser) Parse(_ string, _ []byte) error {
-	return fmt.Errorf("DOCX parser requires CGO (office_oxide)")
 }
 
 func (p *DOCXParser) String() string {
@@ -103,10 +95,6 @@ func NewXLSParser(libType string) (*XLSParser, error) {
 	return nil, fmt.Errorf("XLS parser requires CGO (office_oxide)")
 }
 
-func (p *XLSParser) Parse(_ string, _ []byte) error {
-	return fmt.Errorf("XLS parser requires CGO (office_oxide)")
-}
-
 func (p *XLSParser) String() string {
 	return "XLSParser(no-cgo)"
 }
@@ -117,10 +105,6 @@ type XLSXParser struct {
 
 func NewXLSXParser(libType string) (*XLSXParser, error) {
 	return nil, fmt.Errorf("XLSX parser requires CGO (office_oxide)")
-}
-
-func (p *XLSXParser) Parse(_ string, _ []byte) error {
-	return fmt.Errorf("XLSX parser requires CGO (office_oxide)")
 }
 
 func (p *XLSXParser) String() string {
@@ -135,10 +119,6 @@ func NewPPTParser(libType string) (*PPTParser, error) {
 	return nil, fmt.Errorf("PPT parser requires CGO (office_oxide)")
 }
 
-func (p *PPTParser) Parse(_ string, _ []byte) error {
-	return fmt.Errorf("PPT parser requires CGO (office_oxide)")
-}
-
 func (p *PPTParser) String() string {
 	return "PPTParser(no-cgo)"
 }
@@ -149,10 +129,6 @@ type PPTXParser struct {
 
 func NewPPTXParser(libType string) (*PPTXParser, error) {
 	return nil, fmt.Errorf("PPTX parser requires CGO (office_oxide)")
-}
-
-func (p *PPTXParser) Parse(_ string, _ []byte) error {
-	return fmt.Errorf("PPTX parser requires CGO (office_oxide)")
 }
 
 func (p *PPTXParser) String() string {

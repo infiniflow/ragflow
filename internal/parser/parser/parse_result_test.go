@@ -134,13 +134,8 @@ func TestMarkdownParser_ParseWithResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMarkdownParser: %v", err)
 	}
-	producer, ok := FileParser(p).(ParseResultProducer)
-	if !ok {
-		t.Fatal("MarkdownParser does not implement ParseResultProducer")
-	}
-
 	src := []byte("# Title\n\nFirst paragraph.\n\n- Item one\n")
-	res := producer.ParseWithResult("doc.md", src)
+	res := p.ParseWithResult("doc.md", src)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -177,7 +172,7 @@ func TestMarkdownParser_ParseWithResult(t *testing.T) {
 // build has the cgo-backed DeepDOC engine enabled.
 func TestParseResultProducer_PDFIsProducer(t *testing.T) {
 	pdf := &PDFParser{}
-	if _, ok := FileParser(pdf).(ParseResultProducer); !ok {
+	if _, ok := any(pdf).(ParseResultProducer); !ok {
 		t.Error("PDFParser must implement ParseResultProducer so the " +
 			"dispatch seam routes PDFs through ParseWithResult")
 	}

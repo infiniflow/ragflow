@@ -39,45 +39,6 @@ func NewDOCXParser(libType string) (*DOCXParser, error) {
 	}
 }
 
-func (p *DOCXParser) Parse(filename string, data []byte) error {
-
-	switch p.libType {
-	case OfficeOxide:
-		return p.OfficeOxideParse(data)
-	default:
-		return fmt.Errorf("unsupported DOCX library type: %s", p.libType)
-	}
-}
-
-func (p *DOCXParser) OfficeOxideParse(data []byte) error {
-
-	doc, err := officeOxide.OpenFromBytes(data, "docx")
-	if err != nil {
-		return err
-	}
-	defer doc.Close()
-
-	docFormat, err := doc.Format()
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("Document format:", docFormat)
-
-	docContext, err := doc.PlainText()
-	if err != nil {
-		return err
-	}
-	fmt.Println("Document context:", docContext)
-
-	md, err := doc.ToMarkdown()
-	if err != nil {
-		return err
-	}
-	fmt.Println("Document Markdown:", md)
-	return nil
-}
-
 // ParseWithResult captures the office_oxide ToMarkdown output
 // instead of discarding it. Returns OutputFormat="markdown" with
 // the rendered Markdown on the matching key. Mirrors the python

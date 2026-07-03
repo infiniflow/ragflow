@@ -163,9 +163,8 @@ func resolveLibType(fileType utility.FileType, setups map[string]schema.ParserSe
 	return libType, parseMethod
 }
 
-// dispatchParse resolves the FileParser for the given fileType,
-// invokes it through the ParseResultProducer seam when available,
-// and otherwise falls back to the legacy Parse + raw-text path.
+// dispatchParse resolves the parser for the given fileType and invokes
+// its structured ParseWithResult contract.
 //
 // The function NEVER returns a partial result. On error the result
 // is the zero value (OutputFormat == "" + Err != nil). Callers can
@@ -193,45 +192,26 @@ func dispatchParse(fileType utility.FileType, filename string, data []byte, setu
 		return parserDispatchResult{Err: fmt.Errorf("Parser: resolve %q: %w", fileType, err)}
 	}
 
-	// Migration seam: when the parser is a ParseResultProducer
-	// drive it through the structured path. The ParseWithResult
-	// contract is the python-compatible shape (one payload family,
-	// matching OutputFormat, File metadata); the legacy Parse path
-	// is intentionally left for unported parsers.
-	if producer, ok := p.(parser.ParseResultProducer); ok {
-		res := producer.ParseWithResult(filename, data)
-		if res.Err != nil {
-			return parserDispatchResult{Err: fmt.Errorf("Parser: %q: %w", fileType, res.Err)}
-		}
-		// Carry the configured parse_method on the file metadata so
-		// downstream consumers can read which provider ran.
-		if parseMethod != "" {
-			if res.File == nil {
-				res.File = map[string]any{}
-			}
-			res.File["parse_method"] = parseMethod
-		}
-		return parserDispatchResult{
-			OutputFormat: res.OutputFormat,
-			File:         res.File,
-			JSON:         res.JSON,
-			Markdown:     res.Markdown,
-			Text:         res.Text,
-			HTML:         res.HTML,
-		}
+	res := p.ParseWithResult(filename, data)
+	if res.Err != nil {
+		return parserDispatchResult{Err: fmt.Errorf("Parser: %q: %w", fileType, res.Err)}
 	}
-
-	// Unported parser — drive the legacy Parse so the call site is
-	// exercised even though the result is dropped. We then signal
-	// "no result" (OutputFormat == "") so the component routes to
-	// the raw-text fallback. The Parse call itself only fails on
-	// unrecoverable I/O today (the stubs return nil), but we still
-	// surface a non-nil error if it does so a future real parser
-	// doesn't silently degrade.
-	if perr := p.Parse(filename, data); perr != nil {
-		return parserDispatchResult{Err: fmt.Errorf("Parser: %q legacy Parse: %w", fileType, perr)}
+	// Carry the configured parse_method on the file metadata so
+	// downstream consumers can read which provider ran.
+	if parseMethod != "" {
+		if res.File == nil {
+			res.File = map[string]any{}
+		}
+		res.File["parse_method"] = parseMethod
 	}
-	return parserDispatchResult{}
+	return parserDispatchResult{
+		OutputFormat: res.OutputFormat,
+		File:         res.File,
+		JSON:         res.JSON,
+		Markdown:     res.Markdown,
+		Text:         res.Text,
+		HTML:         res.HTML,
+	}
 }
 
 // fileTypeFromInputs derives the parser-library extension form

@@ -39,43 +39,6 @@ func NewDOCParser(libType string) (*DOCParser, error) {
 	}
 }
 
-func (p *DOCParser) Parse(filename string, data []byte) error {
-	switch p.libType {
-	case OfficeOxide:
-		return p.OfficeOxideParse(data)
-	default:
-		return fmt.Errorf("unsupported DOC library type: %s", p.libType)
-	}
-}
-
-func (p *DOCParser) OfficeOxideParse(data []byte) error {
-	doc, err := officeOxide.OpenFromBytes(data, "doc")
-	if err != nil {
-		return err
-	}
-	defer doc.Close()
-
-	docFormat, err := doc.Format()
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("Document format:", docFormat)
-
-	docContext, err := doc.PlainText()
-	if err != nil {
-		return err
-	}
-	fmt.Println("Document context:", docContext)
-
-	md, err := doc.ToMarkdown()
-	if err != nil {
-		return err
-	}
-	fmt.Println("Document Markdown:", md)
-	return nil
-}
-
 func (p *DOCParser) String() string {
 	return "DOCParser"
 }

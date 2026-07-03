@@ -19,7 +19,6 @@ package parser
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/gomarkdown/markdown/ast"
@@ -45,21 +44,11 @@ func NewMarkdownParser(libType string) (*MarkdownParser, error) {
 	}
 }
 
-func (p *MarkdownParser) Parse(filename string, data []byte) error {
-	switch p.libType {
-	case GoMarkdown:
-		return p.GoMarkdownParse(data)
-	default:
-		return fmt.Errorf("unsupported Markdown library type: %s", p.libType)
-	}
-}
-
 // ParseWithResult implements ParseResultProducer (plan §6.5) and
 // returns a structured markdown payload that mirrors the Python
 // parser's `output_format == "json"` shape. Each top-level block
 // emits one item with `text` + `doc_type_kwd: "text"`. The legacy
-// Parse path is untouched; callers that have not migrated can
-// still drive GoMarkdownParse through Parse().
+// debug-print path has been removed; callers consume ParseResult directly.
 func (p *MarkdownParser) ParseWithResult(filename string, data []byte) ParseResult {
 	if p.libType != GoMarkdown {
 		return ParseResult{Err: fmt.Errorf("unsupported Markdown library type: %s", p.libType)}
@@ -81,20 +70,6 @@ func (p *MarkdownParser) ParseWithResult(filename string, data []byte) ParseResu
 		},
 		JSON: items,
 	}
-}
-
-func (p *MarkdownParser) GoMarkdownParse(data []byte) error {
-	// create Markdown parser with extensions
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs | parser.NoEmptyLineBeforeBlock
-	parser.NewWithExtensions(extensions)
-	markdownParser := parser.NewWithExtensions(extensions)
-	doc := markdownParser.Parse(data)
-
-	fmt.Print("--- AST tree:\n")
-	ast.Print(os.Stdout, doc)
-	fmt.Print("\n")
-
-	return nil
 }
 
 func (p *MarkdownParser) String() string {
