@@ -85,25 +85,16 @@ func (s *SearchService) ListSearches(userID string, keywords string, page, pageS
 	var err error
 
 	if len(ownerIDs) == 0 {
-		// Get tenant IDs by user ID (joined tenants)
-		tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
-		if err != nil {
-			return nil, err
-		}
-
-		// Use database pagination
-		searches, total, err = s.searchDAO.ListByTenantIDs(tenantIDs, userID, page, pageSize, orderby, desc, keywords)
+		searches, total, err = s.searchDAO.ListByTenantIDs(nil, userID, page, pageSize, orderby, desc, keywords)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		// Filter by owner IDs, manual pagination
 		searches, total, err = s.searchDAO.ListByOwnerIDs(ownerIDs, userID, orderby, desc, keywords)
 		if err != nil {
 			return nil, err
 		}
 
-		// Manual pagination
 		if page > 0 && pageSize > 0 {
 			start := (page - 1) * pageSize
 			end := start + pageSize
