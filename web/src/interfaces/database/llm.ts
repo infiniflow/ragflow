@@ -96,7 +96,7 @@ export interface IInstanceModel {
    *   - `false` → verified but failed
    *   - `undefined` → never verified yet
    */
-  verify?: boolean;
+  verify?: 'unknown' | 'success' | 'fail';
   /**
    * Persisted Tool-call flag from `tenant_model.extra.is_tools`.
    * The backend's `_hybrid_get_instance_models` includes this so the
