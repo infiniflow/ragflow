@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -26,6 +27,14 @@ type fakeStorage struct {
 	err        error
 	exists     bool
 	getCalls   int
+}
+
+func testFileService() *FileService {
+	return &FileService{
+		fileDAO:          dao.NewFileDAO(),
+		file2DocumentDAO: dao.NewFile2DocumentDAO(),
+		documentService:  &DocumentService{},
+	}
 }
 
 func (f *fakeStorage) Health() bool {
@@ -170,7 +179,7 @@ func TestFileService_GetFileContents_NotAccessible(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	svc := NewFileService()
+	svc := testFileService()
 	texts, images, err := svc.GetFileContents("user-1", []map[string]interface{}{{"id": "file-1"}}, false)
 	if err == nil {
 		t.Fatal("expected authorization error")
@@ -195,7 +204,7 @@ func TestFileService_GetFileContents_Accessible(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	svc := NewFileService()
+	svc := testFileService()
 	texts, images, err := svc.GetFileContents("user-1", []map[string]interface{}{{"id": "file-1"}}, false)
 	if err != nil {
 		t.Fatalf("GetFileContents failed: %v", err)
@@ -229,7 +238,7 @@ func TestFileService_DownloadAgentFile_Success(t *testing.T) {
 		factory.SetStorage(originalStorage)
 	})
 
-	svc := NewFileService()
+	svc := testFileService()
 	tenantID := "tenant123"
 	location := "file-abc.txt"
 
@@ -264,7 +273,7 @@ func TestFileService_DownloadAgentFile_Error(t *testing.T) {
 		factory.SetStorage(originalStorage)
 	})
 
-	svc := NewFileService()
+	svc := testFileService()
 	tenantID := "tenant123"
 	location := "file-abc.txt"
 
@@ -306,7 +315,7 @@ func TestFileService_UploadFromURL_PDFAddsExtensionAndStoresToDownloads(t *testi
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	svc := NewFileService()
+	svc := testFileService()
 	resp, err := svc.UploadFromURL("tenant123", server.URL+"/report")
 	if err != nil {
 		t.Fatalf("UploadFromURL failed: %v", err)
@@ -352,7 +361,7 @@ func TestFileService_UploadFromURL_HTMLNormalizesReadableContent(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	svc := NewFileService()
+	svc := testFileService()
 	resp, err := svc.UploadFromURL("tenant123", server.URL+"/page")
 	if err != nil {
 		t.Fatalf("UploadFromURL failed: %v", err)
@@ -395,6 +404,92 @@ func TestReadUploadInfoData_RejectsOversizedInput(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "file size exceeds") {
 		t.Fatalf("err = %v, want size limit message", err)
+	}
+}
+
+func TestFileService_DeleteSingleFile_RemovesLinkedDocumentThroughDocumentService(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	mockStorage := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	insertTestKB(t, "kb-file-delete", "tenant-1", 1, 30, 10)
+	insertTestDoc(t, "doc-file-delete", "kb-file-delete", 30, 10)
+	insertTestTask(t, "task-file-delete", "doc-file-delete")
+
+	location := "doc.pdf"
+	insertTestFile(t, "file-delete", "folder-delete", "doc.pdf", &location)
+	insertTestFile2Document(t, "f2d-file-delete", "file-delete", "doc-file-delete")
+	if err := mockStorage.Put("folder-delete", location, []byte("blob")); err != nil {
+		t.Fatalf("put test blob: %v", err)
+	}
+
+	file, err := dao.NewFileDAO().GetByID("file-delete")
+	if err != nil {
+		t.Fatalf("get file: %v", err)
+	}
+	docSvc := testDocumentService(t)
+	docEngine := &rerunDeleteDocEngine{}
+	docSvc.docEngine = docEngine
+	svc := &FileService{
+		fileDAO:          dao.NewFileDAO(),
+		file2DocumentDAO: dao.NewFile2DocumentDAO(),
+		documentService:  docSvc,
+	}
+
+	if err := svc.deleteSingleFile(context.Background(), file); err != nil {
+		t.Fatalf("deleteSingleFile failed: %v", err)
+	}
+
+	if mockStorage.ObjExist("folder-delete", location) {
+		t.Fatal("expected storage object to be removed")
+	}
+	if _, err := dao.NewDocumentDAO().GetByID("doc-file-delete"); err == nil {
+		t.Fatal("expected linked document to be deleted")
+	}
+	var taskCount int64
+	if err := dao.DB.Model(&entity.Task{}).Where("doc_id = ?", "doc-file-delete").Count(&taskCount).Error; err != nil {
+		t.Fatalf("count tasks: %v", err)
+	}
+	if taskCount != 0 {
+		t.Fatalf("expected linked tasks to be deleted, got %d", taskCount)
+	}
+	mappings, err := dao.NewFile2DocumentDAO().GetByFileID("file-delete")
+	if err != nil {
+		t.Fatalf("get file2document mappings: %v", err)
+	}
+	if len(mappings) != 0 {
+		t.Fatalf("expected file2document mappings to be deleted, got %d", len(mappings))
+	}
+	files, err := dao.NewFileDAO().GetByIDs([]string{"file-delete"})
+	if err != nil {
+		t.Fatalf("get deleted file: %v", err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("expected file record to be deleted, got %d", len(files))
+	}
+	if docEngine.deleteCalls != 1 {
+		t.Fatalf("expected document engine cleanup to be called once, got %d", docEngine.deleteCalls)
+	}
+	if docEngine.indexName != "ragflow_tenant-1" {
+		t.Fatalf("expected document engine index ragflow_tenant-1, got %q", docEngine.indexName)
+	}
+	if docEngine.datasetID != "kb-file-delete" {
+		t.Fatalf("expected document engine dataset kb-file-delete, got %q", docEngine.datasetID)
+	}
+	if docEngine.condition["doc_id"] != "doc-file-delete" {
+		t.Fatalf("expected document engine doc_id condition doc-file-delete, got %v", docEngine.condition["doc_id"])
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID("kb-file-delete")
+	if err != nil {
+		t.Fatalf("get kb: %v", err)
+	}
+	if kb.DocNum != 0 || kb.TokenNum != 0 || kb.ChunkNum != 0 {
+		t.Fatalf("expected KB counters to be decremented to zero, got doc=%d token=%d chunk=%d", kb.DocNum, kb.TokenNum, kb.ChunkNum)
 	}
 }
 
