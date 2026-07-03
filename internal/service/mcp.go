@@ -112,8 +112,13 @@ type ListMCPServersResponse struct {
 	Total      int64                `json:"total"`
 }
 
+const maxMCPFetchTimeoutSec = 60
+
 // CreateMCPServer creates an MCP server owned by a tenant.
 func (s *MCPService) CreateMCPServer(tenantID string, req CreateMCPServerRequest) (*CreateMCPServerResponse, common.ErrorCode, error) {
+	if req.Timeout < 0 || req.Timeout > maxMCPFetchTimeoutSec {
+		return nil, common.CodeDataError, errors.New("Invalid timeout.")
+	}
 	if !isValidMCPServerType(req.ServerType) {
 		return nil, common.CodeDataError, errors.New("Unsupported MCP server type.")
 	}
@@ -342,17 +347,22 @@ func (s *MCPService) UpdateMCPServer(tenantID, mcpID string, req UpdateMCPServer
 	if variables == nil {
 		variables = entity.JSONMap{}
 	}
+	existingTools := server.Variables["tools"]
 	delete(variables, "tools")
-	timeoutSeconds, err := optionalFloat64(req, "timeout", defaultMCPFetchTimeoutSec)
-	if err != nil {
-		return nil, common.CodeDataError, err
+	needsRefresh := serverURLProvided || serverTypeProvided || headerOrVariablesChanged(req)
+	if needsRefresh {
+		timeoutSeconds, err := optionalFloat64(req, "timeout", defaultMCPFetchTimeoutSec)
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		tools, err := fetchMCPTools(context.Background(), serverURL, serverType, headers, variables, timeoutSeconds)
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		variables["tools"] = tools
+	} else if existingTools != nil {
+		variables["tools"] = existingTools
 	}
-
-	tools, err := fetchMCPTools(context.Background(), serverURL, serverType, headers, variables, timeoutSeconds)
-	if err != nil {
-		return nil, common.CodeDataError, err
-	}
-	variables["tools"] = tools
 
 	updates := map[string]interface{}{
 		"id":        mcpID,
@@ -392,6 +402,16 @@ func (s *MCPService) UpdateMCPServer(tenantID, mcpID string, req UpdateMCPServer
 		return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
 	}
 	return updatedServer, common.CodeSuccess, nil
+}
+
+func headerOrVariablesChanged(req UpdateMCPServerRequest) bool {
+	if _, ok := req["headers"]; ok {
+		return true
+	}
+	if _, ok := req["variables"]; ok {
+		return true
+	}
+	return false
 }
 
 func isMCPServerNotFound(err error) bool {
