@@ -558,7 +558,7 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 	// fallback for code paths that do not go through canvas;
 	// this site is the canonical entry point for production
 	// task execution.
-	_, runErr := pl.Run(ctx, res.Inputs, res.StartAt)
+	_, runErr := pl.Run(ctx, res.Inputs)
 	if runErr != nil {
 		if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s cancelled: %v", task.ID, runErr))
