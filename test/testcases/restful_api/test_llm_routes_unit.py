@@ -215,7 +215,7 @@ def _load_llm_app(monkeypatch):
 
     api_utils_mod.get_request_json = _get_request_json
     api_utils_mod.server_error_response = lambda exc: {"code": 500, "message": str(exc), "data": None}
-    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda fn: fn)
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda fn: fn
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     constants_mod = ModuleType("common.constants")
@@ -499,9 +499,7 @@ def test_add_llm_factory_specific_key_assembly_unit(monkeypatch):
 
     assert json.loads(_run_case("BaiduYiyan", extra={"yiyan_ak": "ak", "yiyan_sk": "sk"})["api_key"]) == {"yiyan_ak": "ak", "yiyan_sk": "sk"}
     assert json.loads(_run_case("Fish Audio", extra={"fish_audio_ak": "ak", "fish_audio_refid": "rid"})["api_key"]) == {"fish_audio_ak": "ak", "fish_audio_refid": "rid"}
-    assert json.loads(
-        _run_case("Google Cloud", extra={"google_project_id": "pid", "google_region": "us", "google_service_account_key": "sak"})["api_key"]
-    ) == {
+    assert json.loads(_run_case("Google Cloud", extra={"google_project_id": "pid", "google_region": "us", "google_service_account_key": "sak"})["api_key"]) == {
         "google_project_id": "pid",
         "google_region": "us",
         "google_service_account_key": "sak",
@@ -668,9 +666,9 @@ def test_add_llm_model_type_probe_and_persistence_matrix_unit(monkeypatch):
     monkeypatch.setattr(
         module.LLMService,
         "query",
-        lambda **kwargs: [] if kwargs.get("llm_factory") == "FUnknown" else [
-            _LLMRow(llm_name="m", fid=kwargs.get("llm_factory"), model_type=kwargs.get("model_type", module.LLMType.CHAT.value), max_tokens=4096)
-        ],
+        lambda **kwargs: (
+            [] if kwargs.get("llm_factory") == "FUnknown" else [_LLMRow(llm_name="m", fid=kwargs.get("llm_factory"), model_type=kwargs.get("model_type", module.LLMType.CHAT.value), max_tokens=4096)]
+        ),
     )
 
     _set_request_json(monkeypatch, module, {"llm_factory": "FUnknown", "llm_name": "m", "model_type": "unknown"})

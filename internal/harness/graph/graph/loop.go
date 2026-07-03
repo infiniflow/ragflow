@@ -146,7 +146,7 @@ type loopInterruptState struct {
 // shouldQuit is the termination predicate (called after each iteration).
 func NewLoopNodeFunc(
 	key string,
-	sub *CompiledGraph,
+	sub types.CompiledGraph,
 	shouldQuit LoopCondition,
 	opts ...LoopOption,
 ) (types.NodeFunc, error) {
@@ -165,7 +165,7 @@ func NewLoopNodeFunc(
 	}
 
 	nodeFunc := func(ctx context.Context, state interface{}) (interface{}, error) {
-		return runLoop(ctx, key, sub, state, shouldQuit, options)
+		return runLoop(ctx, key, sub.(*compiledGraph), state, shouldQuit, options)
 	}
 	return nodeFunc, nil
 }
@@ -174,7 +174,7 @@ func NewLoopNodeFunc(
 func runLoop(
 	ctx context.Context,
 	key string,
-	sub *CompiledGraph,
+	sub types.CompiledGraph,
 	input interface{},
 	shouldQuit LoopCondition,
 	options *loopOptions,

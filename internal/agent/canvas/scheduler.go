@@ -115,7 +115,7 @@ func statePost(ctx context.Context, out any) (any, error) {
 //   - For components with no upstream (Begin nodes): sg.AddEdge(Start, cpn).
 //   - For components with no downstream (terminals): sg.AddEdge(cpn, End).
 //   - Switch/Categorize with >= 2 children get an AddBranch for runtime routing.
-func BuildWorkflow(ctx context.Context, c *Canvas) (*graphpkg.StateGraph, error) {
+func BuildWorkflow(ctx context.Context, c *Canvas) (types.StateGraph, error) {
 	if c == nil {
 		return nil, fmt.Errorf("canvas: nil canvas")
 	}
@@ -199,7 +199,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*graphpkg.StateGraph, error)
 		if err != nil {
 			return nil, err
 		}
-		sg.AddNodeWithOptions(cpnID, body, graphpkg.NodeOptions{
+		sg.AddNodeWithOptions(cpnID, body, types.NodeOptions{
 			StatePre:  statePre,
 			StatePost: statePost,
 		})

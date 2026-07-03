@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"strings"
 
-	graphpkg "ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/types"
 )
 
 // branchableControlNames is the case-insensitive set of component
@@ -44,7 +44,7 @@ func isBranchableControl(name string) bool {
 // does NOT fall back to AddEdge (regular edges), so only the routed
 // child executes.
 func wireMultiBranches(
-	sg *graphpkg.StateGraph,
+	sg types.StateGraph,
 	c *Canvas,
 	loopMembers map[string]bool,
 ) error {

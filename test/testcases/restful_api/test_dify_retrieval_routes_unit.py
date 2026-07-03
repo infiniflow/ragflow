@@ -53,11 +53,7 @@ class _DummyKB:
 
 class _DummyRetriever:
     async def retrieval(self, *_args, **_kwargs):
-        return {
-            "chunks": [
-                {"doc_id": "doc-1", "content_with_weight": "chunk-content", "similarity": 0.8, "docnm_kwd": "doc-title", "vector": [0.1]}
-            ]
-        }
+        return {"chunks": [{"doc_id": "doc-1", "content_with_weight": "chunk-content", "similarity": 0.8, "docnm_kwd": "doc-title", "vector": [0.1]}]}
 
     def retrieval_by_children(self, chunks, _tenant_ids):
         return chunks

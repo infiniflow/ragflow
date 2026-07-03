@@ -54,6 +54,8 @@ type AgentParam struct {
 	StreamFinal bool
 }
 
+const agentUserPromptSchemaDefault = "This is the order you need to send to the agent."
+
 // AgentMeta declares the OpenAI-style function-call interface for the
 // Agent component. Mirrors ragflow Python's ToolMeta shape.
 type AgentMeta struct {
@@ -894,6 +896,95 @@ func emptyArtifactList() []artifactEntry {
 	return nil
 }
 
+// promptMessagesFromParams extracts the Python DSL `prompts` list into
+// the single system/user prompt shape supported by the Go ReAct runner.
+func promptMessagesFromParams(params map[string]any) (systemPrompt, userPrompt string, ok bool) {
+	raw, exists := params["prompts"]
+	if !exists {
+		return "", "", false
+	}
+	switch v := raw.(type) {
+	case string:
+		return "", v, true
+	case []any:
+		var systems, users []string
+		for _, item := range v {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			content, ok := stringFrom(m, "content")
+			if !ok {
+				continue
+			}
+			role, _ := stringFrom(m, "role")
+			switch strings.ToLower(strings.TrimSpace(role)) {
+			case "system":
+				systems = append(systems, content)
+			case "user", "":
+				users = append(users, content)
+			}
+		}
+		if len(systems) == 0 && len(users) == 0 {
+			return "", "", false
+		}
+		return strings.Join(systems, "\n"), strings.Join(users, "\n"), true
+	case []map[string]any:
+		items := make([]any, 0, len(v))
+		for _, item := range v {
+			items = append(items, item)
+		}
+		return promptMessagesFromParams(map[string]any{"prompts": items})
+	}
+	return "", "", false
+}
+
+func appendPromptText(base, extra string) string {
+	if strings.TrimSpace(extra) == "" {
+		return base
+	}
+	if strings.TrimSpace(base) == "" {
+		return extra
+	}
+	return base + "\n" + extra
+}
+
+func hasNonEmptyString(inputs map[string]any, name string) bool {
+	v, ok := stringFrom(inputs, name)
+	return ok && strings.TrimSpace(v) != ""
+}
+
+func shouldFallbackToSysQuery(prompt string) bool {
+	p := strings.TrimSpace(prompt)
+	return p == "" || p == agentUserPromptSchemaDefault
+}
+
+func stringFromState(state *runtime.CanvasState, name string) (string, bool) {
+	if state == nil {
+		return "", false
+	}
+	v, ok := state.Sys[name].(string)
+	if !ok || strings.TrimSpace(v) == "" {
+		return "", false
+	}
+	return v, true
+}
+
+func formatAgentRuntimePrompt(inputs map[string]any, userPrompt string) string {
+	var b strings.Builder
+	if reasoning, ok := stringFrom(inputs, "reasoning"); ok && reasoning != "" {
+		fmt.Fprintf(&b, "\nREASONING:\n%s\n", reasoning)
+	}
+	if contextText, ok := stringFrom(inputs, "context"); ok && contextText != "" {
+		fmt.Fprintf(&b, "\nCONTEXT:\n%s\n", contextText)
+	}
+	if b.Len() == 0 {
+		return userPrompt
+	}
+	fmt.Fprintf(&b, "\nQUERY:\n%s\n", userPrompt)
+	return b.String()
+}
+
 // mergeAgentParam layers raw inputs over the receiver's default param set.
 //
 // v1 aliases accepted alongside the v2 names: "llm_id" → "model_id",
@@ -912,7 +1003,13 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	} else if v, ok := stringFrom(inputs, "sys_prompt"); ok {
 		p.SystemPrompt = v
 	}
-	if v, ok := stringFrom(inputs, "user_prompt"); ok {
+	if promptSystem, promptUser, ok := promptMessagesFromParams(inputs); ok {
+		p.SystemPrompt = appendPromptText(p.SystemPrompt, promptSystem)
+		if strings.TrimSpace(promptUser) != "" {
+			p.UserPrompt = promptUser
+		}
+	}
+	if v, ok := stringFrom(inputs, "user_prompt"); ok && !shouldFallbackToSysQuery(v) {
 		p.UserPrompt = v
 	}
 	if v, ok := floatFrom(inputs, "top_p"); ok {
@@ -1086,7 +1183,11 @@ func init() {
 		} else if v, ok := stringFrom(params, "sys_prompt"); ok {
 			p.SystemPrompt = v
 		}
-		if v, ok := stringFrom(params, "user_prompt"); ok {
+		if promptSystem, promptUser, ok := promptMessagesFromParams(params); ok {
+			p.SystemPrompt = appendPromptText(p.SystemPrompt, promptSystem)
+			p.UserPrompt = promptUser
+		}
+		if v, ok := stringFrom(params, "user_prompt"); ok && p.UserPrompt == "" {
 			p.UserPrompt = v
 		}
 		if v, ok := floatFrom(params, "top_p"); ok {

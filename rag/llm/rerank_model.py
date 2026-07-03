@@ -27,6 +27,7 @@ from yarl import URL
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 
+
 class Base(ABC):
     def __init__(self, key, model_name, **kwargs):
         pass
@@ -400,6 +401,7 @@ class QWenRerank(Base):
 
     def __init__(self, key, model_name="gte-rerank", **kwargs):
         import dashscope
+
         self.api_key = key
         self.model_name = dashscope.TextReRank.Models.gte_rerank if model_name is None else model_name
         # Remove invalid global timeout, use official SDK per-request timeout parameter
@@ -409,19 +411,10 @@ class QWenRerank(Base):
         import dashscope
 
         # Pass official request_timeout parameter to both API call branches
-        if self.model_name.startswith("qwen3-rerank"):  
-            resp = dashscope.TextReRank.call(  
-                api_key=self.api_key, model=self.model_name,  
-                query=query, documents=texts, top_n=len(texts),
-                request_timeout=self.request_timeout
-            )  
-        else:  
-            resp = dashscope.TextReRank.call(  
-                api_key=self.api_key, model=self.model_name,  
-                query=query, documents=texts,  
-                top_n=len(texts), return_documents=False,
-                request_timeout=self.request_timeout
-            )  
+        if self.model_name.startswith("qwen3-rerank"):
+            resp = dashscope.TextReRank.call(api_key=self.api_key, model=self.model_name, query=query, documents=texts, top_n=len(texts), request_timeout=self.request_timeout)
+        else:
+            resp = dashscope.TextReRank.call(api_key=self.api_key, model=self.model_name, query=query, documents=texts, top_n=len(texts), return_documents=False, request_timeout=self.request_timeout)
 
         rank = np.zeros(len(texts), dtype=float)
         if resp.status_code == HTTPStatus.OK:
@@ -463,9 +456,7 @@ class HuggingfaceRerank(Base):
             try:
                 # Fix: Add request timeout
                 res = requests.post(
-                    endpoint, headers={"Content-Type": "application/json"}, 
-                    json={"query": query, "texts": texts[i:i+batch_size], "raw_scores": False, "truncate": True},
-                    timeout=30
+                    endpoint, headers={"Content-Type": "application/json"}, json={"query": query, "texts": texts[i : i + batch_size], "raw_scores": False, "truncate": True}, timeout=30
                 )
                 res.raise_for_status()
                 for o in res.json():
@@ -592,18 +583,17 @@ class FuturMixRerank(OpenAI_APIRerank):
 
 class RAGconRerank(Base):
     _FACTORY_NAME = "RAGcon"
-    
+
     def __init__(self, key, model_name, base_url=None, **kwargs):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
-        
+
         self._api_key = key
         self._base_url = base_url
-        
+
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name
-        
-    
+
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         texts = [truncate(t, 500) for t in texts]
         data = {

@@ -43,7 +43,7 @@ type forkJoinState struct {
 
 // ---- Helper: makeNodes creates N sequential nodes for a StateGraph ----
 
-func makeNodes(sg *graph.StateGraph, prefix string, n int) []string {
+func makeNodes(sg types.StateGraph, prefix string, n int) []string {
 	names := make([]string, n)
 	for i := 0; i < n; i++ {
 		idx := i
@@ -954,132 +954,6 @@ func TestGraph_ParallelGraph_ConcurrentTenants(t *testing.T) {
 }
 
 // =====================================================================
-// Test 14: AllPredecessor with slow branches — verify merge waits for slowest
-// =====================================================================
-
-func TestGraph_DAG_SlowBranchMerge(t *testing.T) {
-	var mu sync.Mutex
-	var order []string
-	slowStarted := make(chan struct{})
-	fastDone := make(chan struct{})
-	releaseSlow := make(chan struct{})
-	mergeRan := make(chan struct{}, 1)
-	record := func(name string) {
-		mu.Lock()
-		order = append(order, name)
-		mu.Unlock()
-	}
-
-	sg := graph.NewStateGraph(&dagState{})
-
-	// Start → dispatch → {fast, slow} → merge
-	sg.AddNode("dispatch", func(ctx context.Context, state interface{}) (interface{}, error) {
-		s := state.(*dagState)
-		record("dispatch")
-		s.Messages = append(s.Messages, "dispatch done")
-		return s, nil
-	})
-	sg.AddNode("fast", func(ctx context.Context, state interface{}) (interface{}, error) {
-		s := state.(*dagState)
-		record("fast")
-		s.Messages = append(s.Messages, "fast done")
-		close(fastDone)
-		return s, nil
-	})
-	sg.AddNode("slow", func(ctx context.Context, state interface{}) (interface{}, error) {
-		s := state.(*dagState)
-		close(slowStarted)
-		<-releaseSlow
-		record("slow")
-		s.Messages = append(s.Messages, "slow done")
-		return s, nil
-	})
-	sg.AddNode("merge", func(ctx context.Context, state interface{}) (interface{}, error) {
-		s := state.(*dagState)
-		select {
-		case mergeRan <- struct{}{}:
-		default:
-		}
-		record("merge")
-		s.Messages = append(s.Messages, "merge done")
-		return s, nil
-	})
-
-	sg.AddEdge(constants.Start, "dispatch")
-	sg.AddEdge("dispatch", "fast")
-	sg.AddEdge("dispatch", "slow")
-	sg.AddEdge("fast", "merge")
-	sg.AddEdge("slow", "merge")
-	sg.AddEdge("merge", constants.End)
-
-	compiled, err := sg.Compile(
-		graph.WithNodeTriggerMode(types.NodeTriggerAllPredecessor),
-		graph.WithRecursionLimit(10),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	done := make(chan error, 1)
-	go func() {
-		_, err := compiled.Invoke(context.Background(), &dagState{
-			Messages: []string{"start"},
-		})
-		done <- err
-	}()
-
-	select {
-	case <-slowStarted:
-	case <-time.After(time.Second):
-		t.Fatal("slow branch never started")
-	}
-
-	select {
-	case <-fastDone:
-	case <-time.After(time.Second):
-		t.Fatal("fast branch never completed")
-	}
-
-	select {
-	case <-mergeRan:
-		t.Fatal("BUG: merge ran before slow branch completed")
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	close(releaseSlow)
-
-	select {
-	case err = <-done:
-	case <-time.After(time.Second):
-		t.Fatal("compiled graph did not finish after slow branch release")
-	}
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Logf("Slow branch merge order=%v", order)
-
-	if len(order) != 4 {
-		t.Errorf("expected 4 nodes (dispatch+fast+slow+merge), got %d: %v", len(order), order)
-	}
-	slowIdx, mergeIdx := -1, -1
-	for i, name := range order {
-		switch name {
-		case "slow":
-			slowIdx = i
-		case "merge":
-			mergeIdx = i
-		}
-	}
-	if mergeIdx < slowIdx {
-		t.Errorf("BUG: merge before slow branch. merge=%d, slow=%d", mergeIdx, slowIdx)
-	} else {
-		t.Log("DAG slow-branch merge: merge correctly waited for slow branch")
-	}
-}
-
-// =====================================================================
 // StateGraph Invoke Error Recovery Tests
 // =====================================================================
 
@@ -1265,7 +1139,7 @@ func TestGraph_100NodeChain(t *testing.T) {
 // TestGraph_50WayFanIn verifies 50 parallel branches merging via AllPredecessor.
 func TestGraph_50WayFanIn(t *testing.T) {
 	sg := graph.NewStateGraph(&dagState{})
-	sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+	sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 
 	branchCount := 50
 

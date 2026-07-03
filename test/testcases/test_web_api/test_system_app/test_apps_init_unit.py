@@ -183,10 +183,7 @@ def test_load_user_api_token_fallback_and_fallback_exception(monkeypatch, caplog
             return []
 
         def _query_user(**kwargs):
-            if (
-                kwargs.get("id") == "tenant-1"
-                and kwargs.get("status") == apps_module.StatusEnum.VALID.value
-            ):
+            if kwargs.get("id") == "tenant-1" and kwargs.get("status") == apps_module.StatusEnum.VALID.value:
                 return [beta_user]
             return []
 

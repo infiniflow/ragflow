@@ -17,6 +17,7 @@ import datetime
 import logging
 import time
 
+
 def current_timestamp():
     """
     Get the current timestamp in milliseconds.
@@ -74,6 +75,7 @@ def date_string_to_timestamp(time_str, format_string="%Y-%m-%d %H:%M:%S"):
     time_stamp = int(time.mktime(time_array) * 1000)
     return time_stamp
 
+
 def datetime_format(date_time: datetime.datetime) -> datetime.datetime:
     """
     Normalize a datetime object by removing microsecond component.
@@ -92,8 +94,7 @@ def datetime_format(date_time: datetime.datetime) -> datetime.datetime:
         >>> datetime_format(dt)
         datetime.datetime(2024, 1, 1, 12, 30, 45)
     """
-    return datetime.datetime(date_time.year, date_time.month, date_time.day,
-                             date_time.hour, date_time.minute, date_time.second)
+    return datetime.datetime(date_time.year, date_time.month, date_time.day, date_time.hour, date_time.minute, date_time.second)
 
 
 def get_format_time() -> datetime.datetime:

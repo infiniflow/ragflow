@@ -21,11 +21,12 @@ import (
 
 	"ragflow/internal/harness/graph/constants"
 	graphpkg "ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/types"
 )
 
 // loopExpansion holds the artefacts produced by buildLoopExpansion.
 type loopExpansion struct {
-	Sub        *graphpkg.CompiledGraph // compiled loop body sub-graph
+	Sub        types.CompiledGraph // compiled loop body sub-graph
 	ShouldQuit LoopConditionHarness    // terminal condition
 	MaxIters   int
 	Members    map[string]bool // cpn_ids consumed by the sub-graph
@@ -116,7 +117,7 @@ func buildSubGraph(
 	members map[string]bool,
 	loopID string,
 	initValues map[string]initVarSpec,
-) (*graphpkg.CompiledGraph, error) {
+) (types.CompiledGraph, error) {
 	_ = ctx
 	sg := graphpkg.NewStateGraph(map[string]any{})
 

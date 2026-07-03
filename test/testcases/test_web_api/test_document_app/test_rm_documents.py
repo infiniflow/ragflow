@@ -47,7 +47,7 @@ class TestDocumentsDeletion:
         "payload, expected_code, expected_message, remaining",
         [
             ({}, 102, "should either provide doc ids or set delete_all(true), dataset:", 3),
-            ({"invalid_key":[]}, 101, "Field: <invalid_key> - Message: <Extra inputs are not permitted> - Value: <[]>", 3),
+            ({"invalid_key": []}, 101, "Field: <invalid_key> - Message: <Extra inputs are not permitted> - Value: <[]>", 3),
             ({"ids": ""}, 101, "Field: <ids> - Message: <Input should be a valid list> - Value: <>", 3),
             ({"ids": ["invalid_id"]}, 102, "These documents do not belong to dataset", 3),
             ("not json", 101, "Invalid request payload: expected object, got str", 3),

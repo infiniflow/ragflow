@@ -18,6 +18,7 @@ import (
 
 	"ragflow/internal/common"
 	graphpkg "ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/types"
 )
 
 // CheckPointStore ...
@@ -80,7 +81,7 @@ func (a checkpointerAdapter) List(ctx context.Context, config map[string]interfa
 // Graph is the compiled harness graph; CheckPointID is the checkpoint
 // identifier for this compile.
 type CompiledCanvas struct {
-	Graph        *graphpkg.CompiledGraph
+	Graph        types.CompiledGraph
 	CheckPointID string
 }
 
@@ -362,7 +363,11 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 		compileOpts = append(compileOpts, graphpkg.WithInterruptsAfter(cfg.InterruptAfter...))
 	}
 
-	cg, err := sg.Compile(compileOpts...)
+	var args []interface{}
+	for _, o := range compileOpts {
+		args = append(args, o)
+	}
+	cg, err := sg.Compile(args...)
 	if err != nil {
 		return nil, fmt.Errorf("canvas: harness compile: %w", err)
 	}

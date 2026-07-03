@@ -20,7 +20,8 @@ from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response
 from api.apps import login_required, current_user
 
-@manager.route('/system/stats', methods=['GET'])  # noqa: F821
+
+@manager.route("/system/stats", methods=["GET"])  # noqa: F821
 @login_required
 def stats():
     try:
@@ -29,15 +30,10 @@ def stats():
             return get_data_error_result(message="Tenant not found!")
         objs = API4ConversationService.stats(
             tenants[0].tenant_id,
-            request.args.get(
-                "from_date",
-                (datetime.now() -
-                 timedelta(
-                     days=7)).strftime("%Y-%m-%d 00:00:00")),
-            request.args.get(
-                "to_date",
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-            "agent" if "canvas_id" in request.args else None)
+            request.args.get("from_date", (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d 00:00:00")),
+            request.args.get("to_date", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            "agent" if "canvas_id" in request.args else None,
+        )
 
         res = {"pv": [], "uv": [], "speed": [], "tokens": [], "round": [], "thumb_up": []}
 
@@ -45,8 +41,8 @@ def stats():
             dt = obj["dt"]
             res["pv"].append((dt, obj["pv"]))
             res["uv"].append((dt, obj["uv"]))
-            res["speed"].append((dt, float(obj["tokens"]) / (float(obj["duration"]) + 0.1))) # +0.1 to avoid division by zero
-            res["tokens"].append((dt, float(obj["tokens"]) / 1000.0)) # convert to thousands
+            res["speed"].append((dt, float(obj["tokens"]) / (float(obj["duration"]) + 0.1)))  # +0.1 to avoid division by zero
+            res["tokens"].append((dt, float(obj["tokens"]) / 1000.0))  # convert to thousands
             res["round"].append((dt, obj["round"]))
             res["thumb_up"].append((dt, obj["thumb_up"]))
 

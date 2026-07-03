@@ -31,7 +31,7 @@ They are **not** downloaded by `build.sh` — use the included download script:
 uv run ragflow_deps/download_deps.py
 ```
 
-This also requires `lld` on Linux (for Chromium-built pdfium):
+This also requires `lld-20` on Linux (for Chromium-built pdfium):
 
 ```bash
 sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
@@ -61,17 +61,17 @@ Note: admin server must be started first; otherwise, api server will encounter e
 
 ```bash
 # Start admin server
-./bin/ragflow_main --admin
+./bin/ragflow_server --admin
 ```
 
 ```bash
 # Start RAGFlow server
-./bin/ragflow_main --api
+./bin/ragflow_server --api
 ```
 
 ```bash
 # Start RAGFlow ingestor
-./bin/ragflow_main --ingestor
+./bin/ragflow_server --ingestor
 ```
 
 ```bash
