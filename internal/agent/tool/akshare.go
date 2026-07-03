@@ -19,59 +19,101 @@ package tool
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 )
 
-const akshareToolName = "akshare"
+const akshareToolName = "akshare_stock_news"
 
-const akshareToolDescription = "Query Chinese A-share financial data (AkShare). " +
-	"STUB: AkShare is a Python library — not available in the Go Canvas. " +
-	"Use the Python Canvas for Chinese A-share data."
+const akshareToolDescription = "Retrieves the latest East Money news articles for a Chinese A-share stock symbol."
 
-const akshareUnsupportedMessage = "AkShare is a Python library — not available in Go Canvas. " +
-	"Use Python Canvas for Chinese A-share data."
+const defaultAkShareTopN = 10
+
+var akshareStockNewsEndpoint = "https://search-api-web.eastmoney.com/search/jsonp"
 
 // akshareParams is the JSON shape the model sends into InvokableRun.
-//
-// AkShare exposes 200+ indicator functions (e.g. stock_zh_a_hist,
-// stock_zh_a_spot_em, bond_zh_hs_cov). For a future HTTP shim that routes
-// to a Python backend we keep the same shape: a stock/asset symbol plus
-// the indicator name. The Go stub validates the shape and rejects all
-// invocations with a clear error.
 type akshareParams struct {
-	Symbol    string `json:"symbol"`
-	Indicator string `json:"indicator"`
+	Query  string `json:"query"`
+	Symbol string `json:"symbol,omitempty"`
+	TopN   int    `json:"top_n,omitempty"`
 }
 
-// akshareEnvelope is the model-facing JSON shape. The stub always
-// returns a populated Error so the model gets a deterministic, parseable
-// failure.
+func (p akshareParams) stockSymbol() string {
+	if query := strings.TrimSpace(p.Query); query != "" {
+		return query
+	}
+	return strings.TrimSpace(p.Symbol)
+}
+
+type akshareArticle struct {
+	Title       string `json:"title"`
+	Content     string `json:"content"`
+	PublishedAt string `json:"published_at"`
+	Source      string `json:"source"`
+	URL         string `json:"url"`
+}
+
 type akshareEnvelope struct {
-	Fields []string `json:"fields,omitempty"`
-	Items  []any    `json:"items,omitempty"`
-	Error  string   `json:"_ERROR,omitempty"`
+	Content  string           `json:"content,omitempty"`
+	Articles []akshareArticle `json:"articles,omitempty"`
+	Error    string           `json:"_ERROR,omitempty"`
 }
 
-// AkShareTool is a stub implementation of the AkShare Chinese
-// financial data tool.
-//
-// AkShare is a Python library (https://github.com/akfamily/akshare)
-// — there is no public HTTP API. The tool is registered with the
-// canvas so DSLs that reference "akshare" continue to parse, but
-// every invocation fails fast with a clear "use Python Canvas"
-// message rather
-// than silently no-op'ing.
-//
-// AkShareTool does not own an HTTPHelper — it never makes network calls.
-type AkShareTool struct{}
+type akshareSearchRequest struct {
+	UID           string         `json:"uid"`
+	Keyword       string         `json:"keyword"`
+	Type          []string       `json:"type"`
+	Client        string         `json:"client"`
+	ClientType    string         `json:"clientType"`
+	ClientVersion string         `json:"clientVersion"`
+	Param         map[string]any `json:"param"`
+}
 
-// NewAkShareTool returns an AkShareTool. No HTTPHelper is allocated;
-// the stub never issues network requests.
-func NewAkShareTool() *AkShareTool { return &AkShareTool{} }
+type akshareSearchResponse struct {
+	Result struct {
+		Articles []akshareEastMoneyArticle `json:"cmsArticleWebOld"`
+	} `json:"result"`
+}
+
+type akshareEastMoneyArticle struct {
+	Code      string `json:"code"`
+	Title     string `json:"title"`
+	Content   string `json:"content"`
+	Date      string `json:"date"`
+	MediaName string `json:"mediaName"`
+}
+
+// AkShareTool retrieves East Money stock news using the same endpoint
+// as AkShare's stock_news_em(symbol=...) helper.
+type AkShareTool struct {
+	helper *HTTPHelper
+	topN   int
+}
+
+func NewAkShareTool() *AkShareTool {
+	return NewAkShareToolWith(NewHTTPHelper())
+}
+
+func NewAkShareToolWith(h *HTTPHelper) *AkShareTool {
+	return NewAkShareToolWithTopN(h, defaultAkShareTopN)
+}
+
+func NewAkShareToolWithTopN(h *HTTPHelper, topN int) *AkShareTool {
+	if h == nil {
+		h = NewHTTPHelper()
+	}
+	if topN <= 0 {
+		topN = defaultAkShareTopN
+	}
+	return &AkShareTool{helper: h, topN: topN}
+}
 
 // Info returns the tool's metadata for the chat model.
 func (a *AkShareTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -79,36 +121,197 @@ func (a *AkShareTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		Name: akshareToolName,
 		Desc: akshareToolDescription,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"symbol": {
+			"query": {
 				Type:     schema.String,
-				Desc:     "Stock or asset symbol (e.g. 000001, sh600000, bj920566).",
-				Required: true,
-			},
-			"indicator": {
-				Type:     schema.String,
-				Desc:     "AkShare indicator function name (e.g. stock_zh_a_hist, stock_zh_a_spot_em).",
+				Desc:     "Stock symbol/code to fetch East Money news for, e.g. 600519.",
 				Required: true,
 			},
 		}),
 	}, nil
 }
 
-// InvokableRun validates the input shape and returns a clear "use Python
-// Canvas" error. The model receives a JSON envelope with the message in
-// the `_ERROR` field so it can present a useful message back to the user
-// without surfacing a Go stack trace.
-func (a *AkShareTool) InvokableRun(_ context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+// InvokableRun fetches stock news from East Money and returns both a
+// formatted content string and structured article records.
+func (a *AkShareTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
 	var p akshareParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
-		return akshareErrJSON(errors.New(akshareUnsupportedMessage)),
-			errors.New(akshareUnsupportedMessage)
+		return akshareErrJSON(fmt.Errorf("akshare: parse arguments: %w", err)),
+			fmt.Errorf("akshare: parse arguments: %w", err)
 	}
-	if p.Symbol == "" || p.Indicator == "" {
-		return akshareErrJSON(errors.New(akshareUnsupportedMessage)),
-			errors.New(akshareUnsupportedMessage)
+
+	symbol := p.stockSymbol()
+	if symbol == "" {
+		return akshareErrJSON(fmt.Errorf("akshare: query is required")),
+			fmt.Errorf("akshare: query is required")
 	}
-	return akshareErrJSON(errors.New(akshareUnsupportedMessage)),
-		errors.New(akshareUnsupportedMessage)
+
+	topN := a.topN
+	if p.TopN > 0 {
+		topN = p.TopN
+	}
+	if topN <= 0 {
+		topN = defaultAkShareTopN
+	}
+
+	endpoint, err := buildAkShareStockNewsURL(symbol)
+	if err != nil {
+		return akshareErrJSON(err), err
+	}
+	headers := map[string]string{
+		"Accept":     "*/*",
+		"Referer":    "https://so.eastmoney.com/news/s?keyword=" + url.QueryEscape(symbol),
+		"User-Agent": "Mozilla/5.0 (compatible; ragflow/1.0)",
+	}
+
+	resp, err := a.helper.Do(ctx, http.MethodGet, endpoint, "", "", headers)
+	if err != nil {
+		return akshareErrJSON(err), err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		err := fmt.Errorf("akshare: upstream returned %d", resp.StatusCode)
+		return akshareErrJSON(err), err
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		err = fmt.Errorf("akshare: read response: %w", err)
+		return akshareErrJSON(err), err
+	}
+
+	articles, err := parseAkShareStockNews(body, topN)
+	if err != nil {
+		return akshareErrJSON(err), err
+	}
+
+	env := akshareEnvelope{
+		Content:  formatAkShareArticles(articles),
+		Articles: articles,
+	}
+	return akshareJSON(env), nil
+}
+
+func buildAkShareStockNewsURL(symbol string) (string, error) {
+	inner := akshareSearchRequest{
+		Keyword:       symbol,
+		Type:          []string{"cmsArticleWebOld"},
+		Client:        "web",
+		ClientType:    "web",
+		ClientVersion: "curr",
+		Param: map[string]any{
+			"cmsArticleWebOld": map[string]any{
+				"searchScope": "default",
+				"sort":        "default",
+				"pageIndex":   1,
+				"pageSize":    defaultAkShareTopN,
+				"preTag":      "<em>",
+				"postTag":     "</em>",
+			},
+		},
+	}
+	innerJSON, err := json.Marshal(inner)
+	if err != nil {
+		return "", fmt.Errorf("akshare: build request: %w", err)
+	}
+	callback := fmt.Sprintf("jQuery%d_%d", time.Now().UnixNano(), time.Now().UnixMilli())
+	q := url.Values{}
+	q.Set("cb", callback)
+	q.Set("param", string(innerJSON))
+	q.Set("_", fmt.Sprint(time.Now().UnixMilli()))
+	return akshareStockNewsEndpoint + "?" + q.Encode(), nil
+}
+
+func parseAkShareStockNews(body []byte, topN int) ([]akshareArticle, error) {
+	if topN <= 0 {
+		topN = defaultAkShareTopN
+	}
+
+	rawJSON, err := stripJSONP(string(body))
+	if err != nil {
+		return nil, err
+	}
+
+	var raw akshareSearchResponse
+	if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
+		return nil, fmt.Errorf("akshare: decode response: %w", err)
+	}
+
+	if topN > len(raw.Result.Articles) {
+		topN = len(raw.Result.Articles)
+	}
+
+	articles := make([]akshareArticle, 0, topN)
+	for _, item := range raw.Result.Articles[:topN] {
+		articleURL := ""
+		if code := strings.TrimSpace(item.Code); code != "" {
+			articleURL = "http://finance.eastmoney.com/a/" + code + ".html"
+		}
+		articles = append(articles, akshareArticle{
+			Title:       cleanAkShareText(item.Title),
+			Content:     cleanAkShareText(item.Content),
+			PublishedAt: strings.TrimSpace(item.Date),
+			Source:      strings.TrimSpace(item.MediaName),
+			URL:         articleURL,
+		})
+	}
+	return articles, nil
+}
+
+func stripJSONP(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	start := strings.IndexByte(s, '(')
+	end := strings.LastIndexByte(s, ')')
+	if start < 0 || end <= start {
+		if strings.HasPrefix(s, "{") {
+			return s, nil
+		}
+		return "", fmt.Errorf("akshare: invalid JSONP response")
+	}
+	return strings.TrimSpace(s[start+1 : end]), nil
+}
+
+func cleanAkShareText(s string) string {
+	replacements := []struct {
+		old string
+		new string
+	}{
+		{old: "(<em>", new: ""},
+		{old: "</em>)", new: ""},
+		{old: "<em>", new: ""},
+		{old: "</em>", new: ""},
+		{old: "\u3000", new: ""},
+		{old: "\r\n", new: " "},
+	}
+	for _, repl := range replacements {
+		s = strings.ReplaceAll(s, repl.old, repl.new)
+	}
+	return strings.TrimSpace(s)
+}
+
+// formatAkShareArticles renders articles into a human-readable block.
+// NOTE: the upstream Python PR's _invoke dropped 文章来源 from the
+// format string (5 args but only 4 {} placeholders); we preserve all
+// five fields here (link, title, content, date, source).
+func formatAkShareArticles(articles []akshareArticle) string {
+	if len(articles) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(articles))
+	for _, item := range articles {
+		parts = append(parts, fmt.Sprintf(
+			`<a href="%s">%s</a>
+ 新闻内容: %s 
+发布时间:%s 
+文章来源: %s`,
+			item.URL,
+			item.Title,
+			item.Content,
+			item.PublishedAt,
+			item.Source,
+		))
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func akshareJSON(env akshareEnvelope) string {
