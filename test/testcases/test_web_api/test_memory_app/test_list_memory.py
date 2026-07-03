@@ -20,6 +20,7 @@ from test_common import list_memory, get_memory_config
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
+
 class TestAuthorization:
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -45,11 +46,12 @@ class TestCapability:
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
 
+
 @pytest.mark.usefixtures("add_memory_func")
 class TestMemoryList:
     @pytest.mark.p2
     def test_params_unset(self, WebApiAuth):
-        res  = list_memory(WebApiAuth, None)
+        res = list_memory(WebApiAuth, None)
         assert res["code"] == 0, res
 
     @pytest.mark.p2
@@ -67,8 +69,7 @@ class TestMemoryList:
             ({"page": 2, "page_size": 2}, 1),
             ({"page": 5, "page_size": 10}, 0),
         ],
-        ids=["normal_first_page", "beyond_max_page", "normal_last_partial_page" , "normal_middle_page",
-             "full_data_single_page"],
+        ids=["normal_first_page", "beyond_max_page", "normal_last_partial_page", "normal_middle_page", "full_data_single_page"],
     )
     def test_page(self, WebApiAuth, params, expected_page_size):
         # have added 3 memories in fixture
@@ -112,7 +113,21 @@ class TestMemoryList:
         memory_config = get_memory_config(WebApiAuth, memory_list["data"]["memory_list"][0]["id"])
         assert memory_config["code"] == 0, memory_config
         assert memory_config["data"]["id"] == memory_list["data"]["memory_list"][0]["id"], memory_config
-        for field in ["name", "avatar", "tenant_id", "owner_name", "memory_type", "storage_type",
-                      "embd_id", "llm_id", "permissions", "description", "memory_size", "forgetting_policy",
-                      "temperature", "system_prompt", "user_prompt"]:
+        for field in [
+            "name",
+            "avatar",
+            "tenant_id",
+            "owner_name",
+            "memory_type",
+            "storage_type",
+            "embd_id",
+            "llm_id",
+            "permissions",
+            "description",
+            "memory_size",
+            "forgetting_policy",
+            "temperature",
+            "system_prompt",
+            "user_prompt",
+        ]:
             assert field in memory_config["data"], memory_config

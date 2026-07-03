@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import logging
@@ -20,8 +19,10 @@ from common.constants import MAXIMUM_PAGE_NUMBER
 try:
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 except Exception:
+
     class RAGFlowPdfParser:
         pass
+
 
 from deepdoc.parser.utils import extract_pdf_outlines
 
@@ -137,19 +138,14 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
     def check_installation(self) -> bool:
         """Return True when the OpenDataLoader service is reachable."""
         if not self.api_url:
-            self.logger.warning(
-                "[OpenDataLoader] OPENDATALOADER_APISERVER is not set. "
-                "Start the opendataloader service and set the env var."
-            )
+            self.logger.warning("[OpenDataLoader] OPENDATALOADER_APISERVER is not set. Start the opendataloader service and set the env var.")
             return False
         try:
             headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
             resp = requests.get(f"{self.api_url}/health", timeout=5, headers=headers)
             if resp.status_code == 200:
                 return True
-            self.logger.warning(
-                f"[OpenDataLoader] Health check returned {resp.status_code}: {resp.text[:200]}"
-            )
+            self.logger.warning(f"[OpenDataLoader] Health check returned {resp.status_code}: {resp.text[:200]}")
             return False
         except Exception as exc:
             self.logger.warning(f"[OpenDataLoader] Health check failed: {exc}")
@@ -185,9 +181,7 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         _, page_height = self.page_images[bbox.page_no - 1].size
         top = page_height - bbox.y1
         bott = page_height - bbox.y0
-        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(
-            bbox.page_no, x0, x1, top, bott
-        )
+        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(bbox.page_no, x0, x1, top, bott)
 
     @staticmethod
     def extract_positions(txt: str) -> list[tuple[list[int], float, float, float, float]]:
@@ -345,10 +339,7 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
 
         if not self.api_url:
-            raise RuntimeError(
-                "[OpenDataLoader] OPENDATALOADER_APISERVER is not configured. "
-                "Please start the opendataloader service and set the env var."
-            )
+            raise RuntimeError("[OpenDataLoader] OPENDATALOADER_APISERVER is not configured. Please start the opendataloader service and set the env var.")
 
         # Render page images locally — used by _make_line_tag() and crop().
         # The image rendering stays on the RAGFlow host; only the Java conversion

@@ -163,6 +163,7 @@ class DocGenerator(Message, ABC):
         logging.info("Starting document generation, content length: %s chars", len(content))
 
         if content:
+
             def _replace_variable(match_obj: re.Match[str]) -> str:
                 match = match_obj.group(1)
                 try:

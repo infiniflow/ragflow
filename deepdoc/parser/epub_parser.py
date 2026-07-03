@@ -63,9 +63,7 @@ class RAGFlowEpubParser:
                     continue
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", category=UserWarning)
-                    sections = html_parser(
-                        item_path, binary=html_bytes, chunk_token_num=chunk_token_num
-                    )
+                    sections = html_parser(item_path, binary=html_bytes, chunk_token_num=chunk_token_num)
                 all_sections.extend(sections)
 
             return all_sections
@@ -130,16 +128,9 @@ class RAGFlowEpubParser:
                 continue
             spine_items.append(opf_dir + href)
 
-        return (
-            spine_items if spine_items else RAGFlowEpubParser._fallback_xhtml_order(zf)
-        )
+        return spine_items if spine_items else RAGFlowEpubParser._fallback_xhtml_order(zf)
 
     @staticmethod
     def _fallback_xhtml_order(zf):
         """Fallback: return all .xhtml/.html files sorted alphabetically."""
-        return sorted(
-            n
-            for n in zf.namelist()
-            if n.lower().endswith((".xhtml", ".html", ".htm"))
-            and not n.startswith("META-INF/")
-        )
+        return sorted(n for n in zf.namelist() if n.lower().endswith((".xhtml", ".html", ".htm")) and not n.startswith("META-INF/"))

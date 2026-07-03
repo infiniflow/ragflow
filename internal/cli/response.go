@@ -1293,11 +1293,11 @@ func (r *QuotaSummaryResponse) PrintOut() {
 //
 //	{"code":0,"data":{"answer":"...","reference":...},"message":""}
 type ChatCompletionsResponse struct {
-	Code         int             `json:"code"`
+	Code         int                 `json:"code"`
 	Data         *chatCompletionData `json:"data"`
-	Message      string          `json:"message"`
-	Duration     float64         `json:"-"`
-	OutputFormat OutputFormat    `json:"-"`
+	Message      string              `json:"message"`
+	Duration     float64             `json:"-"`
+	OutputFormat OutputFormat        `json:"-"`
 	// raw HTTP body for "raw" output.
 	raw []byte
 	// streamed skips the "Answer:" line in PrintOut to avoid duplication
@@ -1313,8 +1313,8 @@ type chatCompletionData struct {
 	ChatID    string          `json:"chat_id,omitempty"`
 }
 
-func (r *ChatCompletionsResponse) Type() string                { return "chat_completions" }
-func (r *ChatCompletionsResponse) TimeCost() float64           { return r.Duration }
+func (r *ChatCompletionsResponse) Type() string                   { return "chat_completions" }
+func (r *ChatCompletionsResponse) TimeCost() float64              { return r.Duration }
 func (r *ChatCompletionsResponse) SetOutputFormat(f OutputFormat) { r.OutputFormat = f }
 
 func (r *ChatCompletionsResponse) PrintOut() {

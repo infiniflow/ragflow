@@ -112,9 +112,7 @@ def test_overlap_prefix_is_counted_in_token_budget():
     # Pre-fix, the prefix tokens were not counted, so the per-chunk budget check
     # fired late and chunks systematically overshot chunk_token_num.
     sentences = [" ".join(["w"] * 10) for _ in range(30)]
-    chunks = _nonempty(
-        naive_merge(sentences, chunk_token_num=50, delimiter=DEFAULT_DELIMITER, overlapped_percent=20)
-    )
+    chunks = _nonempty(naive_merge(sentences, chunk_token_num=50, delimiter=DEFAULT_DELIMITER, overlapped_percent=20))
     assert len(chunks) > 1
     # Each 10-token sentence divides chunk_token_num evenly, so a correct
     # accounting yields chunks of exactly the budget. The buggy version
@@ -156,9 +154,7 @@ def test_images_oversized_section_is_split():
     texts = [(section, "")]
     images = [None]
 
-    chunks, imgs = naive_merge_with_images(
-        texts, images, chunk_token_num=50, delimiter=DEFAULT_DELIMITER
-    )
+    chunks, imgs = naive_merge_with_images(texts, images, chunk_token_num=50, delimiter=DEFAULT_DELIMITER)
     nonempty = _nonempty(chunks)
     assert len(nonempty) > 1
     # Returned lists stay aligned.
@@ -168,9 +164,7 @@ def test_images_oversized_section_is_split():
 
 @pytest.mark.p2
 def test_images_custom_delimiter_preserved():
-    chunks, imgs = naive_merge_with_images(
-        [("x##y##z", "")], [None], chunk_token_num=1000, delimiter="`##`"
-    )
+    chunks, imgs = naive_merge_with_images([("x##y##z", "")], [None], chunk_token_num=1000, delimiter="`##`")
     assert [c.strip() for c in chunks] == ["x", "y", "z"]
     assert len(chunks) == len(imgs)
 
@@ -180,9 +174,7 @@ def test_images_plain_string_input():
     # texts may be plain strings (not tuples).
     sentence = " ".join(["word"] * 10)
     section = "\n".join([sentence] * 20)
-    chunks, imgs = naive_merge_with_images(
-        [section], [None], chunk_token_num=50, delimiter=DEFAULT_DELIMITER
-    )
+    chunks, imgs = naive_merge_with_images([section], [None], chunk_token_num=50, delimiter=DEFAULT_DELIMITER)
     assert len(_nonempty(chunks)) > 1
     assert len(chunks) == len(imgs)
 
@@ -202,9 +194,7 @@ def test_images_shared_lazyimage_not_stacked_across_split_sentences():
     image = LazyImage([b"FAKEBLOB"])
     section = "\n".join([" ".join(["word"] * 10)] * 20)
 
-    _, imgs = naive_merge_with_images(
-        [(section, "")], [image], chunk_token_num=50, delimiter=DEFAULT_DELIMITER
-    )
+    _, imgs = naive_merge_with_images([(section, "")], [image], chunk_token_num=50, delimiter=DEFAULT_DELIMITER)
     for im in imgs:
         if isinstance(im, LazyImage):
             assert len(im._blobs) == 1  # never grows beyond the single source blob
@@ -219,9 +209,7 @@ def test_images_distinct_lazyimages_are_concatenated():
     a = LazyImage([b"BLOB_A"])
     b = LazyImage([b"BLOB_B"])
     texts = [("alpha beta gamma", ""), ("delta epsilon zeta", "")]
-    _, imgs = naive_merge_with_images(
-        texts, [a, b], chunk_token_num=100, delimiter=DEFAULT_DELIMITER
-    )
+    _, imgs = naive_merge_with_images(texts, [a, b], chunk_token_num=100, delimiter=DEFAULT_DELIMITER)
     nonempty_imgs = [im for im in imgs if im is not None]
     assert len(nonempty_imgs) == 1
     merged = nonempty_imgs[0]

@@ -27,9 +27,7 @@ def _debug_register_response(page, response_info: dict) -> None:
     if isinstance(message, str) and len(message) > 300:
         message = message[:300]
     print(
-        "[auth-debug] register_response "
-        f"url={response_info.get('__url__')} status={response_info.get('__status__')} "
-        f"code={response_info.get('code')} message={message}",
+        f"[auth-debug] register_response url={response_info.get('__url__')} status={response_info.get('__status__')} code={response_info.get('code')} message={message}",
         flush=True,
     )
     try:
@@ -41,9 +39,7 @@ def _debug_register_response(page, response_info: dict) -> None:
         print(f"[auth-debug] sonner_toast_dump_failed: {exc}", flush=True)
 
 
-def _wait_for_login_outcome(
-    page, post_login_path: str | None, timeout_ms: int = RESULT_TIMEOUT_MS
-):
+def _wait_for_login_outcome(page, post_login_path: str | None, timeout_ms: int = RESULT_TIMEOUT_MS):
     auth_status_selector = json.dumps(AUTH_STATUS)
     return page.wait_for_function(
         """
@@ -72,7 +68,8 @@ def _wait_for_login_outcome(
           if (successByUrl || successMarker) return { state: 'success' };
           return false;
         }
-        """ % auth_status_selector,
+        """
+        % auth_status_selector,
         post_login_path,
         timeout=timeout_ms,
     )
@@ -171,15 +168,12 @@ def step_03_register_user(
                     auth_click(submit_button, "submit_register"),
                     snap("register_submitted"),
                 ),
-                lambda resp: resp.request.method == "POST"
-                and "/api/v1/users" in resp.url,
+                lambda resp: resp.request.method == "POST" and "/api/v1/users" in resp.url,
                 timeout_ms=RESULT_TIMEOUT_MS,
             )
         except PlaywrightTimeoutError as exc:
             snap("register_failure")
-            raise AssertionError(
-                f"Register response not received in time. url={page.url}"
-            ) from exc
+            raise AssertionError(f"Register response not received in time. url={page.url}") from exc
 
     _debug_register_response(page, response_info)
 
@@ -187,9 +181,7 @@ def step_03_register_user(
         snap("register_error_response")
         snap("register_failure")
         raise AssertionError(
-            "Registration error detected. "
-            f"url={response_info.get('__url__')} status={response_info.get('__status__')} "
-            f"code={response_info.get('code')} message={response_info.get('message')}"
+            f"Registration error detected. url={response_info.get('__url__')} status={response_info.get('__status__')} code={response_info.get('code')} message={response_info.get('message')}"
         )
 
     snap("register_success_response")
@@ -258,9 +250,7 @@ def step_05_verify_login(
             login_result = _wait_for_login_outcome(page, post_login_path)
         except PlaywrightTimeoutError as exc:
             snap("login_failure")
-            raise AssertionError(
-                f"Login result did not resolve in time. url={page.url}"
-            ) from exc
+            raise AssertionError(f"Login result did not resolve in time. url={page.url}") from exc
 
     login_outcome = login_result.json_value()
     if login_outcome.get("state") == "error":
@@ -272,9 +262,7 @@ def step_05_verify_login(
     if post_login_path:
         if not path.startswith(post_login_path):
             snap("login_failure")
-            raise AssertionError(
-                f"Post-login path mismatch. expected_prefix={post_login_path} url={page.url}"
-            )
+            raise AssertionError(f"Post-login path mismatch. expected_prefix={post_login_path} url={page.url}")
     elif "/login" in path:
         snap("login_failure")
         raise AssertionError(f"URL still on login after submit. url={page.url}")

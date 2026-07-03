@@ -90,12 +90,8 @@ async def main():
     )
     print(json.dumps(nx.node_link_data(graph), ensure_ascii=False, indent=2))
 
-    await with_resolution(
-        args.tenant_id, kb_id, args.doc_id, llm_bdl, embed_bdl, callback
-    )
-    community_structure, community_reports = await with_community(
-        args.tenant_id, kb_id, args.doc_id, llm_bdl, embed_bdl, callback
-    )
+    await with_resolution(args.tenant_id, kb_id, args.doc_id, llm_bdl, embed_bdl, callback)
+    community_structure, community_reports = await with_community(args.tenant_id, kb_id, args.doc_id, llm_bdl, embed_bdl, callback)
 
     print(
         "------------------ COMMUNITY STRUCTURE--------------------\n",
