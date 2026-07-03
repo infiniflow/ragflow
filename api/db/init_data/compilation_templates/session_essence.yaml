@@ -44,10 +44,6 @@ config:
   synthesis:
     enabled: true
     compile_kwd: "essence"
-    plan:
-      entity_type_filter: []
-      mention_count_threshold: 2
-      top_n: 50
     example: |
       Write a 3-5 sentence executive summary about the entity.
       Synthesize what multiple sources collectively say.

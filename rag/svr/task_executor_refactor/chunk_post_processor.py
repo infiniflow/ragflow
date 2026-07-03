@@ -1099,6 +1099,20 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
         if synthesis_cfg.get("enabled"):
             example = synthesis_cfg.get("example")
             compile_kwd = synthesis_cfg.get("compile_kwd", "artifact_page")
+            plan_cfg = synthesis_cfg.get("plan") or {}
+
+            # Reserved for future wiki_plan_from_reduction extension:
+            # entity_type_filter, mention_count_threshold, top_n
+            if plan_cfg:
+                logging.debug(
+                    "synthesis: template %s plan config %r reserved for future use",
+                    template_id, plan_cfg,
+                )
+
+            if ctx.has_canceled_func(ctx.id):
+                raise TaskCanceledException(
+                    f"Task {ctx.id} was cancelled before synthesis PLAN"
+                )
 
             if not example:
                 logging.warning(
@@ -1112,8 +1126,6 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
                         wiki_refine_from_plan,
                     )
 
-                    # PLAN — entity_type_filter and mention_count_threshold
-                    # are read from plan_cfg.
                     progress_cb(
                         msg=f"Synthesis PLAN for template {template_id} (kind={compile_kwd}) ..."
                     )
@@ -1124,12 +1136,16 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
                         kb_id=ctx.kb_id,
                         callback=progress_cb,
                     )
+                    if ctx.has_canceled_func(ctx.id):
+                        raise TaskCanceledException(
+                            f"Task {ctx.id} was cancelled after synthesis PLAN"
+                        )
+
                     if not plan or not plan.get("pages"):
                         progress_cb(
                             msg=f"Synthesis: no pages planned for template {template_id}."
                         )
                     else:
-                        # REFINE — example drives the generation prompt.
                         progress_cb(
                             msg=f"Synthesis REFINE for template {template_id} ({len(plan['pages'])} page(s)) ..."
                         )

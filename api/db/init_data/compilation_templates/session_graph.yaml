@@ -61,10 +61,6 @@ config:
   synthesis:
     enabled: true
     compile_kwd: "artifact_page"
-    plan:
-      entity_type_filter: []
-      mention_count_threshold: 1
-      top_n: 100
     example: |
       - Build a wiki article covering the entity's role in the conversations.
       - Include a summary paragraph and sections for key decisions and actions.
