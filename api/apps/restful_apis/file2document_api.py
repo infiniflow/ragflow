@@ -33,26 +33,28 @@ logger = logging.getLogger(__name__)
 
 
 def _convert_files(file_ids, kb_ids, user_id):
-    """Synchronous worker: delete old docs and insert new ones for the given file/kb pairs."""
-    for id in file_ids:
-        informs = File2DocumentService.get_by_file_id(id)
-        for inform in informs:
-            doc_id = inform.document_id
-            e, doc = DocumentService.get_by_id(doc_id)
-            if not e:
-                continue
-            tenant_id = DocumentService.get_tenant_id(doc_id)
-            if not tenant_id:
-                logging.warning("tenant_id not found for doc_id=%s, skipping remove_document", doc_id)
-                continue
-            DocumentService.remove_document(doc, tenant_id)
-        File2DocumentService.delete_by_file_id(id)
+    """Synchronous worker: add new docs for the given file/kb pairs while preserving existing links.
 
+    Previously this function replaced all existing links with the new ones, which caused
+    multi-select "link to knowledge base" to overwrite previous links. Now it only creates
+    documents for knowledge bases that are not already linked to the file, and leaves
+    existing links untouched.
+    """
+    for id in file_ids:
         e, file = FileService.get_by_id(id)
         if not e:
             continue
 
+        existing_links = {inform.document_id for inform in File2DocumentService.get_by_file_id(id)}
+        existing_kb_ids = set()
+        for doc_id in existing_links:
+            e, doc = DocumentService.get_by_id(doc_id)
+            if e and doc:
+                existing_kb_ids.add(doc.kb_id)
+
         for kb_id in kb_ids:
+            if kb_id in existing_kb_ids:
+                continue
             e, kb = KnowledgebaseService.get_by_id(kb_id)
             if not e:
                 continue
