@@ -1012,6 +1012,18 @@ def test_chat_audio_transcription_routes_unit(monkeypatch):
     res = _run(module.transcription.__wrapped__())
     assert "Unsupported audio format: .txt" in res["message"]
 
+    class _FailingUploadFile(_DummyUploadFile):
+        async def save(self, path):
+            self.saved_path = path
+            raise RuntimeError("save boom")
+
+    _set_request({"stream": "false"}, {"file": _FailingUploadFile("audio.wav")})
+    removed_paths = []
+    monkeypatch.setattr(module.os, "remove", lambda path: removed_paths.append(path))
+    with pytest.raises(RuntimeError, match="save boom"):
+        _run(module.transcription.__wrapped__())
+    assert removed_paths == ["/tmp/audio.wav"]
+
     _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
     removed_paths = []
     monkeypatch.setattr(module.os, "remove", lambda path: removed_paths.append(path))

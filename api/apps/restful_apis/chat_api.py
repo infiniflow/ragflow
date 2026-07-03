@@ -1061,13 +1061,18 @@ async def transcription():
 
     fd, temp_audio_path = tempfile.mkstemp(suffix=suffix)
     os.close(fd)
-    await uploaded.save(temp_audio_path)
 
     def cleanup_temp_audio_file():
         try:
             os.remove(temp_audio_path)
         except Exception as e:
             logging.error(f"Failed to remove temp audio file: {str(e)}")
+
+    try:
+        await uploaded.save(temp_audio_path)
+    except Exception:
+        cleanup_temp_audio_file()
+        raise
 
     try:
         default_asr_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.SPEECH2TEXT)
