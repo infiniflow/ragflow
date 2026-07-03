@@ -47,6 +47,11 @@ class _LenientModule(ModuleType):
         return lambda *_a, **_k: None
 
 
+class _Headers(dict):
+    def set(self, key, value):
+        self[key] = value
+
+
 def _stub(monkeypatch, name, **attrs):
     mod = _LenientModule(name)
     for key, value in attrs.items():
@@ -61,7 +66,7 @@ def _load_agent_api(monkeypatch, *, storage_get):
     async def _make_response(payload):
         if payload is None:
             raise TypeError("response value cannot be None")
-        return SimpleNamespace(payload=payload, headers={})
+        return SimpleNamespace(payload=payload, headers=_Headers())
 
     _stub(
         monkeypatch,

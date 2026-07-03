@@ -107,7 +107,7 @@ func statePost(ctx context.Context, out any) (any, error) {
 	return outMap, nil
 }
 
-// BuildWorkflow assembles a *graph.StateGraph from a Canvas DSL.
+// BuildWorkflow assembles a types.StateGraph from a Canvas DSL.
 //
 // Topology rules:
 //   - For every cpn_id in c.Components: add a node via sg.AddNodeWithOptions.

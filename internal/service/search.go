@@ -85,25 +85,27 @@ func (s *SearchService) ListSearches(userID string, keywords string, page, pageS
 	var err error
 
 	if len(ownerIDs) == 0 {
-		// Get tenant IDs by user ID (joined tenants)
-		tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
-		if err != nil {
-			return nil, err
-		}
-
-		// Use database pagination
-		searches, total, err = s.searchDAO.ListByTenantIDs(tenantIDs, userID, page, pageSize, orderby, desc, keywords)
+		searches, total, err = s.searchDAO.ListByTenantIDs(nil, userID, page, pageSize, orderby, desc, keywords)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		// Filter by owner IDs, manual pagination
+		ownerIDs, err = s.filterAccessibleSearchOwnerIDs(userID, ownerIDs)
+		if err != nil {
+			return nil, err
+		}
+		if len(ownerIDs) == 0 {
+			return &ListSearchAppsResponse{
+				SearchApps: []map[string]interface{}{},
+				Total:      0,
+			}, nil
+		}
+
 		searches, total, err = s.searchDAO.ListByOwnerIDs(ownerIDs, userID, orderby, desc, keywords)
 		if err != nil {
 			return nil, err
 		}
 
-		// Manual pagination
 		if page > 0 && pageSize > 0 {
 			start := (page - 1) * pageSize
 			end := start + pageSize
@@ -128,6 +130,39 @@ func (s *SearchService) ListSearches(userID string, keywords string, page, pageS
 		SearchApps: searchApps,
 		Total:      total,
 	}, nil
+}
+
+func (s *SearchService) filterAccessibleSearchOwnerIDs(userID string, ownerIDs []string) ([]string, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	allowed := map[string]struct{}{userID: {}}
+	for _, tenantID := range tenantIDs {
+		tenantID = strings.TrimSpace(tenantID)
+		if tenantID != "" {
+			allowed[tenantID] = struct{}{}
+		}
+	}
+
+	filtered := make([]string, 0, len(ownerIDs))
+	seen := make(map[string]struct{}, len(ownerIDs))
+	for _, ownerID := range ownerIDs {
+		ownerID = strings.TrimSpace(ownerID)
+		if ownerID == "" {
+			continue
+		}
+		if _, ok := allowed[ownerID]; !ok {
+			continue
+		}
+		if _, ok := seen[ownerID]; ok {
+			continue
+		}
+		seen[ownerID] = struct{}{}
+		filtered = append(filtered, ownerID)
+	}
+	return filtered, nil
 }
 
 // toSearchAppResponse converts search model to response format

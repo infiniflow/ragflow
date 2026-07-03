@@ -100,7 +100,9 @@ jobs:
             trap 'rm -f "$changed_files"' EXIT
             git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
               | while read -r file; do
-                  [[ -f "$file" ]] && printf '%s\0' "$file"
+                  if [[ -f "$file" ]]; then
+                    printf '%s\0' "$file"
+                  fi
                 done > "$changed_files"
             echo "Changed files to run lefthook on:"
             if [[ -s "$changed_files" ]]; then
