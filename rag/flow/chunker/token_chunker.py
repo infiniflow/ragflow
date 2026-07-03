@@ -292,6 +292,7 @@ def _split_chunk_docs_by_children(chunks, pattern):
 
     return docs
 
+
 class TokenChunker(ProcessBase):
     component_name = "TokenChunker"
 
@@ -316,11 +317,15 @@ class TokenChunker(ProcessBase):
                 self.set_output("chunks", [{"text": payload}] if payload.strip() else [])
                 self.callback(1, "Done.")
                 return
-            cks = _split_text_by_pattern(payload, delimiter_pattern) if delimiter_pattern else naive_merge(
-                payload,
-                self._param.chunk_token_size,
-                "",
-                overlapped_percent,
+            cks = (
+                _split_text_by_pattern(payload, delimiter_pattern)
+                if delimiter_pattern
+                else naive_merge(
+                    payload,
+                    self._param.chunk_token_size,
+                    "",
+                    overlapped_percent,
+                )
             )
             if custom_pattern:
                 docs = []

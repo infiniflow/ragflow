@@ -182,9 +182,9 @@ func TestChunkHandlerListChunksMapsAvailableFalse(t *testing.T) {
 			t.Fatalf("available_int = %v, want 0", req.AvailableInt)
 		}
 		return &service.ListChunksResponse{
-			Total: 0,
+			Total:  0,
 			Chunks: []map[string]interface{}{},
-			Doc: map[string]interface{}{"id": "doc-1"},
+			Doc:    map[string]interface{}{"id": "doc-1"},
 		}, nil
 	}
 

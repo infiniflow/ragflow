@@ -232,11 +232,7 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
             # Wrap code to call main() function
             # Matches self_managed provider behavior: call main(**arguments)
             args_json = json.dumps(arguments or {})
-            wrapped_code = (
-                build_python_wrapper(code, args_json)
-                if normalized_lang == "python"
-                else build_javascript_wrapper(code, args_json)
-            )
+            wrapped_code = build_python_wrapper(code, args_json) if normalized_lang == "python" else build_javascript_wrapper(code, args_json)
             logger.debug(f"Aliyun Code Interpreter: Wrapped code (first 200 chars): {wrapped_code[:200]}")
 
             start_time = time.time()

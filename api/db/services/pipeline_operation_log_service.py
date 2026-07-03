@@ -98,8 +98,8 @@ class PipelineOperationLogService(CommonService):
         if document_id != GRAPH_RAPTOR_FAKE_DOC_ID:
             referred_document_id = document_id
 
-        # no need to update document for graph rag, raptor mindmap task
-        if task_type not in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
+        # no need to update document for KB-level fan-out tasks
+        if task_type not in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP, PipelineTaskType.ARTIFACT, PipelineTaskType.SKILL]:
             ok, document = DocumentService.get_by_id(referred_document_id)
             if not ok:
                 logging.warning(f"Document for referred_document_id {referred_document_id} not found")
@@ -137,7 +137,7 @@ class PipelineOperationLogService(CommonService):
         if task_type not in VALID_PIPELINE_TASK_TYPES:
             raise ValueError(f"Invalid task type: {task_type}")
 
-        if task_type in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
+        if task_type in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP, PipelineTaskType.ARTIFACT, PipelineTaskType.SKILL]:
             # query task to get progress information from task
             ok, task = TaskService.get_by_id(task_id)
             if not ok:
@@ -165,6 +165,16 @@ class PipelineOperationLogService(CommonService):
                 KnowledgebaseService.update_by_id(
                     document.kb_id,
                     {"mindmap_task_finish_at": finish_at},
+                )
+            elif task_type == PipelineTaskType.ARTIFACT:
+                KnowledgebaseService.update_by_id(
+                    document.kb_id,
+                    {"artifact_task_finish_at": finish_at},
+                )
+            elif task_type == PipelineTaskType.SKILL:
+                KnowledgebaseService.update_by_id(
+                    document.kb_id,
+                    {"skill_task_finish_at": finish_at},
                 )
 
         log = dict(
