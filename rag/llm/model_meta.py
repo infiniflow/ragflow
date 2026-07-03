@@ -77,7 +77,6 @@ class VolcEngine(Base):
         serving_model = [model for model in raw_model_list["data"] if model.get("status", "") != "Shutdown"]
         res = []
         for model in serving_model:
-
             model_types = []
 
             if model.get("domain", "") == "Embedding":
@@ -109,13 +108,9 @@ class VolcEngine(Base):
             if model.get("token_limits", {}).get("max_reasoning_token_length", 0) > 0:
                 features.append("thinking")
 
-            res.append({
-                "name": model["id"],
-                "model_types": model_types,
-                "features": features,
-                "max_tokens": model.get("token_limits", {}).get("max_input_token_length", 8192),
-                "status": model.get("status")
-            })
+            res.append(
+                {"name": model["id"], "model_types": model_types, "features": features, "max_tokens": model.get("token_limits", {}).get("max_input_token_length", 8192), "status": model.get("status")}
+            )
         return res
 
 

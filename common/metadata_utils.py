@@ -23,21 +23,8 @@ import json_repair
 def convert_conditions(metadata_condition):
     if metadata_condition is None:
         metadata_condition = {}
-    op_mapping = {
-        "is": "=",
-        "not is": "≠",
-        ">=": "≥",
-        "<=": "≤",
-        "!=": "≠"
-    }
-    return [
-        {
-            "op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]),
-            "key": cond["name"],
-            "value": cond["value"]
-        }
-        for cond in metadata_condition.get("conditions", [])
-    ]
+    op_mapping = {"is": "=", "not is": "≠", ">=": "≥", "<=": "≤", "!=": "≠"}
+    return [{"op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]), "key": cond["name"], "value": cond["value"]} for cond in metadata_condition.get("conditions", [])]
 
 
 def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
@@ -53,30 +40,15 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
     def filter_out(v2docs, operator, value):
         ids = []
         for input, docids in v2docs.items():
-
             if operator in ["=", "≠", ">", "<", "≥", "≤"]:
                 # Check if input is in YYYY-MM-DD date format
                 input_str = str(input).strip()
                 value_str = str(value).strip()
 
                 # Strict date format detection: YYYY-MM-DD (must be 10 chars with correct format)
-                is_input_date = (
-                        len(input_str) == 10 and
-                        input_str[4] == '-' and
-                        input_str[7] == '-' and
-                        input_str[:4].isdigit() and
-                        input_str[5:7].isdigit() and
-                        input_str[8:10].isdigit()
-                )
+                is_input_date = len(input_str) == 10 and input_str[4] == "-" and input_str[7] == "-" and input_str[:4].isdigit() and input_str[5:7].isdigit() and input_str[8:10].isdigit()
 
-                is_value_date = (
-                        len(value_str) == 10 and
-                        value_str[4] == '-' and
-                        value_str[7] == '-' and
-                        value_str[:4].isdigit() and
-                        value_str[5:7].isdigit() and
-                        value_str[8:10].isdigit()
-                )
+                is_value_date = len(value_str) == 10 and value_str[4] == "-" and value_str[7] == "-" and value_str[:4].isdigit() and value_str[5:7].isdigit() and value_str[8:10].isdigit()
 
                 if is_value_date:
                     # Query value is in date format
@@ -110,23 +82,17 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
             matched = False
             try:
                 if operator == "contains":
-                    matched = str(input).find(value) >= 0 if not isinstance(input, list) else any(
-                        str(i).find(value) >= 0 for i in input)
+                    matched = str(input).find(value) >= 0 if not isinstance(input, list) else any(str(i).find(value) >= 0 for i in input)
                 elif operator == "not contains":
-                    matched = str(input).find(value) == -1 if not isinstance(input, list) else all(
-                        str(i).find(value) == -1 for i in input)
+                    matched = str(input).find(value) == -1 if not isinstance(input, list) else all(str(i).find(value) == -1 for i in input)
                 elif operator == "in":
                     matched = input in value if not isinstance(input, list) else all(i in value for i in input)
                 elif operator == "not in":
                     matched = input not in value if not isinstance(input, list) else all(i not in value for i in input)
                 elif operator == "start with":
-                    matched = str(input).lower().startswith(str(value).lower()) if not isinstance(input,
-                                                                                                  list) else "".join(
-                        [str(i).lower() for i in input]).startswith(str(value).lower())
+                    matched = str(input).lower().startswith(str(value).lower()) if not isinstance(input, list) else "".join([str(i).lower() for i in input]).startswith(str(value).lower())
                 elif operator == "end with":
-                    matched = str(input).lower().endswith(str(value).lower()) if not isinstance(input,
-                                                                                                list) else "".join(
-                        [str(i).lower() for i in input]).endswith(str(value).lower())
+                    matched = str(input).lower().endswith(str(value).lower()) if not isinstance(input, list) else "".join([str(i).lower() for i in input]).endswith(str(value).lower())
                 elif operator == "empty":
                     matched = not input
                 elif operator == "not empty":
@@ -173,14 +139,14 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
 
 
 async def apply_meta_data_filter(
-        meta_data_filter: dict | None,
-        metas: dict | None = None,
-        question: str = "",
-        chat_mdl: Any = None,
-        base_doc_ids: list[str] | None = None,
-        manual_value_resolver: Callable[[dict], dict] | None = None,
-        kb_ids: list[str] | None = None,
-        metas_loader: Callable[[], dict] | None = None,
+    meta_data_filter: dict | None,
+    metas: dict | None = None,
+    question: str = "",
+    chat_mdl: Any = None,
+    base_doc_ids: list[str] | None = None,
+    manual_value_resolver: Callable[[dict], dict] | None = None,
+    kb_ids: list[str] | None = None,
+    metas_loader: Callable[[], dict] | None = None,
 ) -> list[str] | None:
     """
     Apply metadata filtering rules and return the filtered doc_ids.
@@ -232,6 +198,7 @@ async def apply_meta_data_filter(
         if conditions and kb_ids:
             try:
                 from api.db.services.doc_metadata_service import DocMetadataService
+
                 doc_ids = DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
                 logging.debug(f"Doc ids filtered by metadata: {doc_ids}")
                 if doc_ids is not None:
@@ -285,9 +252,9 @@ async def apply_meta_data_filter(
 
 
 def _try_meta_pushdown(
-        kb_ids: list[str],
-        conditions: list[dict],
-        logic: str,
+    kb_ids: list[str],
+    conditions: list[dict],
+    logic: str,
 ) -> list[str] | None:
     """Attempt the ES push-down path; return ``None`` to fall back in-memory.
 
@@ -364,9 +331,7 @@ def metadata_schema(metadata: dict | list | None) -> Dict[str, Any]:
         if not key:
             continue
 
-        prop_schema = {
-            "description": item.get("description", "")
-        }
+        prop_schema = {"description": item.get("description", "")}
         if "enum" in item and item["enum"]:
             prop_schema["enum"] = item["enum"]
             prop_schema["type"] = "string"

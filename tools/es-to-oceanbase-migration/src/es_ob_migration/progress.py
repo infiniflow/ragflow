@@ -64,9 +64,7 @@ class ProgressManager:
         filename = f"{es_index}_to_{ob_table}.json"
         return self.progress_dir / filename
 
-    def load_progress(
-        self, es_index: str, ob_table: str
-    ) -> MigrationProgress | None:
+    def load_progress(self, es_index: str, ob_table: str) -> MigrationProgress | None:
         """
         Load progress from file.
 
@@ -86,9 +84,7 @@ class ProgressManager:
             with open(progress_file, "r") as f:
                 data = json.load(f)
             progress = MigrationProgress(**data)
-            logger.info(
-                f"Loaded progress: {progress.migrated_documents}/{progress.total_documents} documents"
-            )
+            logger.info(f"Loaded progress: {progress.migrated_documents}/{progress.total_documents} documents")
             return progress
         except Exception as e:
             logger.warning(f"Failed to load progress: {e}")
@@ -174,9 +170,7 @@ class ProgressManager:
         progress.status = "completed"
         progress.updated_at = datetime.utcnow().isoformat()
         self.save_progress(progress)
-        logger.info(
-            f"Migration completed: {progress.migrated_documents} documents"
-        )
+        logger.info(f"Migration completed: {progress.migrated_documents} documents")
 
     def mark_failed(self, progress: MigrationProgress, error: str):
         """Mark migration as failed."""
@@ -191,9 +185,7 @@ class ProgressManager:
         progress.status = "paused"
         progress.updated_at = datetime.utcnow().isoformat()
         self.save_progress(progress)
-        logger.info(
-            f"Migration paused at {progress.migrated_documents}/{progress.total_documents}"
-        )
+        logger.info(f"Migration paused at {progress.migrated_documents}/{progress.total_documents}")
 
     def can_resume(self, es_index: str, ob_table: str) -> bool:
         """Check if migration can be resumed."""

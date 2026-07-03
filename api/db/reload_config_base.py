@@ -18,8 +18,7 @@ class ReloadConfigBase:
     def get_all(cls):
         configs = {}
         for k, v in cls.__dict__.items():
-            if not callable(getattr(cls, k)) and not k.startswith(
-                    "__") and not k.startswith("_"):
+            if not callable(getattr(cls, k)) and not k.startswith("__") and not k.startswith("_"):
                 configs[k] = v
         return configs
 

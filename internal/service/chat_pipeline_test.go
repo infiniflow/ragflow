@@ -1317,10 +1317,10 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	if len(docAggs) != 2 {
 		t.Fatalf("docAggs len = %d, want 2", len(docAggs))
 	}
-	// Each chunk must carry kb_id from the single-KB dialog.
+	// Each chunk must carry dataset_id (remapped from kb_id by chunksFormat) from the single-KB dialog.
 	for i, cm := range chunks {
-		if cm["kb_id"] != "kb_a" {
-			t.Errorf("chunks[%d].kb_id = %v, want kb_a", i, cm["kb_id"])
+		if cm["dataset_id"] != "kb_a" {
+			t.Errorf("chunks[%d].dataset_id = %v, want kb_a", i, cm["dataset_id"])
 		}
 	}
 }

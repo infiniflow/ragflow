@@ -63,11 +63,11 @@ def clean_markdown_block(text):
     """
     # Remove opening ```Markdown tag with optional whitespace and newlines
     # Matches: optional whitespace + ```markdown + optional whitespace + optional newline
-    text = re.sub(r'^\s*```markdown\s*\n?', '', text)
+    text = re.sub(r"^\s*```markdown\s*\n?", "", text)
 
     # Remove closing ``` tag with optional whitespace and newlines
     # Matches: optional newline + optional whitespace + ``` + optional whitespace at end
-    text = re.sub(r'\n?\s*```\s*$', '', text)
+    text = re.sub(r"\n?\s*```\s*$", "", text)
 
     # Return text with surrounding whitespace removed
     return text.strip()

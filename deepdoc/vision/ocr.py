@@ -35,8 +35,9 @@ from .postprocess import build_post_process
 
 loaded_models = {}
 
+
 def transform(data, ops=None):
-    """ transform """
+    """transform"""
     if ops is None:
         ops = []
     for op in ops:
@@ -53,12 +54,10 @@ def create_operators(op_param_list, global_config=None):
     Args:
         params(list): a dict list, used to create some operators
     """
-    assert isinstance(
-        op_param_list, list), ('operator config should be a list')
+    assert isinstance(op_param_list, list), "operator config should be a list"
     ops = []
     for operator in op_param_list:
-        assert isinstance(operator,
-                          dict) and len(operator) == 1, "yaml format error"
+        assert isinstance(operator, dict) and len(operator) == 1, "yaml format error"
         op_name = list(operator)[0]
         param = {} if operator[op_name] is None else operator[op_name]
         if global_config is not None:
@@ -79,13 +78,13 @@ def load_model(model_dir, nm, device_id: int | None = None):
         return loaded_model
 
     if not os.path.exists(model_file_path):
-        raise ValueError("not find model file path {}".format(
-            model_file_path))
+        raise ValueError("not find model file path {}".format(model_file_path))
 
     def cuda_is_available():
         try:
             pip_install_torch()
             import torch
+
             target_id = 0 if device_id is None else device_id
             if torch.cuda.is_available() and torch.cuda.device_count() > target_id:
                 return True
@@ -108,27 +107,18 @@ def load_model(model_dir, nm, device_id: int | None = None):
         arena_strategy = os.environ.get("OCR_ARENA_EXTEND_STRATEGY", "kNextPowerOfTwo")
         provider_device_id = 0 if device_id is None else device_id
         cuda_provider_options = {
-            "device_id": provider_device_id, # Use specific GPU
+            "device_id": provider_device_id,  # Use specific GPU
             "gpu_mem_limit": max(gpu_mem_limit_mb, 0) * 1024 * 1024,
             "arena_extend_strategy": arena_strategy,  # gpu memory allocation strategy
         }
-        sess = ort.InferenceSession(
-            model_file_path,
-            options=options,
-            providers=['CUDAExecutionProvider'],
-            provider_options=[cuda_provider_options]
-            )
+        sess = ort.InferenceSession(model_file_path, options=options, providers=["CUDAExecutionProvider"], provider_options=[cuda_provider_options])
         # Explicit arena shrinkage for GPU to release VRAM back to the system after each run
         if os.environ.get("OCR_GPUMEM_ARENA_SHRINKAGE") == "1":
             run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", f"gpu:{provider_device_id}")
-            logging.info(
-                f"load_model {model_file_path} enabled GPU memory arena shrinkage on device {provider_device_id}")
+            logging.info(f"load_model {model_file_path} enabled GPU memory arena shrinkage on device {provider_device_id}")
         logging.info(f"load_model {model_file_path} uses GPU (device {provider_device_id}, gpu_mem_limit={cuda_provider_options['gpu_mem_limit']}, arena_strategy={arena_strategy})")
     else:
-        sess = ort.InferenceSession(
-            model_file_path,
-            options=options,
-            providers=['CPUExecutionProvider'])
+        sess = ort.InferenceSession(model_file_path, options=options, providers=["CPUExecutionProvider"])
         run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "cpu")
         logging.info(f"load_model {model_file_path} uses CPU")
     loaded_model = (sess, run_options)
@@ -140,13 +130,9 @@ class TextRecognizer:
     def __init__(self, model_dir, device_id: int | None = None):
         self.rec_image_shape = [int(v) for v in "3, 48, 320".split(",")]
         self.rec_batch_num = 16
-        postprocess_params = {
-            'name': 'CTCLabelDecode',
-            "character_dict_path": os.path.join(model_dir, "ocr.res"),
-            "use_space_char": True
-        }
+        postprocess_params = {"name": "CTCLabelDecode", "character_dict_path": os.path.join(model_dir, "ocr.res"), "use_space_char": True}
         self.postprocess_op = build_post_process(postprocess_params)
-        self.predictor, self.run_options = load_model(model_dir, 'rec', device_id)
+        self.predictor, self.run_options = load_model(model_dir, "rec", device_id)
         self.input_tensor = self.predictor.get_inputs()[0]
 
     def resize_norm_img(self, img, max_wh_ratio):
@@ -167,7 +153,7 @@ class TextRecognizer:
             resized_w = int(math.ceil(imgH * ratio))
 
         resized_image = cv2.resize(img, (resized_w, imgH))
-        resized_image = resized_image.astype('float32')
+        resized_image = resized_image.astype("float32")
         resized_image = resized_image.transpose((2, 0, 1)) / 255
         resized_image -= 0.5
         resized_image /= 0.5
@@ -179,9 +165,8 @@ class TextRecognizer:
 
         imgC, imgH, imgW = image_shape
         img = img[:, :, ::-1]  # bgr2rgb
-        resized_image = cv2.resize(
-            img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
-        resized_image = resized_image.astype('float32')
+        resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
+        resized_image = resized_image.astype("float32")
         resized_image = resized_image.transpose((2, 0, 1)) / 255
         return resized_image
 
@@ -203,7 +188,7 @@ class TextRecognizer:
 
         img_np = np.asarray(img_new)
         img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2GRAY)
-        img_black[:, 0:img_np.shape[1]] = img_np
+        img_black[:, 0 : img_np.shape[1]] = img_np
         img_black = img_black[:, :, np.newaxis]
 
         row, col, c = img_black.shape
@@ -216,49 +201,35 @@ class TextRecognizer:
         imgC, imgH, imgW = image_shape
         feature_dim = int((imgH / 8) * (imgW / 8))
 
-        encoder_word_pos = np.array(range(0, feature_dim)).reshape(
-            (feature_dim, 1)).astype('int64')
-        gsrm_word_pos = np.array(range(0, max_text_length)).reshape(
-            (max_text_length, 1)).astype('int64')
+        encoder_word_pos = np.array(range(0, feature_dim)).reshape((feature_dim, 1)).astype("int64")
+        gsrm_word_pos = np.array(range(0, max_text_length)).reshape((max_text_length, 1)).astype("int64")
 
         gsrm_attn_bias_data = np.ones((1, max_text_length, max_text_length))
-        gsrm_slf_attn_bias1 = np.triu(gsrm_attn_bias_data, 1).reshape(
-            [-1, 1, max_text_length, max_text_length])
-        gsrm_slf_attn_bias1 = np.tile(
-            gsrm_slf_attn_bias1,
-            [1, num_heads, 1, 1]).astype('float32') * [-1e9]
+        gsrm_slf_attn_bias1 = np.triu(gsrm_attn_bias_data, 1).reshape([-1, 1, max_text_length, max_text_length])
+        gsrm_slf_attn_bias1 = np.tile(gsrm_slf_attn_bias1, [1, num_heads, 1, 1]).astype("float32") * [-1e9]
 
-        gsrm_slf_attn_bias2 = np.tril(gsrm_attn_bias_data, -1).reshape(
-            [-1, 1, max_text_length, max_text_length])
-        gsrm_slf_attn_bias2 = np.tile(
-            gsrm_slf_attn_bias2,
-            [1, num_heads, 1, 1]).astype('float32') * [-1e9]
+        gsrm_slf_attn_bias2 = np.tril(gsrm_attn_bias_data, -1).reshape([-1, 1, max_text_length, max_text_length])
+        gsrm_slf_attn_bias2 = np.tile(gsrm_slf_attn_bias2, [1, num_heads, 1, 1]).astype("float32") * [-1e9]
 
         encoder_word_pos = encoder_word_pos[np.newaxis, :]
         gsrm_word_pos = gsrm_word_pos[np.newaxis, :]
 
-        return [
-            encoder_word_pos, gsrm_word_pos, gsrm_slf_attn_bias1,
-            gsrm_slf_attn_bias2
-        ]
+        return [encoder_word_pos, gsrm_word_pos, gsrm_slf_attn_bias1, gsrm_slf_attn_bias2]
 
     def process_image_srn(self, img, image_shape, num_heads, max_text_length):
         norm_img = self.resize_norm_img_srn(img, image_shape)
         norm_img = norm_img[np.newaxis, :]
 
-        [encoder_word_pos, gsrm_word_pos, gsrm_slf_attn_bias1, gsrm_slf_attn_bias2] = \
-            self.srn_other_inputs(image_shape, num_heads, max_text_length)
+        [encoder_word_pos, gsrm_word_pos, gsrm_slf_attn_bias1, gsrm_slf_attn_bias2] = self.srn_other_inputs(image_shape, num_heads, max_text_length)
 
         gsrm_slf_attn_bias1 = gsrm_slf_attn_bias1.astype(np.float32)
         gsrm_slf_attn_bias2 = gsrm_slf_attn_bias2.astype(np.float32)
         encoder_word_pos = encoder_word_pos.astype(np.int64)
         gsrm_word_pos = gsrm_word_pos.astype(np.int64)
 
-        return (norm_img, encoder_word_pos, gsrm_word_pos, gsrm_slf_attn_bias1,
-                gsrm_slf_attn_bias2)
+        return (norm_img, encoder_word_pos, gsrm_word_pos, gsrm_slf_attn_bias1, gsrm_slf_attn_bias2)
 
-    def resize_norm_img_sar(self, img, image_shape,
-                            width_downsample_ratio=0.25):
+    def resize_norm_img_sar(self, img, image_shape, width_downsample_ratio=0.25):
         imgC, imgH, imgW_min, imgW_max = image_shape
         h = img.shape[0]
         w = img.shape[1]
@@ -276,7 +247,7 @@ class TextRecognizer:
             valid_ratio = min(1.0, 1.0 * resize_w / imgW_max)
             resize_w = min(imgW_max, resize_w)
         resized_image = cv2.resize(img, (resize_w, imgH))
-        resized_image = resized_image.astype('float32')
+        resized_image = resized_image.astype("float32")
         # norm
         if image_shape[0] == 1:
             resized_image = resized_image / 255
@@ -312,9 +283,8 @@ class TextRecognizer:
     def resize_norm_img_svtr(self, img, image_shape):
 
         imgC, imgH, imgW = image_shape
-        resized_image = cv2.resize(
-            img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
-        resized_image = resized_image.astype('float32')
+        resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
+        resized_image = resized_image.astype("float32")
         resized_image = resized_image.transpose((2, 0, 1)) / 255
         resized_image -= 0.5
         resized_image /= 0.5
@@ -324,24 +294,21 @@ class TextRecognizer:
 
         imgC, imgH, imgW = image_shape
 
-        resized_image = cv2.resize(
-            img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
-        resized_image = resized_image.astype('float32')
-        resized_image = resized_image / 255.
+        resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
+        resized_image = resized_image.astype("float32")
+        resized_image = resized_image / 255.0
 
         mean = np.array([0.485, 0.456, 0.406])
         std = np.array([0.229, 0.224, 0.225])
-        resized_image = (
-            resized_image - mean[None, None, ...]) / std[None, None, ...]
+        resized_image = (resized_image - mean[None, None, ...]) / std[None, None, ...]
         resized_image = resized_image.transpose((2, 0, 1))
-        resized_image = resized_image.astype('float32')
+        resized_image = resized_image.astype("float32")
 
         return resized_image
 
     def norm_img_can(self, img, image_shape):
 
-        img = cv2.cvtColor(
-            img, cv2.COLOR_BGR2GRAY)  # CAN only predict gray scale image
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # CAN only predict gray scale image
 
         if self.rec_image_shape[0] == 1:
             h, w = img.shape
@@ -349,19 +316,17 @@ class TextRecognizer:
             if h < imgH or w < imgW:
                 padding_h = max(imgH - h, 0)
                 padding_w = max(imgW - w, 0)
-                img_padded = np.pad(img, ((0, padding_h), (0, padding_w)),
-                                    'constant',
-                                    constant_values=(255))
+                img_padded = np.pad(img, ((0, padding_h), (0, padding_w)), "constant", constant_values=(255))
                 img = img_padded
 
         img = np.expand_dims(img, 0) / 255.0  # h,w,c -> c,h,w
-        img = img.astype('float32')
+        img = img.astype("float32")
 
         return img
 
     def close(self):
         # close session and release manually
-        logging.info('Close text recognizer.')
+        logging.info("Close text recognizer.")
         if hasattr(self, "predictor"):
             del self.predictor
         gc.collect()
@@ -374,7 +339,7 @@ class TextRecognizer:
             width_list.append(img.shape[1] / float(img.shape[0]))
         # Sorting can speed up the recognition process
         indices = np.argsort(np.array(width_list))
-        rec_res = [['', 0.0]] * img_num
+        rec_res = [["", 0.0]] * img_num
         batch_num = self.rec_batch_num
         st = time.time()
 
@@ -389,8 +354,7 @@ class TextRecognizer:
                 wh_ratio = w * 1.0 / h
                 max_wh_ratio = max(max_wh_ratio, wh_ratio)
             for ino in range(beg_img_no, end_img_no):
-                norm_img = self.resize_norm_img(img_list[indices[ino]],
-                                                max_wh_ratio)
+                norm_img = self.resize_norm_img(img_list[indices[ino]], max_wh_ratio)
                 norm_img = norm_img[np.newaxis, :]
                 norm_img_batch.append(norm_img)
             norm_img_batch = np.concatenate(norm_img_batch)
@@ -419,41 +383,28 @@ class TextRecognizer:
 
 class TextDetector:
     def __init__(self, model_dir, device_id: int | None = None):
-        pre_process_list = [{
-            'DetResizeForTest': {
-                'limit_side_len': 960,
-                'limit_type': "max",
-            }
-        }, {
-            'NormalizeImage': {
-                'std': [0.229, 0.224, 0.225],
-                'mean': [0.485, 0.456, 0.406],
-                'scale': '1./255.',
-                'order': 'hwc'
-            }
-        }, {
-            'ToCHWImage': None
-        }, {
-            'KeepKeys': {
-                'keep_keys': ['image', 'shape']
-            }
-        }]
-        postprocess_params = {"name": "DBPostProcess", "thresh": 0.3, "box_thresh": 0.5, "max_candidates": 1000,
-                              "unclip_ratio": 1.5, "use_dilation": False, "score_mode": "fast", "box_type": "quad"}
+        pre_process_list = [
+            {
+                "DetResizeForTest": {
+                    "limit_side_len": 960,
+                    "limit_type": "max",
+                }
+            },
+            {"NormalizeImage": {"std": [0.229, 0.224, 0.225], "mean": [0.485, 0.456, 0.406], "scale": "1./255.", "order": "hwc"}},
+            {"ToCHWImage": None},
+            {"KeepKeys": {"keep_keys": ["image", "shape"]}},
+        ]
+        postprocess_params = {"name": "DBPostProcess", "thresh": 0.3, "box_thresh": 0.5, "max_candidates": 1000, "unclip_ratio": 1.5, "use_dilation": False, "score_mode": "fast", "box_type": "quad"}
 
         self.postprocess_op = build_post_process(postprocess_params)
-        self.predictor, self.run_options = load_model(model_dir, 'det', device_id)
+        self.predictor, self.run_options = load_model(model_dir, "det", device_id)
         self.input_tensor = self.predictor.get_inputs()[0]
 
         img_h, img_w = self.input_tensor.shape[2:]
         if isinstance(img_h, str) or isinstance(img_w, str):
             pass
         elif img_h is not None and img_w is not None and img_h > 0 and img_w > 0:
-            pre_process_list[0] = {
-                'DetResizeForTest': {
-                    'image_shape': [img_h, img_w]
-                }
-            }
+            pre_process_list[0] = {"DetResizeForTest": {"image_shape": [img_h, img_w]}}
         self.preprocess_op = create_operators(pre_process_list)
 
     def order_points_clockwise(self, pts):
@@ -508,7 +459,7 @@ class TextDetector:
 
     def __call__(self, img):
         ori_im = img.copy()
-        data = {'image': img}
+        data = {"image": img}
 
         st = time.time()
         data = transform(data, self.preprocess_op)
@@ -530,7 +481,7 @@ class TextDetector:
                 time.sleep(5)
 
         post_result = self.postprocess_op({"maps": outputs[0]}, shape_list)
-        dt_boxes = post_result[0]['points']
+        dt_boxes = post_result[0]["points"]
         dt_boxes = self.filter_tag_det_res(dt_boxes, ori_im.shape)
 
         return dt_boxes, time.time() - st
@@ -554,10 +505,8 @@ class OCR:
         """
         if not model_dir:
             try:
-                model_dir = os.path.join(
-                        get_project_base_directory(),
-                        "rag/res/deepdoc")
-                
+                model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
+
                 # Append muti-gpus task to the list
                 if settings.PARALLEL_DEVICES > 0:
                     self.text_detector = []
@@ -574,7 +523,7 @@ class OCR:
                     repo_id="InfiniFlow/deepdoc",
                     local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
                 )
-                
+
                 if settings.PARALLEL_DEVICES > 0:
                     self.text_detector = []
                     self.text_recognizer = []
@@ -600,23 +549,11 @@ class OCR:
         points[:, 1] = points[:, 1] - top
         """
         assert len(points) == 4, "shape of points must be 4*2"
-        img_crop_width = int(
-            max(
-                np.linalg.norm(points[0] - points[1]),
-                np.linalg.norm(points[2] - points[3])))
-        img_crop_height = int(
-            max(
-                np.linalg.norm(points[0] - points[3]),
-                np.linalg.norm(points[1] - points[2])))
-        pts_std = np.float32([[0, 0], [img_crop_width, 0],
-                              [img_crop_width, img_crop_height],
-                              [0, img_crop_height]])
+        img_crop_width = int(max(np.linalg.norm(points[0] - points[1]), np.linalg.norm(points[2] - points[3])))
+        img_crop_height = int(max(np.linalg.norm(points[0] - points[3]), np.linalg.norm(points[1] - points[2])))
+        pts_std = np.float32([[0, 0], [img_crop_width, 0], [img_crop_width, img_crop_height], [0, img_crop_height]])
         M = cv2.getPerspectiveTransform(points, pts_std)
-        dst_img = cv2.warpPerspective(
-            img,
-            M, (img_crop_width, img_crop_height),
-            borderMode=cv2.BORDER_REPLICATE,
-            flags=cv2.INTER_CUBIC)
+        dst_img = cv2.warpPerspective(img, M, (img_crop_width, img_crop_height), borderMode=cv2.BORDER_REPLICATE, flags=cv2.INTER_CUBIC)
         dst_img_height, dst_img_width = dst_img.shape[0:2]
         if dst_img_height * 1.0 / dst_img_width >= 1.5:
             # Try original orientation
@@ -658,8 +595,7 @@ class OCR:
 
         for i in range(num_boxes - 1):
             for j in range(i, -1, -1):
-                if abs(_boxes[j + 1][0][1] - _boxes[j][0][1]) < 10 and \
-                        (_boxes[j + 1][0][0] < _boxes[j][0][0]):
+                if abs(_boxes[j + 1][0][1] - _boxes[j][0][1]) < 10 and (_boxes[j + 1][0][0] < _boxes[j][0][0]):
                     tmp = _boxes[j]
                     _boxes[j] = _boxes[j + 1]
                     _boxes[j + 1] = tmp
@@ -679,8 +615,7 @@ class OCR:
         if dt_boxes is None:
             return None
 
-        return zip(self.sorted_boxes(dt_boxes), [
-                   ("", 0) for _ in range(len(dt_boxes))])
+        return zip(self.sorted_boxes(dt_boxes), [("", 0) for _ in range(len(dt_boxes))])
 
     def recognize(self, ori_im, box, device_id: int | None = None):
         if device_id is None:
@@ -706,8 +641,8 @@ class OCR:
             texts.append(text)
         return texts
 
-    def __call__(self, img, device_id = 0, cls=True):
-        time_dict = {'det': 0, 'rec': 0, 'cls': 0, 'all': 0}
+    def __call__(self, img, device_id=0, cls=True):
+        time_dict = {"det": 0, "rec": 0, "cls": 0, "all": 0}
         if device_id is None:
             device_id = 0
 
@@ -717,11 +652,11 @@ class OCR:
         start = time.time()
         ori_im = img.copy()
         dt_boxes, elapse = self.text_detector[device_id](img)
-        time_dict['det'] = elapse
+        time_dict["det"] = elapse
 
         if dt_boxes is None:
             end = time.time()
-            time_dict['all'] = end - start
+            time_dict["all"] = end - start
             return None, None, time_dict
 
         img_crop_list = []
@@ -735,7 +670,7 @@ class OCR:
 
         rec_res, elapse = self.text_recognizer[device_id](img_crop_list)
 
-        time_dict['rec'] = elapse
+        time_dict["rec"] = elapse
 
         filter_boxes, filter_rec_res = [], []
         for box, rec_result in zip(dt_boxes, rec_res):
@@ -744,7 +679,7 @@ class OCR:
                 filter_boxes.append(box)
                 filter_rec_res.append(rec_result)
         end = time.time()
-        time_dict['all'] = end - start
+        time_dict["all"] = end - start
 
         # for bno in range(len(img_crop_list)):
         #    print(f"{bno}, {rec_res[bno]}")
