@@ -132,7 +132,6 @@ def test_session_create_requires_auth_and_invalid_chat_contract():
         assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
 
 
-
 @pytest.mark.p2
 def test_session_create_validation_and_deleted_chat_contract(rest_client, create_chat):
     chat_id = create_chat("restful_session_create_contract")

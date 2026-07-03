@@ -446,10 +446,7 @@ def test_documents_upload_contract_matrix(rest_client, create_dataset, tmp_path)
     assert len(multi_payload["data"]) == 20, multi_payload
 
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [
-            executor.submit(_upload_files, rest_client, dataset_id, [create_txt_file(tmp_path / f"parallel_upload_{i}.txt")])
-            for i in range(20)
-        ]
+        futures = [executor.submit(_upload_files, rest_client, dataset_id, [create_txt_file(tmp_path / f"parallel_upload_{i}.txt")]) for i in range(20)]
     responses = list(as_completed(futures))
     assert len(responses) == 20, responses
     assert all(f.result().json()["code"] == 0 for f in futures)
@@ -1171,9 +1168,7 @@ def test_documents_delete_invalid_dataset_partial_duplicate_repeat_and_cross_dat
 
 @pytest.mark.p2
 def test_documents_delete_concurrent_and_bulk_contract(rest_client, create_dataset, tmp_path):
-    dataset_id, uploaded_docs = _seed_documents(
-        rest_client, create_dataset, tmp_path, count=60, timeout=120
-    )
+    dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=60, timeout=120)
     document_ids = [doc["id"] for doc in uploaded_docs]
 
     with ThreadPoolExecutor(max_workers=8) as executor:
@@ -1199,9 +1194,7 @@ def test_documents_delete_concurrent_and_bulk_contract(rest_client, create_datas
     assert list_after_payload["code"] == 0, list_after_payload
     assert list_after_payload["data"]["total"] == 0, list_after_payload
 
-    bulk_dataset_id, bulk_docs = _seed_documents(
-        rest_client, create_dataset, tmp_path, count=120, timeout=120
-    )
+    bulk_dataset_id, bulk_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=120, timeout=120)
     bulk_ids = [doc["id"] for doc in bulk_docs]
     bulk_delete_res = rest_client.delete(
         f"/datasets/{bulk_dataset_id}/documents",

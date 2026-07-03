@@ -245,11 +245,7 @@ class MarkdownElementExtractor:
         return merged
 
     def _protected_ranges(self, text):
-        return self._merge_ranges(
-            self._fenced_code_ranges(text)
-            + self._markdown_table_ranges(text)
-            + self._html_table_ranges(text)
-        )
+        return self._merge_ranges(self._fenced_code_ranges(text) + self._markdown_table_ranges(text) + self._html_table_ranges(text))
 
     def _append_delimited_section(self, sections, text, start, end, include_meta):
         part = text[start:end]
@@ -307,6 +303,7 @@ class MarkdownElementExtractor:
         if len(dels) > 0:
             text = "\n".join(self.lines)
             sections = self._extract_delimited_elements(text, dels, include_meta)
+
             # Attach lone header lines to the section that follows them so that
             # "## Title\n" never becomes an isolated chunk when the delimiter
             # splits at every newline.  A header is "lone" when it occupies a
@@ -354,11 +351,13 @@ class MarkdownElementExtractor:
                         if _is_attachable_body(body_content):
                             combined = "\n".join(header_parts) + "\n" + body_content
                             if include_meta:
-                                merged.append({
-                                    **sections[i],
-                                    "content": combined,
-                                    "end_line": sections[j]["end_line"],
-                                })
+                                merged.append(
+                                    {
+                                        **sections[i],
+                                        "content": combined,
+                                        "end_line": sections[j]["end_line"],
+                                    }
+                                )
                             else:
                                 merged.append(combined)
                             merged_header_count += len(header_parts)

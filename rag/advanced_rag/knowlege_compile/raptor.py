@@ -862,7 +862,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 random_state=random_state,
                 task_id=task_id,
             )
-            
+
             # Loop-termination guarantee. The outer ``while end - start > 1``
             # relies on each layer strictly shrinking the input count. If
             # the clusterer degenerates and returns one cluster per input,
@@ -878,10 +878,9 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             # that ``layers`` is monotonically shrinking.
             if n_clusters >= len(embeddings):
                 logging.warning(
-                    "RAPTOR clustering did not reduce input count "
-                    "(%d inputs → %d clusters); collapsing this layer "
-                    "into a single summary to prevent a non-terminating loop",
-                    len(embeddings), n_clusters,
+                    "RAPTOR clustering did not reduce input count (%d inputs → %d clusters); collapsing this layer into a single summary to prevent a non-terminating loop",
+                    len(embeddings),
+                    n_clusters,
                 )
                 n_clusters = 1
                 lbls = [0] * len(embeddings)

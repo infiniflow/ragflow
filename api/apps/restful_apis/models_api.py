@@ -188,9 +188,7 @@ async def set_default_models(tenant_id: str):
     model_type = data["model_type"]
 
     try:
-        success, msg = models_api_service.set_tenant_default_models(
-            tenant_id, model_provider, model_instance, model_name, model_type
-        )
+        success, msg = models_api_service.set_tenant_default_models(tenant_id, model_provider, model_instance, model_name, model_type)
         if success:
             logging.info(f"success: {success}, msg: {msg}")
             return get_result(message=msg)

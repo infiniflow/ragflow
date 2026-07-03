@@ -1114,15 +1114,11 @@ async def run_document_post_chunking_if_last(
         return False
 
     chunking_aborted = is_doc_chunking_aborted(task_doc_id)
-    remaining_chunking_tasks = (
-        0 if ctx.write_interceptor
-        else credit_doc_chunking_task(task_doc_id, task_id)
-    )
+    remaining_chunking_tasks = 0 if ctx.write_interceptor else credit_doc_chunking_task(task_doc_id, task_id)
     if remaining_chunking_tasks != 0:
         if chunking_aborted:
             logging.info(
-                "Chunking for doc %s was aborted before task %s reached post-processing; "
-                "skip document finalizers.",
+                "Chunking for doc %s was aborted before task %s reached post-processing; skip document finalizers.",
                 task_doc_id,
                 task_id,
             )

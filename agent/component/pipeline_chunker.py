@@ -131,10 +131,7 @@ class PipelineChunker(ComponentBase, ABC):
                 try:
                     return FileService.get_blob(created_by, file_id), filename
                 except Exception as e:
-                    logging.exception(
-                        f"[PipelineChunker] FileService.get_blob failed for "
-                        f"file_id={file_id} created_by={created_by} filename={filename}: {e}"
-                    )
+                    logging.exception(f"[PipelineChunker] FileService.get_blob failed for file_id={file_id} created_by={created_by} filename={filename}: {e}")
                     return None, None
         return None, None
 

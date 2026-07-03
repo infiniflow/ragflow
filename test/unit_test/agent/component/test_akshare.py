@@ -29,7 +29,7 @@ def _make_tool(top_n=10):
     tool.check_if_canceled = lambda *a, **k: False
     out = {}
     tool.set_output = lambda k, v: out.__setitem__(k, v)
-    tool.output = lambda k=None: (out.get(k) if k else out)
+    tool.output = lambda k=None: out.get(k) if k else out
     return tool, out
 
 
