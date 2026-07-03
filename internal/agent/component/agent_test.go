@@ -28,6 +28,7 @@ import (
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
 
+	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 )
 
@@ -66,6 +67,89 @@ func TestAgent_NoToolsReAct(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Errorf("runner called %d times, want 1", calls)
+	}
+}
+
+func TestAgent_ResolvesUserPromptFromCanvasState(t *testing.T) {
+	var gotPrompt string
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		gotPrompt = p.UserPrompt
+		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+	})
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["query"] = "what is marigold"
+	ctx := runtime.WithState(context.Background(), state)
+
+	c := NewAgentComponent(AgentParam{
+		ModelID:    "stub",
+		APIKey:     "test-key",
+		UserPrompt: "Question: {sys.query}",
+		MaxRounds:  1,
+	})
+	if _, err := c.Invoke(ctx, nil); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if gotPrompt != "Question: what is marigold" {
+		t.Fatalf("runner prompt = %q, want resolved sys.query", gotPrompt)
+	}
+}
+
+func TestAgent_UsesPromptsListForSysQuery(t *testing.T) {
+	var gotPrompt string
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		gotPrompt = p.UserPrompt
+		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+	})
+
+	cmp, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"api_key":     "test-key",
+		"sys_prompt":  "act as assistant",
+		"user_prompt": "This is the order you need to send to the agent.",
+		"prompts": []any{
+			map[string]any{"role": "user", "content": "{sys.query}"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["query"] = "用户真正的问题"
+	ctx := runtime.WithState(context.Background(), state)
+
+	if _, err := cmp.Invoke(ctx, nil); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if gotPrompt != "用户真正的问题" {
+		t.Fatalf("runner prompt = %q, want sys.query from prompts list", gotPrompt)
+	}
+}
+
+func TestAgent_FormatsRuntimePromptLikePython(t *testing.T) {
+	var gotPrompt string
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		gotPrompt = p.UserPrompt
+		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+	})
+
+	c := NewAgentComponent(AgentParam{
+		ModelID:   "stub",
+		APIKey:    "test-key",
+		MaxRounds: 1,
+	})
+	if _, err := c.Invoke(context.Background(), map[string]any{
+		"user_prompt": "write answer",
+		"reasoning":   "selected because it can answer",
+		"context":     "known facts",
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	want := "\nREASONING:\nselected because it can answer\n\nCONTEXT:\nknown facts\n\nQUERY:\nwrite answer\n"
+	if gotPrompt != want {
+		t.Fatalf("runner prompt = %q, want %q", gotPrompt, want)
 	}
 }
 
