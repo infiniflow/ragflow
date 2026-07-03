@@ -78,7 +78,21 @@ func splitRightAnchoredModelName(compositeName string) (modelName, instanceName,
 	case 3:
 		return parts[0], parts[1], parts[2]
 	case 2:
-		return parts[0], "default", parts[1]
+		// The 2-segment form "model@X" is ambiguous: X could be a provider
+		// suffix (only "Builtin" is recognised by the TEI / Builtin
+		// short-circuits that consume this helper) or part of the model
+		// name itself (e.g. a quantization tag like "q8_0" in
+		// "text-embedding-nomic-embed-text-v1.5@q8_0"). Treat the last
+		// token as a provider only when it actually is one; otherwise
+		// the whole string is the bare model name and the caller falls
+		// through to its non-short-circuit path. The TEI short-circuit's
+		// `modelName == teiModel` exact-match fast path already covers
+		// the bare-default case where the embedded '@' happens to match
+		// the TEI model identifier verbatim.
+		if parts[1] == "Builtin" {
+			return parts[0], "default", parts[1]
+		}
+		return compositeName, "", ""
 	case 1:
 		return parts[0], "", ""
 	}

@@ -319,6 +319,20 @@ func TestSplitRightAnchoredModelName(t *testing.T) {
 			wantProvider: "",
 		},
 		{
+			// Regression for the CodeRabbit "Major" comment on PR #16468:
+			// a 2-segment key whose '@' is part of the model name (not a
+			// provider separator) must stay bare. Without this branch the
+			// helper would return ("text-embedding-nomic-embed-text-v1.5",
+			// "default", "q8_0"), mis-classifying the quantization tag as a
+			// provider and missing the TEI fast path's `modelName == teiModel`
+			// match when TEI_MODEL is the full embedded string.
+			name:         "two parts bare default with embedded '@' stays bare",
+			composite:    "text-embedding-nomic-embed-text-v1.5@q8_0",
+			wantModel:    "text-embedding-nomic-embed-text-v1.5@q8_0",
+			wantInstance: "",
+			wantProvider: "",
+		},
+		{
 			name:         "embedded @ in modelName preserved (four parts)",
 			composite:    "text-embedding-nomic-embed-text-v1.5@q8_0@default@LM-Studio",
 			wantModel:    "text-embedding-nomic-embed-text-v1.5@q8_0",
