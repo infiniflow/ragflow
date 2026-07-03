@@ -696,3 +696,180 @@ func TestMergeCaptions_NeedsCaptionLayoutType(t *testing.T) {
 		}
 	}
 }
+
+func TestCleanupOrphanColumns(t *testing.T) {
+	// Test 1: Less than 4 rows - no cleanup
+	t.Run("less than 4 rows", func(t *testing.T) {
+		rows := [][]pdf.TSRCell{
+			{{Text: "a"}},
+			{{Text: "b"}},
+			{{Text: "c"}},
+		}
+		result := CleanupOrphanColumns(rows)
+		if len(result) != 3 {
+			t.Errorf("expected 3 rows, got %d", len(result))
+		}
+	})
+
+	// Test 2: 4 rows, no orphan columns
+	t.Run("4 rows no orphans", func(t *testing.T) {
+		rows := [][]pdf.TSRCell{
+			{{Text: "a"}, {Text: "b"}},
+			{{Text: "c"}, {Text: "d"}},
+			{{Text: "e"}, {Text: "f"}},
+			{{Text: "g"}, {Text: "h"}},
+		}
+		result := CleanupOrphanColumns(rows)
+		if len(result[0]) != 2 {
+			t.Errorf("expected 2 columns, got %d", len(result[0]))
+		}
+	})
+
+	// Test 3: 4 rows, one orphan column in the middle
+	t.Run("4 rows orphan column in middle kept", func(t *testing.T) {
+		rows := [][]pdf.TSRCell{
+			{{Text: "a", X0: 0, X1: 10}, {Text: ""}, {Text: "b", X0: 30, X1: 40}},
+			{{Text: "c", X0: 0, X1: 10}, {Text: ""}, {Text: "d", X0: 30, X1: 40}},
+			{{Text: "e", X0: 0, X1: 10}, {Text: "orphan", X0: 15, X1: 25}, {Text: "f", X0: 30, X1: 40}},
+			{{Text: "g", X0: 0, X1: 10}, {Text: ""}, {Text: "h", X0: 30, X1: 40}},
+		}
+		result := CleanupOrphanColumns(rows)
+		if len(result[0]) != 3 {
+			t.Errorf("expected 3 columns (kept because both sides have text), got %d", len(result[0]))
+		}
+	})
+}
+
+func TestCountNonEmptyCells(t *testing.T) {
+	rows := [][]pdf.TSRCell{
+		{{Text: "a"}, {Text: ""}},
+		{{Text: ""}, {Text: ""}},
+		{{Text: "b"}, {Text: "c"}},
+		{{Text: ""}, {Text: ""}},
+	}
+
+	count, rowIdx := countNonEmptyCells(rows, 0)
+	if count != 2 {
+		t.Errorf("expected 2 non-empty cells in column 0, got %d", count)
+	}
+	if rowIdx != 2 {
+		t.Errorf("expected last non-empty cell at row 2, got %d", rowIdx)
+	}
+
+	count, rowIdx = countNonEmptyCells(rows, 1)
+	if count != 1 {
+		t.Errorf("expected 1 non-empty cell in column 1, got %d", count)
+	}
+	if rowIdx != 2 {
+		t.Errorf("expected last non-empty cell at row 2, got %d", rowIdx)
+	}
+
+	count, rowIdx = countNonEmptyCells(rows, 999)
+	if count != 0 {
+		t.Errorf("expected 0 non-empty cells for invalid column, got %d", count)
+	}
+}
+
+func TestCheckAdjacentColumns(t *testing.T) {
+	rows := [][]pdf.TSRCell{
+		{{Text: "left"}, {Text: "orphan"}, {Text: "right"}},
+	}
+
+	hasLeft, hasRight := checkAdjacentColumns(rows, 1, 0)
+	if !hasLeft {
+		t.Error("expected left column to have text")
+	}
+	if !hasRight {
+		t.Error("expected right column to have text")
+	}
+
+	rows2 := [][]pdf.TSRCell{
+		{{Text: ""}, {Text: "orphan"}, {Text: ""}},
+	}
+	hasLeft, hasRight = checkAdjacentColumns(rows2, 1, 0)
+	if hasLeft {
+		t.Error("expected left column to be empty")
+	}
+	if hasRight {
+		t.Error("expected right column to be empty")
+	}
+
+	// Test edge cases
+	rows3 := [][]pdf.TSRCell{
+		{{Text: "only column"}},
+	}
+	hasLeft, hasRight = checkAdjacentColumns(rows3, 0, 0)
+	if !hasLeft { // j == 0 should count hasLeft as true
+		t.Error("expected hasLeft to be true when j == 0")
+	}
+	if !hasRight { // j+1 >= len should count hasRight as true
+		t.Error("expected hasRight to be true when j+1 >= len")
+	}
+}
+
+func TestCalculateMergeDistance(t *testing.T) {
+	rows := [][]pdf.TSRCell{
+		{{Text: "left", X0: 0, X1: 10}, {Text: "orphan", X0: 15, X1: 25}, {Text: "right", X0: 30, X1: 40}},
+	}
+
+	leftDist, rightDist := calculateMergeDistance(rows, 1, 0, 3, false, false)
+	if leftDist != 5 { // 15 - 10 = 5
+		t.Errorf("expected left distance 5, got %v", leftDist)
+	}
+	if rightDist != 5 { // 30 - 25 = 5
+		t.Errorf("expected right distance 5, got %v", rightDist)
+	}
+}
+
+func TestMergeColumnIntoLeft(t *testing.T) {
+	rows := [][]pdf.TSRCell{
+		{{Text: "a"}, {Text: "b"}},
+		{{Text: ""}, {Text: "d"}},
+		{{Text: "e"}, {Text: ""}},
+	}
+
+	mergeColumnIntoLeft(rows, 1)
+	if rows[0][0].Text != "a b" {
+		t.Errorf("expected 'a b', got '%s'", rows[0][0].Text)
+	}
+	if rows[1][0].Text != "d" {
+		t.Errorf("expected 'd', got '%s'", rows[1][0].Text)
+	}
+	if rows[2][0].Text != "e" {
+		t.Errorf("expected 'e', got '%s'", rows[2][0].Text)
+	}
+}
+
+func TestMergeColumnIntoRight(t *testing.T) {
+	rows := [][]pdf.TSRCell{
+		{{Text: "a"}, {Text: "b"}},
+		{{Text: ""}, {Text: "d"}},
+		{{Text: "e"}, {Text: ""}},
+	}
+
+	mergeColumnIntoRight(rows, 0)
+	if rows[0][1].Text != "a b" {
+		t.Errorf("expected 'a b' in right column, got '%s'", rows[0][1].Text)
+	}
+	if rows[1][1].Text != "d" {
+		t.Errorf("expected 'd' in right column, got '%s'", rows[1][1].Text)
+	}
+	if rows[2][1].Text != "e" {
+		t.Errorf("expected 'e' in right column, got '%s'", rows[2][1].Text)
+	}
+}
+
+func TestRemoveColumn(t *testing.T) {
+	rows := [][]pdf.TSRCell{
+		{{Text: "a"}, {Text: "b"}, {Text: "c"}},
+		{{Text: "d"}, {Text: "e"}, {Text: "f"}},
+	}
+
+	result := removeColumn(rows, 1)
+	if len(result[0]) != 2 {
+		t.Errorf("expected 2 columns after removal, got %d", len(result[0]))
+	}
+	if result[0][0].Text != "a" || result[0][1].Text != "c" {
+		t.Errorf("unexpected column content after removal")
+	}
+}

@@ -209,8 +209,8 @@ func minRectangleDistance(left1, right1, top1, bottom1, left2, right2, top2, bot
 
 // Orphan column/row cleanup (Python: construct_table lines 256-368)
 
-// cleanupOrphanColumns removes columns that have only a single non-empty cell
-// when there are ≥4 rows.  Matches Python's construct_table column cleanup.
+// CleanupOrphanColumns removes columns that have only a single non-empty cell
+// when there are ≥4 rows. Matches Python's construct_table column cleanup.
 func CleanupOrphanColumns(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
 	if len(rows) < 4 || len(rows) == 0 {
 		return rows
@@ -218,84 +218,120 @@ func CleanupOrphanColumns(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
 	nCols := len(rows[0])
 
 	j := 0
-colLoop:
 	for j < nCols {
-		e, ii := 0, 0
-		for i := range rows {
-			if j < len(rows[i]) && strings.TrimSpace(rows[i][j].Text) != "" {
-				e++
-				ii = i
-			}
-			if e > 1 {
-				j++
-				continue colLoop
-			}
-		}
-		// Column j has only one non-empty cell at row ii.
-		// Check if adjacent columns have text for this row.
-		f := (j > 0 && j-1 < len(rows[ii]) && strings.TrimSpace(rows[ii][j-1].Text) != "") || j == 0
-		ff := (j+1 < len(rows[ii]) && strings.TrimSpace(rows[ii][j+1].Text) != "") || j+1 >= len(rows[ii])
-		if f && ff {
-			// Both adjacent columns are ok for merging — but this means
-			// there's text on both sides, keep column.
+		// Step 1: Count non-empty cells in column
+		e, ii := countNonEmptyCells(rows, j)
+		if e > 1 {
 			j++
 			continue
 		}
 
-		// Determine which side to merge into.
-		left := 1e9
-		right := 1e9
-		if j > 0 && !f {
-			for i := range rows {
-				if j-1 < len(rows[i]) && strings.TrimSpace(rows[i][j-1].Text) != "" {
-					// Distance from orphan cell to left neighbor.
-					if d := rows[ii][j].X0 - rows[i][j-1].X1; d < left {
-						left = d
-					}
-				}
-			}
-		}
-		if j+1 < nCols && !ff {
-			for i := range rows {
-				if j+1 < len(rows[i]) && strings.TrimSpace(rows[i][j+1].Text) != "" {
-					if d := rows[i][j+1].X0 - rows[ii][j].X1; d < right {
-						right = d
-					}
-				}
-			}
+		// Step 2: Check adjacent columns
+		hasLeftText, hasRightText := checkAdjacentColumns(rows, j, ii)
+		if hasLeftText && hasRightText {
+			j++
+			continue
 		}
 
-		if left < right && j > 0 {
-			// Merge into left column.
-			for i := range rows {
-				if j-1 < len(rows[i]) && j < len(rows[i]) {
-					if rows[i][j-1].Text == "" {
-						rows[i][j-1].Text = rows[i][j].Text
-					} else if rows[i][j].Text != "" {
-						rows[i][j-1].Text += " " + rows[i][j].Text
-					}
-				}
-			}
+		// Step 3: Calculate merge distance
+		leftDist, rightDist := calculateMergeDistance(rows, j, ii, nCols, hasLeftText, hasRightText)
+
+		// Step 4: Merge the column
+		if leftDist < rightDist && j > 0 {
+			mergeColumnIntoLeft(rows, j)
 		} else if j+1 < nCols {
-			// Merge into right column.
-			for i := range rows {
-				if j < len(rows[i]) && j+1 < len(rows[i]) {
-					if rows[i][j+1].Text == "" {
-						rows[i][j+1].Text = rows[i][j].Text
-					} else if rows[i][j].Text != "" {
-						rows[i][j+1].Text = rows[i][j].Text + " " + rows[i][j+1].Text
-					}
-				}
-			}
+			mergeColumnIntoRight(rows, j)
 		}
-		// Remove column j.
-		for i := range rows {
-			if j < len(rows[i]) {
-				rows[i] = append(rows[i][:j], rows[i][j+1:]...)
-			}
-		}
+
+		// Step 5: Remove the column
+		rows = removeColumn(rows, j)
 		nCols--
 		// Don't increment j — the next column shifted into position j.
+	}
+	return rows
+}
+
+// countNonEmptyCells counts non-empty cells in a column and returns the count
+// and the index of the last non-empty row.
+func countNonEmptyCells(rows [][]pdf.TSRCell, col int) (count int, lastRow int) {
+	count = 0
+	lastRow = 0
+	for i := range rows {
+		if col < len(rows[i]) && strings.TrimSpace(rows[i][col].Text) != "" {
+			count++
+			lastRow = i
+		}
+	}
+	return count, lastRow
+}
+
+// checkAdjacentColumns checks if left and right adjacent columns have text in the given row.
+func checkAdjacentColumns(rows [][]pdf.TSRCell, col int, row int) (hasLeft bool, hasRight bool) {
+	hasLeft = (col > 0 && col-1 < len(rows[row]) && strings.TrimSpace(rows[row][col-1].Text) != "") || col == 0
+	hasRight = (col+1 < len(rows[row]) && strings.TrimSpace(rows[row][col+1].Text) != "") || col+1 >= len(rows[row])
+	return hasLeft, hasRight
+}
+
+// calculateMergeDistance calculates the minimum distance to merge into left or right column.
+func calculateMergeDistance(rows [][]pdf.TSRCell, col int, row int, nCols int, hasLeft bool, hasRight bool) (leftDist float64, rightDist float64) {
+	leftDist = 1e9
+	rightDist = 1e9
+
+	if col > 0 && !hasLeft {
+		for i := range rows {
+			if col-1 < len(rows[i]) && strings.TrimSpace(rows[i][col-1].Text) != "" {
+				if d := rows[row][col].X0 - rows[i][col-1].X1; d < leftDist {
+					leftDist = d
+				}
+			}
+		}
+	}
+
+	if col+1 < nCols && !hasRight {
+		for i := range rows {
+			if col+1 < len(rows[i]) && strings.TrimSpace(rows[i][col+1].Text) != "" {
+				if d := rows[i][col+1].X0 - rows[row][col].X1; d < rightDist {
+					rightDist = d
+				}
+			}
+		}
+	}
+
+	return leftDist, rightDist
+}
+
+// mergeColumnIntoLeft merges column j into column j-1.
+func mergeColumnIntoLeft(rows [][]pdf.TSRCell, j int) {
+	for i := range rows {
+		if j-1 < len(rows[i]) && j < len(rows[i]) {
+			if rows[i][j-1].Text == "" {
+				rows[i][j-1].Text = rows[i][j].Text
+			} else if rows[i][j].Text != "" {
+				rows[i][j-1].Text += " " + rows[i][j].Text
+			}
+		}
+	}
+}
+
+// mergeColumnIntoRight merges column j into column j+1.
+func mergeColumnIntoRight(rows [][]pdf.TSRCell, j int) {
+	for i := range rows {
+		if j < len(rows[i]) && j+1 < len(rows[i]) {
+			if rows[i][j+1].Text == "" {
+				rows[i][j+1].Text = rows[i][j].Text
+			} else if rows[i][j].Text != "" {
+				rows[i][j+1].Text = rows[i][j].Text + " " + rows[i][j+1].Text
+			}
+		}
+	}
+}
+
+// removeColumn removes column j from all rows.
+func removeColumn(rows [][]pdf.TSRCell, j int) [][]pdf.TSRCell {
+	for i := range rows {
+		if j < len(rows[i]) {
+			rows[i] = append(rows[i][:j], rows[i][j+1:]...)
+		}
 	}
 	return rows
 }
