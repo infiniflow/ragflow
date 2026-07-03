@@ -43,7 +43,7 @@ type forkJoinState struct {
 
 // ---- Helper: makeNodes creates N sequential nodes for a StateGraph ----
 
-func makeNodes(sg *graph.StateGraph, prefix string, n int) []string {
+func makeNodes(sg types.StateGraph, prefix string, n int) []string {
 	names := make([]string, n)
 	for i := 0; i < n; i++ {
 		idx := i
@@ -1139,7 +1139,7 @@ func TestGraph_100NodeChain(t *testing.T) {
 // TestGraph_50WayFanIn verifies 50 parallel branches merging via AllPredecessor.
 func TestGraph_50WayFanIn(t *testing.T) {
 	sg := graph.NewStateGraph(&dagState{})
-	sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+	sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 
 	branchCount := 50
 

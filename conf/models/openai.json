@@ -1,5 +1,6 @@
 {
   "name": "OpenAI",
+  "rank": 999,
   "url": {
     "default": "https://api.openai.com/v1"
   },

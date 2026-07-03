@@ -178,7 +178,7 @@ jobs:
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
             -v "${PWD}:/ragflow" \
-            -v "${PWD}/internal/cpp/resource:/usr/share/infinity/resource" \
+            -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
@@ -622,7 +622,7 @@ jobs:
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
             -v "${PWD}:/ragflow" \
-            -v "${PWD}/internal/cpp/resource:/usr/share/infinity/resource" \
+            -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
