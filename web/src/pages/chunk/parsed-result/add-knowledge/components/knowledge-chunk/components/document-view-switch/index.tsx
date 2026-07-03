@@ -1,9 +1,11 @@
 import DocumentPreview from '@/components/document-preview';
 import DocumentHeader from '@/components/document-preview/document-header';
 import { Segmented } from '@/components/ui/segmented';
-import Representation from '@/pages/chunk/representation';
+import Representation, {
+  type ClickableNode,
+} from '@/pages/chunk/representation';
 import { File, LayoutList } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IHighlight } from 'react-pdf-highlighter';
 
@@ -19,6 +21,7 @@ interface DocumentViewSwitchProps {
   highlights: IHighlight[];
   setWidthAndHeight: (width: number, height: number) => void;
   url: string;
+  onChunkIdsChange?: (chunkIds: string[]) => void;
 }
 
 export default function DocumentViewSwitch({
@@ -27,9 +30,17 @@ export default function DocumentViewSwitch({
   highlights,
   setWidthAndHeight,
   url,
+  onChunkIdsChange,
 }: DocumentViewSwitchProps) {
   const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<ViewMode>('preview');
+
+  const handleNodeClick = useCallback(
+    (node: ClickableNode) => {
+      onChunkIdsChange?.(node.source_chunk_ids ?? []);
+    },
+    [onChunkIdsChange],
+  );
 
   const options = [
     {
@@ -78,7 +89,7 @@ export default function DocumentViewSwitch({
             url={url}
           />
         ) : (
-          <Representation />
+          <Representation onNodeClick={handleNodeClick} />
         )}
       </div>
     </>

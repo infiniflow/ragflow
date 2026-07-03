@@ -40,13 +40,6 @@ export default function CompilationTemplates() {
     navigateToCompilationTemplate('create')();
   }, [navigateToCompilationTemplate]);
 
-  const handleEdit = useCallback(
-    (id: string) => {
-      navigateToCompilationTemplate(id)();
-    },
-    [navigateToCompilationTemplate],
-  );
-
   const handleDelete = useCallback(
     async (id: string) => {
       await deleteGroup(id);
@@ -92,7 +85,7 @@ export default function CompilationTemplates() {
                 <TemplateCard
                   key={item.id}
                   data={item}
-                  onEdit={handleEdit}
+                  onClick={navigateToCompilationTemplate(item.id)}
                   onDelete={handleDelete}
                 />
               ))}

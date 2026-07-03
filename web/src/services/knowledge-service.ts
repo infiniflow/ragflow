@@ -146,6 +146,7 @@ const chunkService = {
         page_size: params.page_size || params.size,
         keywords: params.keywords,
         available: getAvailableParam(params.available_int),
+        chunk_ids: params.chunk_ids,
       },
     });
 

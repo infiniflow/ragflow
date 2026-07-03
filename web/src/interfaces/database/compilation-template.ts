@@ -60,6 +60,7 @@ export interface ICompilationTemplateGroup {
   name: string;
   description?: string;
   scope?: string;
+  avatar?: string;
   create_time?: number;
   update_time?: number;
   templates: ICompilationTemplate[];

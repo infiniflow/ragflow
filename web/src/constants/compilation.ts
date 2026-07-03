@@ -7,3 +7,8 @@ export const enum CompilationTemplateKind {
   Empty = 'empty',
   MindMap = 'mind_map',
 }
+
+export const enum CompilationTemplateScope {
+  File = 'file',
+  Dataset = 'dataset',
+}

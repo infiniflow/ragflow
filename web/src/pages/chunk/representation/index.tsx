@@ -1,13 +1,20 @@
 import { Button } from '@/components/ui/button';
 import { useFetchDocumentStructureGraph } from '@/hooks/use-document-request';
 import { Search } from 'lucide-react';
-import { useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RepresentationRenderer } from './components/representation-renderer';
+import {
+  type ClickableNode,
+  RepresentationRenderer,
+} from './components/representation-renderer';
 import { RepresentationSelect } from './components/representation-select';
 import { useSelectedTemplate } from './hooks/use-selected-template';
 
-export default function Representation() {
+interface RepresentationProps {
+  onNodeClick?: (node: ClickableNode) => void;
+}
+
+function Representation({ onNodeClick }: RepresentationProps) {
   const { t } = useTranslation();
   const { data, loading } = useFetchDocumentStructureGraph();
   const templates = data?.templates ?? [];
@@ -17,6 +24,14 @@ export default function Representation() {
   const handleSearch = useCallback(() => {
     // TODO: implement search or refetch
   }, []);
+
+  const handleNodeClick = useCallback(
+    (node: ClickableNode) => {
+      if (!node.source_chunk_ids?.length) return;
+      onNodeClick?.(node);
+    },
+    [onNodeClick],
+  );
 
   return (
     <section className="p-5 rounded-2xl h-full flex flex-col">
@@ -50,8 +65,15 @@ export default function Representation() {
         </div>
       )}
       {!loading && templates.length > 0 && (
-        <RepresentationRenderer template={selectedTemplate} />
+        <RepresentationRenderer
+          template={selectedTemplate}
+          onNodeClick={handleNodeClick}
+        />
       )}
     </section>
   );
 }
+
+export default memo(Representation);
+
+export type { ClickableNode };

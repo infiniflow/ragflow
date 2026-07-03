@@ -1637,6 +1637,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         artifacts: 'Artifacts',
         timeline: 'Timeline',
         page_index: 'Page index',
+        tree: '树',
+        mind_map: '思维导图',
         empty: '空',
       },
     },

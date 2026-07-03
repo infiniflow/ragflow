@@ -37,7 +37,8 @@ import {
 import { LucideArrowBigLeft } from 'lucide-react';
 import styles from './index.module.less';
 
-const Chunk = () => {
+function Chunk() {
+  const [filterChunkIds, setFilterChunkIds] = useState<string[]>([]);
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   const { removeChunk } = useDeleteChunkByIds();
   const {
@@ -49,7 +50,7 @@ const Chunk = () => {
     available,
     handleSetAvailable,
     dataUpdatedAt,
-  } = useFetchNextChunkList();
+  } = useFetchNextChunkList(true, { chunkIds: filterChunkIds });
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
   const isPdf = documentInfo?.type === 'pdf';
 
@@ -193,6 +194,7 @@ const Chunk = () => {
               highlights={highlights}
               setWidthAndHeight={setWidthAndHeight}
               url={fileUrl}
+              onChunkIdsChange={setFilterChunkIds}
             />
           </article>
 
@@ -288,6 +290,6 @@ const Chunk = () => {
       )}
     </main>
   );
-};
+}
 
 export default Chunk;

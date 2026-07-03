@@ -10,6 +10,12 @@ import {
 } from '@/interfaces/database/document-structure';
 import { type TreeData } from '@antv/g6/lib/types';
 
+declare module '@/components/ui/tree-view' {
+  interface TreeDataItem {
+    source_chunk_ids?: string[];
+  }
+}
+
 function normalizeEntity(entity: IStructureGraphEntity) {
   const id = entity.id ?? entity.name ?? '';
   const name = entity.name ?? entity.id ?? '';
@@ -34,6 +40,7 @@ function buildTreeDataItems(
       {
         id: entity.id,
         name: entity.name,
+        source_chunk_ids: entity.source_chunk_ids,
       },
     ]),
   );
@@ -105,7 +112,7 @@ export function adaptKnowledgeGraphToForceGraph(
 function treeDataItemToG6TreeData(item: TreeDataItem): TreeData {
   const node: TreeData = {
     id: item.id,
-    // G6 TreeData uses `children` array
+    source_chunk_ids: item.source_chunk_ids,
   };
 
   if (item.children && item.children.length > 0) {
