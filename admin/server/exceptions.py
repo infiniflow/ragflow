@@ -4,13 +4,16 @@ class AdminException(Exception):
         self.code = code
         self.message = message
 
+
 class UserNotFoundError(AdminException):
     def __init__(self, username):
         super().__init__(f"User '{username}' not found", 404)
 
+
 class UserAlreadyExistsError(AdminException):
     def __init__(self, username):
         super().__init__(f"User '{username}' already exists", 409)
+
 
 class CannotDeleteAdminError(AdminException):
     def __init__(self):

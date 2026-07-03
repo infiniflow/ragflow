@@ -61,7 +61,7 @@ class TestDataflowServiceRunDataflow:
         mock_pipeline.run = AsyncMock(return_value={})
         mock_pipeline_class.return_value = mock_pipeline
 
-        with patch.object(DataflowService, '_record_pipeline_log'):
+        with patch.object(DataflowService, "_record_pipeline_log"):
             service = DataflowService(ctx=task_context)
             await service.run_dataflow()
 
@@ -86,13 +86,13 @@ class TestDataflowServiceRunDataflow:
         mock_pipeline.run = AsyncMock(return_value=data)
         mock_pipeline_class.return_value = mock_pipeline
 
-        with patch.object(DataflowService, '_embed_chunks', new_callable=AsyncMock,
-                          return_value=(data[output_key], 5)), \
-             patch.object(DataflowService, '_insert_chunks', new_callable=AsyncMock, return_value=True), \
-             patch.object(DataflowService, '_update_document_metadata'), \
-             patch.object(DataflowService, '_record_pipeline_log'), \
-             patch("api.db.services.document_service.DocumentService.increment_chunk_num"):
-
+        with (
+            patch.object(DataflowService, "_embed_chunks", new_callable=AsyncMock, return_value=(data[output_key], 5)),
+            patch.object(DataflowService, "_insert_chunks", new_callable=AsyncMock, return_value=True),
+            patch.object(DataflowService, "_update_document_metadata"),
+            patch.object(DataflowService, "_record_pipeline_log"),
+            patch("api.db.services.document_service.DocumentService.increment_chunk_num"),
+        ):
             service = DataflowService(ctx=task_context)
             await service.run_dataflow()
             DataflowService._insert_chunks.assert_called_once()
@@ -118,8 +118,7 @@ class TestDataflowServiceRunDataflow:
         mock_pipeline.run = AsyncMock(return_value=chunks)
         mock_pipeline_class.return_value = mock_pipeline
 
-        with patch.object(DataflowService, '_embed_chunks', new_callable=AsyncMock, return_value=(None, 0)), \
-             patch.object(DataflowService, '_record_pipeline_log'):
+        with patch.object(DataflowService, "_embed_chunks", new_callable=AsyncMock, return_value=(None, 0)), patch.object(DataflowService, "_record_pipeline_log"):
             service = DataflowService(ctx=task_context)
             await service.run_dataflow()
             service._record_pipeline_log.assert_called()
@@ -152,12 +151,13 @@ class TestDataflowServiceRunDataflow:
         billing_hook.on_pipeline_success = AsyncMock()
         billing_hook.on_pipeline_error = AsyncMock()
 
-        with patch.object(DataflowService, '_embed_chunks', new_callable=AsyncMock, return_value=(chunks["chunks"], 1)), \
-             patch.object(DataflowService, '_insert_chunks', new_callable=AsyncMock, return_value=True), \
-             patch.object(DataflowService, '_update_document_metadata'), \
-             patch.object(DataflowService, '_record_pipeline_log'), \
-             patch("api.db.services.document_service.DocumentService.increment_chunk_num"):
-
+        with (
+            patch.object(DataflowService, "_embed_chunks", new_callable=AsyncMock, return_value=(chunks["chunks"], 1)),
+            patch.object(DataflowService, "_insert_chunks", new_callable=AsyncMock, return_value=True),
+            patch.object(DataflowService, "_update_document_metadata"),
+            patch.object(DataflowService, "_record_pipeline_log"),
+            patch("api.db.services.document_service.DocumentService.increment_chunk_num"),
+        ):
             service = DataflowService(ctx=task_context, billing_hook=billing_hook)
             await service.run_dataflow()
             billing_hook.on_pipeline_success.assert_called_once()

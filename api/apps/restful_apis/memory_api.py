@@ -35,12 +35,7 @@ async def create_memory():
     req = await get_request_json()
     t_parsed = time.perf_counter() if timing_enabled else None
     try:
-        memory_info = {
-            "name": req["name"],
-            "memory_type": req["memory_type"],
-            "embd_id": req["embd_id"],
-            "llm_id": req["llm_id"]
-        }
+        memory_info = {"name": req["name"], "memory_type": req["memory_type"], "embd_id": req["embd_id"], "llm_id": req["llm_id"]}
         success, res = await memory_api_service.create_memory(memory_info)
         if timing_enabled:
             logging.info(
@@ -84,10 +79,26 @@ async def create_memory():
 @login_required
 async def update_memory(memory_id):
     req = await get_request_json()
-    new_settings = {k: req[k] for k in [
-        "name", "permissions", "llm_id", "embd_id", "memory_type", "memory_size", "forgetting_policy", "temperature",
-        "avatar", "description", "system_prompt", "user_prompt", "tenant_llm_id", "tenant_embd_id"
-    ] if k in req}
+    new_settings = {
+        k: req[k]
+        for k in [
+            "name",
+            "permissions",
+            "llm_id",
+            "embd_id",
+            "memory_type",
+            "memory_size",
+            "forgetting_policy",
+            "temperature",
+            "avatar",
+            "description",
+            "system_prompt",
+            "user_prompt",
+            "tenant_llm_id",
+            "tenant_embd_id",
+        ]
+        if k in req
+    }
     try:
         success, res = await memory_api_service.update_memory(memory_id, new_settings)
         if success:
@@ -122,9 +133,7 @@ async def delete_memory(memory_id):
 @manager.route("/memories", methods=["GET"])  # noqa: F821
 @login_required
 async def list_memory():
-    filter_params = {
-        k: request.args.get(k) for k in ["memory_type", "tenant_id", "owner_ids", "storage_type"] if k in request.args
-    }
+    filter_params = {k: request.args.get(k) for k in ["memory_type", "tenant_id", "owner_ids", "storage_type"] if k in request.args}
     keywords = request.args.get("keywords")
     page = int(request.args.get("page", 1))
     page_size = validate_rest_api_page_size(int(request.args.get("page_size", 50)))
@@ -155,16 +164,14 @@ async def get_memory_config(memory_id):
 async def get_memory_messages(memory_id):
     args = request.args
     agent_ids = args.getlist("agent_id")
-    if len(agent_ids) == 1 and ',' in agent_ids[0]:
-        agent_ids = agent_ids[0].split(',')
+    if len(agent_ids) == 1 and "," in agent_ids[0]:
+        agent_ids = agent_ids[0].split(",")
     keywords = args.get("keywords", "")
     keywords = keywords.strip()
     page = int(args.get("page", 1))
     page_size = validate_rest_api_page_size(int(args.get("page_size", 50)))
     try:
-        res = await memory_api_service.get_memory_messages(
-            memory_id, agent_ids, keywords, page, page_size
-        )
+        res = await memory_api_service.get_memory_messages(memory_id, agent_ids, keywords, page, page_size)
         return get_json_result(message=True, data=res)
     except NotFoundException as not_found_exception:
         logging.error(not_found_exception)
@@ -174,7 +181,7 @@ async def get_memory_messages(memory_id):
         return get_json_result(code=RetCode.SERVER_ERROR, message="Internal server error")
 
 
-@manager.route("/messages", methods=["POST"]) # noqa: F821
+@manager.route("/messages", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("memory_id", "agent_id", "session_id", "user_input", "agent_response")
 async def add_message():
@@ -206,7 +213,7 @@ async def add_message():
     return get_json_result(message="Some messages failed to add. Detail:" + msg, code=RetCode.SERVER_ERROR)
 
 
-@manager.route("/messages/<memory_id>:<message_id>", methods=["DELETE"]) # noqa: F821
+@manager.route("/messages/<memory_id>:<message_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 async def forget_message(memory_id: str, message_id: int):
     try:
@@ -220,7 +227,7 @@ async def forget_message(memory_id: str, message_id: int):
         return get_json_result(code=RetCode.SERVER_ERROR, message="Internal server error")
 
 
-@manager.route("/messages/<memory_id>:<message_id>", methods=["PUT"]) # noqa: F821
+@manager.route("/messages/<memory_id>:<message_id>", methods=["PUT"])  # noqa: F821
 @login_required
 @validate_request("status")
 async def update_message(memory_id: str, message_id: int):
@@ -243,13 +250,13 @@ async def update_message(memory_id: str, message_id: int):
         return get_json_result(code=RetCode.SERVER_ERROR, message="Internal server error")
 
 
-@manager.route("/messages/search", methods=["GET"]) # noqa: F821
+@manager.route("/messages/search", methods=["GET"])  # noqa: F821
 @login_required
 async def search_message():
     args = request.args
     memory_ids = args.getlist("memory_id")
-    if len(memory_ids) == 1 and ',' in memory_ids[0]:
-        memory_ids = memory_ids[0].split(',')
+    if len(memory_ids) == 1 and "," in memory_ids[0]:
+        memory_ids = memory_ids[0].split(",")
     query = args.get("query")
     similarity_threshold = float(args.get("similarity_threshold", 0.2))
     keywords_similarity_weight = float(args.get("keywords_similarity_weight", 0.7))
@@ -258,28 +265,19 @@ async def search_message():
     session_id = args.get("session_id", "")
     user_id = args.get("user_id", "")
 
-    filter_dict = {
-        "memory_id": memory_ids,
-        "agent_id": agent_id,
-        "session_id": session_id,
-        "user_id": user_id
-    }
-    params = {
-        "query": query,
-        "similarity_threshold": similarity_threshold,
-        "keywords_similarity_weight": keywords_similarity_weight,
-        "top_n": top_n
-    }
+    filter_dict = {"memory_id": memory_ids, "agent_id": agent_id, "session_id": session_id, "user_id": user_id}
+    params = {"query": query, "similarity_threshold": similarity_threshold, "keywords_similarity_weight": keywords_similarity_weight, "top_n": top_n}
     res = await memory_api_service.search_message(filter_dict, params)
     return get_json_result(message=True, data=res)
 
-@manager.route("/messages", methods=["GET"]) # noqa: F821
+
+@manager.route("/messages", methods=["GET"])  # noqa: F821
 @login_required
 async def get_messages():
     args = request.args
     memory_ids = args.getlist("memory_id")
-    if len(memory_ids) == 1 and ',' in memory_ids[0]:
-        memory_ids = memory_ids[0].split(',')
+    if len(memory_ids) == 1 and "," in memory_ids[0]:
+        memory_ids = memory_ids[0].split(",")
     agent_id = args.get("agent_id", "")
     session_id = args.get("session_id", "")
     limit = int(args.get("limit", 10))
@@ -293,7 +291,7 @@ async def get_messages():
         return get_json_result(code=RetCode.SERVER_ERROR, message="Internal server error")
 
 
-@manager.route("/messages/<memory_id>:<message_id>/content", methods=["GET"]) # noqa: F821
+@manager.route("/messages/<memory_id>:<message_id>/content", methods=["GET"])  # noqa: F821
 @login_required
 async def get_message_content(memory_id: str, message_id: int):
     try:

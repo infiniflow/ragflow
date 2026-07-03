@@ -38,6 +38,7 @@ class _DummyManager:
     def route(self, *_args, **_kwargs):
         def decorator(func):
             return func
+
         return decorator
 
 
@@ -55,7 +56,7 @@ _request_payload: list = [{}]
 # FileCommitService (which uses DB.atomic(), .select(), .where(), etc.)
 # works against real SQL.
 
-sqlite_db = SqliteDatabase(':memory:')
+sqlite_db = SqliteDatabase(":memory:")
 
 
 class BaseTestModel(Model):
@@ -141,6 +142,7 @@ def _clear_db():
 
 # ── Module loader ─────────────────────────────────────────────────────────
 
+
 def _load_module(monkeypatch):
     """Load file_commit_api.py with SQLite in-memory DB and mocked HTTP layer."""
     repo_root = Path(__file__).resolve().parents[3]
@@ -184,12 +186,11 @@ def _load_module(monkeypatch):
                 payload = await get_request_json()
                 missing = [k for k in required_keys if k not in payload]
                 if missing:
-                    return get_json_result(
-                        code=101, data=None,
-                        message="required argument are missing: " + ", ".join(missing)
-                    )
+                    return get_json_result(code=101, data=None, message="required argument are missing: " + ", ".join(missing))
                 return await func(*args, **kwargs)
+
             return _wrapper
+
         return _decorator
 
     api_utils_mod.get_json_result = get_json_result
@@ -201,6 +202,7 @@ def _load_module(monkeypatch):
 
     # Stub: common.misc_utils
     import uuid
+
     misc_utils_mod = ModuleType("common.misc_utils")
     misc_utils_mod.get_uuid = lambda: uuid.uuid1().hex
     monkeypatch.setitem(sys.modules, "common.misc_utils", misc_utils_mod)
@@ -235,6 +237,7 @@ def _load_module(monkeypatch):
         def connection_context():
             def dec(func):
                 return func
+
             return dec
 
         @staticmethod
@@ -242,8 +245,10 @@ def _load_module(monkeypatch):
             class Ctx:
                 def __enter__(self2):
                     return self2
+
                 def __exit__(self2, *args):
                     pass
+
             return Ctx()
 
     db_models_mod.DB = _DB
@@ -256,9 +261,11 @@ def _load_module(monkeypatch):
 
     class _StubFileService:
         model = FileTestModel  # class attribute, not staticmethod — code accesses FileService.model.update(...)
+
         @staticmethod
         def update_by_id(pid, data):
             return FileTestModel.update(data).where(FileTestModel.id == pid).execute()
+
         @staticmethod
         def get_by_id(pid):
             try:
@@ -266,6 +273,7 @@ def _load_module(monkeypatch):
                 return True, obj
             except Exception:
                 return False, None
+
         @staticmethod
         def get_or_none(**kwargs):
             try:
@@ -275,6 +283,7 @@ def _load_module(monkeypatch):
 
     class CommonServiceBase:
         model = None
+
         @classmethod
         def get_by_id(cls, pid):
             try:
@@ -284,6 +293,7 @@ def _load_module(monkeypatch):
             except Exception:
                 pass
             return False, None
+
         @classmethod
         def query(cls, cols=None, reverse=None, order_by=None, **kwargs):
             q = cls.model.select()
@@ -291,9 +301,11 @@ def _load_module(monkeypatch):
                 if f_v is not None and hasattr(cls.model, f_n):
                     q = q.where(getattr(cls.model, f_n) == f_v)
             return q
+
         @classmethod
         def update_by_id(cls, pid, data):
             return cls.model.update(data).where(cls.model.id == pid).execute()
+
         @classmethod
         def filter_update(cls, filters, update_data):
             return cls.model.update(update_data).where(*filters).execute()
@@ -306,11 +318,11 @@ def _load_module(monkeypatch):
     # Stub: api.db with real filesystem path so sub-packages can be discovered.
     db_pkg = ModuleType("api.db")
     db_pkg.__path__ = [str(repo_root / "api" / "db")]
-    db_pkg.UserTenantRole = type('UserTenantRole', (), {k: k for k in ('OWNER','ADMIN','NORMAL','INVITE')})
-    db_pkg.TenantPermission = type('TenantPermission', (), {'ME': 'me', 'TEAM': 'team'})
-    db_pkg.FileType = type('FileType', (), {'FOLDER': 'folder', 'DOC': 'doc', 'VISUAL': 'visual', 'AURAL': 'aural', 'VIRTUAL': 'virtual', 'PDF': 'pdf', 'OTHER': 'other'})
-    db_pkg.KNOWLEDGEBASE_FOLDER_NAME = '.knowledgebase'
-    db_pkg.SKILLS_FOLDER_NAME = 'skills'
+    db_pkg.UserTenantRole = type("UserTenantRole", (), {k: k for k in ("OWNER", "ADMIN", "NORMAL", "INVITE")})
+    db_pkg.TenantPermission = type("TenantPermission", (), {"ME": "me", "TEAM": "team"})
+    db_pkg.FileType = type("FileType", (), {"FOLDER": "folder", "DOC": "doc", "VISUAL": "visual", "AURAL": "aural", "VIRTUAL": "virtual", "PDF": "pdf", "OTHER": "other"})
+    db_pkg.KNOWLEDGEBASE_FOLDER_NAME = ".knowledgebase"
+    db_pkg.SKILLS_FOLDER_NAME = "skills"
     monkeypatch.setitem(sys.modules, "api.db", db_pkg)
     api_pkg.db = db_pkg
 
@@ -333,6 +345,7 @@ def _load_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.common_service", common_svc_mod)
 
     kb_svc_mod = ModuleType("api.db.services.knowledgebase_service")
+
     # NB: The dataset resolver in the API calls KnowledgebaseService.get_by_id
     # then accesses .name and .tenant_id.  We return a simple object.
     class _StubKnowledgebaseService:
@@ -341,6 +354,7 @@ def _load_module(monkeypatch):
             if dataset_id == "ds-1":
                 return True, SimpleNamespace(name="test-ds", tenant_id="t1")
             return False, None
+
     kb_svc_mod.KnowledgebaseService = _StubKnowledgebaseService
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_svc_mod)
 
@@ -364,6 +378,7 @@ def _load_module(monkeypatch):
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 
+
 def _setup_request(module, json_payload=None, args=None):
     """Set up a request payload and query args for the next handler call."""
     if json_payload is not None:
@@ -373,6 +388,7 @@ def _setup_request(module, json_payload=None, args=None):
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="session")
 def auth():
@@ -392,17 +408,20 @@ def reset_db():
 
 # ── Tests ─────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.p2
 def test_create_commit_success(monkeypatch):
     module = _load_module(monkeypatch)
     # Seed a file
-    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
 
-    _setup_request(module, json_payload={
-        "message": "initial commit",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "hello"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "initial commit",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "hello"}],
+        },
+    )
 
     res = _run(module.create_commit("root-folder"))
     assert res["code"] == 0, f"Expected 0, got {res}"
@@ -427,26 +446,30 @@ def test_create_commit_missing_fields(monkeypatch):
 @pytest.mark.p2
 def test_create_commit_modify_and_add(monkeypatch):
     module = _load_module(monkeypatch)
-    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="a.txt", type="txt")
-    FileTestModel.create(id="f2", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="b.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f2", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="b.txt", type="txt")
 
     # Commit 1: add f1
-    _setup_request(module, json_payload={
-        "message": "c1",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "v1"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "c1",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "v1"}],
+        },
+    )
     _run(module.create_commit("root-folder"))
 
     # Commit 2: modify f1, add f2
-    _setup_request(module, json_payload={
-        "message": "c2",
-        "files": [
-            {"file_id": "f1", "file_name": "a.txt", "operation": "modify", "content": "v2"},
-            {"file_id": "f2", "file_name": "b.txt", "operation": "add", "content": "world"},
-        ],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "c2",
+            "files": [
+                {"file_id": "f1", "file_name": "a.txt", "operation": "modify", "content": "v2"},
+                {"file_id": "f2", "file_name": "b.txt", "operation": "add", "content": "world"},
+            ],
+        },
+    )
     res = _run(module.create_commit("root-folder"))
     assert res["code"] == 0
     assert res["data"]["file_count"] == 2
@@ -455,20 +478,25 @@ def test_create_commit_modify_and_add(monkeypatch):
 @pytest.mark.p2
 def test_create_commit_delete(monkeypatch):
     module = _load_module(monkeypatch)
-    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
 
     # Add then delete
-    _setup_request(module, json_payload={
-        "message": "add",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "hello"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "add",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "hello"}],
+        },
+    )
     _run(module.create_commit("root-folder"))
 
-    _setup_request(module, json_payload={
-        "message": "delete",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "delete"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "delete",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "delete"}],
+        },
+    )
     res = _run(module.create_commit("root-folder"))
     assert res["code"] == 0
 
@@ -476,21 +504,25 @@ def test_create_commit_delete(monkeypatch):
 @pytest.mark.p2
 def test_create_commit_rename(monkeypatch):
     module = _load_module(monkeypatch)
-    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="old.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="old.txt", type="txt")
 
-    _setup_request(module, json_payload={
-        "message": "add",
-        "files": [{"file_id": "f1", "file_name": "old.txt", "operation": "add", "content": "data"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "add",
+            "files": [{"file_id": "f1", "file_name": "old.txt", "operation": "add", "content": "data"}],
+        },
+    )
     _run(module.create_commit("root-folder"))
 
     # Rename
-    _setup_request(module, json_payload={
-        "message": "rename",
-        "files": [{"file_id": "f1", "file_name": "old.txt", "operation": "rename",
-                    "old_name": "old.txt", "new_name": "new.txt"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "rename",
+            "files": [{"file_id": "f1", "file_name": "old.txt", "operation": "rename", "old_name": "old.txt", "new_name": "new.txt"}],
+        },
+    )
     res = _run(module.create_commit("root-folder"))
     assert res["code"] == 0
 
@@ -498,20 +530,25 @@ def test_create_commit_rename(monkeypatch):
 @pytest.mark.p2
 def test_list_commits_success(monkeypatch):
     module = _load_module(monkeypatch)
-    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
 
     # Create 2 commits
-    _setup_request(module, json_payload={
-        "message": "c1",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "v1"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "c1",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "v1"}],
+        },
+    )
     _run(module.create_commit("root-folder"))
 
-    _setup_request(module, json_payload={
-        "message": "c2",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "modify", "content": "v2"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "c2",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "modify", "content": "v2"}],
+        },
+    )
     _run(module.create_commit("root-folder"))
 
     # List
@@ -525,13 +562,15 @@ def test_list_commits_success(monkeypatch):
 @pytest.mark.p2
 def test_get_commit_detail(monkeypatch):
     module = _load_module(monkeypatch)
-    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
 
-    _setup_request(module, json_payload={
-        "message": "detail test",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "data"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "detail test",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "data"}],
+        },
+    )
     create_res = _run(module.create_commit("root-folder"))
     commit_id = create_res["data"]["id"]
 
@@ -553,26 +592,30 @@ def test_get_commit_not_found(monkeypatch):
 @pytest.mark.p2
 def test_diff_commits(monkeypatch):
     module = _load_module(monkeypatch)
-    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="a.txt", type="txt")
-    FileTestModel.create(id="f2", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="b.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f2", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="b.txt", type="txt")
 
     # c1: add f1
-    _setup_request(module, json_payload={
-        "message": "c1",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "v1"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "c1",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "v1"}],
+        },
+    )
     c1 = _run(module.create_commit("root-folder"))["data"]["id"]
 
     # c2: add f2, modify f1
-    _setup_request(module, json_payload={
-        "message": "c2",
-        "files": [
-            {"file_id": "f2", "file_name": "b.txt", "operation": "add", "content": "world"},
-            {"file_id": "f1", "file_name": "a.txt", "operation": "modify", "content": "v2"},
-        ],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "c2",
+            "files": [
+                {"file_id": "f2", "file_name": "b.txt", "operation": "add", "content": "world"},
+                {"file_id": "f1", "file_name": "a.txt", "operation": "modify", "content": "v2"},
+            ],
+        },
+    )
     c2 = _run(module.create_commit("root-folder"))["data"]["id"]
     assert c1 != c2, "c1 and c2 must have different IDs"
 
@@ -605,17 +648,18 @@ def test_diff_commits_missing_params(monkeypatch):
 def test_get_uncommitted_changes(monkeypatch):
     module = _load_module(monkeypatch)
     # Seed a file that will be committed
-    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
     # Seed a file that will NOT be committed (uncommitted add)
-    FileTestModel.create(id="f2", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="b.txt", type="txt")
+    FileTestModel.create(id="f2", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="b.txt", type="txt")
 
     # Commit only f1
-    _setup_request(module, json_payload={
-        "message": "add f1",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "hello"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "add f1",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "hello"}],
+        },
+    )
     _run(module.create_commit("root-folder"))
 
     res = _run(module.get_uncommitted_changes("root-folder"))
@@ -629,13 +673,15 @@ def test_get_uncommitted_changes(monkeypatch):
 @pytest.mark.p2
 def test_get_commit_tree(monkeypatch):
     module = _load_module(monkeypatch)
-    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
 
-    _setup_request(module, json_payload={
-        "message": "c1",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "data"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "c1",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "data"}],
+        },
+    )
     create_res = _run(module.create_commit("root-folder"))
     commit_id = create_res["data"]["id"]
 
@@ -649,13 +695,15 @@ def test_get_commit_tree(monkeypatch):
 @pytest.mark.p2
 def test_get_commit_file_content(monkeypatch):
     module = _load_module(monkeypatch)
-    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
 
-    _setup_request(module, json_payload={
-        "message": "c1",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "hello world"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "c1",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "hello world"}],
+        },
+    )
     create_res = _run(module.create_commit("root-folder"))
     commit_id = create_res["data"]["id"]
 
@@ -667,20 +715,25 @@ def test_get_commit_file_content(monkeypatch):
 @pytest.mark.p2
 def test_get_file_version_history(monkeypatch):
     module = _load_module(monkeypatch)
-    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
-                         created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
 
     # Two commits modifying f1
-    _setup_request(module, json_payload={
-        "message": "v1",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "v1"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "v1",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "v1"}],
+        },
+    )
     _run(module.create_commit("root-folder"))
 
-    _setup_request(module, json_payload={
-        "message": "v2",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "modify", "content": "v2"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "v2",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "modify", "content": "v2"}],
+        },
+    )
     _run(module.create_commit("root-folder"))
 
     res = _run(module.get_file_version_history("f1"))
@@ -692,13 +745,15 @@ def test_get_file_version_history(monkeypatch):
 def test_workspace_alias(monkeypatch):
     """Verify /workspace/ alias routes work the same as /folders/."""
     module = _load_module(monkeypatch)
-    FileTestModel.create(id="f1", parent_id="ws-folder", tenant_id="t1",
-                         created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="ws-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
 
-    _setup_request(module, json_payload={
-        "message": "workspace commit",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "data"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "workspace commit",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "data"}],
+        },
+    )
     res = _run(module.create_commit("ws-folder"))
     assert res["code"] == 0
 
@@ -712,13 +767,15 @@ def test_workspace_alias(monkeypatch):
 @pytest.mark.p2
 def test_get_commit_wrong_folder_returns_not_found(monkeypatch):
     module = _load_module(monkeypatch)
-    FileTestModel.create(id="f1", parent_id="folder-a", tenant_id="t1",
-                         created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="folder-a", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
 
-    _setup_request(module, json_payload={
-        "message": "c1",
-        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "data"}],
-    })
+    _setup_request(
+        module,
+        json_payload={
+            "message": "c1",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "data"}],
+        },
+    )
     create_res = _run(module.create_commit("folder-a"))
     commit_id = create_res["data"]["id"]
 

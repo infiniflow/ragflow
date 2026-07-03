@@ -166,9 +166,7 @@ def _load_user_app(monkeypatch):
     api_pkg.apps = apps_mod
 
     apps_auth_mod = ModuleType("api.apps.auth")
-    apps_auth_mod.get_auth_client = lambda _config: SimpleNamespace(
-        get_authorization_url=lambda state: f"https://oauth.example/{state}"
-    )
+    apps_auth_mod.get_auth_client = lambda _config: SimpleNamespace(get_authorization_url=lambda state: f"https://oauth.example/{state}")
     monkeypatch.setitem(sys.modules, "api.apps.auth", apps_auth_mod)
 
     db_mod = ModuleType("api.db")
@@ -232,16 +230,7 @@ def _load_user_app(monkeypatch):
         @staticmethod
         def get_api_key(tenant_id, model_name, model_type=None):
             return _MockTableObject(
-                id=1,
-                tenant_id=tenant_id,
-                llm_factory="",
-                model_type="chat",
-                llm_name=model_name,
-                api_key="fake-api-key",
-                api_base="https://api.example.com",
-                max_tokens=8192,
-                used_tokens=0,
-                status=1
+                id=1, tenant_id=tenant_id, llm_factory="", model_type="chat", llm_name=model_name, api_key="fake-api-key", api_base="https://api.example.com", max_tokens=8192, used_tokens=0, status=1
             )
 
     tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService

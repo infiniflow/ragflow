@@ -439,6 +439,7 @@ def _load_agents_app(monkeypatch, *, target="rest"):
         @classmethod
         def normalize_dsl(cls, dsl):
             import json
+
             if isinstance(dsl, str):
                 return json.loads(dsl)
             return dsl
@@ -1516,11 +1517,15 @@ def test_webhook_trace_encoded_id_generation(monkeypatch):
     res = _run(module.webhook_trace("agent-1"))
     assert res["code"] == module.RetCode.SUCCESS
 
-    expected = base64.urlsafe_b64encode(
-        hmac.new(
-            b"webhook_id_secret",
-            b"101.0",
-            hashlib.sha256,
-        ).digest()
-    ).decode("utf-8").rstrip("=")
+    expected = (
+        base64.urlsafe_b64encode(
+            hmac.new(
+                b"webhook_id_secret",
+                b"101.0",
+                hashlib.sha256,
+            ).digest()
+        )
+        .decode("utf-8")
+        .rstrip("=")
+    )
     assert res["data"]["webhook_id"] == expected

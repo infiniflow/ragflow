@@ -20,7 +20,8 @@ from bs4 import BeautifulSoup
 from docx import Document
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import (
-    get_tenant_default_model_by_type, get_model_config_from_provider_instance,
+    get_tenant_default_model_by_type,
+    get_model_config_from_provider_instance,
 )
 from common.constants import LLMType
 from deepdoc.parser.figure_parser import VisionFigureParser
@@ -68,10 +69,7 @@ def remove_header_footer_docx_sections(items, header_footer_texts):
 
 def remove_header_footer_html_blob(blob):
     soup = BeautifulSoup(blob, "html.parser")
-    for element in soup.find_all(
-        lambda tag: tag.name in {"header", "footer"}
-        or tag.get("role") in {"banner", "contentinfo"}
-    ):
+    for element in soup.find_all(lambda tag: tag.name in {"header", "footer"} or tag.get("role") in {"banner", "contentinfo"}):
         element.decompose()
     return str(soup).encode("utf-8")
 
@@ -100,7 +98,7 @@ def remove_toc_pdf(items, outlines):
     for i, (title, level, page_no) in enumerate(outlines):
         if re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$", title.split("@@")[0].strip().lower()):
             toc_start_page = page_no
-            for next_title, next_level, next_page_no in outlines[i + 1:]:
+            for next_title, next_level, next_page_no in outlines[i + 1 :]:
                 if next_level != level:
                     continue
                 if re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$", next_title.split("@@")[0].strip().lower()):
@@ -172,13 +170,9 @@ def enhance_media_sections_with_vision(
 
     try:
         try:
-            vision_model_config = get_model_config_from_provider_instance(
-                tenant_id, LLMType.IMAGE2TEXT, vlm_conf["llm_id"]
-            )
+            vision_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, vlm_conf["llm_id"])
         except Exception:
-            vision_model_config = get_tenant_default_model_by_type(
-                tenant_id, LLMType.IMAGE2TEXT
-            )
+            vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.IMAGE2TEXT)
         vision_model = LLMBundle(tenant_id, vision_model_config)
     except Exception:
         return sections
@@ -188,7 +182,7 @@ def enhance_media_sections_with_vision(
             continue
         if item.get("image") is None:
             continue
-        
+
         text = item.get("text") or ""
         try:
             parsed = VisionFigureParser(

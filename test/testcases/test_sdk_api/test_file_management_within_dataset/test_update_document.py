@@ -17,7 +17,8 @@
 import pytest
 from configs import DOCUMENT_NAME_LIMIT
 from ragflow_sdk import DataSet
-from configs import DEFAULT_PARSER_CONFIG  
+from configs import DEFAULT_PARSER_CONFIG
+
 
 class TestDocumentsUpdated:
     @pytest.mark.p1
@@ -317,6 +318,7 @@ DEFAULT_PARSER_CONFIG_FOR_TEST = {
     },
 }
 
+
 class TestUpdateDocumentParserConfig:
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -395,12 +397,20 @@ class TestUpdateDocumentParserConfig:
                 {"task_page_size": "1024"},
                 "Input should be a valid integer",
             ),
-            ("naive", {"raptor": {"use_raptor": True,                 
-                                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                                "max_token": 256,
-                                "threshold": 0.1,
-                                "max_cluster": 64,
-                                "random_seed": 0,}}, ""),
+            (
+                "naive",
+                {
+                    "raptor": {
+                        "use_raptor": True,
+                        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
+                        "max_token": 256,
+                        "threshold": 0.1,
+                        "max_cluster": 64,
+                        "random_seed": 0,
+                    }
+                },
+                "",
+            ),
             ("naive", {"raptor": {"use_raptor": False}}, ""),
             (
                 "naive",
