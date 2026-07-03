@@ -77,7 +77,7 @@ type ListChatsResponse struct {
 // ListChats list chats for a user
 func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize int, orderby string, desc bool) (*ListChatsResponse, error) {
 	chats, total, err := s.chatDAO.ListByTenantIDs(
-		[]string{userID},
+		nil,
 		userID,
 		page,
 		pageSize,
