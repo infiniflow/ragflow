@@ -357,7 +357,7 @@ class MinerUParser(RAGFlowPdfParser):
             self.logger.exception(e)
 
     def _line_tag(self, bx):
-        pn = [bx["page_idx"] + self.page_from + 1]
+        pn = [bx["page_idx"] + 1]
         positions = bx.get("bbox", (0, 0, 0, 0))
         x0, top, x1, bott = positions
         # Normalize flipped coordinates (MinerU may report inverted bbox for flipped images)
