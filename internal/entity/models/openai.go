@@ -211,6 +211,16 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		ToolCalls:     toolCalls,
 	}
 
+	// Extract usage split (prompt/completion/total) from the raw API
+	// response for accurate per-call token accounting. Non-OpenAI
+	// providers that implement the OpenAI-compat API surface (DeepSeek,
+	// Moonshot, etc.) also return a "usage" key with the same shape.
+	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
+		chatResponse.Usage = &ChatUsage{
+			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
+		}
+	}
+
 	return chatResponse, nil
 }
 
@@ -247,11 +257,17 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		apiMessages[i] = apiMsg
 	}
 
-	// Build request body with streaming on by default
+	// Build request body with streaming on by default.
+	// stream_options.include_usage asks the provider to attach a
+	// usage block to the final streaming chunk (mirrors Python's
+	// chat_model.py _stream_options / stream_options.include_usage).
 	reqBody := map[string]interface{}{
 		"model":    modelName,
 		"messages": apiMessages,
 		"stream":   true,
+		"stream_options": map[string]interface{}{
+			"include_usage": true,
+		},
 	}
 
 	if chatModelConfig != nil {
@@ -316,6 +332,12 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 
 	sawTerminal := false
 	accumulatedToolCalls := make(map[int]map[string]interface{})
+	// Capture the authoritative usage block from the final streaming
+	// chunk (when provider honours stream_options.include_usage=true).
+	// The last chunk in the stream carries the "usage" key alongside
+	// empty choices; we overwrite on every chunk so the final frame
+	// wins, matching Python's chat_model.py usage_from_response loop.
+	var streamUsage *ChatUsage
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -338,6 +360,13 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		var event map[string]interface{}
 		if err = json.Unmarshal([]byte(data), &event); err != nil {
 			continue
+		}
+
+		// Extract usage from this chunk. When stream_options.include_usage
+		// is true, the final chunk carries the full usage breakdown at the
+		// top level of the event alongside (possibly empty) choices.
+		if pt, ct, tt := extractUsageFromMap(event); tt > 0 {
+			streamUsage = &ChatUsage{PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt}
 		}
 
 		choices, ok := event["choices"].([]interface{})
@@ -419,6 +448,11 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 			tcs = append(tcs, tc)
 		}
 		chatModelConfig.ToolCallsResult = &tcs
+	}
+
+	// Populate UsageResult with the authoritative usage from the stream.
+	if streamUsage != nil && chatModelConfig != nil {
+		chatModelConfig.UsageResult = streamUsage
 	}
 
 	// Send the [DONE] marker for OpenAI compatibility
@@ -1022,6 +1056,50 @@ func (o *OpenAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) 
 
 func (o *OpenAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+// extractUsageFromMap reads the "usage" key from an OpenAI-style API
+// response and returns (prompt_tokens, completion_tokens, total_tokens).
+// All return values are zero when the response carries no usage block.
+func extractUsageFromMap(raw map[string]interface{}) (int, int, int) {
+	if raw == nil {
+		return 0, 0, 0
+	}
+	ru, ok := raw["usage"]
+	if !ok {
+		return 0, 0, 0
+	}
+	usage, ok := ru.(map[string]interface{})
+	if !ok {
+		return 0, 0, 0
+	}
+	get := func(keys ...string) int {
+		for _, k := range keys {
+			v, ok := usage[k]
+			if !ok {
+				continue
+			}
+			switch val := v.(type) {
+			case float64:
+				return int(val)
+			case int:
+				return val
+			case json.Number:
+				n, err := val.Int64()
+				if err == nil {
+					return int(n)
+				}
+			}
+		}
+		return 0
+	}
+	pt := get("prompt_tokens", "input_tokens")
+	ct := get("completion_tokens", "output_tokens")
+	tt := get("total_tokens")
+	if tt == 0 {
+		tt = pt + ct
+	}
+	return pt, ct, tt
 }
 
 func cloneMap(m map[string]interface{}) map[string]interface{} {

@@ -67,6 +67,12 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             # compatibility contract.
             "https://github.com/browserbase/stagehand/releases/download/stagehand-server-v3/v3.7.2/stagehand-server-v3-linux-x64",
             "https://github.com/browserbase/stagehand/releases/download/stagehand-server-v3/v3.7.2/stagehand-server-v3-linux-arm64",
+            # Native static libraries for Go build (pdfium, pdf_oxide, office_oxide)
+            # Used by build.sh's check_*_deps functions — pre-downloaded to avoid
+            # network access during CI.
+            ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
+            ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.67/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
+            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.2/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
         ]
     else:
         return [
@@ -95,6 +101,12 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             # compatibility contract.
             "https://github.com/browserbase/stagehand/releases/download/stagehand-server-v3/v3.7.2/stagehand-server-v3-linux-x64",
             "https://github.com/browserbase/stagehand/releases/download/stagehand-server-v3/v3.7.2/stagehand-server-v3-linux-arm64",
+            # Native static libraries for Go build (pdfium, pdf_oxide, office_oxide)
+            # Used by build.sh's check_*_deps functions — pre-downloaded to avoid
+            # network access during CI.
+            ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
+            ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.67/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
+            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.2/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
         ]
 
 
@@ -135,6 +147,30 @@ if __name__ == "__main__":
         print(f"Downloading {filename} from {download_url}...")
         if not os.path.exists(filename):
             urllib.request.urlretrieve(download_url, filename)
+
+    # Extract native static libraries to ~/ragflow-native-libs for Go build.
+    # Ensures build.sh can find them without network access.
+    native_deps_dir = os.path.expanduser("~/ragflow-native-libs")
+    extractions = [
+        ("pdfium-linux-x64-static.tgz", "pdfium-static"),
+        ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide"),
+        ("office_oxide-linux-x86_64.tar.gz", "office_oxide"),
+    ]
+    import tarfile
+
+    for archive, subdir in extractions:
+        archive_path = os.path.join(os.getcwd(), archive)
+        if not os.path.isfile(archive_path):
+            print(f"  Skipping extraction: {archive} not found")
+            continue
+        target = os.path.join(native_deps_dir, subdir)
+        if os.path.isdir(target):
+            print(f"  ✓ {subdir} already extracted to {target}")
+            continue
+        os.makedirs(target, exist_ok=True)
+        print(f"  Extracting {archive} → {target}")
+        with tarfile.open(archive_path) as tf:
+            tf.extractall(target)
 
     local_dir = os.path.abspath("nltk_data")
     for data in ["wordnet", "punkt", "punkt_tab"]:

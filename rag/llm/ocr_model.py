@@ -259,19 +259,12 @@ class SoMarkOcrModel(Base, SoMarkParser):
                 return bool(raw)
             return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
-        def _resolve_int(ui_key: str, env_key: str, default: int) -> int:
-            raw = _resolve(ui_key, env_key, default)
-            try:
-                return int(raw)
-            except (TypeError, ValueError):
-                return default
-
         base_url = _resolve(
             "somark_base_url",
             "SOMARK_BASE_URL",
             kwargs.get("base_url", "https://somark.tech/api/v1"),
         )
-        api_key = _resolve("somark_api_key", "SOMARK_API_KEY", key_as_secret)
+        api_key = _resolve("api_key", "SOMARK_API_KEY", key_as_secret)
         image_format = _resolve("somark_image_format", "SOMARK_IMAGE_FORMAT", "url")
         formula_format = _resolve("somark_formula_format", "SOMARK_FORMULA_FORMAT", "latex")
         table_format = _resolve("somark_table_format", "SOMARK_TABLE_FORMAT", "html")
@@ -292,6 +285,7 @@ class SoMarkOcrModel(Base, SoMarkParser):
             else:
                 redacted_config[k] = v
         logging.info(f"Parsed SoMark config (sensitive fields redacted): {redacted_config}")
+
         self.base_url = base_url
         self.api_key = api_key
         SoMarkParser.__init__(

@@ -133,6 +133,34 @@ func TestRouterSetupRegistersSearchbotMindMapRoute(t *testing.T) {
 	}
 }
 
+func TestRouterSetupRegistersChatbotInfoOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	r := &Router{
+		authHandler: handler.NewAuthHandler(),
+		botHandler:  handler.NewBotHandler(nil),
+	}
+	r.Setup(engine)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/chatbots/dialog-1/info", nil)
+	engine.ServeHTTP(resp, req)
+
+	if resp.Code == http.StatusNotFound {
+		t.Fatalf("GET /api/v1/chatbots/:dialog_id/info returned 404; ChatbotInfo route is not registered")
+	}
+	var body struct {
+		Code common.ErrorCode `json:"code"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	if body.Code != common.CodeUnauthorized {
+		t.Fatalf("status=%d body=%s; want beta auth middleware to handle registered ChatbotInfo route", resp.Code, resp.Body.String())
+	}
+}
+
 func TestRouterSetupRegistersChatMindMapRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

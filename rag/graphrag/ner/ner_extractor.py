@@ -40,9 +40,12 @@ from .types import Entity, ExtractionResult
 
 # Language → spaCy model
 _MODEL_MAP = {
-    "en": "en_core_web_sm", "zh": "zh_core_web_sm",
-    "de": "de_core_news_sm", "fr": "fr_core_news_sm",
-    "es": "es_core_news_sm", "pt": "pt_core_news_sm",
+    "en": "en_core_web_sm",
+    "zh": "zh_core_web_sm",
+    "de": "de_core_news_sm",
+    "fr": "fr_core_news_sm",
+    "es": "es_core_news_sm",
+    "pt": "pt_core_news_sm",
     "ja": "ja_core_news_sm",
 }
 
@@ -51,8 +54,7 @@ _SKIP_LABELS = {"ORDINAL", "CARDINAL"}
 
 # Labels by confidence tier (for NER confidence scoring)
 _HIGH_CONF = {"PERSON", "ORG", "GPE", "LOC", "DATE"}
-_MED_CONF = {"PRODUCT", "EVENT", "WORK_OF_ART", "LAW", "LANGUAGE", "NORP",
-             "MONEY", "TIME", "PERCENT", "FAC", "QUANTITY"}
+_MED_CONF = {"PRODUCT", "EVENT", "WORK_OF_ART", "LAW", "LANGUAGE", "NORP", "MONEY", "TIME", "PERCENT", "FAC", "QUANTITY"}
 
 
 class NERExtractor:
@@ -99,8 +101,7 @@ class NERExtractor:
             self._nlp_cache[self.model_name] = nlp
             self._nlp = nlp
         except Exception as e:
-            logging.error("Failed to load spaCy model '%s': %s",
-                          self.model_name, e)
+            logging.error("Failed to load spaCy model '%s': %s", self.model_name, e)
             raise
 
     # ------------------------------------------------------------------
@@ -207,14 +208,16 @@ class NERExtractor:
             if key in seen:
                 continue
             seen.add(key)
-            entities.append(Entity(
-                text=ent.text,
-                label=ent.label_,
-                start_char=ent.start_char,
-                end_char=ent.end_char,
-                confidence=confidence,
-                metadata={"source": "spacy"},
-            ))
+            entities.append(
+                Entity(
+                    text=ent.text,
+                    label=ent.label_,
+                    start_char=ent.start_char,
+                    end_char=ent.end_char,
+                    confidence=confidence,
+                    metadata={"source": "spacy"},
+                )
+            )
         return entities
 
     @staticmethod
@@ -240,4 +243,3 @@ class NERExtractor:
 
 
 # Patch ExtractionResult to support metadata
-

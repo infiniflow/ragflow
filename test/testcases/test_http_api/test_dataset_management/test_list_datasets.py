@@ -146,8 +146,8 @@ class TestDatasetsList:
     @pytest.mark.parametrize(
         "params, assertions",
         [
-            ({"orderby": "create_time"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"orderby": "update_time"}, lambda r: (is_sorted(r["data"], "update_time", True))),
+            ({"orderby": "create_time"}, lambda r: is_sorted(r["data"], "create_time", True)),
+            ({"orderby": "update_time"}, lambda r: is_sorted(r["data"], "update_time", True)),
         ],
         ids=["orderby_create_time", "orderby_update_time"],
     )
@@ -185,16 +185,16 @@ class TestDatasetsList:
     @pytest.mark.parametrize(
         "params, assertions",
         [
-            ({"desc": True}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": False}, lambda r: (is_sorted(r["data"], "create_time", False))),
-            ({"desc": "true"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": "false"}, lambda r: (is_sorted(r["data"], "create_time", False))),
-            ({"desc": 1}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": 0}, lambda r: (is_sorted(r["data"], "create_time", False))),
-            ({"desc": "yes"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": "no"}, lambda r: (is_sorted(r["data"], "create_time", False))),
-            ({"desc": "y"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": "n"}, lambda r: (is_sorted(r["data"], "create_time", False))),
+            ({"desc": True}, lambda r: is_sorted(r["data"], "create_time", True)),
+            ({"desc": False}, lambda r: is_sorted(r["data"], "create_time", False)),
+            ({"desc": "true"}, lambda r: is_sorted(r["data"], "create_time", True)),
+            ({"desc": "false"}, lambda r: is_sorted(r["data"], "create_time", False)),
+            ({"desc": 1}, lambda r: is_sorted(r["data"], "create_time", True)),
+            ({"desc": 0}, lambda r: is_sorted(r["data"], "create_time", False)),
+            ({"desc": "yes"}, lambda r: is_sorted(r["data"], "create_time", True)),
+            ({"desc": "no"}, lambda r: is_sorted(r["data"], "create_time", False)),
+            ({"desc": "y"}, lambda r: is_sorted(r["data"], "create_time", True)),
+            ({"desc": "n"}, lambda r: is_sorted(r["data"], "create_time", False)),
         ],
         ids=["desc=True", "desc=False", "desc=true", "desc=false", "desc=1", "desc=0", "desc=yes", "desc=no", "desc=y", "desc=n"],
     )

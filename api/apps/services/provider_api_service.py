@@ -480,25 +480,6 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
     if api_key:
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
 
-    # For SoMark, embed OCR config from model_info into the api_key JSON so
-    # SoMarkOcrModel.__init__ can read it via the existing key → api_key_payload
-    # path.  This avoids changing the deprecated LLMBundle in tenant_llm_service.py.
-    if provider_name == "SoMark" and model_info:
-        cfg = {}
-        if api_key_str:
-            try:
-                cfg = json.loads(api_key_str)
-            except Exception:
-                pass
-        if not isinstance(cfg, dict):
-            cfg = {}
-        for model in model_info:
-            if model.get("extra"):
-                cfg.update(model["extra"])
-        if base_url:
-            cfg["SOMARK_BASE_URL"] = base_url
-        api_key_str = json.dumps(cfg)
-
     success, msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
     if not success:
         return False, msg

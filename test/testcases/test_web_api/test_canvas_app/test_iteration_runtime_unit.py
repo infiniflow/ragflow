@@ -136,16 +136,12 @@ def _load_canvas_runtime(monkeypatch):
     component_pkg.__path__ = [str(repo_root / "agent" / "component")]
     monkeypatch.setitem(sys.modules, "agent.component", component_pkg)
 
-    base_spec = importlib.util.spec_from_file_location(
-        "agent.component.base", repo_root / "agent" / "component" / "base.py"
-    )
+    base_spec = importlib.util.spec_from_file_location("agent.component.base", repo_root / "agent" / "component" / "base.py")
     base_mod = importlib.util.module_from_spec(base_spec)
     monkeypatch.setitem(sys.modules, "agent.component.base", base_mod)
     base_spec.loader.exec_module(base_mod)
 
-    iteration_spec = importlib.util.spec_from_file_location(
-        "agent.component.iteration", repo_root / "agent" / "component" / "iteration.py"
-    )
+    iteration_spec = importlib.util.spec_from_file_location("agent.component.iteration", repo_root / "agent" / "component" / "iteration.py")
     iteration_mod = importlib.util.module_from_spec(iteration_spec)
     monkeypatch.setitem(sys.modules, "agent.component.iteration", iteration_mod)
     iteration_spec.loader.exec_module(iteration_mod)
@@ -189,9 +185,7 @@ def _load_canvas_runtime(monkeypatch):
         def _invoke(self, **kwargs):
             query_text = kwargs.get("query")
             vars_map = self.get_input_elements_from_text(query_text)
-            query = self.string_format(
-                query_text, {key: value["value"] for key, value in vars_map.items()}
-            )
+            query = self.string_format(query_text, {key: value["value"] for key, value in vars_map.items()})
             calls = self._canvas.globals.setdefault("probe.calls", [])
             calls.append(query)
             self.set_output("result", query)
@@ -279,9 +273,7 @@ def _load_canvas_runtime(monkeypatch):
 
     component_pkg.component_class = lambda name: class_map[name]
 
-    canvas_spec = importlib.util.spec_from_file_location(
-        "agent.canvas", repo_root / "agent" / "canvas.py"
-    )
+    canvas_spec = importlib.util.spec_from_file_location("agent.canvas", repo_root / "agent" / "canvas.py")
     canvas_mod = importlib.util.module_from_spec(canvas_spec)
     monkeypatch.setitem(sys.modules, "agent.canvas", canvas_mod)
     canvas_spec.loader.exec_module(canvas_mod)
@@ -505,9 +497,7 @@ def test_canvas_resume_does_not_emit_duplicate_workflow_started(monkeypatch):
         "user_inputs",
     ]
 
-    resumed_events = asyncio.run(
-        _collect_events(canvas.run(query="hello", inputs={"value": {"value": "hello"}}))
-    )
+    resumed_events = asyncio.run(_collect_events(canvas.run(query="hello", inputs={"value": {"value": "hello"}})))
     resumed_kinds = [event["event"] for event in resumed_events]
     assert resumed_kinds[0] == "node_started"
     assert "workflow_started" not in resumed_kinds

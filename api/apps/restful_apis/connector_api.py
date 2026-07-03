@@ -551,6 +551,7 @@ async def google_drive_web_oauth_callback():
 
     return await _render_web_oauth_popup(state_id, True, "Authorization completed successfully.", source)
 
+
 @manager.route("/connectors/google/oauth/web/result", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("flow_id")
@@ -571,13 +572,14 @@ async def poll_google_web_result():
     REDIS_CONN.delete(_web_result_cache_key(flow_id, source))
     return get_json_result(data={"credentials": result.get("credentials")})
 
+
 @manager.route("/connectors/box/oauth/web/start", methods=["POST"])  # noqa: F821
 @login_required
 async def start_box_web_oauth():
     req = await get_request_json()
 
     client_id = req.get("client_id")
-    client_secret = req.get("client_secret")    
+    client_secret = req.get("client_secret")
     redirect_uri = req.get("redirect_uri", BOX_WEB_OAUTH_REDIRECT_URI)
 
     if not client_id or not client_secret:
@@ -608,18 +610,20 @@ async def start_box_web_oauth():
     }
     REDIS_CONN.set_obj(_web_state_cache_key(flow_id, "box"), cache_payload, WEB_FLOW_TTL_SECS)
     return get_json_result(
-        data = {
+        data={
             "flow_id": flow_id,
             "authorization_url": auth_url,
-            "expires_in": WEB_FLOW_TTL_SECS,}
+            "expires_in": WEB_FLOW_TTL_SECS,
+        }
     )
+
 
 @manager.route("/connectors/box/oauth/web/callback", methods=["GET"])  # noqa: F821
 async def box_web_oauth_callback():
     flow_id = request.args.get("state")
     if not flow_id:
         return await _render_web_oauth_popup("", False, "Missing OAuth parameters.", "box")
-    
+
     code = request.args.get("code")
     if not code:
         return await _render_web_oauth_popup(flow_id, False, "Missing authorization code from Box.", "box")
@@ -633,7 +637,7 @@ async def box_web_oauth_callback():
     if error:
         REDIS_CONN.delete(_web_state_cache_key(flow_id, "box"))
         return await _render_web_oauth_popup(flow_id, False, error_description or "Authorization failed.", "box")
-    
+
     auth = BoxOAuth(
         OAuthConfig(
             client_id=cache_payload.get("client_id"),
@@ -656,6 +660,7 @@ async def box_web_oauth_callback():
 
     return await _render_web_oauth_popup(flow_id, True, "Authorization completed successfully.", "box")
 
+
 @manager.route("/connectors/box/oauth/web/result", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("flow_id")
@@ -670,7 +675,7 @@ async def poll_box_web_result():
     cache_raw = json.loads(cache_blob)
     if cache_raw.get("user_id") != current_user.id:
         return get_json_result(code=RetCode.PERMISSION_ERROR, message="You are not allowed to access this authorization result.")
-    
+
     REDIS_CONN.delete(_web_result_cache_key(flow_id, "box"))
 
     return get_json_result(data={"credentials": cache_raw})

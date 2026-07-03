@@ -18,11 +18,10 @@ from common.data_source.models import (
 )
 from common.data_source.utils import extract_size_bytes, get_file_ext
 
+
 class AirtableClientNotSetUpError(PermissionError):
     def __init__(self) -> None:
-        super().__init__(
-            "Airtable client is not set up. Did you forget to call load_credentials()?"
-        )
+        super().__init__("Airtable client is not set up. Did you forget to call load_credentials()?")
 
 
 class AirtableConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
@@ -52,10 +51,7 @@ class AirtableConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         table = self.airtable_client.table(self.base_id, self.table_name_or_id)
         records = table.all()
 
-        logging.info(
-            f"Starting Airtable attachment scan for table {self.table_name_or_id}, "
-            f"{len(records)} records found."
-        )
+        logging.info(f"Starting Airtable attachment scan for table {self.table_name_or_id}, {len(records)} records found.")
 
         for record in records:
             record_id = record.get("id")
@@ -119,20 +115,11 @@ class AirtableConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
                 resp.raise_for_status()
                 content = resp.content
             except Exception:
-                logging.exception(
-                    f"Failed to download attachment {filename} "
-                    f"(record={record_id})"
-                )
+                logging.exception(f"Failed to download attachment {filename} (record={record_id})")
                 continue
             size_bytes = extract_size_bytes(attachment)
-            if (
-                self.size_threshold is not None
-                and isinstance(size_bytes, int)
-                and size_bytes > self.size_threshold
-            ):
-                logging.warning(
-                    f"{filename} exceeds size threshold of {self.size_threshold}. Skipping."
-                )
+            if self.size_threshold is not None and isinstance(size_bytes, int) and size_bytes > self.size_threshold:
+                logging.warning(f"{filename} exceeds size threshold of {self.size_threshold}. Skipping.")
                 continue
             batch.append(
                 Document(
@@ -142,7 +129,7 @@ class AirtableConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
                     semantic_identifier=filename,
                     extension=get_file_ext(filename),
                     size_bytes=size_bytes if size_bytes else 0,
-                    doc_updated_at=datetime.strptime(created_time, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+                    doc_updated_at=datetime.strptime(created_time, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc),
                 )
             )
 
@@ -190,11 +177,12 @@ class AirtableConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
             if filtered:
                 yield filtered
 
+
 if __name__ == "__main__":
     import os
 
     logging.basicConfig(level=logging.DEBUG)
-    connector = AirtableConnector("xxx","xxx")
+    connector = AirtableConnector("xxx", "xxx")
     connector.load_credentials({"airtable_access_token": os.environ.get("AIRTABLE_ACCESS_TOKEN")})
     connector.validate_connector_settings()
     document_batches = connector.load_from_state()

@@ -21,11 +21,11 @@ import time
 import uuid
 
 from peewee import IntegrityError
-
 from api.db import UserTenantRole
 from api.db.db_models import init_database_tables as init_web_db
 from api.db.services import UserService
 from api.db.services.canvas_service import CanvasTemplateService
+from api.db.services.compilation_template_service import CompilationTemplateService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
@@ -42,6 +42,7 @@ from api.common.base64 import encode_to_base64
 DEFAULT_SUPERUSER_NICKNAME = os.getenv("DEFAULT_SUPERUSER_NICKNAME", "admin")
 DEFAULT_SUPERUSER_EMAIL = os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
 DEFAULT_SUPERUSER_PASSWORD = os.getenv("DEFAULT_SUPERUSER_PASSWORD", "admin")
+
 
 def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_EMAIL, password=DEFAULT_SUPERUSER_PASSWORD, role=UserTenantRole.OWNER):
     if UserService.query(email=email):
@@ -67,12 +68,7 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
         "img2txt_id": settings.IMAGE2TEXT_MDL,
         "rerank_id": settings.RERANK_MDL,
     }
-    usr_tenant = {
-        "tenant_id": user_info["id"],
-        "user_id": user_info["id"],
-        "invited_by": user_info["id"],
-        "role": role
-    }
+    usr_tenant = {"tenant_id": user_info["id"], "user_id": user_info["id"], "invited_by": user_info["id"], "role": role}
 
     try:
         if not UserService.save(**user_info):
@@ -83,15 +79,14 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
         return
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
-    logging.info(
-        f"Super user initialized. email: {email},A default password has been set; changing the password after login is strongly recommended.")
+    logging.info(f"Super user initialized. email: {email},A default password has been set; changing the password after login is strongly recommended.")
 
     if tenant["llm_id"]:
         chat_model_config = get_tenant_default_model_by_type(tenant["id"], LLMType.CHAT)
         chat_mdl = LLMBundle(tenant["id"], chat_model_config)
         msg = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
         if msg.find("ERROR: ") == 0:
-            logging.error("'{}' doesn't work. {}".format( tenant["llm_id"], msg))
+            logging.error("'{}' doesn't work. {}".format(tenant["llm_id"], msg))
 
     if tenant["embd_id"]:
         embd_model_config = get_tenant_default_model_by_type(tenant["id"], LLMType.EMBEDDING)
@@ -109,7 +104,6 @@ def update_document_number_in_init():
     doc_count = DocumentService.get_all_kb_doc_count()
     for kb_id in KnowledgebaseService.get_all_ids():
         KnowledgebaseService.update_document_number_in_init(kb_id=kb_id, doc_num=doc_count.get(kb_id, 0))
-
 
 
 def add_graph_templates():
@@ -136,6 +130,10 @@ def add_graph_templates():
             logging.exception("Add agent templates error for %s: %s", template_path, e)
 
 
+def add_compilation_templates():
+    CompilationTemplateService.seed_builtins_from_files()
+
+
 def init_web_data():
     start_time = time.time()
 
@@ -147,10 +145,12 @@ def init_web_data():
     #    init_superuser()
 
     add_graph_templates()
+    add_compilation_templates()
     init_message_id_sequence()
     init_memory_size_cache()
     fix_missing_tokenized_memory()
     logging.info("init web data success:{}".format(time.time() - start_time))
+
 
 def init_table():
     # init system_settings
@@ -178,6 +178,6 @@ def init_table():
             raise e
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     init_web_db()
     init_web_data()

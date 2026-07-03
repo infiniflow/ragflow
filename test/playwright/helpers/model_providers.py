@@ -119,18 +119,11 @@ def _assert_selected_option_value(
         return
 
     if _has_malformed_model_suffix(selected_value):
-        raise AssertionError(
-            "Selected combobox option contains malformed model suffix '#': "
-            f"value={selected_value!r} option_text={option_text!r}"
-        )
+        raise AssertionError(f"Selected combobox option contains malformed model suffix '#': value={selected_value!r} option_text={option_text!r}")
 
     expected_prefix = _clean_text(expected_value_prefix)
     if expected_prefix and not selected_value.lower().startswith(expected_prefix.lower()):
-        raise AssertionError(
-            "Selected combobox option does not match expected canonical prefix: "
-            f"expected_prefix={expected_prefix!r} selected_value={selected_value!r} "
-            f"option_text={option_text!r}"
-        )
+        raise AssertionError(f"Selected combobox option does not match expected canonical prefix: expected_prefix={expected_prefix!r} selected_value={selected_value!r} option_text={option_text!r}")
 
 
 def click_with_retry(page, expect, locator_factory, attempts: int, timeout_ms: int) -> None:
@@ -165,9 +158,7 @@ def select_cmdk_option_by_value_prefix(
 
     controls_id = combobox.get_attribute("aria-controls")
     options_container = None
-    option_selector = (
-        "[data-testid='combobox-option'], [role='option'], [cmdk-item], [data-value]"
-    )
+    option_selector = "[data-testid='combobox-option'], [role='option'], [cmdk-item], [data-value]"
 
     if controls_id:
         controls_selector = f"[id={json.dumps(controls_id)}]:visible"
@@ -190,11 +181,7 @@ def select_cmdk_option_by_value_prefix(
         return page.locator(option_selector)
 
     def option_locator():
-        by_value = (
-            options_container.locator(value_selector)
-            if options_container is not None
-            else page.locator(f"{value_selector}:visible")
-        )
+        by_value = options_container.locator(value_selector) if options_container is not None else page.locator(f"{value_selector}:visible")
         if by_value.count() > 0:
             return by_value.first
         return options_locator().filter(has_text=option_pattern).first
@@ -218,18 +205,12 @@ def select_cmdk_option_by_value_prefix(
                 selected_value = None
             click_with_retry(page, expect, lambda: first_option, attempts=3, timeout_ms=timeout_ms)
             if selected_text:
-                expect(combobox).to_contain_text(
-                    selected_text, timeout=timeout_ms
-                )
+                expect(combobox).to_contain_text(selected_text, timeout=timeout_ms)
             try:
-                expect(combobox).to_have_attribute(
-                    "aria-expanded", "false", timeout=timeout_ms
-                )
+                expect(combobox).to_have_attribute("aria-expanded", "false", timeout=timeout_ms)
             except AssertionError:
                 page.keyboard.press("Escape")
-                expect(combobox).to_have_attribute(
-                    "aria-expanded", "false", timeout=timeout_ms
-                )
+                expect(combobox).to_have_attribute("aria-expanded", "false", timeout=timeout_ms)
             return selected_text or option_text, selected_value
         dump = []
         count = min(options.count(), 30)
@@ -306,8 +287,7 @@ def select_default_model(
         capture_response(
             page,
             trigger,
-            lambda resp: resp.request.method == "PATCH"
-            and "/api/v1/users/me/models" in resp.url,
+            lambda resp: resp.request.method == "PATCH" and "/api/v1/users/me/models" in resp.url,
         )
     except PlaywrightTimeoutError:
         if not selected[0]:
@@ -322,8 +302,5 @@ def select_default_model(
     except Exception:
         current_text = expected_text
     if _has_malformed_model_suffix(current_text):
-        raise AssertionError(
-            "Combobox text still contains malformed model suffix '#': "
-            f"text={current_text!r} expected={expected_text!r}"
-        )
+        raise AssertionError(f"Combobox text still contains malformed model suffix '#': text={current_text!r} expected={expected_text!r}")
     return selected

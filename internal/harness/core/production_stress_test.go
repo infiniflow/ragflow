@@ -690,15 +690,13 @@ func TestProduction_BinOpChannelUnderLoad(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < writerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for j := 0; j < opsPerWriter; j++ {
 				mu.Lock()
 				binop.Update([]interface{}{1})
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

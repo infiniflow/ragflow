@@ -3020,6 +3020,7 @@ Important structured information may include: names, dates, locations, events, k
       bulkManage: 'Bulk manage',
       exitBulkManage: 'Exit bulk manage',
       selected: 'Selected',
+      noServerSelected: 'Please select at least one MCP server',
     },
     search: {
       searchApps: 'Search apps',

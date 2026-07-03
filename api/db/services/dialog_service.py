@@ -42,7 +42,7 @@ from api.utils.reference_metadata_utils import (
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_model_type_by_name, get_model_config_by_id
 from common.time_utils import current_timestamp, datetime_format
 from common.text_utils import normalize_arabic_digits
-from rag.graphrag.general.mind_map_extractor import MindMapExtractor
+from rag.advanced_rag.knowlege_compile.mind_map_extractor import MindMapExtractor
 from rag.advanced_rag import DeepResearcher
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
@@ -801,6 +801,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     retrieval_ts = timer()
     if not knowledges and prompt_config.get("empty_response"):
         empty_res = prompt_config["empty_response"]
+        yield {"answer": empty_res, "reference": {}, "prompt": "", "audio_binary": None, "final": False}
         yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res), "final": True}
         return
 

@@ -99,11 +99,7 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     # Special case: TEI Builtin embedding model
     compose_profiles = os.getenv("COMPOSE_PROFILES", "")
     tei_model = os.getenv("TEI_MODEL", "")
-    if (model_type == "embedding"
-        and "tei-" in compose_profiles
-        and tei_model
-        and model_name == tei_model
-        and (not provider_name or provider_name == "Builtin")):
+    if model_type == "embedding" and "tei-" in compose_profiles and tei_model and model_name == tei_model and (not provider_name or provider_name == "Builtin"):
         return {
             "model_provider": "Builtin",
             "model_instance": "default",
@@ -160,12 +156,7 @@ def _check_model_available(tenant_id: str, provider_name: str, instance_name: st
         return True, None
 
     compose_profiles = os.getenv("COMPOSE_PROFILES", "")
-    is_tei_builtin_embedding = (
-            model_type == LLMType.EMBEDDING.value
-            and "tei-" in compose_profiles
-            and model_name == os.getenv("TEI_MODEL", "")
-            and (provider_name == "Builtin" or not provider_name)
-    )
+    is_tei_builtin_embedding = model_type == LLMType.EMBEDDING.value and "tei-" in compose_profiles and model_name == os.getenv("TEI_MODEL", "") and (provider_name == "Builtin" or not provider_name)
     if is_tei_builtin_embedding:
         return True, None
 
@@ -260,7 +251,7 @@ def set_tenant_default_models(tenant_id: str, model_provider: str, model_instanc
     return True, "success"
 
 
-def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
+def list_tenant_added_models(tenant_id: str, model_type_filter: str = None):
     """
     List all added models for a tenant.
 
@@ -314,19 +305,18 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
     tei_model = os.getenv("TEI_MODEL", "")
     if "tei-" in compose_profiles and tei_model:
         if not model_type_filter or model_type_filter == "embedding":
-            tei_already_added = any(
-                m["provider_name"] == "Builtin" and m["name"] == tei_model
-                for m in added_models
-            )
+            tei_already_added = any(m["provider_name"] == "Builtin" and m["name"] == tei_model for m in added_models)
             if not tei_already_added:
-                added_models.append({
-                    "model_type": ["embedding"],
-                    "name": tei_model,
-                    "provider_id": "",
-                    "provider_name": "Builtin",
-                    "instance_id": "",
-                    "instance_name": "default",
-                })
+                added_models.append(
+                    {
+                        "model_type": ["embedding"],
+                        "name": tei_model,
+                        "provider_id": "",
+                        "provider_name": "Builtin",
+                        "instance_id": "",
+                        "instance_name": "default",
+                    }
+                )
 
     added_models.sort(
         key=lambda x: (factory_rank_mapping.get(x["provider_name"]), x["provider_name"], x["instance_name"]))

@@ -289,7 +289,7 @@ def _load_chunk_module(monkeypatch):
     api_utils_mod.get_result = lambda data=None, message="", code=0: {"code": code, "message": message, "data": data}
     api_utils_mod.get_error_data_result = lambda message="": {"code": _DummyRetCode.DATA_ERROR, "message": message, "data": False}
     api_utils_mod.server_error_response = lambda exc: {"code": _DummyRetCode.EXCEPTION_ERROR, "message": repr(exc), "data": False}
-    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda fn: fn)
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda fn: fn
     api_utils_mod.add_tenant_id_to_kwargs = lambda func: func
     api_utils_mod.check_duplicate_ids = lambda ids, _kind: (list(dict.fromkeys(ids)), [] if len(ids) == len(set(ids)) else [f"Duplicate {_kind} ids"])
     api_utils_mod.get_request_json = lambda: _AwaitableValue({})
@@ -386,12 +386,7 @@ def _load_chunk_module(monkeypatch):
     class _DummyLLMService:
         @staticmethod
         def query(**_kwargs):
-            return [SimpleNamespace(
-                llm_name="gpt-3.5-turbo",
-                model_type="chat",
-                max_tokens=8192,
-                is_tools=True
-            )]
+            return [SimpleNamespace(llm_name="gpt-3.5-turbo", model_type="chat", max_tokens=8192, is_tools=True)]
 
     llm_service_mod = ModuleType("api.db.services.llm_service")
     llm_service_mod.LLMService = _DummyLLMService
@@ -427,22 +422,13 @@ def _load_chunk_module(monkeypatch):
                 api_base="https://api.example.com",
                 max_tokens=8192,
                 used_tokens=0,
-                status=1
+                status=1,
             )
 
         @staticmethod
         def get_api_key(tenant_id, model_name):
             return _MockTableObject(
-                id=1,
-                tenant_id=tenant_id,
-                llm_factory="",
-                model_type="chat",
-                llm_name=model_name,
-                api_key="fake-api-key",
-                api_base="https://api.example.com",
-                max_tokens=8192,
-                used_tokens=0,
-                status=1
+                id=1, tenant_id=tenant_id, llm_factory="", model_type="chat", llm_name=model_name, api_key="fake-api-key", api_base="https://api.example.com", max_tokens=8192, used_tokens=0, status=1
             )
 
         @staticmethod
@@ -471,7 +457,7 @@ def _load_chunk_module(monkeypatch):
                 asr_id="whisper-1",
                 img2txt_id="gpt-4-vision-preview",
                 rerank_id="bge-reranker",
-                tts_id="tts-1"
+                tts_id="tts-1",
             )
 
     tenant_llm_service_mod.TenantLLMService = _TenantLLMService
@@ -728,4 +714,3 @@ def test_restful_add_chunk_valid_image_base64_stores_before_insert(monkeypatch):
     inserted = module.settings.docStoreConn.inserted[-1]
     assert inserted.get("img_id"), inserted
     assert inserted.get("doc_type_kwd") == "image", inserted
-

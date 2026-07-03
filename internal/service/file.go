@@ -30,7 +30,6 @@ import (
 	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/parser"
 	"ragflow/internal/storage"
@@ -46,6 +45,7 @@ import (
 type FileService struct {
 	fileDAO          *dao.FileDAO
 	file2DocumentDAO *dao.File2DocumentDAO
+	documentService  *DocumentService
 }
 
 // NewFileService create file service
@@ -53,6 +53,7 @@ func NewFileService() *FileService {
 	return &FileService{
 		fileDAO:          dao.NewFileDAO(),
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
+		documentService:  NewDocumentService(),
 	}
 }
 
@@ -95,6 +96,11 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 		if err := s.initDatasetDocs(pfID, tenantID); err != nil {
 			return nil, fmt.Errorf("failed to initialize dataset docs: %w", err)
 		}
+
+		// Initialize skills folder (matching Python init_skills_folder logic)
+		if err := s.initSkillsFolder(pfID, tenantID); err != nil {
+			return nil, fmt.Errorf("failed to initialize skills folder: %w", err)
+		}
 	}
 
 	// Check if parent folder exists
@@ -114,9 +120,15 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 		return nil, fmt.Errorf("File not found!")
 	}
 
-	// Process files to add additional info
+	// Process files to add additional info, deduplicating by ID as a safety net
+	// against any leftover duplicate rows (e.g. duplicate 'skills' or '.knowledgebase' folders).
 	fileResponses := make([]map[string]interface{}, 0, len(files))
+	seenIDs := make(map[string]struct{})
 	for _, file := range files {
+		if _, ok := seenIDs[file.ID]; ok {
+			continue
+		}
+		seenIDs[file.ID] = struct{}{}
 		fileInfo := s.toFileInfo(file)
 
 		// If folder, calculate size and check for child folders
@@ -157,6 +169,47 @@ func (s *FileService) initDatasetDocs(rootID, tenantID string) error {
 
 // DatasetFolderName is the folder name for dataset
 const DatasetFolderName = ".knowledgebase"
+
+// SkillsFolderName is the folder name for skills
+const SkillsFolderName = "skills"
+
+// initSkillsFolder initializes the skills folder under the root folder.
+// Deduplicates duplicate entries that may have been created by
+// concurrent race conditions (TOCTOU).
+func (s *FileService) initSkillsFolder(rootID, tenantID string) error {
+	existing := s.fileDAO.Query(SkillsFolderName, rootID, tenantID)
+	if len(existing) > 0 {
+		if len(existing) > 1 {
+			common.Logger.Warn(fmt.Sprintf(
+				"Found %d duplicate '%s' folders under root %s, keeping only the first",
+				len(existing), SkillsFolderName, rootID,
+			))
+			keepID := existing[0].ID
+			for _, dup := range existing[1:] {
+				children, _ := s.fileDAO.ListAllFilesByParentID(dup.ID)
+				for _, child := range children {
+					s.fileDAO.UpdateByID(child.ID, map[string]interface{}{"parent_id": keepID})
+				}
+				if delErr := s.fileDAO.Delete(dup.ID); delErr != nil {
+					common.Logger.Warn(fmt.Sprintf("Failed to delete duplicate skills folder %s: %v", dup.ID, delErr))
+				}
+			}
+		}
+		return nil
+	}
+
+	folder := &entity.File{
+		ID:         s.generateUUID(),
+		ParentID:   rootID,
+		TenantID:   tenantID,
+		CreatedBy:  tenantID,
+		Name:       SkillsFolderName,
+		Type:       FileTypeFolder,
+		Size:       0,
+		SourceType: "",
+	}
+	return s.fileDAO.Insert(folder)
+}
 
 // FileSourceDataset represents dataset as file source
 const FileSourceDataset = "knowledgebase"
@@ -377,7 +430,7 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 			return nil, fmt.Errorf("failed to store file: %w", err)
 		}
 
-		uniqueName := s.getUniqueFilename(fileObjNames[len(fileObjNames)-1], lastFolder.ID)
+		uniqueName := s.getUniqueFilename(fileObjNames[len(fileObjNames)-1], lastFolder.ID, tenantID)
 
 		fileRecord := &entity.File{
 			ID:         s.generateUUID(),
@@ -477,8 +530,8 @@ func (s *FileService) createFolderRecursive(parentFolder *entity.File, names []s
 	return s.createFolderRecursive(newFolder, names, count+1, tenantID)
 }
 
-func (s *FileService) getUniqueFilename(name, parentID string) string {
-	existingFiles := s.fileDAO.Query(name, parentID)
+func (s *FileService) getUniqueFilename(name, parentID, tenantID string) string {
+	existingFiles := s.fileDAO.Query(name, parentID, tenantID)
 	if len(existingFiles) == 0 {
 		return name
 	}
@@ -490,7 +543,7 @@ func (s *FileService) getUniqueFilename(name, parentID string) string {
 	counter := 1
 	for {
 		newName := fmt.Sprintf("%s_%d%s", nameWithoutExt, counter, ext)
-		existingFiles = s.fileDAO.Query(newName, parentID)
+		existingFiles = s.fileDAO.Query(newName, parentID, tenantID)
 		if len(existingFiles) == 0 {
 			return newName
 		}
@@ -517,7 +570,7 @@ func (s *FileService) CreateFolder(tenantID, name, parentID, fileType string) (m
 		return nil, fmt.Errorf("Parent Folder Doesn't Exist!")
 	}
 
-	existingFiles := s.fileDAO.Query(name, parentID)
+	existingFiles := s.fileDAO.Query(name, parentID, tenantID)
 	if len(existingFiles) > 0 {
 		return nil, fmt.Errorf("Duplicated folder name in the same folder.")
 	}
@@ -640,35 +693,14 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 		return fmt.Errorf("failed to get file2document mappings: %w", err)
 	}
 	if len(informs) > 0 {
-		documentDAO := dao.NewDocumentDAO()
-		datasetDAO := dao.NewKnowledgebaseDAO()
-
 		for _, inform := range informs {
 			if inform.DocumentID == nil {
 				continue
 			}
 			docID := *inform.DocumentID
-
-			doc, err := documentDAO.GetByID(docID)
-			if err == nil && doc != nil {
-				// Get tenant ID from KB
-				ds, err := datasetDAO.GetByID(doc.KbID)
-				if err == nil && ds != nil {
-					tenantID := ds.TenantID
-					if tenantID != "" {
-						// Delete from document engine
-						if err := s.deleteDocumentFromEngine(ctx, doc, tenantID); err != nil {
-							common.Logger.Error(fmt.Sprintf("Fail to delete document from engine: %s, error: %v", doc.ID, err))
-						}
-					}
-				}
-
-				// Delete document record
-				if _, err := documentDAO.Delete(docID); err != nil {
-					common.Logger.Error(fmt.Sprintf("Fail to delete document: %s, error: %v", docID, err))
-				}
+			if err := s.documentService.RemoveDocumentKeepFile(docID); err != nil {
+				common.Logger.Error(fmt.Sprintf("Fail to remove document: %s, error: %v", docID, err))
 			}
-
 		}
 
 		// Delete file2document mapping (outside the loop, called once - matching Python behavior)
@@ -682,27 +714,6 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 		return err
 	}
 
-	return nil
-}
-
-// deleteDocumentFromEngine deletes a document from the document engine
-func (s *FileService) deleteDocumentFromEngine(ctx context.Context, doc *entity.Document, tenantID string) error {
-	// Get document engine
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return nil
-	}
-
-	// Build index name: ragflow_<tenant_id>_<kb_id>
-	indexName := fmt.Sprintf("ragflow_%s_%s", tenantID, doc.KbID)
-
-	// Delete document from engine with timeout
-	reqCtx, cancel := context.WithTimeout(ctx, 300*time.Second)
-	defer cancel()
-	condition := map[string]interface{}{"doc_id": doc.ID}
-	if _, err := docEngine.DeleteChunks(reqCtx, condition, indexName, doc.KbID); err != nil {
-		return fmt.Errorf("delete document from engine: %w", err)
-	}
 	return nil
 }
 
@@ -788,6 +799,34 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 		if !s.checkFileTeamPermission(destFolder, uid) {
 			return false, "No authorization to write to destination folder."
 		}
+
+		if destFolder.Type != FileTypeFolder {
+			return false, "Destination is not a folder."
+		}
+
+		destAncestors, err := s.fileDAO.GetAllParentFolders(destFolder.ID)
+		if err != nil {
+			return false, "Parent folder not found!"
+		}
+
+		destAncestorIDs := make(map[string]struct{}, len(destAncestors))
+		for _, folder := range destAncestors {
+			destAncestorIDs[folder.ID] = struct{}{}
+		}
+
+		for _, file := range files {
+			if file.Type != FileTypeFolder {
+				continue
+			}
+
+			if file.ID == destFolder.ID {
+				return false, "Cannot move a folder to itself."
+			}
+
+			if _, ok := destAncestorIDs[file.ID]; ok {
+				return false, "Cannot move a folder into its own subfolder."
+			}
+		}
 	}
 
 	// 5. Validate new_name if provided
@@ -811,7 +850,7 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 		if destFolder != nil {
 			targetParentID = destFolder.ID
 		}
-		existingFiles := s.fileDAO.Query(newName, targetParentID)
+		existingFiles := s.fileDAO.Query(newName, targetParentID, file.TenantID)
 		for _, f := range existingFiles {
 			if f.Name == newName {
 				return false, "Duplicated file name in the same folder."
@@ -820,7 +859,7 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 	} else if destFolder != nil {
 		// Plain move (no rename): check for duplicate names in destination folder
 		for _, file := range files {
-			existingFiles := s.fileDAO.Query(file.Name, destFolder.ID)
+			existingFiles := s.fileDAO.Query(file.Name, destFolder.ID, file.TenantID)
 			for _, f := range existingFiles {
 				// Ignore the source file itself
 				if f.ID != file.ID {
@@ -874,7 +913,7 @@ func (s *FileService) moveEntryRecursive(sourceFile *entity.File, destFolder *en
 
 	if sourceFile.Type == FileTypeFolder {
 		// Handle folder move
-		existingFolders := s.fileDAO.Query(effectiveName, destFolder.ID)
+		existingFolders := s.fileDAO.Query(effectiveName, destFolder.ID, sourceFile.TenantID)
 		var newFolder *entity.File
 		if len(existingFolders) > 0 {
 			// Prevent moving a folder into itself (self-target merge)

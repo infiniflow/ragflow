@@ -320,7 +320,7 @@ type fakeAgentService struct {
 
 // agentServiceIface is the minimum interface the handler depends on.
 type agentServiceIface interface {
-	ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*service.ListAgentsResponse, common.ErrorCode, error)
+	ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*service.ListAgentsResponse, common.ErrorCode, error)
 	ListTemplates() ([]*entity.CanvasTemplate, error)
 }
 
@@ -335,7 +335,7 @@ func (h *agentHandlerTestable) listAgents(c *gin.Context) {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
-	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "")
+	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "", nil)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": code, "data": false, "message": err.Error()})
 		return
@@ -359,7 +359,7 @@ func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": templates, "message": "success"})
 }
 
-func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*service.ListAgentsResponse, common.ErrorCode, error) {
+func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
 	return f.result, f.code, f.err
 }
 
@@ -429,7 +429,7 @@ type fullFakeAgentService struct {
 	versions []*entity.UserCanvasVersion
 }
 
-func (f *fullFakeAgentService) ListAgents(string, string, int, int, string, bool, []string, string) (*service.ListAgentsResponse, common.ErrorCode, error) {
+func (f *fullFakeAgentService) ListAgents(string, string, int, int, string, bool, []string, string, []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
 	return &service.ListAgentsResponse{}, common.CodeSuccess, nil
 }
 func (f *fullFakeAgentService) CreateAgent(context.Context, *service.CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
@@ -441,7 +441,7 @@ func (f *fullFakeAgentService) GetAgent(context.Context, string, string) (*entit
 	}
 	return f.getRow, nil
 }
-func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, entity.JSONMap) error {
+func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, map[string]interface{}) error {
 	return nil
 }
 func (f *fullFakeAgentService) DeleteAgent(context.Context, string, string) error {
@@ -730,10 +730,9 @@ func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _ string, _ any) (
 // TestAgentChatCompletions_StreamSetsContentType covers the SSE
 // path: the handler streams canvas.RunEvent frames as
 // `data: {...}\n\n` with a trailing `data: [DONE]\n\n` terminator.
-// The frame shape is the unified python envelope
-// {code:0, message:"", data:{answer, reference, audio_binary, id,
-// session_id}} — the same shape /api/v1/agentbots/<id>/completions
-// emits. See service.WriteChatbotRunEvent and WriteChatbotFrame.
+// The frame shape is the Python agent-canvas envelope
+// {event,message_id,task_id,session_id,data:{content}}. See
+// service.WriteChatbotRunEvent.
 //
 // The stubChatRunner emits one `message` frame and one `done` frame
 // so the test verifies the body contains both the framed event and
@@ -749,7 +748,7 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 	c.Set("user_id", "u1")
 
 	runner := &stubChatRunner{events: []canvas.RunEvent{
-		{Type: "message", Data: `{"answer":"hi back","reference":[]}`},
+		{Type: "message", MessageID: "msg-1", TaskID: "task-1", SessionID: "sess-1", Data: `{"content":"hi back","reference":[]}`},
 		{Type: "done", Data: ""},
 	}}
 	h := &AgentHandler{chatRunner: runner}
@@ -759,12 +758,12 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/event-stream", got)
 	}
 	body := w.Body.String()
-	// Body must contain the unified python envelope (`code/data.answer`)
-	// and the [DONE] terminator. The iframe SDK JSON.parse()s `answer`
-	// to extract the inner fields, so the embedded JSON is double-encoded
-	// (escaped quotes inside the outer `"answer"` string).
-	if !strings.Contains(body, "\"code\":0") || !strings.Contains(body, `"answer":"{\"answer\":\"hi back\",\"reference\":[]}"`) {
-		t.Errorf("body should contain unified python envelope with answer, got %q", body)
+	if !strings.Contains(body, `"event":"message"`) ||
+		!strings.Contains(body, `"message_id":"msg-1"`) ||
+		!strings.Contains(body, `"task_id":"task-1"`) ||
+		!strings.Contains(body, `"session_id":"sess-1"`) ||
+		!strings.Contains(body, `"content":"hi back"`) {
+		t.Errorf("body should contain flat agent event with content, got %q", body)
 	}
 	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
 		t.Errorf("body should end with [DONE] terminator, got %q", body)
@@ -775,8 +774,7 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 // scenario the user actually hit: `openai-compatible: false` with no
 // `stream` field on the body. The handler must still invoke the
 // canvas runner and stream the result as SSE — the SSE envelope is
-// the unified python shape shared with
-// /api/v1/agentbots/<id>/completions regardless of the stream flag.
+// the flat Python agent-canvas shape regardless of the stream flag.
 func TestAgentChatCompletions_DefaultBranchStreamsSSE(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -788,7 +786,7 @@ func TestAgentChatCompletions_DefaultBranchStreamsSSE(t *testing.T) {
 	c.Set("user_id", "u1")
 
 	runner := &stubChatRunner{events: []canvas.RunEvent{
-		{Type: "message", Data: `{"answer":"hello back","reference":[]}`},
+		{Type: "message", MessageID: "msg-2", TaskID: "task-2", SessionID: "sess-2", Data: `{"content":"hello back","reference":[]}`},
 		{Type: "done", Data: ""},
 	}}
 	h := &AgentHandler{chatRunner: runner}
@@ -798,8 +796,10 @@ func TestAgentChatCompletions_DefaultBranchStreamsSSE(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/event-stream (default branch must stream)", got)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "\"code\":0") || !strings.Contains(body, `"answer":"{\"answer\":\"hello back\",\"reference\":[]}"`) {
-		t.Errorf("body should contain unified python envelope with answer, got %q", body)
+	if !strings.Contains(body, `"event":"message"`) ||
+		!strings.Contains(body, `"message_id":"msg-2"`) ||
+		!strings.Contains(body, `"content":"hello back"`) {
+		t.Errorf("body should contain flat agent event with content, got %q", body)
 	}
 	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
 		t.Errorf("body should end with [DONE] terminator, got %q", body)

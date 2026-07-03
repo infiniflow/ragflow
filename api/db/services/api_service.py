@@ -28,12 +28,12 @@ class APITokenService(CommonService):
     @classmethod
     @DB.connection_context()
     def used(cls, token):
-        return cls.model.update({
-            "update_time": current_timestamp(),
-            "update_date": datetime_format(datetime.now()),
-        }).where(
-            cls.model.token == token
-        )
+        return cls.model.update(
+            {
+                "update_time": current_timestamp(),
+                "update_date": datetime_format(datetime.now()),
+            }
+        ).where(cls.model.token == token)
 
     @classmethod
     @DB.connection_context()
@@ -54,15 +54,11 @@ class API4ConversationService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_list(cls, dialog_id, tenant_id,
-                 page_number, items_per_page,
-                 orderby, desc, id=None, user_id=None, include_dsl=True, keywords="",
-                 from_date=None, to_date=None, exp_user_id=None
-                 ):
+    def get_list(cls, dialog_id, tenant_id, page_number, items_per_page, orderby, desc, id=None, user_id=None, include_dsl=True, keywords="", from_date=None, to_date=None, exp_user_id=None):
         if include_dsl:
             sessions = cls.model.select().where(cls.model.dialog_id == dialog_id)
         else:
-            fields = [field for field in cls.model._meta.fields.values() if field.name != 'dsl']
+            fields = [field for field in cls.model._meta.fields.values() if field.name != "dsl"]
             sessions = cls.model.select(*fields).where(cls.model.dialog_id == dialog_id)
         if id:
             sessions = sessions.where(cls.model.id == id)
@@ -85,15 +81,15 @@ class API4ConversationService(CommonService):
         sessions = sessions.paginate(page_number, items_per_page)
 
         return count, list(sessions.dicts())
-    
+
     @classmethod
     @DB.connection_context()
     def get_names(cls, dialog_id, exp_user_id):
-        fields = [cls.model.id, cls.model.name,]
-        sessions = cls.model.select(*fields).where(
-            cls.model.dialog_id == dialog_id,
-            cls.model.exp_user_id == exp_user_id
-            ).order_by(cls.model.getter_by("create_date").desc())
+        fields = [
+            cls.model.id,
+            cls.model.name,
+        ]
+        sessions = cls.model.select(*fields).where(cls.model.dialog_id == dialog_id, cls.model.exp_user_id == exp_user_id).order_by(cls.model.getter_by("create_date").desc())
 
         return list(sessions.dicts())
 
@@ -108,25 +104,21 @@ class API4ConversationService(CommonService):
     def stats(cls, tenant_id, from_date, to_date, source=None):
         if len(to_date) == 10:
             to_date += " 23:59:59"
-        return cls.model.select(
-            cls.model.create_date.truncate("day").alias("dt"),
-            peewee.fn.COUNT(
-                cls.model.id).alias("pv"),
-            peewee.fn.COUNT(
-                cls.model.user_id.distinct()).alias("uv"),
-            peewee.fn.SUM(
-                cls.model.tokens).alias("tokens"),
-            peewee.fn.SUM(
-                cls.model.duration).alias("duration"),
-            peewee.fn.AVG(
-                cls.model.round).alias("round"),
-            peewee.fn.SUM(
-                cls.model.thumb_up).alias("thumb_up")
-        ).join(Dialog, on=((cls.model.dialog_id == Dialog.id) & (Dialog.tenant_id == tenant_id))).where(
-            cls.model.create_date >= from_date,
-            cls.model.create_date <= to_date,
-            cls.model.source == source
-        ).group_by(cls.model.create_date.truncate("day")).dicts()
+        return (
+            cls.model.select(
+                cls.model.create_date.truncate("day").alias("dt"),
+                peewee.fn.COUNT(cls.model.id).alias("pv"),
+                peewee.fn.COUNT(cls.model.user_id.distinct()).alias("uv"),
+                peewee.fn.SUM(cls.model.tokens).alias("tokens"),
+                peewee.fn.SUM(cls.model.duration).alias("duration"),
+                peewee.fn.AVG(cls.model.round).alias("round"),
+                peewee.fn.SUM(cls.model.thumb_up).alias("thumb_up"),
+            )
+            .join(Dialog, on=((cls.model.dialog_id == Dialog.id) & (Dialog.tenant_id == tenant_id)))
+            .where(cls.model.create_date >= from_date, cls.model.create_date <= to_date, cls.model.source == source)
+            .group_by(cls.model.create_date.truncate("day"))
+            .dicts()
+        )
 
     @classmethod
     @DB.connection_context()
