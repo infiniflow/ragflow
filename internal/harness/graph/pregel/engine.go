@@ -543,7 +543,7 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 				common.Debug("allFailed",
 					zap.Int("step", step),
 					zap.String("results", why))
-				errCh <- fmt.Errorf("all %d tasks failed in step %d", len(results), step)
+				errCh <- fmt.Errorf("all %d tasks failed in step %d: %s", len(results), step, why)
 				return
 			}
 
@@ -706,6 +706,9 @@ func (e *Engine) prepareNextTasksWithMode(
 
 		// Determine triggers for this node
 		triggers := e.getTriggers(node)
+		if len(triggers) == 0 {
+			triggers = registry.Names()
+		}
 
 		// BSP mode: always schedule, even if previously completed (supports loops).
 		var task *Task
@@ -767,6 +770,13 @@ func (e *Engine) prepareNextTasksDAG(
 		}
 
 		triggers := e.getTriggers(n)
+		if len(triggers) == 0 {
+			chMap := e.graph.GetChannels()
+			triggers = make([]string, 0, len(chMap))
+			for name := range chMap {
+				triggers = append(triggers, name)
+			}
+		}
 		var task *Task
 		if forExecution {
 			task = e.createTask(n, currentState, triggers, []string{})
@@ -1032,9 +1042,12 @@ func (e *Engine) executeTasksAsync(
 				return
 			}
 
+			// Convert map input to struct type if state schema is a struct
+			convertedInput := e.mapToStateSchema(input)
+
 			// Define the function to execute
 			executeFn := func(ctx context.Context) (any, error) {
-				return t.Func(ctx, input)
+				return t.Func(ctx, convertedInput)
 			}
 
 			// Use task's retry policy or default
@@ -1111,6 +1124,9 @@ func (e *Engine) executeTask(
 		}
 	}
 
+	// Convert map input to struct type if the state schema is a struct
+	input = e.mapToStateSchema(input)
+
 	// Use RetryExecutor for retry logic
 	retryPolicy := task.RetryPolicy
 	if retryPolicy == nil {
@@ -1158,6 +1174,64 @@ func (e *Engine) executeTask(
 }
 
 // readTaskInput reads the input for a task from channels.
+// mapToStateSchema converts a map[string]any state to the graph's state schema
+// type if it is a struct (or pointer to struct). If the schema is a map or
+// nil, the map input is returned as-is.
+func (e *Engine) mapToStateSchema(input any) any {
+	if input == nil {
+		return nil
+	}
+	inputMap, ok := input.(map[string]any)
+	if !ok {
+		return input
+	}
+
+	schema := e.graph.GetStateSchema()
+	if schema == nil {
+		return inputMap
+	}
+
+	rv := reflect.ValueOf(schema)
+	for rv.Kind() == reflect.Ptr {
+		rv = rv.Elem()
+	}
+	if rv.Kind() != reflect.Struct {
+		return inputMap
+	}
+
+	// State schema is a struct (possibly wrapped in pointer): create a new
+	// instance and populate fields from the input map.
+	// Preserve whether the original schema was a pointer or value.
+	schemaVal := reflect.ValueOf(schema)
+	isPtr := schemaVal.Kind() == reflect.Ptr
+	structType := rv.Type() // underlying struct type
+	structPtr := reflect.New(structType)
+	structVal := structPtr.Elem()
+
+	for i := 0; i < structType.NumField(); i++ {
+		field := structType.Field(i)
+		if field.PkgPath != "" {
+			continue
+		}
+		if val, exists := inputMap[field.Name]; exists {
+			fv := structVal.Field(i)
+			if fv.CanSet() {
+				rvVal := reflect.ValueOf(val)
+				if rvVal.Type().AssignableTo(fv.Type()) {
+					fv.Set(rvVal)
+				} else if rvVal.Type().ConvertibleTo(fv.Type()) {
+					fv.Set(rvVal.Convert(fv.Type()))
+				}
+			}
+		}
+	}
+
+	if isPtr {
+		return structPtr.Interface() // *StructType
+	}
+	return structVal.Interface() // StructType (value)
+}
+
 func (e *Engine) readTaskInput(registry *channels.Registry, task *Task) (any, error) {
 	if len(task.Channels) == 0 {
 		return nil, nil
@@ -1508,25 +1582,14 @@ func toMap(val any) (map[string]any, error) {
 		}
 		val := rv.Field(i).Interface()
 
-		// Convert field name to snake_case for consistency
-		fieldName := toSnakeCase(field.Name)
-		result[fieldName] = val
+		// Use original field name to match channel registration
+		// (configureChannelsFromSchema registers channels with field.Name).
+		result[field.Name] = val
 	}
 
 	return result, nil
 }
 
-// toSnakeCase converts CamelCase to snake_case.
-func toSnakeCase(name string) string {
-	var result []rune
-	for i, r := range name {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			result = append(result, '_')
-		}
-		result = append(result, r)
-	}
-	return strings.ToLower(string(result))
-}
 
 // saveCheckpoint saves a checkpoint to the checkpointer.
 func (e *Engine) saveCheckpoint(ctx context.Context, threadID, checkpointID string, step int, checkpoint map[string]any) error {

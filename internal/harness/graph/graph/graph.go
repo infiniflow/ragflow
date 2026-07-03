@@ -230,6 +230,7 @@ func (g *stateGraph) GetNodes() map[string]*types.Node           { return g.node
 func (g *stateGraph) GetNodeTriggerMode() types.NodeTriggerMode  { return g.NodeTriggerMode }
 func (g *stateGraph) SetNodeTriggerMode(mode types.NodeTriggerMode) { g.NodeTriggerMode = mode }
 func (g *stateGraph) GetDataEdges() []*types.DataEdge            { return g.dataEdges }
+func (g *stateGraph) GetStateSchema() interface{}                { return g.stateSchema }
 
 func (g *stateGraph) SetEntryPoint(node string) error {
 	if _, ok := g.nodes[node]; !ok {
@@ -369,7 +370,7 @@ func (g *stateGraph) Compile(opts ...interface{}) (types.CompiledGraph, error) {
 		nodeTriggerMode: types.NodeTriggerAnyPredecessor,
 	}
 	for _, opt := range opts {
-		if fn, ok := opt.(func(*compiledGraph)); ok {
+		if fn, ok := opt.(CompileOption); ok {
 			fn(cg)
 		}
 	}

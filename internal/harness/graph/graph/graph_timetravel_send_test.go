@@ -35,6 +35,7 @@ func TestTimeTravel_MultiStepInject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
+	insp := getInspector(t, cg)
 
 	tid := "tt-multi-inject"
 	ctx := context.Background()

@@ -428,6 +428,9 @@ type StateGraph interface {
 	GetNodes() map[string]*Node
 	GetNodeTriggerMode() NodeTriggerMode
 	GetDataEdges() []*DataEdge
+
+	// GetStateSchema returns the raw state schema (struct, map, etc.)
+	GetStateSchema() interface{}
 }
 
 // CompiledGraph is the interface for executing a compiled graph.

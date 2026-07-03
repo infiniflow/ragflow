@@ -113,19 +113,16 @@ func TestTimeTravel_GetState_AfterExecution(t *testing.T) {
 // TestTimeTravel_UpdateState_ThenResume verifies that updating state via
 // UpdateState and then resuming works correctly.
 func TestTimeTravel_UpdateState_ThenResume(t *testing.T) {
-	type State struct {
-		Items map[string]string
-	}
-
-	b := graphPkg.NewStateGraph(State{})
+	b := graphPkg.NewStateGraph(map[string]any{})
+	b.AddChannel("Items", channels.NewLastValue(map[string]string{}))
 	b.AddNode("modify", func(ctx context.Context, state any) (any, error) {
-		s := state.(State)
-		s.Items = map[string]string{"original": "yes"}
+		s := state.(map[string]any)
+		s["Items"] = map[string]string{"original": "yes"}
 		return s, nil
 	})
 	b.AddNode("validate", func(ctx context.Context, state any) (any, error) {
-		s := state.(State)
-		if s.Items == nil {
+		s := state.(map[string]any)
+		if s["Items"] == nil {
 			return nil, nil
 		}
 		return s, nil
@@ -151,7 +148,7 @@ func TestTimeTravel_UpdateState_ThenResume(t *testing.T) {
 	}
 
 	// First execution.
-	_, err = cg.Invoke(ctx, State{}, cfg)
+	_, err = cg.Invoke(ctx, map[string]any{}, cfg)
 	if err != nil {
 		t.Fatalf("first Invoke: %v", err)
 	}
@@ -186,6 +183,8 @@ func TestTimeTravel_UpdateState_ThenResume(t *testing.T) {
 // TestTimeTravel_MultipleUpdates verifies multi-step time travel.
 func TestTimeTravel_MultipleUpdates(t *testing.T) {
 	b := graphPkg.NewStateGraph(map[string]any{})
+	b.AddChannel("step", channels.NewLastValue(0))
+	b.AddChannel("updated", channels.NewLastValue(false))
 	b.AddNode("echo", func(ctx context.Context, state any) (any, error) {
 		return state, nil
 	})
@@ -213,17 +212,18 @@ func TestTimeTravel_MultipleUpdates(t *testing.T) {
 	}
 
 	// Apply multiple updates.
-	inspector2, ok2 := cg.(graphPkg.StateInspector)
-	if !ok2 {
-		t.Fatal("compiled graph does not implement StateInspector")
+	csg := graphPkg.NewCompiledStateGraph(cg)
+	if csg == nil {
+		t.Fatal("NewCompiledStateGraph returned nil")
 	}
+	t.Logf("checkpointer set: %v, store: %v", cg.GetCheckpointer(), cg.GetGraph())
 	for i := 1; i <= 3; i++ {
 		u := &graphPkg.StateUpdate{
 			Values:   map[string]interface{}{"step": i, "updated": true},
 			AsNode:   "user",
 			ThreadID: tid,
 		}
-		_, err := inspector2.UpdateState(ctx, &types.RunnableConfig{
+		_, err := csg.UpdateState(ctx, &types.RunnableConfig{
 			Configurable: map[string]interface{}{constants.ConfigKeyThreadID: tid},
 		}, u)
 		if err != nil {
@@ -232,7 +232,7 @@ func TestTimeTravel_MultipleUpdates(t *testing.T) {
 	}
 
 	// GetStateHistory should show all checkpoints, including the updates.
-	history, err := inspector2.GetStateHistory(ctx, &types.RunnableConfig{
+	history, err := csg.GetStateHistory(ctx, &types.RunnableConfig{
 		Configurable: map[string]interface{}{constants.ConfigKeyThreadID: tid},
 	}, 10, nil)
 	if err != nil {
