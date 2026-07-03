@@ -46,12 +46,7 @@ class AkShareParam(ToolParamBase):
         self.check_positive_integer(self.top_n, "Top N")
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "query": {
-                "name": "Stock symbol",
-                "type": "line"
-            }
-        }
+        return {"query": {"name": "Stock symbol", "type": "line"}}
 
 
 class AkShare(ToolBase, ABC):
@@ -80,12 +75,7 @@ class AkShare(ToolBase, ABC):
                 if self.check_if_canceled("AkShare processing"):
                     return
 
-                items = [
-                    '<a href="{}">{}</a>\n 新闻内容: {} \n发布时间:{} \n文章来源: {}'.format(
-                        i["新闻链接"], i["新闻标题"], i["新闻内容"], i["发布时间"], i["文章来源"]
-                    )
-                    for _, i in df.iterrows()
-                ]
+                items = ['<a href="{}">{}</a>\n 新闻内容: {} \n发布时间:{} \n文章来源: {}'.format(i["新闻链接"], i["新闻标题"], i["新闻内容"], i["发布时间"], i["文章来源"]) for _, i in df.iterrows()]
                 res = "\n\n".join(items)
                 self.set_output("formalized_content", res)
                 return res
