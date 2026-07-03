@@ -17,7 +17,7 @@
 import { FormFieldType } from '@/components/dynamic-form';
 import { LLMFactory } from '@/constants/llm';
 import type { FieldConfig, ProviderConfig } from '../types';
-import { buildModelInfoFromValues, capitalize } from './utils';
+import { buildModelInfoFromValues } from './utils';
 
 /**
  * Factory configuration for local/compatible factories
@@ -182,20 +182,20 @@ function buildLocalConfig(
       placeholder: 'instanceNameMessage',
       tooltip: 'instanceNameTip',
     },
-    {
-      name: 'model_type',
-      label: 'modelType',
-      type: FormFieldType.MultiSelect,
-      required: true,
-      options: modelTypes.map((t) => ({ label: capitalize(t), value: t })),
-    },
-    {
-      name: 'model_name',
-      label: modelNameLabel ?? 'modelName',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: 'modelNameMessage',
-    },
+    // {
+    //   name: 'model_type',
+    //   label: 'modelType',
+    //   type: FormFieldType.MultiSelect,
+    //   required: true,
+    //   options: modelTypes.map((t) => ({ label: capitalize(t), value: t })),
+    // },
+    // {
+    //   name: 'model_name',
+    //   label: modelNameLabel ?? 'modelName',
+    //   type: FormFieldType.Text,
+    //   required: true,
+    //   placeholder: 'modelNameMessage',
+    // },
     {
       name: 'base_url',
       label: 'addLlmBaseUrl',
@@ -212,23 +212,23 @@ function buildLocalConfig(
       placeholder: 'apiKeyMessage',
       shouldRender: 'hideWhenInstanceExists',
     },
-    {
-      name: 'max_tokens',
-      label: 'maxTokens',
-      type: FormFieldType.Number,
-      required: true,
-      placeholder: 'maxTokensTip',
-      defaultValue: 8192,
-      validation: { min: 0, message: 'maxTokensMessage' },
-    },
-    {
-      name: 'is_tools',
-      label: 'enableToolCall',
-      type: FormFieldType.Switch,
-      required: false,
-      shouldRender: 'modelTypeSupportsToolCall',
-      defaultValue: false,
-    },
+    // {
+    //   name: 'max_tokens',
+    //   label: 'maxTokens',
+    //   type: FormFieldType.Number,
+    //   required: true,
+    //   placeholder: 'maxTokensTip',
+    //   defaultValue: 8192,
+    //   validation: { min: 0, message: 'maxTokensMessage' },
+    // },
+    // {
+    //   name: 'is_tools',
+    //   label: 'enableToolCall',
+    //   type: FormFieldType.Switch,
+    //   required: false,
+    //   shouldRender: 'modelTypeSupportsToolCall',
+    //   defaultValue: false,
+    // },
   ];
 
   if (addProviderOrder) {

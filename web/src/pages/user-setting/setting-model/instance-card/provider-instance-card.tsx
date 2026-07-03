@@ -54,6 +54,77 @@ import { BedrockInstanceCard } from './bedrock-instance-card';
 import { ModelsSection } from './models-section';
 import VerifyButton from './verify-button';
 
+/**
+ * Provider-specific credential fields that the backend expects bundled
+ * *inside* `api_key` as an object rather than as top-level keys:
+ *   api_key: { api_key, group_id?, api_version?, provider_order? }
+ * - MiniMax        → group_id
+ * - Azure OpenAI   → api_version
+ * - OpenRouter     → provider_order
+ * When none of these are present the api_key stays a bare string.
+ */
+const API_KEY_NESTED_FIELDS = [
+  'group_id',
+  'api_version',
+  'provider_order',
+] as const;
+
+/**
+ * Build the `api_key` payload value from the flat form values. If any of
+ * the nested credential fields (see `API_KEY_NESTED_FIELDS`) carry a
+ * value, returns `{ api_key, ...nested }`; otherwise returns the plain
+ * api_key string. Used by both the auto-save payload and its change
+ * signature baseline so the two stay byte-identical.
+ */
+function buildApiKeyValue(
+  values: Record<string, any>,
+): string | Record<string, any> | undefined {
+  const nested: Record<string, any> = {};
+  for (const field of API_KEY_NESTED_FIELDS) {
+    const v = values[field];
+    if (v !== undefined && v !== '') nested[field] = v;
+  }
+  if (Object.keys(nested).length === 0) return values.api_key;
+  return { api_key: values.api_key ?? '', ...nested };
+}
+
+/**
+ * Inverse of `buildApiKeyValue`, used on the echo/prefill path. The
+ * backend persists the credential bundle as a JSON string (see
+ * `rag/llm/chat_model.py`, which does `json.loads(key)`), so
+ * `showProviderInstance` may return `api_key` as:
+ *   1. a raw JSON string  `'{"api_key":"sk-x","group_id":"123"}'`
+ *   2. an already-parsed object `{ api_key, group_id }`
+ *   3. a plain bare key string `'sk-x'`
+ * Normalise all three into the bare key plus any nested credential
+ * fields so the form pre-fills group_id / api_version / provider_order.
+ */
+function unwrapApiKey(raw: unknown): {
+  apiKey: string;
+  nested: Record<string, any>;
+} {
+  let obj: any = raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('{')) {
+      try {
+        obj = JSON.parse(trimmed);
+      } catch {
+        obj = raw;
+      }
+    }
+  }
+  if (obj && typeof obj === 'object') {
+    const nested: Record<string, any> = {};
+    for (const field of API_KEY_NESTED_FIELDS) {
+      const v = obj[field];
+      if (v !== undefined && v !== '') nested[field] = v;
+    }
+    return { apiKey: obj.api_key ?? '', nested };
+  }
+  return { apiKey: typeof raw === 'string' ? raw : '', nested: {} };
+}
+
 interface ProviderInstanceCardProps {
   providerName: string;
   /**
@@ -354,7 +425,16 @@ function GenericProviderInstanceCard({
     const values: Record<string, any> = {
       instance_name: merged.instance_name,
     };
-    if (merged.api_key) values.api_key = merged.api_key;
+    // api_key may come back as a JSON string, an already-parsed object,
+    // or a plain bare key (see `unwrapApiKey`). Normalise it so the
+    // api_key text field shows the bare key and the nested credential
+    // fields (MiniMax group_id, Azure api_version, OpenRouter
+    // provider_order) pre-fill their own form inputs.
+    if (merged.api_key) {
+      const { apiKey, nested } = unwrapApiKey(merged.api_key);
+      values.api_key = apiKey;
+      Object.assign(values, nested);
+    }
     if (merged.base_url) {
       values.base_url = merged.base_url;
       values.api_base = merged.base_url;
@@ -366,9 +446,14 @@ function GenericProviderInstanceCard({
     // for providers where it applies; surface it so the form / region
     // submit logic can echo it back.
     if ((merged as any).region) values.region = (merged as any).region;
-    // Provider-specific fields (e.g. MiniMax `group_id`) are echoed back
-    // so the form pre-fills them and the auto-save baseline matches.
-    if ((merged as any).group_id) values.group_id = (merged as any).group_id;
+    // Fallback: some backends may still surface these credential fields
+    // at the top level rather than nested in api_key — echo any that
+    // weren't already lifted from the api_key object above.
+    for (const field of API_KEY_NESTED_FIELDS) {
+      if (values[field] === undefined && (merged as any)[field] !== undefined) {
+        values[field] = (merged as any)[field];
+      }
+    }
     return values;
   }, [instance, instanceDetails, isDraft, baseUrlOptions]);
 
@@ -515,37 +600,22 @@ function GenericProviderInstanceCard({
 
     const values = formRef.current?.getValues?.() ?? {};
     const instanceId = instanceDetails?.id || instance.id;
-    // Peel off the fields that already have dedicated payload slots (or
-    // are never persisted directly). Everything left over is a
-    // provider-specific field (e.g. MiniMax `group_id`) that must be
-    // forwarded verbatim — otherwise editing it never reaches the
-    // backend and, because it's absent from the signature below, never
-    // even triggers a save.
-    const {
-      api_key: _apiKey,
-      base_url: _baseUrl,
-      api_base: _apiBase,
-      region: _region,
-      instance_name: _instanceName,
-      model_info: _modelInfo,
-      ...extraFields
-    } = values as Record<string, any>;
-    void _apiKey;
-    void _baseUrl;
-    void _apiBase;
-    void _region;
-    void _instanceName;
-    void _modelInfo;
+    // Providers like MiniMax / Azure-OpenAI / OpenRouter carry extra
+    // credential fields (group_id / api_version / provider_order) that
+    // the backend expects bundled *inside* api_key as an object rather
+    // than as top-level keys. Nesting them here also folds their values
+    // into the change signature below, so editing one actually triggers
+    // a blur-save.
+    const apiKeyValue = buildApiKeyValue(values as Record<string, any>);
     const payload: IUpdateProviderInstanceRequestBody = {
       provider_name: providerName,
       instance_name: instance.instance_name,
       id: instanceId,
-      api_key: values.api_key,
+      api_key: apiKeyValue ?? '',
       base_url: values.base_url ?? values.api_base,
       region: values.region || 'default',
       model_info: [],
       verify: false,
-      ...extraFields,
     };
     // Pull the latest model list from ModelsSection (via the ref it
     // updates). Only attach when non-empty so we don't accidentally
@@ -635,20 +705,17 @@ function GenericProviderInstanceCard({
     if (isDraft) return;
     const instanceId = instanceDetails?.id || instance.id;
     if (!instanceId) return;
+    // Match the api_key shape performAutoSave produces (extra credential
+    // fields nested inside api_key) so the first blur after mount doesn't
+    // see a signature diff and fire a redundant save.
     const baseline = {
       provider_name: providerName,
       instance_name: instance.instance_name,
       id: instanceId,
-      api_key: initialValues.api_key,
+      api_key: buildApiKeyValue(initialValues),
       base_url: initialValues.base_url ?? initialValues.api_base,
       region: initialValues.region,
       model_info: [] as IModelInfo[],
-      // Mirror the provider-specific fields that performAutoSave now
-      // spreads into its payload so the first blur after mount doesn't
-      // see a signature diff and fire a redundant save.
-      ...(initialValues.group_id !== undefined
-        ? { group_id: initialValues.group_id }
-        : {}),
     };
     lastSavedPayloadRef.current = JSON.stringify(baseline);
   }, [
@@ -661,41 +728,48 @@ function GenericProviderInstanceCard({
   ]);
 
   // ── Dropdown value-change auto-save (saved mode only) ───────────
-  // Watch every dropdown field's value directly and schedule an
-  // auto-save on change. A dropdown field's value commits via click,
-  // not blur — and the popover is rendered in a Radix portal outside
-  // the card's blur container, so blur-based saves are unreliable
-  // for dropdowns. The shared debounce (`scheduleAutoSave`,
-  // AUTO_SAVE_DEBOUNCE_MS) coalesces rapid successive changes with
-  // any blur-triggered save. Skipped in draft mode — draft mode has
-  // its own 200ms-debounced watch subscription that auto-saves.
-  // Also skipped until `instanceDetails` loads, so the initial form
-  // reset above doesn't fire a no-op save with the just-loaded values.
+  // A dropdown field's value commits via click, not blur — and the
+  // popover is rendered in a Radix portal outside the card's blur
+  // container, so blur-based saves are unreliable for dropdowns.
+  //
+  // We subscribe to the *raw* RHF form so we can read the change
+  // metadata `{ name, type }`. Only genuine user edits carry
+  // `type === 'change'`; programmatic updates (the `form.reset` that
+  // runs when `instanceDetails` loads, `setValue`, etc.) come through
+  // with an undefined type. Gating on `type === 'change'` is what stops
+  // merely opening the card / loading its details from firing a save —
+  // only an actual user selection in a dropdown schedules one. The
+  // shared debounce (`scheduleAutoSave`) coalesces it with any
+  // blur-triggered save. Skipped in draft mode (which has its own
+  // 200ms-debounced watch) and until `instanceDetails` loads.
   useEffect(() => {
     if (isDraft) return;
     if (dropdownFieldNames.length === 0) return;
     if (!instanceDetails) return;
-    const ref = formRef.current;
-    if (!ref || typeof ref.watch !== 'function') return;
+    const form = (formRef.current as any)?.form;
+    if (!form || typeof form.watch !== 'function') return;
 
     let cancelled = false;
+    const dropdownFieldSet = new Set(dropdownFieldNames);
 
-    const unsubscribers = dropdownFieldNames.map((name) =>
-      ref.watch(name, () => {
+    const subscription = form.watch(
+      (_values: any, meta: { name?: string; type?: string }) => {
         if (cancelled) return;
+        // Ignore programmatic value changes (reset/setValue) — they have
+        // no `type`. Only react to user-driven dropdown selections.
+        if (meta?.type !== 'change') return;
+        if (!meta?.name || !dropdownFieldSet.has(meta.name)) return;
         scheduleAutoSaveRef.current();
-      }),
+      },
     );
 
     return () => {
       cancelled = true;
-      unsubscribers.forEach((unsub) => {
-        try {
-          unsub?.();
-        } catch {
-          // ignore cleanup errors
-        }
-      });
+      try {
+        subscription?.unsubscribe?.();
+      } catch {
+        // ignore cleanup errors
+      }
     };
   }, [isDraft, dropdownFieldNames, instanceDetails]);
 

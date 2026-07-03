@@ -48,14 +48,33 @@ export interface IAvailableProvider {
 }
 
 export interface IProviderInstance {
-  api_key: string;
+  /**
+   * Usually a plain key string, but the showProviderInstance endpoint
+   * may return an object `{ api_key, ...nested }` for providers that
+   * bundle extra credentials (see the nested fields below).
+   */
+  api_key: string | Record<string, any>;
   id: string;
   instance_name: string;
   provider_id: string;
   region: string;
   status: string;
+  /**
+   * Optional: only returned by the showProviderInstance endpoint. Used
+   * to pre-fill the base_url/api_base form field when opening a saved
+   * instance.
+   */
   base_url?: string;
+  /**
+   * Provider-specific credentials that may be returned either at the top
+   * level or nested inside `api_key`:
+   *   - group_id       → MiniMax
+   *   - api_version    → Azure OpenAI
+   *   - provider_order → OpenRouter
+   */
   group_id?: string;
+  api_version?: string;
+  provider_order?: string;
 }
 export interface IAddedModel {
   model_type: string[];
@@ -78,6 +97,13 @@ export interface IInstanceModel {
    *   - `undefined` → never verified yet
    */
   verify?: boolean;
+  /**
+   * Persisted Tool-call flag from `tenant_model.extra.is_tools`.
+   * The backend's `_hybrid_get_instance_models` includes this so the
+   * frontend can forward the correct value in auto-save payloads
+   * without relying solely on the (possibly unfetched) catalog.
+   */
+  is_tools?: boolean;
 }
 
 export interface IDefaultModel {

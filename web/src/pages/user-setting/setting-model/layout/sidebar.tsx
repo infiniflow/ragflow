@@ -17,14 +17,10 @@
 import { LlmIcon } from '@/components/svg-icon';
 import { SearchInput } from '@/components/ui/input';
 import {
-  LlmKeys,
   useFetchAddedProviders,
   useFetchAvailableProviders,
 } from '@/hooks/use-llm-request';
-import { IProviderInstance } from '@/interfaces/database/llm';
 import { cn } from '@/lib/utils';
-import llmService from '@/services/llm-service';
-import { useQueries } from '@tanstack/react-query';
 import { ChevronRight } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -60,27 +56,13 @@ export function Sidebar({ selection, onSelect }: SidebarProps) {
   const { data: addedProviders } = useFetchAddedProviders();
   const [search, setSearch] = useState('');
 
-  const addedInstanceQueries = useQueries({
-    queries: addedProviders.map((p) => ({
-      queryKey: LlmKeys.providerInstances(p.name),
-      queryFn: async () => {
-        const { data } = await llmService.listProviderInstances(
-          { provider_name: p.name },
-          true,
-        );
-        return (data?.data ?? []) as IProviderInstance[];
-      },
-      enabled: !!p.name,
-      gcTime: 0,
-    })),
-  });
-
+  // Any provider present in `addedProviders` is treated as "added" and
+  // sorted first in the list. We deliberately do NOT fetch each added
+  // provider's instance list on mount — instance details are fetched
+  // lazily by the right pane only when the user clicks a provider.
   const addedSet = useMemo(() => {
-    const names = addedProviders
-      .filter((_, idx) => (addedInstanceQueries[idx]?.data?.length ?? 0) > 0)
-      .map((p) => p.name);
-    return new Set(names);
-  }, [addedProviders, addedInstanceQueries]);
+    return new Set(addedProviders.map((p) => p.name));
+  }, [addedProviders]);
 
   const filteredProviders = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -110,7 +92,7 @@ export function Sidebar({ selection, onSelect }: SidebarProps) {
         <ChevronRight className="size-4" />
       </button>
 
-      <div className="text-xs font-medium text-text-secondary px-1">
+      <div className="text-base font-medium text-text-primary px-1">
         {t('setting.availableModels')}
       </div>
 

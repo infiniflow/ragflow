@@ -259,11 +259,16 @@ export function ModelsSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerName, instanceName, hideActions]);
 
-  // Normalize instance-model records (which historically use `model_type`
-  // singular and lack `features`) into the shared `IProviderModelItem`
-  // shape used by the catalog. The current backend already returns the
-  // newer shape (`model_types` plural, `features`), but we defensively
-  // handle both.
+  const catalogFeatures = useMemo(() => {
+    const map = new Map<string, string[]>();
+    catalog.forEach((m) => {
+      if (Array.isArray(m.features) && m.features.length > 0) {
+        map.set(m.name, m.features);
+      }
+    });
+    return map;
+  }, [catalog]);
+
   const instanceItems: IProviderModelItem[] = useMemo(() => {
     return (instanceModels ?? []).map((im: any) => {
       const rawTypes = im.model_types ?? im.model_type ?? [];
@@ -272,14 +277,25 @@ export function ModelsSection({
         : rawTypes
           ? [rawTypes]
           : [];
+      console.log(`[ModelsSection] instanceModel: `, im);
+      const catalogFeats = catalogFeatures.get(im.name) ?? im.features ?? null;
+      const hasToolFlag = (feats: string[] | null | undefined) =>
+        Array.isArray(feats) &&
+        feats.some((f) =>
+          ['is_tools', 'tool_call', 'tools', 'function_call'].includes(f),
+        );
+      let features: string[] | null = catalogFeats;
+      if (im.is_tools && !hasToolFlag(catalogFeats)) {
+        features = [...(catalogFeats ?? []), 'is_tools'];
+      }
       return {
         name: im.name,
         max_tokens: im.max_tokens ?? 0,
         model_types,
-        features: im.features ?? null,
+        features,
       };
     });
-  }, [instanceModels]);
+  }, [instanceModels, catalogFeatures]);
 
   // Union of instance models + catalog, keyed by `name`. Catalog entries
   // win on conflict because the upstream list is authoritative for
@@ -300,6 +316,7 @@ export function ModelsSection({
   // / blur fires — even after add/remove mutations that invalidate
   // `useFetchInstanceModels`.
   useEffect(() => {
+    console.log(`[ModelsSection] onInstanceModelsChange: `, instanceItems);
     onInstanceModelsChange?.(toModelInfo(instanceItems));
   }, [instanceItems, onInstanceModelsChange]);
 
@@ -563,7 +580,7 @@ export function ModelsSection({
       model_name: targetName,
       max_tokens: item.max_tokens ?? 0,
       model_type: item.model_types ?? [],
-      is_tools: isTools,
+      extra: { is_tools: isTools },
     });
     setEditingModel(null);
   };

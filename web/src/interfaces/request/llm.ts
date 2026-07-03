@@ -91,7 +91,7 @@ export interface IPatchInstanceModelRequestBody {
   status?: 'active' | 'inactive';
   max_tokens?: number;
   model_type?: string[];
-  is_tools?: boolean;
+  extra?: Record<string, any>;
 }
 
 export interface IDeleteInstanceModelsRequestBody {
@@ -104,17 +104,16 @@ export interface IUpdateProviderInstanceRequestBody {
   provider_name: string;
   instance_name: string;
   id?: string;
-  api_key?: string;
+  /**
+   * Either a plain API-key string, or — for providers that need an
+   * extra credential such as MiniMax's `group_id` — an object bundling
+   * the key with those fields: `{ api_key, group_id }`.
+   */
+  api_key?: string | Record<string, any>;
   base_url?: string;
   region?: string;
   model_info?: IModelInfo[];
   verify?: boolean;
-  /**
-   * Provider-specific extra fields passed through verbatim from the
-   * dynamic form (e.g. MiniMax `group_id`). Not every provider has
-   * these, so they are typed loosely via an index signature.
-   */
-  [key: string]: unknown;
 }
 
 export interface ISetDefaultModelRequestBody {

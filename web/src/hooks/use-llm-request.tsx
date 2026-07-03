@@ -271,7 +271,15 @@ export const useAddProviderInstance = () => {
         // ignore list failure and proceed to add
       }
 
-      const { data } = await llmService.addProviderInstance(params);
+      // The provider is carried in the URL path
+      // (`/providers/<llm_factory>/instances`), so `llm_factory` must not
+      // be duplicated in the request body. Keep it only for URL building
+      // (native-config form) and send the remaining fields as the body.
+      const { llm_factory, ...body } = params;
+      const { data } = await llmService.addProviderInstance(
+        { llm_factory, data: body },
+        true,
+      );
       if (data.code === 0 && !params.verify) {
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(params.llm_factory),
