@@ -49,6 +49,8 @@ LOCAL_PYTHON_THREAD_ENV_VARS = (
     "BLIS_NUM_THREADS",
     "VECLIB_MAXIMUM_THREADS",
 )
+
+
 class LocalProvider(SandboxProvider):
     """
     Execute code as a local child process.
@@ -313,33 +315,38 @@ class LocalProvider(SandboxProvider):
 
     def _collect_artifacts(self, artifacts_dir: Path) -> list[dict[str, Any]]:
         artifacts: list[dict[str, Any]] = []
-        for path in sorted(artifacts_dir.rglob("*")):
-            if path.is_symlink():
-                raise RuntimeError(f"Artifact symlinks are not allowed: {path.name}")
-            if path.is_dir():
-                continue
-            if not path.is_file():
-                raise RuntimeError(f"Unsupported artifact entry: {path.name}")
+        artifacts_dir_str = str(artifacts_dir)
+        for root, dirs, files in list(os.walk(artifacts_dir_str)):
+            dirs.sort()
+            for name in sorted(files):
+                file_path = os.path.join(root, name)
+                if os.path.islink(file_path):
+                    raise RuntimeError(f"Artifact symlinks are not allowed: {name}")
+                if not os.path.isfile(file_path):
+                    raise RuntimeError(f"Unsupported artifact entry: {name}")
 
-            if len(artifacts) >= self.max_artifacts:
-                raise RuntimeError(f"Local execution produced more than {self.max_artifacts} artifacts.")
+                if len(artifacts) >= self.max_artifacts:
+                    raise RuntimeError(f"Local execution produced more than {self.max_artifacts} artifacts.")
 
-            size = path.stat().st_size
-            if size > self.max_artifact_bytes:
-                raise RuntimeError(f"Artifact exceeds {self.max_artifact_bytes} bytes: {path.name}")
+                size = os.path.getsize(file_path)
+                if size > self.max_artifact_bytes:
+                    raise RuntimeError(f"Artifact exceeds {self.max_artifact_bytes} bytes: {name}")
 
-            ext = path.suffix.lower()
-            if ext not in ALLOWED_ARTIFACT_EXTENSIONS:
-                raise RuntimeError(f"Unsupported artifact type: {path.name}")
+                ext = os.path.splitext(name)[1].lower()
+                if ext not in ALLOWED_ARTIFACT_EXTENSIONS:
+                    raise RuntimeError(f"Unsupported artifact type: {name}")
 
-            artifacts.append(
-                {
-                    "name": path.relative_to(artifacts_dir).as_posix(),
-                    "content_b64": base64.b64encode(path.read_bytes()).decode("ascii"),
-                    "mime_type": mimetypes.guess_type(path.name)[0] or "application/octet-stream",
-                    "size": size,
-                }
-            )
+                rel_path = os.path.relpath(file_path, artifacts_dir_str)
+                with open(file_path, "rb") as f:
+                    content_b64 = base64.b64encode(f.read()).decode("ascii")
+                artifacts.append(
+                    {
+                        "name": rel_path.replace(os.sep, "/"),
+                        "content_b64": content_b64,
+                        "mime_type": mimetypes.guess_type(name)[0] or "application/octet-stream",
+                        "size": size,
+                    }
+                )
         return artifacts
 
     @staticmethod
