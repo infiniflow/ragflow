@@ -482,9 +482,9 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
     if api_key:
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
 
-    success, msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
+    success, verify_msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
     if not success:
-        return False, msg
+        return False, verify_msg
 
     extra_fields = {}
     if base_url:
@@ -505,6 +505,7 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
         if msg:
             return False, msg
     else:
+        msg = ""
         target_factory_name = "siliconflow_intl" if provider_name.lower() == "siliconflow" and region == "intl" else provider_name
         factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == target_factory_name]
         factory_llms = factory_info[0]["llm"]
