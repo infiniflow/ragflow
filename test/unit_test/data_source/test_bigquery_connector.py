@@ -174,17 +174,12 @@ def test_missing_table_and_query_raises():
 
 @pytest.mark.p2
 def test_time_filtered_query_compound_cursor_with_id_column():
-    client = _FakeClient(table_schema=[
-        _FakeSchemaField("updated_at", "TIMESTAMP"),
-        _FakeSchemaField("id", "STRING")
-    ])
+    client = _FakeClient(table_schema=[_FakeSchemaField("updated_at", "TIMESTAMP"), _FakeSchemaField("id", "STRING")])
     connector = _make_connector(client=client, timestamp_column="updated_at", id_column="id")
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     end = datetime(2026, 2, 1, tzinfo=timezone.utc)
 
-    query, params = connector._build_time_filtered_query(
-        connector._build_base_query(), start, end, start_id="last-id"
-    )
+    query, params = connector._build_time_filtered_query(connector._build_base_query(), start, end, start_id="last-id")
 
     assert "(ragflow_src.updated_at > @start_cursor OR (ragflow_src.updated_at = @start_cursor AND ragflow_src.id > @start_cursor_id))" in query
     assert "ragflow_src.updated_at <= @end_cursor" in query
@@ -194,6 +189,7 @@ def test_time_filtered_query_compound_cursor_with_id_column():
         ("end_cursor", "TIMESTAMP", end),
     ]
 
+
 @pytest.mark.p2
 def test_time_filtered_query_uses_gte_without_id_column():
     client = _FakeClient(table_schema=[_FakeSchemaField("updated_at", "TIMESTAMP")])
@@ -201,9 +197,7 @@ def test_time_filtered_query_uses_gte_without_id_column():
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     end = datetime(2026, 2, 1, tzinfo=timezone.utc)
 
-    query, params = connector._build_time_filtered_query(
-        connector._build_base_query(), start, end
-    )
+    query, params = connector._build_time_filtered_query(connector._build_base_query(), start, end)
 
     assert "ragflow_src.updated_at >= @start_cursor" in query
     assert "ragflow_src.updated_at <= @end_cursor" in query
@@ -251,13 +245,8 @@ def test_value_serialization_types():
     assert BigQueryConnector._render_content_value(b"binary") is None
     assert BigQueryConnector._render_content_value(date(2026, 1, 2)) == "2026-01-02"
     assert BigQueryConnector._render_content_value(time(3, 4, 5)) == "03:04:05"
-    assert (
-        BigQueryConnector._render_content_value({"a": 1, "b": [1, 2]})
-        == '{"a": 1, "b": [1, 2]}'
-    )
-    assert (
-        BigQueryConnector._render_content_value("POINT(1 2)") == "POINT(1 2)"
-    )  # GEOGRAPHY WKT passes through
+    assert BigQueryConnector._render_content_value({"a": 1, "b": [1, 2]}) == '{"a": 1, "b": [1, 2]}'
+    assert BigQueryConnector._render_content_value("POINT(1 2)") == "POINT(1 2)"  # GEOGRAPHY WKT passes through
 
     # Metadata base64-encodes bytes instead of skipping.
     assert BigQueryConnector._render_metadata_value(b"hi") == "aGk="
@@ -310,10 +299,7 @@ def test_custom_query_mode_id_prefix():
 
 @pytest.mark.p2
 def test_batches_accumulate_to_batch_size():
-    rows = [
-        {"id": i, "name": f"n{i}", "description": "d", "status": "s"}
-        for i in range(5)
-    ]
+    rows = [{"id": i, "name": f"n{i}", "description": "d", "status": "s"} for i in range(5)]
     client = _FakeClient(rows=rows)
     connector = _make_connector(client=client, batch_size=2)
 
@@ -329,18 +315,10 @@ def test_cursor_serialize_deserialize_roundtrip():
     t = time(12, 0)
     dec = Decimal("1.23")
 
-    assert BigQueryConnector.deserialize_cursor_value(
-        BigQueryConnector.serialize_cursor_value(dt)
-    ) == dt
-    assert BigQueryConnector.deserialize_cursor_value(
-        BigQueryConnector.serialize_cursor_value(d)
-    ) == d
-    assert BigQueryConnector.deserialize_cursor_value(
-        BigQueryConnector.serialize_cursor_value(t)
-    ) == t
-    assert BigQueryConnector.deserialize_cursor_value(
-        BigQueryConnector.serialize_cursor_value(dec)
-    ) == dec
+    assert BigQueryConnector.deserialize_cursor_value(BigQueryConnector.serialize_cursor_value(dt)) == dt
+    assert BigQueryConnector.deserialize_cursor_value(BigQueryConnector.serialize_cursor_value(d)) == d
+    assert BigQueryConnector.deserialize_cursor_value(BigQueryConnector.serialize_cursor_value(t)) == t
+    assert BigQueryConnector.deserialize_cursor_value(BigQueryConnector.serialize_cursor_value(dec)) == dec
     assert BigQueryConnector.serialize_cursor_value(42) == 42
     assert BigQueryConnector.deserialize_cursor_value(42) == 42
 
@@ -383,12 +361,14 @@ def test_validation_detects_missing_content_column():
     with pytest.raises(ConnectorValidationError, match="name"):
         connector.validate_connector_settings()
 
+
 @pytest.mark.p2
 def test_validation_detects_missing_metadata_column():
     client = _FakeClient(table_schema=[_FakeSchemaField("name", "STRING")])
     connector = _make_connector(client=client, content_columns="name", metadata_columns="status")
     with pytest.raises(ConnectorValidationError, match="status"):
         connector.validate_connector_settings()
+
 
 @pytest.mark.p2
 def test_validation_detects_missing_id_column():
@@ -397,12 +377,14 @@ def test_validation_detects_missing_id_column():
     with pytest.raises(ConnectorValidationError, match="id"):
         connector.validate_connector_settings()
 
+
 @pytest.mark.p2
 def test_validation_detects_missing_timestamp_column():
     client = _FakeClient(table_schema=[_FakeSchemaField("name", "STRING")])
     connector = _make_connector(client=client, content_columns="name", metadata_columns="", id_column="", timestamp_column="ts")
     with pytest.raises(ConnectorValidationError, match="ts"):
         connector.validate_connector_settings()
+
 
 @pytest.mark.p2
 def test_validation_detects_unsupported_cursor_type_early():

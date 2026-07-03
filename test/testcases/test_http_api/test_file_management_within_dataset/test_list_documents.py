@@ -155,10 +155,10 @@ class TestDocumentsList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            ({"orderby": None}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"orderby": "create_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "update_time", True)), ""),
-            pytest.param({"orderby": "name", "desc": "False"}, 0, lambda r: (is_sorted(r["data"]["docs"], "name", False)), "", marks=pytest.mark.skip(reason="issues/5851")),
+            ({"orderby": None}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"orderby": "create_time"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"orderby": "update_time"}, 0, lambda r: is_sorted(r["data"]["docs"], "update_time", True), ""),
+            pytest.param({"orderby": "name", "desc": "False"}, 0, lambda r: is_sorted(r["data"]["docs"], "name", False), "", marks=pytest.mark.skip(reason="issues/5851")),
             pytest.param({"orderby": "unknown"}, 102, 0, "orderby should be create_time or update_time", marks=pytest.mark.skip(reason="issues/5851")),
         ],
     )
@@ -184,14 +184,14 @@ class TestDocumentsList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            ({"desc": None}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"desc": "true"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"desc": "True"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"desc": True}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            pytest.param({"desc": "false"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), "", marks=pytest.mark.skip(reason="issues/5851")),
-            ({"desc": "False"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), ""),
-            ({"desc": False}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), ""),
-            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "update_time", False)), ""),
+            ({"desc": None}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"desc": "true"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"desc": "True"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"desc": True}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            pytest.param({"desc": "false"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", False), "", marks=pytest.mark.skip(reason="issues/5851")),
+            ({"desc": "False"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", False), ""),
+            ({"desc": False}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", False), ""),
+            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: is_sorted(r["data"]["docs"], "update_time", False), ""),
             pytest.param({"desc": "unknown"}, 102, 0, "desc should be true or false", marks=pytest.mark.skip(reason="issues/5851")),
         ],
     )
@@ -231,7 +231,6 @@ class TestDocumentsList:
         assert len(res["data"]["docs"]) == expected_num
         assert res["data"]["total"] == expected_num
 
-
     @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_num, expected_message",
@@ -240,21 +239,21 @@ class TestDocumentsList:
             ({"name": ""}, 0, 5, ""),
             ({"name": "ragflow_test_upload_0.txt"}, 0, 1, ""),
             (
-                    {"name": "unknown.txt"},
-                    102,
-                    0,
-                    "You don't own the document unknown.txt.",
+                {"name": "unknown.txt"},
+                102,
+                0,
+                "You don't own the document unknown.txt.",
             ),
         ],
     )
     def test_name(
-            self,
-            HttpApiAuth,
-            add_documents,
-            params,
-            expected_code,
-            expected_num,
-            expected_message,
+        self,
+        HttpApiAuth,
+        add_documents,
+        params,
+        expected_code,
+        expected_num,
+        expected_message,
     ):
         dataset_id, _ = add_documents
         res = list_documents(HttpApiAuth, dataset_id, params=params)
@@ -267,7 +266,6 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
-
     @pytest.mark.p1
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_num, expected_message",
@@ -279,13 +277,13 @@ class TestDocumentsList:
         ],
     )
     def test_id(
-            self,
-            HttpApiAuth,
-            add_documents,
-            document_id,
-            expected_code,
-            expected_num,
-            expected_message,
+        self,
+        HttpApiAuth,
+        add_documents,
+        document_id,
+        expected_code,
+        expected_num,
+        expected_message,
     ):
         dataset_id, document_ids = add_documents
         if callable(document_id):
@@ -304,7 +302,6 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
-
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "document_id, name, expected_code, expected_num, expected_message",
@@ -313,23 +310,23 @@ class TestDocumentsList:
             (lambda r: r[0], "ragflow_test_upload_1.txt", 0, 0, ""),
             (lambda r: r[0], "unknown", 102, 0, "You don't own the document unknown."),
             (
-                    "id",
-                    "ragflow_test_upload_0.txt",
-                    102,
-                    0,
-                    "You don't own the document id.",
+                "id",
+                "ragflow_test_upload_0.txt",
+                102,
+                0,
+                "You don't own the document id.",
             ),
         ],
     )
     def test_name_and_id(
-            self,
-            HttpApiAuth,
-            add_documents,
-            document_id,
-            name,
-            expected_code,
-            expected_num,
-            expected_message,
+        self,
+        HttpApiAuth,
+        add_documents,
+        document_id,
+        name,
+        expected_code,
+        expected_num,
+        expected_message,
     ):
         dataset_id, document_ids = add_documents
         if callable(document_id):
@@ -342,7 +339,6 @@ class TestDocumentsList:
             assert len(res["data"]["docs"]) == expected_num
         else:
             assert res["message"] == expected_message
-
 
     @pytest.mark.p3
     def test_concurrent_list(self, HttpApiAuth, add_documents):
@@ -379,9 +375,7 @@ class TestDocumentsList:
             ),
         ],
     )
-    def test_metadata_condition_validation(
-        self, HttpApiAuth, add_documents, params, expected_code, expected_message
-    ):
+    def test_metadata_condition_validation(self, HttpApiAuth, add_documents, params, expected_code, expected_message):
         dataset_id, _ = add_documents
         res = list_documents(HttpApiAuth, dataset_id, params=params)
         assert res["code"] == expected_code
@@ -399,9 +393,7 @@ class TestDocumentsList:
             ({"create_time_from": "0", "create_time_to": "9999999999000"}, 0, 5),
         ],
     )
-    def test_create_time_filter(
-        self, HttpApiAuth, add_documents, params, expected_code, expected_total
-    ):
+    def test_create_time_filter(self, HttpApiAuth, add_documents, params, expected_code, expected_total):
         dataset_id, _ = add_documents
         res = list_documents(HttpApiAuth, dataset_id, params=params)
 
@@ -417,9 +409,7 @@ class TestDocumentsList:
             ({"run": ["INVALID_STATUS"]}, 102, "Invalid filter run status conditions: INVALID_STATUS"),
         ],
     )
-    def test_run_status_filter_invalid(
-        self, HttpApiAuth, add_documents, params, expected_code, expected_message
-    ):
+    def test_run_status_filter_invalid(self, HttpApiAuth, add_documents, params, expected_code, expected_message):
         dataset_id, _ = add_documents
         res = list_documents(HttpApiAuth, dataset_id, params=params)
 
@@ -434,9 +424,7 @@ class TestDocumentsList:
             ({"run": ["UNSTART"]}, 5),
         ],
     )
-    def test_run_status_filter_unstart(
-            self, HttpApiAuth, add_documents, params, expected_size
-    ):
+    def test_run_status_filter_unstart(self, HttpApiAuth, add_documents, params, expected_size):
         dataset_id, _ = add_documents
         res = list_documents(HttpApiAuth, dataset_id, params=params)
 

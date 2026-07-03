@@ -196,7 +196,7 @@ class RAGFlow:
         top_k=1024,
         rerank_id: str | None = None,
         keyword: bool = False,
-        cross_languages: list[str]|None = None,
+        cross_languages: list[str] | None = None,
         metadata_condition: dict | None = None,
         use_kg: bool = False,
         toc_enhance: bool = False,
@@ -217,7 +217,7 @@ class RAGFlow:
             "cross_languages": cross_languages,
             "metadata_condition": metadata_condition,
             "use_kg": use_kg,
-            "toc_enhance": toc_enhance
+            "toc_enhance": toc_enhance,
         }
         # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
         res = self.post("/retrieval", json=data_json)
@@ -331,7 +331,7 @@ class RAGFlow:
                 "memory_type": memory_type,
                 "storage_type": storage_type,
                 "keywords": keywords,
-            }
+            },
         )
         res = res.json()
         if res.get("code") != 0:
@@ -339,12 +339,7 @@ class RAGFlow:
         result_list = []
         for data in res["data"]["memory_list"]:
             result_list.append(Memory(self, data))
-        return {
-            "code": res.get("code", 0),
-            "message": res.get("message"),
-            "memory_list": result_list,
-            "total_count": res["data"]["total_count"]
-        }
+        return {"code": res.get("code", 0), "message": res.get("message"), "memory_list": result_list, "total_count": res["data"]["total_count"]}
 
     def delete_memory(self, memory_id: str):
         res = self.delete(f"/memories/{memory_id}", {})
@@ -354,21 +349,24 @@ class RAGFlow:
 
     def add_message(self, memory_id: list[str], agent_id: str, session_id: str, user_input: str, agent_response: str, user_id: str = "") -> str:
         """Append messages to memories; ``user_id`` is forwarded only for API-key auth (external subject)."""
-        payload = {
-            "memory_id": memory_id,
-            "agent_id": agent_id,
-            "session_id": session_id,
-            "user_input": user_input,
-            "agent_response": agent_response,
-            "user_id": user_id
-        }
+        payload = {"memory_id": memory_id, "agent_id": agent_id, "session_id": session_id, "user_input": user_input, "agent_response": agent_response, "user_id": user_id}
         res = self.post("/messages", payload)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
         return res["message"]
 
-    def search_message(self, query: str, memory_id: list[str], agent_id: str=None, session_id: str=None, user_id: str=None, similarity_threshold: float=0.2, keywords_similarity_weight: float=0.7, top_n: int=10) -> list[dict]:
+    def search_message(
+        self,
+        query: str,
+        memory_id: list[str],
+        agent_id: str = None,
+        session_id: str = None,
+        user_id: str = None,
+        similarity_threshold: float = 0.2,
+        keywords_similarity_weight: float = 0.7,
+        top_n: int = 10,
+    ) -> list[dict]:
         params = {
             "query": query,
             "memory_id": memory_id,
@@ -377,7 +375,7 @@ class RAGFlow:
             "user_id": user_id,
             "similarity_threshold": similarity_threshold,
             "keywords_similarity_weight": keywords_similarity_weight,
-            "top_n": top_n
+            "top_n": top_n,
         }
         res = self.get("/messages/search", params)
         res = res.json()
@@ -385,13 +383,8 @@ class RAGFlow:
             raise Exception(res["message"])
         return res["data"]
 
-    def get_recent_messages(self, memory_id: list[str], agent_id: str=None, session_id: str=None, limit: int=10) -> list[dict]:
-        params = {
-            "memory_id": memory_id,
-            "agent_id": agent_id,
-            "session_id": session_id,
-            "limit": limit
-        }
+    def get_recent_messages(self, memory_id: list[str], agent_id: str = None, session_id: str = None, limit: int = 10) -> list[dict]:
+        params = {"memory_id": memory_id, "agent_id": agent_id, "session_id": session_id, "limit": limit}
         res = self.get("/messages", params)
         res = res.json()
         if res.get("code") != 0:

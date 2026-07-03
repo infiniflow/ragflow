@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/service/chunk"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/storage"
+	"ragflow/internal/syncer"
 	"ragflow/internal/tokenizer"
 	"strconv"
 	"strings"
@@ -56,15 +57,15 @@ import (
 )
 
 type serverArgs struct {
-	mode          *string // admin | api | ingestor
+	mode          *string // admin | api | ingestor | syncer
 	helpFlag      bool
 	versionFlag   bool
 	debugLog      bool
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
 	port          *int    // Used by admin, api
-	adminHost     *string // Used by api and ingestor for heartbeat
-	adminPort     *int    // Used by api and ingestor for heartbeat, "ip:port"
+	adminHost     *string // Used by api, ingestor, syncer for heartbeat
+	adminPort     *int    // Used by api, ingestor, syncer for heartbeat, "ip:port"
 	name          *string // server name
 }
 
@@ -84,6 +85,9 @@ func parseArgs() (*serverArgs, error) {
 			args.mode = &serverMode
 		case "--api":
 			serverMode = "api"
+			args.mode = &serverMode
+		case "--syncer":
+			serverMode = "syncer"
 			args.mode = &serverMode
 		case "-h", "--help":
 			args.helpFlag = true
@@ -188,6 +192,16 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
 		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
+	case *args.mode == "syncer":
+		fmt.Fprintf(os.Stderr, "Usage: %s --syncer [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "RAGFlow Sync Service - Sync files from source to RAGFlow\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
+		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
+		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
+		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
+		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
 	}
 }
 
@@ -272,6 +286,11 @@ func main() {
 		if serverName == "" {
 			uuid := common.GenerateUUID()
 			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
+		}
+	case "syncer":
+		if serverName == "" {
+			uuid := common.GenerateUUID()
+			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
 	default:
 		common.Error("invalid server mode", errors.New(*arguments.mode))
@@ -365,6 +384,11 @@ func main() {
 			fmt.Printf("Failed to start ingestion worker: %v\n", err)
 			os.Exit(1)
 		}
+	case "syncer":
+		if err = runSyncer(arguments); err != nil {
+			fmt.Printf("Failed to start syncer: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
 		os.Exit(1)
@@ -402,9 +426,6 @@ func runAdmin(args *serverArgs) error {
 		Addr:    addr,
 		Handler: ginEngine,
 	}
-
-	// Print all configuration settings
-	server.PrintAll()
 
 	// Print RAGFlow Admin logo
 	common.Info("" +
@@ -461,8 +482,6 @@ func runIngestor(args *serverArgs) error {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
 
-	// Print all configuration settings
-	server.PrintAll()
 	common.Info("\n    ____                      __  _\n" +
 		"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
 		"   / // __ \\/ __ `/ _ \\/ ___/ __/ / __ \\/ __ \\   / ___/ _ \\/ ___/ | / / _ \\/ ___/\n" +
@@ -519,6 +538,81 @@ func runIngestor(args *serverArgs) error {
 	ingestor.Stop()
 
 	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", *args.name))
+
+	return nil
+}
+
+func runSyncer(args *serverArgs) error {
+	config := server.GetConfig()
+	fileSyncer := syncer.NewSyncer(config.FileSyncer.MaxConcurrentSyncs, time.Duration(config.FileSyncer.SyncInterval)*time.Second)
+
+	go func() {
+		err := fileSyncer.Start()
+		if err != nil {
+			common.Error("Failed to initialize file syncer", err)
+			return
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
+
+	common.Info("\n     _______ __        _____\n" +
+		"    / ____(_) /__     / ___/__  ______  ________  _____\n" +
+		"   / /_  / / / _ \\    \\__ \\/ / / / __ \\/ ___/ _ \\/ ___/\n" +
+		"  / __/ / / /  __/   ___/ / /_/ / / / / /__/  __/ /\n" +
+		" /_/   /_/_/\\___/   /____/\\__, /_/ /_/\\___/\\___/_/\n" +
+		"                           /____/    \n")
+
+	// Print RAGFlow version
+	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", utility.GetRAGFlowVersion()))
+
+	// Get local IP address for heartbeat reporting
+	localIP, err := utility.GetLocalIP()
+	if err != nil {
+		common.Fatal("fail to get local ip address")
+	}
+
+	// Initialize and start heartbeat reporter to admin server
+	service.AdminServiceClient = service.NewAdminClient(
+		common.Logger,
+		common.ServerTypeFileSyncer,
+		fmt.Sprintf("syncer-%s", fileSyncer.ID()),
+		localIP,
+		-1,
+	)
+	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
+		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
+	} else {
+		// Start heartbeat reporter with 30 seconds interval
+		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
+			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
+				local.SetAdminStatus(0, "")
+			} else {
+				local.SetAdminStatus(1, err.Error())
+				//logger.Warn(fmt.Sprintf(err.Error()))
+			}
+		})
+		heartbeatReporter.Start()
+		defer heartbeatReporter.Stop()
+	}
+
+	// Wait for either an OS signal or a shutdown command from the admin
+	select {
+	case sig := <-quit:
+		common.Info("Received signal", zap.String("signal", sig.String()))
+		common.Info(fmt.Sprintf("Shutting down RAGFlow file syncer %s ...", *args.name))
+	case <-fileSyncer.ShutdownCh:
+		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping file syncer %s ...", *args.name))
+	}
+
+	// Create context with timeout for graceful shutdown
+	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	fileSyncer.Stop()
+
+	common.Info(fmt.Sprintf("File syncer %s shutdown complete", *args.name))
 
 	return nil
 }
@@ -599,7 +693,7 @@ func startServer(config *server.Config) {
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
 	systemHandler := handler.NewSystemHandler(systemService)
-	datasethandler := handler.NewKnowledgebaseHandler(datasetService, userService, documentService)
+	datasetHandler := handler.NewKnowledgebaseHandler(datasetService, userService, documentService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
@@ -713,7 +807,7 @@ func startServer(config *server.Config) {
 		documentHandler,
 		datasetsHandler,
 		systemHandler,
-		datasethandler,
+		datasetHandler,
 		chunkHandler,
 		llmHandler,
 		chatHandler,

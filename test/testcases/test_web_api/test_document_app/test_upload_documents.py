@@ -23,6 +23,7 @@ from utils.file_utils import create_txt_file
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+
 @pytest.mark.p1
 @pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
@@ -313,7 +314,6 @@ class TestDocumentsUploadUnit:
         # The exact behavior depends on the implementation
         # Just verify we get a response
         assert "code" in res
-
 
 
 @pytest.mark.p2
