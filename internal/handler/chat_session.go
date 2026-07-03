@@ -272,7 +272,7 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 		jsonError(c, code, err.Error())
 		return
 	}
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }
 
 // CreateSession create a session in a dialog
@@ -311,14 +311,14 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 	result, code, err := h.chatSessionService.CreateSession(userID, chatID, req)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
-			jsonResponse(c, code, false, err.Error())
+			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
 		jsonError(c, code, err.Error())
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }
 
 // DeleteSessions delete a session in a dialog
@@ -357,14 +357,14 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 	result, message, code, err := h.chatSessionService.DeleteSessions(userID, chatID, req)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
-			jsonResponse(c, code, false, err.Error())
+			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
 		jsonError(c, code, err.Error())
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, result, message)
+	common.SuccessWithData(c, result, message)
 }
 
 func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
@@ -396,7 +396,7 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 		jsonError(c, code, err.Error())
 		return
 	}
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
@@ -411,13 +411,13 @@ func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 	result, code, err := h.chatSessionService.DeleteSessionMessage(userID, chatID, sessionID, msgID)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
-			jsonResponse(c, code, false, err.Error())
+			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
 		jsonError(c, code, err.Error())
 		return
 	}
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
@@ -447,11 +447,11 @@ func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 	result, code, err := h.chatSessionService.UpdateMessageFeedback(c.Request.Context(), userID, chatID, sessionID, msgID, req)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
-			jsonResponse(c, code, false, err.Error())
+			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
 		jsonError(c, code, err.Error())
 		return
 	}
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }

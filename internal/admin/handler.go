@@ -60,32 +60,6 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
-// success returns success response
-func success(c *gin.Context, data interface{}, message string) {
-	c.JSON(200, SuccessResponse{
-		Code:    0,
-		Message: message,
-		Data:    data,
-	})
-}
-
-// successNoData returns success response without data
-func successNoData(c *gin.Context, message string) {
-	c.JSON(200, SuccessResponse{
-		Code:    0,
-		Message: message,
-		Data:    nil,
-	})
-}
-
-// error returns error response
-func errorResponse(c *gin.Context, message string, code int) {
-	c.JSON(code, ErrorResponse{
-		Code:    code,
-		Message: message,
-	})
-}
-
 func responseWithCode(c *gin.Context, message string, httpCode int, errorCode common.ErrorCode) {
 	if message == "" {
 		c.JSON(httpCode, ErrorResponse{
@@ -107,7 +81,7 @@ func (h *Handler) Health(c *gin.Context) {
 
 // Ping ping endpoint
 func (h *Handler) Ping(c *gin.Context) {
-	successNoData(c, "pong")
+	common.SuccessNoData(c, "pong")
 }
 
 // Login handle admin login
@@ -186,21 +160,21 @@ func (h *Handler) Login(c *gin.Context) {
 func (h *Handler) Logout(c *gin.Context) {
 	user, exists := c.Get("user")
 	if !exists {
-		errorResponse(c, "Not authenticated", 401)
+		common.ErrorWithCode(c, 401, "Not authenticated")
 		return
 	}
 
 	if err := h.service.Logout(user); err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	successNoData(c, "Logout successful")
+	common.SuccessNoData(c, "Logout successful")
 }
 
 // AuthCheck check admin auth
 func (h *Handler) AuthCheck(c *gin.Context) {
-	successNoData(c, "Admin is authorized")
+	common.SuccessNoData(c, "Admin is authorized")
 }
 
 // ListUsersRequest list users request
@@ -225,7 +199,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	} else {
 		pageInt, err = strconv.Atoi(page)
 		if err != nil {
-			errorResponse(c, "Page must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Page must be an integer")
 			return
 		}
 	}
@@ -237,7 +211,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	} else {
 		pageSizeInt, err = strconv.Atoi(pageSize)
 		if err != nil {
-			errorResponse(c, "Page size must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Page size must be an integer")
 			return
 		}
 	}
@@ -247,19 +221,19 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	if err = c.ShouldBindJSON(&req); err != nil {
 		users, err = h.service.ListUsers(pageInt, pageSizeInt)
 		if err != nil {
-			errorResponse(c, err.Error(), 500)
+			common.ErrorWithCode(c, 500, err.Error())
 			return
 		}
 
-		success(c, users, "Get all users")
+		common.SuccessWithData(c, users, "Get all users")
 	} else {
 		users, err = h.service.ListUsersEnterprise(pageInt, pageSizeInt, req.UserStatus, req.OrderBy, req.Plan, req.Top, req.Days, req.Quota)
 		if err != nil {
-			errorResponse(c, err.Error(), 500)
+			common.ErrorWithCode(c, 500, err.Error())
 			return
 		}
 
-		success(c, users, "list users")
+		common.SuccessWithData(c, users, "List users")
 	}
 
 }
@@ -275,7 +249,7 @@ type CreateUserHTTPRequest struct {
 func (h *Handler) CreateUser(c *gin.Context) {
 	var req CreateUserHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Username and password are required", 400)
+		common.ErrorWithCode(c, 400, "Username and password are required")
 		return
 	}
 
@@ -285,11 +259,11 @@ func (h *Handler) CreateUser(c *gin.Context) {
 
 	userInfo, err := h.service.CreateUser(req.Username, req.Password, req.Role)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, userInfo, "User created successfully")
+	common.SuccessWithData(c, userInfo, "User created successfully")
 }
 
 // GetUser handle get user
@@ -297,25 +271,25 @@ func (h *Handler) GetUser(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	userDetails, err := h.service.GetUserDetails(username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, userDetails, "")
+	common.SuccessWithData(c, userDetails, "")
 }
 
 // DeleteUser handle delete user
@@ -323,17 +297,17 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	result, err := h.service.DeleteUser(username)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
@@ -342,7 +316,7 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		detailsMsg += detail + "\n"
 	}
 
-	successNoData(c, detailsMsg)
+	common.SuccessNoData(c, detailsMsg)
 }
 
 // ChangePasswordHTTPRequest change password request
@@ -355,26 +329,26 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	var req ChangePasswordHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "New password is required", 400)
+		common.ErrorWithCode(c, 400, "New password is required")
 		return
 	}
 
 	if err := h.service.ChangePassword(username, req.NewPassword); err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	successNoData(c, "Password updated successfully")
+	common.SuccessNoData(c, "Password updated successfully")
 }
 
 // UpdateActivateStatusHTTPRequest update activate status request
@@ -387,32 +361,32 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	var req UpdateActivateStatusHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Activation status is required", 400)
+		common.ErrorWithCode(c, 400, "Activation status is required")
 		return
 	}
 
 	if req.ActivateStatus != "on" && req.ActivateStatus != "off" {
-		errorResponse(c, "Activation status must be 'on' or 'off'", 400)
+		common.ErrorWithCode(c, 400, "Activation status must be 'on' or 'off'")
 		return
 	}
 
 	isActive := req.ActivateStatus == "on"
 	if err := h.service.UpdateUserActivateStatus(username, isActive); err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	successNoData(c, "Activation status updated")
+	common.SuccessNoData(c, "Activation status updated")
 }
 
 // GrantAdmin handle grant admin role
@@ -420,27 +394,27 @@ func (h *Handler) GrantAdmin(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	// Get current user email from context
 	email, _ := c.Get("email")
 	if email != nil && email.(string) == username {
-		errorResponse(c, "can't grant current user: "+username, 409)
+		common.ErrorWithCode(c, 409, "can't grant current user: "+username)
 		return
 	}
 
 	if err := h.service.GrantAdmin(username); err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	successNoData(c, "Admin role granted")
+	common.SuccessNoData(c, "Admin role granted")
 }
 
 // RevokeAdmin handle revoke admin role
@@ -448,27 +422,27 @@ func (h *Handler) RevokeAdmin(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	// Get current user email from context
 	email, _ := c.Get("email")
 	if email != nil && email.(string) == username {
-		errorResponse(c, "can't revoke current user: "+username, 409)
+		common.ErrorWithCode(c, 409, "can't revoke current user: "+username)
 		return
 	}
 
-	if err := h.service.RevokeAdmin(username); err != nil {
-		errorResponse(c, err.Error(), 500)
+	if err = h.service.RevokeAdmin(username); err != nil {
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	successNoData(c, "Admin role revoked")
+	common.SuccessNoData(c, "Admin role revoked")
 }
 
 // ListUserAPITokens handle get user API keys
@@ -476,21 +450,21 @@ func (h *Handler) ListUserAPITokens(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	apiKeys, err := h.service.ListUserAPITokens(username)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, apiKeys, "Get user API keys")
+	common.SuccessWithData(c, apiKeys, "Get user API keys")
 }
 
 // GenerateUserAPIToken handle generate user API key
@@ -498,21 +472,21 @@ func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	apiKey, err := h.service.GenerateUserAPIToken(username)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, apiKey, "API key generated successfully")
+	common.SuccessWithData(c, apiKey, "API key generated successfully")
 }
 
 // DeleteUserAPIToken handle delete user API key
@@ -520,21 +494,21 @@ func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	key := c.Param("token")
 	if username == "" || key == "" {
-		errorResponse(c, "Username and key are required", 400)
+		common.ErrorWithCode(c, 400, "Username and key are required")
 		return
 	}
 
-	if err := h.service.DeleteUserAPIToken(username, key); err != nil {
-		errorResponse(c, err.Error(), 404)
+	if err = h.service.DeleteUserAPIToken(username, key); err != nil {
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
-	successNoData(c, "API key deleted successfully")
+	common.SuccessNoData(c, "API key deleted successfully")
 }
 
 // GetServices handle get all services
@@ -548,31 +522,31 @@ func (h *Handler) GetServices(c *gin.Context) {
 		return
 	}
 
-	success(c, services, "Get all services")
+	common.SuccessWithData(c, services, "Get all services")
 }
 
 // GetServicesByType handle get services by type
 func (h *Handler) GetServicesByType(c *gin.Context) {
 	serviceType := c.Param("service_type")
 	if serviceType == "" {
-		errorResponse(c, "Service type is required", 400)
+		common.ErrorWithCode(c, 400, "Service type is required")
 		return
 	}
 
 	services, err := h.service.GetServicesByType(serviceType)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, services, "")
+	common.SuccessWithData(c, services, "")
 }
 
 // GetService handle get service details
 func (h *Handler) GetService(c *gin.Context) {
 	serviceID := c.Param("service_id")
 	if serviceID == "" {
-		errorResponse(c, "Service ID is required", 400)
+		common.ErrorWithCode(c, 400, "Service ID is required")
 		return
 	}
 
@@ -590,68 +564,68 @@ func (h *Handler) GetService(c *gin.Context) {
 	}
 
 	if targetService == nil {
-		errorResponse(c, "Service not found", 404)
+		common.ErrorWithCode(c, 404, "Service not found")
 		return
 	}
 
 	serviceStatus, err := h.service.GetServiceDetails(targetService)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, serviceStatus, "")
+	common.SuccessWithData(c, serviceStatus, "")
 }
 
 // ShutdownService handle shutdown service
 func (h *Handler) ShutdownService(c *gin.Context) {
 	serviceID := c.Param("service_id")
 	if serviceID == "" {
-		errorResponse(c, "Service ID is required", 400)
+		common.ErrorWithCode(c, 400, "Service ID is required")
 		return
 	}
 
 	result, err := h.service.ShutdownService(serviceID)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "")
+	common.SuccessWithData(c, result, "")
 }
 
 // StartService handle start service
 func (h *Handler) StartService(c *gin.Context) {
 	serviceID := c.Param("service_id")
 	if serviceID == "" {
-		errorResponse(c, "Service ID is required", 400)
+		common.ErrorWithCode(c, 400, "Service ID is required")
 		return
 	}
 
 	result, err := h.service.StartService(serviceID)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "")
+	common.SuccessWithData(c, result, "")
 }
 
 // RestartService handle restart service
 func (h *Handler) RestartService(c *gin.Context) {
 	serviceID := c.Param("service_id")
 	if serviceID == "" {
-		errorResponse(c, "Service ID is required", 400)
+		common.ErrorWithCode(c, 400, "Service ID is required")
 		return
 	}
 
 	result, err := h.service.RestartService(serviceID)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "")
+	common.SuccessWithData(c, result, "")
 }
 
 // ListVariables handle list variables
@@ -661,10 +635,10 @@ func (h *Handler) ListVariables(c *gin.Context) {
 		// List all variables
 		variables, err := h.service.ListAllVariables()
 		if err != nil {
-			errorResponse(c, err.Error(), 500)
+			common.ErrorWithCode(c, 500, err.Error())
 			return
 		}
-		success(c, variables, "")
+		common.SuccessWithData(c, variables, "")
 		return
 	}
 
@@ -673,12 +647,12 @@ func (h *Handler) ListVariables(c *gin.Context) {
 		VarName string `json:"var_name"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Invalid request body", 400)
+		common.ErrorWithCode(c, 400, "Invalid request body")
 		return
 	}
 
 	if req.VarName == "" {
-		errorResponse(c, "Var name is required", 400)
+		common.ErrorWithCode(c, 400, "Var name is required")
 		return
 	}
 
@@ -686,14 +660,14 @@ func (h *Handler) ListVariables(c *gin.Context) {
 	if err != nil {
 		// Check if it's an AdminException
 		if adminErr, ok := err.(*AdminException); ok {
-			errorResponse(c, adminErr.Message, 400)
+			common.ErrorWithCode(c, 400, adminErr.Message)
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, variable, "")
+	common.SuccessWithData(c, variable, "")
 }
 
 // ShowVariable handle show variable
@@ -701,21 +675,21 @@ func (h *Handler) ShowVariable(c *gin.Context) {
 	encodedVarName := c.Param("var_name")
 	varName, err := common.DecodeFromBase64(encodedVarName)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if varName == "" {
-		errorResponse(c, "Var name is required", 400)
+		common.ErrorWithCode(c, 400, "Var name is required")
 		return
 	}
 
 	variable, err := h.service.GetVariable(varName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, variable, "")
+	common.SuccessWithData(c, variable, "")
 }
 
 // SetVariableHTTPRequest set variable request
@@ -729,59 +703,59 @@ type SetVariableHTTPRequest struct {
 func (h *Handler) SetVariable(c *gin.Context) {
 	var req SetVariableHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Var name is required", 400)
+		common.ErrorWithCode(c, 400, "Var name is required")
 		return
 	}
 
 	if req.VarName == "" {
-		errorResponse(c, "Var name is required", 400)
+		common.ErrorWithCode(c, 400, "Var name is required")
 		return
 	}
 
 	if req.VarValue == "" {
-		errorResponse(c, "Var value is required", 400)
+		common.ErrorWithCode(c, 400, "Var value is required")
 		return
 	}
 
 	if err := h.service.SetVariable(req.VarName, req.VarValue); err != nil {
 		// Check if it's an AdminException
 		if adminErr, ok := err.(*AdminException); ok {
-			errorResponse(c, adminErr.Message, 400)
+			common.ErrorWithCode(c, 400, adminErr.Message)
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	successNoData(c, "Set variable successfully")
+	common.SuccessNoData(c, "Set variable successfully")
 }
 
 // ListConfigs handle list configs
 func (h *Handler) ListConfigs(c *gin.Context) {
 	configs, err := h.service.ListAllConfigs()
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, configs, "")
+	common.SuccessWithData(c, configs, "")
 }
 
 // ListEnvironments handle list environments
 func (h *Handler) ListEnvironments(c *gin.Context) {
 	environments, err := h.service.ListEnvironments()
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, environments, "")
+	common.SuccessWithData(c, environments, "")
 }
 
 // GetVersion handle get version
 func (h *Handler) GetVersion(c *gin.Context) {
 	version := h.service.GetVersion()
-	success(c, gin.H{"version": version}, "")
+	common.SuccessWithData(c, gin.H{"version": version}, "")
 }
 
 // GetFingerprint handle get system fingerprint
@@ -832,39 +806,39 @@ func (h *Handler) ShowLicense(c *gin.Context) {
 func (h *Handler) ListSandboxProviders(c *gin.Context) {
 	providers, err := h.service.ListSandboxProviders()
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
-	success(c, providers, "")
+	common.SuccessWithData(c, providers, "")
 }
 
 // GetSandboxProviderSchema handle get sandbox provider schema
 func (h *Handler) GetSandboxProviderSchema(c *gin.Context) {
 	providerID := c.Param("provider_id")
 	if providerID == "" {
-		errorResponse(c, "Provider ID is required", 400)
+		common.ErrorWithCode(c, 400, "Provider ID is required")
 		return
 	}
 
 	schema, err := h.service.GetSandboxProviderSchema(providerID)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
-	success(c, schema, "")
+	common.SuccessWithData(c, schema, "")
 }
 
 // GetSandboxConfig handle get sandbox config
 func (h *Handler) GetSandboxConfig(c *gin.Context) {
 	config, err := h.service.GetSandboxConfig()
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
-	success(c, config, "")
+	common.SuccessWithData(c, config, "")
 }
 
 // SetSandboxConfigHTTPRequest set sandbox config request
@@ -878,12 +852,12 @@ type SetSandboxConfigHTTPRequest struct {
 func (h *Handler) SetSandboxConfig(c *gin.Context) {
 	var req SetSandboxConfigHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Request body is required", 400)
+		common.ErrorWithCode(c, 400, "Request body is required")
 		return
 	}
 
 	if req.ProviderType == "" {
-		errorResponse(c, "provider_type is required", 400)
+		common.ErrorWithCode(c, 400, "Provider type is required")
 		return
 	}
 
@@ -893,11 +867,11 @@ func (h *Handler) SetSandboxConfig(c *gin.Context) {
 
 	result, err := h.service.SetSandboxConfig(req.ProviderType, req.Config, req.SetActive)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
-	success(c, result, "Sandbox configuration updated successfully")
+	common.SuccessWithData(c, result, "Sandbox configuration updated successfully")
 }
 
 // TestSandboxConnectionHTTPRequest test sandbox connection request
@@ -910,12 +884,12 @@ type TestSandboxConnectionHTTPRequest struct {
 func (h *Handler) TestSandboxConnection(c *gin.Context) {
 	var req TestSandboxConnectionHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Request body is required", 400)
+		common.ErrorWithCode(c, 400, "Request body is required")
 		return
 	}
 
 	if req.ProviderType == "" {
-		errorResponse(c, "provider_type is required", 400)
+		common.ErrorWithCode(c, 400, "Provider type is required")
 		return
 	}
 
@@ -928,7 +902,7 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 		return
 	}
 
-	success(c, result, "")
+	common.SuccessWithData(c, result, "")
 }
 
 // AuthMiddleware JWT auth middleware
@@ -937,8 +911,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader("Authorization")
 		if token == "" {
-			errorResponse(c, "missing authorization header", 401)
-			c.Abort()
+			common.ErrorWithCode(c, 401, "Missing authorization header")
 			return
 		}
 
@@ -979,7 +952,7 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 // GetLogLevel returns the current log level
 func (h *Handler) GetLogLevel(c *gin.Context) {
 	level := common.GetLevel()
-	success(c, gin.H{"level": level}, "SUCCESS")
+	common.SuccessWithData(c, gin.H{"level": level}, "SUCCESS")
 }
 
 // SetLogLevelRequest set log level request
@@ -991,16 +964,16 @@ type SetLogLevelRequest struct {
 func (h *Handler) SetLogLevel(c *gin.Context) {
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "level is required", 400)
+		common.ErrorWithCode(c, 400, "Level is required")
 		return
 	}
 
 	if err := common.SetLevel(req.Level); err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
-	success(c, gin.H{"level": req.Level}, "SUCCESS")
+	common.SuccessWithData(c, gin.H{"level": req.Level}, "SUCCESS")
 }
 
 func (h *Handler) ListMessagesFromQueue(c *gin.Context) {
@@ -1008,7 +981,7 @@ func (h *Handler) ListMessagesFromQueue(c *gin.Context) {
 	msgQueueEngine := engine.GetMessageQueueEngine()
 	messages, err := msgQueueEngine.ListMessages("ingestion", false)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	var result []map[string]string
@@ -1025,7 +998,7 @@ func (h *Handler) ListMessagesFromQueue(c *gin.Context) {
 		})
 	}
 
-	success(c, result, "List messages from queue successfully")
+	common.SuccessWithData(c, result, "List messages from queue successfully")
 }
 
 type PublishMessageToQueueRequest struct {
@@ -1035,7 +1008,7 @@ type PublishMessageToQueueRequest struct {
 func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 	var req PublishMessageToQueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "message is required", 400)
+		common.ErrorWithCode(c, 400, "Message is required")
 		return
 	}
 
@@ -1047,18 +1020,18 @@ func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 	// convert task
 	taskMessageStr, err := json.Marshal(taskMessage)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
 	err = msgQueueEngine.PublishTask("tasks.RAGFLOW", taskMessageStr)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
-	success(c, nil, "Publish message successfully")
+	common.SuccessWithData(c, nil, "Publish message successfully")
 }
 
 type PullMessageFromQueueRequest struct {
@@ -1069,14 +1042,14 @@ type PullMessageFromQueueRequest struct {
 func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 	var req PullMessageFromQueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, fmt.Sprintf("message count and ack_policy are required, error: %s", err.Error()), 400)
+		common.ErrorWithCode(c, 400, fmt.Sprintf("Message count error: %s", err.Error()))
 		return
 	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
 	err := msgQueueEngine.InitConsumer("tasks.RAGFLOW")
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	messages, err := msgQueueEngine.GetMessages(req.MessageCount)
@@ -1112,7 +1085,7 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 		}
 	}
 
-	success(c, result, "Pull messages from queue successfully")
+	common.SuccessWithData(c, result, "Pull messages from queue successfully")
 }
 
 func (h *Handler) ShowMessageQueue(c *gin.Context) {
@@ -1120,11 +1093,11 @@ func (h *Handler) ShowMessageQueue(c *gin.Context) {
 	msgQueueEngine := engine.GetMessageQueueEngine()
 	result, err := msgQueueEngine.ShowMessageQueue()
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
-	success(c, result, "show message queue successfully")
+	common.SuccessWithData(c, result, "show message queue successfully")
 }
 
 type RemoveIngestionTaskRequest struct {
@@ -1136,25 +1109,25 @@ type RemoveIngestionTaskRequest struct {
 func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
 	var req RemoveIngestionTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "task id is required", 400)
+		common.ErrorWithCode(c, 400, "Task ID is required")
 		return
 	}
 
 	if req.Email == nil && req.Status == nil {
 		tasks, err := h.service.RemoveIngestionTasks(req.Tasks)
 		if err != nil {
-			errorResponse(c, err.Error(), 400)
+			common.ErrorWithCode(c, 400, err.Error())
 			return
 		}
 
-		success(c, tasks, "Remove tasks successfully")
+		common.SuccessWithData(c, tasks, "Remove tasks successfully")
 	} else {
 		tasks, err := h.service.RemoveIngestionTasksByCondition(req.Tasks, req.Email, req.Status)
 		if err != nil {
-			errorResponse(c, err.Error(), 400)
+			common.ErrorWithCode(c, 400, err.Error())
 			return
 		}
-		success(c, tasks, "Remove tasks successfully")
+		common.SuccessWithData(c, tasks, "Remove tasks successfully")
 	}
 }
 
@@ -1167,14 +1140,14 @@ type StopIngestionTaskRequest struct {
 func (h *Handler) StopIngestionTasks(c *gin.Context) {
 	var req StopIngestionTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "task id and from is required", 400)
+		common.ErrorWithCode(c, 400, "Task ID is required")
 		return
 	}
 
 	if req.Email == nil && req.Status == nil {
 		tasks, err := h.service.StopIngestionTasks(req.Tasks)
 		if err != nil {
-			errorResponse(c, err.Error(), 400)
+			common.ErrorWithCode(c, 400, err.Error())
 			return
 		}
 		var result []map[string]string
@@ -1185,14 +1158,14 @@ func (h *Handler) StopIngestionTasks(c *gin.Context) {
 			})
 		}
 
-		success(c, result, "Stop tasks successfully")
+		common.SuccessWithData(c, result, "Stop tasks successfully")
 	} else {
 		tasks, err := h.service.StopIngestionTasksByCondition(req.Tasks, req.Email, req.Status)
 		if err != nil {
-			errorResponse(c, err.Error(), 400)
+			common.ErrorWithCode(c, 400, err.Error())
 			return
 		}
-		success(c, tasks, "Stop tasks successfully")
+		common.SuccessWithData(c, tasks, "Stop tasks successfully")
 	}
 }
 
@@ -1213,9 +1186,9 @@ func (h *Handler) ListIngestionTasks(c *gin.Context) {
 	}
 
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 	}
-	success(c, tasks, "Get all tasks")
+	common.SuccessWithData(c, tasks, "Get all tasks")
 }
 
 func (h *Handler) ListIngestors(c *gin.Context) {
@@ -1236,7 +1209,7 @@ func (h *Handler) ListIngestors(c *gin.Context) {
 			ingestorResults = append(ingestorResults, ingestorResult)
 		}
 	}
-	success(c, ingestorResults, "Get all tasks")
+	common.SuccessWithData(c, ingestorResults, "Get all tasks")
 }
 
 type ShutdownIngestorRequest struct {
@@ -1246,7 +1219,7 @@ type ShutdownIngestorRequest struct {
 func (h *Handler) ShutdownIngestor(c *gin.Context) {
 	var req ShutdownIngestorRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "file uri is required", 400)
+		common.ErrorWithCode(c, 400, "Ingestor ID is required")
 		return
 	}
 
@@ -1257,7 +1230,7 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 	//	AssignedTo: req.IngestorID,
 	//})
 
-	success(c, gin.H{"task_id": taskID, "ingestor_id": req.IngestorID}, "Shutdown ingestor")
+	common.SuccessWithData(c, gin.H{"task_id": taskID, "ingestor_id": req.IngestorID}, "Shutdown ingestor")
 }
 
 // Reports handle heartbeat reports from servers
@@ -1314,11 +1287,11 @@ func (h *Handler) ListAllModels(c *gin.Context) {
 	// List models
 	models, err := h.service.ListAllModels(page, pageSize)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, models, "")
+	common.SuccessWithData(c, models, "")
 }
 
 func (h *Handler) ShowModel(c *gin.Context) {
@@ -1333,21 +1306,21 @@ func (h *Handler) ShowModel(c *gin.Context) {
 
 	decodedModelName, err := common.DecodeFromBase64(encodedModelName)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if decodedModelName == "" {
-		errorResponse(c, "Decoded model name is empty", 400)
+		common.ErrorWithCode(c, 400, "Decoded model name is empty")
 		return
 	}
 
 	// Get model
 	model, err := h.service.GetModelByModelName(decodedModelName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, model, "")
+	common.SuccessWithData(c, model, "")
 
 }

@@ -224,7 +224,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		jsonInternalError(c, err)
 		return
 	}
-	jsonResponse(c, common.CodeSuccess, mindMap, "success")
+	common.SuccessWithData(c, mindMap, "success")
 }
 
 func (h *ChatHandler) DeleteChat(c *gin.Context) {
@@ -499,5 +499,5 @@ func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }

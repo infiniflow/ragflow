@@ -78,7 +78,7 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 		jsonError(c, common.CodeServerError, err.Error())
 		return
 	}
-	jsonResponse(c, common.CodeSuccess, row, "success")
+	common.SuccessWithData(c, row, "success")
 }
 
 // ListChatChannel handles GET /chat-channels.
@@ -94,7 +94,7 @@ func (h *ChatChannelHandler) ListChatChannel(c *gin.Context) {
 		jsonError(c, common.CodeServerError, err.Error())
 		return
 	}
-	jsonResponse(c, common.CodeSuccess, rows, "success")
+	common.SuccessWithData(c, rows, "success")
 }
 
 // GetChatChannel handles GET /chat-channels/:channel_id.

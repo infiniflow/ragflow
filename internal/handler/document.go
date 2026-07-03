@@ -445,7 +445,7 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, map[string]interface{}{"deleted": deleted}, "success")
+	common.SuccessWithData(c, map[string]interface{}{"deleted": deleted}, "success")
 }
 
 // BatchUpdateDocumentStatus Batch update status of documents within a dataset.

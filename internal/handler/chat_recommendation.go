@@ -63,5 +63,5 @@ func (h *ChatHandler) Recommendation(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, questions, "success")
+	common.SuccessWithData(c, questions, "success")
 }

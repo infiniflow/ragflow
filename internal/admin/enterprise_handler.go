@@ -31,7 +31,7 @@ import (
 func (h *Handler) ListRoles(c *gin.Context) {
 	roles, err := h.service.ListRoles()
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
@@ -39,7 +39,7 @@ func (h *Handler) ListRoles(c *gin.Context) {
 		roles = []map[string]interface{}{}
 	}
 
-	success(c, roles, "")
+	common.SuccessWithData(c, roles, "")
 }
 
 // CreateRoleHTTPRequest create role request
@@ -52,34 +52,34 @@ type CreateRoleHTTPRequest struct {
 func (h *Handler) CreateRole(c *gin.Context) {
 	var req CreateRoleHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Role name is required", 400)
+		common.ErrorWithCode(c, 400, "Role name is required")
 		return
 	}
 
 	role, err := h.service.CreateRole(req.RoleName, req.Description)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, role, "")
+	common.SuccessWithData(c, role, "")
 }
 
 // ShowRole handle show role
 func (h *Handler) ShowRole(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
-		errorResponse(c, "Role name is required", 400)
+		common.ErrorWithCode(c, 400, "Role name is required")
 		return
 	}
 
 	role, err := h.service.ShowRole(roleName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, role, "")
+	common.SuccessWithData(c, role, "")
 }
 
 // UpdateRoleHTTPRequest update role request
@@ -91,57 +91,57 @@ type UpdateRoleHTTPRequest struct {
 func (h *Handler) UpdateRole(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
-		errorResponse(c, "Role name is required", 400)
+		common.ErrorWithCode(c, 400, "Role name is required")
 		return
 	}
 
 	var req UpdateRoleHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Role description is required", 400)
+		common.ErrorWithCode(c, 400, "Role description is required")
 		return
 	}
 
 	role, err := h.service.UpdateRole(roleName, req.Description)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, role, "")
+	common.SuccessWithData(c, role, "")
 }
 
 // DropRole handle drop role
 func (h *Handler) DropRole(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
-		errorResponse(c, "Role name is required", 400)
+		common.ErrorWithCode(c, 400, "Role name is required")
 		return
 	}
 
 	role, err := h.service.DropRole(roleName)
 	if err != nil {
-		errorResponse(c, "Role not found", 404)
+		common.ErrorWithCode(c, 404, "Role not found")
 		return
 	}
 
-	success(c, role, "")
+	common.SuccessWithData(c, role, "")
 }
 
 // ShowRolePermission handle get role permission
 func (h *Handler) ShowRolePermission(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
-		errorResponse(c, "Role name is required", 400)
+		common.ErrorWithCode(c, 400, "Role name is required")
 		return
 	}
 
 	permissions, err := h.service.ShowRolePermission(roleName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, permissions, "")
+	common.SuccessWithData(c, permissions, "")
 }
 
 // GrantRolePermissionHTTPRequest grant role permission request
@@ -154,23 +154,23 @@ type GrantRolePermissionHTTPRequest struct {
 func (h *Handler) GrantRolePermission(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
-		errorResponse(c, "Role name is required", 400)
+		common.ErrorWithCode(c, 400, "Role name is required")
 		return
 	}
 
 	var req GrantRolePermissionHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Permission is required", 400)
+		common.ErrorWithCode(c, 400, "Permission is required")
 		return
 	}
 
 	result, err := h.service.GrantRolePermission(roleName, req.Actions, req.Resource)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "")
+	common.SuccessWithData(c, result, "")
 }
 
 // RevokeRolePermissionHTTPRequest revoke role permission request
@@ -183,23 +183,23 @@ type RevokeRolePermissionHTTPRequest struct {
 func (h *Handler) RevokeRolePermission(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
-		errorResponse(c, "Role name is required", 400)
+		common.ErrorWithCode(c, 400, "Role name is required")
 		return
 	}
 
 	var req RevokeRolePermissionHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Permission is required", 400)
+		common.ErrorWithCode(c, 400, "Permission is required")
 		return
 	}
 
 	result, err := h.service.RevokeRolePermission(roleName, req.Actions, req.Resource)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "")
+	common.SuccessWithData(c, result, "")
 }
 
 // ListResources handle list role resources
@@ -207,29 +207,29 @@ func (h *Handler) ListResources(c *gin.Context) {
 	resources, err := h.service.ListResources()
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "Role not found", 404)
+			common.ErrorWithCode(c, 404, "Role not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, resources, "")
+	common.SuccessWithData(c, resources, "")
 }
 
 func (h *Handler) ShowRoleDefaultModels(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
-		errorResponse(c, "Role name is required", 400)
+		common.ErrorWithCode(c, 400, "Role name is required")
 		return
 	}
 
 	result, err := h.service.ShowRoleDefaultModels(roleName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
-	success(c, result, "Role default model set successfully")
+	common.SuccessWithData(c, result, "Role default model set successfully")
 }
 
 type SetRoleDefaultModelRequest struct {
@@ -240,7 +240,7 @@ type SetRoleDefaultModelRequest struct {
 func (h *Handler) SetRoleDefaultModel(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
-		errorResponse(c, "Role name is required", 400)
+		common.ErrorWithCode(c, 400, "Role name is required")
 		return
 	}
 
@@ -256,10 +256,10 @@ func (h *Handler) SetRoleDefaultModel(c *gin.Context) {
 
 	result, err := h.service.SetRoleDefaultModel(roleName, request.ModelID, request.ModelType)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
-	success(c, result, "Role default model set successfully")
+	common.SuccessWithData(c, result, "Role default model set successfully")
 }
 
 type ResetRoleDefaultModelRequest struct {
@@ -269,7 +269,7 @@ type ResetRoleDefaultModelRequest struct {
 func (h *Handler) ResetRoleDefaultModel(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
-		errorResponse(c, "Role name is required", 400)
+		common.ErrorWithCode(c, 400, "Role name is required")
 		return
 	}
 
@@ -285,10 +285,10 @@ func (h *Handler) ResetRoleDefaultModel(c *gin.Context) {
 
 	result, err := h.service.ResetRoleDefaultModel(roleName, request.ModelType)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
-	success(c, result, "Role default model set successfully")
+	common.SuccessWithData(c, result, "Role default model set successfully")
 }
 
 func (h *Handler) ListModelProviders(c *gin.Context) {
@@ -303,11 +303,11 @@ func (h *Handler) ListModelProviders(c *gin.Context) {
 
 	result, err := h.service.ListModelProviders()
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "List model providers successfully")
+	common.SuccessWithData(c, result, "List model providers successfully")
 }
 
 type AddProviderRequest struct {
@@ -329,11 +329,11 @@ func (h *Handler) AddModelProvider(c *gin.Context) {
 
 	result, err := h.service.AddModelProvider(req.ProviderName, userID)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Model provider added successfully")
+	common.SuccessWithData(c, result, "Model provider added successfully")
 }
 
 func (h *Handler) ShowProvider(c *gin.Context) {
@@ -379,11 +379,11 @@ func (h *Handler) DeleteModelProvider(c *gin.Context) {
 
 	result, err := h.service.DeleteModelProviders(userID, req.ProviderNames)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Model provider deleted successfully")
+	common.SuccessWithData(c, result, "Model provider deleted successfully")
 }
 
 func (h *Handler) ListModels(c *gin.Context) {
@@ -456,11 +456,11 @@ func (h *Handler) ListModelInstances(c *gin.Context) {
 
 	result, err := h.service.ListModelInstances(userID, providerName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Model instances listed successfully")
+	common.SuccessWithData(c, result, "Model instances listed successfully")
 }
 
 func (h *Handler) ShowProviderInstance(c *gin.Context) {
@@ -484,11 +484,11 @@ func (h *Handler) ShowProviderInstance(c *gin.Context) {
 
 	result, err := h.service.ShowProviderInstance(userID, providerName, instanceName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Model instance shown successfully")
+	common.SuccessWithData(c, result, "Model instance shown successfully")
 }
 
 func (h *Handler) ShowProviderInstanceBalance(c *gin.Context) {
@@ -512,11 +512,11 @@ func (h *Handler) ShowProviderInstanceBalance(c *gin.Context) {
 
 	result, err := h.service.ShowProviderInstanceBalance(userID, providerName, instanceName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Model instance balance shown successfully")
+	common.SuccessWithData(c, result, "Model instance balance shown successfully")
 }
 
 func (h *Handler) CheckInstanceConnection(c *gin.Context) {
@@ -540,11 +540,11 @@ func (h *Handler) CheckInstanceConnection(c *gin.Context) {
 
 	result, err := h.service.CheckInstanceConnection(userID, providerName, instanceName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Model instance connection checked successfully")
+	common.SuccessWithData(c, result, "Model instance connection checked successfully")
 }
 
 type CheckConnectionRequest struct {
@@ -576,11 +576,11 @@ func (h *Handler) CheckProviderConnection(c *gin.Context) {
 
 	result, err := h.service.CheckProviderConnection(userID, providerName, req.Region, req.APIKey, req.BaseURL)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Model instance connection checked successfully")
+	common.SuccessWithData(c, result, "Model instance connection checked successfully")
 }
 
 type AlterProviderInstanceRequest struct {
@@ -627,11 +627,11 @@ func (h *Handler) AlterProviderInstance(c *gin.Context) {
 
 	result, err := h.service.AlterProviderInstance(userID, providerName, instanceName, req.InstanceName, req.APIKey)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Model instance altered successfully")
+	common.SuccessWithData(c, result, "Model instance altered successfully")
 }
 
 type AddModelInstanceRequest struct {
@@ -662,11 +662,11 @@ func (h *Handler) AddModelInstance(c *gin.Context) {
 
 	result, err := h.service.AddModelInstance(userID, providerName, req.InstanceName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Model instance added successfully")
+	common.SuccessWithData(c, result, "Model instance added successfully")
 }
 
 type DropModelInstanceRequest struct {
@@ -696,11 +696,11 @@ func (h *Handler) DeleteModelInstance(c *gin.Context) {
 
 	result, err := h.service.DeleteModelInstances(userID, providerName, req.InstanceNames)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Model provider added successfully")
+	common.SuccessWithData(c, result, "Model provider added successfully")
 }
 
 func (h *Handler) ListInstanceModels(c *gin.Context) {
@@ -726,11 +726,11 @@ func (h *Handler) ListInstanceModels(c *gin.Context) {
 
 	result, err := h.service.ListInstanceModels(userID, providerName, instanceName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Models listed successfully")
+	common.SuccessWithData(c, result, "Models listed successfully")
 }
 
 type EnableOrDisableModelRequest struct {
@@ -782,11 +782,11 @@ func (h *Handler) EnableOrDisableModel(c *gin.Context) {
 
 	result, err := h.service.EnableOrDisableModel(userID, providerName, instanceName, modelName, modelID, req.Status)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Models listed successfully")
+	common.SuccessWithData(c, result, "Models listed successfully")
 }
 
 type AddModelsRequest struct {
@@ -826,11 +826,11 @@ func (h *Handler) AddModels(c *gin.Context) {
 
 	result, err := h.service.AddModels(userID, providerName, instanceName, req.ModelNames)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Models added successfully")
+	common.SuccessWithData(c, result, "Models added successfully")
 }
 
 type DropModelsRequest struct {
@@ -869,22 +869,22 @@ func (h *Handler) DeleteModels(c *gin.Context) {
 
 	result, err := h.service.DeleteModels(userID, providerName, instanceName, req.ModelNames)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Model deleted successfully")
+	common.SuccessWithData(c, result, "Model deleted successfully")
 }
 
 // GetSystemFingerprint handle get system fingerprint
 func (h *Handler) GetSystemFingerprint(c *gin.Context) {
 	fingerprint, err := h.service.GetSystemFingerprint()
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, fingerprint, "")
+	common.SuccessWithData(c, fingerprint, "")
 }
 
 type SetSystemLicenseRequest struct {
@@ -905,10 +905,10 @@ func (h *Handler) SetSystemLicense(c *gin.Context) {
 
 	err := h.service.SetSystemLicense(req.License)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
-	success(c, nil, "System license set successfully")
+	common.SuccessWithData(c, nil, "System license set successfully")
 }
 
 // ShowSystemLicense to get system license
@@ -919,16 +919,16 @@ func (h *Handler) ShowSystemLicense(c *gin.Context) {
 	}
 	checkFlag, err := strconv.ParseBool(check)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	systemLicense, err := h.service.ShowSystemLicense(checkFlag)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, systemLicense, "")
+	common.SuccessWithData(c, systemLicense, "")
 }
 
 type SetSystemLicenseConfigRequest struct {
@@ -948,10 +948,10 @@ func (h *Handler) UpdateSystemLicenseConfig(c *gin.Context) {
 	}
 	result, err := h.service.UpdateSystemLicenseConfig(req.TimeRecordSaveInterval, req.TimeRecordTaskDuration)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
-	success(c, result, "System license config updated successfully")
+	common.SuccessWithData(c, result, "System license config updated successfully")
 }
 
 type ShowUserActivityRequest struct {
@@ -973,14 +973,14 @@ func (h *Handler) ShowUserActivity(c *gin.Context) {
 	userActivity, err := h.service.ShowUserActivity(req.Email, req.Days)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, userActivity, "")
+	common.SuccessWithData(c, userActivity, "")
 }
 
 type ShowUserDatasetSummaryRequest struct {
@@ -1002,25 +1002,25 @@ func (h *Handler) ShowUserDatasetSummary(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	userDatasetSummary, err := h.service.ShowUserDatasetSummary(username, req.Dataset)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, userDatasetSummary, "")
+	common.SuccessWithData(c, userDatasetSummary, "")
 }
 
 // ShowUserSummary handle show user summary
@@ -1028,25 +1028,25 @@ func (h *Handler) ShowUserSummary(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	userSummary, err := h.service.ShowUserSummary(username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, userSummary, "")
+	common.SuccessWithData(c, userSummary, "")
 }
 
 // ShowUserStorage handle show user storage
@@ -1054,25 +1054,25 @@ func (h *Handler) ShowUserStorage(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	userStorage, err := h.service.ShowUserStorage(username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, userStorage, "")
+	common.SuccessWithData(c, userStorage, "")
 }
 
 // ShowUserQuota handle show user quota
@@ -1080,25 +1080,25 @@ func (h *Handler) ShowUserQuota(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	userQuota, err := h.service.ShowUserQuota(username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, userQuota, "")
+	common.SuccessWithData(c, userQuota, "")
 }
 
 // ShowUserIndex handle show user index
@@ -1106,25 +1106,25 @@ func (h *Handler) ShowUserIndex(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	userIndex, err := h.service.ShowUserIndex(username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, userIndex, "")
+	common.SuccessWithData(c, userIndex, "")
 }
 
 // UpdateUserRoleHTTPRequest update user role request
@@ -1137,27 +1137,27 @@ func (h *Handler) UpdateUserRole(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	var req UpdateUserRoleHTTPRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "Role name is required", 400)
+	if err = c.ShouldBindJSON(&req); err != nil {
+		common.ErrorWithCode(c, 400, "Role name is required")
 		return
 	}
 
 	result, err := h.service.UpdateUserRole(username, req.RoleName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "")
+	common.SuccessWithData(c, result, "")
 }
 
 // ShowUserPermission handle show user permission
@@ -1165,21 +1165,21 @@ func (h *Handler) ShowUserPermission(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	permissions, err := h.service.ShowUserPermission(username)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, permissions, "")
+	common.SuccessWithData(c, permissions, "")
 }
 
 // ListUserDatasets handle show user datasets
@@ -1187,21 +1187,21 @@ func (h *Handler) ListUserDatasets(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	datasets, err := h.service.ListUserDatasets(username)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, datasets, "")
+	common.SuccessWithData(c, datasets, "")
 }
 
 // ListUserAgents handle show user agents
@@ -1209,21 +1209,21 @@ func (h *Handler) ListUserAgents(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	agents, err := h.service.ListUserAgents(username)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, agents, "")
+	common.SuccessWithData(c, agents, "")
 }
 
 // ListUserChats handle show user chats
@@ -1231,21 +1231,21 @@ func (h *Handler) ListUserChats(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	chats, err := h.service.ListUserChats(username)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, chats, "")
+	common.SuccessWithData(c, chats, "")
 }
 
 // ListUserSearches handle show user searches
@@ -1253,21 +1253,21 @@ func (h *Handler) ListUserSearches(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	searches, err := h.service.ListUserSearches(username)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, searches, "")
+	common.SuccessWithData(c, searches, "")
 }
 
 // ListUserModels handle show user models
@@ -1275,21 +1275,21 @@ func (h *Handler) ListUserModels(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	models, err := h.service.ListUserModels(username)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, models, "")
+	common.SuccessWithData(c, models, "")
 }
 
 // ListUserFiles handle show user files
@@ -1297,21 +1297,21 @@ func (h *Handler) ListUserFiles(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	files, err := h.service.ListUserFiles(username)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, files, "")
+	common.SuccessWithData(c, files, "")
 }
 
 // ListUserProviders handle show user providers
@@ -1319,21 +1319,21 @@ func (h *Handler) ListUserProviders(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	providers, err := h.service.ListUserProviders(username)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, providers, "")
+	common.SuccessWithData(c, providers, "")
 }
 
 // ListUserProviderInstances handle show user provider instances
@@ -1341,27 +1341,27 @@ func (h *Handler) ListUserProviderInstances(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	userName, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if userName == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		errorResponse(c, "Provider name is required", 400)
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 
 	instances, err := h.service.ListUserProviderInstances(userName, providerName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, instances, "")
+	common.SuccessWithData(c, instances, "")
 }
 
 // ListUserProviderInstanceModels handle show user provider instance models
@@ -1369,33 +1369,33 @@ func (h *Handler) ListUserProviderInstanceModels(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	userName, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if userName == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		errorResponse(c, "Provider name is required", 400)
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		errorResponse(c, "Instance name is required", 400)
+		common.ErrorWithCode(c, 400, "Instance name is required")
 		return
 	}
 
 	models, err := h.service.ListUserProviderInstanceModels(userName, providerName, instanceName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, models, "")
+	common.SuccessWithData(c, models, "")
 }
 
 // ListUserDefaultModels handle show user default models
@@ -1403,21 +1403,21 @@ func (h *Handler) ListUserDefaultModels(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	userName, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if userName == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	models, err := h.service.ListUserDefaultModels(userName)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, models, "")
+	common.SuccessWithData(c, models, "")
 }
 
 // ShowUsersSummary handle show users summary
@@ -1425,14 +1425,14 @@ func (h *Handler) ShowUsersSummary(c *gin.Context) {
 	usersSummary, err := h.service.ShowUsersSummary()
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, usersSummary, "")
+	common.SuccessWithData(c, usersSummary, "")
 }
 
 type ShowUsersActivityRequest struct {
@@ -1454,14 +1454,14 @@ func (h *Handler) ShowUsersActivity(c *gin.Context) {
 	usersActivity, err := h.service.ShowUsersActivity(req.Days, req.Window)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, usersActivity, "")
+	common.SuccessWithData(c, usersActivity, "")
 }
 
 type ListUsersReportsRequest struct {
@@ -1488,7 +1488,7 @@ func (h *Handler) ListUsersReports(c *gin.Context) {
 	if pageIndexStr != "" {
 		pageIndex, err = strconv.Atoi(pageIndexStr)
 		if err != nil {
-			errorResponse(c, "Page index must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Page index must be an integer")
 			return
 		}
 	}
@@ -1497,7 +1497,7 @@ func (h *Handler) ListUsersReports(c *gin.Context) {
 	if pageSizeStr != "" {
 		pageSize, err = strconv.Atoi(pageSizeStr)
 		if err != nil {
-			errorResponse(c, "Page size must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Page size must be an integer")
 			return
 		}
 	}
@@ -1505,14 +1505,14 @@ func (h *Handler) ListUsersReports(c *gin.Context) {
 	usersReports, err := h.service.ListUsersReports(pageIndex, pageSize, req.Status, req.Plan, req.Days)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, usersReports, "")
+	common.SuccessWithData(c, usersReports, "")
 }
 
 // ListUsersStorage handle show users storage
@@ -1524,7 +1524,7 @@ func (h *Handler) ListUsersStorage(c *gin.Context) {
 	if pageIndexStr != "" {
 		pageIndex, err = strconv.Atoi(pageIndexStr)
 		if err != nil {
-			errorResponse(c, "Page index must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Page index must be an integer")
 			return
 		}
 	}
@@ -1533,7 +1533,7 @@ func (h *Handler) ListUsersStorage(c *gin.Context) {
 	if pageSizeStr != "" {
 		pageSize, err = strconv.Atoi(pageSizeStr)
 		if err != nil {
-			errorResponse(c, "Page size must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Page size must be an integer")
 			return
 		}
 	}
@@ -1542,21 +1542,21 @@ func (h *Handler) ListUsersStorage(c *gin.Context) {
 	if topStr != "" {
 		top, err = strconv.Atoi(topStr)
 		if err != nil {
-			errorResponse(c, "Top must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Top must be an integer")
 		}
 	}
 
 	usersStorage, err := h.service.ListUsersStorage(pageIndex, pageSize, top)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, usersStorage, "")
+	common.SuccessWithData(c, usersStorage, "")
 }
 
 // ListUsersDocuments handle show users documents
@@ -1568,7 +1568,7 @@ func (h *Handler) ListUsersDocuments(c *gin.Context) {
 	if pageIndexStr != "" {
 		pageIndex, err = strconv.Atoi(pageIndexStr)
 		if err != nil {
-			errorResponse(c, "Page index must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Page index must be an integer")
 			return
 		}
 	}
@@ -1577,7 +1577,7 @@ func (h *Handler) ListUsersDocuments(c *gin.Context) {
 	if pageSizeStr != "" {
 		pageSize, err = strconv.Atoi(pageSizeStr)
 		if err != nil {
-			errorResponse(c, "Page size must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Page size must be an integer")
 			return
 		}
 	}
@@ -1586,21 +1586,21 @@ func (h *Handler) ListUsersDocuments(c *gin.Context) {
 	if topStr != "" {
 		top, err = strconv.Atoi(topStr)
 		if err != nil {
-			errorResponse(c, "Top must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Top must be an integer")
 		}
 	}
 
 	usersDocuments, err := h.service.ListUsersDocuments(pageIndex, pageSize, top)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, usersDocuments, "")
+	common.SuccessWithData(c, usersDocuments, "")
 }
 
 // ListUsersIndex handle show users index
@@ -1612,7 +1612,7 @@ func (h *Handler) ListUsersIndex(c *gin.Context) {
 	if pageIndexStr != "" {
 		pageIndex, err = strconv.Atoi(pageIndexStr)
 		if err != nil {
-			errorResponse(c, "Page index must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Page index must be an integer")
 			return
 		}
 	}
@@ -1621,7 +1621,7 @@ func (h *Handler) ListUsersIndex(c *gin.Context) {
 	if pageSizeStr != "" {
 		pageSize, err = strconv.Atoi(pageSizeStr)
 		if err != nil {
-			errorResponse(c, "Page size must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Page size must be an integer")
 			return
 		}
 	}
@@ -1630,21 +1630,21 @@ func (h *Handler) ListUsersIndex(c *gin.Context) {
 	if topStr != "" {
 		top, err = strconv.Atoi(topStr)
 		if err != nil {
-			errorResponse(c, "Top must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Top must be an integer")
 		}
 	}
 
 	usersIndex, err := h.service.ListUsersIndex(pageIndex, pageSize, top)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, usersIndex, "")
+	common.SuccessWithData(c, usersIndex, "")
 }
 
 type ListUsersQuotaRequest struct {
@@ -1671,7 +1671,7 @@ func (h *Handler) ListUsersQuota(c *gin.Context) {
 	if pageIndexStr != "" {
 		pageIndex, err = strconv.Atoi(pageIndexStr)
 		if err != nil {
-			errorResponse(c, "Page index must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Page index must be an integer")
 			return
 		}
 	}
@@ -1680,7 +1680,7 @@ func (h *Handler) ListUsersQuota(c *gin.Context) {
 	if pageSizeStr != "" {
 		pageSize, err = strconv.Atoi(pageSizeStr)
 		if err != nil {
-			errorResponse(c, "Page size must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Page size must be an integer")
 			return
 		}
 	}
@@ -1689,21 +1689,21 @@ func (h *Handler) ListUsersQuota(c *gin.Context) {
 	if topStr != "" {
 		top, err = strconv.Atoi(topStr)
 		if err != nil {
-			errorResponse(c, "Top must be an integer", 400)
+			common.ErrorWithCode(c, 400, "Top must be an integer")
 		}
 	}
 
 	usersQuota, err := h.service.ListUsersQuota(pageIndex, pageSize, top, request.QuotaThreshold, request.Plan, request.Days)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, usersQuota, "")
+	common.SuccessWithData(c, usersQuota, "")
 }
 
 // ShowUsersPlanSummary handle show users plan summary
@@ -1711,14 +1711,14 @@ func (h *Handler) ShowUsersPlanSummary(c *gin.Context) {
 	usersPlanSummary, err := h.service.ShowUsersPlanSummary()
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, usersPlanSummary, "")
+	common.SuccessWithData(c, usersPlanSummary, "")
 }
 
 // ShowUsersQuotaSummary handle show users quota summary
@@ -1726,14 +1726,14 @@ func (h *Handler) ShowUsersQuotaSummary(c *gin.Context) {
 	usersQuotaSummary, err := h.service.ShowUsersQuotaSummary()
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, usersQuotaSummary, "")
+	common.SuccessWithData(c, usersQuotaSummary, "")
 }
 
 // ShowIngestionTasksSummary handle show ingestion tasks summary
@@ -1741,14 +1741,14 @@ func (h *Handler) ShowIngestionTasksSummary(c *gin.Context) {
 	ingestionTasksSummary, err := h.service.ShowIngestionTasksSummary()
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, ingestionTasksSummary, "")
+	common.SuccessWithData(c, ingestionTasksSummary, "")
 }
 
 // ShowDataSummary handle show data summary
@@ -1756,14 +1756,14 @@ func (h *Handler) ShowDataSummary(c *gin.Context) {
 	dataSummary, err := h.service.ShowDataSummary()
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, dataSummary, "")
+	common.SuccessWithData(c, dataSummary, "")
 }
 
 // ShowDataOrphan handle show data orphan
@@ -1771,14 +1771,14 @@ func (h *Handler) ShowDataOrphan(c *gin.Context) {
 	dataOrphan, err := h.service.ShowDataOrphan()
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, dataOrphan, "")
+	common.SuccessWithData(c, dataOrphan, "")
 }
 
 // ShowDataStorage handle show data storage
@@ -1786,14 +1786,14 @@ func (h *Handler) ShowDataStorage(c *gin.Context) {
 	dataStorage, err := h.service.ShowDataStorage()
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, dataStorage, "")
+	common.SuccessWithData(c, dataStorage, "")
 }
 
 // ShowDataIndex handle show data index
@@ -1801,14 +1801,14 @@ func (h *Handler) ShowDataIndex(c *gin.Context) {
 	dataIndex, err := h.service.ShowDataIndex()
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, dataIndex, "")
+	common.SuccessWithData(c, dataIndex, "")
 }
 
 type PurgeOrphanDataRequest struct {
@@ -1829,14 +1829,14 @@ func (h *Handler) PurgeOrphanData(c *gin.Context) {
 	result, err := h.service.PurgeOrphanData(request.Preview)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "Orphan data purged successfully")
+	common.SuccessWithData(c, result, "Orphan data purged successfully")
 }
 
 type PurgeUserDataRequest struct {
@@ -1857,25 +1857,25 @@ func (h *Handler) PurgeUserData(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	result, err := h.service.PurgeUserData(username, request.Preview)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "")
+	common.SuccessWithData(c, result, "")
 }
 
 type PurgeUsersDataRequest struct {
@@ -1900,14 +1900,14 @@ func (h *Handler) PurgeUsersData(c *gin.Context) {
 	result, err := h.service.PurgeUsersData(request.Preview, request.Days, request.Plan, request.UserStatus)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			errorResponse(c, "User not found", 404)
+			common.ErrorWithCode(c, 404, "User not found")
 			return
 		}
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "")
+	common.SuccessWithData(c, result, "")
 }
 
 // GenerateUserAPIKey handle create tenant API key
@@ -1915,17 +1915,17 @@ func (h *Handler) GenerateUserAPIKey(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
 	apiKey, err := h.service.GenerateUserAPIKey(username)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, apiKey, "API key generated successfully")
+	common.SuccessWithData(c, apiKey, "API key generated successfully")
 }
 
 // DeleteUserAPIKey handle delete user API key
@@ -1933,22 +1933,22 @@ func (h *Handler) DeleteUserAPIKey(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	key := c.Param("key")
 	if username == "" || key == "" {
-		errorResponse(c, "Username and key are required", 400)
+		common.ErrorWithCode(c, 400, "Username and key are required")
 		return
 	}
 
 	result, err := h.service.DeleteUserAPIKey(username, key)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "API key deleted successfully")
+	common.SuccessWithData(c, result, "API key deleted successfully")
 }
 
 // ListUserAPIKeys handle list user API keys
@@ -1956,19 +1956,19 @@ func (h *Handler) ListUserAPIKeys(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		errorResponse(c, err.Error(), 400)
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if username == "" {
-		errorResponse(c, "Username is required", 400)
+		common.ErrorWithCode(c, 400, "Username is required")
 		return
 	}
 
 	result, err := h.service.ListUserAPIKeys(username)
 	if err != nil {
-		errorResponse(c, err.Error(), 500)
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	success(c, result, "API keys listed successfully")
+	common.SuccessWithData(c, result, "API keys listed successfully")
 }

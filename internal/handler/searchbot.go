@@ -391,7 +391,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 		jsonInternalError(c, err)
 		return
 	}
-	jsonResponse(c, common.CodeSuccess, mindMap, "success")
+	common.SuccessWithData(c, mindMap, "success")
 }
 
 // SearchbotDetail returns the public share-page bootstrap payload for a
@@ -424,7 +424,7 @@ func (h *SearchBotHandler) SearchbotDetail(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, detail, "success")
+	common.SuccessWithData(c, detail, "success")
 }
 
 // ---- SSE helpers ----

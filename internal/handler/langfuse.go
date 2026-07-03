@@ -76,7 +76,7 @@ func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
 	}
 
 	// Echo back the stored keys, matching the Python langfuse_keys payload.
-	jsonResponse(c, common.CodeSuccess, gin.H{
+	common.SuccessWithData(c, gin.H{
 		"tenant_id":  row.TenantID,
 		"secret_key": row.SecretKey,
 		"public_key": row.PublicKey,
@@ -97,7 +97,7 @@ func (h *LangfuseHandler) GetAPIKey(c *gin.Context) {
 		jsonError(c, code, message)
 		return
 	}
-	jsonResponse(c, code, data, message)
+	common.ResponseWithCodeData(c, code, data, message)
 }
 
 // DeleteAPIKey handles DELETE /langfuse/api-key.
@@ -115,8 +115,8 @@ func (h *LangfuseHandler) DeleteAPIKey(c *gin.Context) {
 	}
 	// No record: mirror get_json_result(message=...) with data=nil.
 	if message != "" {
-		jsonResponse(c, common.CodeSuccess, nil, message)
+		common.SuccessWithData(c, nil, message)
 		return
 	}
-	jsonResponse(c, common.CodeSuccess, ok, "success")
+	common.SuccessWithData(c, ok, "success")
 }

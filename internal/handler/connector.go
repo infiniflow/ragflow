@@ -524,7 +524,7 @@ func (h *ConnectorHandler) StartBoxWebOAuth(c *gin.Context) {
 		jsonError(c, code, err.Error())
 		return
 	}
-	jsonResponse(c, code, resp, "success")
+	common.ResponseWithCodeData(c, code, resp, "success")
 }
 
 func (h *ConnectorHandler) BoxWebOAuthCallback(c *gin.Context) {
@@ -554,5 +554,5 @@ func (h *ConnectorHandler) PollBoxWebOAuthResult(c *gin.Context) {
 		jsonError(c, code, err.Error())
 		return
 	}
-	jsonResponse(c, code, resp, "success")
+	common.ResponseWithCodeData(c, code, resp, "success")
 }

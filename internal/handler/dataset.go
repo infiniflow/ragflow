@@ -40,15 +40,6 @@ type DatasetsHandler struct {
 	searchDatasetService  searchDatasetService
 }
 
-// jsonResponse sends a JSON response with code and message
-func jsonResponse(c *gin.Context, code common.ErrorCode, data interface{}, message string) {
-	c.JSON(http.StatusOK, gin.H{
-		"code":    code,
-		"data":    data,
-		"message": message,
-	})
-}
-
 // jsonError sends a JSON error response
 func jsonError(c *gin.Context, code common.ErrorCode, message string) {
 	c.JSON(http.StatusOK, gin.H{
@@ -307,7 +298,7 @@ func (h *DatasetsHandler) GetIngestionSummary(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }
 
 // ListIngestionLogs handles GET /api/v1/datasets/:dataset_id/ingestions.
@@ -355,7 +346,7 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }
 
 // GetIngestionLog handles GET /api/v1/datasets/:dataset_id/ingestions/:log_id.
@@ -374,7 +365,7 @@ func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }
 
 // DeleteDatasets handles DELETE /api/v1/datasets.
@@ -457,7 +448,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		"mind_map": map[string]interface{}{},
 	}
 	if !exists {
-		jsonResponse(c, common.CodeSuccess, result, "success")
+		common.SuccessWithData(c, result, "success")
 		return
 	}
 
@@ -477,7 +468,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		return
 	}
 	if searchResult == nil || len(searchResult.Chunks) == 0 {
-		jsonResponse(c, common.CodeSuccess, result, "success")
+		common.SuccessWithData(c, result, "success")
 		return
 	}
 
@@ -485,17 +476,17 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	graphType := firstStringValue(chunk["knowledge_graph_kwd"])
 	contentWithWeight, _ := chunk["content_with_weight"].(string)
 	if strings.TrimSpace(contentWithWeight) == "" {
-		jsonResponse(c, common.CodeSuccess, result, "success")
+		common.SuccessWithData(c, result, "success")
 		return
 	}
 
 	var graphData map[string]interface{}
 	if err := json.Unmarshal([]byte(contentWithWeight), &graphData); err != nil {
-		jsonResponse(c, common.CodeSuccess, result, "success")
+		common.SuccessWithData(c, result, "success")
 		return
 	}
 	if len(graphData) == 0 {
-		jsonResponse(c, common.CodeSuccess, result, "success")
+		common.SuccessWithData(c, result, "success")
 		return
 	}
 
@@ -509,7 +500,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		result[graphType] = graphData
 	}
 
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }
 
 // ListTags handles GET /api/v1/datasets/:dataset_id/tags.
@@ -535,7 +526,7 @@ func (h *DatasetsHandler) ListTags(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }
 
 type renameTagRequest struct {
@@ -580,7 +571,7 @@ func (h *DatasetsHandler) RenameTag(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }
 
 // DeleteKnowledgeGraph handles DELETE /api/v1/datasets/:dataset_id/graph.
@@ -624,7 +615,7 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, true, "success")
+	common.SuccessWithData(c, true, "success")
 }
 
 // RemoveTags handles DELETE /api/v1/datasets/:dataset_id/tags.
@@ -694,7 +685,7 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 		}
 	}
 
-	jsonResponse(c, common.CodeSuccess, true, "success")
+	common.SuccessWithData(c, true, "success")
 }
 
 // RunEmbedding Run embedding for all documents in a dataset.
@@ -723,7 +714,7 @@ func (h *DatasetsHandler) RunEmbedding(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }
 
 // CheckEmbedding Check embedding model compatibility by sampling random chunks,
@@ -760,13 +751,13 @@ func (h *DatasetsHandler) CheckEmbedding(c *gin.Context) {
 	data, code, err := h.datasetsService.CheckEmbedding(userID, datasetID, &req)
 	if err != nil {
 		if code == common.CodeNotEffective {
-			jsonResponse(c, code, data, err.Error())
+			common.ResponseWithCodeData(c, code, data, err.Error())
 			return
 		}
 		jsonError(c, code, err.Error())
 		return
 	}
-	jsonResponse(c, common.CodeSuccess, data, "success")
+	common.SuccessWithData(c, data, "success")
 }
 
 // AggregateTags handles GET /api/v1/datasets/tags/aggregation.
@@ -804,7 +795,7 @@ func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
 		jsonError(c, code, err.Error())
 		return
 	}
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	common.SuccessWithData(c, result, "success")
 }
 
 // RunIndex Run an indexing task (graph/raptor/mindmap) for a dataset.
@@ -834,7 +825,7 @@ func (h *DatasetsHandler) RunIndex(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, data, "success")
+	common.SuccessWithData(c, data, "success")
 }
 
 // TraceIndex Trace an indexing task (graph/raptor/mindmap) for a dataset.
@@ -864,7 +855,7 @@ func (h *DatasetsHandler) TraceIndex(c *gin.Context) {
 		return
 	}
 	if result == nil {
-		jsonResponse(c, common.CodeSuccess, map[string]interface{}{}, "success")
+		common.SuccessWithData(c, map[string]interface{}{}, "success")
 		return
 	}
 
@@ -913,7 +904,7 @@ func (h *DatasetsHandler) DeleteIndex(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, map[string]interface{}{}, "success")
+	common.SuccessWithData(c, map[string]interface{}{}, "success")
 }
 
 // ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.
@@ -965,7 +956,7 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, flattenedMeta, "success")
+	common.SuccessWithData(c, flattenedMeta, "success")
 }
 
 func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
