@@ -22,7 +22,7 @@
 #
 # Typical workflow:
 #
-#   uv run ragflow_deps/download_deps.py            # download
+#   uv run python3 ragflow_deps/download_deps.py            # download
 #   cd ragflow_deps
 #   docker build -f Dockerfile -t infiniflow/ragflow_deps .
 #
