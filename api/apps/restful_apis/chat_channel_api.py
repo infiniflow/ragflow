@@ -37,14 +37,7 @@ def _chat_channel_auth_error(channel_id: str, user_id: str):
 async def create_chat_channel():
     """Create a chat channel bot owned by the current tenant."""
     req = await get_request_json()
-    channel = {
-        "id": get_uuid(),
-        "tenant_id": current_user.id,
-        "name": req["name"],
-        "channel": req["channel"],
-        "config": req.get("config") or {},
-        "chat_id": req.get("chat_id") or None
-    }
+    channel = {"id": get_uuid(), "tenant_id": current_user.id, "name": req["name"], "channel": req["channel"], "config": req.get("config") or {}, "chat_id": req.get("chat_id") or None}
     ChatChannelService.insert(**channel)
 
     e, conn = ChatChannelService.get_by_id(channel["id"])

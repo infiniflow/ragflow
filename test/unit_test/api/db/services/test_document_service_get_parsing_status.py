@@ -31,6 +31,7 @@ warnings.filterwarnings(
 def _install_cv2_stub_if_unavailable():
     try:
         import cv2  # noqa: F401
+
         return
     except Exception:
         pass
@@ -70,6 +71,7 @@ from common.constants import TaskStatus  # noqa: E402
 # Helpers to access the original function bypassing @DB.connection_context()
 # ---------------------------------------------------------------------------
 
+
 def _unwrapped_get_parsing_status():
     """Return the original (un-decorated) get_parsing_status_by_kb_ids function.
 
@@ -83,6 +85,7 @@ def _unwrapped_get_parsing_status():
 # ---------------------------------------------------------------------------
 # Fake ORM helpers – mimic the minimal peewee query chain used by the function
 # ---------------------------------------------------------------------------
+
 
 class _FieldStub:
     """Minimal stand-in for a peewee model field used in select/where/group_by."""
@@ -130,6 +133,7 @@ def _make_fake_model(rows):
 # Pytest fixture – patch DocumentService.model per test
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def call_with_rows(monkeypatch):
     """Return a helper that runs get_parsing_status_by_kb_ids with fake DB rows."""
@@ -146,14 +150,11 @@ def call_with_rows(monkeypatch):
 # Tests
 # ---------------------------------------------------------------------------
 
-_ALL_STATUS_FIELDS = frozenset(
-    ["unstart_count", "running_count", "cancel_count", "done_count", "fail_count"]
-)
+_ALL_STATUS_FIELDS = frozenset(["unstart_count", "running_count", "cancel_count", "done_count", "fail_count"])
 
 
 @pytest.mark.p2
 class TestGetParsingStatusByKbIds:
-
     # ------------------------------------------------------------------
     # Edge-case: empty input list – must short-circuit before any DB call
     # ------------------------------------------------------------------
@@ -224,16 +225,13 @@ class TestGetParsingStatusByKbIds:
 
     def test_unknown_run_value_ignored(self, call_with_rows):
         rows = [
-            {"kb_id": "kb-1", "run": "9", "cnt": 99},   # "9" is not a TaskStatus
+            {"kb_id": "kb-1", "run": "9", "cnt": 99},  # "9" is not a TaskStatus
             {"kb_id": "kb-1", "run": TaskStatus.DONE.value, "cnt": 4},
         ]
         result = call_with_rows(rows=rows, kb_ids=["kb-1"])
 
         assert result["kb-1"]["done_count"] == 4
-        assert all(
-            result["kb-1"][f] == 0
-            for f in _ALL_STATUS_FIELDS - {"done_count"}
-        )
+        assert all(result["kb-1"][f] == 0 for f in _ALL_STATUS_FIELDS - {"done_count"})
 
     # ------------------------------------------------------------------
     # A row whose kb_id was NOT requested must not appear in the output
@@ -298,9 +296,7 @@ class TestGetParsingStatusByKbIds:
         rows = [
             {"kb_id": "kb-with-data", "run": TaskStatus.DONE.value, "cnt": 1},
         ]
-        result = call_with_rows(
-            rows=rows, kb_ids=["kb-with-data", "kb-empty-1", "kb-empty-2"]
-        )
+        result = call_with_rows(rows=rows, kb_ids=["kb-with-data", "kb-empty-1", "kb-empty-2"])
 
         assert set(result.keys()) == {"kb-with-data", "kb-empty-1", "kb-empty-2"}
         assert result["kb-empty-1"] == {f: 0 for f in _ALL_STATUS_FIELDS}
@@ -320,7 +316,4 @@ class TestGetParsingStatusByKbIds:
         assert result["kb-1"]["done_count"] == 2
         # SCHEDULE is not a tracked bucket
         assert "schedule_count" not in result["kb-1"]
-        assert all(
-            result["kb-1"][f] == 0
-            for f in _ALL_STATUS_FIELDS - {"done_count"}
-        )
+        assert all(result["kb-1"][f] == 0 for f in _ALL_STATUS_FIELDS - {"done_count"})

@@ -279,7 +279,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
         if provider_name.lower() == "somark":
             # SoMark/OCR factories read parser config (somark_*, parse_method, ...)
             # from model_config["extra"]; see tenant_llm_service.LLMBundle OCR path.
-            model_config["extra"] = model_extra.get("ocr_config", model_extra)
+            model_config["extra"] = model_extra
 
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload

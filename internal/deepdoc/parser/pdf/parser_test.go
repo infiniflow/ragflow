@@ -3,10 +3,10 @@ package pdf
 import (
 	"context"
 	"image"
+	"math"
 	"strings"
 	"sync"
 	"testing"
-	"math"
 
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"

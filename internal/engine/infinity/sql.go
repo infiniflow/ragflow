@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -59,18 +58,23 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 	if mappingFileName == "" {
 		mappingFileName = "infinity_mapping.json"
 	}
-	confPath := filepath.Join(utility.GetProjectRoot(), "conf", mappingFileName)
-	data, err := os.ReadFile(confPath)
+
+	filePath, err := utility.FindConfFileInProject(mappingFileName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	data, err := os.ReadFile(*filePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return map[string]string{}, map[string]string{}, nil
 		}
-		return nil, nil, fmt.Errorf("load field mapping %q: %w", confPath, err)
+		return nil, nil, fmt.Errorf("load field mapping %q: %w", *filePath, err)
 	}
 
 	fields := map[string]fieldMappingEntry{}
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return nil, nil, fmt.Errorf("parse field mapping %q: %w", confPath, err)
+	if err = json.Unmarshal(data, &fields); err != nil {
+		return nil, nil, fmt.Errorf("parse field mapping %q: %w", *filePath, err)
 	}
 
 	aliasToActual = make(map[string]string, len(fields)*2)

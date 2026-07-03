@@ -65,9 +65,7 @@ def test_max_tokens_falls_back_to_factory_when_model_extra_empty(monkeypatch):
         ],
     )
 
-    config = tms.get_model_config_from_provider_instance(
-        "tenant-1", "chat", "gpt-test@default@OpenAI"
-    )
+    config = tms.get_model_config_from_provider_instance("tenant-1", "chat", "gpt-test@default@OpenAI")
 
     assert config["max_tokens"] == 128000
 
@@ -115,8 +113,6 @@ def test_max_tokens_prefers_model_extra_over_factory(monkeypatch):
         ],
     )
 
-    config = tms.get_model_config_from_provider_instance(
-        "tenant-1", "chat", "gpt-test@default@OpenAI"
-    )
+    config = tms.get_model_config_from_provider_instance("tenant-1", "chat", "gpt-test@default@OpenAI")
 
     assert config["max_tokens"] == 32000

@@ -27,8 +27,7 @@ TimeoutException = Union[Type[BaseException], BaseException]
 OnTimeoutCallback = Union[Callable[..., Any], Coroutine[Any, Any, Any]]
 
 
-def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: Optional[TimeoutException] = None,
-            on_timeout: Optional[OnTimeoutCallback] = None):
+def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: Optional[TimeoutException] = None, on_timeout: Optional[OnTimeoutCallback] = None):
     if isinstance(seconds, str):
         seconds = float(seconds)
 
@@ -121,6 +120,7 @@ async def construct_response(code=RetCode.SUCCESS, message="success", data=None,
 
 def sync_construct_response(code=RetCode.SUCCESS, message="success", data=None, auth=None):
     import flask
+
     result_dict = {"code": code, "message": message, "data": data}
     response_dict = {}
     for key, value in result_dict.items():

@@ -35,17 +35,35 @@ from unittest import mock
 # We mock the heavy third-party modules so that pdf_parser.py can be loaded
 # purely for its static detection methods.
 _MOCK_MODULES = [
-    "numpy", "np", "pdfplumber", "xgboost", "xgb",
-    "huggingface_hub", "PIL", "PIL.Image", "pypdf",
-    "sklearn", "sklearn.cluster", "sklearn.metrics",
-    "common", "common.file_utils", "common.misc_utils", "common.settings",
+    "numpy",
+    "np",
+    "pdfplumber",
+    "xgboost",
+    "xgb",
+    "huggingface_hub",
+    "PIL",
+    "PIL.Image",
+    "pypdf",
+    "sklearn",
+    "sklearn.cluster",
+    "sklearn.metrics",
+    "common",
+    "common.file_utils",
+    "common.misc_utils",
+    "common.settings",
     "common.token_utils",
-    "deepdoc", "deepdoc.vision", "deepdoc.parser",
-    "rag", "rag.nlp", "rag.prompts", "rag.prompts.generator",
+    "deepdoc",
+    "deepdoc.vision",
+    "deepdoc.parser",
+    "rag",
+    "rag.nlp",
+    "rag.prompts",
+    "rag.prompts.generator",
 ]
 for _m in _MOCK_MODULES:
     if _m not in sys.modules:
         sys.modules[_m] = mock.MagicMock()
+
 
 def _find_project_root(marker="pyproject.toml"):
     """Walk up from this file until a directory containing *marker* is found."""
@@ -96,15 +114,15 @@ class TestIsGarbledChar:
             assert is_garbled_char(ch) is False
 
     def test_common_whitespace_not_garbled(self):
-        assert is_garbled_char('\t') is False
-        assert is_garbled_char('\n') is False
-        assert is_garbled_char('\r') is False
-        assert is_garbled_char(' ') is False
+        assert is_garbled_char("\t") is False
+        assert is_garbled_char("\n") is False
+        assert is_garbled_char("\r") is False
+        assert is_garbled_char(" ") is False
 
     def test_pua_chars_are_garbled(self):
-        assert is_garbled_char('\uE000') is True
-        assert is_garbled_char('\uF000') is True
-        assert is_garbled_char('\uF8FF') is True
+        assert is_garbled_char("\ue000") is True
+        assert is_garbled_char("\uf000") is True
+        assert is_garbled_char("\uf8ff") is True
 
     def test_supplementary_pua_a(self):
         assert is_garbled_char(chr(0xF0000)) is True
@@ -115,20 +133,20 @@ class TestIsGarbledChar:
         assert is_garbled_char(chr(0x10FFFF)) is True
 
     def test_replacement_char(self):
-        assert is_garbled_char('\uFFFD') is True
+        assert is_garbled_char("\ufffd") is True
 
     def test_c0_control_chars(self):
-        assert is_garbled_char('\x00') is True
-        assert is_garbled_char('\x01') is True
-        assert is_garbled_char('\x1F') is True
+        assert is_garbled_char("\x00") is True
+        assert is_garbled_char("\x01") is True
+        assert is_garbled_char("\x1f") is True
 
     def test_c1_control_chars(self):
-        assert is_garbled_char('\x80') is True
-        assert is_garbled_char('\x8F') is True
-        assert is_garbled_char('\x9F') is True
+        assert is_garbled_char("\x80") is True
+        assert is_garbled_char("\x8f") is True
+        assert is_garbled_char("\x9f") is True
 
     def test_empty_string(self):
-        assert is_garbled_char('') is False
+        assert is_garbled_char("") is False
 
     def test_common_punctuation(self):
         for ch in ".,;:!?()[]{}\"'-/\\@#$%^&*+=<>~`|":
@@ -164,15 +182,15 @@ class TestIsGarbledText:
         assert is_garbled_text(None) is False
 
     def test_all_pua_chars(self):
-        text = "\uE000\uE001\uE002\uE003\uE004"
+        text = "\ue000\ue001\ue002\ue003\ue004"
         assert is_garbled_text(text) is True
 
     def test_mostly_garbled(self):
-        text = "\uE000\uE001\uE002好"
+        text = "\ue000\ue001\ue002好"
         assert is_garbled_text(text, threshold=0.5) is True
 
     def test_few_garbled_below_threshold(self):
-        text = "这是正常文本\uE000"
+        text = "这是正常文本\ue000"
         assert is_garbled_text(text, threshold=0.5) is False
 
     def test_cid_pattern_detected(self):
@@ -187,23 +205,23 @@ class TestIsGarbledText:
         assert is_garbled_text("   \t\n  ") is False
 
     def test_custom_threshold(self):
-        text = "\uE000正常"
+        text = "\ue000正常"
         assert is_garbled_text(text, threshold=0.3) is True
         assert is_garbled_text(text, threshold=0.5) is False
 
     def test_replacement_chars_in_text(self):
-        text = "文档\uFFFD\uFFFD解析"
+        text = "文档\ufffd\ufffd解析"
         assert is_garbled_text(text, threshold=0.5) is False
         assert is_garbled_text(text, threshold=0.3) is True
 
     def test_real_world_garbled_pattern(self):
-        text = "\uE000\uE001\uE002\uE003\uE004\uE005\uE006\uE007"
+        text = "\ue000\ue001\ue002\ue003\ue004\ue005\ue006\ue007"
         assert is_garbled_text(text) is True
 
     def test_mixed_garbled_and_normal_at_boundary(self):
-        text = "AB\uE000\uE001"
+        text = "AB\ue000\ue001"
         assert is_garbled_text(text, threshold=0.5) is True
-        text2 = "ABC\uE000"
+        text2 = "ABC\ue000"
         assert is_garbled_text(text2, threshold=0.5) is False
 
 
@@ -263,7 +281,7 @@ class TestIsGarbledByFontEncoding:
     def test_ascii_punct_from_subset_font_is_garbled(self):
         """Simulates GB.18067-2000.pdf: all chars are ASCII punct from subset fonts."""
         chars = _make_chars(
-            list('!"#$%&\'(\'&)\'"*$!"#$%&\'\'()*+,$-'),
+            list("!\"#$%&'('&)'\"*$!\"#$%&''()*+,$-"),
             fontname="DY1+ZLQDm1-1",
         )
         assert is_garbled_by_font_encoding(chars) is True
@@ -287,7 +305,7 @@ class TestIsGarbledByFontEncoding:
     def test_non_subset_font_not_flagged(self):
         """ASCII punct from non-subset fonts should not be flagged."""
         chars = _make_chars(
-            list('!"#$%&\'()*+,-./!"#$%&\'()*+,-./'),
+            list("!\"#$%&'()*+,-./!\"#$%&'()*+,-./"),
             fontname="Arial",
         )
         assert is_garbled_by_font_encoding(chars) is False
@@ -315,13 +333,13 @@ class TestIsGarbledByFontEncoding:
 
     def test_real_world_gb18067_page1(self):
         """Simulate actual GB.18067-2000.pdf Page 1 character distribution."""
-        page_text = '!"#$%&\'(\'&)\'"*$!"#$%&\'\'()*+,$-'
+        page_text = "!\"#$%&'('&)'\"*$!\"#$%&''()*+,$-"
         chars = _make_chars(list(page_text), fontname="DY1+ZLQDm1-1")
         assert is_garbled_by_font_encoding(chars) is True
 
     def test_real_world_gb18067_page3(self):
         """Simulate actual GB.18067-2000.pdf Page 3 character distribution."""
-        page_text = '!"#$%&\'()*+,-.*+/0+123456789:;<'
+        page_text = "!\"#$%&'()*+,-.*+/0+123456789:;<"
         chars = _make_chars(list(page_text), fontname="DY1+ZLQDnC-1")
         assert is_garbled_by_font_encoding(chars) is True
 
@@ -342,14 +360,14 @@ class TestIsGarbledByFontEncoding:
     def test_boundary_cjk_ratio(self):
         """Just below 5% CJK threshold should still be flagged."""
         # 1 CJK out of 25 chars = 4% CJK, rest are punct from subset font
-        chars = _make_chars(list('!"#$%&\'()*+,-./!@#$%^&*'), fontname="DY1+Font")
+        chars = _make_chars(list("!\"#$%&'()*+,-./!@#$%^&*"), fontname="DY1+Font")
         chars.append({"text": "中", "fontname": "DY1+Font"})
         assert is_garbled_by_font_encoding(chars, min_chars=5) is True
 
     def test_boundary_above_cjk_threshold(self):
         """Above 5% CJK ratio should NOT be flagged."""
         # 3 CJK out of 23 chars = ~13% CJK
-        chars = _make_chars(list('!"#$%&\'()*+,-./!@#$'), fontname="DY1+Font")
+        chars = _make_chars(list("!\"#$%&'()*+,-./!@#$"), fontname="DY1+Font")
         for ch in "中文字":
             chars.append({"text": ch, "fontname": "DY1+Font"})
         assert is_garbled_by_font_encoding(chars, min_chars=5) is False
@@ -362,14 +380,14 @@ class TestIsGarbledByFontEncoding:
         """
         # 5 chars from subset font, 20 from normal font -> 20% subset ratio < 30%
         chars = _make_chars(list('!"#$%'), fontname="DY1+Font")
-        chars.extend(_make_chars(list('!"#$%&\'()*+,-./!@#$%'), fontname="Arial"))
+        chars.extend(_make_chars(list("!\"#$%&'()*+,-./!@#$%"), fontname="Arial"))
         assert is_garbled_by_font_encoding(chars, min_chars=5) is False
 
     def test_high_subset_ratio_flagged(self):
         """When most chars come from subset fonts, detection should trigger."""
         # All 30 chars from subset font with punct -> garbled
         chars = _make_chars(
-            list('!"#$%&\'()*+,-./!@#$%^&*()[]{}'),
+            list("!\"#$%&'()*+,-./!@#$%^&*()[]{}"),
             fontname="BCDGEE+R0015",
         )
         assert is_garbled_by_font_encoding(chars) is True

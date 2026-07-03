@@ -17,6 +17,7 @@ import pytest
 from ragflow_sdk import RAGFlow
 from configs import INVALID_API_TOKEN, HOST_ADDRESS
 
+
 class TestAuthorization:
     @pytest.mark.p2
     @pytest.mark.parametrize(

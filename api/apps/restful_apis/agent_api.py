@@ -1407,7 +1407,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                 dsl_str = workflow_dsl
             else:
                 dsl_str = json.dumps(workflow_dsl, ensure_ascii=False)
-            canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id, custom_header=custom_header)
+            canvas = Canvas(dsl_str, str(tenant_id), task_id=session_id, canvas_id=agent_id, custom_header=custom_header)
         except Exception as exc:
             return server_error_response(exc)
 
@@ -1528,7 +1528,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         try:
             from agent.canvas import Canvas
 
-            canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id, custom_header=custom_header)
+            canvas = Canvas(dsl_str, str(tenant_id), task_id=session_id, canvas_id=agent_id, custom_header=custom_header)
             canvas.clear_history()
         except Exception as exc:
             return server_error_response(exc)

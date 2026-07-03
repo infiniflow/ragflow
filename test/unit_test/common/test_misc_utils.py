@@ -183,12 +183,12 @@ class TestGetUuid:
         # UUID v1 hex should be 32 characters (without dashes)
         assert len(result) == 32
         # Should only contain hexadecimal characters
-        assert all(c in '0123456789abcdef' for c in result)
+        assert all(c in "0123456789abcdef" for c in result)
 
     def test_no_dashes_in_result(self):
         """Test that result contains no dashes"""
         result = get_uuid()
-        assert '-' not in result
+        assert "-" not in result
 
     def test_unique_results(self):
         """Test that multiple calls return different UUIDs"""
@@ -200,7 +200,7 @@ class TestGetUuid:
         # All should be valid hex strings of correct length
         for result in results:
             assert len(result) == 32
-            assert all(c in '0123456789abcdef' for c in result)
+            assert all(c in "0123456789abcdef" for c in result)
 
     def test_valid_uuid_structure(self):
         """Test that the hex string can be converted back to UUID"""
@@ -222,7 +222,7 @@ class TestGetUuid:
         assert uuid_obj.version == 1
 
         # Variant should be RFC 4122
-        assert uuid_obj.variant == 'specified in RFC 4122'
+        assert uuid_obj.variant == "specified in RFC 4122"
 
     def test_result_length_consistency(self):
         """Test that all generated UUIDs have consistent length"""
@@ -236,7 +236,7 @@ class TestGetUuid:
             result = get_uuid()
             # Should only contain lowercase hex characters (UUID hex is lowercase)
             assert result.islower()
-            assert all(c in '0123456789abcdef' for c in result)
+            assert all(c in "0123456789abcdef" for c in result)
 
 
 class TestDownloadImg:
@@ -314,12 +314,12 @@ class TestHashStr2Int:
         """Test basic string hashing functionality"""
         result = hash_str2int("hello")
         assert isinstance(result, int)
-        assert 0 <= result < 10 ** 8
+        assert 0 <= result < 10**8
 
     def test_default_mod_value(self):
         """Test that default mod value is 10^8"""
         result = hash_str2int("test")
-        assert 0 <= result < 10 ** 8
+        assert 0 <= result < 10**8
 
     def test_custom_mod_value(self):
         """Test with custom mod value"""
@@ -349,44 +349,32 @@ class TestHashStr2Int:
         """Test hashing empty string"""
         result = hash_str2int("")
         assert isinstance(result, int)
-        assert 0 <= result < 10 ** 8
+        assert 0 <= result < 10**8
 
     def test_unicode_string(self):
         """Test hashing unicode strings"""
-        test_strings = [
-            "中文",
-            "🚀火箭",
-            "café",
-            "🎉",
-            "Hello 世界"
-        ]
+        test_strings = ["中文", "🚀火箭", "café", "🎉", "Hello 世界"]
 
         for test_str in test_strings:
             result = hash_str2int(test_str)
             assert isinstance(result, int)
-            assert 0 <= result < 10 ** 8
+            assert 0 <= result < 10**8
 
     def test_special_characters(self):
         """Test hashing strings with special characters"""
-        test_strings = [
-            "hello@world.com",
-            "test#123",
-            "line\nwith\nnewlines",
-            "tab\tcharacter",
-            "space in string"
-        ]
+        test_strings = ["hello@world.com", "test#123", "line\nwith\nnewlines", "tab\tcharacter", "space in string"]
 
         for test_str in test_strings:
             result = hash_str2int(test_str)
             assert isinstance(result, int)
-            assert 0 <= result < 10 ** 8
+            assert 0 <= result < 10**8
 
     def test_large_string(self):
         """Test hashing large string"""
         large_string = "x" * 10000
         result = hash_str2int(large_string)
         assert isinstance(result, int)
-        assert 0 <= result < 10 ** 8
+        assert 0 <= result < 10**8
 
     def test_mod_value_1(self):
         """Test with mod value 1 (should always return 0)"""
@@ -400,15 +388,15 @@ class TestHashStr2Int:
 
     def test_very_large_mod(self):
         """Test with very large mod value"""
-        result = hash_str2int("test", mod=10 ** 12)
+        result = hash_str2int("test", mod=10**12)
         assert isinstance(result, int)
-        assert 0 <= result < 10 ** 12
+        assert 0 <= result < 10**12
 
     def test_hash_algorithm_sha1(self):
         """Test that SHA1 algorithm is used"""
         test_string = "hello"
         expected_hash = hashlib.sha1(test_string.encode("utf-8")).hexdigest()
-        expected_int = int(expected_hash, 16) % (10 ** 8)
+        expected_int = int(expected_hash, 16) % (10**8)
 
         result = hash_str2int(test_string)
         assert result == expected_int
@@ -437,7 +425,7 @@ class TestHashStr2Int:
         test_string = "hello"
         hash_obj = hashlib.sha1(test_string.encode("utf-8"))
         hex_digest = hash_obj.hexdigest()
-        expected_int = int(hex_digest, 16) % (10 ** 8)
+        expected_int = int(hex_digest, 16) % (10**8)
 
         result = hash_str2int(test_string)
         assert result == expected_int
@@ -447,7 +435,7 @@ class TestHashStr2Int:
         test_strings = ["a", "b", "abc", "hello world", "12345"]
 
         for test_str in test_strings:
-            direct_result = int(hashlib.sha1(test_str.encode("utf-8")).hexdigest(), 16) % (10 ** 8)
+            direct_result = int(hashlib.sha1(test_str.encode("utf-8")).hexdigest(), 16) % (10**8)
             function_result = hash_str2int(test_str)
             assert function_result == direct_result
 
@@ -458,23 +446,16 @@ class TestHashStr2Int:
         for test_str in test_strings:
             result = hash_str2int(test_str)
             assert isinstance(result, int)
-            assert 0 <= result < 10 ** 8
+            assert 0 <= result < 10**8
 
     def test_whitespace_strings(self):
         """Test hashing strings with various whitespace"""
-        test_strings = [
-            "  leading",
-            "trailing  ",
-            "  both  ",
-            "\ttab",
-            "new\nline",
-            "\r\nwindows"
-        ]
+        test_strings = ["  leading", "trailing  ", "  both  ", "\ttab", "new\nline", "\r\nwindows"]
 
         for test_str in test_strings:
             result = hash_str2int(test_str)
             assert isinstance(result, int)
-            assert 0 <= result < 10 ** 8
+            assert 0 <= result < 10**8
 
 
 class TestConvertBytes:
