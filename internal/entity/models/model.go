@@ -174,6 +174,7 @@ type Model struct {
 // Provider represents an LLM provider
 type Provider struct {
 	Name        string            `json:"name"`
+	Rank        int               `json:"rank"`
 	URL         map[string]string `json:"url"`
 	URLSuffix   URLSuffix         `json:"url_suffix"`
 	Models      []*Model          `json:"models"`
@@ -372,6 +373,7 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 
 		providerData := map[string]interface{}{
 			"name":        provider.Name,
+			"rank":        provider.Rank,
 			"url":         provider.URL,
 			"model_types": modelTypes,
 			"url_suffix":  provider.URLSuffix,
