@@ -8,7 +8,7 @@ import { MessageType } from '@/constants/chat';
 import { useUploadAgentFileWithProgress } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IAgentLogResponse } from '@/interfaces/database/agent';
-import { IMessage } from '@/interfaces/database/chat';
+import { IMessage, IReferenceObject } from '@/interfaces/database/chat';
 import DebugContent from '@/pages/agent/debug-content';
 import { useAwaitComponentData } from '@/pages/agent/hooks/use-chat-logic';
 import { BeginQuery } from '@/pages/agent/interface';
@@ -149,7 +149,13 @@ export function SessionChat({ session }: SessionChatProps) {
                       nickname={userInfo.nickname}
                       avatar={userInfo.avatar}
                       avatarDialog={canvasInfo?.avatar || ''}
-                      reference={findReferenceByMessageId(message.id)}
+                      reference={
+                        findReferenceByMessageId(message.id) ||
+                        (session?.reference?.[
+                          Math.floor((i - 1) / 2)
+                        ] as unknown as IReferenceObject) ||
+                        {}
+                      }
                       clickDocumentButton={clickDocumentButton}
                       index={i}
                       showLikeButton={false}

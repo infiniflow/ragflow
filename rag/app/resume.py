@@ -45,12 +45,13 @@ from common.constants import MAXIMUM_PAGE_NUMBER
 # tiktoken for long random string filtering (ref: SmartResume should_remove strategy)
 try:
     import tiktoken
+
     _tiktoken_encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
 except ImportError:
     _tiktoken_encoding = None
 
 # Long random string pattern: 40+ char alphanumeric mixed strings (hash, token, tracking ID, etc.)
-_LONG_RANDOM_PATTERN = re.compile(r'[a-zA-Z0-9\-~_]{40,}')
+_LONG_RANDOM_PATTERN = re.compile(r"[a-zA-Z0-9\-~_]{40,}")
 
 import logging as logger
 from rag.nlp import rag_tokenizer
@@ -79,6 +80,7 @@ def _get_layout_recognizer():
     if _layout_recognizer is None:
         try:
             from deepdoc.vision import LayoutRecognizer
+
             _layout_recognizer = LayoutRecognizer("layout")
             logger.info("YOLOv10 layout detector loaded successfully")
         except Exception as e:
@@ -86,13 +88,11 @@ def _get_layout_recognizer():
             _layout_recognizer = False  # Mark as failed to avoid repeated attempts
     return _layout_recognizer if _layout_recognizer is not False else None
 
+
 # ==================== Constants ====================
 
 # Fields forbidden from being used as select fields in resume
-FORBIDDEN_SELECT_FIELDS = [
-    "name_pinyin_kwd", "edu_first_fea_kwd", "degree_kwd",
-    "sch_rank_kwd", "edu_fea_kwd"
-]
+FORBIDDEN_SELECT_FIELDS = ["name_pinyin_kwd", "edu_first_fea_kwd", "degree_kwd", "sch_rank_kwd", "edu_fea_kwd"]
 
 # Field name to description mapping (bilingual versions for chunk construction)
 FIELD_MAP_ZH = {
@@ -243,8 +243,8 @@ def _normalize_whitespace(text: str) -> str:
     """
     Unicode whitespace normalization (ref: SmartResume _clean_text_content)
 
-    Replaces various Unicode spaces (\u00A0 non-breaking space, \u3000 fullwidth space,
-    \u2000-\u200A various width spaces, etc.) with regular spaces,
+    Replaces various Unicode spaces (\u00a0 non-breaking space, \u3000 fullwidth space,
+    \u2000-\u200a various width spaces, etc.) with regular spaces,
     then applies NFKC normalization (fullwidth to halfwidth) and merges consecutive spaces.
 
     Args:
@@ -255,14 +255,11 @@ def _normalize_whitespace(text: str) -> str:
     if not text:
         return ""
     # NFKC normalization (fullwidth to halfwidth, etc.)
-    text = unicodedata.normalize('NFKC', text)
+    text = unicodedata.normalize("NFKC", text)
     # Unify various Unicode spaces to regular space
-    text = re.sub(
-        r'[\u0020\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u00A7]',
-        ' ', text
-    )
+    text = re.sub(r"[\u0020\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u00A7]", " ", text)
     # Merge consecutive spaces
-    text = re.sub(r' {2,}', ' ', text)
+    text = re.sub(r" {2,}", " ", text)
     return text.strip()
 
 
@@ -282,11 +279,7 @@ def _should_remove_random_str(match: re.Match) -> bool:
     if _tiktoken_encoding is None:
         # When tiktoken is unavailable, use simple heuristic: case/digit alternation frequency
         s = match.group(0)
-        changes = sum(
-            1 for i in range(1, len(s))
-            if s[i].isdigit() != s[i-1].isdigit()
-            or (s[i].isalpha() and s[i-1].isalpha() and s[i].isupper() != s[i-1].isupper())
-        )
+        changes = sum(1 for i in range(1, len(s)) if s[i].isdigit() != s[i - 1].isdigit() or (s[i].isalpha() and s[i - 1].isalpha() and s[i].isupper() != s[i - 1].isupper()))
         return changes / len(s) > 0.3
     encoded = _tiktoken_encoding.encode(match.group(0))
     return len(encoded) > len(match.group(0)) * 0.5
@@ -306,18 +299,13 @@ def _clean_line_content(text: str) -> str:
     # Unicode whitespace normalization
     text = _normalize_whitespace(text)
     # Filter long random strings (hash, token and other meaningless content)
-    text = _LONG_RANDOM_PATTERN.sub(
-        lambda m: '' if _should_remove_random_str(m) else m.group(0),
-        text
-    )
+    text = _LONG_RANDOM_PATTERN.sub(lambda m: "" if _should_remove_random_str(m) else m.group(0), text)
     # Clean up extra spaces after filtering
-    text = re.sub(r' {2,}', ' ', text).strip()
+    text = re.sub(r" {2,}", " ", text).strip()
     return text
 
 
 # ==================== Phase 1: PDF Text Fusion and Layout Reconstruction ====================
-
-
 
 
 def _is_noise_char(obj: dict) -> bool:
@@ -350,13 +338,11 @@ def _is_noise_char(obj: dict) -> bool:
 
     # Whitelist condition 2: Has PDF structure tag
     tag = obj.get("tag")
-    if tag in ("Span", "NonStruct", "P", "H1", "H2", "H3", "H4", "H5", "H6",
-               "TD", "TH", "LI", "L", "Table", "TR", "Figure", "Caption"):
+    if tag in ("Span", "NonStruct", "P", "H1", "H2", "H3", "H4", "H5", "H6", "TD", "TH", "LI", "L", "Table", "TR", "Figure", "Caption"):
         return False  # Has semantic structure tag = body content
 
     # Doesn't meet any whitelist condition, treat as noise
     return True
-
 
 
 def _extract_metadata_text(binary: bytes) -> list[dict]:
@@ -377,6 +363,7 @@ def _extract_metadata_text(binary: bytes) -> list[dict]:
     """
     try:
         import pdfplumber
+
         blocks = []
         with pdfplumber.open(BytesIO(binary)) as pdf:
             for page_idx, page in enumerate(pdf.pages):
@@ -387,9 +374,7 @@ def _extract_metadata_text(binary: bytes) -> list[dict]:
                 # may use non-embedded fonts without structure tags, skip filtering to avoid false positives
                 try:
                     original_char_count = len(page.chars)
-                    filtered_page = page.filter(
-                        lambda obj: not _is_noise_char(obj)
-                    )
+                    filtered_page = page.filter(lambda obj: not _is_noise_char(obj))
                     filtered_char_count = len(filtered_page.chars)
                     if original_char_count > 0 and filtered_char_count < original_char_count * 0.3:
                         # Filtered out over 70% of chars, likely false positives, fall back to original page
@@ -400,9 +385,7 @@ def _extract_metadata_text(binary: bytes) -> list[dict]:
                 # Use extract_words for extraction (with real coordinates)
                 words = []
                 try:
-                    words = filtered_page.extract_words(
-                        keep_blank_chars=False, use_text_flow=True
-                    )
+                    words = filtered_page.extract_words(keep_blank_chars=False, use_text_flow=True)
                 except Exception:
                     pass
 
@@ -461,14 +444,16 @@ def _extract_metadata_text(binary: bytes) -> list[dict]:
                             cleaned = line.strip()
                             if not cleaned:
                                 continue
-                            blocks.append({
-                                "text": cleaned,
-                                "x0": 0,
-                                "top": i * line_height,
-                                "x1": page_width,
-                                "bottom": i * line_height + line_height - 2,
-                                "page": page_idx,
-                            })
+                            blocks.append(
+                                {
+                                    "text": cleaned,
+                                    "x0": 0,
+                                    "top": i * line_height,
+                                    "x1": page_width,
+                                    "bottom": i * line_height + line_height - 2,
+                                    "page": page_idx,
+                                }
+                            )
 
                 # Extract table content from the page
                 # Many resumes use table layouts (e.g., personal info section), extract_words may miss table structure
@@ -495,14 +480,16 @@ def _extract_metadata_text(binary: bytes) -> list[dict]:
                                         break
                                 if is_dup:
                                     continue
-                                blocks.append({
-                                    "text": row_text,
-                                    "x0": 0,
-                                    "top": max_top,
-                                    "x1": page_width,
-                                    "bottom": max_top + row_height - 2,
-                                    "page": page_idx,
-                                })
+                                blocks.append(
+                                    {
+                                        "text": row_text,
+                                        "x0": 0,
+                                        "top": max_top,
+                                        "x1": page_width,
+                                        "bottom": max_top + row_height - 2,
+                                        "page": page_idx,
+                                    }
+                                )
                                 max_top += row_height
                 except Exception as e:
                     logger.debug(f"PDF table extraction skipped (page {page_idx}): {e}")
@@ -510,6 +497,7 @@ def _extract_metadata_text(binary: bytes) -> list[dict]:
     except Exception as e:
         logger.warning(f"PDF metadata extraction failed: {e}")
         return []
+
 
 def _extract_ocr_text(binary: bytes, meta_blocks: list[dict] | None = None) -> list[dict]:
     """
@@ -564,12 +552,16 @@ def _extract_ocr_text(binary: bytes, meta_blocks: list[dict] | None = None) -> l
                             xs = [p[0] for p in coords if isinstance(p, (list, tuple))]
                             ys = [p[1] for p in coords if isinstance(p, (list, tuple))]
                             if xs and ys:
-                                blocks.append({
-                                    "text": text.strip(),
-                                    "x0": min(xs), "top": min(ys),
-                                    "x1": max(xs), "bottom": max(ys),
-                                    "page": page_idx,
-                                })
+                                blocks.append(
+                                    {
+                                        "text": text.strip(),
+                                        "x0": min(xs),
+                                        "top": min(ys),
+                                        "x1": max(xs),
+                                        "bottom": max(ys),
+                                        "page": page_idx,
+                                    }
+                                )
         return blocks
     except Exception as e:
         logger.warning(f"OCR extraction failed: {e}")
@@ -611,8 +603,6 @@ def _fuse_text_blocks(meta_blocks: list[dict], ocr_blocks: list[dict]) -> list[d
     # Under blackout strategy, OCR won't re-recognize existing text, just merge directly
     fused = valid_meta + ocr_blocks
     return fused
-
-
 
 
 def _layout_aware_reorder(blocks: list[dict]) -> list[dict]:
@@ -752,6 +742,7 @@ def _build_indexed_text(blocks: list[dict]) -> tuple[str, list[str], list[dict]]
 
     return indexed_text, lines, line_positions
 
+
 def _is_valid_line(line: str) -> bool:
     """
     Check if a text line is valid content (not garbled)
@@ -770,19 +761,19 @@ def _is_valid_line(line: str) -> bool:
         # Short lines may be valid content like names, keep them
         return True
 
-    cid_count = len(re.findall(r'\(cid:\d+\)', line))
+    cid_count = len(re.findall(r"\(cid:\d+\)", line))
     if cid_count >= 3:
         return False
     # Valid characters: Chinese (incl. extension), ASCII alphanumeric, common punctuation and spaces, fullwidth chars, CJK punctuation
     valid_chars = re.findall(
-        r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff'
-        r'a-zA-Z0-9\s@.,:;!?()（）【】\-_/\\|·•'
-        r'、，。：；！？\u201c\u201d\u2018\u2019《》'
-        r'\uff01-\uff5e'
-        r'\u3000-\u303f'
-        r'#%&+=~`\u00b7\u2022\u2013\u2014'
-        r']',
-        line
+        r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff"
+        r"a-zA-Z0-9\s@.,:;!?()（）【】\-_/\\|·•"
+        r"、，。：；！？\u201c\u201d\u2018\u2019《》"
+        r"\uff01-\uff5e"
+        r"\u3000-\u303f"
+        r"#%&+=~`\u00b7\u2022\u2013\u2014"
+        r"]",
+        line,
     )
     ratio = len(valid_chars) / len(line) if len(line) > 0 else 0
     if ratio < 0.5:
@@ -791,7 +782,7 @@ def _is_valid_line(line: str) -> bool:
     # Detect PDF custom font mapping causing single-character spacing anomaly pattern
     # Feature: lots of "single letter space single letter space" sequences, e.g. "O U W Z_W V 2 X 3"
     # Stats: ratio of space-separated single chars among non-space chars
-    spaced_singles = re.findall(r'(?:^|\s)([a-zA-Z0-9])(?:\s|$)', line)
+    spaced_singles = re.findall(r"(?:^|\s)([a-zA-Z0-9])(?:\s|$)", line)
     non_space_len = len(line.replace(" ", ""))
     if non_space_len > 5 and len(spaced_singles) > 0:
         # If ratio of space-separated single chars to non-space chars is too high, classify as garbled
@@ -801,16 +792,12 @@ def _is_valid_line(line: str) -> bool:
 
     # Detect consecutive meaningless mixed-case alphanumeric sequences (e.g. "UJqZX9V2")
     # Normal English words don't have such frequent case alternation patterns
-    garbled_seqs = re.findall(r'[a-zA-Z0-9]{4,}', line.replace(" ", ""))
+    garbled_seqs = re.findall(r"[a-zA-Z0-9]{4,}", line.replace(" ", ""))
     if garbled_seqs:
         garbled_count = 0
         for seq in garbled_seqs:
             # Count case alternations
-            case_changes = sum(
-                1 for i in range(1, len(seq))
-                if (seq[i].isupper() != seq[i-1].isupper() and seq[i].isalpha() and seq[i-1].isalpha())
-                or (seq[i].isdigit() != seq[i-1].isdigit())
-            )
+            case_changes = sum(1 for i in range(1, len(seq)) if (seq[i].isupper() != seq[i - 1].isupper() and seq[i].isalpha() and seq[i - 1].isalpha()) or (seq[i].isdigit() != seq[i - 1].isdigit()))
             # Too high alternation frequency = garbled sequence (normal words like "Spring" have only 1 alternation)
             if len(seq) >= 4 and case_changes / len(seq) > 0.5:
                 garbled_count += 1
@@ -853,14 +840,14 @@ def _fix_split_labels(lines: list[str]) -> list[str]:
         # Detect in-line split patterns: "X：content Y" where (Y, X) is a split pair
         for (suffix_char, prefix_char), full_label in split_patterns.items():
             # Pattern: "prefix_char：content suffix_char" (first half at line start, second half at line end)
-            pattern = rf'^({re.escape(prefix_char)})\s*[:：]\s*(.+?)\s+{re.escape(suffix_char)}\s*$'
+            pattern = rf"^({re.escape(prefix_char)})\s*[:：]\s*(.+?)\s+{re.escape(suffix_char)}\s*$"
             m = re.match(pattern, line)
             if m:
                 content = m.group(2).strip()
                 line = f"{full_label}：{content}"
                 break
             # Pattern: "suffix_char content prefix_char：" (second half at line start, first half at line end)
-            pattern2 = rf'^{re.escape(suffix_char)}\s*[:：]?\s*(.+?)\s+{re.escape(prefix_char)}\s*$'
+            pattern2 = rf"^{re.escape(suffix_char)}\s*[:：]?\s*(.+?)\s+{re.escape(prefix_char)}\s*$"
             m2 = re.match(pattern2, line)
             if m2:
                 content = m2.group(1).strip()
@@ -868,9 +855,6 @@ def _fix_split_labels(lines: list[str]) -> list[str]:
                 break
         fixed.append(line)
     return fixed
-
-
-
 
 
 def extract_text(filename: str, binary: bytes) -> tuple[str, list[str], list[dict]]:
@@ -921,9 +905,7 @@ def extract_text(filename: str, binary: bytes) -> tuple[str, list[str], list[dic
                 if total_line_count > 0:
                     valid_ratio = valid_line_count / total_line_count
                     if valid_ratio < 0.6:
-                        logger.info(
-                            f"PDF metadata text quality low (valid line ratio {valid_ratio:.1%}), enabling OCR supplementation"
-                        )
+                        logger.info(f"PDF metadata text quality low (valid line ratio {valid_ratio:.1%}), enabling OCR supplementation")
                         need_ocr = True
 
             if need_ocr:
@@ -941,6 +923,7 @@ def extract_text(filename: str, binary: bytes) -> tuple[str, list[str], list[dic
 
         elif fname_lower.endswith(".docx"):
             from docx import Document
+
             doc = Document(BytesIO(binary))
             lines = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
 
@@ -997,14 +980,14 @@ def _clean_llm_json_response(response: str) -> str:
     # Remove markdown code block markers
     text = text.replace("```json", "").replace("```", "").strip()
     # Remove reasoning model thinking tags
-    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     # Clean escaped quotes (SmartResume's approach)
     text = text.replace('\\"', '"')
     # SmartResume strategy: locate first { and last }
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
-        return text[start:end + 1]
+        return text[start : end + 1]
     return text
 
 
@@ -1032,9 +1015,9 @@ def _parse_json_with_repair(text: str) -> dict:
 
     # Second attempt: replace Python-style values (ref SmartResume)
     repaired = text.replace("'", '"')
-    repaired = repaired.replace('True', 'true')
-    repaired = repaired.replace('False', 'false')
-    repaired = repaired.replace('None', 'null')
+    repaired = repaired.replace("True", "true")
+    repaired = repaired.replace("False", "false")
+    repaired = repaired.replace("None", "null")
     try:
         return json.loads(repaired)
     except json.JSONDecodeError:
@@ -1051,7 +1034,7 @@ def _parse_json_with_repair(text: str) -> dict:
     raise json.JSONDecodeError("All JSON repair strategies failed", text, 0)
 
 
-def _call_llm(prompt: str, tenant_id , lang: str) -> Optional[dict]:
+def _call_llm(prompt: str, tenant_id, lang: str) -> Optional[dict]:
     """
     Call LLM and parse JSON response (ref SmartResume's retry + fault-tolerance strategy).
 
@@ -1071,7 +1054,7 @@ def _call_llm(prompt: str, tenant_id , lang: str) -> Optional[dict]:
         from api.db.services.llm_service import LLMBundle
         from common.constants import LLMType
 
-        llm =  LLMBundle(tenant_id, LLMType.CHAT, lang=lang)
+        llm = LLMBundle(tenant_id, LLMType.CHAT, lang=lang)
 
         for attempt in range(_LLM_MAX_RETRIES + 1):
             try:
@@ -1121,8 +1104,9 @@ def _normalize_for_comparison(text: str) -> str:
     # Unicode NFKC normalization (fullwidth to halfwidth, etc.)
     text = unicodedata.normalize("NFKC", text)
     # Remove all whitespace characters
-    text = re.sub(r'\s+', '', text)
+    text = re.sub(r"\s+", "", text)
     return text.lower()
+
 
 def _calc_single_exp_years(start_str: str, end_str: str) -> float:
     """
@@ -1169,9 +1153,7 @@ def _calculate_work_years(experiences: list[dict]) -> float:
     """
     total = 0.0
     for exp in experiences:
-        total += _calc_single_exp_years(
-            exp.get("start_date", ""), exp.get("end_date", "")
-        )
+        total += _calc_single_exp_years(exp.get("start_date", ""), exp.get("end_date", ""))
     return round(total, 1)
 
 
@@ -1214,12 +1196,7 @@ def _parse_date_str(date_str: str) -> Optional[datetime.datetime]:
     return None
 
 
-
-
-def _extract_description_from_range(
-        index_range: list, lines: list[str],
-        company: str = "", position: str = ""
-) -> str:
+def _extract_description_from_range(index_range: list, lines: list[str], company: str = "", position: str = "") -> str:
     """
     Extract description from original text by index range (ref SmartResume's _extract_description_from_range).
 
@@ -1244,7 +1221,7 @@ def _extract_description_from_range(
     if start_idx < 0 or end_idx >= len(lines) or start_idx > end_idx:
         return ""
 
-    extracted_lines = lines[start_idx:end_idx + 1]
+    extracted_lines = lines[start_idx : end_idx + 1]
 
     # Filter out lines containing both company name and position title (ref SmartResume)
     if company or position:
@@ -1268,44 +1245,44 @@ def _extract_description_from_range(
     return "\n".join(line.strip() for line in extracted_lines if line.strip())
 
 
-def _extract_basic_info(indexed_text: str, tenant_id , lang: str) -> Optional[dict]:
+def _extract_basic_info(indexed_text: str, tenant_id, lang: str) -> Optional[dict]:
     """Extract basic info (subtask 1).
 
     Basic info is usually at the beginning of the resume, first 8000 chars suffice.
     """
     prompt = get_basic_info_prompt(lang).format(indexed_text=indexed_text[:8000])
-    return _call_llm(prompt,tenant_id, lang)
+    return _call_llm(prompt, tenant_id, lang)
 
 
-def _extract_work_experience(indexed_text: str, tenant_id , lang: str) -> Optional[dict]:
+def _extract_work_experience(indexed_text: str, tenant_id, lang: str) -> Optional[dict]:
     """Extract work experience (subtask 2, using index pointers).
 
     Work experience may span the middle-to-end of the resume, use full text to avoid truncation.
     """
     prompt = get_work_exp_prompt(lang).format(indexed_text=indexed_text)
-    return _call_llm(prompt, tenant_id , lang)
+    return _call_llm(prompt, tenant_id, lang)
 
 
-def _extract_education(indexed_text: str, tenant_id , lang: str) -> Optional[dict]:
+def _extract_education(indexed_text: str, tenant_id, lang: str) -> Optional[dict]:
     """Extract education background (subtask 3).
 
     Education is usually at the end of the resume, must use full text to avoid truncation.
     Resume text is generally under 30K chars, within LLM context window.
     """
     prompt = get_education_prompt(lang).format(indexed_text=indexed_text)
-    return _call_llm(prompt,tenant_id, lang)
+    return _call_llm(prompt, tenant_id, lang)
 
 
-def _extract_project_experience(indexed_text: str, tenant_id , lang: str) -> Optional[dict]:
+def _extract_project_experience(indexed_text: str, tenant_id, lang: str) -> Optional[dict]:
     """Extract project experience (subtask 4, using index pointers).
 
     Project experience may span the middle-to-end of the resume, use full text to avoid truncation.
     """
     prompt = get_project_exp_prompt(lang).format(indexed_text=indexed_text)
-    return _call_llm(prompt, tenant_id , lang)
+    return _call_llm(prompt, tenant_id, lang)
 
 
-def parse_with_llm(indexed_text: str, lines: list[str], tenant_id , lang: str) -> Optional[dict]:
+def parse_with_llm(indexed_text: str, lines: list[str], tenant_id, lang: str) -> Optional[dict]:
     """
     Extract resume info using parallel task decomposition strategy (ref SmartResume Section 3.2).
 
@@ -1325,10 +1302,10 @@ def parse_with_llm(indexed_text: str, lines: list[str], tenant_id , lang: str) -
     try:
         # Execute four subtasks in parallel
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            future_basic = executor.submit(_extract_basic_info, indexed_text, tenant_id , lang)
-            future_work = executor.submit(_extract_work_experience, indexed_text, tenant_id , lang)
+            future_basic = executor.submit(_extract_basic_info, indexed_text, tenant_id, lang)
+            future_work = executor.submit(_extract_work_experience, indexed_text, tenant_id, lang)
             future_edu = executor.submit(_extract_education, indexed_text, tenant_id, lang)
-            future_project = executor.submit(_extract_project_experience, indexed_text, tenant_id , lang)
+            future_project = executor.submit(_extract_project_experience, indexed_text, tenant_id, lang)
 
             basic_info = future_basic.result(timeout=60)
             work_exp = future_work.result(timeout=60)
@@ -1363,20 +1340,20 @@ def parse_with_llm(indexed_text: str, lines: list[str], tenant_id , lang: str) -
                 if position:
                     positions.append(position)
                 # Save detailed info for each experience entry
-                work_exp_details.append({
-                    "company": company,
-                    "position": position,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "years": years,
-                })
+                work_exp_details.append(
+                    {
+                        "company": company,
+                        "position": position,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "years": years,
+                    }
+                )
                 # Index pointer mechanism: extract description from original text by line range
                 # Use _extract_description_from_range to filter header lines (ref SmartResume)
                 desc_lines = exp.get("desc_lines", [])
                 if isinstance(desc_lines, list) and len(desc_lines) == 2:
-                    desc = _extract_description_from_range(
-                        desc_lines, lines, company=company, position=position
-                    )
+                    desc = _extract_description_from_range(desc_lines, lines, company=company, position=position)
                     if desc.strip():
                         work_descs.append(desc.strip())
 
@@ -1426,11 +1403,22 @@ def parse_with_llm(indexed_text: str, lines: list[str], tenant_id , lang: str) -
                 resume["degree_kwd"] = degrees
                 # Infer highest degree (supports both Chinese and English degree names)
                 degree_rank = {
-                    "博士": 5, "PhD": 5, "Doctor": 5,
-                    "硕士": 4, "Master": 4, "MBA": 4, "EMBA": 4, "MPA": 4,
-                    "本科": 3, "Bachelor": 3,
-                    "大专": 2, "专科": 2, "Associate": 2, "Diploma": 2,
-                    "高中": 1, "High School": 1,
+                    "博士": 5,
+                    "PhD": 5,
+                    "Doctor": 5,
+                    "硕士": 4,
+                    "Master": 4,
+                    "MBA": 4,
+                    "EMBA": 4,
+                    "MPA": 4,
+                    "本科": 3,
+                    "Bachelor": 3,
+                    "大专": 2,
+                    "专科": 2,
+                    "Associate": 2,
+                    "Diploma": 2,
+                    "高中": 1,
+                    "High School": 1,
                 }
                 highest = max(degrees, key=lambda d: degree_rank.get(d, 0), default="")
                 if highest:
@@ -1450,9 +1438,7 @@ def parse_with_llm(indexed_text: str, lines: list[str], tenant_id , lang: str) -
                 # Index pointer mechanism: extract project description from original text by line range
                 desc_lines = proj.get("desc_lines", [])
                 if isinstance(desc_lines, list) and len(desc_lines) == 2:
-                    desc = _extract_description_from_range(
-                        desc_lines, lines, company=name, position=proj.get("role", "")
-                    )
+                    desc = _extract_description_from_range(desc_lines, lines, company=name, position=proj.get("role", ""))
                     if desc.strip():
                         project_descs.append(desc.strip())
 
@@ -1478,7 +1464,6 @@ def parse_with_llm(indexed_text: str, lines: list[str], tenant_id , lang: str) -
 # ==================== Phase 3: Regex Fallback Parsing ====================
 
 
-
 def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
     """
     Parse resume text using regex (fallback strategy)
@@ -1498,19 +1483,19 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
     if _is_english(lang):
         # English resume: extract from "Name: XXX" format
         for line in lines[:30]:
-            name_match = re.search(r'(?:Name|Full\s*Name)\s*[:：]\s*([A-Za-z][A-Za-z\s\-\.]{1,40})', line, re.IGNORECASE)
+            name_match = re.search(r"(?:Name|Full\s*Name)\s*[:：]\s*([A-Za-z][A-Za-z\s\-\.]{1,40})", line, re.IGNORECASE)
             if name_match:
                 resume["name_kwd"] = name_match.group(1).strip()
                 break
         # English resume strategy 2: first line if short text without digits, may be a name
         if "name_kwd" not in resume and lines:
             first = lines[0].strip()
-            if len(first) <= 40 and not re.search(r"\d", first) and re.match(r'^[A-Za-z][A-Za-z\s\-\.]+$', first):
+            if len(first) <= 40 and not re.search(r"\d", first) and re.match(r"^[A-Za-z][A-Za-z\s\-\.]+$", first):
                 resume["name_kwd"] = first
     else:
         # Chinese resume: extract from "姓名：XXX" format
         for line in lines[:30]:
-            name_match = re.search(r'姓\s*名\s*[:：]\s*([\u4e00-\u9fa5]{2,4})', line)
+            name_match = re.search(r"姓\s*名\s*[:：]\s*([\u4e00-\u9fa5]{2,4})", line)
             if name_match:
                 resume["name_kwd"] = name_match.group(1)
                 break
@@ -1518,14 +1503,35 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
         # Strategy 2: search first 20 lines for standalone Chinese names (2-4 chars), excluding common title words
         if "name_kwd" not in resume:
             title_words = {
-                "个人", "简历", "求职", "应聘", "基本", "信息", "概述", "简介",
-                "教育", "工作", "经历", "经验", "技能", "项目", "自我", "评价",
-                "专业", "技术", "证书", "语言", "能力", "培训", "荣誉", "奖项",
+                "个人",
+                "简历",
+                "求职",
+                "应聘",
+                "基本",
+                "信息",
+                "概述",
+                "简介",
+                "教育",
+                "工作",
+                "经历",
+                "经验",
+                "技能",
+                "项目",
+                "自我",
+                "评价",
+                "专业",
+                "技术",
+                "证书",
+                "语言",
+                "能力",
+                "培训",
+                "荣誉",
+                "奖项",
             }
             for line in lines[:20]:
                 if any(w in line for w in title_words):
                     continue
-                if re.search(r'[:：]', line) and len(line) > 6:
+                if re.search(r"[:：]", line) and len(line) > 6:
                     continue
                 cleaned = re.sub(r"^[A-Za-z_\-\d\s]+\s+", "", line)
                 cleaned = re.sub(r"\s+[A-Za-z_\-\d\s]+$", "", cleaned).strip()
@@ -1537,7 +1543,7 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
         if "name_kwd" not in resume and lines:
             first = lines[0].strip()
             if len(first) <= 10 and not re.search(r"\d", first):
-                cn_part = re.findall(r'[\u4e00-\u9fa5]+', first)
+                cn_part = re.findall(r"[\u4e00-\u9fa5]+", first)
                 if cn_part and 2 <= len(cn_part[0]) <= 4:
                     resume["name_kwd"] = cn_part[0]
 
@@ -1554,17 +1560,17 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
     # --- Extract Gender ---
     if _is_english(lang):
         # English resume: extract from "Gender: Male/Female" format
-        gender_label = re.search(r'(?:Gender|Sex)\s*[:：]\s*(Male|Female|M|F)', text, re.IGNORECASE)
+        gender_label = re.search(r"(?:Gender|Sex)\s*[:：]\s*(Male|Female|M|F)", text, re.IGNORECASE)
         if gender_label:
             raw = gender_label.group(1).strip().upper()
             resume["gender_kwd"] = "Male" if raw in ("M", "MALE") else "Female"
         else:
-            gender_match = re.search(r'\b(Male|Female)\b', text[:500], re.IGNORECASE)
+            gender_match = re.search(r"\b(Male|Female)\b", text[:500], re.IGNORECASE)
             if gender_match:
                 resume["gender_kwd"] = gender_match.group(1).capitalize()
     else:
         # Chinese resume: extract from "性别：男/女" format
-        gender_label = re.search(r'性\s*别\s*[:：]\s*(男|女)', text)
+        gender_label = re.search(r"性\s*别\s*[:：]\s*(男|女)", text)
         if gender_label:
             resume["gender_kwd"] = gender_label.group(1)
         else:
@@ -1575,9 +1581,9 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
     # --- Extract Age ---
     if _is_english(lang):
         # English resume: match "25 years old" or "Age: 25"
-        age_match = re.search(r'(?:Age)\s*[:：]\s*(\d{1,2})', text, re.IGNORECASE)
+        age_match = re.search(r"(?:Age)\s*[:：]\s*(\d{1,2})", text, re.IGNORECASE)
         if not age_match:
-            age_match = re.search(r'(\d{1,2})\s*years?\s*old', text, re.IGNORECASE)
+            age_match = re.search(r"(\d{1,2})\s*years?\s*old", text, re.IGNORECASE)
         if age_match:
             resume["age_int"] = int(age_match.group(1))
     else:
@@ -1589,7 +1595,7 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
     # --- Extract Date of Birth ---
     if _is_english(lang):
         # English resume: match "1990-01-15" or "Jan 15, 1990" etc.
-        birth_match = re.search(r'(?:Birth|DOB|Date\s*of\s*Birth)\s*[:：]\s*(.{6,20})', text, re.IGNORECASE)
+        birth_match = re.search(r"(?:Birth|DOB|Date\s*of\s*Birth)\s*[:：]\s*(.{6,20})", text, re.IGNORECASE)
         if birth_match:
             resume["birth_dt"] = birth_match.group(1).strip()
         else:
@@ -1604,8 +1610,7 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
 
     # --- Extract Education Level ---
     degree_keywords_zh = ["博士", "硕士", "本科", "大专", "专科", "高中", "MBA", "EMBA", "MPA"]
-    degree_keywords_en = ["PhD", "Master", "Bachelor", "Associate", "Diploma", "High School",
-                          "MBA", "EMBA", "MPA", "Doctor"]
+    degree_keywords_en = ["PhD", "Master", "Bachelor", "Associate", "Diploma", "High School", "MBA", "EMBA", "MPA", "Doctor"]
     degree_keywords = degree_keywords_en if _is_english(lang) else degree_keywords_zh
     found_degrees = [d for d in degree_keywords if d in text]
     if found_degrees:
@@ -1614,12 +1619,9 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
     # --- Extract School ---
     if _is_english(lang):
         # English resume: match "University/College/Institute/School" keywords
-        schools = re.findall(
-            r'([A-Z][A-Za-z\s\-&]{2,40}(?:University|College|Institute|School|Academy))',
-            text
-        )
+        schools = re.findall(r"([A-Z][A-Za-z\s\-&]{2,40}(?:University|College|Institute|School|Academy))", text)
         # Remove extra whitespace
-        schools = [re.sub(r'\s+', ' ', s).strip() for s in schools]
+        schools = [re.sub(r"\s+", " ", s).strip() for s in schools]
     else:
         # Chinese resume: match "XX大学/学院/职业技术学院"
         schools = re.findall(r"[\u4e00-\u9fa5]{2,15}(?:大学|学院|职业技术学院)", text)
@@ -1630,10 +1632,7 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
     # --- Extract Major ---
     if _is_english(lang):
         # English resume: match "Major: XXX" / "Field of Study: XXX" / "Specialization: XXX"
-        majors = re.findall(
-            r'(?:Major|Field\s*of\s*Study|Specialization|Concentration)\s*[:：]\s*([A-Za-z\s\-&,]{2,40})',
-            text, re.IGNORECASE
-        )
+        majors = re.findall(r"(?:Major|Field\s*of\s*Study|Specialization|Concentration)\s*[:：]\s*([A-Za-z\s\-&,]{2,40})", text, re.IGNORECASE)
         majors = [m.strip() for m in majors if m.strip()]
     else:
         # Chinese resume: match "专业：XXX"
@@ -1646,12 +1645,12 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
     if _is_english(lang):
         # English resume: match common company suffixes
         en_company_patterns = [
-            r'([A-Z][A-Za-z\s\-&,\.]{2,40}(?:Inc\.|Corp\.|Ltd\.|LLC|Co\.|Company|Group|Technologies|Technology|Solutions|Consulting|Services|Bank))',
+            r"([A-Z][A-Za-z\s\-&,\.]{2,40}(?:Inc\.|Corp\.|Ltd\.|LLC|Co\.|Company|Group|Technologies|Technology|Solutions|Consulting|Services|Bank))",
         ]
         companies = []
         for pattern in en_company_patterns:
             companies.extend(re.findall(pattern, text))
-        companies = [re.sub(r'\s+', ' ', c).strip() for c in companies]
+        companies = [re.sub(r"\s+", " ", c).strip() for c in companies]
     else:
         # Chinese resume: match "XX有限公司" format
         company_patterns = [
@@ -1665,11 +1664,7 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
     unique_companies = []
     seen = set()
     # Filter verb list (bilingual)
-    filter_verbs = (
-        ["completed", "conducted", "implemented", "responsible", "participated", "developed"]
-        if _is_english(lang)
-        else ["完成", "进行", "实施", "负责", "参与", "开发"]
-    )
+    filter_verbs = ["completed", "conducted", "implemented", "responsible", "participated", "developed"] if _is_english(lang) else ["完成", "进行", "实施", "负责", "参与", "开发"]
     min_len = 3 if _is_english(lang) else 6
     for c in companies:
         if len(c) < min_len or any(v in c.lower() for v in filter_verbs) or c in seen:
@@ -1693,24 +1688,35 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
     # --- Extract Position (improved: context constraints to reduce noise) ---
     if _is_english(lang):
         # English resume: Strategy 1 - extract from "Title: XXX" / "Position: XXX" / "Role: XXX" format
-        position_label_matches = re.findall(
-            r'(?:Title|Position|Role|Job\s*Title)\s*[:：]\s*([A-Za-z\s\-/&]{2,30})',
-            text, re.IGNORECASE
-        )
+        position_label_matches = re.findall(r"(?:Title|Position|Role|Job\s*Title)\s*[:：]\s*([A-Za-z\s\-/&]{2,30})", text, re.IGNORECASE)
         positions = [p.strip() for p in position_label_matches if p.strip()]
 
         # English resume: Strategy 2 - match common position suffix keywords
         en_position_suffixes = [
-            "Engineer", "Manager", "Director", "Supervisor", "Specialist",
-            "Designer", "Consultant", "Assistant", "Architect", "Analyst",
-            "Developer", "Lead", "Officer", "Coordinator", "Administrator",
-            "Intern", "VP", "President",
+            "Engineer",
+            "Manager",
+            "Director",
+            "Supervisor",
+            "Specialist",
+            "Designer",
+            "Consultant",
+            "Assistant",
+            "Architect",
+            "Analyst",
+            "Developer",
+            "Lead",
+            "Officer",
+            "Coordinator",
+            "Administrator",
+            "Intern",
+            "VP",
+            "President",
         ]
         for line in lines:
             if len(line) > 60:
                 continue  # Skip overly long lines (usually description text)
             for suffix in en_position_suffixes:
-                match = re.search(rf'([A-Za-z\s\-]{{1,25}}{suffix})\b', line, re.IGNORECASE)
+                match = re.search(rf"([A-Za-z\s\-]{{1,25}}{suffix})\b", line, re.IGNORECASE)
                 if match:
                     pos = match.group(1).strip()
                     # Filter out matches that are clearly not positions (contain verbs)
@@ -1719,29 +1725,22 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
                         positions.append(pos)
     else:
         # Chinese resume: Strategy 1 - extract from "职位/岗位：XXX" format
-        position_label_matches = re.findall(
-            r'(?:职位|岗位|职务|职称|担任)\s*[:：]\s*([\u4e00-\u9fa5a-zA-Z]{2,15})',
-            text
-        )
+        position_label_matches = re.findall(r"(?:职位|岗位|职务|职称|担任)\s*[:：]\s*([\u4e00-\u9fa5a-zA-Z]{2,15})", text)
         positions = list(position_label_matches)
 
         # Chinese resume: Strategy 2 - extract from work experience paragraphs (company name followed by position)
         for line in lines:
-            pos_match = re.search(
-                r'(?:有限公司|集团|银行)\s+([\u4e00-\u9fa5]{2,8}(?:工程师|经理|总监|主管|专员|设计师|顾问|助理|架构师|分析师|运营|产品))',
-                line
-            )
+            pos_match = re.search(r"(?:有限公司|集团|银行)\s+([\u4e00-\u9fa5]{2,8}(?:工程师|经理|总监|主管|专员|设计师|顾问|助理|架构师|分析师|运营|产品))", line)
             if pos_match:
                 positions.append(pos_match.group(1))
 
         # Chinese resume: Strategy 3 - position keywords in standalone lines (length-limited to avoid matching description text)
-        position_suffixes = ["工程师", "经理", "总监", "主管", "专员", "设计师", "顾问",
-                             "助理", "架构师", "分析师", "开发者", "负责人"]
+        position_suffixes = ["工程师", "经理", "总监", "主管", "专员", "设计师", "顾问", "助理", "架构师", "分析师", "开发者", "负责人"]
         for line in lines:
             if len(line) > 20:
                 continue  # Skip overly long lines
             for suffix in position_suffixes:
-                match = re.search(rf'([\u4e00-\u9fa5]{{1,6}}{suffix})', line)
+                match = re.search(rf"([\u4e00-\u9fa5]{{1,6}}{suffix})", line)
                 if match:
                     pos = match.group(1)
                     if not any(v in pos for v in ["负责", "参与", "完成", "开发了", "设计了"]):
@@ -1760,7 +1759,7 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
     # --- Extract Years of Experience ---
     if _is_english(lang):
         # English resume: match "5 years experience" / "5+ years of experience"
-        work_exp_match = re.search(r'(\d+)\+?\s*years?\s*(?:of\s*)?(?:experience|work)', text, re.IGNORECASE)
+        work_exp_match = re.search(r"(\d+)\+?\s*years?\s*(?:of\s*)?(?:experience|work)", text, re.IGNORECASE)
         if work_exp_match:
             resume["work_exp_flt"] = float(work_exp_match.group(1))
     else:
@@ -1772,7 +1771,7 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
     # --- Extract Graduation Year ---
     if _is_english(lang):
         # English resume: match "Graduated 2020" / "Graduation: 2020" / "Class of 2020"
-        grad_match = re.search(r'(?:Graduat(?:ed|ion)|Class\s*of)\s*[:：]?\s*((?:19|20)\d{2})', text, re.IGNORECASE)
+        grad_match = re.search(r"(?:Graduat(?:ed|ion)|Class\s*of)\s*[:：]?\s*((?:19|20)\d{2})", text, re.IGNORECASE)
         if grad_match:
             resume["edu_end_int"] = int(grad_match.group(1))
     else:
@@ -1785,7 +1784,6 @@ def parse_with_regex(text: str, lang: str = "Chinese") -> dict:
         resume["name_kwd"] = "Unknown" if _is_english(lang) else "未知"
 
     return resume
-
 
 
 # ==================== Phase 4: Post-processing Pipeline ====================
@@ -1885,8 +1883,7 @@ def _postprocess_resume(resume: dict, lines: list[str], lang: str = "Chinese") -
             resume["gender_kwd"] = "Female" if _en else "女"
 
     # --- Phase 3: Contextual deduplication ---
-    for list_field in ["corp_nm_tks", "school_name_tks", "major_tks",
-                       "position_name_tks", "skill_tks"]:
+    for list_field in ["corp_nm_tks", "school_name_tks", "major_tks", "position_name_tks", "skill_tks"]:
         if isinstance(resume.get(list_field), list):
             # Order-preserving deduplication
             seen = set()
@@ -1941,8 +1938,7 @@ def _postprocess_resume(resume: dict, lines: list[str], lang: str = "Chinese") -
                             if dt_start_i <= eff_end_j and dt_start_j <= eff_end_i:
                                 is_dup = True
                                 break
-                        elif (start_i and start_j and start_i == start_j) or \
-                                (end_i and end_j and end_i == end_j):
+                        elif (start_i and start_j and start_i == start_j) or (end_i and end_j and end_i == end_j):
                             # Fallback: exact string match if date parsing fails
                             is_dup = True
                             break
@@ -1958,7 +1954,7 @@ def _postprocess_resume(resume: dict, lines: list[str], lang: str = "Chinese") -
                     is_dup = True
                     break
             if is_dup:
-                dup_corp = corp_names[i] if i < len(corp_names) else f"#{i+1}"
+                dup_corp = corp_names[i] if i < len(corp_names) else f"#{i + 1}"
                 logger.debug(f"Work desc internal duplicate removed: {dup_corp}")
             else:
                 kept_indices.append(i)
@@ -1978,7 +1974,9 @@ def _postprocess_resume(resume: dict, lines: list[str], lang: str = "Chinese") -
                 recalc_years = round(recalc_years, 1)
                 if recalc_years > 0:
                     resume["work_exp_flt"] = recalc_years
-                    logger.info(f"Work years recalculated: {recalc_years} yrs (before dedup: {_calculate_work_years([{'start_date': d.get('start_date',''), 'end_date': d.get('end_date','')} for d in work_details])} yrs)")
+                    logger.info(
+                        f"Work years recalculated: {recalc_years} yrs (before dedup: {_calculate_work_years([{'start_date': d.get('start_date', ''), 'end_date': d.get('end_date', '')} for d in work_details])} yrs)"
+                    )
             new_corps = resume.get("corp_nm_tks", [])
             if new_corps:
                 resume["corporation_name_tks"] = new_corps[0]
@@ -2018,7 +2016,7 @@ def _postprocess_resume(resume: dict, lines: list[str], lang: str = "Chinese") -
                     break
             if already_exists:
                 skipped_count += 1
-                proj_name = project_names[i] if i < len(project_names) else f"#{i+1}"
+                proj_name = project_names[i] if i < len(project_names) else f"#{i + 1}"
                 logger.debug(f"Project desc already in work_desc, skipped: {proj_name}")
             else:
                 # Append to work_desc_tks with project name prefix for context
@@ -2035,8 +2033,13 @@ def _postprocess_resume(resume: dict, lines: list[str], lang: str = "Chinese") -
         logger.info(f"Merged project descs into work_desc_tks: {merged_count} merged, {skipped_count} skipped (duplicate)")
     # --- Phase 4: Field completion ---
     required_fields = [
-        "name_kwd", "gender_kwd", "phone_kwd", "email_tks",
-        "position_name_tks", "school_name_tks", "major_tks",
+        "name_kwd",
+        "gender_kwd",
+        "phone_kwd",
+        "email_tks",
+        "position_name_tks",
+        "school_name_tks",
+        "major_tks",
     ]
     for field in required_fields:
         if field not in resume:
@@ -2056,7 +2059,7 @@ def _postprocess_resume(resume: dict, lines: list[str], lang: str = "Chinese") -
 # ==================== Pipeline Orchestration & Chunk Construction ====================
 
 
-def parse_resume(filename: str, binary: bytes, tenant_id , lang: str = "Chinese") -> tuple[dict, list[str], list[dict]]:
+def parse_resume(filename: str, binary: bytes, tenant_id, lang: str = "Chinese") -> tuple[dict, list[str], list[dict]]:
     """
     Resume parsing pipeline orchestration function
 
@@ -2084,7 +2087,7 @@ def parse_resume(filename: str, binary: bytes, tenant_id , lang: str = "Chinese"
         return {"name_kwd": default_name}, [], []
 
     # Phase 2: Parallel LLM structured extraction
-    resume = parse_with_llm(indexed_text, lines, tenant_id , lang)
+    resume = parse_with_llm(indexed_text, lines, tenant_id, lang)
 
     # Phase 3: Fallback to regex parsing when LLM fails
     if not resume:
@@ -2098,8 +2101,7 @@ def parse_resume(filename: str, binary: bytes, tenant_id , lang: str = "Chinese"
     return resume, lines, line_positions
 
 
-def _build_chunk_document(filename: str, resume: dict,
-                          lang: str = "Chinese") -> list[dict]:
+def _build_chunk_document(filename: str, resume: dict, lang: str = "Chinese") -> list[dict]:
     """
     Build a list of document chunks from structured resume information
 
@@ -2129,17 +2131,14 @@ def _build_chunk_document(filename: str, resume: dict,
 
     # Extract key identity fields, redundantly written to each chunk
     # These fields are small in size but high in information density; once retrieved, the candidate can be immediately identified
-    _IDENTITY_FIELDS = ("name_kwd", "phone_kwd", "email_tks", "gender_kwd",
-                        "highest_degree_kwd", "work_exp_flt")
+    _IDENTITY_FIELDS = ("name_kwd", "phone_kwd", "email_tks", "gender_kwd", "highest_degree_kwd", "work_exp_flt")
     identity_meta = {}
     for ik in _IDENTITY_FIELDS:
         iv = resume.get(ik)
         if not iv:
             continue
         if ik.endswith("_tks"):
-            identity_meta[ik] = rag_tokenizer.tokenize(
-                " ".join(iv) if isinstance(iv, list) else str(iv)
-            )
+            identity_meta[ik] = rag_tokenizer.tokenize(" ".join(iv) if isinstance(iv, list) else str(iv))
         elif ik.endswith("_kwd"):
             identity_meta[ik] = iv if isinstance(iv, list) else str(iv)
         elif ik.endswith("_flt"):
@@ -2174,27 +2173,46 @@ def _build_chunk_document(filename: str, resume: dict,
 
     # Basic info field set: these fields should be merged into one chunk to avoid splitting name, phone, email, etc.
     _BASIC_INFO_FIELDS = {
-        "name_kwd", "name_pinyin_kwd", "gender_kwd", "age_int",
-        "phone_kwd", "email_tks", "birth_dt", "work_exp_flt",
-        "position_name_tks", "expect_city_names_tks",
+        "name_kwd",
+        "name_pinyin_kwd",
+        "gender_kwd",
+        "age_int",
+        "phone_kwd",
+        "email_tks",
+        "birth_dt",
+        "work_exp_flt",
+        "position_name_tks",
+        "expect_city_names_tks",
         "expect_position_name_tks",
     }
 
     # Education field set: degree, school, major, tags, etc. should be merged into one chunk
     _EDUCATION_FIELDS = {
-        "first_school_name_tks", "first_degree_kwd", "highest_degree_kwd",
-        "first_major_tks", "edu_first_fea_kwd", "degree_kwd", "major_tks",
-        "school_name_tks", "sch_rank_kwd", "edu_fea_kwd", "edu_end_int",
+        "first_school_name_tks",
+        "first_degree_kwd",
+        "highest_degree_kwd",
+        "first_major_tks",
+        "edu_first_fea_kwd",
+        "degree_kwd",
+        "major_tks",
+        "school_name_tks",
+        "sch_rank_kwd",
+        "edu_fea_kwd",
+        "edu_end_int",
     }
 
     # Skills & certificates field set: skills, languages, certificates are small, merge into one chunk
     _SKILL_CERT_FIELDS = {
-        "skill_tks", "language_tks", "certificate_tks",
+        "skill_tks",
+        "language_tks",
+        "certificate_tks",
     }
 
     # Work overview field set: company list, industry, most recent company merged into one chunk
     _WORK_OVERVIEW_FIELDS = {
-        "corporation_name_tks", "corp_nm_tks", "industry_name_tks",
+        "corporation_name_tks",
+        "corp_nm_tks",
+        "industry_name_tks",
     }
 
     # All merge groups: (field_set, group_title) tuple list
@@ -2239,9 +2257,7 @@ def _build_chunk_document(filename: str, resume: dict,
         chunk = {
             "content_with_weight": content,
             "content_ltks": rag_tokenizer.tokenize(content),
-            "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(
-                rag_tokenizer.tokenize(content)
-            ),
+            "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(content)),
         }
         chunk.update(doc)
         # Redundantly write identity fields
@@ -2327,9 +2343,7 @@ def _build_chunk_document(filename: str, resume: dict,
                 chunk = {
                     "content_with_weight": content,
                     "content_ltks": rag_tokenizer.tokenize(content),
-                    "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(
-                        rag_tokenizer.tokenize(content)
-                    ),
+                    "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(content)),
                 }
                 chunk.update(doc)
 
@@ -2361,9 +2375,7 @@ def _build_chunk_document(filename: str, resume: dict,
         chunk = {
             "content_with_weight": content,
             "content_ltks": rag_tokenizer.tokenize(content),
-            "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(
-                rag_tokenizer.tokenize(content)
-            ),
+            "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(content)),
         }
         chunk.update(doc)
 
@@ -2402,9 +2414,7 @@ def _build_chunk_document(filename: str, resume: dict,
         chunk = {
             "content_with_weight": content,
             "content_ltks": rag_tokenizer.tokenize(content),
-            "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(
-                rag_tokenizer.tokenize(content)
-            ),
+            "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(content)),
         }
         chunk.update(doc)
         chunks.append(chunk)
@@ -2429,8 +2439,8 @@ def _build_chunk_document(filename: str, resume: dict,
 
     return chunks
 
-def _blackout_text_regions(image: "np.ndarray", meta_blocks: list[dict], page_idx: int,
-                           pdf_to_img_scale: float) -> "np.ndarray":
+
+def _blackout_text_regions(image: "np.ndarray", meta_blocks: list[dict], page_idx: int, pdf_to_img_scale: float) -> "np.ndarray":
     """
     Black out metadata-extracted text regions on the page image to prevent OCR duplication.
 
@@ -2447,6 +2457,7 @@ def _blackout_text_regions(image: "np.ndarray", meta_blocks: list[dict], page_id
         Image with text regions blacked out
     """
     import cv2
+
     blacked = image.copy()
     page_blocks = [b for b in meta_blocks if b.get("page") == page_idx]
     # Draw filled black rectangles over each metadata text block
@@ -2465,9 +2476,7 @@ def _blackout_text_regions(image: "np.ndarray", meta_blocks: list[dict], page_id
     return blacked
 
 
-
-def chunk(filename, binary, tenant_id, from_page=0, to_page=MAXIMUM_PAGE_NUMBER,
-          lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary, tenant_id, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Resume parsing entry function (compatible with task_executor.py)
 
@@ -2486,7 +2495,9 @@ def chunk(filename, binary, tenant_id, from_page=0, to_page=MAXIMUM_PAGE_NUMBER,
         Document chunk list
     """
     if callback is None:
-        def callback(prog, msg): return None
+
+        def callback(prog, msg):
+            return None
 
     if settings.DOC_ENGINE.lower() != "elasticsearch":
         raise Exception("Resume is supported only with Elasticsearch.")
@@ -2495,7 +2506,7 @@ def chunk(filename, binary, tenant_id, from_page=0, to_page=MAXIMUM_PAGE_NUMBER,
         callback(0.1, "Starting resume parsing...")
 
         # Parse resume
-        resume, lines, line_positions = parse_resume(filename, binary, tenant_id , lang)
+        resume, lines, line_positions = parse_resume(filename, binary, tenant_id, lang)
         callback(0.6, "Resume structured extraction complete")
 
         # Build document chunks (with coordinate info)
@@ -2516,10 +2527,13 @@ def _resort_page_with_layout(page_blocks: list[dict], layout_regions: list[dict]
         return []
 
     if not layout_regions:
-        return sorted(page_blocks, key=lambda b: (
-            (b.get("top", 0) + b.get("bottom", 0)) / 2,
-            (b.get("x0", 0) + b.get("x1", 0)) / 2,
-        ))
+        return sorted(
+            page_blocks,
+            key=lambda b: (
+                (b.get("top", 0) + b.get("bottom", 0)) / 2,
+                (b.get("x0", 0) + b.get("x1", 0)) / 2,
+            ),
+        )
 
     type_groups: dict[str, list] = {}
     for lt in layout_regions:
@@ -2531,11 +2545,18 @@ def _resort_page_with_layout(page_blocks: list[dict], layout_regions: list[dict]
             key = f"{tp}-{idx}"
             x0, x1 = lt.get("x0", 0), lt.get("x1", 0)
             top, bottom = lt.get("top", 0), lt.get("bottom", 0)
-            entries.append({
-                "key": key, "type": tp,
-                "x0": x0, "top": top, "x1": x1, "bottom": bottom,
-                "cy": (top + bottom) / 2, "cx": (x0 + x1) / 2,
-            })
+            entries.append(
+                {
+                    "key": key,
+                    "type": tp,
+                    "x0": x0,
+                    "top": top,
+                    "x1": x1,
+                    "bottom": bottom,
+                    "cy": (top + bottom) / 2,
+                    "cx": (x0 + x1) / 2,
+                }
+            )
 
     for b in page_blocks:
         if b.get("layoutno"):
@@ -2543,8 +2564,7 @@ def _resort_page_with_layout(page_blocks: list[dict], layout_regions: list[dict]
         b_cx = (b.get("x0", 0) + b.get("x1", 0)) / 2
         b_cy = (b.get("top", 0) + b.get("bottom", 0)) / 2
         for entry in entries:
-            if (entry["x0"] <= b_cx <= entry["x1"]
-                    and entry["top"] <= b_cy <= entry["bottom"]):
+            if entry["x0"] <= b_cx <= entry["x1"] and entry["top"] <= b_cy <= entry["bottom"]:
                 b["layoutno"] = entry["key"]
                 b["layout_type"] = entry["type"]
                 break
@@ -2557,10 +2577,7 @@ def _resort_page_with_layout(page_blocks: list[dict], layout_regions: list[dict]
         layout_blocks = [b for b in page_blocks if b.get("layoutno") == layout_key]
         if not layout_blocks:
             continue
-        text_total_area = sum(
-            (b.get("x1", 0) - b.get("x0", 0)) * (b.get("bottom", 0) - b.get("top", 0))
-            for b in layout_blocks
-        )
+        text_total_area = sum((b.get("x1", 0) - b.get("x0", 0)) * (b.get("bottom", 0) - b.get("top", 0)) for b in layout_blocks)
         if text_total_area / layout_area < 0.075:
             for b in layout_blocks:
                 b["layoutno"] = ""
@@ -2605,19 +2622,22 @@ def _resort_page_with_layout(page_blocks: list[dict], layout_regions: list[dict]
                 dx = b_cx - lx2
             else:
                 dx = 0
-            dist = (dx ** 2 + dy ** 2) ** 0.5
+            dist = (dx**2 + dy**2) ** 0.5
             if dist < min_dist:
                 min_dist = dist
                 best_cx, best_cy = ae["cx"], ae["cy"]
         b["_lx_center"] = best_cx
         b["_ly_center"] = best_cy
 
-    sorted_blocks = sorted(page_blocks, key=lambda b: (
-        b.get("_ly_center", 0),
-        b.get("_lx_center", 0),
-        b.get("_y_center", 0),
-        b.get("_x_center", 0),
-    ))
+    sorted_blocks = sorted(
+        page_blocks,
+        key=lambda b: (
+            b.get("_ly_center", 0),
+            b.get("_lx_center", 0),
+            b.get("_y_center", 0),
+            b.get("_x_center", 0),
+        ),
+    )
 
     for b in sorted_blocks:
         b.pop("_ly_center", None)
@@ -2639,6 +2659,7 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
 
     try:
         import pdfplumber
+
         pages_blocks: dict[int, list[dict]] = {}
         for b in blocks:
             pg = b.get("page", 0)
@@ -2658,22 +2679,22 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
 
                 page_bxs = []
                 for b in pages_blocks[pg]:
-                    page_bxs.append({
-                        "x0": float(b["x0"]),
-                        "top": float(b["top"]),
-                        "x1": float(b["x1"]),
-                        "bottom": float(b["bottom"]),
-                        "text": b["text"],
-                        "page": pg,
-                    })
+                    page_bxs.append(
+                        {
+                            "x0": float(b["x0"]),
+                            "top": float(b["top"]),
+                            "x1": float(b["x1"]),
+                            "bottom": float(b["bottom"]),
+                            "text": b["text"],
+                            "page": pg,
+                        }
+                    )
                 ocr_res_per_page.append(page_bxs)
 
         if not image_list:
             return _layout_aware_reorder(blocks)
 
-        tagged_blocks, page_layouts = recognizer(
-            image_list, ocr_res_per_page, scale_factor=3, thr=0.2, drop=False
-        )
+        tagged_blocks, page_layouts = recognizer(image_list, ocr_res_per_page, scale_factor=3, thr=0.2, drop=False)
 
         if not tagged_blocks:
             logger.warning("Layout detector unavailable, falling back to heuristic sorting")
@@ -2697,14 +2718,12 @@ def _layout_detect_reorder(blocks: list[dict], binary: bytes) -> list[dict]:
             if "page" not in b:
                 b["page"] = 0
 
-        logger.info(f"YOLOv10 detector completed， {len(sorted_all)} total chunks，"
-                    f"checked {total_layout_count} layout")
+        logger.info(f"YOLOv10 detector completed， {len(sorted_all)} total chunks，checked {total_layout_count} layout")
         return sorted_all
 
     except Exception as e:
         logger.warning(f"Layout detector unavailable, falling back to heuristic sorting: {e}")
         return _layout_aware_reorder(blocks)
-
 
 
 def _text_shingles(text: str, n: int = 5) -> set[tuple[int, ...]]:
@@ -2726,7 +2745,7 @@ def _text_shingles(text: str, n: int = 5) -> set[tuple[int, ...]]:
     if len(tokens) < n:
         # Text too short: return the entire token sequence as a single shingle
         return {tuple(tokens)} if tokens else set()
-    return {tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1)}
+    return {tuple(tokens[i : i + n]) for i in range(len(tokens) - n + 1)}
 
 
 def _shingling_jaccard(text1: str, text2: str, n: int = 5) -> float:

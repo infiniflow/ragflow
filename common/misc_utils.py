@@ -97,7 +97,6 @@ async def download_img(url):
                             if not location:
                                 logger.warning(
                                     "download_img redirect missing Location header: status=%s redirect_hops=%s",
-                                
                                     response.status_code,
                                     redirect_hops,
                                 )
@@ -106,7 +105,6 @@ async def download_img(url):
                         if response.status_code != 200:
                             logger.warning(
                                 "download_img non-200 response: status=%s redirect_hops=%s",
-                                
                                 response.status_code,
                                 redirect_hops,
                             )
@@ -122,19 +120,13 @@ async def download_img(url):
                                     # the URL query string. Only the static
                                     # threshold value is logged.
                                     "download_img response exceeded max size: max_bytes=%s",
-
                                     _OAUTH_AVATAR_MAX_BYTES,
                                 )
                                 await response.aclose()
                                 return ("fail", None)
                             body.extend(chunk)
                         content_type = response.headers.get("Content-Type", "image/jpeg")
-                        data_uri = (
-                            "data:"
-                            + content_type
-                            + ";base64,"
-                            + base64.b64encode(bytes(body)).decode("utf-8")
-                        )
+                        data_uri = "data:" + content_type + ";base64," + base64.b64encode(bytes(body)).decode("utf-8")
                         return ("data", data_uri)
 
         try:
@@ -168,15 +160,15 @@ async def download_img(url):
     # hop count and configured max are logged.
     logger.warning(
         "download_img redirect hop limit exceeded: redirect_hops=%s max_redirects=%s",
-
         redirect_hops,
         _OAUTH_AVATAR_MAX_REDIRECTS,
     )
     return ""
 
 
-def hash_str2int(line: str, mod: int = 10 ** 8) -> int:
+def hash_str2int(line: str, mod: int = 10**8) -> int:
     return int(hashlib.sha1(line.encode("utf-8")).hexdigest(), 16) % mod
+
 
 def convert_bytes(size_in_bytes: int) -> str:
     """
@@ -185,7 +177,7 @@ def convert_bytes(size_in_bytes: int) -> str:
     if size_in_bytes == 0:
         return "0 B"
 
-    units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+    units = ["B", "KB", "MB", "GB", "TB", "PB"]
     i = 0
     size = float(size_in_bytes)
 
@@ -227,6 +219,7 @@ def once(func):
     executed = False
     result = None
     lock = threading.Lock()
+
     def wrapper(*args, **kwargs):
         nonlocal executed, result
         with lock:
@@ -234,12 +227,14 @@ def once(func):
                 result = func(*args, **kwargs)
                 executed = True
         return result
+
     return wrapper
+
 
 @once
 def pip_install_torch():
     device = os.getenv("DEVICE", "cpu")
-    if device=="cpu":
+    if device == "cpu":
         return
     logging.info("Installing pytorch")
     pkg_names = ["torch>=2.5.0,<3.0.0"]
