@@ -1478,19 +1478,62 @@ func (e *Engine) PrepareNextTasksForInspection(
 }
 
 func (e *Engine) applyInput(registry *channels.Registry, input any) error {
-	// Convert input to map
 	inputMap, err := toMap(input)
 	if err != nil {
 		return err
 	}
 
-	// Apply each key to corresponding channel
-	writes := make(map[string][]any)
+	// Auto-create channels for any input keys not yet registered, then write.
+	for key, value := range inputMap {
+		if _, ok := registry.Get(key); ok {
+			continue
+		}
+		guessed := caseFoldKey(registry, key)
+		if guessed != "" {
+			delete(inputMap, key)
+			inputMap[guessed] = value
+		} else {
+			registry.Register(key, channels.NewLastValue(value))
+		}
+	}
+
+	writes := make(map[string][]any, len(inputMap))
 	for key, value := range inputMap {
 		writes[key] = []any{value}
 	}
 
-	return registry.UpdateChannels(writes)
+	if len(writes) > 0 {
+		return registry.UpdateChannels(writes)
+	}
+	return nil
+}
+
+// caseFoldKey attempts to locate a registered channel whose name differs from
+// key only by the case of the first character (e.g. struct field "Counter" vs
+// input map key "counter").  Returns the matched channel name, or "".
+func caseFoldKey(registry *channels.Registry, key string) string {
+	if len(key) == 0 {
+		return ""
+	}
+	// Try uppercase first (e.g. "counter" → "Counter")
+	bs := []byte(key)
+	if bs[0] >= 'a' && bs[0] <= 'z' {
+		bs[0] -= 32
+		candidate := string(bs)
+		if _, ok := registry.Get(candidate); ok {
+			return candidate
+		}
+	}
+	// Try lowercase first (e.g. "Counter" → "counter")
+	bs[0] = key[0]
+	if bs[0] >= 'A' && bs[0] <= 'Z' {
+		bs[0] += 32
+		candidate := string(bs)
+		if _, ok := registry.Get(candidate); ok {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func (e *Engine) getThreadID() string {
