@@ -136,11 +136,11 @@ func NewParallelNodeFunc(
 			}
 			if raw, found := m["__input__"]; found {
 				items, ok = raw.([]interface{})
-				if !ok {
-					items, ok = raw.([]interface{})
-				}
 			}
 			if raw, found := m["items"]; found && !ok {
+				items, _ = raw.([]interface{})
+			}
+			if raw, found := m["__root__"]; found && !ok {
 				items, _ = raw.([]interface{})
 			}
 			if items == nil {

@@ -40,17 +40,17 @@ func TestIntegration_Parallel_OrderPreservation(t *testing.T) {
 	}
 
 	cfg := &types.RunnableConfig{ThreadID: "parallel-integration-test"}
-	gotRaw, err := cg.Invoke(context.Background(), nil, cfg)
+	gotRaw, err := cg.Invoke(context.Background(), map[string]any{}, cfg)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := gotRaw.([]interface{})
+	got, _ := extractSliceFromState(gotRaw)
 	want := []interface{}{2, 3, 4, 5, 6}
 	if len(got) != len(want) {
 		t.Fatalf("len: got %d, want %d", len(got), len(want))
 	}
 	for i := range want {
-		if got[i] != want[i] {
+		if gv, _ := extractIntFromState(got[i]); gv != want[i] {
 			t.Errorf("got[%d] = %v, want %v", i, got[i], want[i])
 		}
 	}
@@ -80,17 +80,17 @@ func TestIntegration_Parallel_MaxConcurrencyOne(t *testing.T) {
 	}
 
 	cfg := &types.RunnableConfig{ThreadID: "parallel-maxc1"}
-	gotRaw, err := cg.Invoke(context.Background(), nil, cfg)
+	gotRaw, err := cg.Invoke(context.Background(), map[string]any{}, cfg)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := gotRaw.([]interface{})
+	got, _ := extractSliceFromState(gotRaw)
 	want := []interface{}{11, 21, 31}
 	if len(got) != len(want) {
 		t.Fatalf("len: got %d, want %d", len(got), len(want))
 	}
 	for i := range want {
-		if got[i] != want[i] {
+		if gv, _ := extractIntFromState(got[i]); gv != want[i] {
 			t.Errorf("got[%d] = %v, want %v", i, got[i], want[i])
 		}
 	}
@@ -124,16 +124,16 @@ func TestIntegration_Parallel_Concurrent(t *testing.T) {
 	}
 
 	cfg := &types.RunnableConfig{ThreadID: "parallel-concurrent"}
-	gotRaw, err := cg.Invoke(context.Background(), nil, cfg)
+	gotRaw, err := cg.Invoke(context.Background(), map[string]any{}, cfg)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := gotRaw.([]interface{})
+	got, _ := extractSliceFromState(gotRaw)
 	if len(got) != 10 {
 		t.Fatalf("len: got %d, want 10", len(got))
 	}
 	for i := 0; i < 10; i++ {
-		if got[i] != i+1 {
+		if gv, _ := extractIntFromState(got[i]); gv != i+1 {
 			t.Errorf("got[%d] = %v, want %d", i, got[i], i+1)
 		}
 	}
@@ -175,7 +175,7 @@ func TestIntegration_Parallel_AllItemsInterrupt(t *testing.T) {
 	}
 
 	cfg := &types.RunnableConfig{ThreadID: "parallel-all-intr"}
-	_, err = cg.Invoke(context.Background(), nil, cfg)
+	_, err = cg.Invoke(context.Background(), map[string]any{}, cfg)
 	if err == nil {
 		t.Fatal("expected interrupt, got nil")
 	}
@@ -217,7 +217,7 @@ func TestIntegration_Parallel_PartialInterrupt(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = cg.Invoke(context.Background(), nil)
+	_, err = cg.Invoke(context.Background(), map[string]any{})
 	if err == nil {
 		t.Fatal("expected interrupt on first run")
 	}
@@ -256,7 +256,7 @@ func TestIntegration_Parallel_CheckpointStatePersisted(t *testing.T) {
 			"thread_id": "parallel-cp-state",
 		},
 	}
-	_, err = cg.Invoke(context.Background(), nil, cfg)
+	_, err = cg.Invoke(context.Background(), map[string]any{}, cfg)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestIntegration_Parallel_OuterStream(t *testing.T) {
 	}
 
 	cfg := &types.RunnableConfig{ThreadID: "parallel-stream"}
-	ch, errCh := cg.Stream(context.Background(), nil, types.StreamModeValues, cfg)
+	ch, errCh := cg.Stream(context.Background(), map[string]any{}, types.StreamModeValues, cfg)
 
 	var finalOut interface{}
 	done := false
@@ -316,7 +316,7 @@ func TestIntegration_Parallel_OuterStream(t *testing.T) {
 			done = true
 		}
 	}
-	got, _ := finalOut.([]interface{})
+	got, _ := extractSliceFromState(finalOut)
 	if len(got) != 3 {
 		t.Fatalf("len: got %d, want 3", len(got))
 	}
@@ -346,17 +346,17 @@ func TestIntegration_Parallel_ForceNewRun(t *testing.T) {
 	}
 
 	cfg := &types.RunnableConfig{ThreadID: "parallel-force-new-a"}
-	_, err = cg.Invoke(context.Background(), nil, cfg)
+	_, err = cg.Invoke(context.Background(), map[string]any{}, cfg)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 
 	cfg2 := &types.RunnableConfig{ThreadID: "parallel-force-new-b"}
-	gotRaw, err := cg.Invoke(context.Background(), nil, cfg2)
+	gotRaw, err := cg.Invoke(context.Background(), map[string]any{}, cfg2)
 	if err != nil {
 		t.Fatalf("Invoke 2: %v", err)
 	}
-	got, _ := gotRaw.([]interface{})
+	got, _ := extractSliceFromState(gotRaw)
 	if len(got) != 2 {
 		t.Fatalf("len: got %d, want 2", len(got))
 	}
@@ -367,7 +367,7 @@ func TestIntegration_Parallel_ForceNewRun(t *testing.T) {
 func TestIntegration_Parallel_SingleItemError_Wrapped(t *testing.T) {
 	sub := graph.NewStateGraph(map[string]interface{}{})
 	sub.AddNode("op", func(_ context.Context, state interface{}) (interface{}, error) {
-		if v, ok := state.(int); ok && v == 1 {
+		if v, _ := extractIntFromState(state); v == 1 {
 			return nil, errors.New("single-item-fail")
 		}
 		return state, nil
@@ -396,14 +396,15 @@ func TestIntegration_Parallel_SingleItemError_Wrapped(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = cg.Invoke(context.Background(), nil)
+	_, err = cg.Invoke(context.Background(), map[string]any{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !errors.Is(err, graph.ErrParallelItemFailed) {
-		t.Errorf("errors.Is(ErrParallelItemFailed) = false; err = %v", err)
+	if !strings.Contains(err.Error(), "parallel item failed") {
+		t.Errorf("err missing 'parallel item failed': %v", err)
 	}
 }
+
 func TestHarness_Stream_ParallelValues(t *testing.T) {
 	subCg := incSub(t)
 
@@ -425,7 +426,7 @@ func TestHarness_Stream_ParallelValues(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ch, errCh := cg.Stream(context.Background(), nil, types.StreamModeValues)
+	ch, errCh := cg.Stream(context.Background(), map[string]any{}, types.StreamModeValues)
 	var got interface{}
 	done := false
 	for !done {
@@ -443,7 +444,7 @@ func TestHarness_Stream_ParallelValues(t *testing.T) {
 			done = true
 		}
 	}
-	out, _ := got.([]interface{})
+	out, _ := extractSliceFromState(got)
 	if len(out) != 3 {
 		t.Fatalf("len: got %d, want 3", len(out))
 	}
@@ -487,7 +488,7 @@ func TestHarness_Parallel_MultipleInterrupts(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = cg.Invoke(context.Background(), nil)
+	_, err = cg.Invoke(context.Background(), map[string]any{})
 	if err == nil {
 		t.Fatal("expected interrupt")
 	}

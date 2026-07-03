@@ -25,7 +25,7 @@ func TestIntegration_Loop_BasicCheckpoint(t *testing.T) {
 	outer := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(5),
@@ -47,7 +47,7 @@ func TestIntegration_Loop_BasicCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if v, _ := out.(int); v != 3 {
+	if v, _ := extractIntFromState(out); v != 3 {
 		t.Errorf("output: got %v, want 3", out)
 	}
 }
@@ -135,10 +135,8 @@ func TestIntegration_Loop_CounterPerIteration(t *testing.T) {
 	sub := graph.NewStateGraph(map[string]interface{}{})
 	sub.AddNode("op", func(_ context.Context, state interface{}) (interface{}, error) {
 		counter.Add(1)
-		if in, ok := state.(int); ok {
-			return in + 1, nil
-		}
-		return state, nil
+		v, _ := extractIntFromState(state)
+		return map[string]interface{}{"__root__": v + 1}, nil
 	})
 	sub.SetEntryPoint("op")
 	sub.SetFinishPoint("op")
@@ -150,7 +148,7 @@ func TestIntegration_Loop_CounterPerIteration(t *testing.T) {
 	outer := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(10),
@@ -183,7 +181,7 @@ func TestIntegration_Loop_OuterStream(t *testing.T) {
 	outer := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(5),
@@ -220,7 +218,7 @@ func TestIntegration_Loop_OuterStream(t *testing.T) {
 			done = true
 		}
 	}
-	if v, _ := finalOut.(int); v != 3 {
+	if v, _ := extractIntFromState(finalOut); v != 3 {
 		t.Errorf("stream output: got %v, want 3", finalOut)
 	}
 }
@@ -234,7 +232,7 @@ func TestIntegration_Loop_ForceNewRun(t *testing.T) {
 	outer := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(5),
@@ -256,7 +254,7 @@ func TestIntegration_Loop_ForceNewRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke 1: %v", err)
 	}
-	if v, _ := out.(int); v != 3 {
+	if v, _ := extractIntFromState(out); v != 3 {
 		t.Errorf("run 1 output: got %v, want 3", out)
 	}
 
@@ -265,7 +263,7 @@ func TestIntegration_Loop_ForceNewRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke 2: %v", err)
 	}
-	if v, _ := out2.(int); v != 3 {
+	if v, _ := extractIntFromState(out2); v != 3 {
 		t.Errorf("run 2 output: got %v, want 3", out2)
 	}
 }
@@ -280,7 +278,7 @@ func TestIntegration_Loop_CheckpointStatePersisted(t *testing.T) {
 	outer := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(5),
@@ -408,7 +406,7 @@ func TestHarness_Stream_LoopValues(t *testing.T) {
 	outer := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(5),
@@ -443,7 +441,7 @@ func TestHarness_Stream_LoopValues(t *testing.T) {
 			done = true
 		}
 	}
-	if v, _ := got.(int); v != 3 {
+	if v, _ := extractIntFromState(got); v != 3 {
 		t.Errorf("stream output: got %v, want 3", got)
 	}
 }
@@ -508,7 +506,7 @@ func TestHarness_Checkpoint_Roundtrip(t *testing.T) {
 	outer := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 2, nil
 		},
 		graph.WithLoopMaxIterations(5),
@@ -572,7 +570,7 @@ func TestHarness_Loop_ConcurrentInvocation(t *testing.T) {
 	outer := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(5),
@@ -600,7 +598,7 @@ func TestHarness_Loop_ConcurrentInvocation(t *testing.T) {
 				t.Errorf("concurrent invoke: %v", invErr)
 				return
 			}
-			if v, _ := out.(int); v == 3 {
+			if v, _ := extractIntFromState(out); v == 3 {
 				results <- v
 			}
 		}()
@@ -692,7 +690,7 @@ func TestHarness_GraphInterrupt_IsGraphInterrupt(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = pCg.Invoke(context.Background(), nil)
+	_, err = pCg.Invoke(context.Background(), map[string]any{})
 	if err == nil {
 		t.Fatal("expected interrupt from parallel")
 	}

@@ -40,7 +40,7 @@ var registry = map[string]Factory{
 	"google":            noConfig("google", func() Tool { return NewGoogleTool() }),
 	"google_scholar":    noConfig("google_scholar", func() Tool { return NewGoogleScholarTool() }),
 	"jin10":             noConfig("jin10", func() Tool { return NewJin10Tool() }),
-	"keenable":          noConfig("keenable", func() Tool { return NewKeenableTool() }),
+	"keenable":          buildKeenableTool,
 	"pubmed":            noConfig("pubmed", func() Tool { return NewPubMedTool() }),
 	"qweather":          noConfig("qweather", func() Tool { return NewQWeatherTool() }),
 	"retrieval":         noConfig("retrieval", func() Tool { return NewRetrievalTool() }),
@@ -49,6 +49,7 @@ var registry = map[string]Factory{
 	"searxng":           noConfig("searxng", func() Tool { return NewSearXNGTool() }),
 	"tavily":            noConfig("tavily", func() Tool { return NewTavilyTool() }),
 	"tushare":           noConfig("tushare", func() Tool { return NewTushareTool() }),
+	"web_crawler":       noConfig("web_crawler", func() Tool { return NewCrawlerTool() }),
 	"wencai":            noConfig("wencai", func() Tool { return NewWencaiTool() }),
 	"wikipedia":         noConfig("wikipedia", func() Tool { return NewWikipediaTool() }),
 	"yahoo_finance":     noConfig("yahoo_finance", func() Tool { return NewYahooFinanceTool() }),
@@ -108,6 +109,22 @@ func buildExeSQLTool(params map[string]any) (Tool, error) {
 		return nil, err
 	}
 	return NewExeSQLTool(conn), nil
+}
+
+func buildKeenableTool(params map[string]any) (Tool, error) {
+	if len(params) == 0 {
+		return NewKeenableTool(), nil
+	}
+	for key := range params {
+		if key != "api_key" {
+			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param api_key", "keenable")
+		}
+	}
+	apiKey, ok := params["api_key"].(string)
+	if !ok || strings.TrimSpace(apiKey) == "" {
+		return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param api_key", "keenable")
+	}
+	return NewKeenableToolWithAPIKey(nil, apiKey), nil
 }
 
 func decodeExeSQLConnParams(params map[string]any) (exesqlConnParams, error) {

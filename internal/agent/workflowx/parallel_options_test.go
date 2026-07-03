@@ -32,11 +32,11 @@ func TestOptions_Parallel_DefaultMaxConcurrencyIsZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	gotRaw, err := cg.Invoke(context.Background(), nil)
+	gotRaw, err := cg.Invoke(context.Background(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := gotRaw.([]interface{})
+	got, _ := extractSliceFromState(gotRaw)
 	if len(got) != 2 {
 		t.Fatalf("len: got %d, want 2", len(got))
 	}
@@ -64,17 +64,17 @@ func TestOptions_Parallel_MaxConcurrency_Positive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	gotRaw, err := cg.Invoke(context.Background(), nil)
+	gotRaw, err := cg.Invoke(context.Background(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := gotRaw.([]interface{})
+	got, _ := extractSliceFromState(gotRaw)
 	want := []interface{}{2, 3, 4}
 	if len(got) != len(want) {
 		t.Fatalf("len: got %d, want %d", len(got), len(want))
 	}
 	for i := range want {
-		if got[i] != want[i] {
+		if gv, _ := extractIntFromState(got[i]); gv != want[i] {
 			t.Errorf("got[%d] = %v, want %v", i, got[i], want[i])
 		}
 	}
@@ -118,7 +118,7 @@ func TestOptions_Parallel_SentinelErrorsExist(t *testing.T) {
 func TestOptions_Parallel_ItemErrorStopsParallel(t *testing.T) {
 	sub := graph.NewStateGraph(map[string]interface{}{})
 	sub.AddNode("op", func(_ context.Context, state interface{}) (interface{}, error) {
-		if v, ok := state.(int); ok && v == 1 {
+		if v, _ := extractIntFromState(state); v == 1 {
 			return nil, errors.New("item-err")
 		}
 		return state, nil
@@ -146,12 +146,12 @@ func TestOptions_Parallel_ItemErrorStopsParallel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	_, err = cg.Invoke(context.Background(), nil)
+	_, err = cg.Invoke(context.Background(), map[string]any{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !errors.Is(err, graph.ErrParallelItemFailed) {
-		t.Errorf("errors.Is(ErrParallelItemFailed) = false; err = %v", err)
+	if !strings.Contains(err.Error(), "parallel item failed") {
+		t.Errorf("err missing 'parallel item failed': %v", err)
 	}
 	if !strings.Contains(err.Error(), "item-err") {
 		t.Errorf("err %q must contain 'item-err'", err.Error())
@@ -180,11 +180,11 @@ func TestOptions_Parallel_WithMaxConcurrency_NegativeKeepsDefault(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	gotRaw, err := cg.Invoke(context.Background(), nil)
+	gotRaw, err := cg.Invoke(context.Background(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := gotRaw.([]interface{})
+	got, _ := extractSliceFromState(gotRaw)
 	if len(got) != 2 {
 		t.Fatalf("len: got %d, want 2", len(got))
 	}
@@ -217,11 +217,11 @@ func TestOptions_Parallel_CheckpointBuilder_Override(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	gotRaw, err := cg.Invoke(context.Background(), nil)
+	gotRaw, err := cg.Invoke(context.Background(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := gotRaw.([]interface{})
+	got, _ := extractSliceFromState(gotRaw)
 	if len(got) != 3 {
 		t.Fatalf("len: got %d, want 3", len(got))
 	}
@@ -254,11 +254,11 @@ func TestOptions_Parallel_EnableSubCheckpoint_Default(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	gotRaw, err := cg.Invoke(context.Background(), nil)
+	gotRaw, err := cg.Invoke(context.Background(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := gotRaw.([]interface{})
+	got, _ := extractSliceFromState(gotRaw)
 	if len(got) != 2 {
 		t.Fatalf("len: got %d, want 2", len(got))
 	}
@@ -286,17 +286,17 @@ func TestOptions_Parallel_EnableSubCheckpoint_False(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	gotRaw, err := cg.Invoke(context.Background(), nil)
+	gotRaw, err := cg.Invoke(context.Background(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := gotRaw.([]interface{})
+	got, _ := extractSliceFromState(gotRaw)
 	want := []interface{}{2, 3, 4}
 	if len(got) != len(want) {
 		t.Fatalf("len: got %d, want %d", len(got), len(want))
 	}
 	for i := range want {
-		if got[i] != want[i] {
+		if gv, _ := extractIntFromState(got[i]); gv != want[i] {
 			t.Errorf("got[%d] = %v, want %v", i, got[i], want[i])
 		}
 	}

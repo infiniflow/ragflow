@@ -701,6 +701,14 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 		}
 	}
 
+	// Runtime prompt formatting: when the sub-agent tool call provides
+	// reasoning/context alongside the user_prompt, prepend a structured
+	// preamble.  Mirrors Python's upstream behavior and the eino agent's
+	// formatAgentRuntimePrompt.
+	if hasNonEmptyString(inputs, "reasoning") || hasNonEmptyString(inputs, "context") {
+		p.UserPrompt = formatAgentRuntimePrompt(inputs, p.UserPrompt)
+	}
+
 	msg, err := agentRunner(ctx, p)
 	// Tool-call memory summarization. After the ReAct loop
 	// completes, summarize the tool calls via an LLM and append to

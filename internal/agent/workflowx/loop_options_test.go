@@ -103,7 +103,7 @@ func TestOptions_Loop_CheckpointIDPrefix(t *testing.T) {
 	subCg := buildIncGraph(t)
 	_, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(10),
@@ -141,10 +141,8 @@ func TestOptions_Loop_ShouldQuitReturnsTrueTerminatesEarly(t *testing.T) {
 	sub := graph.NewStateGraph(map[string]interface{}{})
 	sub.AddNode("op", func(_ context.Context, state interface{}) (interface{}, error) {
 		iterations++
-		if in, ok := state.(int); ok {
-			return in + 1, nil
-		}
-		return state, nil
+		v, _ := extractIntFromState(state)
+		return map[string]interface{}{"__root__": v + 1}, nil
 	})
 	sub.SetEntryPoint("op")
 	sub.SetFinishPoint("op")
@@ -156,7 +154,7 @@ func TestOptions_Loop_ShouldQuitReturnsTrueTerminatesEarly(t *testing.T) {
 	sg := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 2, nil
 		},
 		graph.WithLoopMaxIterations(10),
@@ -175,7 +173,7 @@ func TestOptions_Loop_ShouldQuitReturnsTrueTerminatesEarly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if v, _ := out.(int); v != 2 {
+	if v, _ := extractIntFromState(out); v != 2 {
 		t.Errorf("output: got %v, want 2", out)
 	}
 }
@@ -247,7 +245,7 @@ func TestOptions_Loop_DefaultStreamModeIsFinalOnly(t *testing.T) {
 	sg := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(10),
@@ -266,7 +264,7 @@ func TestOptions_Loop_DefaultStreamModeIsFinalOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if v, _ := out.(int); v != 3 {
+	if v, _ := extractIntFromState(out); v != 3 {
 		t.Errorf("output: got %v, want 3", out)
 	}
 }
@@ -277,7 +275,7 @@ func TestOptions_Loop_WithLoopStream_Values(t *testing.T) {
 	sg := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(10),
@@ -297,7 +295,7 @@ func TestOptions_Loop_WithLoopStream_Values(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if v, _ := out.(int); v != 3 {
+	if v, _ := extractIntFromState(out); v != 3 {
 		t.Errorf("output: got %v, want 3", out)
 	}
 }
@@ -309,7 +307,7 @@ func TestOptions_Loop_WithLoopStream_UnknownRejected(t *testing.T) {
 	sg := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(10),
@@ -329,7 +327,7 @@ func TestOptions_Loop_WithLoopStream_UnknownRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if v, _ := out.(int); v != 3 {
+	if v, _ := extractIntFromState(out); v != 3 {
 		t.Errorf("output: got %v, want 3", out)
 	}
 }

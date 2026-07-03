@@ -13,18 +13,12 @@ import (
 	"ragflow/internal/harness/graph/types"
 )
 
-// incNode returns a nodefunc that increments the input int.
+// incNode returns a nodefunc that increments the value under __root__ by 1.
+// Works with both the inline engine (raw int) and the pregel engine (map).
 func incNode() func(context.Context, interface{}) (interface{}, error) {
 	return func(_ context.Context, state interface{}) (interface{}, error) {
-		if in, ok := state.(int); ok {
-			return in + 1, nil
-		}
-		if m, ok := state.(map[string]interface{}); ok {
-			if v, ok := m["__root__"].(float64); ok {
-				return int(v) + 1, nil
-			}
-		}
-		return state, nil
+		v, _ := extractIntFromState(state)
+		return map[string]interface{}{"__root__": v + 1}, nil
 	}
 }
 
@@ -49,7 +43,7 @@ func TestLoop_BasicIteration(t *testing.T) {
 	sg := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(10),
@@ -68,7 +62,8 @@ func TestLoop_BasicIteration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if v, ok := out.(int); !ok || v != 3 {
+	v, _ := extractIntFromState(out)
+	if v != 3 {
 		t.Errorf("output: got %v, want 3", out)
 	}
 }
@@ -107,7 +102,7 @@ func TestLoop_MaxIterationsExceeded(t *testing.T) {
 func TestLoop_SubErrorStopsLoop(t *testing.T) {
 	sub := graph.NewStateGraph(map[string]interface{}{})
 	sub.AddNode("err", func(_ context.Context, _ interface{}) (interface{}, error) {
-		return nil, errors.New("sub-fail")
+		return map[string]interface{}{}, errors.New("sub-fail")
 	})
 	sub.SetEntryPoint("err")
 	sub.SetFinishPoint("err")
@@ -149,10 +144,8 @@ func TestLoop_CounterIncrementedPerIteration(t *testing.T) {
 	sub := graph.NewStateGraph(map[string]interface{}{})
 	sub.AddNode("inc", func(_ context.Context, state interface{}) (interface{}, error) {
 		counter.Add(1)
-		if in, ok := state.(int); ok {
-			return in + 1, nil
-		}
-		return state, nil
+		v, _ := extractIntFromState(state)
+		return map[string]interface{}{"__root__": v + 1}, nil
 	})
 	sub.SetEntryPoint("inc")
 	sub.SetFinishPoint("inc")
@@ -164,7 +157,7 @@ func TestLoop_CounterIncrementedPerIteration(t *testing.T) {
 	sg := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(10),
@@ -215,7 +208,7 @@ func TestLoop_DoWhileContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if v, _ := out.(int); v != 8 {
+	if v, _ := extractIntFromState(out); v != 8 {
 		t.Errorf("output: got %v, want 8", out)
 	}
 	if seen != 1 {
@@ -232,7 +225,7 @@ func TestLoop_IterationNumbering(t *testing.T) {
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, iter int, _, next interface{}) (bool, error) {
 			iterations = append(iterations, iter)
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 4, nil
 		},
 		graph.WithLoopMaxIterations(10),
@@ -251,7 +244,7 @@ func TestLoop_IterationNumbering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if v, _ := out.(int); v != 4 {
+	if v, _ := extractIntFromState(out); v != 4 {
 		t.Errorf("output: got %v, want 4", out)
 	}
 	want := []int{1, 2, 3}
@@ -301,7 +294,7 @@ func TestLoop_NormalConvergence(t *testing.T) {
 	sg := graph.NewStateGraph(map[string]interface{}{})
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, _ int, _, next interface{}) (bool, error) {
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 5, nil
 		},
 		graph.WithLoopMaxIterations(10),
@@ -320,7 +313,7 @@ func TestLoop_NormalConvergence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if v, _ := out.(int); v != 5 {
+	if v, _ := extractIntFromState(out); v != 5 {
 		t.Errorf("output: got %v, want 5", out)
 	}
 }
@@ -334,7 +327,7 @@ func TestLoop_ShouldQuitCalledWithCorrectIteration(t *testing.T) {
 	loopFn, err := graph.NewLoopNodeFunc("loop", subCg,
 		func(_ context.Context, iter int, _, next interface{}) (bool, error) {
 			iterations = append(iterations, iter)
-			v, _ := next.(int)
+			v, _ := extractIntFromState(next)
 			return v >= 3, nil
 		},
 		graph.WithLoopMaxIterations(10),
@@ -394,7 +387,7 @@ func TestLoop_SingleIterationDoWhile(t *testing.T) {
 	if !called {
 		t.Error("shouldQuit was not called")
 	}
-	if v, _ := out.(int); v != 6 {
+	if v, _ := extractIntFromState(out); v != 6 {
 		t.Errorf("output: got %v, want 6", out)
 	}
 }
