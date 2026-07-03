@@ -139,6 +139,8 @@ class MinerUParseOptions:
     parse_method: str = "raw"
     formula_enable: bool = True
     table_enable: bool = True
+    start_page_id: int = 0
+    end_page_id: int = 99999
 
 
 class MinerUParser(RAGFlowPdfParser):
@@ -300,8 +302,8 @@ class MinerUParser(RAGFlowPdfParser):
             "return_content_list": True,
             "return_images": True,
             "response_format_zip": True,
-            "start_page_id": 0,
-            "end_page_id": 99999,
+            "start_page_id": options.start_page_id,
+            "end_page_id": options.end_page_id,
         }
 
         if options.server_url:
@@ -360,7 +362,7 @@ class MinerUParser(RAGFlowPdfParser):
             self.logger.exception(e)
 
     def _line_tag(self, bx):
-        pn = [bx["page_idx"] + 1]
+        pn = [bx["page_idx"] + self.page_from + 1]
         positions = bx.get("bbox", (0, 0, 0, 0))
         x0, top, x1, bott = positions
         # Normalize flipped coordinates (MinerU may report inverted bbox for flipped images)
@@ -762,6 +764,8 @@ class MinerUParser(RAGFlowPdfParser):
             server_url: Optional[str] = None,
             delete_output: bool = True,
             parse_method: str = "raw",
+            from_page: int = 0,
+            to_page: int = MAXIMUM_PAGE_NUMBER,
             **kwargs,
     ) -> tuple:
         import shutil
@@ -776,6 +780,15 @@ class MinerUParser(RAGFlowPdfParser):
         mineru_method_raw_str = parser_cfg.get('mineru_parse_method', 'auto')
         enable_formula = parser_cfg.get('mineru_formula_enable', True)
         enable_table = parser_cfg.get('mineru_table_enable', True)
+        try:
+            start_page_id = max(0, int(from_page or 0))
+        except (TypeError, ValueError):
+            start_page_id = 0
+        try:
+            raw_to_page = int(to_page)
+        except (TypeError, ValueError):
+            raw_to_page = MAXIMUM_PAGE_NUMBER
+        end_page_id = 99999 if raw_to_page >= MAXIMUM_PAGE_NUMBER else max(start_page_id, raw_to_page - 1)
 
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)
@@ -812,8 +825,6 @@ class MinerUParser(RAGFlowPdfParser):
         if callback:
             callback(0.15, f"[MinerU] Output directory: {out_dir}")
 
-        self.__images__(pdf, zoomin=1)
-
         try:
             options = MinerUParseOptions(
                 backend=MinerUBackend(backend),
@@ -824,9 +835,23 @@ class MinerUParser(RAGFlowPdfParser):
                 parse_method=parse_method,
                 formula_enable=enable_formula,
                 table_enable=enable_table,
+                start_page_id=start_page_id,
+                end_page_id=end_page_id,
             )
             final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
+            page_indices = [
+                int(item["page_idx"])
+                for item in outputs
+                if isinstance(item, dict) and str(item.get("page_idx", "")).isdigit()
+            ]
+            # MinerU versions differ: some return original PDF page_idx, others
+            # return page_idx relative to start_page_id. Render matching pages
+            # so crop/position logic uses the same coordinate base.
+            if start_page_id > 0 and page_indices and min(page_indices) >= start_page_id:
+                self.__images__(pdf, zoomin=1)
+            else:
+                self.__images__(pdf, zoomin=1, page_from=start_page_id, page_to=end_page_id + 1)
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:
                 callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")

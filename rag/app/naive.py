@@ -171,6 +171,8 @@ def by_mineru(
                     binary=binary,
                     callback=callback,
                     parse_method=parse_method,
+                    from_page=from_page,
+                    to_page=to_page,
                     lang=lang,
                     **kwargs,
                 )
