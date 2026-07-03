@@ -58,6 +58,24 @@ func (r *CommonResponse) PrintOut() {
 	}
 }
 
+func HandleCommonResponse(response *Response, command string) (ResponseIf, error) {
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to %s: HTTP %d, body: %s", command, response.StatusCode, string(response.Body))
+	}
+
+	var result CommonResponse
+	if err := json.Unmarshal(response.Body, &result); err != nil {
+		return nil, fmt.Errorf("%s failed: invalid JSON (%w)", command, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = response.Duration
+	return &result, nil
+}
+
 type ModelsResponse struct {
 	Code         int                                 `json:"code"`
 	Data         map[string][]map[string]interface{} `json:"data"`
@@ -142,6 +160,24 @@ func (r *CommonDataResponse) PrintOut() {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
+}
+
+func HandleCommonDataResponse(response *Response, command string) (ResponseIf, error) {
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to %s: HTTP %d, body: %s", command, response.StatusCode, string(response.Body))
+	}
+
+	var result CommonDataResponse
+	if err := json.Unmarshal(response.Body, &result); err != nil {
+		return nil, fmt.Errorf("%s failed: invalid JSON (%w)", command, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = response.Duration
+	return &result, nil
 }
 
 type ListDocumentsResponse struct {
@@ -451,6 +487,10 @@ func (r *SimpleResponse) PrintOut() {
 }
 
 func HandleSimpleResponse(response *Response, command string) (ResponseIf, error) {
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to %s: HTTP %d, body: %s", command, response.StatusCode, string(response.Body))
+	}
+
 	var result SimpleResponse
 	if err := json.Unmarshal(response.Body, &result); err != nil {
 		return nil, fmt.Errorf("%s failed: invalid JSON (%w)", command, err)
@@ -912,7 +952,7 @@ func printReferenceChunks(raw json.RawMessage) {
 
 	fmt.Println("Reference:")
 	for i, chunk := range chunks {
-		id := chunkID(chunk)
+		id := getChunkID(chunk)
 		content := chunkContent(chunk)
 		docName := chunkDocName(chunk)
 		fmt.Printf("  [ID:%d] id=%s content=%q", i, id, truncateStr(content, 120))
@@ -930,7 +970,7 @@ func printReferenceChunks(raw json.RawMessage) {
 	}
 }
 
-func chunkID(c map[string]interface{}) string {
+func getChunkID(c map[string]interface{}) string {
 	for _, key := range []string{"chunk_id", "id"} {
 		if v, ok := c[key]; ok {
 			return fmt.Sprint(v)
@@ -940,9 +980,11 @@ func chunkID(c map[string]interface{}) string {
 }
 
 func chunkContent(c map[string]interface{}) string {
-	if v, ok := c["content"]; ok {
-		s := fmt.Sprint(v)
-		return strings.TrimSpace(s)
+	for _, key := range []string{"content_with_weight", "content"} {
+		if v, ok := c[key]; ok {
+			s := fmt.Sprint(v)
+			return strings.TrimSpace(s)
+		}
 	}
 	return ""
 }
@@ -1242,4 +1284,60 @@ func (r *QuotaSummaryResponse) PrintOut() {
 
 		PrintTableSimpleByFormatWithOrder(table, section.columns, r.OutputFormat)
 	}
+}
+
+// ChatCompletionsResponse represents the RAGFlow-internal response from
+// POST /api/v1/chat/completions (non-OpenAI format).
+//
+// JSON shape:
+//
+//	{"code":0,"data":{"answer":"...","reference":...},"message":""}
+type ChatCompletionsResponse struct {
+	Code         int                 `json:"code"`
+	Data         *chatCompletionData `json:"data"`
+	Message      string              `json:"message"`
+	Duration     float64             `json:"-"`
+	OutputFormat OutputFormat        `json:"-"`
+	// raw HTTP body for "raw" output.
+	raw []byte
+	// streamed skips the "Answer:" line in PrintOut to avoid duplication
+	// (used by the streaming path which prints chunk-by-chunk).
+	streamed bool
+}
+
+type chatCompletionData struct {
+	Answer    string          `json:"answer"`
+	Reference json.RawMessage `json:"reference,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	SessionID string          `json:"session_id,omitempty"`
+	ChatID    string          `json:"chat_id,omitempty"`
+}
+
+func (r *ChatCompletionsResponse) Type() string                   { return "chat_completions" }
+func (r *ChatCompletionsResponse) TimeCost() float64              { return r.Duration }
+func (r *ChatCompletionsResponse) SetOutputFormat(f OutputFormat) { r.OutputFormat = f }
+
+func (r *ChatCompletionsResponse) PrintOut() {
+	if r.OutputFormat == "raw" && r.raw != nil {
+		fmt.Println(string(r.raw))
+		return
+	}
+	if r.Code != 0 {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+		return
+	}
+	if r.Data == nil {
+		fmt.Println("(no data)")
+		return
+	}
+	if !r.streamed {
+		if r.Data.Answer != "" {
+			fmt.Printf("Answer: %s\n", r.Data.Answer)
+		}
+	}
+	if r.Data != nil && len(r.Data.Reference) > 0 {
+		printReferenceChunks(r.Data.Reference)
+	}
+	fmt.Printf("Time: %f\n", r.Duration)
 }

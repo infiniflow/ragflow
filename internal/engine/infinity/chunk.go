@@ -20,8 +20,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"os"
-	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
@@ -30,6 +30,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
 	"go.uber.org/zap"
@@ -37,6 +38,13 @@ import (
 
 // ChinesePunctRegex splits on comma, semicolon, Chinese punctuations, and newlines
 var ChinesePunctRegex = regexp.MustCompile(`[,，;；、\r\n]+`)
+
+const (
+	pagerankAdjustRetryCount = 2
+	pagerankAdjustLockCount  = 256
+)
+
+var pagerankAdjustLocks [pagerankAdjustLockCount]sync.Mutex
 
 // CreateChunkStore creates a chunk table in Infinity
 // baseName is the table name prefix (e.g., "ragflow_<tenant_id>")
@@ -58,23 +66,26 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 		common.Info("Creating regular index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
 	}
 
-	// Use configured schema
-	fpMapping := filepath.Join(utility.GetProjectRoot(), "conf", mappingFile)
-
-	schemaData, err := os.ReadFile(fpMapping)
+	fpMapping, err := utility.FindConfFileInProject(mappingFile)
 	if err != nil {
-		return fmt.Errorf("Failed to read mapping file: %w", err)
+		return err
+	}
+
+	// Use configured schema
+	schemaData, err := os.ReadFile(*fpMapping)
+	if err != nil {
+		return fmt.Errorf("failed to read mapping file %s: %w", *fpMapping, err)
 	}
 
 	var schema orderedFields
 	if err := json.Unmarshal(schemaData, &schema); err != nil {
-		return fmt.Errorf("Failed to parse mapping file: %w", err)
+		return fmt.Errorf("failed to parse mapping file: %w", err)
 	}
 
 	// Get database
 	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
-		return fmt.Errorf("Failed to get database: %w", err)
+		return fmt.Errorf("failed to get database: %w", err)
 	}
 
 	// Determine vector column name
@@ -83,7 +94,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 	// Check if table already exists
 	exists, err := e.tableExists(ctx, tableName)
 	if err != nil {
-		return fmt.Errorf("Failed to check if table exists: %w", err)
+		return fmt.Errorf("failed to check if table exists: %w", err)
 	}
 
 	var table *infinity.Table
@@ -92,7 +103,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 		common.Info("Table already exists, checking for vector column", zap.String("tableName", tableName))
 		table, err = db.GetTable(tableName)
 		if err != nil {
-			return fmt.Errorf("Failed to open existing table %s: %w", tableName, err)
+			return fmt.Errorf("failed to open existing table %s: %w", tableName, err)
 		}
 
 		// Check if vector column exists (for embedding model changes)
@@ -112,7 +123,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 			}
 			if _, err := table.AddColumns(addColSchema); err != nil {
 				common.Error("Failed to add vector column "+vectorColName, err)
-				return fmt.Errorf("Failed to add vector column %s: %w", vectorColName, err)
+				return fmt.Errorf("failed to add vector column %s: %w", vectorColName, err)
 			}
 			common.Info("Successfully added vector column", zap.String("column", vectorColName))
 		}
@@ -150,7 +161,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 		// Create table
 		table, err = db.CreateTable(tableName, columns, infinity.ConflictTypeIgnore)
 		if err != nil {
-			return fmt.Errorf("Failed to create table: %w", err)
+			return fmt.Errorf("failed to create table: %w", err)
 		}
 		common.Debug("Infinity created table", zap.String("tableName", tableName))
 	}
@@ -170,7 +181,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 		"",
 	)
 	if err != nil {
-		return fmt.Errorf("Failed to create HNSW index %s: %w", vectorIndexName, err)
+		return fmt.Errorf("failed to create HNSW index %s: %w", vectorIndexName, err)
 	}
 	common.Info("Created vector index", zap.String("indexName", vectorIndexName), zap.String("column", vectorColName))
 
@@ -205,7 +216,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 				"",
 			)
 			if err != nil {
-				return fmt.Errorf("Failed to create fulltext index %s: %w", indexNameFt, err)
+				return fmt.Errorf("failed to create fulltext index %s: %w", indexNameFt, err)
 			}
 		}
 	}
@@ -241,7 +252,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 				"",
 			)
 			if err != nil {
-				return fmt.Errorf("Failed to create secondary index %s: %w", indexNameSec, err)
+				return fmt.Errorf("failed to create secondary index %s: %w", indexNameSec, err)
 			}
 		}
 	}
@@ -249,7 +260,7 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 	return nil
 }
 
-// InsertChunks inserts documents into a dataset table
+// InsertChunks inserts documents into a dataset table;
 // Table name format: {baseName}_{datasetID}
 // Auto-create the table if it doesn't exist
 // Delete existing rows with matching IDs before insert
@@ -516,6 +527,97 @@ func (e *infinityEngine) UpdateChunks(ctx context.Context, condition map[string]
 
 	common.Info("InfinityConnection.UpdateChunks completes", zap.String("tableName", tableName))
 	return nil
+}
+
+// AdjustChunkPagerank adjusts pagerank_fea and clamps it to [minWeight, maxWeight].
+func (e *infinityEngine) AdjustChunkPagerank(ctx context.Context, baseName, chunkID, datasetID string, delta, minWeight, maxWeight float64) error {
+	if baseName == "" {
+		return fmt.Errorf("index name cannot be empty")
+	}
+	if chunkID == "" {
+		return fmt.Errorf("chunk id cannot be empty")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if e.client == nil || e.client.conn == nil {
+		return fmt.Errorf("Infinity client not initialized")
+	}
+
+	tableName := buildChunkTableName(baseName, datasetID)
+	lock := pagerankAdjustLock(tableName + ":" + chunkID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil {
+		return fmt.Errorf("failed to get database: %w", err)
+	}
+	table, err := db.GetTable(tableName)
+	if err != nil {
+		return fmt.Errorf("failed to get table %s: %w", tableName, err)
+	}
+
+	var lastErr error
+	filter := fmt.Sprintf("id = '%s'", escapeFilterValue(chunkID))
+	for attempt := 0; attempt <= pagerankAdjustRetryCount; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		result, err := table.Output([]string{common.PAGERANK_FLD, "row_id()"}).Filter(filter).ToResult()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		qr, ok := result.(*infinity.QueryResult)
+		if !ok {
+			return fmt.Errorf("unexpected query result type: %T", result)
+		}
+
+		rowID, ok := firstQueryInt64(qr.Data, "ROW_ID", "row_id()", "row_id")
+		if !ok {
+			return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
+		}
+
+		currentWeight := 0.0
+		if currentValue, ok := firstQueryValue(qr.Data, common.PAGERANK_FLD); ok {
+			if weight, ok := coerceToFloat(currentValue); ok {
+				currentWeight = weight
+			}
+		}
+		nextWeight := currentWeight + delta
+		if nextWeight < minWeight {
+			nextWeight = minWeight
+		}
+		if nextWeight > maxWeight {
+			nextWeight = maxWeight
+		}
+		if floatsEqual(currentWeight, nextWeight) {
+			return nil
+		}
+
+		updateFilter := fmt.Sprintf("_row_id = %d AND %s = %s", rowID, common.PAGERANK_FLD, formatFilterFloat(currentWeight))
+		if _, err := table.Update(updateFilter, map[string]interface{}{common.PAGERANK_FLD: nextWeight}); err != nil {
+			lastErr = err
+			continue
+		}
+		verifyResult, err := table.Output([]string{common.PAGERANK_FLD}).Filter(filter).ToResult()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		verifyQR, ok := verifyResult.(*infinity.QueryResult)
+		if !ok {
+			return fmt.Errorf("unexpected query result type: %T", verifyResult)
+		}
+		if currentValue, ok := firstQueryValue(verifyQR.Data, common.PAGERANK_FLD); ok {
+			if actualWeight, ok := coerceToFloat(currentValue); ok && floatsEqual(actualWeight, nextWeight) {
+				return nil
+			}
+		}
+		lastErr = fmt.Errorf("pagerank update conflict")
+	}
+	return fmt.Errorf("failed to adjust chunk pagerank: %w", lastErr)
 }
 
 // DeleteChunks deletes chunks from a dataset table
@@ -1974,6 +2076,77 @@ func convertMatchingField(fieldWeightStr string) string {
 // escapeFilterValue escapes single quotes for filter values
 func escapeFilterValue(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
+}
+
+func firstQueryValue(data map[string][]interface{}, columns ...string) (interface{}, bool) {
+	for _, column := range columns {
+		values, ok := data[column]
+		if ok && len(values) > 0 {
+			return values[0], true
+		}
+	}
+	return nil, false
+}
+
+func firstQueryInt64(data map[string][]interface{}, columns ...string) (int64, bool) {
+	value, ok := firstQueryValue(data, columns...)
+	if !ok {
+		return 0, false
+	}
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int8:
+		return int64(v), true
+	case int16:
+		return int64(v), true
+	case int32:
+		return int64(v), true
+	case int64:
+		return v, true
+	case uint:
+		if uint64(v) <= ^uint64(0)>>1 {
+			return int64(v), true
+		}
+	case uint8:
+		return int64(v), true
+	case uint16:
+		return int64(v), true
+	case uint32:
+		return int64(v), true
+	case uint64:
+		if v <= ^uint64(0)>>1 {
+			return int64(v), true
+		}
+	case float32:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case string:
+		parsed, err := strconv.ParseInt(v, 10, 64)
+		if err == nil {
+			return parsed, true
+		}
+	}
+	return 0, false
+}
+
+func pagerankAdjustLock(key string) *sync.Mutex {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(key))
+	return &pagerankAdjustLocks[hash.Sum32()%pagerankAdjustLockCount]
+}
+
+func formatFilterFloat(value float64) string {
+	return strconv.FormatFloat(value, 'f', -1, 64)
+}
+
+func floatsEqual(a, b float64) bool {
+	diff := a - b
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff < 1e-9
 }
 
 // equivalentConditionToStr converts a condition map to an Infinity filter string

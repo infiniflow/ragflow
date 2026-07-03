@@ -31,7 +31,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
-	"ragflow/internal/service/kg"
+	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
 
 	"github.com/gin-gonic/gin"
@@ -291,7 +291,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		if kgErr != nil {
 			common.Warn("KG retrieval: failed to get chat model", zap.String("kbID", req.KnowledgeID), zap.Error(kgErr))
 		} else if chatModel != nil {
-			kgPipeline := kg.NewPipeline(
+			kgPipeline := graph.NewPipeline(
 				h.docEngine,
 				[]string{req.KnowledgeID},
 				[]string{kb.TenantID},

@@ -18,6 +18,7 @@ from rag.flow.chunker.title_chunker.group_chunker import GroupTitleChunker
 from rag.flow.chunker.title_chunker.hierarchy_chunker import HierarchyTitleChunker
 from rag.flow.chunker.title_chunker.schema import TitleChunkerFromUpstream
 
+
 class TitleChunker(ProcessBase):
     component_name = "TitleChunker"
 

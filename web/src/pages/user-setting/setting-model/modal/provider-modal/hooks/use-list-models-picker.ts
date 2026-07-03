@@ -161,9 +161,10 @@ export const useListModelsPicker = ({
         // In viewMode, pass instance_name so the backend looks up
         // stored credentials server-side (avoids exposing api_key).
         // For new-instance mode, pass api_key/base_url from the form.
-        const values = viewMode && initialValues
-          ? { ...initialValues, ...rawValues }
-          : rawValues;
+        const values =
+          viewMode && initialValues
+            ? { ...initialValues, ...rawValues }
+            : rawValues;
         const verifyArgs = config.verifyTransform
           ? config.verifyTransform({
               ...values,
@@ -294,8 +295,9 @@ export const useListModelsPicker = ({
   );
 
   // --- Model editing ---
-  const [editingModel, setEditingModel] =
-    useState<IProviderModelItem | null>(null);
+  const [editingModel, setEditingModel] = useState<IProviderModelItem | null>(
+    null,
+  );
   const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   const handleEditModel = useCallback((model: IProviderModelItem) => {

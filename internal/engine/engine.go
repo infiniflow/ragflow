@@ -99,4 +99,5 @@ type MessageQueue interface {
 	GetMessages(messageCount int) ([]common.TaskHandle, error)
 	ListMessages(messageType string, pending bool) ([]map[string]string, error)
 	ShowMessageQueue() (map[string]string, error)
+	CheckStatus() string
 }

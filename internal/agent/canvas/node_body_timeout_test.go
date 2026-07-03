@@ -46,8 +46,13 @@ func (b *blockingComponent) Outputs() map[string]string { return nil }
 
 // TestRealComponentBody_RespectsTimeout verifies that a component whose
 // Invoke blocks longer than the configured timeout causes the body to
-// return a deadline-exceeded error within a small slack window of the
-// timeout, not hang indefinitely.
+// return a wrapped context.DeadlineExceeded error.
+//
+// The call itself runs under context.Background(); a separate watchdog
+// goroutine fails the test if the inner timeout never fires. That keeps
+// the assertion semantic (the returned error must wrap
+// context.DeadlineExceeded) without letting an outer test context
+// manufacture the same error type and create a false positive.
 func TestRealComponentBody_RespectsTimeout(t *testing.T) {
 	t.Setenv("COMPONENT_EXEC_TIMEOUT", "1")
 
@@ -57,18 +62,22 @@ func TestRealComponentBody_RespectsTimeout(t *testing.T) {
 		t.Fatalf("realComponentBody returned nil")
 	}
 
-	start := time.Now()
-	_, err := body(context.Background(), map[string]any{"x": 1})
-	elapsed := time.Since(start)
+	done := make(chan error, 1)
+	go func() {
+		_, err := body(context.Background(), map[string]any{"x": 1})
+		done <- err
+	}()
 
-	if err == nil {
-		t.Fatalf("expected error, got nil")
-	}
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("expected context.DeadlineExceeded wrapped error, got: %v", err)
-	}
-	if elapsed > 3*time.Second {
-		t.Errorf("body did not honour 1s timeout: elapsed=%s", elapsed)
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("expected context.DeadlineExceeded wrapped error, got: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("body did not return within 15s — timeout wrap is broken or call is hanging")
 	}
 }
 

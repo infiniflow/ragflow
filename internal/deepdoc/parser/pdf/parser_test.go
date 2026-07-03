@@ -1,8 +1,9 @@
-package parser
+package pdf
 
 import (
 	"context"
 	"image"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -207,15 +208,16 @@ func TestOCR_FallbackIntegration(t *testing.T) {
 
 func TestOCR_FallbackIntegration_NoDeepDoc(t *testing.T) {
 	chars := garbledSample()
-	mockEng := &mockEngine{chars: map[int][]pdf.TextChar{0: chars}, pageCount: 1}
+	mockEng := &MockEngine{Chars: map[int][]pdf.TextChar{0: chars}, NumPages: 1}
+	mockDLA := &MockDocAnalyzer{Healthy: true}
 
 	cfg := pdf.DefaultParserConfig()
-	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true})
-	result, err := p.Parse(context.Background(), mockEng)
+	p := NewParser(cfg)
+	result, err := p.ParseRaw(context.Background(), mockEng, mockDLA)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("garbled chars: %d sections", len(result.Sections))
+	t.Logf("garbled Chars: %d sections", len(result.Sections))
 }
 
 func TestNoDeepDoc_PdfOxideUnmapped_KeepsChars(t *testing.T) {
@@ -241,9 +243,10 @@ func TestNoDeepDoc_PdfOxideUnmapped_KeepsChars(t *testing.T) {
 	chars[28] = pdf.TextChar{Text: "*", FontName: "SimSun", X0: 194, X1: 202, Top: 100, Bottom: 112}
 	chars[29] = pdf.TextChar{Text: "用", FontName: "SimSun", X0: 202, X1: 210, Top: 100, Bottom: 112}
 
-	mockEng := &mockEngine{chars: map[int][]pdf.TextChar{0: chars}, pageCount: 1}
-	p := NewParser(pdf.DefaultParserConfig(), &MockDocAnalyzer{Healthy: true})
-	result, err := p.Parse(context.Background(), mockEng)
+	mockEng := &MockEngine{Chars: map[int][]pdf.TextChar{0: chars}, NumPages: 1}
+	mockDLA := &MockDocAnalyzer{Healthy: true}
+	p := NewParser(pdf.DefaultParserConfig())
+	result, err := p.ParseRaw(context.Background(), mockEng, mockDLA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +282,7 @@ func TestIsGarbledPage(t *testing.T) {
 	})
 	t.Run("pdf oxide unmapped + CJK — not garbled", func(t *testing.T) {
 		// ### unmapped glyphs + real CJK text (no subset fonts).
-		// isScanNoise returns false (≥2 consecutive CJK chars: "护理全科").
+		// isScanNoise returns false (≥2 consecutive CJK Chars: "护理全科").
 		chars := []pdf.TextChar{
 			{Text: "和", PageNumber: 0}, {Text: "蔘", PageNumber: 0},
 			{Text: "语", PageNumber: 0}, {Text: "言", PageNumber: 0},
@@ -552,23 +555,70 @@ func TestTableSectionCaptionInHTML(t *testing.T) {
 // text boxes that are mostly OUTSIDE the cell, even with cellIsEmpty=true.
 // The 0.3 threshold should not match a wide box that barely touches a
 // narrow cell — this would cause body text to leak into table cells.
-// TestParser_ConcurrentSafety verifies that Parser.Parse() is safe for
+// TestParser_ConcurrentSafety verifies that Parser.ParseRaw() is safe for
 // concurrent use. 8 goroutines each call Parse 5 times on the same Parser
 // instance. Run with -race.
 func TestParser_ConcurrentSafety(t *testing.T) {
-	p := NewParser(pdf.DefaultParserConfig(), &MockDocAnalyzer{Healthy: false})
+	mockDLA := &MockDocAnalyzer{Healthy: true}
+	p := NewParser(pdf.DefaultParserConfig())
 
 	var wg sync.WaitGroup
 	n := 8
 	for range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 5 {
-				eng := &mockEngine{pageCount: 2}
-				_, _ = p.Parse(context.Background(), eng)
+				eng := &MockEngine{NumPages: 2}
+				if _, err := p.ParseRaw(context.Background(), eng, mockDLA); err != nil {
+					t.Errorf("ParseRaw: %v", err)
+				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
+}
+
+func TestParseRaw_ClampsFromPage(t *testing.T) {
+	// A negative FromPage should be treated as page 0.
+	// Only page 0 has content so we can verify clamping worked.
+	eng := &MockEngine{NumPages: 3, Chars: map[int][]pdf.TextChar{
+		0: {{Text: "page0", X0: 100, X1: 200, Top: 100, Bottom: 120}},
+	}}
+	mockDLA := &MockDocAnalyzer{Healthy: true}
+	cfg := pdf.DefaultParserConfig()
+	cfg.FromPage = -1
+	p := NewParser(cfg)
+	result, err := p.ParseRaw(context.Background(), eng, mockDLA)
+	if err != nil {
+		t.Fatalf("ParseRaw: %v", err)
+	}
+	if len(result.Sections) == 0 {
+		t.Error("expected sections from page 0")
+	}
+}
+
+func TestParseRaw_ZeroZoom_NoNaN(t *testing.T) {
+	// Zoom=0 should not produce NaN coordinates.
+	eng := &MockEngine{NumPages: 1, Chars: map[int][]pdf.TextChar{
+		0: {{Text: "test", X0: 100, X1: 200, Top: 100, Bottom: 120}},
+	}}
+	mockDLA := &MockDocAnalyzer{Healthy: true}
+	cfg := pdf.DefaultParserConfig()
+	cfg.Zoom = 0
+	p := NewParser(cfg)
+	result, err := p.ParseRaw(context.Background(), eng, mockDLA)
+	if err != nil {
+		t.Fatalf("ParseRaw: %v", err)
+	}
+	foundPosition := false
+	for _, s := range result.Sections {
+		for _, pos := range s.Positions {
+			foundPosition = true
+			if math.IsNaN(pos.Left) || math.IsNaN(pos.Top) {
+				t.Error("Zoom=0 produced NaN coordinates")
+			}
+		}
+	}
+	if !foundPosition {
+		t.Fatal("expected at least one position to validate")
+	}
 }

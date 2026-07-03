@@ -28,6 +28,8 @@ import pandas as pd
 
 from agent import settings
 from common.connection_utils import timeout
+
+
 from common.misc_utils import thread_pool_exec
 
 _logger = logging.getLogger(__name__)
@@ -95,7 +97,13 @@ class ComponentParamBase(ABC):
         return {name: True for name in self.get_feeded_deprecated_params()}
 
     def __str__(self):
-        return json.dumps(self.as_dict(), ensure_ascii=False)
+        def _serialize_default(obj):
+            if callable(obj):
+                return None
+            logging.warning("ComponentParamBase.__str__: JSON fallback via str() for type=%s", type(obj).__name__)
+            return str(obj)
+
+        return json.dumps(self.as_dict(), ensure_ascii=False, default=_serialize_default)
 
     def as_dict(self):
         def _recursive_convert_obj_to_dict(obj):

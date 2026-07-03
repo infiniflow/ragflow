@@ -40,10 +40,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -54,6 +54,14 @@ import (
 // rendered as a python-style {code:500, message:str(e),
 // data:{answer:"**ERROR**..."}} frame.
 type ChatbotSSEFrame struct {
+	// Event is the canvas.RunEvent type ("message",
+	// "user_inputs", "workflow_finished", etc.). It is
+	// forwarded in the SSE envelope as the `event` field so the
+	// front-end can distinguish interactive form pauses from
+	// plain assistant text (PR #14589). The field is omitted
+	// from the JSON when empty to preserve the original wire
+	// shape for callers that do not set it.
+	Event     string         `json:"event,omitempty"`
 	Data      string         `json:"-"`
 	Reference map[string]any `json:"-"`
 	SessionID string         `json:"-"`
@@ -85,19 +93,32 @@ func WriteChatbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
 			},
 		}
 	} else {
+		data := map[string]any{
+			"answer":       f.Data,
+			"reference":    f.Reference,
+			"audio_binary": nil,
+			"id":           nil,
+			"session_id":   f.SessionID,
+		}
+		// Forward the canvas event type so the front-end can
+		// distinguish interactive form pauses ("user_inputs",
+		// "workflow_finished") from plain assistant messages
+		// (PR #14589). When Event is empty the field is omitted
+		// from the JSON so existing message frames stay
+		// byte-compatible.
+		if f.Event != "" {
+			data["event"] = f.Event
+		}
 		payload = map[string]any{
 			"code":    0,
 			"message": "",
-			"data": map[string]any{
-				"answer":       f.Data,
-				"reference":    f.Reference,
-				"audio_binary": nil,
-				"id":           nil,
-				"session_id":   f.SessionID,
-			},
+			"data":    data,
 		}
 	}
-	b, err := json.Marshal(payload)
+	// Use SafeJSONMarshal to handle non-serializable values (funcs,
+	// channels) that may have leaked into SSE payload maps. Mirrors
+	// the Python PR #14210 _canvas_json_default fallback in agent_api.py.
+	b, err := runtime.SafeJSONMarshal(payload)
 	if err != nil {
 		return err
 	}
@@ -133,22 +154,22 @@ func WriteDoneFrame(w http.ResponseWriter) error {
 	return nil
 }
 
-// WriteChatbotRunEvent translates one canvas.RunEvent into the
-// unified python-shaped chat-completion envelope (same shape as
-// WriteChatbotFrame). This unifies the SSE format across:
+// WriteChatbotRunEvent translates one canvas.RunEvent into the flat
+// Python agent-canvas SSE envelope:
 //
-//   - /api/v1/agents/chat/completions   (was: writeChatCompletionSSE)
-//   - /api/v1/agentbots/<id>/completions (was: WriteChatbotFrame per-event)
+//	data: {"event":"message","message_id":"...","task_id":"...",
+//	  "session_id":"...","created_at":123,"data":{"content":"..."}}\n\n
+//
+// This is intentionally different from WriteChatbotFrame's legacy
+// chatbot `{code,data:{answer:"..."}}` shape. The agent React page's
+// use-send-message.ts parser appends each parsed object directly to
+// answerList and expects top-level `event` / `message_id`, plus a
+// typed `data` payload. If RunEvent frames are double-wrapped in
+// data.answer, the browser receives bytes but cannot render the
+// assistant message or correlate the current Log panel.
 //
 // The "done" event type emits `data: [DONE]\n\n` (no envelope),
-// matching the OpenAI-style terminator and the existing
-// AgentbotCompletion wire.
-//
-// For non-done events, ev.Data is placed verbatim into the `answer`
-// field — callers pass canvas-runner output that is itself a JSON
-// string (e.g. `{"answer":"hi back","reference":[]}`); the iframe
-// SDK then JSON.parse()s the `answer` string to extract the inner
-// fields. This matches the existing AgentbotCompletion behaviour.
+// matching the Python agent API terminator.
 //
 // Returns the write error so callers can short-circuit; both nil
 // and io.ErrClosedPipe are tolerated because the client may have
@@ -164,12 +185,65 @@ func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 		}
 		return nil
 	}
-	f := ChatbotSSEFrame{
-		Data:      ev.Data,
-		Reference: map[string]any{},
-		SessionID: ev.SessionID,
+
+	var data any = map[string]any{}
+	if ev.Data != "" {
+		if err := json.Unmarshal([]byte(ev.Data), &data); err != nil {
+			data = ev.Data
+		}
 	}
-	return WriteChatbotFrame(w, f)
+	if ev.Type == "error" {
+		msg := "an internal error occurred"
+		if m, ok := data.(map[string]any); ok {
+			if s, _ := m["message"].(string); s != "" {
+				msg = s
+			}
+		}
+		payload := map[string]any{
+			"code":    500,
+			"message": msg,
+			"data":    false,
+		}
+		return writeSSEJSON(w, payload)
+	}
+
+	payload := map[string]any{
+		"data":       data,
+		"created_at": ev.CreatedAt,
+	}
+	if ev.Type != "" {
+		payload["event"] = ev.Type
+	}
+	if ev.MessageID != "" {
+		payload["message_id"] = ev.MessageID
+	}
+	if ev.TaskID != "" {
+		payload["task_id"] = ev.TaskID
+	}
+	if ev.SessionID != "" {
+		payload["session_id"] = ev.SessionID
+	}
+	return writeSSEJSON(w, payload)
+}
+
+func writeSSEJSON(w http.ResponseWriter, payload map[string]any) error {
+	b, err := runtime.SafeJSONMarshal(payload)
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte("data:")); err != nil {
+		return err
+	}
+	if _, err := w.Write(b); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte("\n\n")); err != nil {
+		return err
+	}
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return nil
 }
 
 // AgentbotSSEFrame mirrors ChatbotSSEFrame for the agentbot
@@ -253,7 +327,7 @@ func (s *BotService) ChatbotCompletion(
 			},
 		})
 		session = &entity.API4Conversation{
-			ID:       uuid.NewString(),
+			ID:       common.GenerateUUID(),
 			DialogID: dialogID,
 			UserID:   tenantID,
 			Message:  seedMsg,

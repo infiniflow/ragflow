@@ -15,6 +15,7 @@
 #
 import asyncio
 import base64
+import contextvars
 import datetime
 import inspect
 import json
@@ -36,6 +37,7 @@ from api.db.services.task_service import has_canceled
 from common.constants import LLMType
 from common.exceptions import TaskCanceledException
 from common.misc_utils import get_uuid, hash_str2int
+from common.token_utils import token_usage_sink, langfuse_run_attrs
 from rag.prompts.generator import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.tts_cache import synthesize_with_cache
@@ -120,7 +122,11 @@ class Graph:
         for k in self.dsl.keys():
             if k in ["components"]:
                 continue
-            dsl[k] = deepcopy(self.dsl[k])
+            try:
+                dsl[k] = deepcopy(self.dsl[k])
+            except Exception as e:
+                logging.warning("Graph.__str__: deepcopy failed for dsl key '%s' (type=%s): %s. Using shallow reference.", k, type(self.dsl[k]).__name__, e)
+                dsl[k] = self.dsl[k]
 
         for k, cpn in self.components.items():
             if k not in dsl["components"]:
@@ -129,8 +135,19 @@ class Graph:
                 if c == "obj":
                     dsl["components"][k][c] = json.loads(str(cpn["obj"]))
                     continue
-                dsl["components"][k][c] = deepcopy(cpn[c])
-        return json.dumps(dsl, ensure_ascii=False)
+                try:
+                    dsl["components"][k][c] = deepcopy(cpn[c])
+                except Exception as e:
+                    logging.warning("Graph.__str__: deepcopy failed for component '%s' key '%s' (type=%s): %s. Using shallow reference.", k, c, type(cpn[c]).__name__, e)
+                    dsl["components"][k][c] = cpn[c]
+
+        def _serialize_default(obj):
+            if callable(obj):
+                return None
+            logging.warning("Graph.__str__: JSON fallback via str() for type=%s", type(obj).__name__)
+            return str(obj)
+
+        return json.dumps(dsl, ensure_ascii=False, default=_serialize_default)
 
     def reset(self):
         self.path = []
@@ -141,6 +158,21 @@ class Graph:
             REDIS_CONN.delete(f"{self.task_id}-cancel")
         except Exception as e:
             logging.exception(e)
+
+    def close(self):
+        from common.mcp_tool_call_conn import MCPToolCallSession
+
+        seen = set()
+        for cpn in self.components.values():
+            obj = cpn.get("obj")
+            if obj and hasattr(obj, "tools"):
+                for tool in obj.tools.values():
+                    if isinstance(tool, MCPToolCallSession) and id(tool) not in seen:
+                        seen.add(id(tool))
+                        try:
+                            tool.close_sync(timeout=3)
+                        except Exception:
+                            pass
 
     def get_component_name(self, cid):
         for n in self.dsl.get("graph", {}).get("nodes", []):
@@ -303,6 +335,11 @@ class Canvas(Graph):
             "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         }
         self.variables = {}
+        # Aggregated provider token usage (prompt/completion/total) across every LLM
+        # call in a single run — query rewriting, cross-language translation, tool
+        # reasoning and the final answer. Populated via the token_usage_sink context
+        # variable that each LLMBundle chat call writes to. Reset at run() start.
+        self._run_token_usage: dict = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
         super().__init__(dsl, tenant_id, task_id, custom_header=custom_header)
         self._id = canvas_id
 
@@ -387,6 +424,38 @@ class Canvas(Graph):
                     self.globals[k] = ""
 
     async def run(self, **kwargs):
+        # Install a fresh per-run token usage sink and Langfuse correlation context,
+        # and guarantee both are torn down when the run ends (even on early return or
+        # exception) so later LLM calls in the same task never inherit a previous
+        # run's sink or session/user attributes.
+        self._run_token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
+        _lf_attrs = {}
+        _user_id = kwargs.get("user_id")
+        if _user_id:
+            _lf_attrs["user_id"] = str(_user_id)[:200]
+        _session_id = kwargs.get("session_id") or self._id
+        if _session_id:
+            _lf_attrs["session_id"] = str(_session_id)[:200]
+        sink_token = token_usage_sink.set(self._run_token_usage)
+        attrs_token = langfuse_run_attrs.set(_lf_attrs)
+        try:
+            async for ev in self._run_impl(**kwargs):
+                yield ev
+        finally:
+            # reset() can raise if the generator is closed from a different context
+            # (e.g. client disconnect); fall back to clearing the values in that case.
+            try:
+                token_usage_sink.reset(sink_token)
+            except ValueError:
+                logging.debug("Failed to reset token usage ContextVar", exc_info=True)
+                token_usage_sink.set(None)
+            try:
+                langfuse_run_attrs.reset(attrs_token)
+            except ValueError:
+                logging.debug("Failed to reset Langfuse run attributes ContextVar", exc_info=True)
+                langfuse_run_attrs.set(None)
+
+    async def _run_impl(self, **kwargs):
         self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         st = time.perf_counter()
         self._loop = asyncio.get_running_loop()
@@ -470,7 +539,11 @@ class Canvas(Graph):
                     if use_async:
                         await cpn_obj.invoke_async(**(call_kwargs or {}))
                         return
-                    await loop.run_in_executor(self._thread_pool, partial(sync_fn, **(call_kwargs or {})))
+                    # run_in_executor does not propagate context variables; copy the
+                    # current context so the token usage sink / Langfuse attributes set
+                    # by run() remain visible to LLMBundle calls inside sync components.
+                    ctx = contextvars.copy_context()
+                    await loop.run_in_executor(self._thread_pool, lambda: ctx.run(partial(sync_fn, **(call_kwargs or {}))))
 
             i = f
             while i < t:
@@ -696,6 +769,8 @@ class Canvas(Graph):
                     "outputs": self.get_component_obj(self.path[-1]).output(),
                     "elapsed_time": time.perf_counter() - st,
                     "created_at": st,
+                    # Run-level total of all LLM calls — emitted once here.
+                    "usage": self._run_usage_payload(),
                 },
             )
             self.history.append(("assistant", self.get_component_obj(self.path[-1]).output()))
@@ -708,6 +783,7 @@ class Canvas(Graph):
                     "outputs": "Task has been canceled",
                     "elapsed_time": time.perf_counter() - st,
                     "created_at": st,
+                    "usage": self._run_usage_payload(),
                 },
             )
 
@@ -885,7 +961,20 @@ class Canvas(Graph):
             message_end["attachment"] = cpn_obj.output("attachment")
         if self._has_reference():
             message_end["reference"] = self.get_reference()
+        # NOTE: aggregated run token usage is intentionally NOT attached here.
+        # _build_message_end runs once per Message component, so a multi-Message graph
+        # would emit cumulative usage repeatedly and double count. The run total is
+        # emitted exactly once on the terminal workflow_finished event instead.
         return message_end
+
+    def _run_usage_payload(self) -> dict:
+        usage = getattr(self, "_run_token_usage", None) or {}
+        return {
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+            "calls": usage.get("calls", 0),
+        }
 
     def add_memory(self, user: str, assist: str, summ: str):
         self.memory.append((user, assist, summ))

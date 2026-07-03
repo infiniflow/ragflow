@@ -133,6 +133,11 @@ def _load_canvas_module(monkeypatch):
     )
     _stub_module("common.constants", LLMType=MagicMock())
     _stub_module("common.misc_utils", get_uuid=lambda: "test-uuid", hash_str2int=lambda _s: 0, thread_pool_exec=lambda fn, *a, **kw: fn(*a, **kw))
+    _stub_module(
+        "common.token_utils",
+        token_usage_sink=lambda *_a, **_kw: None,
+        langfuse_run_attrs=lambda *_a, **_kw: {},
+    )
     _stub_module("common.connection_utils", timeout=lambda *_a, **_kw: lambda fn: fn)
     _stub_module("common.exceptions", TaskCanceledException=type("TaskCanceledException", (Exception,), {}))
     _stub_module("rag.prompts.generator", chunks_format=MagicMock())

@@ -323,7 +323,7 @@ func TestEngine_MixedChannels_TopicPlusLastValue(t *testing.T) {
 // Helper
 // ============================================================
 
-func newRetryGraph(fn func(context.Context, any) (any, error)) *graphPkg.StateGraph {
+func newRetryGraph(fn func(context.Context, any) (any, error)) types.StateGraph {
 	sg := graphPkg.NewStateGraph(map[string]any{})
 	sg.AddChannel("value", channels.NewLastValue(""))
 	sg.AddNode("work", fn)

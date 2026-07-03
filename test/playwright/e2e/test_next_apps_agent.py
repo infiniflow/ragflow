@@ -170,12 +170,8 @@ def step_03_create_first_agent(
             name_input_testid="agent-name-input",
             save_testid="agent-save",
         )
-        expect(page.locator("[data-testid='agents-list']")).to_be_visible(
-            timeout=RESULT_TIMEOUT_MS
-        )
-        expect(page.locator("[data-testid='agent-card']").first).to_be_visible(
-            timeout=RESULT_TIMEOUT_MS
-        )
+        expect(page.locator("[data-testid='agents-list']")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        expect(page.locator("[data-testid='agent-card']").first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     flow_state["first_agent_created"] = True
     snap("agent_first_created")
 
@@ -235,16 +231,12 @@ def step_05_open_imported_agent(
     with step("open imported agent"):
         card = page.locator(
             "[data-testid='agent-card']",
-            has=page.locator(
-                "[data-testid='agent-name']", has_text=re.compile(flow_state["second_agent_name"])
-            ),
+            has=page.locator("[data-testid='agent-name']", has_text=re.compile(flow_state["second_agent_name"])),
         ).first
         expect(card).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         auth_click(card, "open_agent")
         _wait_for_url_regex(page, r"/agent/")
-        expect(page.locator("[data-testid='agent-detail']")).to_be_visible(
-            timeout=RESULT_TIMEOUT_MS
-        )
+        expect(page.locator("[data-testid='agent-detail']")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     flow_state["agent_detail_open"] = True
     snap("agent_detail_open")
 
@@ -267,11 +259,7 @@ def step_06_run_agent(
 
         run_ui_timeout_ms = int(os.getenv("PW_AGENT_RUN_UI_TIMEOUT_MS", "60000"))
         run_root = page.locator("[data-testid='agent-run']")
-        run_ui_selector = (
-            "[data-testid='agent-run-chat'], "
-            "[data-testid='chat-textarea'], "
-            "[data-testid='agent-run-idle']"
-        )
+        run_ui_selector = "[data-testid='agent-run-chat'], [data-testid='chat-textarea'], [data-testid='agent-run-idle']"
         run_ui_locator = page.locator(run_ui_selector)
 
         try:
@@ -367,9 +355,7 @@ def step_07_send_chat(
         except AssertionError:
             # Older UI builds do not expose agent-run-idle; fallback to assistant reply.
             agent_chat = page.locator("[data-testid='agent-run-chat']")
-            assistant_reply = agent_chat.locator(
-                "text=/how can i assist|hello/i"
-            ).first
+            assistant_reply = agent_chat.locator("text=/how can i assist|hello/i").first
             try:
                 expect(assistant_reply).to_be_visible(timeout=60000)
             except AssertionError:
