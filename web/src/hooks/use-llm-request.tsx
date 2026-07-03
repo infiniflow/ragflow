@@ -159,12 +159,6 @@ export const useFetchProviderInstances = (providerName: string) => {
   return { data, loading };
 };
 
-/**
- * Fetch full details of a single provider instance (used in viewMode to
- * retrieve fields like `baseUrl` that the list endpoint does not return).
- * Disabled by default; call from an event handler (e.g. onClick) and
- * rely on the returned `refetch` to actually trigger the request.
- */
 export const useFetchProviderInstance = (
   providerName: string,
   instanceName: string,

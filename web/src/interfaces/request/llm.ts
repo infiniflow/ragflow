@@ -141,7 +141,7 @@ export interface IProviderModelItem {
  */
 export interface IListProviderModelsRequestBody {
   provider_name: string;
-  api_key: string;
+  api_key?: string;
   base_url?: string;
   region?: string;
   model_info?: IModelInfo[];
