@@ -138,10 +138,9 @@ func init() {
 	// Register mock variants of the real ingestion stage names
 	// so resume tests can use a DSL whose stage names match the
 	// materialized-boundary targets. Names use the "Mock" prefix
-	// (not suffix) so indexOfStage's HasSuffix(name, "Parser")
-	// correctly matches "MockParser" while the real "Parser"
-	// component registered by internal/ingestion/component's
-	// init() is not shadowed.
+	// because indexOfStage explicitly allows only the Mock<Name>
+	// test convention as a fallback; production stage matching
+	// stays exact.
 	registerMock("MockFile", 1)
 	registerMock("MockParser", 4)
 	registerMock("MockTokenChunker", 1)

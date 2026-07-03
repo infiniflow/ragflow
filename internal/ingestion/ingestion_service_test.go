@@ -55,7 +55,7 @@ import (
 
 const (
 	stubIngestionComp = "StubIngest"
-	stubTokenizerComp = "ResumeTokenizer"
+	stubTokenizerComp = "MockTokenizer"
 )
 
 type stubIngest struct {

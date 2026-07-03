@@ -1264,16 +1264,19 @@ func parseJSONLChunks(data []byte) ([]map[string]any, error) {
 	return out, nil
 }
 
-// indexOfStage returns the index of the stage whose name equals
-// `name` or whose name has `name` as a suffix (e.g. "Tokenizer"
-// matches "TokenizerMock" used by resume tests). Returns -1 if
-// no stage matches.
+// indexOfStage returns the index of the stage whose name equals `name`.
+//
+// Resume tests also register "MockParser" / "MockTokenizer" style stage
+// names so boundary resolution can exercise the production lookup without
+// shadowing the real component registrations. That fallback is intentionally
+// limited to the explicit "Mock" prefix to keep production stage matching
+// exact.
 func (p *Pipeline) indexOfStage(name string) int {
 	for i, s := range p.stages {
 		if s.Name == name {
 			return i
 		}
-		if strings.HasSuffix(s.Name, name) {
+		if strings.HasPrefix(s.Name, "Mock") && strings.TrimPrefix(s.Name, "Mock") == name {
 			return i
 		}
 	}
