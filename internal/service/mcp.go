@@ -451,16 +451,10 @@ func safeJSONMap(raw json.RawMessage) entity.JSONMap {
 // Sentinel errors mapped by the handler to Python's response codes for the
 // import / test endpoints. Per-server CRUD errors stay inside CreateMCPServer.
 var (
-	// ErrMCPInvalidType mirrors Python's "Unsupported MCP server type.".
 	ErrMCPInvalidType = errors.New("unsupported MCP server type")
-	// ErrMCPInvalidName mirrors Python's invalid-name/length error.
 	ErrMCPInvalidName = errors.New("invalid MCP name")
-	// ErrMCPInvalidURL mirrors Python's "Invalid url.".
-	ErrMCPInvalidURL = errors.New("invalid url")
-	// ErrMCPTestFailed is returned by TestServer when the live connection or
-	// tool-list fetch fails. The handler maps this to code 102 (DATA_ERROR),
-	// matching Python's test_mcp which never returns HTTP 500 for fetch errors.
-	ErrMCPTestFailed = errors.New("MCP test failed")
+	ErrMCPInvalidURL  = errors.New("invalid url")
+	ErrMCPTestFailed  = errors.New("MCP test failed")
 )
 
 // ImportResult is a single per-server outcome in the bulk import response,
@@ -474,14 +468,7 @@ type ImportResult struct {
 	Message string `json:"message,omitempty"`
 }
 
-// ImportServers bulk-imports MCP servers from a {"mcpServers": {name: config}}
-// map. For each entry: validate type and URL, de-duplicate the name with a
-// "_N" suffix, fetch the remote tool list via mcpclient (SSRF-guarded), and
-// persist the server with tools stored under variables.tools. Mirrors
-// Python's import_multiple.
-//
-// timeoutSeconds controls how long each tool-fetch call waits; <=0 falls back
-// to the Python default of 10 s.
+// ImportServers bulk-imports MCP servers from a {"mcpServers": {name: config}} map.
 func (s *MCPService) ImportServers(tenantID string, servers map[string]map[string]interface{}, timeoutSeconds float64) ([]ImportResult, error) {
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = defaultMCPFetchTimeoutSec
@@ -541,12 +528,15 @@ func (s *MCPService) ImportServers(tenantID string, servers map[string]map[strin
 				headerVals[k] = v
 			}
 		}
-		if token, ok := config["authorization_token"].(string); ok {
-			if _, exists := headers["authorization_token"]; !exists {
-				headers["authorization_token"] = token
+		if token, ok := config["authorization_token"].(string); ok && strings.TrimSpace(token) != "" {
+			variables["authorization_token"] = token
+			stringVars["authorization_token"] = token
+
+			if _, exists := headers["Authorization"]; !exists {
+				headers["Authorization"] = "Bearer ${authorization_token}"
 			}
-			if _, exists := headerVals["authorization_token"]; !exists {
-				headerVals["authorization_token"] = token
+			if _, exists := headerVals["Authorization"]; !exists {
+				headerVals["Authorization"] = "Bearer ${authorization_token}"
 			}
 		}
 
@@ -616,9 +606,7 @@ type TestServerRequest struct {
 	Timeout    float64                `json:"timeout,omitempty"`
 }
 
-// TestServer opens a live MCP session and returns the tools the server
-// advertises. Mirrors Python's test_mcp. mcpID is used for log correlation
-// only.
+// TestServer opens a live MCP session and returns the tools the server advertises.
 func (s *MCPService) TestServer(mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
 	if req == nil || req.URL == "" {
 		return nil, fmt.Errorf("%w: Invalid MCP url.", ErrMCPInvalidURL)
@@ -686,8 +674,6 @@ func (s *MCPService) TestServer(mcpID string, req *TestServerRequest) ([]map[str
 	return out, nil
 }
 
-// toolsAsMap mirrors Python's `{tool["name"]: tool ...}` shape used when
-// persisting variables.tools.
 func toolsAsMap(tools []utility.Tool) map[string]interface{} {
 	m := map[string]interface{}{}
 	for _, t := range tools {
