@@ -54,7 +54,7 @@ func TestTimeTravel_Fork_Basic(t *testing.T) {
 // TestTimeTravel_Fork_ThenModify verifies forking then invoking on
 // the fork produces independent state.
 func TestTimeTravel_Fork_ThenModify(t *testing.T) {
-t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	b := NewStateGraph(map[string]any{})
 	b.AddNode("incr", func(ctx context.Context, state any) (any, error) {
 		m := state.(map[string]any)
@@ -149,7 +149,7 @@ func TestTimeTravel_Replay_Basic(t *testing.T) {
 // TestTimeTravel_Replay_AfterInject runs a graph, injects state via
 // UpdateState, then verifies the new state is correct.
 func TestTimeTravel_Replay_AfterInject(t *testing.T) {
-t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	b, ms, tid := newCounterGraph(t)
 	cg := compileOrFail(t, b, ms)
 	insp := getInspector(t, cg)
@@ -189,7 +189,7 @@ t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 // support cross-invocation checkpoint state restoration because state
 // keys may not match registered channel names.
 func TestTimeTravel_UpdateThenResume(t *testing.T) {
-t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	b, ms, tid := newCounterGraph(t)
 	cg := compileOrFail(t, b, ms)
 	insp := getInspector(t, cg)
@@ -222,7 +222,7 @@ t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 // TestTimeTravel_MultiStep_InjectionChain injects state at multiple points.
 // NOTE: Resume requires Pregel engine path (inline Pregel doesn't support it).
 func TestTimeTravel_MultiStep_InjectionChain(t *testing.T) {
-t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	b, ms, tid := newCounterGraph(t)
 	cg := compileOrFail(t, b, ms)
 	insp := getInspector(t, cg)
@@ -404,7 +404,7 @@ func TestTimeTravel_Replay_AllCheckpoints(t *testing.T) {
 // TestTimeTravel_SchemaEvolution forks from a V1 checkpoint and
 // runs with a V2 graph.
 func TestTimeTravel_SchemaEvolution(t *testing.T) {
-t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	// V1 graph.
 	v1 := NewStateGraph(map[string]any{})
 	v1.AddNode("v1_proc", func(ctx context.Context, state any) (any, error) {

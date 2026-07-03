@@ -344,13 +344,13 @@ type EdgeFunc func(context.Context, interface{}) (interface{}, error)
 
 // Node represents a node in a StateGraph.
 type Node struct {
-	Name        string
-	Function    NodeFunc
-	Triggers    []string
-	Writes      []string
-	RetryPolicy *RetryPolicy
-	Tags        []string
-	Metadata    map[string]interface{}
+	Name         string
+	Function     NodeFunc
+	Triggers     []string
+	Writes       []string
+	RetryPolicy  *RetryPolicy
+	Tags         []string
+	Metadata     map[string]interface{}
 	FieldMapping []FieldMapping
 }
 

@@ -1,9 +1,9 @@
 package core
 
 import (
-	"ragflow/internal/harness/graph/checkpoint"
 	"context"
 	"fmt"
+	"ragflow/internal/harness/graph/checkpoint"
 	"strings"
 	"sync"
 	"sync/atomic"

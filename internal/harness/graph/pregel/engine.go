@@ -1378,7 +1378,7 @@ func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[s
 		hasConditional = true
 		conditionResult, err := condEdge.Condition(ctx, state)
 		if err != nil {
-			continue
+			common.Debug("conditional edge failed", zap.String("from", node), zap.Error(err))
 		}
 		conditionKey := fmt.Sprintf("%v", conditionResult)
 		targetNode, ok := condEdge.Mapping[conditionKey]
@@ -1655,7 +1655,6 @@ func toMap(val any) (map[string]any, error) {
 
 	return result, nil
 }
-
 
 // saveCheckpoint saves a checkpoint to the checkpointer.
 func (e *Engine) saveCheckpoint(ctx context.Context, threadID, checkpointID string, step int, checkpoint map[string]any) error {

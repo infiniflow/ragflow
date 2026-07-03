@@ -218,19 +218,19 @@ func (g *stateGraph) GetChannels() map[string]interface{} {
 	return result
 }
 
-func (g *stateGraph) GetEntryPoint() string               { return g.entryPoint }
+func (g *stateGraph) GetEntryPoint() string { return g.entryPoint }
 func (g *stateGraph) GetNode(name string) (*types.Node, bool) {
 	n, ok := g.nodes[name]
 	return n, ok
 }
-func (g *stateGraph) GetEdges() []*types.Edge                    { return g.edges }
+func (g *stateGraph) GetEdges() []*types.Edge                       { return g.edges }
 func (g *stateGraph) GetConditionalEdges() []*types.ConditionalEdge { return g.conditionalEdges }
-func (g *stateGraph) GetBranches() []*types.Branch               { return g.branches }
-func (g *stateGraph) GetNodes() map[string]*types.Node           { return g.nodes }
-func (g *stateGraph) GetNodeTriggerMode() types.NodeTriggerMode  { return g.NodeTriggerMode }
+func (g *stateGraph) GetBranches() []*types.Branch                  { return g.branches }
+func (g *stateGraph) GetNodes() map[string]*types.Node              { return g.nodes }
+func (g *stateGraph) GetNodeTriggerMode() types.NodeTriggerMode     { return g.NodeTriggerMode }
 func (g *stateGraph) SetNodeTriggerMode(mode types.NodeTriggerMode) { g.NodeTriggerMode = mode }
-func (g *stateGraph) GetDataEdges() []*types.DataEdge            { return g.dataEdges }
-func (g *stateGraph) GetStateSchema() interface{}                { return g.stateSchema }
+func (g *stateGraph) GetDataEdges() []*types.DataEdge               { return g.dataEdges }
+func (g *stateGraph) GetStateSchema() interface{}                   { return g.stateSchema }
 
 func (g *stateGraph) SetEntryPoint(node string) error {
 	if _, ok := g.nodes[node]; !ok {
@@ -461,9 +461,9 @@ func (cg *compiledGraph) run(ctx context.Context, input interface{}, config *typ
 
 // --- types.CompiledGraph interface methods ---
 
-func (cg *compiledGraph) GetGraph() types.StateGraph           { return cg.graph }
-func (cg *compiledGraph) GetCheckpointer() interface{}          { return cg.checkpointer }
-func (cg *compiledGraph) GetInterrupts() map[string]bool        { return cg.interrupts }
-func (cg *compiledGraph) GetInterruptsAfter() map[string]bool   { return cg.interruptsAfter }
-func (cg *compiledGraph) GetRecursionLimit() int                { return cg.recursionLimit }
-func (cg *compiledGraph) IsDebug() bool                         { return cg.debug }
+func (cg *compiledGraph) GetGraph() types.StateGraph          { return cg.graph }
+func (cg *compiledGraph) GetCheckpointer() interface{}        { return cg.checkpointer }
+func (cg *compiledGraph) GetInterrupts() map[string]bool      { return cg.interrupts }
+func (cg *compiledGraph) GetInterruptsAfter() map[string]bool { return cg.interruptsAfter }
+func (cg *compiledGraph) GetRecursionLimit() int              { return cg.recursionLimit }
+func (cg *compiledGraph) IsDebug() bool                       { return cg.debug }

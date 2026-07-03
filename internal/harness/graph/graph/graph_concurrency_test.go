@@ -126,7 +126,7 @@ func TestGraph_ConcurrentInvoke_ComplexGraph(t *testing.T) {
 // TestGraph_ConcurrentInvoke_LoopGraph: 30 goroutines invoke a graph with conditional
 // loop edges. Each invocation creates its own channel registry, so loop state is isolated.
 func TestGraph_ConcurrentInvoke_LoopGraph(t *testing.T) {
-t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	sg := NewStateGraph(map[string]interface{}{"counter": 0, "value": ""})
 	sg.AddNode("entry", func(ctx context.Context, state interface{}) (interface{}, error) {
 		s := state.(map[string]interface{})

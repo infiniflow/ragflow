@@ -30,7 +30,7 @@ func TestGetState_NoCheckpointer(t *testing.T) {
 
 // TestGetState_WithCheckpointer verifies GetState returns a snapshot after execution.
 func TestGetState_WithCheckpointer(t *testing.T) {
-t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	b := NewStateGraph(struct {
 		Messages []string `harness:"reducer=append"`
 	}{})

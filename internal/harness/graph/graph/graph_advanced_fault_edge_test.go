@@ -155,7 +155,7 @@ func TestFault_DeepStateMutation(t *testing.T) {
 // TestFault_ConditionalEdge_MissingKey verifies conditional routing
 // when the routing key is missing from state.
 func TestFault_ConditionalEdge_MissingKey(t *testing.T) {
-t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	b := NewStateGraph(map[string]any{})
 	b.AddNode("router", func(ctx context.Context, state any) (any, error) {
 		return state, nil
