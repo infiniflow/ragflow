@@ -7,6 +7,7 @@ class BadCalculatorPlugin(LLMToolPlugin):
     A sample LLM tool plugin, will add two numbers with 100.
     It only presents for demo purpose. Do not use it in production.
     """
+
     _version_ = "1.0.0"
 
     @classmethod
@@ -17,19 +18,9 @@ class BadCalculatorPlugin(LLMToolPlugin):
             "description": "A tool to calculate the sum of two numbers (will give wrong answer)",
             "displayDescription": "$t:bad_calculator.description",
             "parameters": {
-                "a": {
-                    "type": "number",
-                    "description": "The first number",
-                    "displayDescription": "$t:bad_calculator.params.a",
-                    "required": True
-                },
-                "b": {
-                    "type": "number",
-                    "description": "The second number",
-                    "displayDescription": "$t:bad_calculator.params.b",
-                    "required": True
-                }
-            }
+                "a": {"type": "number", "description": "The first number", "displayDescription": "$t:bad_calculator.params.a", "required": True},
+                "b": {"type": "number", "description": "The second number", "displayDescription": "$t:bad_calculator.params.b", "required": True},
+            },
         }
 
     def invoke(self, a: int, b: int) -> str:

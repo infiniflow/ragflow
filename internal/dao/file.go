@@ -17,6 +17,8 @@
 package dao
 
 import (
+	"fmt"
+	"log"
 	"ragflow/internal/entity"
 	"strings"
 
@@ -367,21 +369,53 @@ func generateUUID() string {
 	return strings.ReplaceAll(id, "-", "")
 }
 
+// reparentAndDeleteFolder safely removes a duplicate folder by first
+// reparenting any child records to the kept folder, then hard-deleting
+// the duplicate row. This prevents orphaned children when cleaning up
+// duplicates created by race conditions.
+func reparentAndDeleteFolder(dupID, keepID string) error {
+	// Reparent any child files/folders from the duplicate to the kept folder
+	if err := DB.Model(&entity.File{}).
+		Where("parent_id = ?", dupID).
+		Update("parent_id", keepID).Error; err != nil {
+		return fmt.Errorf("failed to reparent children from %s to %s: %w", dupID, keepID, err)
+	}
+
+	// Hard-delete the duplicate folder row
+	if err := DB.Unscoped().Where("id = ?", dupID).Delete(&entity.File{}).Error; err != nil {
+		return fmt.Errorf("failed to delete duplicate folder %s: %w", dupID, err)
+	}
+
+	return nil
+}
+
 // DatasetFolderName is the folder name for dataset
 const DatasetFolderName = ".knowledgebase"
 
-// InitDatasetDocs initializes dataset documents for tenant
-// This matches Python's FileService.init_dataset_docs method
+// InitDatasetDocs initializes dataset documents for tenant.
+// This matches Python's FileService.init_dataset_docs method.
+// Deduplicates duplicate entries that may have been created by
+// concurrent race conditions (TOCTOU).
 func (dao *FileDAO) InitDatasetDocs(rootID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
-	var count int64
-	err := DB.Model(&entity.File{}).
-		Where("name = ? AND parent_id = ?", DatasetFolderName, rootID).
-		Count(&count).Error
+	var existing []*entity.File
+	err := DB.Where("name = ? AND parent_id = ? AND tenant_id = ?", DatasetFolderName, rootID, tenantID).
+		Order("create_time ASC").
+		Find(&existing).Error
 	if err != nil {
 		return err
 	}
 
-	if count > 0 {
+	if len(existing) > 0 {
+		if len(existing) > 1 {
+			log.Printf("[WARN] Found %d duplicate '%s' folders under root %s, keeping only the first",
+				len(existing), DatasetFolderName, rootID)
+			keepID := existing[0].ID
+			for _, dup := range existing[1:] {
+				if err := reparentAndDeleteFolder(dup.ID, keepID); err != nil {
+					log.Printf("[ERROR] Failed to deduplicate folder %s: %v", dup.ID, err)
+				}
+			}
+		}
 		return nil
 	}
 
@@ -420,15 +454,26 @@ func (dao *FileDAO) InitDatasetDocs(rootID, tenantID string, file2DocumentDAO *F
 	return nil
 }
 
-// newAFileFromDataset creates a new file from knowledgebase
+// newAFileFromDataset creates a new file from knowledgebase, or returns the existing one.
+// Deduplicates duplicate entries that may have been created by race conditions.
 func (dao *FileDAO) newAFileFromDataset(tenantID, name, parentID string) (*entity.File, error) {
 	var existingFiles []*entity.File
-	err := DB.Where("tenant_id = ? AND parent_id = ? AND name = ?", tenantID, parentID, name).Find(&existingFiles).Error
+	err := DB.Where("tenant_id = ? AND parent_id = ? AND name = ?", tenantID, parentID, name).Order("create_time ASC").Find(&existingFiles).Error
 	if err != nil {
 		return nil, err
 	}
 
 	if len(existingFiles) > 0 {
+		if len(existingFiles) > 1 {
+			log.Printf("[WARN] Found %d duplicate entries named '%s' under parent %s, keeping only the first",
+				len(existingFiles), name, parentID)
+			keepID := existingFiles[0].ID
+			for _, dup := range existingFiles[1:] {
+				if err := reparentAndDeleteFolder(dup.ID, keepID); err != nil {
+					log.Printf("[ERROR] Failed to deduplicate file entry %s: %v", dup.ID, err)
+				}
+			}
+		}
 		return existingFiles[0], nil
 	}
 

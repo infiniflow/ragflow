@@ -13,7 +13,7 @@ from typing_extensions import override
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.config import DocumentSource
 from common.data_source.config import REQUEST_TIMEOUT_SECONDS
-from common.data_source.exceptions import ( 
+from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
     CredentialExpiredError,
     InsufficientPermissionsError,
@@ -76,14 +76,8 @@ class BitbucketConnector(
         batch_size: int = INDEX_BATCH_SIZE,
     ) -> None:
         self.workspace = workspace
-        self._repositories = (
-            [s.strip() for s in repositories.split(",") if s.strip()]
-            if repositories
-            else None
-        )
-        self._projects: list[str] | None = (
-            [s.strip() for s in projects.split(",") if s.strip()] if projects else None
-        )
+        self._repositories = [s.strip() for s in repositories.split(",") if s.strip()] if repositories else None
+        self._projects: list[str] | None = [s.strip() for s in projects.split(",") if s.strip()] if projects else None
         self.batch_size = batch_size
         self.email: str | None = None
         self.api_token: str | None = None
@@ -230,11 +224,7 @@ class BitbucketConnector(
                     yield document
                 except Exception as e:
                     pr_id = pr.get("id")
-                    pr_link = (
-                        f"https://bitbucket.org/{self.workspace}/{repo_slug}/pull-requests/{pr_id}"
-                        if pr_id is not None
-                        else None
-                    )
+                    pr_link = f"https://bitbucket.org/{self.workspace}/{repo_slug}/pull-requests/{pr_id}" if pr_id is not None else None
                     yield ConnectorFailure(
                         failed_document=DocumentFailure(
                             document_id=(
@@ -261,9 +251,7 @@ class BitbucketConnector(
         return BitbucketConnectorCheckpoint(has_more=True)
 
     @override
-    def validate_checkpoint_json(
-        self, checkpoint_json: str
-    ) -> BitbucketConnectorCheckpoint:
+    def validate_checkpoint_json(self, checkpoint_json: str) -> BitbucketConnectorCheckpoint:
         """Validate and deserialize a checkpoint instance from JSON."""
         return BitbucketConnectorCheckpoint.model_validate_json(checkpoint_json)
 
@@ -276,9 +264,7 @@ class BitbucketConnector(
         params = self._build_params(fields=SLIM_PR_LIST_RESPONSE_FIELDS)
         with self._client() as client:
             for slug in self._iter_target_repositories(client):
-                for pr in self._iter_pull_requests_for_repo(
-                    client, slug, params=params
-                ):
+                for pr in self._iter_pull_requests_for_repo(client, slug, params=params):
                     pr_id = pr["id"]
                     doc_id = f"{DocumentSource.BITBUCKET.value}:{self.workspace}:{slug}:pr:{pr_id}"
                     batch.append(SlimDocument(id=doc_id))
@@ -288,9 +274,7 @@ class BitbucketConnector(
                         if callback:
                             if callback.should_stop():
                                 # Note: this is not actually used for permission sync yet, just pruning
-                                raise RuntimeError(
-                                    "bitbucket_pr_sync: Stop signal detected"
-                                )
+                                raise RuntimeError("bitbucket_pr_sync: Stop signal detected")
                             callback.progress("bitbucket_pr_sync", len(batch))
         if batch:
             yield batch
@@ -312,17 +296,11 @@ class BitbucketConnector(
                     timeout=REQUEST_TIMEOUT_SECONDS,
                 )
                 if resp.status_code == 401:
-                    raise CredentialExpiredError(
-                        "Invalid or expired Bitbucket credentials (HTTP 401)."
-                    )
+                    raise CredentialExpiredError("Invalid or expired Bitbucket credentials (HTTP 401).")
                 if resp.status_code == 403:
-                    raise InsufficientPermissionsError(
-                        "Insufficient permissions to access Bitbucket workspace (HTTP 403)."
-                    )
+                    raise InsufficientPermissionsError("Insufficient permissions to access Bitbucket workspace (HTTP 403).")
                 if resp.status_code < 200 or resp.status_code >= 300:
-                    raise UnexpectedValidationError(
-                        f"Unexpected Bitbucket error (status={resp.status_code})."
-                    )
+                    raise UnexpectedValidationError(f"Unexpected Bitbucket error (status={resp.status_code}).")
         except Exception as e:
             # Network or other unexpected errors
             if isinstance(
@@ -335,19 +313,18 @@ class BitbucketConnector(
                 ),
             ):
                 raise
-            raise UnexpectedValidationError(
-                f"Unexpected error while validating Bitbucket settings: {e}"
-            )
+            raise UnexpectedValidationError(f"Unexpected error while validating Bitbucket settings: {e}")
+
 
 if __name__ == "__main__":
-    bitbucket = BitbucketConnector(
-        workspace="<YOUR_WORKSPACE>"
-    )
+    bitbucket = BitbucketConnector(workspace="<YOUR_WORKSPACE>")
 
-    bitbucket.load_credentials({
-        "bitbucket_email": "<YOUR_EMAIL>",
-        "bitbucket_api_token": "<YOUR_API_TOKEN>",
-    })
+    bitbucket.load_credentials(
+        {
+            "bitbucket_email": "<YOUR_EMAIL>",
+            "bitbucket_api_token": "<YOUR_API_TOKEN>",
+        }
+    )
 
     bitbucket.validate_connector_settings()
     print("Credentials validated successfully.")
@@ -359,9 +336,8 @@ if __name__ == "__main__":
         for doc in doc_batch:
             print(doc)
 
-
     bitbucket_checkpoint = bitbucket.build_dummy_checkpoint()
-    
+
     while bitbucket_checkpoint.has_more:
         gen = bitbucket.load_from_checkpoint(
             start=start_time.timestamp(),
@@ -371,9 +347,8 @@ if __name__ == "__main__":
 
         while True:
             try:
-                doc = next(gen)  
+                doc = next(gen)
                 print(doc)
             except StopIteration as e:
-                bitbucket_checkpoint = e.value  
+                bitbucket_checkpoint = e.value
                 break
-        

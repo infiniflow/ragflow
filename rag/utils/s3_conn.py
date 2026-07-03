@@ -29,15 +29,15 @@ class RAGFlowS3:
     def __init__(self):
         self.conn = None
         self.s3_config = settings.S3
-        self.access_key = self.s3_config.get('access_key', None)
-        self.secret_key = self.s3_config.get('secret_key', None)
-        self.session_token = self.s3_config.get('session_token', None)
-        self.region_name = self.s3_config.get('region_name', None)
-        self.endpoint_url = self.s3_config.get('endpoint_url', None)
-        self.signature_version = self.s3_config.get('signature_version', None)
-        self.addressing_style = self.s3_config.get('addressing_style', None)
-        self.bucket = self.s3_config.get('bucket', None)
-        self.prefix_path = self.s3_config.get('prefix_path', None)
+        self.access_key = self.s3_config.get("access_key", None)
+        self.secret_key = self.s3_config.get("secret_key", None)
+        self.session_token = self.s3_config.get("session_token", None)
+        self.region_name = self.s3_config.get("region_name", None)
+        self.endpoint_url = self.s3_config.get("endpoint_url", None)
+        self.signature_version = self.s3_config.get("signature_version", None)
+        self.addressing_style = self.s3_config.get("addressing_style", None)
+        self.bucket = self.s3_config.get("bucket", None)
+        self.prefix_path = self.s3_config.get("prefix_path", None)
         self.__open__()
 
     @staticmethod
@@ -53,7 +53,7 @@ class RAGFlowS3:
     def use_prefix_path(method):
         def wrapper(self, bucket, fnm, *args, **kwargs):
             # If the prefix path is set, use the prefix path.
-            # The bucket passed from the upstream call is 
+            # The bucket passed from the upstream call is
             # used as the file prefix. This is especially useful when you're using the default bucket
             if self.prefix_path:
                 fnm = f"{self.prefix_path}/{bucket}/{fnm}"
@@ -75,25 +75,25 @@ class RAGFlowS3:
             # see doc: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html#configuring-credentials
             if self.access_key and self.secret_key:
                 s3_params = {
-                    'aws_access_key_id': self.access_key,
-                    'aws_secret_access_key': self.secret_key,
-                    'aws_session_token': self.session_token,
+                    "aws_access_key_id": self.access_key,
+                    "aws_secret_access_key": self.secret_key,
+                    "aws_session_token": self.session_token,
                 }
             if self.region_name:
-                s3_params['region_name'] = self.region_name
+                s3_params["region_name"] = self.region_name
             if self.endpoint_url:
-                s3_params['endpoint_url'] = self.endpoint_url
+                s3_params["endpoint_url"] = self.endpoint_url
 
             # Configure signature_version and addressing_style through Config object
             if self.signature_version:
-                config_kwargs['signature_version'] = self.signature_version
+                config_kwargs["signature_version"] = self.signature_version
             if self.addressing_style:
-                config_kwargs['s3'] = {'addressing_style': self.addressing_style}
+                config_kwargs["s3"] = {"addressing_style": self.addressing_style}
 
             if config_kwargs:
-                s3_params['config'] = Config(**config_kwargs)
+                s3_params["config"] = Config(**config_kwargs)
 
-            self.conn = [boto3.client('s3', **s3_params)]
+            self.conn = [boto3.client("s3", **s3_params)]
         except Exception:
             logging.exception(f"Fail to connect at region {self.region_name} or endpoint {self.endpoint_url}")
 
@@ -160,7 +160,7 @@ class RAGFlowS3:
         for _ in range(1):
             try:
                 r = self.conn[0].get_object(Bucket=bucket, Key=fnm)
-                object_data = r['Body'].read()
+                object_data = r["Body"].read()
                 return object_data
             except Exception:
                 logging.exception(f"fail get {bucket}/{fnm}")
@@ -175,7 +175,7 @@ class RAGFlowS3:
             if self.conn[0].head_object(Bucket=bucket, Key=fnm):
                 return True
         except ClientError as e:
-            if e.response['Error']['Code'] == '404':
+            if e.response["Error"]["Code"] == "404":
                 return False
             else:
                 raise
@@ -185,10 +185,7 @@ class RAGFlowS3:
     def get_presigned_url(self, bucket, fnm, expires, *args, **kwargs):
         for _ in range(10):
             try:
-                r = self.conn[0].generate_presigned_url('get_object',
-                                                        Params={'Bucket': bucket,
-                                                                'Key': fnm},
-                                                        ExpiresIn=expires)
+                r = self.conn[0].generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm}, ExpiresIn=expires)
 
                 return r
             except Exception:
@@ -207,7 +204,7 @@ class RAGFlowS3:
         try:
             actual_src_bucket, actual_src_path = self._resolve_path(src_bucket, src_path)
             actual_dest_bucket, actual_dest_path = self._resolve_path(dest_bucket, dest_path)
-            copy_source = {'Bucket': actual_src_bucket, 'Key': actual_src_path}
+            copy_source = {"Bucket": actual_src_bucket, "Key": actual_src_path}
             self.conn[0].copy_object(
                 CopySource=copy_source,
                 Bucket=actual_dest_bucket,
@@ -226,9 +223,7 @@ class RAGFlowS3:
                     self.conn[0].delete_object(Bucket=actual_src_bucket, Key=actual_src_path)
                     return True
                 except Exception:
-                    logging.exception(
-                        f"Copied but failed to delete source: {src_bucket}/{src_path}"
-                    )
+                    logging.exception(f"Copied but failed to delete source: {src_bucket}/{src_path}")
                     return False
             else:
                 logging.error(f"Copy failed, move aborted: {src_bucket}/{src_path}")

@@ -60,28 +60,28 @@ class MinerUContentType(StrEnum):
 
 # Mapping from language names to MinerU language codes
 LANGUAGE_TO_MINERU_MAP = {
-    'English': 'en',
-    'Chinese': 'ch',
-    'Traditional Chinese': 'chinese_cht',
-    'Russian': 'east_slavic',
-    'Ukrainian': 'east_slavic',
-    'Indonesian': 'latin',
-    'Spanish': 'latin',
-    'Vietnamese': 'latin',
-    'Japanese': 'japan',
-    'Korean': 'korean',
-    'Portuguese BR': 'latin',
-    'German': 'latin',
-    'French': 'latin',
-    'Italian': 'latin',
-    'Tamil': 'ta',
-    'Telugu': 'te',
-    'Kannada': 'ka',
-    'Thai': 'th',
-    'Greek': 'el',
-    'Hindi': 'devanagari',
-    'Bulgarian': 'cyrillic',
-    'Turkish': 'latin',
+    "English": "en",
+    "Chinese": "ch",
+    "Traditional Chinese": "chinese_cht",
+    "Russian": "east_slavic",
+    "Ukrainian": "east_slavic",
+    "Indonesian": "latin",
+    "Spanish": "latin",
+    "Vietnamese": "latin",
+    "Japanese": "japan",
+    "Korean": "korean",
+    "Portuguese BR": "latin",
+    "German": "latin",
+    "French": "latin",
+    "Italian": "latin",
+    "Tamil": "ta",
+    "Telugu": "te",
+    "Kannada": "ka",
+    "Thai": "th",
+    "Greek": "el",
+    "Hindi": "devanagari",
+    "Bulgarian": "cyrillic",
+    "Turkish": "latin",
 }
 
 
@@ -269,14 +269,10 @@ class MinerUParser(RAGFlowPdfParser):
 
         return True, reason
 
-    def _run_mineru(
-        self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
-    ) -> Path:
+    def _run_mineru(self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None) -> Path:
         return self._run_mineru_api(input_path, output_dir, options, callback)
 
-    def _run_mineru_api(
-        self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
-    ) -> Path:
+    def _run_mineru_api(self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None) -> Path:
         pdf_file_path = str(input_path)
 
         if not os.path.exists(pdf_file_path):
@@ -352,8 +348,7 @@ class MinerUParser(RAGFlowPdfParser):
         try:
             with pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm)) as pdf:
                 self.pdf = pdf
-                self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original for _, p in
-                                    enumerate(self.pdf.pages[page_from:page_to])]
+                self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original for _, p in enumerate(self.pdf.pages[page_from:page_to])]
         except Exception as e:
             self.page_images = None
             self.total_page = 0
@@ -420,8 +415,7 @@ class MinerUParser(RAGFlowPdfParser):
         pos = poss[-1]
         last_page_idx = pos[0][-1]
         if not (0 <= last_page_idx < page_count):
-            self.logger.warning(
-                f"[MinerU] Last page index {last_page_idx} out of range for {page_count} pages; skipping crop.")
+            self.logger.warning(f"[MinerU] Last page index {last_page_idx} out of range for {page_count} pages; skipping crop.")
             if need_position:
                 return None, None
             return
@@ -447,12 +441,10 @@ class MinerUParser(RAGFlowPdfParser):
                 if 0 <= pn - 1 < page_count:
                     bottom += self.page_images[pn - 1].size[1]
                 else:
-                    self.logger.warning(
-                        f"[MinerU] Page index {pn}-1 out of range for {page_count} pages during crop; skipping height accumulation.")
+                    self.logger.warning(f"[MinerU] Page index {pn}-1 out of range for {page_count} pages during crop; skipping height accumulation.")
 
             if not (0 <= pns[0] < page_count):
-                self.logger.warning(
-                    f"[MinerU] Base page index {pns[0]} out of range for {page_count} pages during crop; skipping this segment.")
+                self.logger.warning(f"[MinerU] Base page index {pns[0]} out of range for {page_count} pages during crop; skipping this segment.")
                 continue
 
             img0 = self.page_images[pns[0]]
@@ -471,8 +463,7 @@ class MinerUParser(RAGFlowPdfParser):
             bottom -= img0.size[1]
             for pn in pns[1:]:
                 if not (0 <= pn < page_count):
-                    self.logger.warning(
-                        f"[MinerU] Page index {pn} out of range for {page_count} pages during crop; skipping this page.")
+                    self.logger.warning(f"[MinerU] Page index {pn} out of range for {page_count} pages during crop; skipping this page.")
                     continue
                 page = self.page_images[pn]
                 x0, y0, x1, y1 = int(left), 0, int(right), int(min(bottom, page.size[1]))
@@ -523,8 +514,7 @@ class MinerUParser(RAGFlowPdfParser):
             poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
         return poss
 
-    def _read_output(self, output_dir: Path, file_stem: str, method: str = "auto", backend: str = "pipeline") -> list[
-        dict[str, Any]]:
+    def _read_output(self, output_dir: Path, file_stem: str, method: str = "auto", backend: str = "pipeline") -> list[dict[str, Any]]:
         json_file = None
         subdir = None
         attempted = []
@@ -661,13 +651,11 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.TEXT:
                     section = output.get("text", "")
                 case MinerUContentType.TABLE:
-                    section = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(
-                        output.get("table_footnote", []))
+                    section = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(output.get("table_footnote", []))
                     if not section.strip():
                         section = "FAILED TO PARSE TABLE"
                 case MinerUContentType.IMAGE:
-                    section = "".join(output.get("image_caption", [])) + "\n" + "".join(
-                        output.get("image_footnote", []))
+                    section = "".join(output.get("image_caption", [])) + "\n" + "".join(output.get("image_footnote", []))
                     # If a vision model enriched this image with a semantic
                     # description (see _enhance_images_with_vlm), embed it in
                     # the chunk so it becomes searchable / retrievable.
@@ -680,12 +668,7 @@ class MinerUParser(RAGFlowPdfParser):
                     section = output.get("code_body", "") + "\n".join(output.get("code_caption", []))
                 case MinerUContentType.LIST:
                     section = "\n".join(output.get("list_items", []))
-                case (
-                    MinerUContentType.HEADER
-                    | MinerUContentType.FOOTER
-                    | MinerUContentType.PAGE_NUMBER
-                    | MinerUContentType.DISCARDED
-                ):
+                case MinerUContentType.HEADER | MinerUContentType.FOOTER | MinerUContentType.PAGE_NUMBER | MinerUContentType.DISCARDED:
                     continue
                 case _:
                     self.logger.debug("[MinerU] Skip unsupported section type=%s", output.get("type"))
@@ -719,13 +702,7 @@ class MinerUParser(RAGFlowPdfParser):
         from rag.app.picture import vision_llm_chunk
         from rag.prompts.generator import vision_llm_figure_describe_prompt
 
-        image_jobs = [
-            (idx, item)
-            for idx, item in enumerate(outputs)
-            if item.get("type") == MinerUContentType.IMAGE
-            and item.get("img_path")
-            and os.path.exists(item["img_path"])
-        ]
+        image_jobs = [(idx, item) for idx, item in enumerate(outputs) if item.get("type") == MinerUContentType.IMAGE and item.get("img_path") and os.path.exists(item["img_path"])]
         if not image_jobs:
             return
 
@@ -752,17 +729,17 @@ class MinerUParser(RAGFlowPdfParser):
                     outputs[idx]["vlm_description"] = desc
 
     def parse_pdf(
-            self,
-            filepath: str | PathLike[str],
-            binary: BytesIO | bytes,
-            callback: Optional[Callable] = None,
-            *,
-            output_dir: Optional[str] = None,
-            backend: str = "pipeline",
-            server_url: Optional[str] = None,
-            delete_output: bool = True,
-            parse_method: str = "raw",
-            **kwargs,
+        self,
+        filepath: str | PathLike[str],
+        binary: BytesIO | bytes,
+        callback: Optional[Callable] = None,
+        *,
+        output_dir: Optional[str] = None,
+        backend: str = "pipeline",
+        server_url: Optional[str] = None,
+        delete_output: bool = True,
+        parse_method: str = "raw",
+        **kwargs,
     ) -> tuple:
         import shutil
 
@@ -770,12 +747,12 @@ class MinerUParser(RAGFlowPdfParser):
         temp_pdf = None
         created_tmp_dir = False
 
-        parser_cfg = kwargs.get('parser_config', {})
-        lang = parser_cfg.get('mineru_lang') or kwargs.get('lang', 'English')
-        mineru_lang_code = LANGUAGE_TO_MINERU_MAP.get(lang, 'ch')  # Defaults to Chinese if not matched
-        mineru_method_raw_str = parser_cfg.get('mineru_parse_method', 'auto')
-        enable_formula = parser_cfg.get('mineru_formula_enable', True)
-        enable_table = parser_cfg.get('mineru_table_enable', True)
+        parser_cfg = kwargs.get("parser_config", {})
+        lang = parser_cfg.get("mineru_lang") or kwargs.get("lang", "English")
+        mineru_lang_code = LANGUAGE_TO_MINERU_MAP.get(lang, "ch")  # Defaults to Chinese if not matched
+        mineru_method_raw_str = parser_cfg.get("mineru_parse_method", "auto")
+        enable_formula = parser_cfg.get("mineru_formula_enable", True)
+        enable_table = parser_cfg.get("mineru_table_enable", True)
 
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)

@@ -142,8 +142,7 @@ def test_agents_crud_validation_contract(rest_client, create_agent_resource):
     # code=103 = permission denied (Python: "Only the owner of the agent..."; Go: "Make sure you have permission...")
     assert invalid_delete_payload["code"] == 103, invalid_delete_payload
     msg = invalid_delete_payload["message"]
-    assert ("Only the owner of the agent is authorized" in msg
-            or "Make sure you have permission" in msg), invalid_delete_payload
+    assert "Only the owner of the agent is authorized" in msg or "Make sure you have permission" in msg, invalid_delete_payload
 
     delete_res = rest_client.delete(f"/agents/{agent_id}")
     assert delete_res.status_code == 200
