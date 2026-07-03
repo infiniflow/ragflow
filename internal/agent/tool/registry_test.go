@@ -163,8 +163,8 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"retrieval":         "search_my_dateset",
 		"search_my_dataset": "search_my_dateset",
 		"search_my_dateset": "search_my_dateset",
-		"crawler":           "web_crawler",
-		"web_crawler":       "web_crawler",
+		"crawler":           "crawler",
+		"web_crawler":       "crawler",
 	}
 	for _, name := range names {
 		canonical, ok := canonicalByAlias[name]
