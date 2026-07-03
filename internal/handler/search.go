@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -50,6 +51,23 @@ func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.ModelProvid
 	h.askService = askService
 }
 
+func getSearchOwnerIDs(c *gin.Context) []string {
+	values := c.QueryArray("owner_ids")
+	if len(values) == 0 {
+		values = c.QueryArray("owner_id")
+	}
+	ownerIDs := make([]string, 0, len(values))
+	for _, value := range values {
+		for _, ownerID := range strings.Split(value, ",") {
+			ownerID = strings.TrimSpace(ownerID)
+			if ownerID != "" {
+				ownerIDs = append(ownerIDs, ownerID)
+			}
+		}
+	}
+	return ownerIDs
+}
+
 // ListSearches list search apps
 // @Summary List Search Apps
 // @Description Get list of search apps for the current user with filtering, pagination and sorting
@@ -61,9 +79,9 @@ func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.ModelProvid
 // @Param page_size query int false "items per page"
 // @Param orderby query string false "order by field (default: create_time)"
 // @Param desc query bool false "descending order (default: true)"
-// @Param request body service.ListSearchAppsRequest true "filter options including owner_ids"
+// @Param owner_ids query []string false "owner IDs"
 // @Success 200 {object} service.ListSearchAppsResponse
-// @Router /api/v1/searches [post]
+// @Router /api/v1/searches [get]
 func (h *SearchHandler) ListSearches(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -96,9 +114,12 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 		desc = descStr != "false"
 	}
 
-	// Parse request body for owner_ids
+	ownerIDs := getSearchOwnerIDs(c)
+
+	// Keep body parsing as a compatibility fallback for existing callers that
+	// send owner_ids in a GET body. Python reads owner_ids from the query.
 	var req service.ListSearchAppsRequest
-	if c.Request.ContentLength > 0 {
+	if len(ownerIDs) == 0 && c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
@@ -106,10 +127,11 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 			})
 			return
 		}
+		ownerIDs = req.OwnerIDs
 	}
 
 	// List search apps with filtering
-	result, err := h.searchService.ListSearches(userID, keywords, page, pageSize, orderby, desc, req.OwnerIDs)
+	result, err := h.searchService.ListSearches(userID, keywords, page, pageSize, orderby, desc, ownerIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
