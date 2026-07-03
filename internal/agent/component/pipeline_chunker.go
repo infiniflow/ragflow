@@ -225,9 +225,8 @@ func parserToSplitStrategy(parserID string) string {
 //
 // Output shape:
 //
-//	chunks       — []string of plain-text chunks
-//	chunks_full  — []map[string]any with at minimum {text, ...}
-//	summary      — short human-readable summary (parser_id + chunk count)
+//	chunks   — []string of plain-text chunks
+//	summary  — short human-readable summary (parser_id + chunk count)
 type PipelineChunkerComponent struct {
 	name  string
 	param pipelineChunkerParam
@@ -300,9 +299,8 @@ func (c *PipelineChunkerComponent) Inputs() map[string]string {
 // nodes can wire into.
 func (c *PipelineChunkerComponent) Outputs() map[string]string {
 	return map[string]string{
-		"chunks":      "list[string]: plain-text chunks.",
-		"chunks_full": "list[object]: per-chunk metadata (text + size + index).",
-		"summary":     "string: short human-readable summary.",
+		"chunks":  "list[string]: plain-text chunks.",
+		"summary": "string: short human-readable summary.",
 	}
 }
 
@@ -332,9 +330,8 @@ func (c *PipelineChunkerComponent) Invoke(ctx context.Context, inputs map[string
 	}
 	if text == "" {
 		return map[string]any{
-			"chunks":      []string{},
-			"chunks_full": []map[string]any{},
-			"summary":     "no input text",
+			"chunks":  []string{},
+			"summary": "no input text",
 		}, nil
 	}
 
@@ -465,27 +462,18 @@ func validateAndDecodeBytes(b []byte) (string, error) {
 func chunkerOutputs(result *chunk.ChunkContext, parserID string) map[string]any {
 	if result == nil {
 		return map[string]any{
-			"chunks":      []string{},
-			"chunks_full": []map[string]any{},
-			"summary":     "no chunks",
+			"chunks":  []string{},
+			"summary": "no chunks",
 		}
 	}
 	chunks := make([]string, 0, len(result.ResultChunks))
-	full := make([]map[string]any, 0, len(result.ResultChunks))
 	for _, c := range result.ResultChunks {
 		chunks = append(chunks, c.Content)
-		full = append(full, map[string]any{
-			"text":  c.Content,
-			"size":  c.Size,
-			"index": c.Index,
-			"meta":  c.Metadata,
-		})
 	}
 	summary := fmt.Sprintf("parser_id=%s chunks=%d", parserID, len(chunks))
 	return map[string]any{
-		"chunks":      chunks,
-		"chunks_full": full,
-		"summary":     summary,
+		"chunks":  chunks,
+		"summary": summary,
 	}
 }
 

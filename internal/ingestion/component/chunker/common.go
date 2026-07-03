@@ -149,24 +149,6 @@ func splitKeepingDelim(text string, pattern *regexp.Regexp) []string {
 // chunk-map helpers
 // ---------------------------------------------------------------------------
 
-// enrichWithIndex mirrors the pipeline_chunker's per-chunk index/size
-// stamping (used by chunks_full outputs).
-func enrichWithIndex(chunks []map[string]any) []map[string]any {
-	out := make([]map[string]any, 0, len(chunks))
-	for i, c := range chunks {
-		m := make(map[string]any, len(c)+2)
-		for k, v := range c {
-			m[k] = v
-		}
-		m["index"] = i
-		if t, ok := m["text"].(string); ok {
-			m["size"] = len([]rune(t))
-		}
-		out = append(out, m)
-	}
-	return out
-}
-
 // itemText returns the text payload from a JSON-style chunk item,
 // preferring "text", then "content_with_weight".
 func itemText(it map[string]any) (string, bool) {
@@ -228,6 +210,5 @@ func emptyOutputs() map[string]any {
 	return map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},
-		"chunks_full":   []map[string]any{},
 	}
 }

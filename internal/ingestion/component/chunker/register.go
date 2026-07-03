@@ -72,6 +72,5 @@ var ChunkerInputs = map[string]string{
 var ChunkerOutputs = map[string]string{
 	"output_format": "Always \"chunks\" on success.",
 	"chunks":        "list[object]: per-chunk map (text + optional meta keys).",
-	"chunks_full":   "list[object]: same as chunks, plus {index} and {size}.",
 	"_ERROR":        "Set only on validation failure.",
 }

@@ -97,7 +97,7 @@ func TestPipelineChunker_InvokeEmptyInput(t *testing.T) {
 
 // TestPipelineChunker_InvokeSlicesText feeds a non-empty text
 // input and confirms the output schema (chunks is a list of
-// strings, chunks_full is a list of dicts with `text`).
+// strings).
 func TestPipelineChunker_InvokeSlicesText(t *testing.T) {
 	c, err := NewPipelineChunkerComponent(map[string]any{
 		"parser_id": "naive",
@@ -114,15 +114,6 @@ func TestPipelineChunker_InvokeSlicesText(t *testing.T) {
 	chunks, _ := out["chunks"].([]string)
 	if len(chunks) == 0 {
 		t.Fatalf("non-empty input: want at least one chunk, got zero")
-	}
-	full, _ := out["chunks_full"].([]map[string]any)
-	if len(full) != len(chunks) {
-		t.Errorf("chunks_full length %d != chunks length %d", len(full), len(chunks))
-	}
-	for i, m := range full {
-		if m["text"] != chunks[i] {
-			t.Errorf("chunks_full[%d].text = %v, want %q", i, m["text"], chunks[i])
-		}
 	}
 }
 
@@ -292,8 +283,8 @@ func TestPipelineChunker_InvalidParserIDInInvoke(t *testing.T) {
 }
 
 // TestPipelineChunker_ChunksFullShape pins the per-chunk
-// metadata shape: text + size + index.
-func TestPipelineChunker_ChunksFullShape(t *testing.T) {
+// no parallel metadata payload is emitted.
+func TestPipelineChunker_NoParallelMetadataOutput(t *testing.T) {
 	c, _ := NewPipelineChunkerComponent(map[string]any{"parser_id": "naive"})
 	out, err := c.Invoke(pipelineChunkerCtx(t), map[string]any{
 		"text": "Chunk A.\n\nChunk B.",
@@ -301,16 +292,8 @@ func TestPipelineChunker_ChunksFullShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	full, ok := out["chunks_full"].([]map[string]any)
-	if !ok {
-		t.Fatalf("chunks_full type = %T, want []map[string]any", out["chunks_full"])
-	}
-	for i, m := range full {
-		for _, key := range []string{"text", "size", "index"} {
-			if _, ok := m[key]; !ok {
-				t.Errorf("chunks_full[%d] missing key %q (map=%v)", i, key, m)
-			}
-		}
+	if _, ok := out["chunks_full"]; ok {
+		t.Fatalf("unexpected chunks_full output: %v", out["chunks_full"])
 	}
 }
 

@@ -130,7 +130,6 @@ func invokeGroup(_ context.Context, inputs map[string]any, p *titleChunkerParam)
 	return map[string]any{
 		"output_format": "chunks",
 		"chunks":        chunks,
-		"chunks_full":   enrichWithIndex(chunks),
 	}, nil
 }
 
@@ -326,7 +325,6 @@ func (c *GroupTitleChunkerComponent) Invoke(ctx context.Context, inputs map[stri
 			return map[string]any{
 				"output_format": "chunks",
 				"chunks":        []map[string]any{},
-				"chunks_full":   []map[string]any{},
 				"_ERROR":        "GroupTitleChunker: missing required upstream field \"name\"",
 			}, nil
 		}

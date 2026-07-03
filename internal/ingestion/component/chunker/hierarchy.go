@@ -268,7 +268,6 @@ func invokeHierarchy(_ context.Context, inputs map[string]any, p *titleChunkerPa
 	return map[string]any{
 		"output_format": "chunks",
 		"chunks":        out2,
-		"chunks_full":   enrichWithIndex(out2),
 	}, nil
 }
 
@@ -327,7 +326,6 @@ func (c *HierarchyTitleChunkerComponent) Invoke(ctx context.Context, inputs map[
 			return map[string]any{
 				"output_format": "chunks",
 				"chunks":        []map[string]any{},
-				"chunks_full":   []map[string]any{},
 				"_ERROR":        "HierarchyTitleChunker: missing required upstream field \"name\"",
 			}, nil
 		}

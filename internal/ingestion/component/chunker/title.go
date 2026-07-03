@@ -366,7 +366,6 @@ func (c *TitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]an
 			return map[string]any{
 				"output_format": "chunks",
 				"chunks":        []map[string]any{},
-				"chunks_full":   []map[string]any{},
 				"_ERROR":        "TitleChunker: missing required upstream field \"name\"",
 			}, nil
 		}
@@ -379,7 +378,6 @@ func (c *TitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]an
 			return map[string]any{
 				"output_format": "chunks",
 				"chunks":        []map[string]any{},
-				"chunks_full":   []map[string]any{},
 				"_ERROR":        fmt.Sprintf("TitleChunker: unsupported method %q", c.param.Method),
 			}, nil
 		}

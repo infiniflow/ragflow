@@ -163,7 +163,6 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 		return map[string]any{
 			"output_format": "chunks",
 			"chunks":        []map[string]any{},
-			"chunks_full":   []map[string]any{},
 			"_ERROR":        "TokenChunker: missing required upstream field \"name\"",
 		}, nil
 	}
@@ -196,7 +195,6 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 		return map[string]any{
 			"output_format": "chunks",
 			"chunks":        chunks,
-			"chunks_full":   enrichWithIndex(chunks),
 		}
 	}
 
@@ -220,7 +218,6 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 	return map[string]any{
 		"output_format": "chunks",
 		"chunks":        docs,
-		"chunks_full":   enrichWithIndex(docs),
 	}
 }
 
@@ -245,7 +242,6 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 		return map[string]any{
 			"output_format": "chunks",
 			"chunks":        []map[string]any{{"text": text}},
-			"chunks_full":   []map[string]any{{"text": text, "index": 0, "size": len([]rune(text))}},
 		}
 	}
 	docs := make([]map[string]any, 0, len(result.ResultChunks))
@@ -260,7 +256,6 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 	return map[string]any{
 		"output_format": "chunks",
 		"chunks":        final,
-		"chunks_full":   enrichWithIndex(final),
 	}
 }
 
@@ -283,7 +278,6 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []m
 		return map[string]any{
 			"output_format": "chunks",
 			"chunks":        chunks,
-			"chunks_full":   enrichWithIndex(chunks),
 		}
 	}
 
@@ -343,7 +337,6 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []m
 	return map[string]any{
 		"output_format": "chunks",
 		"chunks":        out,
-		"chunks_full":   enrichWithIndex(out),
 	}
 }
 
@@ -736,17 +729,16 @@ func stringFromInputs(inputs map[string]any, keys ...string) (string, bool) {
 // []map[string]any, or nil when absent. Both []map[string]any (the
 // JSON-decoded form) and []any (the slice-of-mixed form) are handled.
 //
-// Three upstream keys are accepted, in priority order:
+// Two upstream keys are accepted, in priority order:
 //
-//   - "chunks"     — canonical post-chunker shape (chunker → chunker
+//   - "chunks" — canonical post-chunker shape (chunker → chunker
 //     re-entry, test fixtures, downstream stages).
-//   - "chunks_full" — schema-package alias used by older fixtures.
-//   - "json"       — the parser-structured-output key (Parser
+//   - "json"   — the parser-structured-output key (Parser
 //     component emits under "json"; we accept it
 //     so a token-chunker can run directly after
 //     a parser without an intermediate reshape).
 func chunksFromInputs(inputs map[string]any) []map[string]any {
-	for _, key := range []string{"chunks", "chunks_full", "json"} {
+	for _, key := range []string{"chunks", "json"} {
 		v, ok := inputs[key]
 		if !ok {
 			continue

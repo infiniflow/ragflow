@@ -483,13 +483,12 @@ func concatFields(ck map[string]any, fields []string) string {
 	return b.String()
 }
 
-// getChunks extracts the chunk list from inputs. Accepts both the
-// canonical `chunks` key and the schema package's `chunks_full` alias.
+// getChunks extracts the chunk list from inputs.
 func getChunks(inputs map[string]any) ([]map[string]any, error) {
 	if inputs == nil {
 		return nil, fmt.Errorf("Tokenizer: inputs map is nil")
 	}
-	for _, key := range []string{"chunks", "chunks_full"} {
+	for _, key := range []string{"chunks"} {
 		v, ok := inputs[key]
 		if !ok {
 			continue
