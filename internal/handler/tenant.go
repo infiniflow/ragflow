@@ -44,39 +44,12 @@ func NewTenantHandler(tenantService *service.TenantService, userService *service
 	}
 }
 
-func (h *TenantHandler) GetModels(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
+func (h *TenantHandler) SetModels(c *gin.Context) {
+	h.setDefaultModels(c, false)
+}
 
-	defaultModels, err := h.tenantService.ListTenantDefaultModels(user.ID)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
-		return
-	}
-
-	// Always return success with an array. The previous contract returned
-	// code=102 "No default models" for an empty list, which (a) tripped the
-	// global error toast in web/src/utils/next-request.ts:141 and (b) was
-	// inconsistent with the Python counterpart in
-	// api/apps/restful_apis/models_api.py:30 which returns
-	// get_result(data=[]) on the no-rows path. Frontend hooks (e.g.
-	// useFetchAllAddedModels) coerce `null` to `[]` already, so `[]` is
-	// strictly safer.
-	if defaultModels == nil {
-		defaultModels = []service.ModelItem{}
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    defaultModels,
-	})
+func (h *TenantHandler) SetDefaultModels(c *gin.Context) {
+	h.setDefaultModels(c, true)
 }
 
 type SetModelRequest struct {
@@ -85,14 +58,6 @@ type SetModelRequest struct {
 	ModelName     string `json:"model_name"`
 	ModelID       string `json:"model_id"`
 	ModelType     string `json:"model_type" binding:"required"`
-}
-
-func (h *TenantHandler) SetModels(c *gin.Context) {
-	h.setDefaultModels(c, false)
-}
-
-func (h *TenantHandler) SetDefaultModels(c *gin.Context) {
-	h.setDefaultModels(c, true)
 }
 
 func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
