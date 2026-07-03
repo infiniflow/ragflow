@@ -32,36 +32,17 @@ class EmailParam(ToolParamBase):
     """
     Define the Email component parameters.
     """
+
     def __init__(self):
-        self.meta:ToolMeta = {
+        self.meta: ToolMeta = {
             "name": "email",
             "description": "The email is a method of electronic communication for sending and receiving information through the Internet. This tool helps users to send emails to one person or to multiple recipients with support for CC, BCC, file attachments, and markdown-to-HTML conversion.",
             "parameters": {
-                "to_email": {
-                    "type": "string",
-                    "description": "The target email address.",
-                    "default": "{sys.query}",
-                    "required": True
-                },
-                "cc_email": {
-                    "type": "string",
-                    "description": "The other email addresses needs to be send to. Comma splited.",
-                    "default": "",
-                    "required": False
-                },
-                "content": {
-                    "type": "string",
-                    "description": "The content of the email.",
-                    "default": "",
-                    "required": False
-                },
-                "subject": {
-                    "type": "string",
-                    "description": "The subject/title of the email.",
-                    "default": "",
-                    "required": False
-                }
-            }
+                "to_email": {"type": "string", "description": "The target email address.", "default": "{sys.query}", "required": True},
+                "cc_email": {"type": "string", "description": "The other email addresses needs to be send to. Comma splited.", "default": "", "required": False},
+                "content": {"type": "string", "description": "The content of the email.", "default": "", "required": False},
+                "subject": {"type": "string", "description": "The subject/title of the email.", "default": "", "required": False},
+            },
         }
         super().__init__()
         # Fixed configuration parameters
@@ -81,20 +62,9 @@ class EmailParam(ToolParamBase):
 
     def get_input_form(self) -> dict[str, dict]:
         return {
-            "to_email": {
-                "name": "To ",
-                "type": "line"
-            },
-            "subject": {
-                "name": "Subject",
-                "type": "line",
-                "optional": True
-            },
-            "cc_email": {
-                "name": "CC To",
-                "type": "line",
-                "optional": True
-            },
+            "to_email": {"name": "To ", "type": "line"},
+            "subject": {"name": "Subject", "type": "line", "optional": True},
+            "cc_email": {"name": "CC To", "type": "line", "optional": True},
         }
 
 
@@ -111,7 +81,7 @@ class Email(ToolBase, ABC):
             return ""
 
         last_e = ""
-        for _ in range(self._param.max_retries+1):
+        for _ in range(self._param.max_retries + 1):
             if self.check_if_canceled("Email processing"):
                 return
 
@@ -126,19 +96,19 @@ class Email(ToolBase, ABC):
                     return False
 
                 # Create email object
-                msg = MIMEMultipart('alternative')
+                msg = MIMEMultipart("alternative")
 
                 # Properly handle sender name encoding
-                msg['From'] = formataddr((str(Header(self._param.sender_name,'utf-8')), self._param.email))
-                msg['To'] = email_data["to_email"]
+                msg["From"] = formataddr((str(Header(self._param.sender_name, "utf-8")), self._param.email))
+                msg["To"] = email_data["to_email"]
                 if email_data.get("cc_email"):
-                    msg['Cc'] = email_data["cc_email"]
-                msg['Subject'] = Header(email_data.get("subject", "No Subject"), 'utf-8').encode()
+                    msg["Cc"] = email_data["cc_email"]
+                msg["Subject"] = Header(email_data.get("subject", "No Subject"), "utf-8").encode()
 
                 # Use content from email_data or default content
                 email_content = email_data.get("content", "No content provided")
                 # msg.attach(MIMEText(email_content, 'plain', 'utf-8'))
-                msg.attach(MIMEText(email_content, 'html', 'utf-8'))
+                msg.attach(MIMEText(email_content, "html", "utf-8"))
 
                 # Connect to SMTP server and send
                 logging.info(f"Connecting to SMTP server {self._param.smtp_server}:{self._param.smtp_port}")
@@ -160,7 +130,7 @@ class Email(ToolBase, ABC):
                     # Get all recipient list
                     recipients = [email_data["to_email"]]
                     if email_data.get("cc_email"):
-                        recipients.extend(email_data["cc_email"].split(','))
+                        recipients.extend(email_data["cc_email"].split(","))
 
                     # Send email
                     logging.info(f"Sending email to recipients: {recipients}")

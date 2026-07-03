@@ -189,6 +189,7 @@ export const useSubmitBedrock = () => {
 export const useSubmitSoMark = () => {
   const [saveLoading, setSaveLoading] = useState(false);
   const submitProviderInstance = useSubmitProviderInstance();
+  const verifyConnection = useVerifyConnection();
   const {
     visible: somarkVisible,
     hideModal: hideSoMarkModal,
@@ -204,7 +205,7 @@ export const useSubmitSoMark = () => {
         instance_name: payload.instance_name,
         llm_factory: LLMFactory.SoMark,
         api_key: payload.somark_api_key || '',
-        api_base: payload.somark_base_url,
+        base_url: payload.somark_base_url,
         max_tokens: 0,
         model_info: [
           {
@@ -232,16 +233,19 @@ export const useSubmitSoMark = () => {
         ],
       };
       try {
+        if (isVerify) {
+          return verifyConnection(
+            LLMFactory.SoMark,
+            req.api_key,
+            req.base_url,
+            undefined,
+            req.model_info as IModelInfo[],
+          );
+        }
         const ret = await submitProviderInstance(
           req as IAddProviderInstanceRequestBody,
-          isVerify,
+          false,
         );
-        if (isVerify) {
-          return {
-            isValid: !!ret.data?.success,
-            logs: ret.data?.message,
-          } as VerifyResult;
-        }
         if (ret.code === 0) {
           hideSoMarkModal();
           return true;
@@ -253,7 +257,7 @@ export const useSubmitSoMark = () => {
         }
       }
     },
-    [submitProviderInstance, hideSoMarkModal, setSaveLoading],
+    [submitProviderInstance, hideSoMarkModal, setSaveLoading, verifyConnection],
   );
 
   return {

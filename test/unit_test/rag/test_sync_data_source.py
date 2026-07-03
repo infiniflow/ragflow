@@ -174,7 +174,14 @@ async def test_run_task_logic_skips_multiple_empty_sync_batches(monkeypatch):
         lambda *_args, **_kwargs: pytest.fail("duplicate_and_parse should not be called for empty batches"),
     )
 
-    await _FakeSync(iter(([], [],)))._run_task_logic(_make_task())
+    await _FakeSync(
+        iter(
+            (
+                [],
+                [],
+            )
+        )
+    )._run_task_logic(_make_task())
 
 
 @pytest.mark.asyncio
@@ -197,9 +204,7 @@ async def test_run_prune_task_logic_cleans_up_for_empty_snapshot(monkeypatch):
     task = {**_make_task(), "task_type": sync_data_source.ConnectorTaskType.PRUNE}
     sync = _FakeSync(iter(()))
     sync.conf["sync_deleted_files"] = True
-    sync.connector = types.SimpleNamespace(
-        retrieve_all_slim_docs_perm_sync=lambda: iter(([],))
-    )
+    sync.connector = types.SimpleNamespace(retrieve_all_slim_docs_perm_sync=lambda: iter(([],)))
 
     await sync._run_task_logic(task)
 
@@ -238,9 +243,7 @@ async def test_run_prune_task_logic_cleans_up_for_non_empty_snapshot(monkeypatch
     task = {**_make_task(), "task_type": sync_data_source.ConnectorTaskType.PRUNE}
     sync = _FakeSync(iter(()))
     sync.conf["sync_deleted_files"] = True
-    sync.connector = types.SimpleNamespace(
-        retrieve_all_slim_docs_perm_sync=lambda: iter((file_list,))
-    )
+    sync.connector = types.SimpleNamespace(retrieve_all_slim_docs_perm_sync=lambda: iter((file_list,)))
 
     await sync._run_task_logic(task)
 
@@ -316,7 +319,7 @@ class _FakeRDBMSConnector:
 
     def load_from_cursor_range(self, start_value=None, start_id=None, end_value=None):
         self.load_from_cursor_range_called = True
-        return iter(([ _make_fake_doc("incremental-doc") ],))
+        return iter(([_make_fake_doc("incremental-doc")],))
 
     def persist_sync_state(self):
         self.persist_sync_state_called = True

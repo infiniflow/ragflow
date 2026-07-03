@@ -67,6 +67,7 @@ def _log_http_debug(method, url, req_id, payload, status, text, resp_json, elaps
     print(f"[HTTP DEBUG] response_text={text}")
     print(f"[HTTP DEBUG] response_json={json.dumps(resp_json, default=str) if resp_json is not None else None}")
 
+
 def api_stats(auth, params=None, *, headers=HEADERS):
     res = requests.get(url=f"{HOST_ADDRESS}{API_APP_URL}/stats", headers=headers, auth=auth, params=params)
     return res.json()
@@ -447,7 +448,7 @@ def document_update_metadata_setting(auth, dataset_id, doc_id, payload=None, *, 
 def document_change_status(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
     """
     Batch update document status within a dataset.
-    
+
     Args:
         auth: Authentication credentials
         dataset_id: ID of the dataset
@@ -539,13 +540,13 @@ def create_memory(auth, payload=None):
     return res.json()
 
 
-def update_memory(auth, memory_id:str, payload=None):
+def update_memory(auth, memory_id: str, payload=None):
     url = f"{HOST_ADDRESS}{MEMORY_API_URL}/{memory_id}"
     res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def delete_memory(auth, memory_id:str):
+def delete_memory(auth, memory_id: str):
     url = f"{HOST_ADDRESS}{MEMORY_API_URL}/{memory_id}"
     res = requests.delete(url=url, headers=HEADERS, auth=auth)
     return res.json()
@@ -567,7 +568,7 @@ def list_memory(auth, params=None):
     return res.json()
 
 
-def get_memory_config(auth, memory_id:str):
+def get_memory_config(auth, memory_id: str):
     url = f"{HOST_ADDRESS}{MEMORY_API_URL}/{memory_id}/config"
     res = requests.get(url=url, headers=HEADERS, auth=auth)
     return res.json()

@@ -41,29 +41,29 @@ var bgptEndpoint = "https://bgpt.pro/api/mcp-search"
 
 // bgptParams is the JSON shape the model sends into InvokableRun.
 type bgptParams struct {
-	Query     string `json:"query"`
+	Query      string `json:"query"`
 	MaxResults int    `json:"num_results"`
-	APIKey    string `json:"api_key,omitempty"`
-	DaysBack  int    `json:"days_back,omitempty"`
+	APIKey     string `json:"api_key,omitempty"`
+	DaysBack   int    `json:"days_back,omitempty"`
 }
 
 // bgptResult is one paper in the result list.
 type bgptResult struct {
-	Title                          string `json:"title"`
-	Authors                        string `json:"authors"`
-	Journal                        string `json:"journal"`
-	Year                           string `json:"year"`
-	DOI                            string `json:"doi"`
-	URL                            string `json:"url"`
-	Abstract                       string `json:"abstract"`
-	Methods                        string `json:"methods"`
-	SampleSize                     string `json:"sample_size"`
-	Results                        string `json:"results"`
-	Limitations                    string `json:"limitations"`
-	ConflictOfInterest             string `json:"conflict_of_interest"`
-	DataAvailability               string `json:"data_availability"`
-	BlindSpots                     string `json:"blind_spots"`
-	Falsify                        string `json:"falsify"`
+	Title              string `json:"title"`
+	Authors            string `json:"authors"`
+	Journal            string `json:"journal"`
+	Year               string `json:"year"`
+	DOI                string `json:"doi"`
+	URL                string `json:"url"`
+	Abstract           string `json:"abstract"`
+	Methods            string `json:"methods"`
+	SampleSize         string `json:"sample_size"`
+	Results            string `json:"results"`
+	Limitations        string `json:"limitations"`
+	ConflictOfInterest string `json:"conflict_of_interest"`
+	DataAvailability   string `json:"data_availability"`
+	BlindSpots         string `json:"blind_spots"`
+	Falsify            string `json:"falsify"`
 }
 
 // bgptEnv is what the model sees.
@@ -142,7 +142,7 @@ func (b *BGPTTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.
 	}
 
 	reqBody := map[string]interface{}{
-		"query":      strings.TrimSpace(p.Query),
+		"query":       strings.TrimSpace(p.Query),
 		"num_results": p.MaxResults,
 	}
 	if p.APIKey != "" {
@@ -196,21 +196,21 @@ func (b *BGPTTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.
 	results := make([]bgptResult, 0, len(raw.Results))
 	for _, r := range raw.Results {
 		results = append(results, bgptResult{
-			Title:                          strVal(r["title"]),
-			Authors:                        strVal(r["authors"]),
-			Journal:                        strVal(r["journal"]),
-			Year:                           strVal(r["year"]),
-			DOI:                            strVal(r["doi"]),
-			URL:                            strVal(r["url"]),
-			Abstract:                       strVal(r["abstract"]),
-			Methods:                        firstStr(r, "methods_and_experimental_techniques", "methods"),
-			SampleSize:                     firstStr(r, "sample_size_and_population_characteristics", "sample_size_and_population"),
-			Results:                        firstStr(r, "results_and_conclusions", "results"),
-			Limitations:                    firstStr(r, "paper_limitations_and_biases", "limitations"),
-			ConflictOfInterest:             firstStr(r, "conflict_of_interest_statements", "conflict_of_interest"),
-			DataAvailability:               firstStr(r, "data_availability_statements", "data_availability"),
-			BlindSpots:                     strVal(r["study_blindspots"]),
-			Falsify:                        strVal(r["how_to_falsify"]),
+			Title:              strVal(r["title"]),
+			Authors:            strVal(r["authors"]),
+			Journal:            strVal(r["journal"]),
+			Year:               strVal(r["year"]),
+			DOI:                strVal(r["doi"]),
+			URL:                strVal(r["url"]),
+			Abstract:           strVal(r["abstract"]),
+			Methods:            firstStr(r, "methods_and_experimental_techniques", "methods"),
+			SampleSize:         firstStr(r, "sample_size_and_population_characteristics", "sample_size_and_population"),
+			Results:            firstStr(r, "results_and_conclusions", "results"),
+			Limitations:        firstStr(r, "paper_limitations_and_biases", "limitations"),
+			ConflictOfInterest: firstStr(r, "conflict_of_interest_statements", "conflict_of_interest"),
+			DataAvailability:   firstStr(r, "data_availability_statements", "data_availability"),
+			BlindSpots:         strVal(r["study_blindspots"]),
+			Falsify:            strVal(r["how_to_falsify"]),
 		})
 	}
 
@@ -241,5 +241,3 @@ func firstStr(m map[string]interface{}, keys ...string) string {
 	}
 	return ""
 }
-
-

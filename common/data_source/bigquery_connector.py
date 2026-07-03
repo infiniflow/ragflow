@@ -156,15 +156,11 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
             try:
                 service_account_info = json.loads(raw)
             except json.JSONDecodeError as exc:
-                raise ConnectorMissingCredentialError(
-                    f"BigQuery: service_account_json is not valid JSON: {exc}"
-                )
+                raise ConnectorMissingCredentialError(f"BigQuery: service_account_json is not valid JSON: {exc}")
         elif isinstance(raw, dict):
             service_account_info = raw
         else:
-            raise ConnectorMissingCredentialError(
-                "BigQuery: service_account_json must be a JSON string or object"
-            )
+            raise ConnectorMissingCredentialError("BigQuery: service_account_json must be a JSON string or object")
 
         self._credentials = {"service_account_info": service_account_info}
         return None
@@ -175,9 +171,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
             return self._client
 
         if bigquery is None or service_account is None:
-            raise ConnectorValidationError(
-                "BigQuery client not installed. Please install google-cloud-bigquery."
-            )
+            raise ConnectorValidationError("BigQuery client not installed. Please install google-cloud-bigquery.")
 
         service_account_info = self._credentials.get("service_account_info")
         if not service_account_info:
@@ -208,9 +202,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
             return self.query.rstrip(";")
         if self.dataset_id and self.table_id:
             return f"SELECT * FROM `{self.project_id}.{self.dataset_id}.{self.table_id}`"
-        raise ConnectorValidationError(
-            "BigQuery requires either a custom query or both dataset_id and table_id."
-        )
+        raise ConnectorValidationError("BigQuery requires either a custom query or both dataset_id and table_id.")
 
     @staticmethod
     def _wrap_query(base_query: str, select_clause: str = "*") -> str:
@@ -256,9 +248,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         for field in schema:
             if field.name == self.timestamp_column:
                 return field.field_type
-        raise ConnectorValidationError(
-            f"BigQuery timestamp column '{self.timestamp_column}' was not found in the schema."
-        )
+        raise ConnectorValidationError(f"BigQuery timestamp column '{self.timestamp_column}' was not found in the schema.")
 
     def _resolve_cursor_param_type(self) -> str:
         if self._cursor_param_type is not None:
@@ -266,9 +256,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         field_type = (self._get_cursor_column_field_type() or "").upper()
         param_type = _CURSOR_PARAM_TYPE_MAP.get(field_type)
         if param_type is None:
-            raise ConnectorValidationError(
-                f"BigQuery timestamp column type '{field_type}' is not supported as a cursor."
-            )
+            raise ConnectorValidationError(f"BigQuery timestamp column type '{field_type}' is not supported as a cursor.")
         self._cursor_param_type = param_type
         return param_type
 
@@ -291,10 +279,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         params: List[Any] = []
         if start is not None:
             if self.id_column and start_id is not None:
-                conditions.append(
-                    f"(ragflow_src.{self.timestamp_column} > @start_cursor OR "
-                    f"(ragflow_src.{self.timestamp_column} = @start_cursor AND ragflow_src.{self.id_column} > @start_cursor_id))"
-                )
+                conditions.append(f"(ragflow_src.{self.timestamp_column} > @start_cursor OR (ragflow_src.{self.timestamp_column} = @start_cursor AND ragflow_src.{self.id_column} > @start_cursor_id))")
                 params.append(self._make_cursor_param("start_cursor", start, param_type))
                 params.append(self._make_cursor_param("start_cursor_id", start_id, "STRING"))
             else:
@@ -319,10 +304,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
                 f") "
                 f"GROUP BY ragflow_src.{self.timestamp_column}"
             )
-        return (
-            f"SELECT MAX(ragflow_src.{self.timestamp_column}), NULL "
-            f"FROM ({base_query}) AS ragflow_src"
-        )
+        return f"SELECT MAX(ragflow_src.{self.timestamp_column}), NULL FROM ({base_query}) AS ragflow_src"
 
     def _build_slim_query(self, base_query: str) -> str:
         columns = [self.id_column] if self.id_column else self.content_columns
@@ -426,17 +408,10 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
                 else:
                     doc_updated_at = ts_value.astimezone(timezone.utc)
             elif isinstance(ts_value, date):
-                doc_updated_at = datetime(
-                    ts_value.year, ts_value.month, ts_value.day, tzinfo=timezone.utc
-                )
+                doc_updated_at = datetime(ts_value.year, ts_value.month, ts_value.day, tzinfo=timezone.utc)
 
         first_content_col = self.content_columns[0] if self.content_columns else "record"
-        semantic_id = (
-            str(row_dict.get(first_content_col, "bigquery_record"))
-            .replace("\n", " ")
-            .replace("\r", " ")
-            .strip()[:100]
-        )
+        semantic_id = str(row_dict.get(first_content_col, "bigquery_record")).replace("\n", " ").replace("\r", " ").strip()[:100]
         blob = content.encode("utf-8")
 
         return Document(
@@ -540,9 +515,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         logging.debug("Loading all records from BigQuery project: %s", self.project_id)
         return self._yield_documents()
 
-    def poll_source(
-        self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
-    ) -> Generator[list[Document], None, None]:
+    def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> Generator[list[Document], None, None]:
         """Poll for new/updated rows. Provided for interface completeness.
 
         Orchestration drives full/incremental sync via ``load_from_state`` /
@@ -550,9 +523,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         timestamp column.
         """
         if not self.timestamp_column:
-            logging.warning(
-                "No timestamp column configured for incremental sync. Falling back to full sync."
-            )
+            logging.warning("No timestamp column configured for incremental sync. Falling back to full sync.")
             return self.load_from_state()
         start_dt = datetime.fromtimestamp(start, tz=timezone.utc) if start else None
         end_dt = datetime.fromtimestamp(end, tz=timezone.utc) if end else None
@@ -575,9 +546,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         callback: Any = None,
     ) -> Generator[list[SlimDocument], None, None]:
         del callback
-        yield from self._yield_slim_documents_from_query(
-            self._build_slim_query(self._build_base_query())
-        )
+        yield from self._yield_slim_documents_from_query(self._build_slim_query(self._build_base_query()))
 
     # ------------------------------------------------------------------ #
     # Sync-state persistence (success-only cursor)
@@ -608,9 +577,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         from api.db.services.connector_service import ConnectorService
 
         updated_conf = copy.deepcopy(self._sync_config)
-        updated_conf["sync_cursor_value"] = self.serialize_cursor_value(
-            self._pending_sync_cursor_value
-        )
+        updated_conf["sync_cursor_value"] = self.serialize_cursor_value(self._pending_sync_cursor_value)
         updated_conf["sync_cursor_id"] = self._pending_sync_cursor_id
         ConnectorService.update_by_id(self._sync_connector_id, {"config": updated_conf})
         self._sync_config = updated_conf
@@ -627,9 +594,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         if not self.content_columns:
             raise ConnectorValidationError("At least one content column must be specified.")
         if not self.query and not (self.dataset_id and self.table_id):
-            raise ConnectorValidationError(
-                "BigQuery requires either a custom query or both dataset_id and table_id."
-            )
+            raise ConnectorValidationError("BigQuery requires either a custom query or both dataset_id and table_id.")
 
         try:
             client = self._get_client()
@@ -649,10 +614,8 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
             )
             estimated_bytes = getattr(dry_run_job, "total_bytes_processed", None)
             if estimated_bytes is not None:
-                logging.info(
-                    "BigQuery base query dry-run estimate: %s bytes processed.", estimated_bytes
-                )
-                
+                logging.info("BigQuery base query dry-run estimate: %s bytes processed.", estimated_bytes)
+
             schema = self._resolve_schema(client, dry_run_job)
             schema_columns = {field.name for field in schema}
 
@@ -665,9 +628,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
 
             missing = (required | optional) - schema_columns
             if missing:
-                raise ConnectorValidationError(
-                    f"BigQuery configured columns not found in schema: {', '.join(sorted(missing))}"
-                )
+                raise ConnectorValidationError(f"BigQuery configured columns not found in schema: {', '.join(sorted(missing))}")
 
             if self.timestamp_column:
                 self._resolve_cursor_param_type()

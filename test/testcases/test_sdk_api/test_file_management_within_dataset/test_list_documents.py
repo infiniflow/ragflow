@@ -151,7 +151,6 @@ class TestDocumentsList:
         documents = dataset.list_documents(**params)
         assert len(documents) == expected_num, str(documents)
 
-
     @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_num, expected_message",
@@ -222,7 +221,6 @@ class TestDocumentsList:
         else:
             documents = dataset.list_documents(**params)
             assert len(documents) == expected_num, str(documents)
-
 
     @pytest.mark.p3
     def test_concurrent_list(self, add_documents):
