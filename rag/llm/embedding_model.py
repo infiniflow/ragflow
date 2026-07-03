@@ -307,9 +307,7 @@ def _resolve_azure_credentials(key):
         key_obj = json.loads(key)
         if isinstance(key_obj, dict):
             return key_obj.get("api_key", ""), key_obj.get("api_version", "2024-02-01")
-        logging.warning(
-            "Azure credential payload parsed as JSON but is not an object; using raw api_key string"
-        )
+        logging.warning("Azure credential payload parsed as JSON but is not an object; using raw api_key string")
     except (json.JSONDecodeError, TypeError):
         logging.warning("Azure credential payload is not valid JSON; using raw api_key string")
     return key, "2024-02-01"

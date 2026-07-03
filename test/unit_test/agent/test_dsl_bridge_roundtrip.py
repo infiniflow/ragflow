@@ -127,9 +127,7 @@ def _v1_components_to_graph(components: dict[str, Any]) -> tuple[list[dict], lis
         comp = raw if isinstance(raw, dict) else {}
         obj = comp.get("obj") if isinstance(comp.get("obj"), dict) else {}
         name = obj.get("component_name") or comp.get("name") or key
-        params = obj.get("params") if isinstance(obj.get("params"), dict) else (
-            comp.get("params") if isinstance(comp.get("params"), dict) else {}
-        )
+        params = obj.get("params") if isinstance(obj.get("params"), dict) else (comp.get("params") if isinstance(comp.get("params"), dict) else {})
         nodes.append(
             {
                 "id": key,
@@ -191,9 +189,7 @@ def _graph_to_v1_components(graph: dict[str, Any]) -> dict[str, Any]:
     return components
 
 
-def _build_dsl_components_by_graph(
-    nodes: list[dict], edges: list[dict], seed: dict[str, Any]
-) -> dict[str, Any]:
+def _build_dsl_components_by_graph(nodes: list[dict], edges: list[dict], seed: dict[str, Any]) -> dict[str, Any]:
     """Port of `buildDslComponentsByGraph` (web/src/pages/agent/utils.ts:472).
 
     Reverse-derives a v1-style `components` map from React-Flow
@@ -247,9 +243,7 @@ def _build_v1_dsl_from_import(raw: dict[str, Any], is_agent: bool) -> dict[str, 
         out["components"] = raw["components"]
         layout = raw.get("_layout")
         out["_layout"] = layout
-    elif isinstance(raw.get("graph"), dict) and (
-        isinstance(raw["graph"].get("nodes"), list) and raw["graph"]["nodes"]
-    ):
+    elif isinstance(raw.get("graph"), dict) and (isinstance(raw["graph"].get("nodes"), list) and raw["graph"]["nodes"]):
         graph = raw["graph"]
         out["components"] = _graph_to_v1_components(graph)
         # Mirror the TS bridge: stash positions in _layout so the
@@ -269,9 +263,7 @@ def _build_v2_dsl_from_import(raw: dict[str, Any], is_agent: bool) -> dict[str, 
     shapes and produces a v2 envelope.
     """
     out: dict[str, Any] = dict(raw)
-    if isinstance(raw.get("graph"), dict) and (
-        isinstance(raw["graph"].get("nodes"), list) and raw["graph"]["nodes"]
-    ):
+    if isinstance(raw.get("graph"), dict) and (isinstance(raw["graph"].get("nodes"), list) and raw["graph"]["nodes"]):
         out["graph"] = raw["graph"]
         # v2 input that carries its own `components` (e.g. a v2 file
         # exported from the front-end with `bridge.exportDsl`) keeps
@@ -293,11 +285,7 @@ def _build_v2_dsl_from_import(raw: dict[str, Any], is_agent: bool) -> dict[str, 
         # v1 → v2 cross-mode: prefer saved _layout positions over
         # the default 50/350/200 row layout the inverse-conversion
         # would produce. The user's drag-and-drop work survives.
-        if (
-            isinstance(layout, dict)
-            and isinstance(layout.get("nodes"), list)
-            and layout["nodes"]
-        ):
+        if isinstance(layout, dict) and isinstance(layout.get("nodes"), list) and layout["nodes"]:
             out["graph"] = {
                 "nodes": layout["nodes"],
                 "edges": layout.get("edges") or [],
@@ -326,9 +314,7 @@ def dsl_to_graph(dsl: dict[str, Any]) -> tuple[list[dict], list[dict]]:
     return [], []
 
 
-def graph_to_dsl(
-    mode: str, nodes: list[dict], edges: list[dict], old_dsl: dict[str, Any]
-) -> dict[str, Any]:
+def graph_to_dsl(mode: str, nodes: list[dict], edges: list[dict], old_dsl: dict[str, Any]) -> dict[str, Any]:
     """Port of `graphToDsl` (both v1 and v2 branches)."""
     out = dict(old_dsl)
     if mode == "v1":
@@ -434,10 +420,7 @@ class Diff:
         """pytest entry point: warn on warnings, fail on failures."""
         for w in self.warnings:
             warnings.warn(f"[React-Flow-internal] {w}", stacklevel=2)
-        assert self.failures == [], (
-            f"{len(self.failures)} round-trip mismatches:\n"
-            + "\n".join(f"  - {f}" for f in self.failures)
-        )
+        assert self.failures == [], f"{len(self.failures)} round-trip mismatches:\n" + "\n".join(f"  - {f}" for f in self.failures)
 
 
 def _stable(v: Any) -> str:
@@ -475,9 +458,7 @@ def _compare_into(expected: Any, actual: Any, path: str, out: Diff) -> None:
 
     if exp_arr:
         if len(expected) != len(actual):
-            out.failures.append(
-                f"{path or '<root>'}: length {len(expected)} != {len(actual)}"
-            )
+            out.failures.append(f"{path or '<root>'}: length {len(expected)} != {len(actual)}")
         for i in range(min(len(expected), len(actual))):
             _compare_into(expected[i], actual[i], f"{path}[{i}]", out)
         return
@@ -592,6 +573,4 @@ class TestDslBridgeRoundTrip:
         # pointer. The diff walks into `position: {x, y}` and
         # reports each leaf individually, so only `x` shows up
         # (`y` matches the expected 100).
-        assert diff.failures == [
-            "position.x: value (100 vs 999)"
-        ]
+        assert diff.failures == ["position.x: value (100 vs 999)"]

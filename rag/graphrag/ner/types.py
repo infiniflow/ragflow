@@ -16,6 +16,7 @@
 """
 Data types for entity and relation extraction.
 """
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
@@ -23,6 +24,7 @@ from typing import Any, Dict, List
 @dataclass
 class Entity:
     """Extracted entity."""
+
     text: str
     label: str  # spaCy NER label: PERSON, ORG, GPE, ...
     start_char: int
@@ -34,8 +36,9 @@ class Entity:
 @dataclass
 class Relation:
     """Extracted relation between two entities."""
+
     subject: Entity
-    predicate: str   # relation type: "founded_by", "works_for", ...
+    predicate: str  # relation type: "founded_by", "works_for", ...
     obj: Entity
     confidence: float = 1.0
     context: str = ""  # surrounding text
@@ -45,6 +48,7 @@ class Relation:
 @dataclass
 class ExtractionResult:
     """Result of a full extraction pass."""
+
     entities: List[Entity] = field(default_factory=list)
     relations: List[Relation] = field(default_factory=list)
     language: str = "en"

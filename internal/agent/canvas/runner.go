@@ -335,13 +335,13 @@ func (r *Runner) Run(
 						}
 					}
 				}
-			push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(waiting), MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
-			// Always close a RunAgent call with the `done`
-			// terminator so the front-end can rely on a
-			// channel-end sentinel regardless of whether the run
-			// completed, errored, or paused for user input.
-			push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
-			return
+				push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(waiting), MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
+				// Always close a RunAgent call with the `done`
+				// terminator so the front-end can rely on a
+				// channel-end sentinel regardless of whether the run
+				// completed, errored, or paused for user input.
+				push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
+				return
 			}
 			if IsInterruptError(runErr) {
 				// Raw InterruptSignal (no wrapped InterruptCtx list

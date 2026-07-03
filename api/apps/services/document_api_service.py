@@ -61,6 +61,7 @@ def update_document_name_only(document_id, req_doc_name):
         )
     return None
 
+
 def update_chunk_method(req, doc, tenant_id):
     """
     Update chunk method only (without validation).
@@ -146,7 +147,7 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
     return None
 
 
-def update_document_status_only(status:int, doc, kb):
+def update_document_status_only(status: int, doc, kb):
     """
     Update document status only (without validation).
 
@@ -165,13 +166,18 @@ def update_document_status_only(status:int, doc, kb):
         try:
             if not DocumentService.update_by_id(doc.id, {"status": str(status)}):
                 return get_error_data_result(message="Database error (Document update)!")
-            settings.docStoreConn.update({"doc_id": doc.id}, {"available_int": status}, search.index_name(kb.tenant_id), doc.kb_id)
+            settings.docStoreConn.update(
+                {"doc_id": doc.id, "must_not": {"exists": "compile_kwd"}},
+                {"available_int": status},
+                search.index_name(kb.tenant_id),
+                doc.kb_id,
+            )
         except Exception as e:
             return server_error_response(e)
     return None
 
 
-def validate_document_update_fields(update_doc_req:UpdateDocumentReq, doc, req):
+def validate_document_update_fields(update_doc_req: UpdateDocumentReq, doc, req):
     """
     Validate document update fields in a single method.
 
@@ -269,7 +275,7 @@ def _process_key_mappings(doc):
     }
 
     # Handle both dict and model input
-    items = doc.to_dict().items() if hasattr(doc, 'to_dict') else doc.items()
+    items = doc.to_dict().items() if hasattr(doc, "to_dict") else doc.items()
 
     renamed_doc = {}
     for key, value in items:
