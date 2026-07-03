@@ -28,7 +28,7 @@ They are **not** downloaded by `build.sh` — use the included download script:
 
 ```bash
 # From the project root, download and extract to ~/ragflow-native-libs/
-uv run ragflow_deps/download_deps.py
+uv run python3 ragflow_deps/download_deps.py
 ```
 
 This also requires `lld-20` on Linux (for Chromium-built pdfium):

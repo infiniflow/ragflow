@@ -159,7 +159,7 @@ check_office_oxide_deps() {
 
     echo -e "${RED}Error: office_oxide native library not found${NC}"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run ragflow_deps/download_deps.py"
+    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
     echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
     exit 1
 }
@@ -176,7 +176,7 @@ check_pdfium_deps() {
 
     echo "  pdfium (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run ragflow_deps/download_deps.py"
+    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
     echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/pdfium-linux-x64-static.tgz | tar xz -C ${PDFIUM_STATIC_PREFIX}"
     return 1
 }
@@ -213,7 +213,7 @@ check_pdf_oxide_deps() {
 
     echo "  pdf_oxide (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run ragflow_deps/download_deps.py"
+    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
     echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz | tar xz -C ${PDF_OXIDE_PREFIX}"
     return 1
 }
@@ -478,7 +478,7 @@ DEPENDENCIES:
     - cmake >= 4.0
     - go >= 1.24
     - g++ with C++17/23 support
-    - office_oxide native library (download with: uv run ragflow_deps/download_deps.py)
+    - office_oxide native library (download with: uv run python3 ragflow_deps/download_deps.py)
     - lld (Linux only): sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
     - pcre2 development files
         - Debian/Ubuntu: libpcre2-dev
