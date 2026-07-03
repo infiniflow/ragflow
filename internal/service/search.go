@@ -90,6 +90,17 @@ func (s *SearchService) ListSearches(userID string, keywords string, page, pageS
 			return nil, err
 		}
 	} else {
+		ownerIDs, err = s.filterAccessibleSearchOwnerIDs(userID, ownerIDs)
+		if err != nil {
+			return nil, err
+		}
+		if len(ownerIDs) == 0 {
+			return &ListSearchAppsResponse{
+				SearchApps: []map[string]interface{}{},
+				Total:      0,
+			}, nil
+		}
+
 		searches, total, err = s.searchDAO.ListByOwnerIDs(ownerIDs, userID, orderby, desc, keywords)
 		if err != nil {
 			return nil, err
@@ -119,6 +130,39 @@ func (s *SearchService) ListSearches(userID string, keywords string, page, pageS
 		SearchApps: searchApps,
 		Total:      total,
 	}, nil
+}
+
+func (s *SearchService) filterAccessibleSearchOwnerIDs(userID string, ownerIDs []string) ([]string, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	allowed := map[string]struct{}{userID: {}}
+	for _, tenantID := range tenantIDs {
+		tenantID = strings.TrimSpace(tenantID)
+		if tenantID != "" {
+			allowed[tenantID] = struct{}{}
+		}
+	}
+
+	filtered := make([]string, 0, len(ownerIDs))
+	seen := make(map[string]struct{}, len(ownerIDs))
+	for _, ownerID := range ownerIDs {
+		ownerID = strings.TrimSpace(ownerID)
+		if ownerID == "" {
+			continue
+		}
+		if _, ok := allowed[ownerID]; !ok {
+			continue
+		}
+		if _, ok := seen[ownerID]; ok {
+			continue
+		}
+		seen[ownerID] = struct{}{}
+		filtered = append(filtered, ownerID)
+	}
+	return filtered, nil
 }
 
 // toSearchAppResponse converts search model to response format
