@@ -8,8 +8,8 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// FilterBoxesByRemoveSet 根据索引集合过滤 boxes
-// removeSet: key 是要移除的索引，value=true 表示移除
+// FilterBoxesByRemoveSet filters boxes by index set
+// removeSet: key is index to remove, value=true means remove
 func FilterBoxesByRemoveSet(boxes []pdf.TextBox, removeSet map[int]bool) []pdf.TextBox {
 	if len(removeSet) == 0 {
 		return boxes
@@ -17,8 +17,8 @@ func FilterBoxesByRemoveSet(boxes []pdf.TextBox, removeSet map[int]bool) []pdf.T
 	if len(boxes) == 0 {
 		return boxes
 	}
-	// 预分配: 估算最终大小，避免扩容
-	// 使用 max 防止 len(removeSet) > len(boxes) 导致负数容量
+	// Pre-allocate: estimate final size to avoid resizing
+	// Use max to prevent negative capacity when len(removeSet) > len(boxes)
 	estimatedCap := len(boxes) - len(removeSet)
 	if estimatedCap < 0 {
 		estimatedCap = 0
@@ -32,7 +32,7 @@ func FilterBoxesByRemoveSet(boxes []pdf.TextBox, removeSet map[int]bool) []pdf.T
 	return out
 }
 
-// createTableBoxFromItem 从 TableItem 创建包含 HTML 的 TextBox
+// createTableBoxFromItem creates HTML-containing TextBox from TableItem
 func createTableBoxFromItem(tbl *pdf.TableItem, html string) pdf.TextBox {
 	pg := 0
 	if len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0 {
@@ -54,7 +54,7 @@ func createTableBoxFromItem(tbl *pdf.TableItem, html string) pdf.TextBox {
 	}
 }
 
-// handleImageOnlyPDFs 处理无 boxes 但有 tables 的场景（Image-only PDF）
+// handleImageOnlyPDFs handles cases with no boxes but tables (Image-only PDF)
 func handleImageOnlyPDFs(tables []pdf.TableItem) []pdf.TextBox {
 	var out []pdf.TextBox
 	for ti := range tables {
@@ -194,7 +194,6 @@ func insertTableBoxes(boxes []pdf.TextBox, tables []pdf.TableItem, removeSet map
 	return out
 }
 
-
 // extractTableAndReplace pops table boxes and replaces them with consolidated
 // HTML boxes (one per table).  This matches Python's _extract_table_figure which
 // pops all boxes inside a table DLA region and inserts a single HTML box.
@@ -240,15 +239,22 @@ type replacement struct {
 	boxIdx   int
 }
 
-// buildReplacements scans for data-source-attribution boxes to remove and maps
-// each table to overlapping table-layout boxes, producing the replacement list.
-func buildReplacements(boxes []pdf.TextBox, tables []pdf.TableItem) (map[int]bool, []replacement) {
+// buildRemoveSet scans for data-source-attribution boxes to remove.
+// Does NOT depend on table indices — safe to call before MergeTablesAcrossPages.
+func buildRemoveSet(boxes []pdf.TextBox) map[int]bool {
 	removeSet := make(map[int]bool)
 	for i := range boxes {
 		if boxes[i].LayoutType == pdf.LayoutTypeTable && isDataSourceBox(boxes[i].Text) {
 			removeSet[i] = true
 		}
 	}
+	return removeSet
+}
+
+// buildReplacementsAfterMerge maps each table to overlapping table-layout boxes,
+// producing the replacement list. Must be called AFTER MergeTablesAcrossPages so
+// that tableIdx in each replacement refers to the correct merged-table slot.
+func buildReplacementsAfterMerge(boxes []pdf.TextBox, tables []pdf.TableItem, removeSet map[int]bool) []replacement {
 	var reps []replacement
 	for ti := range tables {
 		for i := range boxes {
@@ -263,17 +269,30 @@ func buildReplacements(boxes []pdf.TextBox, tables []pdf.TableItem) (map[int]boo
 			}
 		}
 	}
+	return reps
+}
+
+// buildReplacements scans for data-source-attribution boxes to remove and maps
+// each table to overlapping table-layout boxes, producing the replacement list.
+// Deprecated: pre-merge variant kept for compatibility; prefer calling
+// buildRemoveSet + MergeTablesAcrossPages + buildReplacementsAfterMerge.
+func buildReplacements(boxes []pdf.TextBox, tables []pdf.TableItem) (map[int]bool, []replacement) {
+	removeSet := buildRemoveSet(boxes)
+	reps := buildReplacementsAfterMerge(boxes, tables, removeSet)
 	return removeSet, reps
 }
 
 func ExtractTableAndReplace(boxes []pdf.TextBox, tables []pdf.TableItem) []pdf.TextBox {
-	removeSet, replacements := buildReplacements(boxes, tables)
+	removeSet := buildRemoveSet(boxes)
 	if len(tables) == 0 {
 		return FilterBoxesByRemoveSet(boxes, removeSet)
 	}
 
 	MarkNoMergeTables(boxes, tables)
 	tables = MergeTablesAcrossPages(tables, nil)
+
+	// Build replacements AFTER merge so tableIdx refers to the merged slice.
+	replacements := buildReplacementsAfterMerge(boxes, tables, removeSet)
 
 	if len(replacements) == 0 && len(boxes) == 0 {
 		return handleImageOnlyPDFs(tables)
@@ -285,7 +304,7 @@ func ExtractTableAndReplace(boxes []pdf.TextBox, tables []pdf.TableItem) []pdf.T
 	return processTablesWithReplacements(boxes, tables, removeSet, replacements)
 }
 
-// buildAndSortAnchors 创建并排序 anchor 列表
+// buildAndSortAnchors creates and sorts anchor list
 func buildAndSortAnchors(anchors map[int]int) []struct{ ti, pos int } {
 	result := make([]struct{ ti, pos int }, 0, len(anchors))
 	for ti, pos := range anchors {
@@ -295,7 +314,7 @@ func buildAndSortAnchors(anchors map[int]int) []struct{ ti, pos int } {
 	return result
 }
 
-// processTablesWithReplacements 处理有 replacements 的正常流程
+// processTablesWithReplacements handles normal flow with replacements
 func processTablesWithReplacements(
 	boxes []pdf.TextBox,
 	tables []pdf.TableItem,
@@ -340,14 +359,13 @@ func findTableAnchorsWithReplacements(boxes []pdf.TextBox, tables []pdf.TableIte
 	return result
 }
 
-
-// figKey 用于按页面和布局号对 figure 框进行分组
+// figKey groups figure boxes by page and layout number
 type figKey struct {
 	page int
 	ln   string
 }
 
-// markDataSourceBoxesForRemoval 标记数据源标注的 figure 框以便移除
+// markDataSourceBoxesForRemoval marks data source attribution figure boxes for removal
 func markDataSourceBoxesForRemoval(boxes []pdf.TextBox) map[int]bool {
 	removeSet := make(map[int]bool)
 	for i, b := range boxes {
@@ -358,7 +376,7 @@ func markDataSourceBoxesForRemoval(boxes []pdf.TextBox) map[int]bool {
 	return removeSet
 }
 
-// groupFigureBoxes 将 figure 框按 (page, layoutno) 分组
+// groupFigureBoxes groups figure boxes by (page, layoutno)
 func groupFigureBoxes(boxes []pdf.TextBox, removeSet map[int]bool) map[figKey][]int {
 	groups := make(map[figKey][]int)
 	for i, b := range boxes {
@@ -371,7 +389,7 @@ func groupFigureBoxes(boxes []pdf.TextBox, removeSet map[int]bool) map[figKey][]
 	return groups
 }
 
-// mergeFigureGroups 合并分组内的 figure 框
+// mergeFigureGroups merges figure boxes within groups
 func mergeFigureGroups(boxes []pdf.TextBox, groups map[figKey][]int, removeSet map[int]bool) {
 	for _, indices := range groups {
 		if len(indices) <= 1 {

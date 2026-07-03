@@ -60,7 +60,7 @@ func determineBestKForPage(boxes, result []pdf.TextBox, indices []int, pg int, p
 	x0s, minX0, maxX1 := extractX0Values(boxes, indices)
 	pageWidth := maxX1 - minX0
 	indentTol := pageWidth * 0.12
-	x0s = applyIndentTolerance(x0s, minX0, indentTol)
+	applyIndentTolerance(x0s, minX0, indentTol)
 
 	bestK, _ := findBestK(x0s, n)
 	pageCols[pg] = bestK
@@ -85,15 +85,12 @@ func extractX0Values(boxes []pdf.TextBox, indices []int) (x0s []float64, minX0 f
 }
 
 // applyIndentTolerance adjusts x0 values that are close to minX0 to improve clustering
-func applyIndentTolerance(x0s []float64, minX0, indentTol float64) []float64 {
-	result := make([]float64, len(x0s))
-	copy(result, x0s)
-	for i := range result {
-		if math.Abs(result[i]-minX0) < indentTol {
-			result[i] = minX0
+func applyIndentTolerance(x0s []float64, minX0, indentTol float64) {
+	for i := range x0s {
+		if math.Abs(x0s[i]-minX0) < indentTol {
+			x0s[i] = minX0
 		}
 	}
-	return result
 }
 
 // findBestK tries k from 1 to min(4, n) and returns the k with the best silhouette score
@@ -215,12 +212,12 @@ func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medi
 		return boxes
 	}
 
-	// 按页面分组
+	// Group boxes by page
 	pageGroups, sortedPages := groupBoxesByPage(boxes)
 
 	var result []pdf.TextBox
 	for _, pg := range sortedPages {
-		// 收集该页面的所有框
+		// Collect all boxes for this page
 		indices := pageGroups[pg]
 		bxs := make([]pdf.TextBox, len(indices))
 		for i, idx := range indices {
@@ -236,7 +233,7 @@ func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medi
 			mw = 8 // Python fallback: np.median([...]) if chars else 8 (pdf_parser.py:1465)
 		}
 
-		// 处理该页面的框
+		// Process boxes for this page
 		processed := processPageBoxes(bxs, mh, mw, isEnglish)
 		result = append(result, processed...)
 	}
@@ -271,7 +268,7 @@ func FinalReadingOrderMerge(boxes []pdf.TextBox) []pdf.TextBox {
 
 var pageNumSuffixPattern = regexp.MustCompile(`[0-9  •一—-]+$`)
 
-// groupBoxesByPage 将文本框按页面分组，返回页号到索引列表的映射和排序后的页号列表
+// groupBoxesByPage groups text boxes by page, returning a map from page number to index list and sorted page number list
 func groupBoxesByPage(boxes []pdf.TextBox) (map[int][]int, []int) {
 	if len(boxes) == 0 {
 		return map[int][]int{}, []int{}
@@ -282,7 +279,7 @@ func groupBoxesByPage(boxes []pdf.TextBox) (map[int][]int, []int) {
 		pageGroups[b.PageNumber] = append(pageGroups[b.PageNumber], i)
 	}
 
-	// 排序页面编号
+	// Sort page numbers
 	pageKeys := make([]int, 0, len(pageGroups))
 	for pg := range pageGroups {
 		pageKeys = append(pageKeys, pg)
@@ -292,29 +289,29 @@ func groupBoxesByPage(boxes []pdf.TextBox) (map[int][]int, []int) {
 	return pageGroups, pageKeys
 }
 
-// shouldMergeBoxes 判断两个框是否应该合并
+// shouldMergeBoxes determines whether two boxes should be merged
 func shouldMergeBoxes(prev, curr *pdf.TextBox, mh, mw float64, isEnglish bool) bool {
-	// 检查布局编号
+	// Check layout number
 	if prev.LayoutNo != curr.LayoutNo {
 		slog.Debug("vm reject", "reason", "layoutNo", "prevLayout", prev.LayoutNo, "currLayout", curr.LayoutNo)
 		return false
 	}
 
-	// 检查垂直间距
+	// Check vertical gap
 	gap := curr.Top - prev.Bottom
 	if gap > mh*1.5 {
 		slog.Debug("vm reject", "reason", "gap", "gap", gap, "threshold", mh*1.5, "mh", mh)
 		return false
 	}
 
-	// 检查水平重叠
+	// Check horizontal overlap
 	ov := util.OverlapX(prev, curr)
 	if ov < 0.3 {
 		slog.Debug("vm reject", "reason", "ovX", "ov", ov, "threshold", 0.3)
 		return false
 	}
 
-	// 检查连接/阻断条件
+	// Check merge/block conditions
 	prevText := strings.TrimSpace(prev.Text)
 	currText := strings.TrimSpace(curr.Text)
 
@@ -326,7 +323,6 @@ func shouldMergeBoxes(prev, curr *pdf.TextBox, mh, mw float64, isEnglish bool) b
 	anti := []bool{
 		endsWithOneOf(prevText, "。？！?"),
 		isEnglish && endsWithOneOf(prevText, ".!?"),
-		prev.PageNumber == curr.PageNumber && curr.Top-prev.Bottom > mh*1.5,
 		prev.PageNumber < curr.PageNumber && math.Abs(prev.X0-curr.X0) > mw*4,
 	}
 	detach := []bool{prev.X1 < curr.X0, prev.X0 > curr.X1}
@@ -338,7 +334,7 @@ func shouldMergeBoxes(prev, curr *pdf.TextBox, mh, mw float64, isEnglish bool) b
 	return true
 }
 
-// mergeTwoBoxes 合并两个文本框
+// mergeTwoBoxes merges two text boxes
 func mergeTwoBoxes(prev, curr pdf.TextBox) pdf.TextBox {
 	prevText := strings.TrimSpace(prev.Text)
 	currText := strings.TrimSpace(curr.Text)
@@ -348,18 +344,25 @@ func mergeTwoBoxes(prev, curr pdf.TextBox) pdf.TextBox {
 	prev.X0 = math.Min(prev.X0, curr.X0)
 	prev.X1 = math.Max(prev.X1, curr.X1)
 
-	slog.Debug("vm merge", "prev", prevText[:min(40, len(prevText))], "curr", currText[:min(40, len(currText))])
+	prevTrunc, currTrunc := prevText, currText
+	if r := []rune(prevTrunc); len(r) > 40 {
+		prevTrunc = string(r[:40])
+	}
+	if r := []rune(currTrunc); len(r) > 40 {
+		currTrunc = string(r[:40])
+	}
+	slog.Debug("vm merge", "prev", prevTrunc, "curr", currTrunc)
 
 	return prev
 }
 
-// processPageBoxes 处理单个页面的所有框
+// processPageBoxes processes all boxes for a single page
 func processPageBoxes(boxes []pdf.TextBox, mh, mw float64, isEnglish bool) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
 	}
 
-	// 按 Top, X0 排序
+	// Sort by Top, X0
 	sortedBoxes := make([]pdf.TextBox, len(boxes))
 	copy(sortedBoxes, boxes)
 	sort.Slice(sortedBoxes, func(i, j int) bool {
@@ -373,18 +376,18 @@ func processPageBoxes(boxes []pdf.TextBox, mh, mw float64, isEnglish bool) []pdf
 	for i := 0; i < len(sortedBoxes); i++ {
 		curr := sortedBoxes[i]
 
-		// 跳过跨页后缀（如前一页页码）
+		// Skip cross-page suffixes (like previous page number)
 		if i > 0 && sortedBoxes[i-1].PageNumber < curr.PageNumber && pageNumSuffixPattern.MatchString(sortedBoxes[i-1].Text) {
 			continue
 		}
 
-		// 处理空白框
+		// Handle empty boxes
 		if strings.TrimSpace(curr.Text) == "" {
 			if len(out) > 0 {
 				prev := &out[len(out)-1]
 				if curr.Top-prev.Bottom <= mh*1.5 && util.OverlapX(prev, &curr) >= 0.3 {
-					// TODO: prev.Bottom = math.Max(prev.Bottom, curr.Bottom) — 直接赋值可能会缩小高合并框
-					// 与 Python 行为一致（也是直接赋值）。在 pipeline alignment 发布前推迟修复。
+					// TODO: prev.Bottom = math.Max(prev.Bottom, curr.Bottom) — direct assignment might shrink tall merged boxes
+					// Matches Python behavior (also direct assignment). Defer fix until pipeline alignment release.
 					prev.Bottom = curr.Bottom
 				}
 			}

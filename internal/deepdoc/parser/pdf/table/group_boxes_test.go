@@ -304,9 +304,10 @@ func TestCompressColIndices_OverlapMerge(t *testing.T) {
 	if cCompressed[0][0] != 0 || cCompressed[0][1] != 0 {
 		t.Errorf("overlap merge incorrect: %v", cCompressed[0])
 	}
-	// Note: cMaxCol is len(cMap)-1, which counts original columns, not unique compressed ones
-	if cMaxCol[0] != 1 {
-		t.Errorf("cMaxCol incorrect: %d", cMaxCol[0])
+	// After fix: cMaxCol tracks unique compressed columns, not original C keys.
+	// 2 overlapping boxes → 1 compressed column → cMaxCol[0] == 0
+	if cMaxCol[0] != 0 {
+		t.Errorf("cMaxCol incorrect: got %d, want 0 (2 overlapping boxes → 1 compressed column)", cMaxCol[0])
 	}
 }
 

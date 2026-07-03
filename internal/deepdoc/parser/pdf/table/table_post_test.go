@@ -1,6 +1,7 @@
 package table
 
 import (
+	"strings"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -18,7 +19,7 @@ func TestFindTableAnchors_SingleTable(t *testing.T) {
 	}
 	tables := []pdf.TableItem{
 		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 60, RegionBottom: 200,
 			Cells: []pdf.TSRCell{{Text: "cell"}},
 		},
@@ -38,7 +39,7 @@ func TestFindTableAnchors_NoBoxes(t *testing.T) {
 	tables := []pdf.TableItem{
 		{
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
-			Cells: []pdf.TSRCell{{Text: "cell"}},
+			Cells:     []pdf.TSRCell{{Text: "cell"}},
 		},
 	}
 
@@ -57,12 +58,12 @@ func TestFindTableAnchors_MultipleTables(t *testing.T) {
 	}
 	tables := []pdf.TableItem{
 		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 40, Bottom: 100}},
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 40, Bottom: 100}},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 40, RegionBottom: 100,
 			Cells: []pdf.TSRCell{{Text: "cell1"}},
 		},
 		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 150, Bottom: 210}},
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 150, Bottom: 210}},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 150, RegionBottom: 210,
 			Cells: []pdf.TSRCell{{Text: "cell2"}},
 		},
@@ -81,7 +82,7 @@ func TestFindTableAnchors_AnchorAboveTable(t *testing.T) {
 	}
 	tables := []pdf.TableItem{
 		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 40, Bottom: 100}},
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 40, Bottom: 100}},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 40, RegionBottom: 100,
 			Cells: []pdf.TSRCell{{Text: "cell"}},
 		},
@@ -103,7 +104,7 @@ func TestFindTableAnchors_DifferentPage(t *testing.T) {
 	}
 	tables := []pdf.TableItem{
 		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 40, Bottom: 100}},
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 40, Bottom: 100}},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 40, RegionBottom: 100,
 			Cells: []pdf.TSRCell{{Text: "cell"}},
 		},
@@ -128,7 +129,7 @@ func TestBuildTableHTMLs_SingleTable(t *testing.T) {
 	tables := []pdf.TableItem{
 		{
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
-			Scale: 1.0,
+			Scale:     1.0,
 			Cells: []pdf.TSRCell{
 				{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "A"},
 				{X0: 100, Y0: 0, X1: 200, Y1: 50, Text: "B"},
@@ -150,7 +151,7 @@ func TestBuildTableHTMLs_NoCells(t *testing.T) {
 	tables := []pdf.TableItem{
 		{
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
-			Cells: []pdf.TSRCell{},
+			Cells:     []pdf.TSRCell{},
 		},
 	}
 
@@ -167,7 +168,7 @@ func TestBuildTableHTMLs_WithTableBoxes(t *testing.T) {
 	tables := []pdf.TableItem{
 		{
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
-			Scale: 1.0,
+			Scale:     1.0,
 			Cells: []pdf.TSRCell{
 				{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "A"},
 			},
@@ -193,7 +194,7 @@ func TestInsertTableBoxes_Basic(t *testing.T) {
 	removeSet := map[int]bool{1: true}
 	tables := []pdf.TableItem{
 		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 60, RegionBottom: 200,
 		},
 	}
@@ -217,7 +218,7 @@ func TestInsertTableBoxes_NoRemove(t *testing.T) {
 	removeSet := map[int]bool{}
 	tables := []pdf.TableItem{
 		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 60, RegionBottom: 200,
 		},
 	}
@@ -238,7 +239,7 @@ func TestInsertTableBoxes_AtEnd(t *testing.T) {
 	removeSet := map[int]bool{}
 	tables := []pdf.TableItem{
 		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 60, RegionBottom: 200,
 		},
 	}
@@ -263,11 +264,11 @@ func TestInsertTableBoxes_MultipleAnchors(t *testing.T) {
 	removeSet := map[int]bool{}
 	tables := []pdf.TableItem{
 		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 60, RegionBottom: 200,
 		},
 		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 210, Bottom: 350}},
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 210, Bottom: 350}},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 210, RegionBottom: 350,
 		},
 	}
@@ -291,7 +292,7 @@ func TestInsertTableBoxes_EmptyHTML(t *testing.T) {
 	removeSet := map[int]bool{}
 	tables := []pdf.TableItem{
 		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 60, Bottom: 200}},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 60, RegionBottom: 200,
 		},
 	}
@@ -316,7 +317,7 @@ func TestExtractTableAndReplace_Integration(t *testing.T) {
 	}
 	tables := []pdf.TableItem{
 		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 40, Bottom: 150}},
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 40, Bottom: 150}},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 40, RegionBottom: 150,
 			Scale: 1.0,
 			Cells: []pdf.TSRCell{
@@ -530,14 +531,14 @@ func TestHandleImageOnlyPDFs_EmptyCells(t *testing.T) {
 func TestHandleImageOnlyPDFs_SingleTable(t *testing.T) {
 	tables := []pdf.TableItem{
 		{
-			Scale:      1.0,
-			CropOffX:   0,
-			CropOffY:   0,
-			RegionLeft: 10,
-			RegionRight: 200,
-			RegionTop: 20,
+			Scale:        1.0,
+			CropOffX:     0,
+			CropOffY:     0,
+			RegionLeft:   10,
+			RegionRight:  200,
+			RegionTop:    20,
 			RegionBottom: 100,
-			Positions: []pdf.Position{{PageNumbers: []int{0}}},
+			Positions:    []pdf.Position{{PageNumbers: []int{0}}},
 			Cells: []pdf.TSRCell{
 				{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "cell1"},
 			},
@@ -555,22 +556,22 @@ func TestHandleImageOnlyPDFs_SingleTable(t *testing.T) {
 func TestHandleImageOnlyPDFs_MultipleTables(t *testing.T) {
 	tables := []pdf.TableItem{
 		{
-			Scale: 1.0,
+			Scale:      1.0,
 			RegionLeft: 10, RegionRight: 200,
 			RegionTop: 20, RegionBottom: 100,
 			Positions: []pdf.Position{{PageNumbers: []int{0}}},
-			Cells: []pdf.TSRCell{{Text: "table1"}},
+			Cells:     []pdf.TSRCell{{Text: "table1"}},
 		},
 		{
 			// 没有 cell 的 table，应该被跳过
 			Cells: []pdf.TSRCell{},
 		},
 		{
-			Scale: 1.0,
+			Scale:      1.0,
 			RegionLeft: 10, RegionRight: 200,
 			RegionTop: 120, RegionBottom: 200,
 			Positions: []pdf.Position{{PageNumbers: []int{1}}},
-			Cells: []pdf.TSRCell{{Text: "table2"}},
+			Cells:     []pdf.TSRCell{{Text: "table2"}},
 		},
 	}
 	result := handleImageOnlyPDFs(tables)
@@ -591,7 +592,7 @@ func TestBuildAndSortAnchors(t *testing.T) {
 	}
 	tables := []pdf.TableItem{
 		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 50, Bottom: 80}},
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 50, Bottom: 80}},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 50, RegionBottom: 80,
 			Cells: []pdf.TSRCell{{Text: "cell1"}},
 		},
@@ -745,5 +746,57 @@ func TestConsolidateFigures_OnlyDataSource(t *testing.T) {
 	result := ConsolidateFigures(boxes)
 	if len(result) != 0 {
 		t.Errorf("expected 0 boxes (data source removed), got %d", len(result))
+	}
+}
+
+func TestExtractTableAndReplace_MergeTablesAcrossPages(t *testing.T) {
+	// Regression test: two tables on consecutive pages with overlapping X
+	// should be merged by MergeTablesAcrossPages, and buildReplacementsAfterMerge
+	// must correctly index into the merged slice (not the original pre-merge slice).
+	boxes := []pdf.TextBox{
+		{Text: "intro", LayoutType: pdf.LayoutTypeText, PageNumber: 0, X0: 10, X1: 100, Top: 10, Bottom: 30},
+		{Text: "table1", LayoutType: pdf.LayoutTypeTable, PageNumber: 0, X0: 10, X1: 400, Top: 40, Bottom: 150},
+		{Text: "middle", LayoutType: pdf.LayoutTypeText, PageNumber: 0, X0: 10, X1: 100, Top: 160, Bottom: 190},
+		{Text: "table2", LayoutType: pdf.LayoutTypeTable, PageNumber: 1, X0: 10, X1: 400, Top: 10, Bottom: 120},
+		{Text: "outro", LayoutType: pdf.LayoutTypeText, PageNumber: 1, X0: 10, X1: 100, Top: 130, Bottom: 160},
+	}
+	tables := []pdf.TableItem{
+		{
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 40, Bottom: 150}},
+			RegionLeft: 10, RegionRight: 400, RegionTop: 40, RegionBottom: 150,
+			Scale: 1.0,
+			Cells: []pdf.TSRCell{
+				{X0: 0, Y0: 0, X1: 100, Y1: 30, Text: "Page0_A"},
+				{X0: 100, Y0: 0, X1: 200, Y1: 30, Text: "Page0_B"},
+			},
+		},
+		{
+			Positions:  []pdf.Position{{PageNumbers: []int{1}, Left: 10, Right: 400, Top: 10, Bottom: 120}},
+			RegionLeft: 10, RegionRight: 400, RegionTop: 10, RegionBottom: 120,
+			Scale: 1.0,
+			Cells: []pdf.TSRCell{
+				{X0: 0, Y0: 50, X1: 100, Y1: 80, Text: "Page1_C"},
+				{X0: 100, Y0: 50, X1: 200, Y1: 80, Text: "Page1_D"},
+			},
+		},
+	}
+
+	result := ExtractTableAndReplace(boxes, tables)
+	if len(result) == 0 {
+		t.Fatal("expected non-empty result")
+	}
+	// After merge: 2 table boxes replaced by 1 merged HTML box.
+	// Original 5 boxes → 4 expected (intro, merged_table, middle, outro).
+	if len(result) != 4 {
+		t.Errorf("expected 4 boxes after merge+replace, got %d", len(result))
+	}
+	// The merged HTML box should contain cells from both pages.
+	htmlBox := result[1]
+	if !strings.Contains(htmlBox.Text, "Page0") || !strings.Contains(htmlBox.Text, "Page1") {
+		t.Errorf("merged HTML should contain cells from both pages, got: %s", htmlBox.Text[:min(100, len(htmlBox.Text))])
+	}
+	// Verify the original text boxes are preserved in the right order.
+	if result[0].Text != "intro" || result[2].Text != "middle" || result[3].Text != "outro" {
+		t.Error("non-table boxes should be preserved in original order")
 	}
 }

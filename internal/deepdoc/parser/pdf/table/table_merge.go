@@ -112,8 +112,16 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float6
 			merged[jt.idx] = true
 			anchorPg = bpg
 			anchorBtm = bp.Bottom
+			ap = anchor.Positions[len(anchor.Positions)-1]
 		}
 		result = append(result, anchor)
+	}
+	// Append unprocessed tables (those with empty Positions) so they
+	// are not silently dropped from the output.
+	for i := range tables {
+		if !merged[i] {
+			result = append(result, tables[i])
+		}
 	}
 	return result
 }

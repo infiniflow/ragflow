@@ -103,11 +103,19 @@ func (p *Parser) normalizePageRange(engine pdf.PDFEngine) (pageCount, fromPage, 
 	if err != nil {
 		return 0, 0, 0, err
 	}
+	fromPage = p.Config.FromPage
+	if fromPage < 0 {
+		fromPage = 0
+	} else if fromPage >= pageCount {
+		fromPage = pageCount - 1
+	}
 	toPage = p.Config.ToPage
 	if toPage < 0 || toPage >= pageCount {
 		toPage = pageCount - 1
 	}
-	fromPage = p.Config.FromPage
+	if toPage < fromPage {
+		toPage = fromPage
+	}
 	return pageCount, fromPage, toPage, nil
 }
 
@@ -193,6 +201,9 @@ func (p *Parser) processLargeDocument(ctx context.Context, engine pdf.PDFEngine,
 func (p *Parser) mergeBatchResults(result, batch *pdf.ParseResult) {
 	result.Sections = append(result.Sections, batch.Sections...)
 	result.Tables = append(result.Tables, batch.Tables...)
+	if result.PageImages == nil {
+		result.PageImages = make(map[int]image.Image)
+	}
 	for pg, img := range batch.PageImages {
 		result.PageImages[pg] = img
 	}
@@ -222,6 +233,10 @@ func (p *Parser) extractPages(ctx context.Context, engine pdf.PDFEngine,
 		chars := prescanChars[pg]
 
 		if len(chars) > 0 && !util.IsGarbledPage(chars) {
+			if err := ctx.Err(); err != nil {
+				results[i] = pageResult{pg: pg, err: fmt.Errorf("cancelled before sync page %d: %w", pg, err)}
+				continue
+			}
 			results[i] = p.processPageSync(ctx, engine, pg, chars, pageImages, docAnalyzer)
 			continue
 		}
@@ -238,11 +253,11 @@ func (p *Parser) extractPages(ctx context.Context, engine pdf.PDFEngine,
 
 // setupPageConcurrency sets up the concurrency primitives for page processing.
 func (p *Parser) setupPageConcurrency() (chan struct{}, *sync.WaitGroup) {
-	cap := p.Config.MaxOCRConcurrency
-	if cap <= 0 {
-		cap = 1
+	maxConc := p.Config.MaxOCRConcurrency
+	if maxConc <= 0 {
+		maxConc = 1
 	}
-	return make(chan struct{}, cap), &sync.WaitGroup{}
+	return make(chan struct{}, maxConc), &sync.WaitGroup{}
 }
 
 // processPageSync processes a page synchronously (normal pages with non-garbled chars).
@@ -252,10 +267,12 @@ func (p *Parser) processPageSync(ctx context.Context, engine pdf.PDFEngine, pg i
 	pageImg, renderErr := RenderPageToImage(engine, pg)
 	if renderErr == nil && pageImg != nil {
 		pageImages[pg] = pageImg
+	} else if renderErr != nil {
+		slog.Warn("processPageSync: RenderPageToImage failed", "page", pg, "err", renderErr)
 	}
 
-	ocrBoxes, ocrUsed := p.processPageBoxes(ctx, pageImg, chars, pg, renderErr, docAnalyzer, false)
-	return pageResult{pg: pg, ocrBoxes: ocrBoxes, chars: chars, ocrUsed: ocrUsed}
+	ocrBoxes, updatedChars, ocrUsed := p.processPageBoxes(ctx, pageImg, chars, pg, renderErr, docAnalyzer, false)
+	return pageResult{pg: pg, ocrBoxes: ocrBoxes, chars: updatedChars, ocrUsed: ocrUsed}
 }
 
 // processPageAsync processes a page asynchronously (garbled pages or scan pages).
@@ -277,14 +294,17 @@ func (p *Parser) processPageAsync(ctx context.Context, engine pdf.PDFEngine, pg 
 		return pageResult{pg: pg, err: err}
 	}
 
-	ocrBoxes, ocrUsed := p.processPageBoxes(ctx, pageImg, chars, pg, nil, docAnalyzer, true)
-	return pageResult{pg: pg, ocrBoxes: ocrBoxes, chars: chars, ocrUsed: ocrUsed, pageImg: pageImg}
+	ocrBoxes, updatedChars, ocrUsed := p.processPageBoxes(ctx, pageImg, chars, pg, nil, docAnalyzer, true)
+	return pageResult{pg: pg, ocrBoxes: ocrBoxes, chars: updatedChars, ocrUsed: ocrUsed, pageImg: pageImg}
 }
 
 // processPageBoxes processes OCR box extraction for a page, shared between sync and async paths.
+// Returns (ocrBoxes, updatedChars, ocrUsed). The updatedChars includes synthetic OCR
+// chars appended when OCR detect+recognize succeeds — callers must use the returned
+// chars slice, not the original, to get correct median/layout calculations.
 func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, pg int,
 	renderErr error, docAnalyzer pdf.DocAnalyzer, isAsync bool,
-) ([]pdf.TextBox, bool) {
+) ([]pdf.TextBox, []pdf.TextChar, bool) {
 	var ocrBoxes []pdf.TextBox
 	ocrUsed := false
 
@@ -326,7 +346,7 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 		}
 	}
 
-	return ocrBoxes, ocrUsed
+	return ocrBoxes, chars, ocrUsed
 }
 
 // collectPageResults collects and merges the per-page results.
@@ -417,7 +437,8 @@ func (p *Parser) retryZoom(ctx context.Context, engine pdf.PDFEngine,
 	slog.Info("zoom retry: re-rendering", "oldZoom", p.Config.Zoom, "newZoom", retryZoomVal)
 	for pg := fromPage; pg <= toPage; pg++ {
 		img, err := engine.RenderPageImage(pg, retryDPI)
-		if err != nil {slog.Warn("zoom retry: render failed", "page", pg, "err", err)
+		if err != nil {
+			slog.Warn("zoom retry: render failed", "page", pg, "err", err)
 			continue
 		}
 		pageImages[pg] = img
@@ -595,33 +616,3 @@ func matchTableImage(sec *pdf.Section, tableImgByRegion map[string]string) (stri
 	return "", false
 }
 
-// mergePageResults collects per-page OCR results into the final output.
-// This is kept for backward compatibility.
-func mergePageResults(results []pageResult, boxes []pdf.TextBox, pageImages map[int]image.Image,
-	pageChars map[int][]pdf.TextChar, ocrUsedAny bool,
-	medianHeights, medianWidths map[int]float64,
-) ([]pdf.TextBox, map[int][]pdf.TextChar, bool, error) {
-	var errs []error
-	for _, r := range results {
-		if r.err != nil {
-			slog.Warn("page OCR failed", "page", r.pg, "err", r.err)
-			errs = append(errs, fmt.Errorf("page %d: %w", r.pg, r.err))
-			continue
-		}
-		if r.ocrUsed {
-			boxes = append(boxes, r.ocrBoxes...)
-			ocrUsedAny = true
-		} else if len(r.ocrBoxes) > 0 {
-			boxes = append(boxes, r.ocrBoxes...)
-		}
-		if r.pageImg != nil {
-			pageImages[r.pg] = r.pageImg
-		}
-		pageChars[r.pg] = r.chars
-		if r.ocrUsed {
-			medianHeights[r.pg] = util.MedianCharHeight(r.chars)
-			medianWidths[r.pg] = util.MedianCharWidth(r.chars)
-		}
-	}
-	return boxes, pageChars, ocrUsedAny, errors.Join(errs...)
-}

@@ -15,9 +15,9 @@ type rb struct {
 	label          string
 }
 
-// groupBoxesByRC groups text boxes into a cell grid by R/C annotations.
-// Matches Python's construct_table: sort by R, merge nearby rows by Y proximity,
-// sort by C within each row, merge nearby columns by X proximity.
+// GroupBoxesByRC groups text boxes into a cell grid by R/C annotations.
+// Matches Python's construct_table: sort by R, sort by C within each row,
+// merge nearby columns by X proximity.
 func GroupBoxesByRC(boxes []pdf.TextBox) [][]pdf.TSRCell {
 	if len(boxes) == 0 {
 		return nil
@@ -57,13 +57,14 @@ func GroupBoxesByRC(boxes []pdf.TextBox) [][]pdf.TSRCell {
 	return buildGrid(cmap, cCompressed, cMaxCol, compressed)
 }
 
-// groupBoxesByYX groups boxes into a cell grid by Y/X coordinates,
+// GroupBoxesByYX groups boxes into a cell grid by Y/X coordinates,
 // matching Python's construct_table which uses sort_R_firstly and
-// sort_C_firstly when R/C annotations are absent.
-// This is test-only — used by table_parity_test.go to verify pipeline
-// parity with Python boxes that lack R/C annotations.
+// sort_C_firstly when R/C annotations are absent. Falls back from
+// GroupBoxesByRC when boxes lack R/C annotations.
 func GroupBoxesByYX(boxes []pdf.TextBox) [][]pdf.TSRCell {
-	if len(boxes) == 0 { return nil }
+	if len(boxes) == 0 {
+		return nil
+	}
 	// Sort by (page, top, x0) — same as Python sort_R_firstly with R=-1.
 	sort.Slice(boxes, func(i, j int) bool {
 		if boxes[i].PageNumber != boxes[j].PageNumber {
@@ -83,8 +84,8 @@ func GroupBoxesByYX(boxes []pdf.TextBox) [][]pdf.TSRCell {
 	var rowGroups []rowGroup
 	rowGroups = append(rowGroups, rowGroup{
 		boxes: []pdf.TextBox{boxes[0]},
-		top: boxes[0].Top,
-		btm: boxes[0].Bottom,
+		top:   boxes[0].Top,
+		btm:   boxes[0].Bottom,
 	})
 	for i := 1; i < len(boxes); i++ {
 		prev := &rowGroups[len(rowGroups)-1]
@@ -100,8 +101,8 @@ func GroupBoxesByYX(boxes []pdf.TextBox) [][]pdf.TSRCell {
 		} else {
 			rowGroups = append(rowGroups, rowGroup{
 				boxes: []pdf.TextBox{boxes[i]},
-				top: boxes[i].Top,
-				btm: boxes[i].Bottom,
+				top:   boxes[i].Top,
+				btm:   boxes[i].Bottom,
 			})
 		}
 	}
@@ -118,12 +119,12 @@ func GroupBoxesByYX(boxes []pdf.TextBox) [][]pdf.TSRCell {
 			boxes []pdf.TextBox
 			x1    float64
 		}
-		cols = append(cols, struct{
+		cols = append(cols, struct {
 			boxes []pdf.TextBox
 			x1    float64
 		}{
 			boxes: []pdf.TextBox{rg.boxes[0]},
-			x1: rg.boxes[0].X1,
+			x1:    rg.boxes[0].X1,
 		})
 		for i := 1; i < len(rg.boxes); i++ {
 			prev := &cols[len(cols)-1]
@@ -133,12 +134,12 @@ func GroupBoxesByYX(boxes []pdf.TextBox) [][]pdf.TSRCell {
 					prev.x1 = rg.boxes[i].X1
 				}
 			} else {
-				cols = append(cols, struct{
+				cols = append(cols, struct {
 					boxes []pdf.TextBox
 					x1    float64
 				}{
 					boxes: []pdf.TextBox{rg.boxes[i]},
-					x1: rg.boxes[i].X1,
+					x1:    rg.boxes[i].X1,
 				})
 			}
 		}
@@ -147,8 +148,12 @@ func GroupBoxesByYX(boxes []pdf.TextBox) [][]pdf.TSRCell {
 			var sb strings.Builder
 			for _, b := range col.boxes {
 				t := strings.TrimSpace(b.Text)
-				if t == "" { continue }
-				if sb.Len() > 0 { sb.WriteByte(' ') }
+				if t == "" {
+					continue
+				}
+				if sb.Len() > 0 {
+					sb.WriteByte(' ')
+				}
 				sb.WriteString(t)
 			}
 			rows[ri][ci].Text = sb.String()
@@ -165,11 +170,19 @@ func cellPosFromBox(b pdf.TextBox) (x0, y0, x1, y1 float64, label string) {
 	if b.H > 0 {
 		label = "table header"
 		if b.HLeft != 0 || b.HRight != 0 {
-			if b.HLeft != 0 { x0 = b.HLeft }
-			if b.HRight != 0 { x1 = b.HRight }
+			if b.HLeft != 0 {
+				x0 = b.HLeft
+			}
+			if b.HRight != 0 {
+				x1 = b.HRight
+			}
 		}
-		if b.HTop != 0 { y0 = b.HTop }
-		if b.HBott != 0 { y1 = b.HBott }
+		if b.HTop != 0 {
+			y0 = b.HTop
+		}
+		if b.HBott != 0 {
+			y1 = b.HBott
+		}
 	} else if b.SP > 0 {
 		label = "table spanning cell"
 	}
@@ -179,8 +192,12 @@ func cellPosFromBox(b pdf.TextBox) (x0, y0, x1, y1 float64, label string) {
 // cellLabelFromBox returns the TSR label for a box based on H/SP annotations.
 // Used when merging multiple boxes into one cell — preserves the spanning label.
 func cellLabelFromBox(b pdf.TextBox) string {
-	if b.H > 0 { return "table header" }
-	if b.SP > 0 { return "table spanning cell" }
+	if b.H > 0 {
+		return "table header"
+	}
+	if b.SP > 0 {
+		return "table spanning cell"
+	}
 	return ""
 }
 
@@ -192,16 +209,13 @@ func compressRowIndices(boxes []pdf.TextBox) (map[int]int, int) {
 	compressed := 0
 	rowMap[boxes[0].R] = 0
 	lastR := boxes[0].R
-	btm := boxes[0].Bottom
 	for i := 1; i < len(boxes); i++ {
 		if boxes[i].R != lastR {
 			compressed++
 			rowMap[boxes[i].R] = compressed
 			lastR = boxes[i].R
-			btm = boxes[i].Bottom
 		} else {
 			rowMap[boxes[i].R] = compressed
-			btm = (btm + boxes[i].Bottom) / 2.0
 		}
 	}
 	return rowMap, compressed
@@ -226,7 +240,9 @@ func collectBoxesPerRow(boxes []pdf.TextBox, rowMap map[int]int) (map[int]map[in
 		}
 		x0, y0, x1, y1, label := cellPosFromBox(b)
 		if v, ok := cmap[r][c]; ok {
-			v.txt += " " + t
+			if t != "" {
+				v.txt += " " + t
+			}
 			// Merge spanning coordinates (use widest extent).
 			if b.H > 0 || b.SP > 0 {
 				v.label = cellLabelFromBox(b)
@@ -277,21 +293,22 @@ func compressColIndices(boxes []pdf.TextBox, rowMap map[int]int, compressed int)
 		// Assign compressed column by X-order (disjoint X → new col).
 		cMap := make(map[int]int) // original C → compressed col
 		right := 0.0
+		nCols := 0
 		for _, rb := range rowBoxes {
 			if len(cMap) == 0 || rb.x0 >= right {
-				cc := len(cMap)
-				cMap[rb.c] = cc
+				cMap[rb.c] = nCols
+				nCols++
 				right = rb.x1
 			} else {
 				// Overlapping X → merge into last column.
-				cMap[rb.c] = len(cMap) - 1
+				cMap[rb.c] = nCols - 1
 				if rb.x1 > right {
 					right = rb.x1
 				}
 			}
 		}
 		cCompressed[ri] = cMap
-		cMaxCol[ri] = len(cMap) - 1
+		cMaxCol[ri] = nCols - 1
 	}
 	return cCompressed, cMaxCol
 }
@@ -305,12 +322,34 @@ func buildGrid(cmap map[int]map[int]*rb, cCompressed map[int]map[int]int, cMaxCo
 		for ci, v := range cmap[ri] {
 			cci := cCompressed[ri][ci]
 			if cci <= maxC {
-				rows[ri][cci].Text = v.txt
-				rows[ri][cci].X0 = v.x0
-				rows[ri][cci].Y0 = v.y0
-				rows[ri][cci].X1 = v.x1
-				rows[ri][cci].Y1 = v.y1
-				rows[ri][cci].Label = v.label
+				if rows[ri][cci].Text == "" {
+					rows[ri][cci].Text = v.txt
+					rows[ri][cci].X0 = v.x0
+					rows[ri][cci].Y0 = v.y0
+					rows[ri][cci].X1 = v.x1
+					rows[ri][cci].Y1 = v.y1
+					rows[ri][cci].Label = v.label
+				} else {
+					// Multiple originals map to same compressed cell — merge deterministically.
+					if v.txt != "" {
+						rows[ri][cci].Text += " " + v.txt
+					}
+					if v.x0 < rows[ri][cci].X0 {
+						rows[ri][cci].X0 = v.x0
+					}
+					if v.y0 < rows[ri][cci].Y0 {
+						rows[ri][cci].Y0 = v.y0
+					}
+					if v.x1 > rows[ri][cci].X1 {
+						rows[ri][cci].X1 = v.x1
+					}
+					if v.y1 > rows[ri][cci].Y1 {
+						rows[ri][cci].Y1 = v.y1
+					}
+					if rows[ri][cci].Label == "" && v.label != "" {
+						rows[ri][cci].Label = v.label
+					}
+				}
 			}
 		}
 	}
@@ -320,8 +359,12 @@ func buildGrid(cmap map[int]map[int]*rb, cCompressed map[int]map[int]int, cMaxCo
 func BoxesHaveAnnotations(boxes []pdf.TextBox) bool {
 	maxR, maxC := 0, 0
 	for _, b := range boxes {
-		if b.R > maxR { maxR = b.R }
-		if b.C > maxC { maxC = b.C }
+		if b.R > maxR {
+			maxR = b.R
+		}
+		if b.C > maxC {
+			maxC = b.C
+		}
 	}
 	// True if at least 2 rows or 2 cols (R/C are 0-based, so maxR>0 means ≥2 rows).
 	return maxR > 0 || maxC > 0

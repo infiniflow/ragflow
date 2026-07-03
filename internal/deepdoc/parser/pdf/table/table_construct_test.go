@@ -821,41 +821,62 @@ func TestCalculateMergeDistance(t *testing.T) {
 	}
 }
 
-func TestMergeColumnIntoLeft(t *testing.T) {
-	rows := [][]pdf.TSRCell{
-		{{Text: "a"}, {Text: "b"}},
-		{{Text: ""}, {Text: "d"}},
-		{{Text: "e"}, {Text: ""}},
+func TestMergeColumn(t *testing.T) {
+	tests := []struct {
+		name     string
+		mergeDir string // "left" or "right"
+		srcCol   int
+		wantCol0 string
+		wantCol1 string
+	}{
+		{
+			name:     "merge left",
+			mergeDir: "left",
+			srcCol:   1,
+			wantCol0: "a b",
+			wantCol1: "b",
+		},
+		{
+			name:     "merge right",
+			mergeDir: "right",
+			srcCol:   0,
+			wantCol0: "a",
+			wantCol1: "a b",
+		},
 	}
 
-	mergeColumnIntoLeft(rows, 1)
-	if rows[0][0].Text != "a b" {
-		t.Errorf("expected 'a b', got '%s'", rows[0][0].Text)
-	}
-	if rows[1][0].Text != "d" {
-		t.Errorf("expected 'd', got '%s'", rows[1][0].Text)
-	}
-	if rows[2][0].Text != "e" {
-		t.Errorf("expected 'e', got '%s'", rows[2][0].Text)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows := [][]pdf.TSRCell{
+				{{Text: "a"}, {Text: "b"}},
+				{{Text: ""}, {Text: "d"}},
+				{{Text: "e"}, {Text: ""}},
+			}
 
-func TestMergeColumnIntoRight(t *testing.T) {
-	rows := [][]pdf.TSRCell{
-		{{Text: "a"}, {Text: "b"}},
-		{{Text: ""}, {Text: "d"}},
-		{{Text: "e"}, {Text: ""}},
-	}
-
-	mergeColumnIntoRight(rows, 0)
-	if rows[0][1].Text != "a b" {
-		t.Errorf("expected 'a b' in right column, got '%s'", rows[0][1].Text)
-	}
-	if rows[1][1].Text != "d" {
-		t.Errorf("expected 'd' in right column, got '%s'", rows[1][1].Text)
-	}
-	if rows[2][1].Text != "e" {
-		t.Errorf("expected 'e' in right column, got '%s'", rows[2][1].Text)
+			if tt.mergeDir == "left" {
+				mergeColumnIntoLeft(rows, tt.srcCol)
+				if rows[0][0].Text != tt.wantCol0 {
+					t.Errorf("expected '%s', got '%s'", tt.wantCol0, rows[0][0].Text)
+				}
+				if rows[1][0].Text != "d" {
+					t.Errorf("expected 'd', got '%s'", rows[1][0].Text)
+				}
+				if rows[2][0].Text != "e" {
+					t.Errorf("expected 'e', got '%s'", rows[2][0].Text)
+				}
+			} else {
+				mergeColumnIntoRight(rows, tt.srcCol)
+				if rows[0][1].Text != tt.wantCol1 {
+					t.Errorf("expected '%s' in right column, got '%s'", tt.wantCol1, rows[0][1].Text)
+				}
+				if rows[1][1].Text != "d" {
+					t.Errorf("expected 'd' in right column, got '%s'", rows[1][1].Text)
+				}
+				if rows[2][1].Text != "e" {
+					t.Errorf("expected 'e' in right column, got '%s'", rows[2][1].Text)
+				}
+			}
+		})
 	}
 }
 

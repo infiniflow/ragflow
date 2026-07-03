@@ -14,6 +14,24 @@ import (
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
+// ---- test helpers ----
+
+func newTestParser() *Parser {
+	return &Parser{Config: pdf.DefaultParserConfig()}
+}
+
+func newMockDocAnalyzer(healthy bool, boxes []pdf.OCRBox, texts []pdf.OCRText) *MockDocAnalyzer {
+	return &MockDocAnalyzer{
+		Healthy:   healthy,
+		OCRBoxes:  boxes,
+		OCRTexts:  texts,
+	}
+}
+
+func newSimpleMockDocAnalyzer() *MockDocAnalyzer {
+	return &MockDocAnalyzer{Healthy: true}
+}
+
 // ── OCR fallback ──────────────────────────────────────────────────────
 
 func TestOCR_Fallback(t *testing.T) {
@@ -698,11 +716,26 @@ func TestParser_setupPageConcurrency(t *testing.T) {
 }
 
 func TestParser_prescanPages(t *testing.T) {
-	testChars := []pdf.TextChar{{Text: "a", PageNumber: 0, Top: 10, Bottom: 20}}
+	// Provide at least 30 ASCII chars per page so DetectEnglish finds a run ≥30.
+	charsPage0 := make([]pdf.TextChar, 50)
+	for i := range charsPage0 {
+		charsPage0[i] = pdf.TextChar{
+			Text: "a", PageNumber: 0, Top: 10, Bottom: 20,
+			X0: 50 + float64(i*10), X1: 58 + float64(i*10),
+		}
+	}
+	charsPage1 := make([]pdf.TextChar, 50)
+	for i := range charsPage1 {
+		charsPage1[i] = pdf.TextChar{
+			Text: "b", PageNumber: 1, Top: 10, Bottom: 20,
+			X0: 50 + float64(i*10), X1: 58 + float64(i*10),
+		}
+	}
 	eng := &MockEngine{
 		NumPages: 2,
 		Chars: map[int][]pdf.TextChar{
-			0: testChars,
+			0: charsPage0,
+			1: charsPage1,
 		},
 	}
 	p := &Parser{Config: pdf.DefaultParserConfig()}

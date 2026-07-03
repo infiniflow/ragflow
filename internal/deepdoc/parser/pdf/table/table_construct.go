@@ -300,30 +300,31 @@ func calculateMergeDistance(rows [][]pdf.TSRCell, col int, row int, nCols int, h
 	return leftDist, rightDist
 }
 
-// mergeColumnIntoLeft merges column j into column j-1.
-func mergeColumnIntoLeft(rows [][]pdf.TSRCell, j int) {
+// mergeColumn merges column src into column dst.
+func mergeColumn(rows [][]pdf.TSRCell, src, dst int) {
 	for i := range rows {
-		if j-1 < len(rows[i]) && j < len(rows[i]) {
-			if rows[i][j-1].Text == "" {
-				rows[i][j-1].Text = rows[i][j].Text
-			} else if rows[i][j].Text != "" {
-				rows[i][j-1].Text += " " + rows[i][j].Text
+		if src < len(rows[i]) && dst < len(rows[i]) {
+			if rows[i][dst].Text == "" {
+				rows[i][dst].Text = rows[i][src].Text
+			} else if rows[i][src].Text != "" {
+				if src < dst {
+					rows[i][dst].Text = rows[i][src].Text + " " + rows[i][dst].Text
+				} else {
+					rows[i][dst].Text += " " + rows[i][src].Text
+				}
 			}
 		}
 	}
 }
 
+// mergeColumnIntoLeft merges column j into column j-1.
+func mergeColumnIntoLeft(rows [][]pdf.TSRCell, j int) {
+	mergeColumn(rows, j, j-1)
+}
+
 // mergeColumnIntoRight merges column j into column j+1.
 func mergeColumnIntoRight(rows [][]pdf.TSRCell, j int) {
-	for i := range rows {
-		if j < len(rows[i]) && j+1 < len(rows[i]) {
-			if rows[i][j+1].Text == "" {
-				rows[i][j+1].Text = rows[i][j].Text
-			} else if rows[i][j].Text != "" {
-				rows[i][j+1].Text = rows[i][j].Text + " " + rows[i][j+1].Text
-			}
-		}
-	}
+	mergeColumn(rows, j, j+1)
 }
 
 // removeColumn removes column j from all rows.
