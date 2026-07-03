@@ -102,6 +102,51 @@ func TestGetComponentInputForm_HappyPath(t *testing.T) {
 	}
 }
 
+func TestGetComponentInputForm_AgentWithoutStaticInputForm(t *testing.T) {
+	cv := &entity.UserCanvas{
+		ID: "c1",
+		DSL: map[string]any{
+			"components": map[string]any{
+				"Agent:StaleDragonsLive": map[string]any{
+					"obj": map[string]any{
+						"component_name": "Agent",
+						"params": map[string]any{
+							"llm_id": "magistral-medium-latest@pr15821-mistral@Mistral",
+						},
+						// No input_form here: Agent mirrors Python by deriving
+						// its input form from the runtime component.
+					},
+				},
+			},
+		},
+	}
+	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
+
+	c, w := componentCtx(t, "GET", "/api/v1/agents/c1/components/Agent:StaleDragonsLive/input-form", "")
+	c.Params = gin.Params{
+		{Key: "canvas_id", Value: "c1"},
+		{Key: "component_id", Value: "Agent:StaleDragonsLive"},
+	}
+	h.GetComponentInputForm(c)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, w.Body.String())
+	}
+	if env.Code != 0 {
+		t.Fatalf("code = %d, want 0; body=%s", env.Code, w.Body.String())
+	}
+	if _, ok := env.Data["self"].(map[string]interface{}); !ok {
+		t.Fatalf("data.self = %T, want object; body=%s", env.Data["self"], w.Body.String())
+	}
+}
+
 func TestGetComponentInputForm_CanvasNotFound(t *testing.T) {
 	h := &AgentHandler{loader: &fakeCanvasLoader{err: dao.ErrUserCanvasNotFound}}
 

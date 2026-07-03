@@ -64,6 +64,15 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 		return
 	}
 
+	if form, ok := h.getRuntimeComponentInputForm(cv.DSL, componentID); ok {
+		c.JSON(200, gin.H{
+			"code":    common.CodeSuccess,
+			"data":    form,
+			"message": "success",
+		})
+		return
+	}
+
 	form, err := dsl.ExtractComponentInputForm(cv.DSL, componentID)
 	if err != nil {
 		mapDSLError(c, componentID, err)
@@ -74,6 +83,31 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 		"data":    form,
 		"message": "success",
 	})
+}
+
+func (h *AgentHandler) getRuntimeComponentInputForm(dslMap map[string]any, componentID string) (map[string]any, bool) {
+	name, err := dsl.ExtractComponentName(dslMap, componentID)
+	if err != nil {
+		return nil, false
+	}
+	params, err := dsl.ExtractComponentParams(dslMap, componentID)
+	if err != nil {
+		return nil, false
+	}
+
+	factory := runtime.DefaultFactory()
+	if factory == nil {
+		return nil, false
+	}
+	comp, err := factory(name, params)
+	if err != nil {
+		return nil, false
+	}
+	formGetter, ok := comp.(interface{ GetInputForm() map[string]any })
+	if !ok {
+		return nil, false
+	}
+	return formGetter.GetInputForm(), true
 }
 
 // DebugComponent POST /api/v1/agents/:canvas_id/components/:component_id/debug
