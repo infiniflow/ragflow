@@ -780,13 +780,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	// continues with an empty tenant_id rather than failing
 	// the run; the run still works, the only loss is the
 	// per-tenant filterability of the run-history log.
-	if tenantIDs, terr := s.userTenantDAO.GetTenantIDsByUserID(userID); terr == nil && len(tenantIDs) > 0 {
-		root["tenant_id"] = tenantIDs[0]
-	} else if terr != nil {
-		common.Warn("service: RunAgent userTenantDAO.GetTenantIDsByUserID (best-effort, run not blocked)",
-			zap.String("user_id", userID),
-			zap.Error(terr))
-	}
+
+	root["tenant_id"] = userID
+
 	// v3.6.1 diagnostic: log what RunAgent put into root so we can
 	// confirm tenant_id / user_id / session_id / user_input all
 	// reached the buildRunFunc closure (which runs in the runner's
