@@ -66,7 +66,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
     List providers for a tenant.
 
     If available_only is True, list all system-wide providers (pool providers).
-    Otherwise, list providers that the tenant has configured.
+    Otherwise, list providers that the tenant has configured, with a has_instance flag.
 
     :param tenant_id: tenant ID
     :param all_available: whether to list all available providers
@@ -102,11 +102,13 @@ def list_providers(tenant_id: str, all_available: bool = False):
     for name in factory_names:
         if name not in ["Youdao", "FastEmbed", "BAAI", "Builtin", "siliconflow_intl"] and factory_info_mapping.get(name):
             factory_info = factory_info_mapping[name]
+            provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, name)
+            has_instance = bool(provider_obj and TenantModelInstanceService.get_all_by_provider_id(provider_obj.id))
             model_types = sorted(set(model_type for llm in factory_info.get("llm", []) for model_type in _factory_model_types(llm))) if factory_info.get("llm", []) else []
             if name in ["MinerU", "PaddleOCR", "OpenDataLoader"]:
                 model_types.append("ocr")
 
-            provider = {"model_types": model_types, "name": factory_info["name"], "url": {"default": factory_info.get("url", "")}}
+            provider = {"has_instance": has_instance, "model_types": model_types, "name": factory_info["name"], "url": {"default": factory_info.get("url", "")}}
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
             elif factory_info["name"] == "Tongyi-Qianwen":
