@@ -28,16 +28,12 @@
 //     MinIO path on the way out so downstream components (Parser)
 //     can re-fetch without re-running File.
 //
-//   - DOC-ID PATH: partially ported. Python branches on
-//     `self._canvas._doc_id` and uses `DocumentService.get_by_id`
-//     to resolve `name`. The Go port accepts `doc_id` as an
-//     upstream input and currently treats it as an opaque key
-//     (the doc-service DAO resolution is a Phase 2.6+ concern —
-//     plan §1 marks "DSL schema" as ❌.not implemented). When a
-//     caller wires `doc_id` WITHOUT `bucket`+`path`, we return
-//     `name = doc_id` and an empty `path`; the caller is expected
-//     to also supply `bucket`/`path` (typical wiring through the
-//     pipeline orchestrator in Phase 3).
+//   - DOC-ID PATH: implemented. When `doc_id` is supplied without an
+//     explicit `bucket`/`path`, File resolves the backing document and
+//     storage address from the database (`document`, `file2document`,
+//     `file`) and fetches the binary from storage. This now matches the
+//     Python intent in dataflow_service.py / pipeline.py: pipeline.run()
+//     can rely on doc_id-only execution.
 //
 //   - BINARY ENCODING: matched. Output `binary` is base64-encoded
 //     raw bytes, matching the python set_output contract. Base64
@@ -62,6 +58,8 @@ import (
 	"time"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/storage"
 )
@@ -115,6 +113,10 @@ type FileComponent struct {
 // `storage.NewMemoryStorage()` via `storage.GetStorageFactory().SetStorage(...)`,
 // the same pattern already used in internal/service/file_test.go:80-83.
 var SetStorageFactoryOverride func() storage.Storage
+
+// ResolveDocumentStorageOverride is the narrow test seam for doc_id-driven
+// storage resolution. Production leaves this nil and uses DAO-backed lookup.
+var ResolveDocumentStorageOverride func(docID string) (*resolvedDocumentRef, error)
 
 // NewFileComponent constructs a FileComponent from DSL params.
 // The current schema (schema.FileParam) has no fields; the
@@ -291,6 +293,12 @@ type fileInputs struct {
 	fileDesc map[string]any
 }
 
+type resolvedDocumentRef struct {
+	name   string
+	bucket string
+	path   string
+}
+
 // parseFileInputs parses and validates the upstream input map.
 // Mirrors python's branching on `self._canvas._doc_id` vs.
 // `kwargs.get("file")[0]`.
@@ -337,7 +345,69 @@ func parseFileInputs(inputs map[string]any) (fileInputs, error) {
 	if v, ok := getString(inputs, "path"); ok {
 		out.path = v
 	}
+	if out.docID != "" && (out.bucket == "" || out.path == "") {
+		ref, err := resolveDocumentStorage(out.docID)
+		if err != nil {
+			return fileInputs{}, fmt.Errorf("file: resolve doc_id %q: %w", out.docID, err)
+		}
+		if ref.name != "" {
+			out.name = ref.name
+		}
+		if out.bucket == "" {
+			out.bucket = ref.bucket
+		}
+		if out.path == "" {
+			out.path = ref.path
+		}
+	}
 	return out, nil
+}
+
+func resolveDocumentStorage(docID string) (*resolvedDocumentRef, error) {
+	if ResolveDocumentStorageOverride != nil {
+		return ResolveDocumentStorageOverride(docID)
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID(docID)
+	if err != nil {
+		return nil, err
+	}
+	ref := &resolvedDocumentRef{name: documentNameOrID(doc)}
+
+	mappings, err := dao.NewFile2DocumentDAO().GetByDocumentID(doc.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(mappings) > 0 && mappings[0].FileID != nil && *mappings[0].FileID != "" {
+		file, err := dao.NewFileDAO().GetByID(*mappings[0].FileID)
+		if err != nil {
+			return nil, err
+		}
+		if file.SourceType == "" || entity.FileSource(file.SourceType) == entity.FileSourceLocal {
+			if file.Location == nil || *file.Location == "" {
+				return nil, fmt.Errorf("file location is empty")
+			}
+			ref.bucket = file.ParentID
+			ref.path = *file.Location
+			return ref, nil
+		}
+	}
+	if doc.Location == nil || *doc.Location == "" {
+		return nil, fmt.Errorf("document location is empty")
+	}
+	ref.bucket = doc.KbID
+	ref.path = *doc.Location
+	return ref, nil
+}
+
+func documentNameOrID(doc *entity.Document) string {
+	if doc != nil && doc.Name != nil && *doc.Name != "" {
+		return *doc.Name
+	}
+	if doc != nil {
+		return doc.ID
+	}
+	return ""
 }
 
 // getString accepts any of the json.Number-adjacent forms JSON

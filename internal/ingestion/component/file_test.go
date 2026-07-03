@@ -26,7 +26,12 @@ import (
 	"time"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/storage"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 // withMemoryStorage swaps the global storage factory for an
@@ -40,6 +45,21 @@ func withMemoryStorage(t *testing.T) *storage.MemoryStorage {
 	factory.SetStorage(ms)
 	t.Cleanup(func() { factory.SetStorage(prev) })
 	return ms
+}
+
+func withFileComponentTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Document{}, &entity.File{}, &entity.File2Document{}); err != nil {
+		t.Fatalf("failed to migrate sqlite: %v", err)
+	}
+	prev := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = prev })
+	return db
 }
 
 // TestFileComponent_Registered verifies the init() registration
@@ -109,6 +129,131 @@ func TestFileComponent_Invoke_HappyPath(t *testing.T) {
 	}
 	if out["_created_time"] == nil {
 		t.Error("_created_time missing")
+	}
+}
+
+func TestFileComponent_Invoke_ResolvesDocIDViaDocumentLocation(t *testing.T) {
+	ms := withMemoryStorage(t)
+	db := withFileComponentTestDB(t)
+	location := "docs/from-document.bin"
+	if err := ms.Put("kb-doc", location, []byte("doc-location")); err != nil {
+		t.Fatalf("seed storage: %v", err)
+	}
+	docName := "report.pdf"
+	if err := db.Create(&entity.Document{
+		ID:           "doc-loc",
+		KbID:         "kb-doc",
+		ParserID:     "na",
+		ParserConfig: entity.JSONMap{},
+		Type:         "pdf",
+		CreatedBy:    "u1",
+		Name:         &docName,
+		Location:     &location,
+		Suffix:       ".pdf",
+	}).Error; err != nil {
+		t.Fatalf("seed doc: %v", err)
+	}
+
+	c := &FileComponent{}
+	out, err := c.Invoke(context.Background(), map[string]any{"doc_id": "doc-loc"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, err := base64.StdEncoding.DecodeString(out["binary"].(string))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if string(got) != "doc-location" {
+		t.Fatalf("binary = %q, want %q", got, "doc-location")
+	}
+	if out["name"] != "report.pdf" {
+		t.Fatalf("name = %v, want report.pdf", out["name"])
+	}
+	if out["bucket"] != "kb-doc" || out["path"] != location {
+		t.Fatalf("bucket/path = %v/%v, want kb-doc/%s", out["bucket"], out["path"], location)
+	}
+}
+
+func TestFileComponent_Invoke_ResolvesDocIDViaFileMapping(t *testing.T) {
+	ms := withMemoryStorage(t)
+	db := withFileComponentTestDB(t)
+	location := "tenant-root/from-file.bin"
+	if err := ms.Put("folder-1", location, []byte("file-mapping")); err != nil {
+		t.Fatalf("seed storage: %v", err)
+	}
+	docName := "deck.pptx"
+	if err := db.Create(&entity.Document{
+		ID:           "doc-file",
+		KbID:         "kb-1",
+		ParserID:     "na",
+		ParserConfig: entity.JSONMap{},
+		Type:         "ppt",
+		CreatedBy:    "u1",
+		Name:         &docName,
+		Suffix:       ".pptx",
+	}).Error; err != nil {
+		t.Fatalf("seed doc: %v", err)
+	}
+	if err := db.Create(&entity.File{
+		ID:        "file-1",
+		ParentID:  "folder-1",
+		TenantID:  "tenant-1",
+		CreatedBy: "u1",
+		Name:      "deck.pptx",
+		Location:  &location,
+		Type:      "file",
+	}).Error; err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	fileID := "file-1"
+	docID := "doc-file"
+	if err := db.Create(&entity.File2Document{
+		ID:         "map-1",
+		FileID:     &fileID,
+		DocumentID: &docID,
+	}).Error; err != nil {
+		t.Fatalf("seed mapping: %v", err)
+	}
+
+	c := &FileComponent{}
+	out, err := c.Invoke(context.Background(), map[string]any{"doc_id": "doc-file"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, err := base64.StdEncoding.DecodeString(out["binary"].(string))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if string(got) != "file-mapping" {
+		t.Fatalf("binary = %q, want %q", got, "file-mapping")
+	}
+	if out["bucket"] != "folder-1" || out["path"] != location {
+		t.Fatalf("bucket/path = %v/%v, want folder-1/%s", out["bucket"], out["path"], location)
+	}
+}
+
+func TestFileComponent_Invoke_DocIDWithoutStorageLocationFails(t *testing.T) {
+	withMemoryStorage(t)
+	db := withFileComponentTestDB(t)
+	if err := db.Create(&entity.Document{
+		ID:           "doc-empty",
+		KbID:         "kb-1",
+		ParserID:     "na",
+		ParserConfig: entity.JSONMap{},
+		Type:         "txt",
+		CreatedBy:    "u1",
+		Suffix:       ".txt",
+	}).Error; err != nil {
+		t.Fatalf("seed doc: %v", err)
+	}
+
+	c := &FileComponent{}
+	_, err := c.Invoke(context.Background(), map[string]any{"doc_id": "doc-empty"})
+	if err == nil {
+		t.Fatal("expected error for doc without storage location")
+	}
+	if !strings.Contains(err.Error(), "document location is empty") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
