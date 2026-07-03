@@ -61,7 +61,9 @@ export function Sidebar({ selection, onSelect }: SidebarProps) {
   // provider's instance list on mount — instance details are fetched
   // lazily by the right pane only when the user clicks a provider.
   const addedSet = useMemo(() => {
-    return new Set(addedProviders.map((p) => p.name));
+    return new Set(
+      addedProviders.filter((p) => p.has_instance).map((p) => p.name),
+    );
   }, [addedProviders]);
 
   const filteredProviders = useMemo(() => {

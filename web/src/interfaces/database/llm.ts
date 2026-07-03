@@ -45,6 +45,7 @@ export interface IAvailableProvider {
   name: string;
   model_types: string[];
   url: { default?: string; [key: string]: string | undefined };
+  has_instance: boolean;
 }
 
 export interface IProviderInstance {
