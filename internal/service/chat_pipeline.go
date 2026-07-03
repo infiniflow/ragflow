@@ -151,6 +151,7 @@ type AsyncChatResult struct {
 //   - kwargs: extra parameters (doc_ids, knowledge, quote, etc.).
 func (s *ChatPipelineService) AsyncChat(
 	ctx context.Context,
+	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
@@ -188,7 +189,7 @@ func (s *ChatPipelineService) AsyncChat(
 	}
 
 	if !hasKBs && !useWebSearch {
-		return s.AsyncChatSolo(ctx, chat, messages, stream)
+		return s.AsyncChatSolo(ctx, userID, chat, messages, stream)
 	}
 
 	// Spawn goroutine for the async pipeline. All remaining phases run inside.
@@ -324,9 +325,9 @@ func (s *ChatPipelineService) AsyncChat(
 				}
 			}
 			if modelType == "chat" {
-				textAttachmentsList, imageAttachments = splitFileAttachments(chat.TenantID, files, false)
+				textAttachmentsList, imageAttachments = splitFileAttachments(userID, files, false)
 			} else {
-				textAttachmentsList, imageFiles = splitFileAttachments(chat.TenantID, files, true)
+				textAttachmentsList, imageFiles = splitFileAttachments(userID, files, true)
 			}
 			attachments = strings.Join(textAttachmentsList, "\n\n")
 			common.Debug("Resolved attachments",
@@ -1278,6 +1279,7 @@ func (s *ChatPipelineService) AsyncChat(
 // Equivalent to Python's async_chat_solo() in dialog_service.py:289-337.
 func (s *ChatPipelineService) AsyncChatSolo(
 	ctx context.Context,
+	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
@@ -1321,11 +1323,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		isImage2Text := modelType == "image2text"
 		if len(messages) > 0 {
 			if files, hasFiles := messages[len(messages)-1]["files"]; hasFiles {
-				attachmentsStr = s.processFileAttachments(chat.TenantID, files)
+				attachmentsStr = s.processFileAttachments(userID, files)
 				if isImage2Text {
 					imageFiles = s.extractRawImageURLs(files)
 				} else {
-					imageFiles = s.extractImageFiles(chat.TenantID, files)
+					imageFiles = s.extractImageFiles(userID, files)
 				}
 			}
 		}
