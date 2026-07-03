@@ -29,15 +29,21 @@ import (
 func TestAkShare_FetchesStockNews(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/search/jsonp" {
-			t.Fatalf("path = %q, want /search/jsonp", r.URL.Path)
+			t.Errorf("path = %q, want /search/jsonp", r.URL.Path)
+			http.Error(w, "unexpected path", http.StatusBadRequest)
+			return
 		}
 		param := r.URL.Query().Get("param")
 		var req akshareSearchRequest
 		if err := json.Unmarshal([]byte(param), &req); err != nil {
-			t.Fatalf("param is not valid request JSON: %v (%s)", err, param)
+			t.Errorf("param is not valid request JSON: %v (%s)", err, param)
+			http.Error(w, "invalid param", http.StatusBadRequest)
+			return
 		}
 		if req.Keyword != "600519" {
-			t.Fatalf("keyword = %q, want 600519", req.Keyword)
+			t.Errorf("keyword = %q, want 600519", req.Keyword)
+			http.Error(w, "unexpected keyword", http.StatusBadRequest)
+			return
 		}
 
 		callback := r.URL.Query().Get("cb")
@@ -195,7 +201,7 @@ func TestBuildAkShareStockNewsURL(t *testing.T) {
 	akshareStockNewsEndpoint = "https://example.com/search/jsonp"
 	defer func() { akshareStockNewsEndpoint = oldEndpoint }()
 
-	rawURL, err := buildAkShareStockNewsURL("600519")
+	rawURL, err := buildAkShareStockNewsURL("600519", 25)
 	if err != nil {
 		t.Fatalf("buildAkShareStockNewsURL: %v", err)
 	}
@@ -212,5 +218,12 @@ func TestBuildAkShareStockNewsURL(t *testing.T) {
 	}
 	if req.Keyword != "600519" {
 		t.Fatalf("keyword = %q, want 600519", req.Keyword)
+	}
+	cmsParam, ok := req.Param["cmsArticleWebOld"].(map[string]any)
+	if !ok {
+		t.Fatalf("cmsArticleWebOld param = %T, want object", req.Param["cmsArticleWebOld"])
+	}
+	if cmsParam["pageSize"] != float64(25) {
+		t.Fatalf("pageSize = %v, want 25", cmsParam["pageSize"])
 	}
 }

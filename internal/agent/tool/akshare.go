@@ -36,6 +36,8 @@ const akshareToolDescription = "Retrieves the latest East Money news articles fo
 
 const defaultAkShareTopN = 10
 
+const maxAkShareResponseBytes = 4 << 20
+
 var akshareStockNewsEndpoint = "https://search-api-web.eastmoney.com/search/jsonp"
 
 // akshareParams is the JSON shape the model sends into InvokableRun.
@@ -153,7 +155,7 @@ func (a *AkShareTool) InvokableRun(ctx context.Context, argsJSON string, _ ...to
 		topN = defaultAkShareTopN
 	}
 
-	endpoint, err := buildAkShareStockNewsURL(symbol)
+	endpoint, err := buildAkShareStockNewsURL(symbol, topN)
 	if err != nil {
 		return akshareErrJSON(err), err
 	}
@@ -174,9 +176,13 @@ func (a *AkShareTool) InvokableRun(ctx context.Context, argsJSON string, _ ...to
 		return akshareErrJSON(err), err
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAkShareResponseBytes+1))
 	if err != nil {
 		err = fmt.Errorf("akshare: read response: %w", err)
+		return akshareErrJSON(err), err
+	}
+	if len(body) > maxAkShareResponseBytes {
+		err = fmt.Errorf("akshare: response too large")
 		return akshareErrJSON(err), err
 	}
 
@@ -192,7 +198,10 @@ func (a *AkShareTool) InvokableRun(ctx context.Context, argsJSON string, _ ...to
 	return akshareJSON(env), nil
 }
 
-func buildAkShareStockNewsURL(symbol string) (string, error) {
+func buildAkShareStockNewsURL(symbol string, topN int) (string, error) {
+	if topN <= 0 {
+		topN = defaultAkShareTopN
+	}
 	inner := akshareSearchRequest{
 		Keyword:       symbol,
 		Type:          []string{"cmsArticleWebOld"},
@@ -204,7 +213,7 @@ func buildAkShareStockNewsURL(symbol string) (string, error) {
 				"searchScope": "default",
 				"sort":        "default",
 				"pageIndex":   1,
-				"pageSize":    defaultAkShareTopN,
+				"pageSize":    topN,
 				"preTag":      "<em>",
 				"postTag":     "</em>",
 			},
