@@ -183,31 +183,14 @@ func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medi
 	if len(boxes) < 2 {
 		return boxes
 	}
-	// Group by page only — matches Python's _naive_vertical_merge which
-	// hardcodes col="x" (pdf_parser.py:868), ignoring column assignment.
-	// Cross-column merges are prevented by the 30% horizontal overlap check.
-	groups := make(map[int][]int)
-	for i, b := range boxes {
-		groups[b.PageNumber] = append(groups[b.PageNumber], i)
-	}
-	// Sort page keys for deterministic output order (Python dict preserves
-	// insertion order since 3.7, Go map iteration is random).
-	pageKeys := make([]int, 0, len(groups))
-	for pg := range groups {
-		pageKeys = append(pageKeys, pg)
-	}
-	sort.Ints(pageKeys)
+
+	// 按页面分组
+	pageGroups, sortedPages := groupBoxesByPage(boxes)
 
 	var result []pdf.TextBox
-	for _, pg := range pageKeys {
-		indices := groups[pg]
-		sort.Slice(indices, func(i, j int) bool {
-			bi, bj := boxes[indices[i]], boxes[indices[j]]
-			if bi.Top != bj.Top {
-				return bi.Top < bj.Top
-			}
-			return bi.X0 < bj.X0
-		})
+	for _, pg := range sortedPages {
+		// 收集该页面的所有框
+		indices := pageGroups[pg]
 		bxs := make([]pdf.TextBox, len(indices))
 		for i, idx := range indices {
 			bxs[i] = boxes[idx]
@@ -222,85 +205,9 @@ func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medi
 			mw = 8 // Python fallback: np.median([...]) if chars else 8 (pdf_parser.py:1465)
 		}
 
-		// Collect pattern: build output slice, merging into last element when appropriate.
-		out := make([]pdf.TextBox, 0, len(bxs))
-		for i := 0; i < len(bxs); i++ {
-			b := bxs[i]
-			// Cross-page suffix (e.g. page number on previous page): skip.
-			if i > 0 && bxs[i-1].PageNumber < b.PageNumber && pageNumSuffixPattern.MatchString(bxs[i-1].Text) {
-				continue
-			}
-			if strings.TrimSpace(b.Text) == "" {
-				// Whitespace gap bridge: absorb into prev box if gap/xov pass,
-				// extending prev.Bottom.  This matches Python's while/pop which
-				// keeps whitespace inline and lets it extend the previous box.
-				if len(out) > 0 {
-					prev := &out[len(out)-1]
-					if b.Top-prev.Bottom <= mh*1.5 && util.OverlapX(prev, &b) >= 0.3 {
-						// TODO: prev.Bottom = math.Max(prev.Bottom, b.Bottom) — direct assignment
-						// can shrink a tall merged box when a short whitespace box overlaps.
-						// Matches Python behavior (also direct assignment). Defer fix until
-						// pipeline alignment is shipped. See TestNaiveVerticalMerge_BottomShrink.
-						prev.Bottom = b.Bottom
-					}
-				}
-				continue
-			}
-			if len(out) == 0 {
-				out = append(out, b)
-				continue
-			}
-			prev := &out[len(out)-1]
-			if prev.LayoutNo != b.LayoutNo || strings.TrimSpace(b.Text) == "" {
-				slog.Debug("vm reject", "reason", "layout_no", "prevLayout", prev.LayoutNo, "bLayout", b.LayoutNo)
-				out = append(out, b)
-				continue
-			}
-			gap := b.Top - prev.Bottom
-			if gap > mh*1.5 {
-				slog.Debug("vm reject", "reason", "gap", "gap", gap, "threshold", mh*1.5, "mh", mh)
-				out = append(out, b)
-				continue
-			}
-			ov := util.OverlapX(prev, &b)
-			if ov < 0.3 {
-				slog.Debug("vm reject", "reason", "ovX", "ov", ov, "threshold", 0.3)
-				out = append(out, b)
-				continue
-			}
-
-			// Strip text before checking first/last characters (matching Python's
-			// b["text"].strip()[-1] / b_["text"].strip()[0]).
-			prevText := strings.TrimSpace(prev.Text)
-			bText := strings.TrimSpace(b.Text)
-
-			concatting := []bool{
-				endsWithOneOf(prevText, ",;:\"，、‘“；：-"),
-				endsSecondLastOneOf(prevText, ",;:\"，、‘“；："),
-				startsWithOneOf(bText, "。；？！”）),，、："),
-			}
-			anti := []bool{
-				endsWithOneOf(prevText, "。？！?"),
-				isEnglish && endsWithOneOf(prevText, ".!?"),
-				prev.PageNumber == b.PageNumber && b.Top-prev.Bottom > mh*1.5,
-				prev.PageNumber < b.PageNumber && math.Abs(prev.X0-b.X0) > mw*4,
-			}
-			detach := []bool{prev.X1 < b.X0, prev.X0 > b.X1}
-			if (slices.Contains(anti, true) && !slices.Contains(concatting, true)) || slices.Contains(detach, true) {
-				out = append(out, b)
-				continue
-			}
-
-			slog.Debug("vm merge", "gap", gap, "ovX", ov, "mh", mh, "prev", prevText[:min(40, len(prevText))], "next", bText[:min(40, len(bText))])
-			// Python: (b["text"].rstrip() + " " + b_["text"].lstrip()).strip()
-			prev.Text = strings.TrimSpace(strings.TrimRight(prevText, " \t") + " " + strings.TrimLeft(bText, " \t"))
-			// Preserve the taller bottom when merging (prev.Bottom may already
-			// extend beyond b.Bottom from a previous merge step).
-			prev.Bottom = math.Max(prev.Bottom, b.Bottom)
-			prev.X0 = math.Min(prev.X0, b.X0)
-			prev.X1 = math.Max(prev.X1, b.X1)
-		}
-		result = append(result, out...)
+		// 处理该页面的框
+		processed := processPageBoxes(bxs, mh, mw, isEnglish)
+		result = append(result, processed...)
 	}
 	slog.Debug("vm result", "in", len(boxes), "out", len(result))
 	return result
@@ -332,6 +239,142 @@ func FinalReadingOrderMerge(boxes []pdf.TextBox) []pdf.TextBox {
 }
 
 var pageNumSuffixPattern = regexp.MustCompile(`[0-9  •一—-]+$`)
+
+// groupBoxesByPage 将文本框按页面分组，返回页号到索引列表的映射和排序后的页号列表
+func groupBoxesByPage(boxes []pdf.TextBox) (map[int][]int, []int) {
+	if len(boxes) == 0 {
+		return map[int][]int{}, []int{}
+	}
+
+	pageGroups := make(map[int][]int)
+	for i, b := range boxes {
+		pageGroups[b.PageNumber] = append(pageGroups[b.PageNumber], i)
+	}
+
+	// 排序页面编号
+	pageKeys := make([]int, 0, len(pageGroups))
+	for pg := range pageGroups {
+		pageKeys = append(pageKeys, pg)
+	}
+	sort.Ints(pageKeys)
+
+	return pageGroups, pageKeys
+}
+
+// shouldMergeBoxes 判断两个框是否应该合并
+func shouldMergeBoxes(prev, curr *pdf.TextBox, mh, mw float64, isEnglish bool) bool {
+	// 检查布局编号
+	if prev.LayoutNo != curr.LayoutNo {
+		slog.Debug("vm reject", "reason", "layoutNo", "prevLayout", prev.LayoutNo, "currLayout", curr.LayoutNo)
+		return false
+	}
+
+	// 检查垂直间距
+	gap := curr.Top - prev.Bottom
+	if gap > mh*1.5 {
+		slog.Debug("vm reject", "reason", "gap", "gap", gap, "threshold", mh*1.5, "mh", mh)
+		return false
+	}
+
+	// 检查水平重叠
+	ov := util.OverlapX(prev, curr)
+	if ov < 0.3 {
+		slog.Debug("vm reject", "reason", "ovX", "ov", ov, "threshold", 0.3)
+		return false
+	}
+
+	// 检查连接/阻断条件
+	prevText := strings.TrimSpace(prev.Text)
+	currText := strings.TrimSpace(curr.Text)
+
+	concatting := []bool{
+		endsWithOneOf(prevText, ",;:\"，、‘“；：-"),
+		endsSecondLastOneOf(prevText, ",;:\"，、‘“；："),
+		startsWithOneOf(currText, "。；？！?\"）),，、："),
+	}
+	anti := []bool{
+		endsWithOneOf(prevText, "。？！?"),
+		isEnglish && endsWithOneOf(prevText, ".!?"),
+		prev.PageNumber == curr.PageNumber && curr.Top-prev.Bottom > mh*1.5,
+		prev.PageNumber < curr.PageNumber && math.Abs(prev.X0-curr.X0) > mw*4,
+	}
+	detach := []bool{prev.X1 < curr.X0, prev.X0 > curr.X1}
+
+	if (slices.Contains(anti, true) && !slices.Contains(concatting, true)) || slices.Contains(detach, true) {
+		return false
+	}
+
+	return true
+}
+
+// mergeTwoBoxes 合并两个文本框
+func mergeTwoBoxes(prev, curr pdf.TextBox) pdf.TextBox {
+	prevText := strings.TrimSpace(prev.Text)
+	currText := strings.TrimSpace(curr.Text)
+
+	prev.Text = strings.TrimSpace(strings.TrimRight(prevText, " \t") + " " + strings.TrimLeft(currText, " \t"))
+	prev.Bottom = math.Max(prev.Bottom, curr.Bottom)
+	prev.X0 = math.Min(prev.X0, curr.X0)
+	prev.X1 = math.Max(prev.X1, curr.X1)
+
+	slog.Debug("vm merge", "prev", prevText[:min(40, len(prevText))], "curr", currText[:min(40, len(currText))])
+
+	return prev
+}
+
+// processPageBoxes 处理单个页面的所有框
+func processPageBoxes(boxes []pdf.TextBox, mh, mw float64, isEnglish bool) []pdf.TextBox {
+	if len(boxes) == 0 {
+		return boxes
+	}
+
+	// 按 Top, X0 排序
+	sortedBoxes := make([]pdf.TextBox, len(boxes))
+	copy(sortedBoxes, boxes)
+	sort.Slice(sortedBoxes, func(i, j int) bool {
+		if sortedBoxes[i].Top != sortedBoxes[j].Top {
+			return sortedBoxes[i].Top < sortedBoxes[j].Top
+		}
+		return sortedBoxes[i].X0 < sortedBoxes[j].X0
+	})
+
+	out := make([]pdf.TextBox, 0, len(sortedBoxes))
+	for i := 0; i < len(sortedBoxes); i++ {
+		curr := sortedBoxes[i]
+
+		// 跳过跨页后缀（如前一页页码）
+		if i > 0 && sortedBoxes[i-1].PageNumber < curr.PageNumber && pageNumSuffixPattern.MatchString(sortedBoxes[i-1].Text) {
+			continue
+		}
+
+		// 处理空白框
+		if strings.TrimSpace(curr.Text) == "" {
+			if len(out) > 0 {
+				prev := &out[len(out)-1]
+				if curr.Top-prev.Bottom <= mh*1.5 && util.OverlapX(prev, &curr) >= 0.3 {
+					// TODO: prev.Bottom = math.Max(prev.Bottom, curr.Bottom) — 直接赋值可能会缩小高合并框
+					// 与 Python 行为一致（也是直接赋值）。在 pipeline alignment 发布前推迟修复。
+					prev.Bottom = curr.Bottom
+				}
+			}
+			continue
+		}
+
+		if len(out) == 0 {
+			out = append(out, curr)
+			continue
+		}
+
+		prev := &out[len(out)-1]
+		if shouldMergeBoxes(prev, &curr, mh, mw, isEnglish) {
+			out[len(out)-1] = mergeTwoBoxes(*prev, curr)
+		} else {
+			out = append(out, curr)
+		}
+	}
+
+	return out
+}
 
 // ---- rune-based text helpers (CJK-safe) ----
 

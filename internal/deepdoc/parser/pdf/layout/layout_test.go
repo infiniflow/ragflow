@@ -505,3 +505,245 @@ func TestNaiveVerticalMergeNonMerge(t *testing.T) {
 		t.Errorf("expected 2 separate boxes (large gap), got %d", len(result))
 	}
 }
+
+// ---- 重构辅助函数的测试 ----
+
+func TestGroupBoxesByPage(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 1, Text: "page1-box1"},
+		{PageNumber: 0, Text: "page0-box1"},
+		{PageNumber: 0, Text: "page0-box2"},
+		{PageNumber: 2, Text: "page2-box1"},
+		{PageNumber: 1, Text: "page1-box2"},
+	}
+	pageGroups, sortedPages := groupBoxesByPage(boxes)
+
+	if len(sortedPages) != 3 {
+		t.Errorf("expected 3 unique pages, got %d", len(sortedPages))
+	}
+	if sortedPages[0] != 0 || sortedPages[1] != 1 || sortedPages[2] != 2 {
+		t.Errorf("pages should be sorted [0,1,2], got %v", sortedPages)
+	}
+	if len(pageGroups[0]) != 2 {
+		t.Errorf("page 0 should have 2 boxes, got %d", len(pageGroups[0]))
+	}
+	if len(pageGroups[1]) != 2 {
+		t.Errorf("page 1 should have 2 boxes, got %d", len(pageGroups[1]))
+	}
+	if len(pageGroups[2]) != 1 {
+		t.Errorf("page 2 should have 1 box, got %d", len(pageGroups[2]))
+	}
+	if boxes[pageGroups[0][0]].Text != "page0-box1" {
+		t.Errorf("first page0 box index incorrect")
+	}
+}
+
+func TestGroupBoxesByPage_Empty(t *testing.T) {
+	pageGroups, sortedPages := groupBoxesByPage(nil)
+	if len(pageGroups) != 0 || len(sortedPages) != 0 {
+		t.Error("empty input should return empty result")
+	}
+
+	pageGroups, sortedPages = groupBoxesByPage([]pdf.TextBox{})
+	if len(pageGroups) != 0 || len(sortedPages) != 0 {
+		t.Error("empty input should return empty result")
+	}
+}
+
+func TestGroupBoxesByPage_SinglePage(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 5, Text: "box1"},
+		{PageNumber: 5, Text: "box2"},
+	}
+	pageGroups, sortedPages := groupBoxesByPage(boxes)
+	if len(sortedPages) != 1 || sortedPages[0] != 5 {
+		t.Errorf("expected single page 5, got %v", sortedPages)
+	}
+	if len(pageGroups[5]) != 2 {
+		t.Errorf("page 5 should have 2 boxes, got %d", len(pageGroups[5]))
+	}
+}
+
+func TestShouldMergeBoxes(t *testing.T) {
+	t.Run("should merge - basic case", func(t *testing.T) {
+		prev := &pdf.TextBox{
+			PageNumber: 0, X0: 50, X1: 250, Top: 100, Bottom: 112,
+			Text:     "前一句",
+			LayoutNo: "1",
+		}
+		curr := &pdf.TextBox{
+			PageNumber: 0, X0: 50, X1: 250, Top: 114, Bottom: 126,
+			Text:     "后一句",
+			LayoutNo: "1",
+		}
+		if !shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should merge basic case")
+		}
+	})
+
+	t.Run("should NOT merge - different layoutNo", func(t *testing.T) {
+		prev := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 250}
+		curr := &pdf.TextBox{PageNumber: 0, LayoutNo: "2", Top: 114, Bottom: 126, X0: 50, X1: 250}
+		if shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should not merge different layoutNo")
+		}
+	})
+
+	t.Run("should NOT merge - gap too large", func(t *testing.T) {
+		prev := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 250}
+		curr := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 200, Bottom: 212, X0: 50, X1: 250}
+		if shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should not merge large gap")
+		}
+	})
+
+	t.Run("should NOT merge - overlap too small", func(t *testing.T) {
+		prev := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 100}
+		curr := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 114, Bottom: 126, X0: 200, X1: 250}
+		if shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should not merge small overlap")
+		}
+	})
+
+	t.Run("should merge - comma override period anti", func(t *testing.T) {
+		prev := &pdf.TextBox{
+			PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 250,
+			Text: "前一句。",
+		}
+		curr := &pdf.TextBox{
+			PageNumber: 0, LayoutNo: "1", Top: 114, Bottom: 126, X0: 50, X1: 250,
+			Text: ", 续句",
+		}
+		if !shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should merge when comma overrides period anti")
+		}
+	})
+
+	t.Run("should NOT merge - english period anti", func(t *testing.T) {
+		prev := &pdf.TextBox{
+			PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 250,
+			Text: "End of sentence.",
+		}
+		curr := &pdf.TextBox{
+			PageNumber: 0, LayoutNo: "1", Top: 114, Bottom: 126, X0: 50, X1: 250,
+			Text: "Next sentence",
+		}
+		if shouldMergeBoxes(prev, curr, 12, 200, true) {
+			t.Error("should not merge english period anti")
+		}
+	})
+}
+
+func TestMergeTwoBoxes(t *testing.T) {
+	prev := pdf.TextBox{
+		PageNumber: 0, X0: 50, X1: 200, Top: 100, Bottom: 112,
+		Text:     "第一行",
+		LayoutNo: "1",
+	}
+	curr := pdf.TextBox{
+		PageNumber: 0, X0: 60, X1: 250, Top: 114, Bottom: 130,
+		Text:     "第二行",
+		LayoutNo: "1",
+	}
+
+	result := mergeTwoBoxes(prev, curr)
+
+	expectedText := "第一行 第二行"
+	if result.Text != expectedText {
+		t.Errorf("expected text %q, got %q", expectedText, result.Text)
+	}
+	if result.X0 != 50 {
+		t.Errorf("expected X0 50, got %f", result.X0)
+	}
+	if result.X1 != 250 {
+		t.Errorf("expected X1 250, got %f", result.X1)
+	}
+	if result.Bottom != 130 {
+		t.Errorf("expected Bottom 130, got %f", result.Bottom)
+	}
+	if result.LayoutNo != "1" {
+		t.Errorf("expected LayoutNo preserved")
+	}
+}
+
+func TestMergeTwoBoxes_TrimWhitespace(t *testing.T) {
+	prev := pdf.TextBox{Text: "  first line  "}
+	curr := pdf.TextBox{Text: "  second line  "}
+
+	result := mergeTwoBoxes(prev, curr)
+
+	if result.Text != "first line second line" {
+		t.Errorf("text should be trimmed and joined, got %q", result.Text)
+	}
+}
+
+func TestProcessPageBoxes(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 114, Bottom: 126,
+			Text:     "第二句",
+			LayoutNo: "1",
+		},
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 100, Bottom: 112,
+			Text:     "第一句",
+			LayoutNo: "1",
+		},
+	}
+
+	result := processPageBoxes(boxes, 12, 200, false)
+
+	if len(result) != 1 {
+		t.Errorf("expected 1 merged box, got %d", len(result))
+	}
+	if !strings.Contains(result[0].Text, "第一句") || !strings.Contains(result[0].Text, "第二句") {
+		t.Errorf("merged text should contain both parts, got %q", result[0].Text)
+	}
+}
+
+func TestProcessPageBoxes_WhitespaceBox(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 100, Bottom: 112,
+			Text:     "第一句",
+			LayoutNo: "1",
+		},
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 113, Bottom: 115,
+			Text:     "   ",
+			LayoutNo: "1",
+		},
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 116, Bottom: 128,
+			Text:     "第二句",
+			LayoutNo: "1",
+		},
+	}
+
+	result := processPageBoxes(boxes, 12, 200, false)
+
+	if len(result) != 1 {
+		t.Errorf("expected 1 merged box, got %d", len(result))
+	}
+}
+
+func TestProcessPageBoxes_NoMerge(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 100, Bottom: 112,
+			Text:     "第一句。",
+			LayoutNo: "1",
+		},
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 200, Bottom: 212,
+			Text:     "第二句",
+			LayoutNo: "1",
+		},
+	}
+
+	result := processPageBoxes(boxes, 12, 200, false)
+
+	if len(result) != 2 {
+		t.Errorf("expected 2 boxes, got %d", len(result))
+	}
+}
