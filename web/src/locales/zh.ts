@@ -1678,6 +1678,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       recommended: '推荐',
       customerSupport: '客户支持',
       marketing: '营销',
+      visualInputFile: '视觉输入文件',
       consumerApp: '消费者应用',
       other: '其他',
       agents: '智能体',
