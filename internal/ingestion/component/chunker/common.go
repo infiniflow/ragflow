@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
 
@@ -146,42 +147,34 @@ func splitKeepingDelim(text string, pattern *regexp.Regexp) []string {
 }
 
 // ---------------------------------------------------------------------------
-// chunk-map helpers
+// chunk-doc helpers
 // ---------------------------------------------------------------------------
 
 // itemText returns the text payload from a JSON-style chunk item,
 // preferring "text", then "content_with_weight".
-func itemText(it map[string]any) (string, bool) {
-	if it == nil {
-		return "", false
+func itemText(it schema.ChunkDoc) (string, bool) {
+	if it.Text != "" {
+		return it.Text, true
 	}
-	if t, ok := it["text"].(string); ok && t != "" {
-		return t, true
-	}
-	if t, ok := it["content_with_weight"].(string); ok && t != "" {
-		return t, true
+	if it.ContentWithWeight != "" {
+		return it.ContentWithWeight, true
 	}
 	return "", false
 }
 
 // itemDocType mirrors _build_json_chunks's type derivation.
-func itemDocType(it map[string]any) string {
-	if it == nil {
-		return "text"
-	}
-	if v, ok := it["doc_type_kwd"].(string); ok {
-		switch strings.ToLower(strings.TrimSpace(v)) {
-		case "table":
-			return "table"
-		case "image":
-			return "image"
-		}
+func itemDocType(it schema.ChunkDoc) string {
+	switch strings.ToLower(strings.TrimSpace(it.DocType)) {
+	case "table":
+		return "table"
+	case "image":
+		return "image"
 	}
 	return "text"
 }
 
 // itemTextOrFallback returns the item's preferred text, or "".
-func itemTextOrFallback(it map[string]any) string {
+func itemTextOrFallback(it schema.ChunkDoc) string {
 	if t, ok := itemText(it); ok {
 		return t
 	}
@@ -210,5 +203,14 @@ func emptyOutputs() map[string]any {
 	return map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},
+	}
+}
+
+func emptyChunkDocs() []schema.ChunkDoc { return []schema.ChunkDoc{} }
+
+func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
+	return map[string]any{
+		"output_format": "chunks",
+		"chunks":        schema.ChunkDocsToMaps(chunks),
 	}
 }

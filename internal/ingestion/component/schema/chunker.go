@@ -51,10 +51,10 @@ type ChunkerFromUpstream struct {
 	Name string `json:"name"`
 
 	// File is the optional upstream file descriptor.
-	File map[string]any `json:"file,omitempty"`
+	File *ChunkerFileMeta `json:"file,omitempty"`
 
 	// Chunks is the upstream chunk list, set when output_format == "chunks".
-	Chunks []map[string]any `json:"chunks,omitempty"`
+	Chunks []ChunkDoc `json:"chunks,omitempty"`
 
 	// OutputFormat controls which of the *Result fields below is the
 	// active payload. Allowed values:
@@ -63,23 +63,23 @@ type ChunkerFromUpstream struct {
 	//   "text"     -> TextResult
 	//   "html"     -> HTMLResult
 	//   "chunks"   -> Chunks
-	OutputFormat string `json:"output_format,omitempty"`
+	OutputFormat PayloadFormat `json:"output_format,omitempty"`
 
 	// JSONResult is the upstream structured JSON list (alias "json" in
 	// Python). Set when OutputFormat == "json".
-	JSONResult []map[string]any `json:"json,omitempty"`
+	JSONResult []ChunkDoc `json:"json,omitempty"`
 
 	// MarkdownResult is the upstream markdown payload (alias "markdown").
 	// Set when OutputFormat == "markdown".
-	MarkdownResult string `json:"markdown,omitempty"`
+	MarkdownResult *string `json:"markdown,omitempty"`
 
 	// TextResult is the upstream plain-text payload (alias "text").
 	// Set when OutputFormat == "text".
-	TextResult string `json:"text,omitempty"`
+	TextResult *string `json:"text,omitempty"`
 
 	// HTMLResult is the upstream HTML payload (alias "html").
 	// Set when OutputFormat == "html".
-	HTMLResult string `json:"html,omitempty"`
+	HTMLResult *string `json:"html,omitempty"`
 }
 
 // Validate enforces the only required field in ChunkerFromUpstream: Name.
@@ -90,6 +90,29 @@ type ChunkerFromUpstream struct {
 func (c *ChunkerFromUpstream) Validate() error {
 	if c.Name == "" {
 		return errRequiredField{Field: "name"}
+	}
+	if !c.OutputFormat.isKnown() {
+		return errInvalidValue{Field: "output_format", Value: string(c.OutputFormat)}
+	}
+	switch c.OutputFormat {
+	case PayloadFormatChunks:
+		return nil
+	case PayloadFormatJSON:
+		if c.JSONResult == nil {
+			return errRequiredField{Field: "json"}
+		}
+	case PayloadFormatMarkdown:
+		if c.MarkdownResult == nil {
+			return errRequiredField{Field: "markdown"}
+		}
+	case PayloadFormatText:
+		if c.TextResult == nil {
+			return errRequiredField{Field: "text"}
+		}
+	case PayloadFormatHTML:
+		if c.HTMLResult == nil {
+			return errRequiredField{Field: "html"}
+		}
 	}
 	return nil
 }
@@ -104,12 +127,12 @@ func (c *ChunkerFromUpstream) Validate() error {
 //	self.set_output("chunks", chunks)
 type ChunkerOutputs struct {
 	// OutputFormat is always "chunks" on success.
-	OutputFormat string `json:"output_format,omitempty"`
+	OutputFormat PayloadFormat `json:"output_format,omitempty"`
 
 	// Chunks is the produced chunk list. Each entry is a free-form map
 	// mirroring the dict shape the Python code builds (text, doc_type_kwd,
 	// tk_nums, PDF_POSITIONS_KEY, mom, img_id, etc.).
-	Chunks []map[string]any `json:"chunks,omitempty"`
+	Chunks []ChunkDoc `json:"chunks,omitempty"`
 
 	// Error is set when the component short-circuits with an error
 	// message (Python: set_output("_ERROR", ...)).

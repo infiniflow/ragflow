@@ -40,6 +40,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
 
@@ -227,17 +228,8 @@ func prependJoin(g []lineRecord, prefix string) []lineRecord {
 //     stream (preserving indentation for non-text formats, strip-only
 //     for the text format).
 func extractLineRecords(inputs map[string]any) []lineRecord {
-	if v, ok := inputs["chunks"].([]map[string]any); ok {
-		return recordsFromStructured(v)
-	}
-	if v, ok := inputs["chunks"].([]any); ok {
-		mapped := make([]map[string]any, 0, len(v))
-		for _, it := range v {
-			if m, ok := it.(map[string]any); ok {
-				mapped = append(mapped, m)
-			}
-		}
-		return recordsFromStructured(mapped)
+	if docs := chunksFromInputs(inputs); docs != nil {
+		return recordsFromStructured(docs)
 	}
 	text, _ := stringFromInputs(inputs, "text", "content")
 	if text == "" {
@@ -246,27 +238,27 @@ func extractLineRecords(inputs map[string]any) []lineRecord {
 	return lineRecordsFromText(text)
 }
 
-func recordsFromStructured(items []map[string]any) []lineRecord {
+func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 	out := make([]lineRecord, 0, len(items))
 	for _, it := range items {
 		text := itemTextOrFallback(it)
 		if text == "" {
 			continue
 		}
-		dt, _ := it["doc_type_kwd"].(string)
+		dt := it.DocType
 		if dt == "" {
 			dt = "text"
 		}
 		var imgID *string
-		if v, ok := it["img_id"].(string); ok {
-			imgID = &v
+		if it.ImgID != "" {
+			img := it.ImgID
+			imgID = &img
 		}
-		layout, _ := it["layout"].(string)
 		out = append(out, lineRecord{
 			text:    text,
 			docType: dt,
 			imgID:   imgID,
-			layout:  layout,
+			layout:  it.Layout,
 		})
 	}
 	return out

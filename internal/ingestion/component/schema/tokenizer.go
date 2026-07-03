@@ -43,7 +43,7 @@ type TokenizerFromUpstream struct {
 	Name string `json:"name,omitempty"`
 
 	// File is the optional upstream file descriptor.
-	File map[string]any `json:"file,omitempty"`
+	File *ChunkerFileMeta `json:"file,omitempty"`
 
 	// OutputFormat controls which of the *Result fields below is the
 	// active payload. Allowed values:
@@ -52,22 +52,22 @@ type TokenizerFromUpstream struct {
 	//   "text"     -> TextResult
 	//   "html"     -> HTMLResult
 	//   "chunks"   -> Chunks
-	OutputFormat string `json:"output_format,omitempty"`
+	OutputFormat PayloadFormat `json:"output_format,omitempty"`
 
 	// Chunks is the upstream chunk list. Set when OutputFormat == "chunks".
-	Chunks []map[string]any `json:"chunks,omitempty"`
+	Chunks []ChunkDoc `json:"chunks,omitempty"`
 
 	// JSONResult is the upstream structured JSON list (alias "json").
-	JSONResult []map[string]any `json:"json,omitempty"`
+	JSONResult []ChunkDoc `json:"json,omitempty"`
 
 	// MarkdownResult is the upstream markdown payload (alias "markdown").
-	MarkdownResult string `json:"markdown,omitempty"`
+	MarkdownResult *string `json:"markdown,omitempty"`
 
 	// TextResult is the upstream plain-text payload (alias "text").
-	TextResult string `json:"text,omitempty"`
+	TextResult *string `json:"text,omitempty"`
 
 	// HTMLResult is the upstream HTML payload (alias "html").
-	HTMLResult string `json:"html,omitempty"`
+	HTMLResult *string `json:"html,omitempty"`
 }
 
 // Validate enforces the Python model_validator invariants: when
@@ -81,20 +81,23 @@ type TokenizerFromUpstream struct {
 // list as valid (the component short-circuits silently), so Chunks
 // being nil is allowed even when OutputFormat == "chunks".
 func (t *TokenizerFromUpstream) Validate() error {
+	if !t.OutputFormat.isKnown() {
+		return errInvalidValue{Field: "output_format", Value: string(t.OutputFormat)}
+	}
 	switch t.OutputFormat {
-	case "chunks":
+	case PayloadFormatChunks:
 		// Chunks may be nil (zero-length is valid). No-op.
 		return nil
-	case "markdown":
-		if t.MarkdownResult == "" {
+	case PayloadFormatMarkdown:
+		if t.MarkdownResult == nil {
 			return errRequiredField{Field: "markdown"}
 		}
-	case "text":
-		if t.TextResult == "" {
+	case PayloadFormatText:
+		if t.TextResult == nil {
 			return errRequiredField{Field: "text"}
 		}
-	case "html":
-		if t.HTMLResult == "" {
+	case PayloadFormatHTML:
+		if t.HTMLResult == nil {
 			return errRequiredField{Field: "html"}
 		}
 	default:
@@ -167,13 +170,13 @@ func (p *TokenizerParam) Validate() error {
 //   - _ERROR
 type TokenizerOutputs struct {
 	// OutputFormat is always "chunks".
-	OutputFormat string `json:"output_format,omitempty"`
+	OutputFormat PayloadFormat `json:"output_format,omitempty"`
 
 	// Chunks is the tokenized chunk list. Each entry is a free-form map
 	// containing tokenized fields (title_tks, content_ltks, ...),
 	// chunk_order_int, and (when "embedding" is in search_method)
 	// the q_<n>_vec vector field.
-	Chunks []map[string]any `json:"chunks,omitempty"`
+	Chunks []ChunkDoc `json:"chunks,omitempty"`
 
 	// EmbeddingTokenConsumption records the token count consumed by
 	// the embedding call. Set only when search_method includes

@@ -56,6 +56,7 @@ package chunker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -190,12 +191,7 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 
 	mode := c.param.DelimiterMode
 	if mode == "one" {
-		out := map[string]any{"text": text}
-		chunks := []map[string]any{out}
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        chunks,
-		}
+		return chunkOutputs([]schema.ChunkDoc{{Text: text}})
 	}
 
 	if !hasActiveDelimiter(delimPattern) {
@@ -215,10 +211,7 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 		return emptyOutputs()
 	}
 	docs := applyChildrenDelim(cleaned, childrenPattern)
-	return map[string]any{
-		"output_format": "chunks",
-		"chunks":        docs,
-	}
+	return chunkOutputs(docs)
 }
 
 // mergeByTokenSize uses the chunk library's split + postprocess-merge
@@ -239,29 +232,23 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 		MergeStrategy:    "greedy",
 	})
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{{"text": text}},
-		}
+		return chunkOutputs([]schema.ChunkDoc{{Text: text}})
 	}
-	docs := make([]map[string]any, 0, len(result.ResultChunks))
+	docs := make([]schema.ChunkDoc, 0, len(result.ResultChunks))
 	for _, ck := range result.ResultChunks {
 		content := strings.TrimSpace(ck.Content)
 		if content == "" {
 			continue
 		}
-		docs = append(docs, map[string]any{"text": content})
+		docs = append(docs, schema.ChunkDoc{Text: content})
 	}
 	final := applyChildrenDelimText(docs, childrenPattern)
-	return map[string]any{
-		"output_format": "chunks",
-		"chunks":        final,
-	}
+	return chunkOutputs(final)
 }
 
 // invokeJSONPayload handles structured upstream input. Items fan
 // across goroutines (Parallelism); merge is by input index.
-func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []map[string]any, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
+func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []schema.ChunkDoc, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
 	if len(items) == 0 {
 		return emptyOutputs()
 	}
@@ -274,11 +261,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []m
 			}
 		}
 		merged := strings.Join(parts, "\n")
-		chunks := []map[string]any{{"text": merged}}
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        chunks,
-		}
+		return chunkOutputs([]schema.ChunkDoc{{Text: merged}})
 	}
 
 	workers := c.Parallelism()
@@ -289,7 +272,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []m
 		workers = len(items)
 	}
 	lanes := partition(len(items), workers)
-	perItem := make([][]map[string]any, len(items))
+	perItem := make([][]schema.ChunkDoc, len(items))
 
 	var wg sync.WaitGroup
 	for w := 0; w < workers; w++ {
@@ -321,12 +304,9 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []m
 		flat = splitByChildren(flat, childrenPattern)
 	}
 
-	out := make([]map[string]any, 0, len(flat))
+	out := make([]schema.ChunkDoc, 0, len(flat))
 	for _, m := range flat {
-		if m == nil {
-			continue
-		}
-		if t, ok := m["text"].(string); ok && strings.TrimSpace(t) == "" {
+		if strings.TrimSpace(m.Text) == "" {
 			continue
 		}
 		out = append(out, m)
@@ -334,10 +314,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []m
 	if len(out) == 0 {
 		return emptyOutputs()
 	}
-	return map[string]any{
-		"output_format": "chunks",
-		"chunks":        out,
-	}
+	return chunkOutputs(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -345,28 +322,28 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []m
 // ---------------------------------------------------------------------------
 
 // chunkFromItem mirrors _build_json_chunks for a single item.
-func chunkFromItem(it map[string]any, delimPattern *regexp.Regexp) []map[string]any {
+func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.ChunkDoc {
 	ckType := itemDocType(it)
 	txt := itemTextOrFallback(it)
 	if ckType != "text" {
-		return []map[string]any{buildChunkMap(it, ckType, txt, "", "")}
+		return []schema.ChunkDoc{buildChunkDoc(it, ckType, txt, "", "")}
 	}
 	if !hasActiveDelimiter(delimPattern) {
-		return []map[string]any{buildChunkMap(it, "text", txt, "", "")}
+		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
 	parts := splitKeepingDelim(txt, delimPattern)
 	if !delimPattern.MatchString(txt) {
-		return []map[string]any{buildChunkMap(it, "text", txt, "", "")}
+		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
-	out := make([]map[string]any, 0, len(parts))
+	out := make([]schema.ChunkDoc, 0, len(parts))
 	for _, p := range parts {
 		if strings.TrimSpace(p) == "" {
 			continue
 		}
-		out = append(out, buildChunkMap(it, "text", p, "", ""))
+		out = append(out, buildChunkDoc(it, "text", p, "", ""))
 	}
 	if len(out) == 0 {
-		return []map[string]any{buildChunkMap(it, "text", txt, "", "")}
+		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
 	return out
 }
@@ -390,23 +367,25 @@ func chunkFromItem(it map[string]any, delimPattern *regexp.Regexp) []map[string]
 // Pass-through fields are sourced from the input item map. Missing
 // fields are simply absent from the output (the python side does
 // the same — see python `_build_json_chunks`).
-func buildChunkMap(it map[string]any, ckType, text, ctxAbove, ctxBelow string) map[string]any {
-	out := map[string]any{
-		"text":         text,
-		"doc_type_kwd": ckType,
-		"ck_type":      ckType,
-		"tk_nums":      tokenizeStr(text),
+func buildChunkDoc(it schema.ChunkDoc, ckType, text, ctxAbove, ctxBelow string) schema.ChunkDoc {
+	out := schema.ChunkDoc{
+		Text:         text,
+		DocType:      ckType,
+		CKType:       ckType,
+		TKNums:       intPtr(tokenizeStr(text)),
+		Mom:          it.Mom,
+		ImgID:        it.ImgID,
+		Layout:       it.Layout,
+		PDFPositions: it.PDFPositions,
+		Positions:    it.Positions,
+		Image:        it.Image,
+		PageNumber:   it.PageNumber,
 	}
 	if ctxAbove != "" {
-		out["context_above"] = ctxAbove
+		out.ContextAbove = ctxAbove
 	}
 	if ctxBelow != "" {
-		out["context_below"] = ctxBelow
-	}
-	for _, key := range []string{"mom", "img_id", "layout", "_pdf_positions", "positions", "image", "page_number"} {
-		if v, ok := it[key]; ok && v != nil {
-			out[key] = v
-		}
+		out.ContextBelow = ctxBelow
 	}
 	return out
 }
@@ -440,7 +419,7 @@ func partition(n, parts int) []lane {
 	return out
 }
 
-func attachMediaContext(perItem [][]map[string]any, tableCtx, imageCtx int) [][]map[string]any {
+func attachMediaContext(perItem [][]schema.ChunkDoc, tableCtx, imageCtx int) [][]schema.ChunkDoc {
 	if tableCtx <= 0 && imageCtx <= 0 {
 		return perItem
 	}
@@ -450,7 +429,7 @@ func attachMediaContext(perItem [][]map[string]any, tableCtx, imageCtx int) [][]
 			continue
 		}
 		for i, ck := range chunks {
-			ckType, _ := ck["ck_type"].(string)
+			ckType := ck.CKType
 			if ckType != "table" && ckType != "image" {
 				continue
 			}
@@ -461,8 +440,8 @@ func attachMediaContext(perItem [][]map[string]any, tableCtx, imageCtx int) [][]
 			if ctx <= 0 {
 				continue
 			}
-			ck["context_above"] = collectContext(chunks, i, ctx, true)
-			ck["context_below"] = collectContext(chunks, i, ctx, false)
+			chunks[i].ContextAbove = collectContext(chunks, i, ctx, true)
+			chunks[i].ContextBelow = collectContext(chunks, i, ctx, false)
 		}
 	}
 	return perItem
@@ -471,16 +450,16 @@ func attachMediaContext(perItem [][]map[string]any, tableCtx, imageCtx int) [][]
 // collectContext walks chunks around `i` (above when direction==true,
 // below when false), pulling text chunks while remaining token budget
 // stays positive. Matches token_chunker.py:_attach_context_to_media_chunks.
-func collectContext(chunks []map[string]any, i, ctxTokens int, above bool) string {
+func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) string {
 	var parts []string
 	remain := ctxTokens
 	var pos int
 	if above {
 		pos = i - 1
 		for pos >= 0 && remain > 0 {
-			if other, ok := chunks[pos]["ck_type"].(string); ok && other == "text" {
-				tk, _ := chunks[pos]["tk_nums"].(int)
-				txt := toString(chunks[pos]["text"])
+			if chunks[pos].CKType == "text" {
+				tk := intValue(chunks[pos].TKNums)
+				txt := chunks[pos].Text
 				if tk >= remain {
 					parts = append([]string{takeFromEnd(txt, remain)}, parts...)
 					remain = 0
@@ -494,9 +473,9 @@ func collectContext(chunks []map[string]any, i, ctxTokens int, above bool) strin
 	} else {
 		pos = i + 1
 		for pos < len(chunks) && remain > 0 {
-			if other, ok := chunks[pos]["ck_type"].(string); ok && other == "text" {
-				tk, _ := chunks[pos]["tk_nums"].(int)
-				txt := toString(chunks[pos]["text"])
+			if chunks[pos].CKType == "text" {
+				tk := intValue(chunks[pos].TKNums)
+				txt := chunks[pos].Text
 				if tk >= remain {
 					parts = append(parts, takeFromStart(txt, remain))
 					remain = 0
@@ -532,35 +511,31 @@ func takeFromStart(text string, tokens int) string {
 
 // mergeByTokenSizeFromJSON mirrors `_merge_text_chunks_by_token_size`
 // at token_chunker.py:212-243.
-func mergeByTokenSizeFromJSON(perItem [][]map[string]any, chunkTokens int, overlappedPct float64) [][]map[string]any {
+func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64) [][]schema.ChunkDoc {
 	threshold := float64(chunkTokens) * (100 - overlappedPct*100) / 100.0
 	for idx := range perItem {
 		chunks := perItem[idx]
 		if len(chunks) == 0 {
 			continue
 		}
-		var merged []map[string]any
+		var merged []schema.ChunkDoc
 		prevTextIdx := -1
 		for _, ck := range chunks {
-			ckType, _ := ck["ck_type"].(string)
+			ckType := ck.CKType
 			if ckType != "text" {
-				merged = append(merged, cloneMap(ck))
+				merged = append(merged, cloneChunkDoc(ck))
 				prevTextIdx = -1
 				continue
 			}
-			tk, _ := ck["tk_nums"].(int)
+			tk := intValue(ck.TKNums)
 			if prevTextIdx < 0 || float64(tk) > threshold {
-				cp := cloneMap(ck)
+				cp := cloneChunkDoc(ck)
 				if prevTextIdx >= 0 && overlappedPct > 0 {
-					if prevText := toString(merged[prevTextIdx]["text"]); prevText != "" {
+					if prevText := merged[prevTextIdx].Text; prevText != "" {
 						cut := int(float64(len(prevText)) * (100 - overlappedPct*100) / 100.0)
 						if cut < len(prevText) {
-							if curText, ok := cp["text"].(string); ok {
-								cp["text"] = prevText[cut:] + curText
-								if v, ok := cp["tk_nums"].(int); ok {
-									cp["tk_nums"] = v + tokenizeStr(cp["text"].(string))
-								}
-							}
+							cp.Text = prevText[cut:] + cp.Text
+							cp.TKNums = intPtr(tk + tokenizeStr(cp.Text))
 						}
 					}
 				}
@@ -569,16 +544,9 @@ func mergeByTokenSizeFromJSON(perItem [][]map[string]any, chunkTokens int, overl
 				continue
 			}
 			// Merge into prev text chunk.
-			prev := merged[prevTextIdx]
-			if pt := toString(prev["text"]); pt != "" {
-				if ct, ok := ck["text"].(string); ok {
-					prev["text"] = pt + "\n" + ct
-					if v, ok := prev["tk_nums"].(int); ok {
-						if curTk, ok := ck["tk_nums"].(int); ok {
-							prev["tk_nums"] = v + curTk
-						}
-					}
-				}
+			if pt := merged[prevTextIdx].Text; pt != "" {
+				merged[prevTextIdx].Text = pt + "\n" + ck.Text
+				merged[prevTextIdx].TKNums = intPtr(intValue(merged[prevTextIdx].TKNums) + intValue(ck.TKNums))
 			}
 		}
 		perItem[idx] = merged
@@ -586,42 +554,56 @@ func mergeByTokenSizeFromJSON(perItem [][]map[string]any, chunkTokens int, overl
 	return perItem
 }
 
-func cloneMap(m map[string]any) map[string]any {
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = v
+func cloneChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
+	out := in
+	if in.TKNums != nil {
+		v := *in.TKNums
+		out.TKNums = &v
+	}
+	if in.ChunkOrderInt != nil {
+		v := *in.ChunkOrderInt
+		out.ChunkOrderInt = &v
+	}
+	if in.PageNumber != nil {
+		v := *in.PageNumber
+		out.PageNumber = &v
+	}
+	if in.Extra != nil {
+		out.Extra = make(map[string]json.RawMessage, len(in.Extra))
+		for k, v := range in.Extra {
+			out.Extra[k] = append(json.RawMessage(nil), v...)
+		}
 	}
 	return out
 }
 
-func flatten(perItem [][]map[string]any) []map[string]any {
-	var out []map[string]any
+func flatten(perItem [][]schema.ChunkDoc) []schema.ChunkDoc {
+	var out []schema.ChunkDoc
 	for _, cs := range perItem {
 		out = append(out, cs...)
 	}
 	return out
 }
 
-func splitByChildren(chunks []map[string]any, pattern *regexp.Regexp) []map[string]any {
+func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
 	if pattern == nil {
 		return chunks
 	}
-	var out []map[string]any
+	var out []schema.ChunkDoc
 	for _, ck := range chunks {
-		dt, _ := ck["doc_type_kwd"].(string)
-		if dt != "text" {
+		if ck.DocType != "text" {
 			out = append(out, ck)
 			continue
 		}
-		mom := toString(ck["text"])
+		mom := ck.Text
 		parts := splitKeepingDelim(mom, pattern)
 		for _, p := range parts {
 			if strings.TrimSpace(p) == "" {
 				continue
 			}
-			cp := cloneMap(ck)
-			cp["text"] = p
-			cp["mom"] = mom
+			cp := cloneChunkDoc(ck)
+			cp.Text = p
+			cp.Mom = mom
 			out = append(out, cp)
 		}
 	}
@@ -641,15 +623,15 @@ func hasActiveDelimiter(p *regexp.Regexp) bool {
 }
 
 // applyChildrenDelim mirrors token_chunker.py:325-334.
-func applyChildrenDelim(segs []string, pattern *regexp.Regexp) []map[string]any {
+func applyChildrenDelim(segs []string, pattern *regexp.Regexp) []schema.ChunkDoc {
 	if pattern == nil {
-		out := make([]map[string]any, 0, len(segs))
+		out := make([]schema.ChunkDoc, 0, len(segs))
 		for _, s := range segs {
-			out = append(out, map[string]any{"text": s})
+			out = append(out, schema.ChunkDoc{Text: s})
 		}
 		return out
 	}
-	var docs []map[string]any
+	var docs []schema.ChunkDoc
 	for _, seg := range segs {
 		if strings.TrimSpace(seg) == "" {
 			continue
@@ -658,19 +640,19 @@ func applyChildrenDelim(segs []string, pattern *regexp.Regexp) []map[string]any 
 			if strings.TrimSpace(child) == "" {
 				continue
 			}
-			docs = append(docs, map[string]any{"text": child, "mom": seg})
+			docs = append(docs, schema.ChunkDoc{Text: child, Mom: seg})
 		}
 	}
 	return docs
 }
 
-func applyChildrenDelimText(docs []map[string]any, pattern *regexp.Regexp) []map[string]any {
+func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
 	if pattern == nil {
 		return docs
 	}
-	var out []map[string]any
+	var out []schema.ChunkDoc
 	for _, d := range docs {
-		t := toString(d["text"])
+		t := d.Text
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
@@ -678,7 +660,7 @@ func applyChildrenDelimText(docs []map[string]any, pattern *regexp.Regexp) []map
 			if strings.TrimSpace(child) == "" {
 				continue
 			}
-			out = append(out, map[string]any{"text": child, "mom": t})
+			out = append(out, schema.ChunkDoc{Text: child, Mom: t})
 		}
 	}
 	return out
@@ -737,27 +719,28 @@ func stringFromInputs(inputs map[string]any, keys ...string) (string, bool) {
 //     component emits under "json"; we accept it
 //     so a token-chunker can run directly after
 //     a parser without an intermediate reshape).
-func chunksFromInputs(inputs map[string]any) []map[string]any {
+func chunksFromInputs(inputs map[string]any) []schema.ChunkDoc {
 	for _, key := range []string{"chunks", "json"} {
 		v, ok := inputs[key]
 		if !ok {
 			continue
 		}
-		switch t := v.(type) {
-		case []map[string]any:
-			return t
-		case []any:
-			out := make([]map[string]any, 0, len(t))
-			for _, it := range t {
-				if m, ok := it.(map[string]any); ok {
-					out = append(out, m)
-				}
-			}
-			return out
+		chunks, found, err := schema.ChunkDocsFromAny(v)
+		if err == nil && found {
+			return chunks
 		}
 	}
 	return nil
 }
+
+func intValue(v *int) int {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+
+func intPtr(v int) *int { return &v }
 
 // init registers TokenChunker under CategoryIngestion.
 func init() {

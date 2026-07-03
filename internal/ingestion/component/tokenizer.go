@@ -289,7 +289,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 
 		out := map[string]any{
 			"output_format": "chunks",
-			"chunks":        chunks,
+			"chunks":        schema.ChunkDocsToMaps(chunks),
 		}
 
 		// embedding pass — batched single call (plan §AD-5a).
@@ -333,7 +333,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 				}
 				titleWeight := c.param.FilenameEmbdWeight
 				for k, idx := range pairs {
-					ck := chunks[idx]
+					ck := &chunks[idx]
 					// Apply the title-weight blend on a copy of the
 					// chunk vector (matches python tokenizer.py:108-114
 					// `vects = title_w * tts + (1 - title_w) * cnts`).
@@ -350,7 +350,9 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 						// resolver exposes a `title_encode` knob.)
 						_ = titleWeight
 					}
-					ck[fmt.Sprintf("q_%d_vec", len(v))] = v
+					if err := ck.SetExtraValue(fmt.Sprintf("q_%d_vec", len(v)), v); err != nil {
+						return nil, fmt.Errorf("Tokenizer: vector marshal: %w", err)
+					}
 				}
 				// token_count: best-effort approximation matching the
 				// python contract — the Go Embedder doesn't surface
@@ -361,6 +363,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 					tokenCount += tokenizer.NumTokensFromString(t)
 				}
 				out["embedding_token_consumption"] = tokenCount
+				out["chunks"] = schema.ChunkDocsToMaps(chunks)
 			}
 		}
 
@@ -378,16 +381,13 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 // not retain separate copies of the chunks map. If both fields
 // are present, the existing "text" wins — preserves the python
 // contract where the chunker's emitted text is authoritative.
-func normalizeChunkTextFallback(chunks []map[string]any) {
-	for _, ck := range chunks {
-		if ck == nil {
+func normalizeChunkTextFallback(chunks []schema.ChunkDoc) {
+	for i := range chunks {
+		if chunks[i].Text != "" {
 			continue
 		}
-		if t, ok := ck["text"].(string); ok && t != "" {
-			continue
-		}
-		if w, ok := ck["content_with_weight"].(string); ok && w != "" {
-			ck["text"] = w
+		if chunks[i].ContentWithWeight != "" {
+			chunks[i].Text = chunks[i].ContentWithWeight
 		}
 	}
 }
@@ -395,9 +395,10 @@ func normalizeChunkTextFallback(chunks []map[string]any) {
 // tokenizeChunks annotates each chunk with title_tks, content_ltks,
 // and (when applicable) question_tks / important_tks / summary fields.
 // Mirrors python tokenizer.py:130-185.
-func tokenizeChunks(chunks []map[string]any, titleStem string) error {
-	for i, ck := range chunks {
-		ck["chunk_order_int"] = i
+func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string) error {
+	for i := range chunks {
+		ck := &chunks[i]
+		ck.ChunkOrderInt = intPtr(i)
 		titleTk, err := tokenizer.Tokenize(titleStem)
 		if err != nil {
 			return fmt.Errorf("Tokenizer: title tokenize: %w", err)
@@ -406,49 +407,57 @@ func tokenizeChunks(chunks []map[string]any, titleStem string) error {
 		if err != nil {
 			return fmt.Errorf("Tokenizer: title fine-grain: %w", err)
 		}
-		ck["title_tks"] = titleTk
-		ck["title_sm_tks"] = titleSmTk
+		ck.TitleTks = titleTk
+		ck.TitleSmTks = titleSmTk
 
 		// Question / keyword / summary fields are optional. The python
 		// path branches on each independently.
-		if q, ok := getStringField(ck, "questions"); ok {
-			ck["question_kwd"] = strings.Split(q, "\n")
+		if q := ck.Questions; q != "" {
+			if err := ck.SetExtraValue("question_kwd", strings.Split(q, "\n")); err != nil {
+				return fmt.Errorf("Tokenizer: question keywords marshal: %w", err)
+			}
 			qt, err := tokenizer.Tokenize(q)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: question tokenize: %w", err)
 			}
-			ck["question_tks"] = qt
+			if err := ck.SetExtraValue("question_tks", qt); err != nil {
+				return fmt.Errorf("Tokenizer: question tokens marshal: %w", err)
+			}
 		}
-		if kw, ok := getStringField(ck, "keywords"); ok {
-			ck["important_kwd"] = strings.Split(kw, ",")
+		if kw := ck.Keywords; kw != "" {
+			if err := ck.SetExtraValue("important_kwd", strings.Split(kw, ",")); err != nil {
+				return fmt.Errorf("Tokenizer: keyword list marshal: %w", err)
+			}
 			it, err := tokenizer.Tokenize(kw)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: keyword tokenize: %w", err)
 			}
-			ck["important_tks"] = it
+			if err := ck.SetExtraValue("important_tks", it); err != nil {
+				return fmt.Errorf("Tokenizer: keyword tokens marshal: %w", err)
+			}
 		}
-		if s, ok := getStringField(ck, "summary"); ok {
+		if s := ck.Summary; s != "" {
 			st, err := tokenizer.Tokenize(s)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: summary tokenize: %w", err)
 			}
-			ck["content_ltks"] = st
+			ck.ContentLtks = st
 			smt, err := tokenizer.FineGrainedTokenize(st)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: summary fine-grain: %w", err)
 			}
-			ck["content_sm_ltks"] = smt
-		} else if t, ok := getStringField(ck, "text"); ok {
+			ck.ContentSmLtks = smt
+		} else if t := ck.Text; t != "" {
 			tt, err := tokenizer.Tokenize(t)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: text tokenize: %w", err)
 			}
-			ck["content_ltks"] = tt
+			ck.ContentLtks = tt
 			smt, err := tokenizer.FineGrainedTokenize(tt)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: text fine-grain: %w", err)
 			}
-			ck["content_sm_ltks"] = smt
+			ck.ContentSmLtks = smt
 		}
 	}
 	return nil
@@ -457,34 +466,35 @@ func tokenizeChunks(chunks []map[string]any, titleStem string) error {
 // concatFields concatenates the configured fields of a chunk into
 // a single string. Mirrors python tokenizer.py:69-79 which
 // concatenates `param.fields` (string or list-of-strings per chunk).
-func concatFields(ck map[string]any, fields []string) string {
+func concatFields(ck schema.ChunkDoc, fields []string) string {
 	var b strings.Builder
 	for _, f := range fields {
-		v, ok := ck[f]
-		if !ok {
-			continue
-		}
-		switch t := v.(type) {
-		case string:
-			b.WriteString(t)
-		case []any:
-			for i, x := range t {
-				if i > 0 {
-					b.WriteByte('\n')
-				}
-				if s, ok := x.(string); ok {
-					b.WriteString(s)
-				}
+		switch f {
+		case "text":
+			b.WriteString(ck.Text)
+		case "content_with_weight":
+			b.WriteString(ck.ContentWithWeight)
+		case "questions":
+			b.WriteString(ck.Questions)
+		case "keywords":
+			b.WriteString(ck.Keywords)
+		case "summary":
+			b.WriteString(ck.Summary)
+		default:
+			if s, ok := ck.GetExtraString(f); ok {
+				b.WriteString(s)
+				continue
 			}
-		case []string:
-			b.WriteString(strings.Join(t, "\n"))
+			if values, ok := ck.GetExtraStringSlice(f); ok {
+				b.WriteString(strings.Join(values, "\n"))
+			}
 		}
 	}
 	return b.String()
 }
 
 // getChunks extracts the chunk list from inputs.
-func getChunks(inputs map[string]any) ([]map[string]any, error) {
+func getChunks(inputs map[string]any) ([]schema.ChunkDoc, error) {
 	if inputs == nil {
 		return nil, fmt.Errorf("Tokenizer: inputs map is nil")
 	}
@@ -493,39 +503,15 @@ func getChunks(inputs map[string]any) ([]map[string]any, error) {
 		if !ok {
 			continue
 		}
-		switch t := v.(type) {
-		case []map[string]any:
-			out := make([]map[string]any, 0, len(t))
-			for _, c := range t {
-				if c != nil {
-					out = append(out, c)
-				}
-			}
-			return out, nil
-		case []any:
-			out := make([]map[string]any, 0, len(t))
-			for _, c := range t {
-				if m, ok := c.(map[string]any); ok && m != nil {
-					out = append(out, m)
-				}
-			}
-			return out, nil
+		chunks, found, err := schema.ChunkDocsFromAny(v)
+		if err != nil {
+			return nil, fmt.Errorf("Tokenizer: decode chunks: %w", err)
+		}
+		if found {
+			return chunks, nil
 		}
 	}
-	return []map[string]any{}, nil
-}
-
-// getStringField reads a string field from a chunk map. Returns
-// (value, true) when the field is present and a non-empty string.
-func getStringField(m map[string]any, key string) (string, bool) {
-	v, ok := m[key]
-	if !ok || v == nil {
-		return "", false
-	}
-	if s, ok := v.(string); ok {
-		return s, true
-	}
-	return "", false
+	return []schema.ChunkDoc{}, nil
 }
 
 func getStringOr(m map[string]any, key, def string) string {
@@ -561,6 +547,8 @@ func contains(s []string, v string) bool {
 	}
 	return false
 }
+
+func intPtr(v int) *int { return &v }
 
 // init registers Tokenizer under CategoryIngestion (plan §4
 // Phase 2.4). The metadata drives Phase 4's GET /api/v1/components

@@ -238,10 +238,12 @@ func TestChunkerFromUpstreamValidate(t *testing.T) {
 }
 
 func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
+	md := "# title"
 	original := ChunkerFromUpstream{
-		Name:         "doc.pdf",
-		OutputFormat: "chunks",
-		Chunks:       []map[string]any{{"text": "alpha"}},
+		Name:           "doc.pdf",
+		OutputFormat:   PayloadFormatChunks,
+		Chunks:         []ChunkDoc{{Text: "alpha"}},
+		MarkdownResult: &md,
 	}
 	data, err := json.Marshal(original)
 	if err != nil {
@@ -254,7 +256,7 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if decoded.Name != "doc.pdf" || decoded.OutputFormat != "chunks" {
+	if decoded.Name != "doc.pdf" || decoded.OutputFormat != PayloadFormatChunks {
 		t.Errorf("round-trip mismatch: %+v", decoded)
 	}
 	if len(decoded.Chunks) != 1 {
@@ -264,8 +266,8 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 
 func TestChunkerOutputsJSONRoundTrip(t *testing.T) {
 	original := ChunkerOutputs{
-		OutputFormat: "chunks",
-		Chunks:       []map[string]any{{"text": "alpha"}, {"text": "beta"}},
+		OutputFormat: PayloadFormatChunks,
+		Chunks:       []ChunkDoc{{Text: "alpha"}, {Text: "beta"}},
 	}
 	data, err := json.Marshal(original)
 	if err != nil {
@@ -368,29 +370,32 @@ func TestHierarchyTitleChunkerParamAlias(t *testing.T) {
 
 func TestTokenizerFromUpstreamValidate(t *testing.T) {
 	// output_format=chunks with nil Chunks is valid.
-	if err := (&TokenizerFromUpstream{OutputFormat: "chunks"}).Validate(); err != nil {
+	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatChunks}).Validate(); err != nil {
 		t.Fatalf("output_format=chunks should be valid, got %v", err)
 	}
 	// output_format=markdown with no MarkdownResult -> error.
-	if err := (&TokenizerFromUpstream{OutputFormat: "markdown"}).Validate(); err == nil {
+	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatMarkdown}).Validate(); err == nil {
 		t.Fatal("expected error for markdown without payload")
 	}
 	// output_format=markdown with payload -> OK.
-	if err := (&TokenizerFromUpstream{OutputFormat: "markdown", MarkdownResult: "# title"}).Validate(); err != nil {
+	md := "# title"
+	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatMarkdown, MarkdownResult: &md}).Validate(); err != nil {
 		t.Fatalf("markdown with payload should be valid, got %v", err)
 	}
 	// output_format=text without payload -> error.
-	if err := (&TokenizerFromUpstream{OutputFormat: "text"}).Validate(); err == nil {
+	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatText}).Validate(); err == nil {
 		t.Fatal("expected error for text without payload")
 	}
-	if err := (&TokenizerFromUpstream{OutputFormat: "text", TextResult: "hello"}).Validate(); err != nil {
+	txt := "hello"
+	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatText, TextResult: &txt}).Validate(); err != nil {
 		t.Fatalf("text with payload should be valid, got %v", err)
 	}
 	// output_format=html without payload -> error.
-	if err := (&TokenizerFromUpstream{OutputFormat: "html"}).Validate(); err == nil {
+	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatHTML}).Validate(); err == nil {
 		t.Fatal("expected error for html without payload")
 	}
-	if err := (&TokenizerFromUpstream{OutputFormat: "html", HTMLResult: "<p>x</p>"}).Validate(); err != nil {
+	html := "<p>x</p>"
+	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatHTML, HTMLResult: &html}).Validate(); err != nil {
 		t.Fatalf("html with payload should be valid, got %v", err)
 	}
 	// Empty output_format with neither JSON nor Chunks -> error.
@@ -398,23 +403,26 @@ func TestTokenizerFromUpstreamValidate(t *testing.T) {
 		t.Fatal("expected error when no output_format and no payload")
 	}
 	// Empty output_format with JSONResult -> OK.
-	if err := (&TokenizerFromUpstream{JSONResult: []map[string]any{{"x": 1}}}).Validate(); err != nil {
+	if err := (&TokenizerFromUpstream{JSONResult: []ChunkDoc{{Text: "x"}}}).Validate(); err != nil {
 		t.Fatalf("empty output_format with JSONResult should be valid, got %v", err)
 	}
 	// Empty output_format with Chunks -> OK.
-	if err := (&TokenizerFromUpstream{Chunks: []map[string]any{{"x": 1}}}).Validate(); err != nil {
+	if err := (&TokenizerFromUpstream{Chunks: []ChunkDoc{{Text: "x"}}}).Validate(); err != nil {
 		t.Fatalf("empty output_format with Chunks should be valid, got %v", err)
 	}
 }
 
 func TestTokenizerFromUpstreamJSONRoundTrip(t *testing.T) {
+	md := "# title"
+	txt := "body"
+	html := "<p>x</p>"
 	original := TokenizerFromUpstream{
 		Name:           "doc.pdf",
-		OutputFormat:   "chunks",
-		Chunks:         []map[string]any{{"text": "alpha"}},
-		MarkdownResult: "# title",
-		TextResult:     "body",
-		HTMLResult:     "<p>x</p>",
+		OutputFormat:   PayloadFormatChunks,
+		Chunks:         []ChunkDoc{{Text: "alpha"}},
+		MarkdownResult: &md,
+		TextResult:     &txt,
+		HTMLResult:     &html,
 	}
 	data, err := json.Marshal(original)
 	if err != nil {
@@ -432,8 +440,8 @@ func TestTokenizerFromUpstreamJSONRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if decoded.MarkdownResult != "# title" {
-		t.Errorf("markdown round-trip mismatch: got %q", decoded.MarkdownResult)
+	if decoded.MarkdownResult == nil || *decoded.MarkdownResult != "# title" {
+		t.Errorf("markdown round-trip mismatch: got %v", decoded.MarkdownResult)
 	}
 	// Re-marshal the decoded and confirm we can read markdown back.
 	data2, err := json.Marshal(decoded)
@@ -479,8 +487,8 @@ func TestTokenizerParamValidate(t *testing.T) {
 func TestTokenizerOutputsJSONRoundTrip(t *testing.T) {
 	tokens := 256
 	original := TokenizerOutputs{
-		OutputFormat:              "chunks",
-		Chunks:                    []map[string]any{{"text": "alpha"}},
+		OutputFormat:              PayloadFormatChunks,
+		Chunks:                    []ChunkDoc{{Text: "alpha"}},
 		EmbeddingTokenConsumption: &tokens,
 	}
 	data, err := json.Marshal(original)
