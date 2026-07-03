@@ -251,7 +251,7 @@ func TestProduction_MixedWorkloadHighConcurrency(t *testing.T) {
 				}
 			}()
 			sg := graph.NewStateGraph(&dagState{})
-			sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+			sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 			branchCount := 5
 
 			sg.AddNode(fmt.Sprintf("s_%d", id), func(ctx context.Context, state interface{}) (interface{}, error) {

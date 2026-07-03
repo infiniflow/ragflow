@@ -22,7 +22,7 @@ type recoveryState struct {
 // limited interrupt/resume semantics. For full integration tests, see
 // the harness_test.go file at the project root.
 func TestCheckpoint_InterruptAndResume(t *testing.T) {
-	if PregelRunFunc == nil {
+	if types.PregelRunFunc == nil {
 		t.Skip("Pregel engine not injected — run from harness root for full test")
 	}
 	sg := NewStateGraph(&recoveryState{})
@@ -182,7 +182,7 @@ func TestCheckpoint_ConcurrentSaves(t *testing.T) {
 
 // TestCheckpoint_RecursionLimit protects against infinite loop.
 func TestCheckpoint_RecursionLimit(t *testing.T) {
-	if PregelRunFunc == nil {
+	if types.PregelRunFunc == nil {
 		t.Skip("Pregel engine not injected")
 	}
 	sg := NewStateGraph(map[string]interface{}{"count": 0})

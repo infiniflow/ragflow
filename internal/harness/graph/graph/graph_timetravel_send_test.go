@@ -55,13 +55,13 @@ func TestTimeTravel_MultiStepInject(t *testing.T) {
 			AsNode:   "user",
 			ThreadID: tid,
 		}
-		newCfg, err := cg.UpdateState(ctx, cfg, update)
+		newCfg, err := insp.UpdateState(ctx, cfg, update)
 		if err != nil {
 			t.Fatalf("UpdateState #%d: %v", i, err)
 		}
 
 		// Verify via GetState.
-		snap, err := cg.GetState(ctx, newCfg)
+		snap, err := insp.GetState(ctx, newCfg)
 		if err != nil {
 			t.Fatalf("GetState #%d: %v", i, err)
 		}
@@ -90,6 +90,7 @@ func TestTimeTravel_ForkFromCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
+	insp := getInspector(t, cg)
 
 	ctx := context.Background()
 
@@ -120,7 +121,7 @@ func TestTimeTravel_ForkFromCheckpoint(t *testing.T) {
 		AsNode:   "user",
 		ThreadID: tidC,
 	}
-	_, err = cg.UpdateState(ctx, &types.RunnableConfig{
+	_, err = insp.UpdateState(ctx, &types.RunnableConfig{
 		Configurable: map[string]interface{}{constants.ConfigKeyThreadID: tidA},
 	}, update)
 	if err != nil {

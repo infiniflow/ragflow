@@ -18,7 +18,6 @@ import (
 	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/errors"
-	"ragflow/internal/harness/graph/graph"
 	"ragflow/internal/harness/graph/interrupt"
 	"ragflow/internal/harness/graph/types"
 )
@@ -35,8 +34,8 @@ import (
 //	    WithRecursionLimit(50),
 //	)
 type Engine struct {
-	graph               *graph.StateGraph
-	checkpointer        graph.Checkpointer
+	graph               types.StateGraph
+	checkpointer        checkpoint.BaseCheckpointer
 	interrupts          map[string]bool
 	interruptsAfter     map[string]bool
 	recursionLimit      int
@@ -65,7 +64,7 @@ type deferredCheckpoint struct {
 //
 // The engine is reusable across multiple Run calls. Each call creates its own
 // background executor for isolation.
-func NewEngine(g *graph.StateGraph, opts ...EngineOption) *Engine {
+func NewEngine(g types.StateGraph, opts ...EngineOption) *Engine {
 	eng := &Engine{
 		graph:           g,
 		interrupts:      make(map[string]bool),
@@ -99,7 +98,7 @@ func NewEngine(g *graph.StateGraph, opts ...EngineOption) *Engine {
 type EngineOption func(*Engine)
 
 // WithCheckpointer sets the checkpointer.
-func WithCheckpointer(cp graph.Checkpointer) EngineOption {
+func WithCheckpointer(cp checkpoint.BaseCheckpointer) EngineOption {
 	return func(e *Engine) {
 		e.checkpointer = cp
 	}
@@ -691,7 +690,7 @@ func (e *Engine) prepareNextTasksWithMode(
 
 	// AllPredecessor (DAG) mode: scan all uncompleted nodes and check if
 	// ALL of their incoming-edge source nodes have completed.
-	if e.graph.NodeTriggerMode == types.NodeTriggerAllPredecessor {
+	if e.graph.GetNodeTriggerMode() == types.NodeTriggerAllPredecessor {
 		return e.prepareNextTasksDAG(completedTasks, currentState, forExecution)
 	}
 
@@ -1245,14 +1244,21 @@ func BuildTaskPath(components ...any) []string {
 
 // Helper methods that access the StateGraph
 func (e *Engine) getGraphChannels() map[string]channels.Channel {
-	return e.graph.GetChannels()
+	raw := e.graph.GetChannels()
+	result := make(map[string]channels.Channel, len(raw))
+	for k, v := range raw {
+		if ch, ok := v.(channels.Channel); ok {
+			result[k] = ch
+		}
+	}
+	return result
 }
 
 func (e *Engine) getEntryPoint() string {
 	return e.graph.GetEntryPoint()
 }
 
-func (e *Engine) getNode(name string) *graph.Node {
+func (e *Engine) getNode(name string) *types.Node {
 	node, _ := e.graph.GetNode(name)
 	return node
 }
@@ -1346,14 +1352,14 @@ func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[s
 	return nextNodes
 }
 
-func (e *Engine) getTriggers(node *graph.Node) []string {
+func (e *Engine) getTriggers(node *types.Node) []string {
 	if node == nil {
 		return []string{}
 	}
 	return node.Triggers
 }
 
-func (e *Engine) createTask(node *graph.Node, state any, channels []string, triggers []string) *Task {
+func (e *Engine) createTask(node *types.Node, state any, channels []string, triggers []string) *Task {
 	task := &Task{
 		ID:       uuid.New().String(),
 		Name:     node.Name,
@@ -1371,7 +1377,7 @@ func (e *Engine) createTask(node *graph.Node, state any, channels []string, trig
 
 // createTaskInfo creates a task info object for inspection/planning (for_execution=false mode).
 // This is similar to Python's prepare_next_tasks with for_execution=False.
-func (e *Engine) createTaskInfo(node *graph.Node, state any, channels []string, triggers []string) *Task {
+func (e *Engine) createTaskInfo(node *types.Node, state any, channels []string, triggers []string) *Task {
 	task := &Task{
 		ID:       uuid.New().String(),
 		Name:     node.Name,
@@ -1601,7 +1607,7 @@ func (e *Engine) RunSync(ctx context.Context, input any) (any, error) {
 // applyFieldMapping filters and remaps an output map according to FieldMapping rules.
 // If no mappings are specified, the entire output map is passed through unchanged.
 // Each mapping specifies a source field path (From) and a target field path (To).
-func applyFieldMapping(output map[string]any, mappings []graph.FieldMapping) map[string]any {
+func applyFieldMapping(output map[string]any, mappings []types.FieldMapping) map[string]any {
 	if len(mappings) == 0 {
 		return output
 	}

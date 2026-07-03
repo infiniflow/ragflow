@@ -1,6 +1,7 @@
 package core
 
 import (
+	"ragflow/internal/harness/graph/checkpoint"
 	"context"
 	"fmt"
 	"strings"
@@ -9,7 +10,6 @@ import (
 
 	"ragflow/internal/harness/core/internal"
 	"ragflow/internal/harness/core/schema"
-	"ragflow/internal/harness/graph/graph"
 )
 
 // ReActConfig holds configuration for TypedReActAgent.
@@ -35,7 +35,7 @@ type ReActConfig[M MessageType] struct {
 	// GraphReActCheckpointer is the checkpointer used when GraphReAct is enabled.
 	// If nil, no checkpointing is performed (but interrupt is still available
 	// via WithInterrupts).
-	GraphReActCheckpointer graph.Checkpointer
+	GraphReActCheckpointer checkpoint.BaseCheckpointer
 	// GraphReActInterruptBefore lists node names to interrupt before.
 	// Default: ["execute_tools"] (pause before tool execution for human approval).
 	GraphReActInterruptBefore []string
@@ -601,7 +601,7 @@ func preprocessCheckpointData(data any) any { return data }
 //	cfg := DefaultReActConfig[*schema.Message]()
 //	cfg.GraphReAct = true
 //	cfg.GraphReActCheckpointer = checkpoint.NewMemorySaver()  // optional
-func WithGraphReAct[M MessageType](cfg *ReActConfig[M], cptr graph.Checkpointer) {
+func WithGraphReAct[M MessageType](cfg *ReActConfig[M], cptr checkpoint.BaseCheckpointer) {
 	cfg.GraphReAct = true
 	cfg.GraphReActCheckpointer = cptr
 }

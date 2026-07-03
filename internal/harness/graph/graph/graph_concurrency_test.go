@@ -202,7 +202,7 @@ func TestGraph_ConcurrentInvoke_LoopGraph(t *testing.T) {
 // TestGraph_ConcurrentInvoke_DAGGraph: 30 goroutines invoke a DAG fan-in graph.
 func TestGraph_ConcurrentInvoke_DAGGraph(t *testing.T) {
 	sg := NewStateGraph(map[string]interface{}{"count": 0, "value": ""})
-	sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+	sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 	sg.AddChannel("count", channels.NewBinaryOperatorAggregate(0, func(a, b interface{}) interface{} {
 		return a.(int) + b.(int)
 	}))

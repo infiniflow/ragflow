@@ -162,14 +162,18 @@ func TestTimeTravel_UpdateState_ThenResume(t *testing.T) {
 		AsNode:   "user",
 		ThreadID: "tt-update-resume",
 	}
-	newCfg, err := cg.UpdateState(ctx, cfg, update)
+	inspector, ok := cg.(graphPkg.StateInspector)
+	if !ok {
+		t.Fatal("compiled graph does not implement StateInspector")
+	}
+	newCfg, err := inspector.UpdateState(ctx, cfg, update)
 	if err != nil {
 		t.Fatalf("UpdateState: %v", err)
 	}
 	t.Logf("UpdateState returned config: %+v", newCfg)
 
 	// GetState should now show the updated values.
-	snap, err := cg.GetState(ctx, newCfg)
+	snap, err := inspector.GetState(ctx, newCfg)
 	if err != nil {
 		t.Fatalf("GetState after update: %v", err)
 	}
@@ -209,13 +213,17 @@ func TestTimeTravel_MultipleUpdates(t *testing.T) {
 	}
 
 	// Apply multiple updates.
+	inspector2, ok2 := cg.(graphPkg.StateInspector)
+	if !ok2 {
+		t.Fatal("compiled graph does not implement StateInspector")
+	}
 	for i := 1; i <= 3; i++ {
 		u := &graphPkg.StateUpdate{
 			Values:   map[string]interface{}{"step": i, "updated": true},
 			AsNode:   "user",
 			ThreadID: tid,
 		}
-		_, err := cg.UpdateState(ctx, &types.RunnableConfig{
+		_, err := inspector2.UpdateState(ctx, &types.RunnableConfig{
 			Configurable: map[string]interface{}{constants.ConfigKeyThreadID: tid},
 		}, u)
 		if err != nil {
@@ -224,7 +232,7 @@ func TestTimeTravel_MultipleUpdates(t *testing.T) {
 	}
 
 	// GetStateHistory should show all checkpoints, including the updates.
-	history, err := cg.GetStateHistory(ctx, &types.RunnableConfig{
+	history, err := inspector2.GetStateHistory(ctx, &types.RunnableConfig{
 		Configurable: map[string]interface{}{constants.ConfigKeyThreadID: tid},
 	}, 10, nil)
 	if err != nil {
@@ -478,7 +486,7 @@ func TestFaultInjection_RapidCancel_Restart(t *testing.T) {
 // ============================================================
 
 // simpleGraphNoCP returns a 2-node graph (node_a → node_b).
-func simpleGraphNoCP() *graphPkg.StateGraph {
+func simpleGraphNoCP() types.StateGraph {
 	sg := graphPkg.NewStateGraph(map[string]any{"value": ""})
 	sg.AddChannel("value", channels.NewLastValue(""))
 
