@@ -14,9 +14,7 @@ PROJECT_ROOT="$SCRIPT_DIR"
 # Build directories
 CPP_DIR="$PROJECT_ROOT/internal/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
-RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/ragflow_server"
-ADMIN_SERVER_BINARY="$PROJECT_ROOT/bin/admin_server"
-INGESTOR_BINARY="$PROJECT_ROOT/bin/ingestor"
+RAGFLOW_MAIN_BINARY="$PROJECT_ROOT/bin/ragflow_main"
 RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 
 # Strip symbols from Go binaries (set via --strip / -s)
@@ -46,7 +44,10 @@ _seed_from_system() {
     local dep_dir="${HOME}/ragflow-native-libs/${dep_name}"
     local sys_dir="${SYSTEM_DEPS}/${dep_name}"
 
+    echo "check if dep ${dep_name} exists in ${dep_dir} or ${sys_dir}"
+
     if [ -d "$dep_dir" ]; then
+        echo "  ${dep_name} → ${dep_dir} (user cache)"
         return 0  # already cached
     fi
     if [ -d "$sys_dir" ]; then
@@ -55,6 +56,7 @@ _seed_from_system() {
         cp -r "$sys_dir" "$dep_dir"
         return 0
     fi
+    echo "  ${dep_name} not found in system or user cache"
     return 1
 }
 
@@ -141,28 +143,10 @@ check_go_deps() {
     echo "✓ Required tools are available"
 }
 
-# Download and extract a tar.gz from a URL to a target directory
-_download_and_extract() {
-    local url="$1" target_dir="$2"
-    echo "Downloading ${url} ..."
-    local tmpfile
-    tmpfile="$(mktemp)"
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$url" -o "$tmpfile"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q "$url" -O "$tmpfile"
-    else
-        echo -e "${RED}Error: need curl or wget to download office_oxide${NC}"
-        exit 1
-    fi
-    tar xzf "$tmpfile" -C "$target_dir"
-    rm -f "$tmpfile"
-}
-
-# Check / install office_oxide native library (Rust → C FFI library)
+# Check office_oxide native library
 check_office_oxide_deps() {
     print_section "Checking office_oxide native library"
-    _seed_from_system "office_oxide"
+    _seed_from_system "office_oxide" || true
 
     local lib_file="liboffice_oxide.a"
     local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
@@ -175,14 +159,14 @@ check_office_oxide_deps() {
 
     echo -e "${RED}Error: office_oxide native library not found${NC}"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run download_deps.py"
+    echo "  Run: uv run ragflow_deps/download_deps.py"
     echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
     exit 1
 }
 
-# Check pdfium static library (must be pre-installed via download_deps.py or CI image).
+# Check pdfium static library.
 check_pdfium_deps() {
-    _seed_from_system "pdfium-static"
+    _seed_from_system "pdfium-static" || true
     local lib_path="${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
 
     if [ -f "$lib_path" ]; then
@@ -192,14 +176,14 @@ check_pdfium_deps() {
 
     echo "  pdfium (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run download_deps.py"
+    echo "  Run: uv run ragflow_deps/download_deps.py"
     echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/pdfium-linux-x64-static.tgz | tar xz -C ${PDFIUM_STATIC_PREFIX}"
     return 1
 }
 
-# Check / install pdf_oxide static library (go-ffi tarball from GitHub Release).
+# Check pdf_oxide static library.
 check_pdf_oxide_deps() {
-    _seed_from_system "pdf_oxide"
+    _seed_from_system "pdf_oxide" || true
     # Map platform to tarball-internal subdirectory.
     local platform_subdir
     case "$(uname -s)" in
@@ -229,7 +213,7 @@ check_pdf_oxide_deps() {
 
     echo "  pdf_oxide (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run download_deps.py"
+    echo "  Run: uv run ragflow_deps/download_deps.py"
     echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz | tar xz -C ${PDF_OXIDE_PREFIX}"
     return 1
 }
@@ -317,39 +301,21 @@ build_go() {
     local strip_flags=()
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
-    echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, $INGESTOR_BINARY, and $RAGFLOW_CLI_BINARY"
+    echo "Building RAGFlow binary: $RAGFLOW_MAIN_BINARY, and $RAGFLOW_CLI_BINARY"
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
-        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build "${strip_flags[@]}" -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
-        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build "${strip_flags[@]}" -o "$INGESTOR_BINARY" cmd/ingestor.go
+        go build "${strip_flags[@]}" -o "$RAGFLOW_MAIN_BINARY" cmd/ragflow_main.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
-    if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
-        echo -e "${RED}Error: Failed to build RAGFlow server binary${NC}"
+    if [ ! -f "$RAGFLOW_MAIN_BINARY" ]; then
+        echo -e "${RED}Error: Failed to build RAGFlow main binary${NC}"
         exit 1
     fi
 
-    if [ ! -f "$ADMIN_SERVER_BINARY" ]; then
-        echo -e "${RED}Error: Failed to build Admin server binary${NC}"
-        exit 1
-    fi
-
-    if [ ! -f "$INGESTOR_BINARY" ]; then
-        echo -e "${RED}Error: Failed to build Ingestor binary${NC}"
-        exit 1
-    fi
-
-    echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
-    echo -e "${GREEN}✓ Go admin_server built successfully: $ADMIN_SERVER_BINARY${NC}"
+    echo -e "${GREEN}✓ Go ragflow_main built successfully: $RAGFLOW_MAIN_BINARY${NC}"
     echo -e "${GREEN}✓ Go ragflow-cli built successfully: $RAGFLOW_CLI_BINARY${NC}"
-    echo -e "${GREEN}✓ Go ingestor built successfully: $INGESTOR_BINARY${NC}"
 }
 
 # Configure CGO flags for native libraries (office_oxide, pdfium, pdf_oxide).
@@ -370,7 +336,7 @@ setup_cgo_env() {
     # duplicate rust_eh_personality symbols.
     if [ "$(uname -s)" = "Linux" ]; then
         if ! command -v ld.lld >/dev/null 2>&1; then
-            echo -e "${RED}Error: ld.lld not found. Install with: sudo apt install lld-20${NC}"
+            echo -e "${RED}Error: ld.lld not found. Install with: sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld${NC}"
             echo "  lld is required to static-link Chromium-built pdfium (.eh_frame format)"
             return 1
         fi
@@ -439,9 +405,7 @@ clean() {
     print_section "Cleaning build artifacts"
 
     rm -rf "$BUILD_DIR"
-    rm -f "$RAGFLOW_SERVER_BINARY"
-    rm -f "$ADMIN_SERVER_BINARY"
-    rm -f "$INGESTOR_BINARY"
+    rm -f "$RAGFLOW_MAIN_BINARY"
     rm -f "$RAGFLOW_CLI_BINARY"
 
     echo -e "${GREEN}✓ Build artifacts cleaned${NC}"
@@ -449,16 +413,8 @@ clean() {
 
 # Run the server
 run() {
-    if [ ! -f "$ADMIN_SERVER_BINARY" ]; then
-        echo -e "${RED}Error: $ADMIN_SERVER_BINARY not found. Build first with --all or --go${NC}"
-        exit 1
-    fi
-    if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
-        echo -e "${RED}Error: $RAGFLOW_SERVER_BINARY not found. Build first with --all or --go${NC}"
-        exit 1
-    fi
-    if [ ! -f "$INGESTOR_BINARY" ]; then
-        echo -e "${RED}Error: $INGESTOR_BINARY not found. Build first with --all or --go${NC}"
+    if [ ! -f "$RAGFLOW_MAIN_BINARY" ]; then
+        echo -e "${RED}Error: $RAGFLOW_MAIN_BINARY not found. Build first with --all or --go${NC}"
         exit 1
     fi
 
@@ -467,7 +423,7 @@ run() {
     # admin_server must be running before ragflow_server, otherwise ragflow_server's
     # heartbeats to admin will error out (see internal/development.md).
     print_section "Starting admin server (background)"
-    "$ADMIN_SERVER_BINARY" &
+    "$RAGFLOW_MAIN_BINARY" --admin &
     ADMIN_PID=$!
     trap 'kill "$ADMIN_PID" 2>/dev/null || true' EXIT INT TERM
 
@@ -476,13 +432,13 @@ run() {
     sleep 1
 
     print_section "Starting ingestor (background)"
-    "$INGESTOR_BINARY" &
+    "$RAGFLOW_MAIN_BINARY" --ingestor &
     INGESTOR_PID=$!
     trap 'kill "$INGESTOR_PID" 2>/dev/null || true' EXIT INT TERM
     sleep 1
 
     print_section "Starting RAGFlow server (foreground)"
-    "$RAGFLOW_SERVER_BINARY"
+    "$RAGFLOW_MAIN_BINARY" -- api
 }
 
 # Show help
@@ -522,7 +478,8 @@ DEPENDENCIES:
     - cmake >= 4.0
     - go >= 1.24
     - g++ with C++17/23 support
-    - office_oxide native library (auto-downloaded on first build)
+    - office_oxide native library (download with: uv run ragflow_deps/download_deps.py)
+    - lld (Linux only): sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
     - pcre2 development files
         - Debian/Ubuntu: libpcre2-dev
         - openSUSE/RHEL/Fedora: pcre2-devel
@@ -583,7 +540,7 @@ main() {
             build_cpp
             build_go
             echo -e "\n${GREEN}=== Build completed successfully! ===${NC}"
-            echo "Binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, $INGESTOR_BINARY, $RAGFLOW_CLI_BINARY"
+            echo "Binary: $RAGFLOW_MAIN_BINARY, $RAGFLOW_CLI_BINARY"
             ;;
         *)
             echo -e "${RED}Unknown option: $1${NC}"

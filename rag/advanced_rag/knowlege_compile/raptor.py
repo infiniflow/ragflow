@@ -19,7 +19,6 @@ import logging
 import re
 
 import numpy as np
-import umap
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.mixture import GaussianMixture
 
@@ -54,6 +53,12 @@ class _PsiTreeNode:
     embedding: np.ndarray | None = None
     children: list["_PsiTreeNode"] = field(default_factory=list)
     parent: "_PsiTreeNode | None" = None
+    # Original (leaf-level) chunk ids that contributed to this node. On
+    # a leaf this is a single-element list with the leaf's own id; on an
+    # internal node it's the order-preserving deduped union of its
+    # children's lists. Carried up through the merge tree so each
+    # produced summary knows which source chunks it covers.
+    source_chunk_ids: list[str] = field(default_factory=list)
 
 
 class _PsiUnionFind:
@@ -150,7 +155,7 @@ class _PsiUnionFind:
     @property
     def tree(self) -> list[int]:
         """Return the compact child-to-parent array for constructed nodes."""
-        return self._tree[:self._next_id]
+        return self._tree[: self._next_id]
 
 
 class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
@@ -209,7 +214,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
                 if response.find("**ERROR**") >= 0:
                     raise Exception(response)
-                await thread_pool_exec(set_llm_cache,self._llm_model.llm_name,system,response,history,gen_conf)
+                await thread_pool_exec(set_llm_cache, self._llm_model.llm_name, system, response, history, gen_conf)
                 return response
             except Exception as exc:
                 last_exc = exc
@@ -305,6 +310,61 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             labels = np.array([remap[int(lbl)] for lbl in new_labels])
         return labels
 
+    def clustering(self, embeddings, random_state: int, task_id: str = "") -> tuple[int, list[int]]:
+        """Cluster one RAPTOR layer and return contiguous labels."""
+        reduced_embeddings = np.asarray(embeddings, dtype=np.float64)
+        if len(reduced_embeddings) == 0:
+            return 0, []
+
+        # Degrade too much ??
+        n_neighbors = int((len(embeddings) - 1) ** 0.8)
+        import umap
+
+        reduced_embeddings = umap.UMAP(
+            n_neighbors=max(2, n_neighbors),
+            n_components=min(12, len(embeddings) - 2),
+            metric="cosine",
+        ).fit_transform(embeddings)
+        if self._clustering_method == AHC_CLUSTERING_METHOD:
+            logging.info("RAPTOR: using clustering_method=%s before _get_clusters_ahc", self._clustering_method)
+            raw_labels = self._get_clusters_ahc(reduced_embeddings, task_id=task_id)
+            raw_cluster_count = np.unique(raw_labels).size
+            logging.info("RAPTOR AHC: _get_clusters_ahc produced n_clusters=%d", raw_cluster_count)
+            if raw_cluster_count > 1:
+                labels = self._adjust_tree_nodes(reduced_embeddings, raw_labels)
+                adjusted_cluster_count = np.unique(labels).size
+                logging.info("RAPTOR AHC: _adjust_tree_nodes adjusted n_clusters=%d", adjusted_cluster_count)
+            else:
+                labels = raw_labels
+                logging.warning("RAPTOR AHC: _adjust_tree_nodes skipped because _get_clusters_ahc returned one cluster")
+        else:
+            n_clusters = int(self._get_optimal_clusters(reduced_embeddings, random_state, task_id=task_id))
+            if n_clusters <= 1:
+                labels = [0 for _ in range(len(reduced_embeddings))]
+            else:
+                gm = GaussianMixture(n_components=n_clusters, random_state=random_state)
+                gm.fit(reduced_embeddings)
+                probs = gm.predict_proba(reduced_embeddings)
+                labels = []
+                for prob in probs:
+                    candidates = np.where(prob > self._threshold)[0]
+                    labels.append(int(candidates[0]) if len(candidates) else int(np.argmax(prob)))
+
+        normalized_labels: list[int] = []
+        for label in labels:
+            if isinstance(label, np.ndarray):
+                normalized_labels.append(int(label[0]) if len(label) else 0)
+            else:
+                normalized_labels.append(int(label))
+
+        if len(normalized_labels) <= 0:
+            return 0, []
+        unique_labels = np.unique(normalized_labels)
+        if len(unique_labels) <= 1:
+            return 1, [0 for _ in normalized_labels]
+        label_map = {int(old): idx for idx, old in enumerate(unique_labels)}
+        return len(unique_labels), [label_map[label] for label in normalized_labels]
+
     @timeout(60 * 20)
     async def _summarize_texts(self, texts: list[str], callback=None, task_id: str = ""):
         """Summarize a cluster and return text plus embedding when successful."""
@@ -317,11 +377,11 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 self._check_task_canceled(task_id, "before LLM call")
 
                 cnt = await self._chat(
-                    "You're a helpful assistant.",
+                    "You're a helpful assistant.\n\nHelp me with the following task.\n\n%s" % self._prompt.format(cluster_content=cluster_content),
                     [
                         {
                             "role": "user",
-                            "content": self._prompt.format(cluster_content=cluster_content),
+                            "content": "Beside the summarization, give a title at the first line of your summarization. Must be in the same language as the paragraphs.",
                         }
                     ],
                     {"max_tokens": max(self._max_token, 512)},  # fix issue:  #10235
@@ -336,7 +396,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 self._check_task_canceled(task_id, "before embedding")
 
                 embds = await self._embedding_encode(cnt)
-                return cnt, embds
+                return cnt.split("\n")[0], cnt, embds
         except TaskCanceledException:
             raise
         except Exception as exc:
@@ -406,10 +466,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             split_groups = [group[labels == center_id].tolist() for center_id in range(fanout)]
             split_groups = [bucket for bucket in split_groups if bucket]
             if len(split_groups) <= 1:
-                split_groups = [
-                    group[start:start + self._psi_bucket_size].tolist()
-                    for start in range(0, len(group), self._psi_bucket_size)
-                ]
+                split_groups = [group[start : start + self._psi_bucket_size].tolist() for start in range(0, len(group), self._psi_bucket_size)]
             groups.extend(split_groups)
 
         buckets = [bucket for bucket in buckets if bucket]
@@ -455,7 +512,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 original_children = len(node.children)
                 grouped_children = []
                 for start in range(0, len(node.children), max_children):
-                    batch = node.children[start:start + max_children]
+                    batch = node.children[start : start + max_children]
                     if len(batch) == 1:
                         grouped_children.append(batch[0])
                         batch[0].parent = node
@@ -561,10 +618,21 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         return self._build_bucketed_psi_structure(nodes, next_index, task_id)
 
     def _build_psi_structure(self, chunks, task_id: str = "") -> tuple[_PsiTreeNode, list[_PsiTreeNode]]:
-        """Build the Psi merge tree from original chunk embeddings."""
+        """Build the Psi merge tree from original chunk embeddings.
+
+        ``chunks`` is expected in the normalized 3-tuple shape
+        ``(text, vec, source_chunk_ids)`` — leaves are seeded with
+        their own source ids, internal nodes get their ids set during
+        layer materialization in ``_build_psi_layers``.
+        """
         leaves = [
-            _PsiTreeNode(index=i, text=text, embedding=np.asarray(embd))
-            for i, (text, embd) in enumerate(chunks)
+            _PsiTreeNode(
+                index=i,
+                text=item[0],
+                embedding=np.asarray(item[1]),
+                source_chunk_ids=list(item[2] if len(item) > 2 else []),
+            )
+            for i, item in enumerate(chunks)
         ]
         if len(leaves) == 1:
             return leaves[0], leaves
@@ -604,7 +672,16 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             layer_start = len(chunks)
 
             async def summarize_node(node: _PsiTreeNode):
-                """Summarize one Psi internal node if its children have text."""
+                """Summarize one Psi internal node if its children have text.
+
+                Also propagates leaf provenance: the node's
+                ``source_chunk_ids`` becomes the order-preserving deduped
+                union of every child's ``source_chunk_ids``. Because
+                children at this layer have already been processed (leaves
+                first, then bottom-up), each child carries the full set
+                of leaf ids underneath it — so the union here is the
+                complete leaf set this summary covers.
+                """
                 texts = [child.text for child in node.children if child.text]
                 if not texts:
                     logging.warning("RAPTOR Psi node %s skipped because it has no child text to summarize", node.index)
@@ -613,7 +690,15 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 if result is None:
                     logging.warning("RAPTOR Psi node %s skipped because summarization failed", node.index)
                     return None
-                node.text, node.embedding = result
+                _, node.text, node.embedding = result
+                merged_ids: list[str] = []
+                seen: set[str] = set()
+                for child in node.children:
+                    for src in child.source_chunk_ids:
+                        if src and src not in seen:
+                            seen.add(src)
+                            merged_ids.append(src)
+                node.source_chunk_ids = merged_ids
                 return node
 
             tasks = [asyncio.create_task(summarize_node(node)) for node in nodes]
@@ -628,7 +713,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
             summarized_nodes = [node for node in summarized_nodes if node is not None]
             for node in summarized_nodes:
-                chunks.append((node.text, node.embedding))
+                chunks.append((node.text, node.embedding, list(node.source_chunk_ids)))
 
             if len(chunks) > layer_start:
                 layers.append((layer_start, len(chunks)))
@@ -646,34 +731,119 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
         return chunks, layers
 
-    async def __call__(self, chunks, random_state, callback=None, task_id: str = ""):
-        """Build summary chunks and layer boundaries for RAPTOR retrieval."""
+    async def __call__(
+        self,
+        chunks,
+        random_state,
+        callback=None,
+        task_id: str = "",
+        is_tree: bool = False,
+    ):
+        """Build summary chunks and layer boundaries for RAPTOR retrieval.
+
+        ``chunks`` accepts either the legacy 2-tuple shape
+        ``(text, vec)`` or the provenance-carrying 3-tuple shape
+        ``(text, vec, source_chunk_ids)`` where ``source_chunk_ids`` is
+        the list of original chunk ids that produced this entry. Output
+        always uses the 3-tuple shape so every appended summary carries
+        its leaves' ids. ``[]`` is left in the slot for a leaf whose id
+        was missing — see the caller for the normalization rules.
+
+        Return shapes:
+          * ``is_tree=False`` (default) — original behavior: returns
+            ``(chunks, layers)`` where ``chunks`` is the flat list
+            (originals + summaries) and ``layers`` is the per-level
+            index range ``[(start, end), ...]``.
+          * ``is_tree=True`` — returns a hierarchical tree dict via
+            ``_materialize_tree``. Supported for the classic builder
+            only; raises ``NotImplementedError`` for PSI_TREE_BUILDER
+            (PSI's hyperedge-driven summarization doesn't form a strict
+            parent-of relation). Returns ``None`` when there's nothing
+            to materialize.
+        """
         if len(chunks) <= 1:
-            return [], []
-        chunks = [(s, a) for s, a in chunks if s and a is not None and len(a) > 0]
-        if len(chunks) <= 1:
-            return chunks, [(0, len(chunks))]
+            return None if is_tree else ([], [])
+
+        # Normalize input to the 3-tuple shape. Reject empties / bad
+        # vectors at the same time the legacy path used to.
+        def _normalize(item):
+            if len(item) >= 3:
+                text, vec, src = item[0], item[1], item[2]
+            else:
+                text, vec = item[0], item[1]
+                src = []
+            if not text or vec is None or len(vec) <= 0:
+                return None
+            # Defensive: a leaf should carry a list of strings. Drop
+            # falsy entries so we don't propagate empty ids upward.
+            if isinstance(src, (list, tuple)):
+                src = [s for s in src if s]
+            else:
+                src = [src] if src else []
+            return (text, vec, list(src), "")
+
+        normalized = [t for t in (_normalize(c) for c in chunks) if t is not None]
+        if len(normalized) <= 1:
+            return None if is_tree else (normalized, [(0, len(normalized))])
+        chunks = normalized
+
         if self._tree_builder == PSI_TREE_BUILDER:
+            if is_tree:
+                raise NotImplementedError(
+                    "is_tree=True is not supported for PSI_TREE_BUILDER",
+                )
             logging.info("RAPTOR: using %s tree builder for %d chunks", self._tree_builder, len(chunks))
             return await self._build_psi_layers(chunks, callback, task_id)
+
+        # ``parent_child_map`` records each summary's immediate
+        # children so ``_materialize_tree`` can walk back into a tree
+        # when ``is_tree`` is set. Always populated (cheap) so the
+        # tree path is just a return-shape choice at the end.
+        parent_child_map: dict[int, list[int]] = {}
+        n_originals = len(chunks)
 
         layers = [(0, len(chunks))]
         start, end = 0, len(chunks)
 
         @timeout(60 * 20)
         async def summarize(ck_idx: list[int]):
-            """Summarize one classic RAPTOR cluster into the chunk list."""
+            """Summarize one classic RAPTOR cluster into the chunk list.
+
+            On success appends ``(summary_text, summary_vec, src_ids)``
+            where ``src_ids`` is the order-preserving deduped union of
+            the ``source_chunk_ids`` of every chunk indexed in
+            ``ck_idx`` — i.e. the full leaf set that contributed to
+            the cluster, even through nested summaries.
+            """
             nonlocal chunks
 
             texts = [chunks[i][0] for i in ck_idx]
             result = await self._summarize_texts(texts, callback, task_id)
             if result is not None:
-                chunks.append(result)
+                # ``dict.fromkeys`` is the cheapest way to de-dup a
+                # list of strings while preserving first-seen order.
+                merged_ids: list[str] = []
+                seen: set[str] = set()
+                for i in ck_idx:
+                    for src in chunks[i][2]:
+                        if src and src not in seen:
+                            seen.add(src)
+                            merged_ids.append(src)
+                summary_ti, summary_text, summary_vec = result
+                chunks.append((summary_text, summary_vec, merged_ids, summary_ti))
+                # Index of the just-appended summary; map it to its
+                # immediate children for the tree materializer below.
+                parent_child_map[len(chunks) - 1] = list(ck_idx)
 
         while end - start > 1:
             self._check_task_canceled(task_id, "layer processing")
 
-            embeddings = [embd for _, embd in chunks[start:end]]
+            # ``chunks`` is a mix of 3-tuples (layer-0 originals from
+            # _normalize) and 4-tuples (summaries appended by
+            # summarize). Vector is always at index 1 in both shapes,
+            # so use positional access — the older ``_, embd, _, _``
+            # form crashed on layer-0 entries.
+            embeddings = [entry[1] for entry in chunks[start:end]]
             if len(embeddings) == 2:
                 await summarize([start, start + 1])
                 produced = len(chunks) - end
@@ -687,43 +857,33 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 end = len(chunks)
                 continue
 
-            n_neighbors = int((len(embeddings) - 1) ** 0.8)
-            reduced_embeddings = umap.UMAP(
-                n_neighbors=max(2, n_neighbors),
-                n_components=min(12, len(embeddings) - 2),
-                metric="cosine",
-            ).fit_transform(embeddings)
-            if self._clustering_method == AHC_CLUSTERING_METHOD:
-                logging.info("RAPTOR: using clustering_method=%s before _get_clusters_ahc", self._clustering_method)
-                raw_labels = self._get_clusters_ahc(reduced_embeddings, task_id=task_id)
-                raw_cluster_count = np.unique(raw_labels).size
-                logging.info("RAPTOR AHC: _get_clusters_ahc produced n_clusters=%d", raw_cluster_count)
-                if raw_cluster_count > 1:
-                    adjusted = self._adjust_tree_nodes(reduced_embeddings, raw_labels)
-                    adjusted_cluster_count = np.unique(adjusted).size
-                    logging.info("RAPTOR AHC: _adjust_tree_nodes adjusted n_clusters=%d", adjusted_cluster_count)
-                else:
-                    adjusted = raw_labels
-                    logging.warning("RAPTOR AHC: _adjust_tree_nodes skipped because _get_clusters_ahc returned one cluster")
-                unique_labels = np.unique(adjusted)
-                label_map = {old: idx for idx, old in enumerate(unique_labels)}
-                lbls = [label_map[int(lbl)] for lbl in adjusted]
-                n_clusters = len(unique_labels)
-            else:
-                n_clusters = self._get_optimal_clusters(reduced_embeddings, random_state, task_id=task_id)
-                if n_clusters == 1:
-                    lbls = [0 for _ in range(len(reduced_embeddings))]
-                else:
-                    gm = GaussianMixture(n_components=n_clusters, random_state=random_state)
-                    gm.fit(reduced_embeddings)
-                    probs = gm.predict_proba(reduced_embeddings)
-                    lbls = [np.where(prob > self._threshold)[0] for prob in probs]
-                    lbls = [lbl[0] if isinstance(lbl, np.ndarray) else lbl for lbl in lbls]
+            n_clusters, lbls = self.clustering(
+                embeddings,
+                random_state=random_state,
+                task_id=task_id,
+            )
 
-            if n_clusters == 1:
-                lbls = [0 for _ in range(len(reduced_embeddings))]
-            else:
-                lbls = [int(lbl[0]) if isinstance(lbl, np.ndarray) else int(lbl) for lbl in lbls]
+            # Loop-termination guarantee. The outer ``while end - start > 1``
+            # relies on each layer strictly shrinking the input count. If
+            # the clusterer degenerates and returns one cluster per input,
+            # every "cluster" is a single chunk, ``summarize()`` produces
+            # one summary per input, and ``produced == end - start`` —
+            # the same count carries into the next iteration and the loop
+            # spins forever, logging "Cluster one layer: N -> N".
+            #
+            # Collapse everything at this level into a single cluster so
+            # the layer produces exactly one summary. The tree gets a
+            # taller-than-usual "single trunk" segment at this depth
+            # instead of an infinite loop; downstream consumers only care
+            # that ``layers`` is monotonically shrinking.
+            if n_clusters >= len(embeddings):
+                logging.warning(
+                    "RAPTOR clustering did not reduce input count (%d inputs → %d clusters); collapsing this layer into a single summary to prevent a non-terminating loop",
+                    len(embeddings),
+                    n_clusters,
+                )
+                n_clusters = 1
+                lbls = [0] * len(embeddings)
 
             tasks = []
             for c in range(n_clusters):
@@ -758,4 +918,52 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             start = end
             end = len(chunks)
 
+        if is_tree:
+            return self._materialize_tree(chunks, layers, parent_child_map, n_originals), []
         return chunks, layers
+
+    @staticmethod
+    def _materialize_tree(chunks, layers, parent_child_map, n_originals):
+        """Walk ``parent_child_map`` from the top layer down to layer-1
+        and emit the user-facing tree dict. See ``__call__``'s
+        ``is_tree=True`` contract for the shape.
+        chunks: [(summary_text, summary_vec, merged_ids, summary_ti)]"""
+        if not layers or len(chunks) == 0:
+            return None
+        top_start, top_end = layers[-1]
+        if top_end <= top_start:
+            return None
+
+        def _title_at(idx: int) -> str:
+            # Summary tuples are (text, vec, merged_ids, summary_ti)
+            # — title is the 4th slot. Layer-0 originals are 3-tuples
+            # and don't appear as tree nodes themselves (they collapse
+            # into source_chunk_ids on their layer-1 parent).
+            return chunks[idx][3] if len(chunks[idx]) >= 4 else ""
+
+        def _desc_at(idx: int) -> str:
+            return chunks[idx][0] if chunks[idx] else ""
+
+        def _build_node(idx: int) -> dict:
+            children_idx = parent_child_map.get(idx, [])
+            # If every immediate child is a layer-0 original, this
+            # node is a "leaf" in the tree contract — collapse to
+            # source_chunk_ids.
+            if children_idx and all(c < n_originals for c in children_idx):
+                ids: list[str] = []
+                seen: set[str] = set()
+                for c in children_idx:
+                    for s in chunks[c][2]:
+                        if s and s not in seen:
+                            seen.add(s)
+                            ids.append(s)
+                return {"title": _title_at(idx), "source_chunk_ids": ids, "description": _desc_at(idx)}
+            return {"children": [_build_node(c) for c in children_idx], "title": _title_at(idx), "description": _desc_at(idx)}
+
+        top_nodes = [_build_node(i) for i in range(top_start, top_end)]
+        if len(top_nodes) == 1:
+            return top_nodes[0]
+        # Multiple top-layer summaries — clustering didn't collapse to
+        # a single root. Wrap in a synthetic root so the caller always
+        # sees one dict.
+        return {"title": "(root)", "children": top_nodes}
