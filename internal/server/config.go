@@ -53,6 +53,7 @@ type Config struct {
 	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`
 	Language         string                 `mapstructure:"language"`
 	TaskExecutor     TaskExecutorConfig     `mapstructure:"task_executor"`
+	FileSyncer       FileSyncerConfig       `mapstructure:"file_syncer"`
 }
 
 // AdminConfig admin server configuration
@@ -74,6 +75,11 @@ type DefaultSuperUser struct {
 
 type TaskExecutorConfig struct {
 	MessageQueueType string `mapstructure:"message_queue_type"`
+}
+
+type FileSyncerConfig struct {
+	MaxConcurrentSyncs int `mapstructure:"max_concurrent_syncs"`
+	SyncInterval       int `mapstructure:"sync_interval"`
 }
 
 // UserDefaultLLMConfig user default LLM configuration
