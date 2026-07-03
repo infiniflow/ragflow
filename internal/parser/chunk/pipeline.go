@@ -14,14 +14,13 @@
 //  limitations under the License.
 //
 
-// Direct chunk-pipeline API. Port-rag-flow-pipeline-to-go.md AD-6
-// replaces the public ChunkEngine usage in production callers with
-// typed-option calls that build the same per-stage operators without a
-// JSON DSL round-trip. The pipeline runs the three stages in order:
+// Direct chunk-pipeline API. The package exposes a typed runtime path
+// for production callers and a DSL-input path for CLI-driven
+// inspection/testing. Both run the same operator model:
 //
 //	preprocess -> split -> postprocess
 //
-// and reports the same ChunkContext shape ChunkEngine.Execute did.
+// and report the same ChunkContext shape.
 //
 // Two entry points are exposed:
 //
@@ -29,15 +28,8 @@
 //     that know their options at compile time (TokenChunker's
 //     token-size fallback, PipelineChunker's per-parser dispatch).
 //
-//   - RunDSL(dsl, text) — accepts the legacy JSON DSL shape. Use this
-//     only for the CLI dev-chunk command, which deliberately accepts a
-//     user-provided DSL file at run time.
-//
-// The legacy ChunkEngine.Compile/Execute path is retained under
-// `Deprecated:` markers so a CLI tool or a future debug-only entry
-// point can still drive it. Production callers must NOT instantiate
-// ChunkEngine directly — the plan reserves ChunkEngine as an internal
-// implementation detail of RunDSL.
+//   - RunDSL(dsl, text) — accepts a JSON DSL file at run time. This is
+//     used by the CLI chunk inspection command.
 
 package chunk
 
@@ -45,25 +37,14 @@ import (
 	"fmt"
 )
 
-// PipelineOptions is the typed configuration that replaces the legacy
-// DSL map for production callers. Each field toggles a behaviour on
+// PipelineOptions is the typed configuration for production callers.
+// Each field toggles a behaviour on
 // the matching operator; an unset field means "use the operator's
 // zero-value default" (no-op for preprocess, default strategy for
 // split, no merge / filter for postprocess).
 //
-// The struct is deliberately flat — it covers every option the two
-// production callers exercise today:
-//
-//   - TokenChunker.mergeByTokenSize (preprocess strip+remove_empty,
-//     split sentence, postprocess merge greedy target_size=N).
-//
-//   - PipelineChunker.Invoke (preprocess normalize_newlines, split
-//     strategy, postprocess filter min_length=1).
-//
-// Any operator config field not exposed here must continue through
-// RunDSL/ExplainDSL — the typed surface is intentionally narrower
-// than the DSL surface; extending it requires going through the
-// operator constructors directly.
+// The struct is deliberately flat because current production callers
+// only need a small subset of operator settings.
 type PipelineOptions struct {
 	// Preprocess flags. Any combination of the four is honoured; all
 	// false means "no preprocess stage" (the engine skips the stage
@@ -126,16 +107,14 @@ func (o PipelineOptions) validate() error {
 
 // Run executes a chunk pipeline against `text` using the typed
 // options and returns the resulting ChunkContext. The pipeline
-// mirrors ChunkEngine.Execute (preprocess -> split -> postprocess)
-// but builds the operators directly from the typed fields, so
-// production callers no longer pay a JSON DSL round-trip on every
-// invocation.
+// runs preprocess -> split -> postprocess and builds operators
+// directly from typed fields, so production callers avoid a JSON
+// round-trip on every invocation.
 //
 // On option-validation failure or operator failure, Run returns a
 // partial ChunkContext with whatever output the operators had
 // produced so far, plus an error. This matches the engine's
-// historical behaviour (operators mutate the shared ChunkContext),
-// so debug-time recovery does not need a second entry point.
+// operator model, which mutates the shared ChunkContext.
 func Run(text string, opts PipelineOptions) (*ChunkContext, error) {
 	if err := opts.validate(); err != nil {
 		return nil, err
@@ -232,33 +211,22 @@ func Run(text string, opts PipelineOptions) (*ChunkContext, error) {
 	return ctx, nil
 }
 
-// RunDSL compiles a legacy JSON DSL blob and runs it against `text`.
-// It is the typed bridge for callers that cannot pre-declare their
-// options — today that is the CLI dev-chunk command, which loads a
-// user-provided DSL file at run time.
-//
-// Internally it delegates to the legacy ChunkEngine.Compile +
-// ChunkEngine.Execute path. New callers should prefer Run.
+// RunDSL compiles a JSON DSL blob and runs it against `text`.
 func RunDSL(dsl string, text string) (*ChunkContext, error) {
-	engine := ChunkEngine{}
-	plan, err := engine.Compile(dsl)
+	plan, err := compileDSL(dsl)
 	if err != nil {
 		return nil, err
 	}
-	return engine.Execute(plan, text)
+	return executePlan(plan, text)
 }
 
 // ExplainDSL renders a human-readable description of a DSL blob.
-// Mirrors ChunkEngine.Explain; exists so the CLI can drive the
-// "explain" mode through the new bridge entry point without
-// referencing the engine API directly.
 func ExplainDSL(dsl string) (string, error) {
-	engine := ChunkEngine{}
-	plan, err := engine.Compile(dsl)
+	plan, err := compileDSL(dsl)
 	if err != nil {
 		return "", err
 	}
-	return engine.Explain(plan)
+	return explainPlan(plan)
 }
 
 // toIfaceSlice adapts []string to the []interface{} shape the

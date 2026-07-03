@@ -14,53 +14,12 @@
 //  limitations under the License.
 //
 
-// Parser dispatch (Phase 2.5 of port-rag-flow-pipeline-to-go.md).
+// Parser dispatch validates the requested output format, resolves the
+// parser backend, and returns the structured ParseWithResult payload.
 //
-// Plan §8 Task 2.4 + 2.5 call for provider-aware parser branches — i.e.,
-// the Parser component must actually look at `setups[fileType].parse_method`,
-// `output_format`, `flatten_media_to_text`, and `remove_toc`, resolve a
-// real `FileParser` from internal/parser/parser, and emit the right
-// payload family on the matching output key.
-//
-// What this file does:
-//
-//   - resolveOutputFormat picks the wire format a setup asks for,
-//     respecting the `allowed_output_format[fileType]` whitelist
-//     (the python ParserParam.check() business validation the schema
-//     defers).
-//
-//   - resolveLibType picks the libType argument for parser.GetParser
-//     when the setup did not override it. Per family the python side
-//     uses a single backend today (GoMarkdown / Official /
-//     OfficeOxide); future providers (DeepDOC, OCR) slot in via
-//     `parse_method` routing without changing this seam.
-//
-//   - dispatchParse is the migration seam that drives the parser
-//     library: when the resolved parser is a ParseResultProducer it
-//     runs the structured ParseWithResult path; otherwise it falls
-//     back to the legacy Parse call + raw-text pages. The fallback is
-//     not an error — it is the documented behaviour for unported
-//     formats (PDF/DOCX/XLSX still go through this path until their
-//     DeepDOC/OfficeOxide integrations land).
-//
-// What this file does NOT do:
-//
-//   - It does not perform the actual DeepDOC / OCR / OfficeOxide work.
-//     That lives in internal/parser/parser/*; when those parsers gain
-//     a ParseWithResult method the routing here automatically picks
-//     it up via the type assertion.
-//
-//   - It does not honour `parse_method == "deepdoc" | "ocr"` literally;
-//     the value is carried on the result via ParseResult.File so a
-//     downstream consumer can read it. When a parser library grows a
-//     deepdoc implementation it advertises ParseWithResult and the
-//     seam routes to it without code change here.
-//
-//   - flatten_media_to_text / remove_toc are accepted keys on the
-//     ParserSetup so the Python setup shape round-trips faithfully,
-//     but their effect on the unported parsers is a no-op (the raw-
-//     text fallback ignores both). The keys surface on the result
-//     metadata so an audit can verify they were honoured.
+// `parse_method` is carried through file metadata for downstream
+// consumers, while the actual backend work stays in
+// internal/parser/parser/*.
 
 package component
 
@@ -82,8 +41,7 @@ import (
 // format-mismatch failure (the whitelist rejects it) OutputFormat is
 // empty and Err is non-nil.
 //
-// File is the per-parser file metadata — may be nil for parsers that
-// do not enrich (today: all unported formats).
+// File is the per-parser file metadata and may be nil.
 //
 // Payload holds exactly one populated field per the ParseResult
 // contract (see internal/parser/parser/parse_result.go).
@@ -105,7 +63,7 @@ type parserDispatchResult struct {
 //  2. if absent, default to "text" (the most permissive option
 //     that every family accepts),
 //  3. if absent and the family has no allowed_output_format entry,
-//     return "" (the component falls back to the raw-text path
+//     return "" (the component falls back to text-page mode
 //     without validating).
 //
 // The whitelist check returns "" + Err when the requested format is
@@ -116,7 +74,7 @@ type parserDispatchResult struct {
 func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, allowed map[string][]string) (string, error) {
 	setup, ok := setups[family]
 	if !ok {
-		// Family not configured — raw-text fallback; no validation.
+		// Family not configured — text-page mode; no validation.
 		return "", nil
 	}
 	format, _ := setup["output_format"].(string)
@@ -171,14 +129,14 @@ func resolveLibType(fileType utility.FileType, setups map[string]schema.ParserSe
 // detect the success/failure boundary on the OutputFormat alone.
 //
 // fileType may be utility.FileTypeOTHER when the upstream did not
-// supply a filename; the dispatch then takes the raw-text fallback
+// supply a filename; the dispatch then takes text-page mode
 // without consulting parser.GetParser.
 func dispatchParse(fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parserDispatchResult {
 	if fileType == utility.FileTypeOTHER {
-		// Unknown / unset family. Raw-text fallback emits the bytes
-		// as a single text page; the component's existing logic
+		// Unknown / unset family. The component treats the bytes
+		// as text pages; the existing logic
 		// (splitIntoPages + fan-out) handles it. We return no
-		// result here so the caller routes to the fallback path.
+		// result here so the caller routes to that path.
 		return parserDispatchResult{}
 	}
 
@@ -229,7 +187,7 @@ func dispatchParse(fileType utility.FileType, filename string, data []byte, setu
 //  2. inputs["file"].name — fall back to the filename so a caller
 //     that only supplies the path is still routed correctly.
 //  3. inputs["name"] — last-resort filename.
-//  4. utility.FileTypeOTHER — the raw-text fallback.
+//  4. utility.FileTypeOTHER — text-page mode.
 //
 // The function never errors; unknown / absent filenames degrade to
 // FileTypeOTHER so the component's raw-text branch picks them up.

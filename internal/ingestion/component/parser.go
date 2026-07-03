@@ -101,7 +101,7 @@ const parserParallelism = 4
 // plan §8 R1.
 const parserPageBatchTimeout = 60 * time.Second
 
-// pageFormFeed is the byte that the raw-text fallback treats as a
+// pageFormFeed is the byte that text-page mode treats as a
 // hard page boundary. Matches the ASCII form feed (\f, 0x0C) — the
 // same convention used by the Python TxtParser and by most
 // "page-segmented text" codecs.
@@ -189,16 +189,16 @@ func (c *ParserComponent) Parallelism() int { return parserParallelism }
 //
 //	binary    ([]byte, required) — file bytes from upstream File.
 //	doc_id    (string, optional) — for naming + checkpoint
-//	                                (NOT used by the raw-text
-//	                                fallback; reserved for the
-//	                                future per-doc format dispatch).
+//	                                (NOT used by text-page mode;
+//	                                reserved for the future
+//	                                per-doc format dispatch).
 //	page_size (int, optional)    — pages per goroutine for
 //	                                fan-out. Defaults to
 //	                                ceil(totalPages / Parallelism).
 func (c *ParserComponent) Inputs() map[string]string {
 	return map[string]string{
 		"binary":    "File bytes ([]byte). The component parses this and emits one page per slice.",
-		"doc_id":    "Optional document ID (string). Carried for downstream checkpoint correlation; not consumed by the raw-text fallback.",
+		"doc_id":    "Optional document ID (string). Carried for downstream checkpoint correlation; not consumed by text-page mode.",
 		"page_size": "Optional integer. Pages per goroutine for fan-out. Default: ceil(totalPages / 4).",
 	}
 }
@@ -210,10 +210,9 @@ func (c *ParserComponent) Inputs() map[string]string {
 //	                        merge per plan §8 R8.
 //	name    string        — carried over from inputs.doc_id
 //	                        (or empty when doc_id is absent).
-//	output_format string  — "text" (raw-text fallback). Future
-//	                        format dispatch will set this to
-//	                        "json" / "markdown" / "html" per
-//	                        parser.py:line-334 etc.
+//	output_format string  — "text" when emitting text pages,
+//	                        otherwise the parser-selected wire
+//	                        format.
 //	_ERROR  string        — populated when the component short-
 //	                        circuits with an error message
 //	                        (mirrors Python set_output("_ERROR", ...)).
@@ -221,7 +220,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 	return map[string]string{
 		"pages":         "[]schema.Page: parsed pages sorted by PageNumber.",
 		"name":          "string: the document ID carried over from inputs.doc_id (or empty).",
-		"output_format": "string: the active output format (\"text\" for the raw-text fallback).",
+		"output_format": "string: the active output format (\"text\" when emitting text pages).",
 		"_ERROR":        "string: set on short-circuit errors.",
 	}
 }
@@ -257,11 +256,9 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	}
 	docID, _ := inputs["doc_id"].(string)
 
-	// 2. Resolve the file family from the inputs. This is the
-	//    Phase 2.5 seam — when the family is known AND a real
-	//    parser is registered for it (i.e., the parser is a
-	//    ParseResultProducer), the dispatch returns a typed
-	//    payload instead of the raw-text fallback.
+	// 2. Resolve the file family from the inputs. When the family
+	//    is known, dispatchParse returns a typed parser payload.
+	//    Otherwise the component stays in text-page mode.
 	//
 	// We track TWO forms:
 	//
@@ -298,8 +295,8 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	//    layout the chunker side consumes (`{text, doc_type_kwd,
 	//    page_number?}`); when the dispatch produced a string
 	//    payload we emit a single page carrying the rendered text;
-	//    otherwise we slice the binary on ASCII form-feed the way
-	//    the raw-text fallback always has.
+	//    otherwise we slice the binary on ASCII form-feed and
+	//    treat the input as text pages.
 	var pages [][]byte
 	var dispatchedPages []schema.Page
 	switch {
@@ -428,9 +425,7 @@ func parseBatch(ctx context.Context, batch [][]byte) ([]schema.Page, error) {
 				return ctx.Err()
 			default:
 			}
-			// Raw-text fallback: the bytes ARE the page text.
-			// Real format dispatch (PDF, DOCX, ...) lands with
-			// the deepdoc/parser port — see the file header.
+			// Text-page mode: the bytes are already page text.
 			pages = append(pages, schema.Page{
 				"text":         string(raw),
 				"doc_type_kwd": "text",
@@ -467,8 +462,7 @@ func readParserBinary(inputs map[string]any) ([]byte, error) {
 		if !utf8.ValidString(s) {
 			return nil, errors.New(
 				"Parser: binary string is not valid UTF-8. " +
-					"The raw-text fallback only accepts UTF-8 text; " +
-					"binary file formats (PDF/DOCX/...) are not yet ported.")
+					"Text-page mode only accepts UTF-8 text input.")
 		}
 		return []byte(s), nil
 	}

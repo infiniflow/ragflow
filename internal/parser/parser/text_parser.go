@@ -19,20 +19,16 @@
 // The python rag/flow/parser/parser.py:_code path (L1066) routes
 // .txt / .py / .js / .java / .c / .cpp / .h / .php / .go / .ts / .sh
 // / .cs / .kt / .sql files through deepdoc.parser.TxtParser. The Go
-// side previously had no entry for these families — parser_type.go
-// had no FileTypeTXT arm and the dispatch seam's pythonFamilyName
-// table referenced "text&code" but had no parser to route to.
+// side needs a parser for these families so `text&code` resolves to a
+// real ParseResultProducer.
 //
 // TextParser fills that gap with a minimal but real implementation:
 // it splits the input into paragraph-sized items and emits the
 // python-compatible `{text, doc_type_kwd:"text"}` shape. The
 // python TxtParser additionally does layout-aware section
 // detection; the Go version is intentionally simpler because (a)
-// no production template currently relies on text&code beyond the
-// raw-text path, and (b) the dispatch seam's raw-text fallback is
-// already the documented behaviour for any text input — TextParser
-// is the path that lets pythonFamilyName("text&code") resolve to a
-// real ParseResultProducer instead of returning empty.
+// no production template currently relies on text&code for richer
+// structure than paragraph items.
 
 package parser
 

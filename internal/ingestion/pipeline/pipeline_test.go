@@ -413,10 +413,7 @@ func TestPipeline_FanOut(t *testing.T) {
 	}
 
 	// Verify the checkpoint reports 4 work-units for the B stage
-	// (Parallelism=4) and 1 for the others. Medium-fix #5
-	// renamed the persisted field from `goroutine_status` to
-	// `work_unit_status`; the runner mirrors both keys so older
-	// readers continue to see the legacy field for one release.
+	// (Parallelism=4) and 1 for the others.
 	pl := mustCompile(t, defaultLinearDSL())
 	_, err := pl.Run(context.Background(), map[string]any{"k": "v"})
 	if err != nil {
@@ -432,11 +429,6 @@ func TestPipeline_FanOut(t *testing.T) {
 	}
 	if got := len(ws[mockCompA]); got != 1 {
 		t.Errorf("expected 1 work-unit status row for A, got %d", got)
-	}
-	// Legacy-key mirror must still be present so a pre-rename
-	// reader on an older persisted row continues to function.
-	if _, ok := cp["goroutine_status"]; !ok {
-		t.Error("expected legacy goroutine_status mirror under new checkpoint")
 	}
 }
 

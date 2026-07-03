@@ -150,8 +150,8 @@ func TestParserComponent_Invoke_PageRangeFilter(t *testing.T) {
 // The test is expected to pass under `go test -count=10 -race`
 // — that flag is run separately in the verification block.
 //
-// We can't tag-stamp the page text (no page_number key on the
-// raw-text fallback) so we tag the input with explicit
+// We can't tag-stamp the page text (no page_number key in
+// text-page mode) so we tag the input with explicit
 // page numbers and verify the SORTED output is stable across
 // runs. The fan-out goroutines therefore produce pages in
 // different physical orders, but the deterministic sort

@@ -589,12 +589,12 @@ func parallelHint(c runtime.Component) int {
 // fan-out, the runner still wraps the call in TrackProgress +
 // TrackElapsed for consistency.
 //
-// statuses is the per-goroutine outcome the runner reports back
+// statuses is the per-worker outcome the runner reports back
 // to the checkpoint. The current implementation captures only
 // a single "done" status per stage (the component's own
 // fan-out merges before returning). A future enhancement could
-// let components emit per-goroutine status; today the
-// goroutine_status[] entry is a single row.
+// let components emit per-worker status; today the
+// work_unit_status[] entry is a single row.
 func (p *Pipeline) runStage(ctx context.Context, step ComponentStep, inputs map[string]any) (map[string]any, []GoroutineStatus, error) {
 	out, err := runtime.TrackElapsed(step.Name, func() (map[string]any, error) {
 		progressErr := runtime.TrackProgress(step.Name, runtime.ProgressCallback(nil), func() error {
@@ -619,9 +619,9 @@ func (p *Pipeline) runStage(ctx context.Context, step ComponentStep, inputs map[
 	// Emit one status row per Parallelism. Components handle
 	// their own fan-out internally, so the runner only sees
 	// one merged result. Recording N rows of "done" keeps the
-	// goroutine_status[] shape consistent with plan §2 AD-5c
+	// work_unit_status[] shape consistent with plan §2 AD-5c
 	// (a future enhancement can have components emit
-	// per-goroutine status via an optional ComponentWithStatus
+	// per-worker status via an optional ComponentWithStatus
 	// interface; today we don't expose that).
 	n := step.Parallelism
 	if n < 1 {
@@ -812,13 +812,8 @@ var defaultStageTimeout = 60 * time.Second
 // stage completes. It is the central place where the resume
 // algorithm reads its state.
 //
-// The persisted field is `work_unit_status` (Medium-fix #5): the
-// runner is work-unit keyed, not goroutine keyed. The earlier
-// `goroutine_status` name persists for read-side
-// compatibility for one release (the runner writes the new
-// name and the map is mirrored under the legacy key so a
-// pre-rename reader on an older row still sees a recognisable
-// value).
+// The persisted field is `work_unit_status`: the runner is
+// work-unit keyed, not goroutine keyed.
 func (p *Pipeline) recordSuccess(name string, statuses []GoroutineStatus) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -832,11 +827,6 @@ func (p *Pipeline) recordSuccess(name string, statuses []GoroutineStatus) {
 	}
 	ws[name] = statuses
 	p.lastCheckpoint["work_unit_status"] = ws
-	// Read-side compatibility shim for any consumer that still
-	// looks up the legacy key. The mirror is best-effort: once
-	// all readers migrate to `work_unit_status`, the mirror can
-	// be retired.
-	p.lastCheckpoint["goroutine_status"] = ws
 }
 
 // recordStageSkip records that a stage was skipped because its

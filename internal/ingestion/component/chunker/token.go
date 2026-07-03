@@ -230,11 +230,8 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 // (token_chunker.py:319-324) at the wire-shape level; the merge
 // strategy is the Go chunk library's "greedy" approximation.
 //
-// Plan AD-6: the legacy chunk.NewChunkEngine().Compile/Execute +
-// JSON-DSL path was removed from this caller in favour of the
-// typed chunk.Run entry point — same operator sequence, no DSL
-// round-trip, no second ingestion-stage runtime (port-rag-flow-
-// pipeline-to-go.md §6.2).
+// This caller uses the typed chunk.Run entry point directly:
+// same operator sequence, no DSL round-trip.
 func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *regexp.Regexp) map[string]any {
 	target := c.param.ChunkTokenSize
 	result, err := chunk.Run(text, chunk.PipelineOptions{

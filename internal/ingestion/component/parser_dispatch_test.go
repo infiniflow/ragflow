@@ -14,20 +14,14 @@
 //  limitations under the License.
 //
 
-// Phase 2.5 dispatch tests for port-rag-flow-pipeline-to-go.md.
-// These pin the routing contract:
+// Dispatch tests pin the routing contract:
 //
-//   - FileTypeOTHER + missing setups → raw-text fallback.
-//   - FileTypeMarkdown + a registered producer (ParseResultProducer
-//     satisfied by MarkdownParser) → JSON payload family on the
-//     matching output key, with the legacy pages slice preserved.
+//   - FileTypeOTHER + missing setups → text-page mode.
+//   - FileTypeMarkdown → JSON payload family on the matching output
+//     key, with the pages slice preserved.
 //   - FileTypePDF + setups["pdf"].output_format set to a value not
 //     in allowed_output_format["pdf"] → component errors with the
 //     format-mismatch message (matches the Python check() behavior).
-//
-// The HTML and PDF parsers are intentionally NOT exercised here —
-// they are stubs today; their dispatch path lands when the
-// ParseResultProducer method is implemented for them.
 
 package component
 
@@ -65,7 +59,7 @@ func TestDispatch_OutputFormatValidation_Allowed(t *testing.T) {
 	if len(jsonItems) == 0 {
 		t.Errorf("json payload empty; want at least 1 item")
 	}
-	// Legacy pages slice must still exist for chunker-side consumers.
+	// Pages must still exist for chunker-side consumers.
 	pages, ok := out["pages"].([]schema.Page)
 	if !ok || len(pages) == 0 {
 		t.Errorf("pages slice missing or empty: %T", out["pages"])
@@ -110,13 +104,13 @@ func TestDispatch_OutputFormatValidation_Rejection(t *testing.T) {
 	}
 }
 
-// TestDispatch_RawTextFallback_NoFileType pins the no-dispatch
+// TestDispatch_TextPageMode_NoFileType pins the no-dispatch
 // path. When the upstream inputs supply neither file_type nor
-// file.name, the component degrades to the raw-text fallback and
+// file.name, the component degrades to text-page mode and
 // emits output_format=text. This is the documented behavior for
 // canvas-bound invocations that wire the binary directly without
 // a family hint.
-func TestDispatch_RawTextFallback_NoFileType(t *testing.T) {
+func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 	param := schema.ParserParam{}.Defaults()
 	c := &ParserComponent{Param: param}
 
@@ -128,7 +122,7 @@ func TestDispatch_RawTextFallback_NoFileType(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got, want := out["output_format"], "text"; got != want {
-		t.Errorf("output_format = %v, want %v (raw-text fallback)", got, want)
+		t.Errorf("output_format = %v, want %v (text-page mode)", got, want)
 	}
 	pages, ok := out["pages"].([]schema.Page)
 	if !ok || len(pages) == 0 {
@@ -136,14 +130,10 @@ func TestDispatch_RawTextFallback_NoFileType(t *testing.T) {
 	}
 }
 
-// TestDispatch_RawTextFallback_UnportedFamily pins the documented
-// behavior for parsers that exist but do NOT implement
-// ParseResultProducer — PDF is the prototype. The dispatch
-// resolves a parser, runs the legacy Parse (which returns nil for
-// the stub), then routes the input to the raw-text branch because
-// the result is empty. The output_format ends up "text" so the
-// downstream chunker sees a sane value.
-func TestDispatch_RawTextFallback_UnportedFamily(t *testing.T) {
+// TestDispatch_TextPageMode_PDFInput pins the current text-page
+// behavior when PDF bytes are not successfully parsed into a
+// structured payload in this test environment.
+func TestDispatch_TextPageMode_PDFInput(t *testing.T) {
 	param := schema.ParserParam{}.Defaults()
 	c := &ParserComponent{Param: param}
 
@@ -155,7 +145,7 @@ func TestDispatch_RawTextFallback_UnportedFamily(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got, want := out["output_format"], "text"; got != want {
-		t.Errorf("output_format = %v, want %v (PDF is unported → text fallback)", got, want)
+		t.Errorf("output_format = %v, want %v (PDF input stayed in text-page mode)", got, want)
 	}
 }
 
@@ -165,7 +155,7 @@ func TestDispatch_RawTextFallback_UnportedFamily(t *testing.T) {
 //  1. inputs["file_type"]  (explicit family hint)
 //  2. inputs["file"].name  (filename in the file descriptor)
 //  3. inputs["name"]       (last-resort filename)
-//  4. FileTypeOTHER        (raw-text fallback)
+//  4. FileTypeOTHER        (text-page mode)
 func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 	cases := []struct {
 		name string
@@ -207,7 +197,7 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:   "no setup → empty (raw-text path)",
+			name:   "no setup → empty (text-page mode)",
 			setups: nil,
 			family: "pdf",
 			want:   "",

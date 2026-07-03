@@ -3788,11 +3788,8 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 		explain = false
 	}
 
-	// Plan AD-6: drive the legacy JSON-DSL path through
-	// chunk.RunDSL / chunk.ExplainDSL rather than instantiating
-	// chunk.NewChunkEngine() directly. The DSL bridge is the one
-	// allowed entry point for user-supplied DSL (this CLI command
-	// is the only caller that reads a DSL file at run time).
+	// This CLI command is the only caller that reads a chunk DSL
+	// file at run time, so it uses the package-level DSL helpers.
 	if explain {
 		explanation, err := chunk.ExplainDSL(string(dsl))
 		if err != nil {

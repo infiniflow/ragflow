@@ -38,10 +38,8 @@ type ProgressSink interface {
 	Persist(ctx context.Context, taskID string, checkpoint map[string]any) error
 }
 
-// GoroutineStatus records one worker goroutine's outcome for
-// the goroutine_status[] entry of the checkpoint. The Python
-// pipeline carries a similar structure (see plan §2 AD-5c
-// example). Pages / OutputRef are optional — File emits
+// GoroutineStatus records one worker's outcome for the
+// work_unit_status[] entry of the checkpoint. Pages / OutputRef are optional — File emits
 // OutputRef, Parser emits Pages, Chunker / Tokenizer /
 // Extractor emit a single (no-pages, no-output-ref) "done".
 type GoroutineStatus struct {

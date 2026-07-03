@@ -14,10 +14,8 @@
 //  limitations under the License.
 //
 
-// Chunk engine — compile-time DSL→operator list, run-time execute
-// against text. The engine itself is a thin orchestrator on top of
-// the per-stage operators in this package (PreprocessOperator /
-// SplitOperator / PostprocessOperator); the DSL shape is:
+// Chunk DSL helpers compile a JSON operator pipeline and execute it
+// against text. The supported DSL shape is:
 //
 //	{
 //	  "name": "...",
@@ -29,14 +27,6 @@
 //	    {"operator": "postprocess", ...}
 //	  ]
 //	}
-//
-// The engine was moved here from the legacy
-// internal/ingestion/chunk_engine.go as part of the
-// internal/parser reorganisation (see .claude/plans
-// refactor-history for the move). The exported surface
-// (NewChunkEngine / Compile / Execute / Explain) and the
-// ChunkPlan shape are unchanged, so callers only need to swap
-// the import path.
 package chunk
 
 import (
@@ -45,47 +35,22 @@ import (
 	"strings"
 )
 
-// ChunkPlan holds the ordered pipeline operators compiled from a
-// DSL blob. Operators are run in declaration order during
-// Execute. The Name / Description / Version fields are
-// diagnostic-only and copied straight off the DSL for the
-// Explain path.
-type ChunkPlan struct {
+// chunkPlan holds the ordered pipeline operators compiled from a
+// DSL blob.
+type chunkPlan struct {
 	Operators   []Operator
 	Version     string
 	Description string
 	Name        string
 }
 
-// ChunkEngine parses DSL JSON into a ChunkPlan and executes it
-// against an input text. The zero value is a usable engine —
-// callers should construct via NewChunkEngine for forward
-// compatibility.
-type ChunkEngine struct{}
-
-// NewChunkEngine returns a ready-to-use engine.
-//
-// Deprecated: production callers must drive chunk pipelines through
-// the typed Run entry point (see pipeline.go); the engine is
-// retained as an internal implementation detail of RunDSL /
-// ExplainDSL, which the CLI dev-chunk command uses to drive
-// user-provided DSL files. Adding new callers is a plan AD-6
-// violation (port-rag-flow-pipeline-to-go.md §6.2: ChunkEngine may
-// not become the public ingestion-stage runtime).
-func NewChunkEngine() *ChunkEngine {
-	return &ChunkEngine{}
-}
-
-// Compile parses a JSON DSL blob into an ordered operator list.
-// On error the returned plan is nil so callers can early-out
-// without checking the plan separately.
-func (e *ChunkEngine) Compile(dsl string) (*ChunkPlan, error) {
+func compileDSL(dsl string) (*chunkPlan, error) {
 	var parsed map[string]interface{}
 	if err := json.Unmarshal([]byte(dsl), &parsed); err != nil {
 		return nil, fmt.Errorf("compile DSL: %w", err)
 	}
 
-	plan := &ChunkPlan{}
+	plan := &chunkPlan{}
 
 	pipelineRaw, ok := parsed["pipeline"].([]interface{})
 	if !ok || len(pipelineRaw) == 0 {
@@ -145,11 +110,7 @@ func (e *ChunkEngine) Compile(dsl string) (*ChunkPlan, error) {
 	return plan, nil
 }
 
-// Execute runs the plan's operators in order against `text` and
-// returns the resulting ChunkContext. Prepare / Execute / Finish
-// are called on every operator; a non-nil error short-circuits
-// the pipeline.
-func (e *ChunkEngine) Execute(plan *ChunkPlan, text string) (*ChunkContext, error) {
+func executePlan(plan *chunkPlan, text string) (*ChunkContext, error) {
 	chunkContext := &ChunkContext{Origin: text}
 
 	for i, op := range plan.Operators {
@@ -167,11 +128,7 @@ func (e *ChunkEngine) Execute(plan *ChunkPlan, text string) (*ChunkContext, erro
 	return chunkContext, nil
 }
 
-// Explain renders a human-readable description of a plan. The
-// output is a multi-line string suitable for logging or a
-// debug-print call; the per-operator String() method is the
-// authoritative description of each stage.
-func (e *ChunkEngine) Explain(plan *ChunkPlan) (string, error) {
+func explainPlan(plan *chunkPlan) (string, error) {
 	var buf strings.Builder
 	buf.WriteString("Chunk Pipeline Plan:\n")
 	for i, op := range plan.Operators {

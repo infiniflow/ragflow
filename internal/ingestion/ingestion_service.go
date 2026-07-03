@@ -190,21 +190,12 @@ func (e *Ingestor) Start() error {
 				TaskHandle: taskHandle,
 			}
 
-			// Register in currentTasks immediately so heartbeat sees PENDING state
-			//e.tasksMu.Lock()
-			//e.currentTasks[task.ID] = taskCtx
-			//e.tasksMu.Unlock()
-
 			// Push to task channel; if full, reject the task (backpressure)
 			select {
 			case e.taskChan <- taskCtx:
 				common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.ID, len(e.taskChan), cap(e.taskChan)))
 			default:
 				common.Info(fmt.Sprintf("No available slot for task %s, failed", task.ID))
-
-				//e.tasksMu.Lock()
-				//delete(e.currentTasks, task.ID)
-				//e.tasksMu.Unlock()
 
 				err = taskHandle.Nack()
 				if err != nil {
@@ -216,28 +207,6 @@ func (e *Ingestor) Start() error {
 	}
 }
 
-//// Connect connects to the admin and establishes a bidirectional stream
-//func (e *Ingestor) Connect(serverAddr string) error {
-//	e.serverAddr = serverAddr
-//	conn, err := grpc.Dial(serverAddr,
-//		grpc.WithTransportCredentials(insecure.NewCredentials()),
-//		grpc.WithBlock(),
-//		grpc.WithTimeout(5*time.Second),
-//	)
-//	if err != nil {
-//		return fmt.Errorf("fail to connect admin server: %s", err.Error())
-//	}
-//	e.conn = conn
-//
-//	e.client = common.NewIngestionManagerClient(conn)
-//
-//	stream, err := e.client.Action(e.ctx)
-//	if err != nil {
-//		conn.Close()
-//		return err
-//	}
-//	e.stream = stream
-//
 //	common.Info(fmt.Sprintf("Ingestor %s connected to admin", e.id))
 //
 //	// 1. Send registration message
@@ -710,85 +679,6 @@ func (e *Ingestor) executeTasklet(taskCtx *TaskContext) {
 	common.Info(fmt.Sprintf("Tasklet %s completed", tasklet.ID))
 }
 
-//
-//func (e *Ingestor) heartbeatLoop() {
-//	ticker := time.NewTicker(5 * time.Second)
-//	defer ticker.Stop()
-//
-//	for {
-//		select {
-//		case <-e.ctx.Done():
-//			return
-//		case <-ticker.C:
-//			if err := e.sendHeartbeat(); err != nil {
-//				common.Info(fmt.Sprintf("Failed to send heartbeat: %v", err))
-//				if e.ctx.Err() != nil {
-//					common.Info(fmt.Sprintf("Ingestor %s context cancelled, heartbeat loop exiting", e.id))
-//					return
-//				}
-//				common.Info(fmt.Sprintf("Admin connection lost, attempting to reconnect"))
-//				e.reconnect()
-//				return
-//			}
-//		}
-//	}
-//}
-//
-//// reconnect closes the old connection and establishes a new one with exponential backoff.
-//// Only one reconnection attempt runs at a time; concurrent callers return immediately.
-//func (e *Ingestor) reconnect() {
-//	if e.ctx.Err() != nil {
-//		common.Info(fmt.Sprintf("Ingestor %s is shutting down, skipping reconnection", e.id))
-//		return
-//	}
-//
-//	if !e.reconnectMu.TryLock() {
-//		return
-//	}
-//	defer e.reconnectMu.Unlock()
-//
-//	common.Info(fmt.Sprintf("Ingestor %s attempting to reconnect to admin at %s", e.id, e.serverAddr))
-//
-//	// Close old stream and connection
-//	if e.stream != nil {
-//		e.stream.CloseSend()
-//	}
-//	if e.conn != nil {
-//		e.conn.Close()
-//	}
-//
-//	backoff := 1 * time.Second
-//	maxBackoff := 30 * time.Second
-//
-//	for {
-//		conn, err := grpc.Dial(e.serverAddr,
-//			grpc.WithTransportCredentials(insecure.NewCredentials()),
-//			grpc.WithBlock(),
-//			grpc.WithTimeout(5*time.Second),
-//		)
-//		if err != nil {
-//			common.Info(fmt.Sprintf("Reconnect dial failed: %v, retrying in %v", err, backoff))
-//			time.Sleep(backoff)
-//			backoff *= 2
-//			if backoff > maxBackoff {
-//				backoff = maxBackoff
-//			}
-//			continue
-//		}
-//		e.conn = conn
-//		e.client = common.NewIngestionManagerClient(conn)
-//
-//		stream, err := e.client.Action(e.ctx)
-//		if err != nil {
-//			conn.Close()
-//			common.Info(fmt.Sprintf("Reconnect create stream failed: %v, retrying in %v", err, backoff))
-//			time.Sleep(backoff)
-//			backoff *= 2
-//			if backoff > maxBackoff {
-//				backoff = maxBackoff
-//			}
-//			continue
-//		}
 //		e.stream = stream
 //
 //		if err = e.sendRegister(); err != nil {
