@@ -213,9 +213,7 @@ def _build(account_id: str, cfg: dict) -> Channel:
     channel_secret = cfg.get("channel_secret")
     channel_access_token = cfg.get("channel_access_token")
     if not channel_secret or not channel_access_token:
-        raise ValueError(
-            f"line account '{account_id}' missing channel_secret or channel_access_token"
-        )
+        raise ValueError(f"line account '{account_id}' missing channel_secret or channel_access_token")
     return LineChannel(
         LineAccount(
             account_id=account_id,

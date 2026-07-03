@@ -336,8 +336,8 @@ reset_default_asr: RESET DEFAULT ASR ";"
 reset_default_tts: RESET DEFAULT TTS ";"
 
 list_user_datasets: LIST DATASETS ";"
-create_user_dataset_with_parser: CREATE DATASET quoted_string WITH EMBEDDING quoted_string PARSER quoted_string ";" 
-create_user_dataset_with_pipeline: CREATE DATASET quoted_string WITH EMBEDDING quoted_string PIPELINE quoted_string ";" 
+create_user_dataset_with_parser: CREATE DATASET quoted_string WITH EMBEDDING quoted_string PARSER quoted_string ";"
+create_user_dataset_with_pipeline: CREATE DATASET quoted_string WITH EMBEDDING quoted_string PIPELINE quoted_string ";"
 drop_user_dataset: DROP DATASET quoted_string ";"
 list_user_dataset_files: LIST FILES OF DATASET quoted_string ";"
 list_user_dataset_documents: LIST DOCUMENTS OF DATASET quoted_string ";"
@@ -640,15 +640,13 @@ class RAGFlowCLITransformer(Transformer):
         dataset_name = items[2].children[0].strip("'\"")
         embedding = items[5].children[0].strip("'\"")
         parser_type = items[7].children[0].strip("'\"")
-        return {"type": "create_user_dataset", "dataset_name": dataset_name, "embedding": embedding,
-                "parser_type": parser_type}
+        return {"type": "create_user_dataset", "dataset_name": dataset_name, "embedding": embedding, "parser_type": parser_type}
 
     def create_user_dataset_with_pipeline(self, items):
         dataset_name = items[2].children[0].strip("'\"")
         embedding = items[5].children[0].strip("'\"")
         pipeline = items[7].children[0].strip("'\"")
-        return {"type": "create_user_dataset", "dataset_name": dataset_name, "embedding": embedding,
-                "pipeline": pipeline}
+        return {"type": "create_user_dataset", "dataset_name": dataset_name, "embedding": embedding, "pipeline": pipeline}
 
     def drop_user_dataset(self, items):
         dataset_name = items[2].children[0].strip("'\"")
@@ -666,7 +664,7 @@ class RAGFlowCLITransformer(Transformer):
         dataset_names = []
         dataset_names.append(items[4].children[0].strip("'\""))
         for i in range(5, len(items)):
-            if items[i] and hasattr(items[i], 'children') and items[i].children:
+            if items[i] and hasattr(items[i], "children") and items[i].children:
                 dataset_names.append(items[i].children[0].strip("'\""))
         return {"type": "list_user_datasets_metadata", "dataset_names": dataset_names}
 
@@ -675,7 +673,7 @@ class RAGFlowCLITransformer(Transformer):
         doc_ids = []
         if len(items) > 6 and items[6] == "DOCUMENTS":
             for i in range(7, len(items)):
-                if items[i] and hasattr(items[i], 'children') and items[i].children:
+                if items[i] and hasattr(items[i], "children") and items[i].children:
                     doc_id = items[i].children[0].strip("'\"")
                     doc_ids.append(doc_id)
         return {"type": "list_user_documents_metadata_summary", "dataset_name": dataset_name, "document_ids": doc_ids}
@@ -698,17 +696,17 @@ class RAGFlowCLITransformer(Transformer):
         dataset_name = None
         vector_size = None
         for i, item in enumerate(items):
-            if hasattr(item, 'data') and item.data == 'quoted_string':
+            if hasattr(item, "data") and item.data == "quoted_string":
                 dataset_name = item.children[0].strip("'\"")
-            if hasattr(item, 'type') and item.type == 'NUMBER':
-                if i > 0 and items[i-1].type == 'SIZE' and items[i-2].type == 'VECTOR':
+            if hasattr(item, "type") and item.type == "NUMBER":
+                if i > 0 and items[i - 1].type == "SIZE" and items[i - 2].type == "VECTOR":
                     vector_size = int(item)
         return {"type": "create_dataset_table", "dataset_name": dataset_name, "vector_size": vector_size}
 
     def drop_dataset_table(self, items):
         dataset_name = None
         for item in items:
-            if hasattr(item, 'data') and item.data == 'quoted_string':
+            if hasattr(item, "data") and item.data == "quoted_string":
                 dataset_name = item.children[0].strip("'\"")
         return {"type": "drop_dataset_table", "dataset_name": dataset_name}
 
@@ -792,7 +790,7 @@ class RAGFlowCLITransformer(Transformer):
 
     def update_chunk(self, items):
         def get_quoted_value(item):
-            if hasattr(item, 'children') and item.children:
+            if hasattr(item, "children") and item.children:
                 return item.children[0].strip("'\"")
             return str(item).strip("'\"")
 
@@ -813,16 +811,16 @@ class RAGFlowCLITransformer(Transformer):
         for i in range(2, len(items)):
             item = items[i]
             # Check for FROM token to stop
-            if hasattr(item, 'type') and item.type == 'FROM':
+            if hasattr(item, "type") and item.type == "FROM":
                 break
-            if hasattr(item, 'children') and item.children:
+            if hasattr(item, "children") and item.children:
                 tag = item.children[0].strip("'\"")
                 tags.append(tag)
         # Find dataset_name: quoted_string after DATASET
         dataset_name = None
         for i, item in enumerate(items):
             # Check if item is a DATASET token
-            if hasattr(item, 'type') and item.type == 'DATASET':
+            if hasattr(item, "type") and item.type == "DATASET":
                 # Next item should be quoted_string
                 dataset_name = items[i + 1].children[0].strip("'\"")
                 break
@@ -835,10 +833,10 @@ class RAGFlowCLITransformer(Transformer):
 
         # Check if it's "REMOVE ALL CHUNKS"
         for item in items:
-            if hasattr(item, 'type') and item.type == 'ALL':
+            if hasattr(item, "type") and item.type == "ALL":
                 # Find doc_id
                 for j, inner_item in enumerate(items):
-                    if hasattr(inner_item, 'type') and inner_item.type == 'DOCUMENT':
+                    if hasattr(inner_item, "type") and inner_item.type == "DOCUMENT":
                         doc_id = items[j + 1].children[0].strip("'\"")
                         return {"type": "remove_chunks", "doc_id": doc_id, "delete_all": True}
 
@@ -846,12 +844,12 @@ class RAGFlowCLITransformer(Transformer):
         chunk_ids = []
         doc_id = None
         for i, item in enumerate(items):
-            if hasattr(item, 'type') and item.type == 'DOCUMENT':
+            if hasattr(item, "type") and item.type == "DOCUMENT":
                 doc_id = items[i + 1].children[0].strip("'\"")
-            elif hasattr(item, 'children') and item.children:
+            elif hasattr(item, "children") and item.children:
                 val = item.children[0].strip("'\"")
                 # Skip if it's "FROM" or "DOCUMENT"
-                if val.upper() in ['FROM', 'DOCUMENT']:
+                if val.upper() in ["FROM", "DOCUMENT"]:
                     continue
                 chunk_ids.append(val)
 

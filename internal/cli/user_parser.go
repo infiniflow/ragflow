@@ -3769,7 +3769,6 @@ optionsLoop:
 //	CHAT COMPLETIONS <question>
 //	                 [chat_id <string>] [session <string>] [llm <string>]
 
-
 // parseChatCompletionsBody parses the question and options of a CHAT COMPLETIONS
 // command. The leading keyword(s) must already have been consumed by the caller.
 func (p *Parser) parseChatCompletionsBody() (*Command, error) {

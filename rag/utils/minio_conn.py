@@ -44,8 +44,8 @@ class RAGFlowMinio:
         self.conn = None
         # Use `or None` to convert empty strings to None, ensuring single-bucket
         # mode is truly disabled when not configured
-        self.bucket = settings.MINIO.get('bucket', None) or None
-        self.prefix_path = settings.MINIO.get('prefix_path', None) or None
+        self.bucket = settings.MINIO.get("bucket", None) or None
+        self.prefix_path = settings.MINIO.get("prefix_path", None) or None
         self.__open__()
 
     @staticmethod
@@ -58,7 +58,7 @@ class RAGFlowMinio:
             actual_bucket = self.bucket if self.bucket else bucket
             if self.bucket:
                 # pass original identifier forward for use by other decorators
-                kwargs['_orig_bucket'] = original_bucket
+                kwargs["_orig_bucket"] = original_bucket
             return method(self, actual_bucket, *args, **kwargs)
 
         return wrapper
@@ -71,7 +71,7 @@ class RAGFlowMinio:
             # bucket name and forwarded the original identifier as `_orig_bucket`.
             # Prefer that original identifier when constructing the key path so
             # objects are stored under <physical-bucket>/<identifier>/...
-            orig_bucket = kwargs.pop('_orig_bucket', None)
+            orig_bucket = kwargs.pop("_orig_bucket", None)
 
             if self.prefix_path:
                 # If a prefix_path is configured, include it and then the identifier
@@ -110,8 +110,7 @@ class RAGFlowMinio:
                 http_client=http_client,
             )
         except Exception:
-            logging.exception(
-                "Fail to connect %s " % settings.MINIO["host"])
+            logging.exception("Fail to connect %s " % settings.MINIO["host"])
 
     def __close__(self):
         del self.conn
@@ -150,10 +149,7 @@ class RAGFlowMinio:
                 if not self.bucket and not self.conn.bucket_exists(bucket):
                     self.conn.make_bucket(bucket)
 
-                r = self.conn.put_object(bucket, fnm,
-                                         BytesIO(binary),
-                                         len(binary)
-                                         )
+                r = self.conn.put_object(bucket, fnm, BytesIO(binary), len(binary))
                 return r
             except Exception:
                 logging.exception(f"Fail to put {bucket}/{fnm}:")
@@ -226,7 +222,7 @@ class RAGFlowMinio:
 
     @use_default_bucket
     def remove_bucket(self, bucket, **kwargs):
-        orig_bucket = kwargs.pop('_orig_bucket', None)
+        orig_bucket = kwargs.pop("_orig_bucket", None)
         try:
             if self.bucket:
                 # Single bucket mode: remove objects with prefix

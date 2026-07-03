@@ -210,7 +210,7 @@ def _load_llm_app(monkeypatch):
 
     api_utils_mod.get_request_json = _get_request_json
     api_utils_mod.server_error_response = lambda exc: {"code": 500, "message": str(exc), "data": None}
-    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda fn: fn)
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda fn: fn
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     constants_mod = ModuleType("common.constants")

@@ -4,6 +4,7 @@ Reference:
  - [LightRag](https://github.com/HKUDS/LightRAG)
  - [MiniRAG](https://github.com/HKUDS/MiniRAG)
 """
+
 PROMPTS = {}
 
 PROMPTS["minirag_query2kwd"] = """---Role---
@@ -14,7 +15,7 @@ You are a helpful assistant tasked with identifying both answer-type and low-lev
 
 Given the query, list both answer-type and low-level keywords.
 answer_type_keywords focus on the type of the answer to the certain query, while low-level keywords focus on specific entities, details, or concrete terms.
-The answer_type_keywords must be selected from Answer type pool. 
+The answer_type_keywords must be selected from Answer type pool.
 This pool is in the form of a dictionary, where the key represents the Type you should choose from and the value represents the example samples.
 
 ---Instructions---

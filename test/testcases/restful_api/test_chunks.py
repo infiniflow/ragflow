@@ -778,9 +778,7 @@ def test_chunk_update_invalid_target_and_param_contract(rest_client, create_docu
 
 @pytest.mark.p2
 def test_chunk_update_repeated_concurrent_and_deleted_document_contract(rest_client, create_document):
-    dataset_id, document_id, chunk_id, base_path = _create_chunk_for_update(
-        rest_client, create_document, "chunk_update_repeated_concurrent_deleted.txt"
-    )
+    dataset_id, document_id, chunk_id, base_path = _create_chunk_for_update(rest_client, create_document, "chunk_update_repeated_concurrent_deleted.txt")
 
     first_res = rest_client.patch(f"{base_path}/{chunk_id}", json={"content": "chunk test 1"})
     assert first_res.status_code == 200

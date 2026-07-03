@@ -20,7 +20,7 @@ from .session import Session
 
 class Agent(Base):
     def __init__(self, rag, res_dict):
-        self.id  = None
+        self.id = None
         self.avatar = None
         self.canvas_type = None
         self.description = None
@@ -30,42 +30,17 @@ class Agent(Base):
     class Dsl(Base):
         def __init__(self, rag, res_dict):
             self.answer = []
-            self.components = {
-                "begin": {
-                    "downstream": ["Answer:China"],
-                    "obj": {
-                        "component_name": "Begin",
-                        "params": {}
-                    },
-                    "upstream": []
-                }
-            }
+            self.components = {"begin": {"downstream": ["Answer:China"], "obj": {"component_name": "Begin", "params": {}}, "upstream": []}}
             self.graph = {
                 "edges": [],
-                "nodes": [
-                    {
-                        "data": {
-                            "label": "Begin",
-                            "name": "begin"
-                        },
-                        "id": "begin",
-                        "position": {
-                            "x": 50,
-                            "y": 200
-                        },
-                        "sourcePosition": "left",
-                        "targetPosition": "right",
-                        "type": "beginNode"
-                    }
-                ]
+                "nodes": [{"data": {"label": "Begin", "name": "begin"}, "id": "begin", "position": {"x": 50, "y": 200}, "sourcePosition": "left", "targetPosition": "right", "type": "beginNode"}],
             }
-            self.history =  []
-            self.messages =  []
-            self.path =  []
+            self.history = []
+            self.messages = []
+            self.path = []
             self.reference = []
             super().__init__(rag, res_dict)
 
-    
     def create_session(self, **kwargs) -> Session:
         res = self.post(f"/agents/{self.id}/sessions", json=kwargs)
         res = res.json()
@@ -73,11 +48,8 @@ class Agent(Base):
             return Session(self.rag, res.get("data"))
         raise Exception(res.get("message"))
 
-    
-    def list_sessions(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True,
-                      id: str = None) -> list[Session]:
-        res = self.get(f"/agents/{self.id}/sessions",
-                       {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id})
+    def list_sessions(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str = None) -> list[Session]:
+        res = self.get(f"/agents/{self.id}/sessions", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id})
         res = res.json()
         if res.get("code") == 0:
             result_list = []
@@ -86,7 +58,7 @@ class Agent(Base):
                 result_list.append(temp_agent)
             return result_list
         raise Exception(res.get("message"))
-    
+
     def delete_sessions(self, ids: list[str] | None = None, delete_all: bool = False):
         payload = {"ids": ids}
         if delete_all:
