@@ -339,7 +339,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
 		promptConfig := chat.PromptConfig
-		fieldMap, fmErr := s.KbService.GetFieldMap(kbIDStrings(kbs))
+		fieldMap, fmErr := s.datasetService.GetFieldMap(kbIDStrings(kbs))
 		if fmErr != nil {
 			common.Warn("get_field_map failed; proceeding without field_map", zap.Error(fmErr))
 			fieldMap = nil
