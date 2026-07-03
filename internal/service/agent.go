@@ -773,15 +773,24 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if payload, ok := ctx.Value(webhookPayloadKey{}).(map[string]any); ok && payload != nil {
 		root["webhook_payload"] = payload
 	}
-	// Phase 4.4 V2.1 (v3.6.1): populate root["tenant_id"] so the
-	// RunTracker.Start call (in buildRunFunc) records the run
-	// under the right tenant. The lookup is best-effort — a
-	// failure here (DAO down, user has no tenants) logs and
-	// continues with an empty tenant_id rather than failing
-	// the run; the run still works, the only loss is the
-	// per-tenant filterability of the run-history log.
-
+	// Match Python's @add_tenant_id_to_kwargs behavior for runtime
+	// components and model credential lookup: the canvas runs under
+	// the current caller's tenant id. Team-agent access was already
+	// authorized by loadCanvasForUser above; do not replace this with
+	// an arbitrary joined team tenant or LLM credential lookup can miss
+	// the caller's configured provider key.
 	root["tenant_id"] = userID
+
+	// Preserve the historical RunTracker tenant dimension separately.
+	// Existing tests and log filters expect the joined tenant id in the
+	// run hash, but runtime state must keep tenant_id=userID.
+	if tenantIDs, terr := s.userTenantDAO.GetTenantIDsByUserID(userID); terr == nil && len(tenantIDs) > 0 {
+		root["run_tenant_id"] = tenantIDs[0]
+	} else if terr != nil {
+		common.Warn("service: RunAgent userTenantDAO.GetTenantIDsByUserID (best-effort, run tracker tenant not populated)",
+			zap.String("user_id", userID),
+			zap.Error(terr))
+	}
 
 	// v3.6.1 diagnostic: log what RunAgent put into root so we can
 	// confirm tenant_id / user_id / session_id / user_input all
@@ -1177,11 +1186,16 @@ func runIDFor(canvasID string, root map[string]any) string {
 	return canvasID
 }
 
-// tenantIDFromRoot returns the optional tenant_id that the handler
-// may have populated on the root map. Empty when absent — the
-// RunTracker stores "" as the tenant id, which the test suite
-// already exercises.
+// tenantIDFromRoot returns the optional run-tracker tenant id that
+// RunAgent populated on the root map. Runtime components use
+// root["tenant_id"] / state.Sys["tenant_id"] for the caller tenant;
+// RunTracker keeps the historical joined-tenant dimension separately.
+// Empty when absent — the RunTracker stores "" as the tenant id, which
+// the test suite already exercises.
 func tenantIDFromRoot(root map[string]any) string {
+	if s, ok := root["run_tenant_id"].(string); ok {
+		return s
+	}
 	if s, ok := root["tenant_id"].(string); ok {
 		return s
 	}
