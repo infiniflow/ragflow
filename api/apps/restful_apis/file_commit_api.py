@@ -16,19 +16,11 @@
 
 import logging
 from functools import wraps
-
 from quart import request
-
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_json_result, get_data_error_result, get_request_json, server_error_response, validate_request
-
-# manager is injected dynamically by api.apps.register_page() before this
-# module is exec'd. DO NOT assign manager = None here — it would overwrite
-# the Blueprint that register_page set on the module.
 from api.db.services.file_commit_service import FileCommitService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.file_service import FileService
-from common.constants import FileSource
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +37,16 @@ def _register_resolver(entity_type):
     The decorated function receives (entity_id) and must return a folder_id
     or None if the entity has no corresponding folder.
     """
+
     def decorator(func):
         _ENTITY_RESOLVERS[entity_type] = func
+
         @wraps(func)
         def wrapper(entity_id):
             return func(entity_id)
+
         return wrapper
+
     return decorator
 
 
@@ -64,22 +60,28 @@ def _resolve_folder_id(entity_type, entity_id):
 
 @_register_resolver("datasets")
 def _resolve_dataset_folder(dataset_id):
-    success, kb = KnowledgebaseService.get_by_id(dataset_id)
+    """For the ``/datasets/<dataset_id>/commits`` scope we now serve
+    artifact-page history rather than workspace file commits.
+
+    Artifact commits are written via
+    :meth:`FileCommitService.record_page_edit` with ``folder_id = kb_id``,
+    so this resolver simply returns the dataset id verbatim. Workspace
+    file-commit browsing for the same KB still works via ``/workspace/*``
+    or ``/folders/*`` with the real folder id — the two commit domains
+    coexist in ``file_commit`` but never mix under the same folder_id.
+
+    A quick existence check keeps us honest: returning ``None`` for a
+    missing KB drives ``_resolve`` to reject the request before it hits
+    a query.
+    """
+    success, _kb = KnowledgebaseService.get_by_id(dataset_id)
     if not success:
         return None
-    # Find the folder with matching name, source_type, and tenant_id
-    folders = FileService.query(
-        name=kb.name,
-        source_type=FileSource.KNOWLEDGEBASE.value,
-        type="folder",
-        tenant_id=kb.tenant_id,
-    )
-    if folders:
-        return folders[0].id
-    return None
+    return dataset_id
 
 
 # ── Route registration helper ─────────────────────────────────────────────
+
 
 def _register_commit_routes(prefix, param_name, resolver_type=None):
     """Register all 8 commit endpoints for a given URL prefix.
@@ -102,7 +104,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
         return folder_id
 
     # ── Create commit ──────────────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits', methods=['POST'], endpoint=f'create_commit_{_n}')  # noqa: F821
+    @manager.route(f"{prefix}/commits", methods=["POST"], endpoint=f"create_commit_{_n}")  # noqa: F821
     @login_required
     @validate_request("message", "files")
     async def create_commit(entity_id):
@@ -115,21 +117,27 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
                 message=req["message"],
                 file_changes=req["files"],
             )
-            return get_json_result(data={
-                "id": commit.id,
-                "folder_id": commit.folder_id,
-                "parent_id": commit.parent_id,
-                "message": commit.message,
-                "author_id": commit.author_id,
-                "file_count": commit.file_count,
-                "tree_state": commit.tree_state,
-                "create_time": commit.create_time,
-            })
+            return get_json_result(
+                data={
+                    "id": commit.id,
+                    "folder_id": commit.folder_id,
+                    "parent_id": commit.parent_id,
+                    "message": commit.message,
+                    "author_id": commit.author_id,
+                    "file_count": commit.file_count,
+                    "tree_state": commit.tree_state,
+                    "create_time": commit.create_time,
+                }
+            )
         except Exception as e:
             return server_error_response(e)
 
     # ── List commits ───────────────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits', methods=['GET'], endpoint=f'list_commits_{_n}')  # noqa: F821
+    # Accepts an optional ``?slug=<page_type>/<name>`` filter to serve
+    # per-artifact-page history. When ``slug`` is set we delegate to
+    # ``list_page_commits`` (indexed join on FileCommitItem.slug_kwd);
+    # otherwise this is the plain folder-wide commit list.
+    @manager.route(f"{prefix}/commits", methods=["GET"], endpoint=f"list_commits_{_n}")  # noqa: F821
     @login_required
     async def list_commits(entity_id):
         folder_id = _resolve(entity_id)
@@ -138,26 +146,57 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             page_size = int(request.args.get("page_size", 15))
             order_by = request.args.get("order_by", "create_time")
             desc = request.args.get("desc", "true").lower() != "false"
+            slug = request.args.get("slug") or ""
+
+            if slug:
+                total, items = FileCommitService.list_page_commits(
+                    tenant_id="",  # scoped implicitly via folder_id == kb_id
+                    kb_id=folder_id,
+                    slug=slug,
+                    page=page,
+                    page_size=page_size,
+                )
+                return get_json_result(
+                    data={
+                        "total": total,
+                        "page": page,
+                        "page_size": page_size,
+                        "commits": items,
+                    }
+                )
+
             commits, total = FileCommitService.list_commits(folder_id, page, page_size, order_by, desc)
-            return get_json_result(data={
-                "total": total,
-                "page": page,
-                "page_size": page_size,
-                "commits": [{
-                    "id": c.id,
-                    "folder_id": c.folder_id,
-                    "parent_id": c.parent_id,
-                    "message": c.message,
-                    "author_id": c.author_id,
-                    "file_count": c.file_count,
-                    "create_time": c.create_time,
-                } for c in commits],
-            })
+            return get_json_result(
+                data={
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "commits": [
+                        {
+                            "id": c.id,
+                            "folder_id": c.folder_id,
+                            "parent_id": c.parent_id,
+                            "message": c.message,
+                            "author_id": c.author_id,
+                            "file_count": c.file_count,
+                            "create_time": c.create_time,
+                            # Artifact-commit extension — null for workspace commits.
+                            "title": getattr(c, "title", None),
+                            "comments": getattr(c, "comments", None),
+                        }
+                        for c in commits
+                    ],
+                }
+            )
         except Exception as e:
             return server_error_response(e)
 
     # ── Get commit ─────────────────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits/<commit_id>', methods=['GET'], endpoint=f'get_commit_{_n}')  # noqa: F821
+    # For artifact commits (folder_id == kb_id) we route through
+    # ``get_page_commit_detail`` which resolves ``content_after`` from
+    # the configured blob store and returns the flat shape the old
+    # ``/artifacts/commits/<id>`` endpoint used to serve.
+    @manager.route(f"{prefix}/commits/<commit_id>", methods=["GET"], endpoint=f"get_commit_{_n}")  # noqa: F821
     @login_required
     async def get_commit(entity_id, commit_id):
         folder_id = _resolve(entity_id)
@@ -167,29 +206,47 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
                 return get_data_error_result("Commit not found")
             if commit.folder_id != folder_id:
                 return get_data_error_result("Commit not found in workspace")
+
+            # Artifact commits carry a non-null ``title``; use that as
+            # the discriminator to pick the enriched response shape.
+            if getattr(commit, "title", None):
+                detail = FileCommitService.get_page_commit_detail(
+                    tenant_id="",
+                    kb_id=folder_id,
+                    commit_id=commit_id,
+                )
+                if detail is None:
+                    return get_data_error_result("Commit not found")
+                return get_json_result(data=detail)
+
             items = FileCommitService.list_commit_files(commit_id)
-            return get_json_result(data={
-                "id": commit.id,
-                "folder_id": commit.folder_id,
-                "parent_id": commit.parent_id,
-                "message": commit.message,
-                "author_id": commit.author_id,
-                "file_count": commit.file_count,
-                "create_time": commit.create_time,
-                "files": [{
-                    "file_id": item.file_id,
-                    "operation": item.operation,
-                    "old_hash": item.old_hash,
-                    "new_hash": item.new_hash,
-                    "old_name": item.old_name,
-                    "new_name": item.new_name,
-                } for item in items],
-            })
+            return get_json_result(
+                data={
+                    "id": commit.id,
+                    "folder_id": commit.folder_id,
+                    "parent_id": commit.parent_id,
+                    "message": commit.message,
+                    "author_id": commit.author_id,
+                    "file_count": commit.file_count,
+                    "create_time": commit.create_time,
+                    "files": [
+                        {
+                            "file_id": item.file_id,
+                            "operation": item.operation,
+                            "old_hash": item.old_hash,
+                            "new_hash": item.new_hash,
+                            "old_name": item.old_name,
+                            "new_name": item.new_name,
+                        }
+                        for item in items
+                    ],
+                }
+            )
         except Exception as e:
             return server_error_response(e)
 
     # ── List commit files ──────────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits/<commit_id>/files', methods=['GET'], endpoint=f'list_commit_files_{_n}')  # noqa: F821
+    @manager.route(f"{prefix}/commits/<commit_id>/files", methods=["GET"], endpoint=f"list_commit_files_{_n}")  # noqa: F821
     @login_required
     async def list_commit_files(entity_id, commit_id):
         folder_id = _resolve(entity_id)
@@ -200,22 +257,27 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             if commit.folder_id != folder_id:
                 return get_data_error_result("Commit not found in workspace")
             items = FileCommitService.list_commit_files(commit_id)
-            return get_json_result(data=[{
-                "id": item.id,
-                "file_id": item.file_id,
-                "operation": item.operation,
-                "old_hash": item.old_hash,
-                "new_hash": item.new_hash,
-                "old_location": item.old_location,
-                "new_location": item.new_location,
-                "old_name": item.old_name,
-                "new_name": item.new_name,
-            } for item in items])
+            return get_json_result(
+                data=[
+                    {
+                        "id": item.id,
+                        "file_id": item.file_id,
+                        "operation": item.operation,
+                        "old_hash": item.old_hash,
+                        "new_hash": item.new_hash,
+                        "old_location": item.old_location,
+                        "new_location": item.new_location,
+                        "old_name": item.old_name,
+                        "new_name": item.new_name,
+                    }
+                    for item in items
+                ]
+            )
         except Exception as e:
             return server_error_response(e)
 
     # ── Diff commits ───────────────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits/diff', methods=['GET'], endpoint=f'diff_commits_{_n}')  # noqa: F821
+    @manager.route(f"{prefix}/commits/diff", methods=["GET"], endpoint=f"diff_commits_{_n}")  # noqa: F821
     @login_required
     async def diff_commits(entity_id):
         folder_id = _resolve(entity_id)
@@ -236,7 +298,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             return server_error_response(e)
 
     # ── Get uncommitted changes ────────────────────────────────────────────
-    @manager.route(f'{prefix}/changes', methods=['GET'], endpoint=f'get_uncommitted_changes_{_n}')  # noqa: F821
+    @manager.route(f"{prefix}/changes", methods=["GET"], endpoint=f"get_uncommitted_changes_{_n}")  # noqa: F821
     @login_required
     async def get_uncommitted_changes(entity_id):
         folder_id = _resolve(entity_id)
@@ -247,7 +309,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             return server_error_response(e)
 
     # ── Get commit tree ────────────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits/<commit_id>/tree', methods=['GET'], endpoint=f'get_commit_tree_{_n}')  # noqa: F821
+    @manager.route(f"{prefix}/commits/<commit_id>/tree", methods=["GET"], endpoint=f"get_commit_tree_{_n}")  # noqa: F821
     @login_required
     async def get_commit_tree(entity_id, commit_id):
         folder_id = _resolve(entity_id)
@@ -263,7 +325,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             return server_error_response(e)
 
     # ── Get commit file content ────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits/<commit_id>/files/<file_id>/content', methods=['GET'], endpoint=f'get_commit_file_content_{_n}')  # noqa: F821
+    @manager.route(f"{prefix}/commits/<commit_id>/files/<file_id>/content", methods=["GET"], endpoint=f"get_commit_file_content_{_n}")  # noqa: F821
     @login_required
     async def get_commit_file_content(entity_id, commit_id, file_id):
         folder_id = _resolve(entity_id)
@@ -282,14 +344,15 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
 
     # Expose handlers at module level for direct testing.
     _g = globals()
-    _g['create_commit'] = create_commit
-    _g['list_commits'] = list_commits
-    _g['get_commit'] = get_commit
-    _g['list_commit_files'] = list_commit_files
-    _g['diff_commits'] = diff_commits
-    _g['get_uncommitted_changes'] = get_uncommitted_changes
-    _g['get_commit_tree'] = get_commit_tree
-    _g['get_commit_file_content'] = get_commit_file_content
+    _g["create_commit"] = create_commit
+    _g["list_commits"] = list_commits
+    _g["get_commit"] = get_commit
+    _g["list_commit_files"] = list_commit_files
+    _g["diff_commits"] = diff_commits
+    _g["get_uncommitted_changes"] = get_uncommitted_changes
+    _g["get_commit_tree"] = get_commit_tree
+    _g["get_commit_file_content"] = get_commit_file_content
+
 
 # ── Register routes for all entity types ──────────────────────────────────
 # All URL patterns use <entity_id> as the consistent param name.
@@ -297,14 +360,14 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
 # For other entity types entity_id is resolved via _resolve_folder_id().
 # Register datasets first, workspace second, folders last —
 # the last call's handlers overwrite module-level names for test access.
-_register_commit_routes('/datasets/<entity_id>', 'entity_id', resolver_type='datasets')
-_register_commit_routes('/workspace/<entity_id>', 'entity_id')  # alias — workspace_id == folder_id
-_register_commit_routes('/folders/<entity_id>', 'entity_id')  # direct — entity_id == folder_id (wins)
+_register_commit_routes("/datasets/<entity_id>", "entity_id", resolver_type="datasets")
+_register_commit_routes("/workspace/<entity_id>", "entity_id")  # alias — workspace_id == folder_id
+_register_commit_routes("/folders/<entity_id>", "entity_id")  # direct — entity_id == folder_id (wins)
 # /memories and /skills routes are not mounted until resolvers are implemented.
 
 
 # ── File version history (shared across all entity types) ─────────────────
-@manager.route('/files/<file_id>/versions', methods=['GET'])  # noqa: F821
+@manager.route("/files/<file_id>/versions", methods=["GET"])  # noqa: F821
 @login_required
 async def get_file_version_history(file_id):
     try:

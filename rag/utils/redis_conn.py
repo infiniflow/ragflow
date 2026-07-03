@@ -216,6 +216,14 @@ class RedisDB:
             self.__open__()
         return False
 
+    def set_if_absent(self, k, v, exp=3600):
+        try:
+            return bool(self.REDIS.set(k, v, exp, nx=True))
+        except Exception as e:
+            logging.warning("RedisDB.set_if_absent " + str(k) + " got exception: " + str(e))
+            self.__open__()
+        return False
+
     def sadd(self, key: str, member: str):
         try:
             self.REDIS.sadd(key, member)

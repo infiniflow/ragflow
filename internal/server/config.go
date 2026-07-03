@@ -905,11 +905,11 @@ func PrintAll() {
 	}
 
 	allSettings := globalViper.AllSettings()
-	zapLogger.Info("=== All Configuration Settings ===")
+	zapLogger.Info("=== All Configurations ===")
 	for key, value := range allSettings {
 		zapLogger.Info("config", zap.String("key", key), zap.Any("value", value))
 	}
-	zapLogger.Info("=== End Configuration ===")
+	zapLogger.Info("=== End Configurations ===")
 }
 
 // parseHostPort parses host:port string and returns host and port

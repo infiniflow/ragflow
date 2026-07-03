@@ -17,6 +17,7 @@ limitations under the License.
 package utility
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -57,4 +58,54 @@ func GetProjectRoot() string {
 		return "."
 	}
 	return filepath.Dir(filepath.Dir(exe))
+}
+
+func FindConfFileInProject(fileName string) (*string, error) {
+
+	var filePath string
+	if projDir := os.Getenv("RAG_PROJECT_BASE"); projDir != "" {
+		filePath = filepath.Join(projDir, "conf", fileName)
+		if _, err := os.Stat(filePath); err == nil {
+			return &filePath, nil
+		}
+	}
+
+	if projDir := os.Getenv("RAG_DEPLOY_BASE"); projDir != "" {
+		filePath = filepath.Join(projDir, "conf", fileName)
+		if _, err := os.Stat(filePath); err == nil {
+			return &filePath, nil
+		}
+	}
+
+	exeFilePath, err := os.Executable()
+	if err == nil {
+		projDir := filepath.Dir(filepath.Dir(exeFilePath))
+		filePath = filepath.Join(projDir, "conf", fileName)
+		if _, err = os.Stat(filePath); err == nil {
+			return &filePath, nil
+		}
+	}
+
+	_, curFile, _, _ := runtime.Caller(0)
+	dir := filepath.Dir(curFile)
+	for {
+		if _, err = os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			filePath = filepath.Join(dir, "conf", fileName)
+			if _, err = os.Stat(filePath); err == nil {
+				return &filePath, nil
+			}
+			return nil, fmt.Errorf("conf file %s not found in %s", fileName, dir)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			projDir := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(curFile))))
+			filePath = filepath.Join(projDir, "conf", fileName)
+			if _, err = os.Stat(filePath); err == nil {
+				return &filePath, nil
+			}
+
+			return nil, fmt.Errorf("conf file %s not found in %s", fileName, projDir)
+		}
+		dir = parent
+	}
 }
