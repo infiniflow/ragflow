@@ -60,7 +60,8 @@ const SettingModelV2: FC = () => {
   // Always re-fetch when the selection changes. Passing an empty string
   // disables the query.
   const providerQueryName = selection === 'default' ? '' : selection;
-  const { data: instances } = useFetchProviderInstances(providerQueryName);
+  const { data: instances, loading: instancesLoading } =
+    useFetchProviderInstances(providerQueryName);
   const queryClient = useQueryClient();
 
   // Append a new draft id to the visible list.
@@ -86,12 +87,21 @@ const SettingModelV2: FC = () => {
   // no drafts already on screen, auto-show a "new instance" draft so
   // they can fill it in immediately. If they have explicitly cancelled,
   // do not re-show.
+  //
+  // Wait for the provider-instances query to settle before deciding:
+  // `initialData: []` on the hook means `instances` is an empty array
+  // from the first render, so a naive length check would auto-spawn a
+  // draft during the brief loading window even when the provider
+  // already has saved instances, only to remove it once the query
+  // resolves. Gating on `!instancesLoading` skips that flicker and
+  // keeps the UI clean for providers that do have instances.
   useEffect(() => {
     if (selection === 'default' || cancelledRef.current) return;
-    if ((!instances || instances.length === 0) && draftIds.length === 0) {
+    if (instancesLoading) return;
+    if (instances.length === 0 && draftIds.length === 0) {
       addDraft();
     }
-  }, [selection, instances, draftIds, addDraft]);
+  }, [selection, instances, instancesLoading, draftIds, addDraft]);
 
   const { addProviderInstance } = useAddProviderInstance();
 

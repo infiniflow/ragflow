@@ -578,6 +578,14 @@ function GenericProviderInstanceCard({
   // `onBlurSuppressChange`.
   const blurSuppressRef = useRef(false);
   const lastSavedPayloadRef = useRef<string>('');
+  // Tracks whether the host has ever successfully synced the instance
+  // with the backend via `updateProviderInstance`. The edit-absorbing
+  // handler below uses this as a precondition — until at least one
+  // sync has happened, `lastSavedPayloadRef` still carries the initial
+  // `model_info: []` baseline and we want the next blur to fire a save
+  // so the persisted model set picks up the user's adds/edits via the
+  // standard PUT path.
+  const hasSyncedInstanceRef = useRef(false);
   // Debounce timer shared by every auto-save trigger (blur, dropdown
   // change, etc). Coalesces rapid successive edits into a single
   // network round-trip. Cleared on unmount.
@@ -633,6 +641,7 @@ function GenericProviderInstanceCard({
       const ret = await updateProviderInstance(payload);
       if (ret?.code === 0) {
         lastSavedPayloadRef.current = signature;
+        hasSyncedInstanceRef.current = true;
       }
     } finally {
       blurSavingRef.current = false;
@@ -707,7 +716,9 @@ function GenericProviderInstanceCard({
     if (!instanceId) return;
     // Match the api_key shape performAutoSave produces (extra credential
     // fields nested inside api_key) so the first blur after mount doesn't
-    // see a signature diff and fire a redundant save.
+    // see a signature diff and fire a redundant save. model_info is
+    // omitted for the same reason as in performAutoSave: model changes
+    // are owned by the per-model endpoints, not this auto-save.
     const baseline = {
       provider_name: providerName,
       instance_name: instance.instance_name,
@@ -793,6 +804,36 @@ function GenericProviderInstanceCard({
     onDelete,
   ]);
 
+  // Absorb a model patch into the host's last-saved baseline. When the
+  // user saves the edit modal, patchInstanceModel has already persisted
+  // the new max_tokens / model_type / features server-side, so the next
+  // blur auto-save should NOT re-PUT the same model_info. By parsing
+  // the previously-saved payload and overwriting ONLY model_info, the
+  // baseline now matches the current state and the signature check in
+  // performAutoSave short-circuits — while any in-flight edits to
+  // api_key / base_url / region remain in `lastSavedPayloadRef`
+  // unchanged and will still trigger a save on blur via signature
+  // mismatch.
+  //
+  // Skipped until the host has synced at least once. Before that the
+  // baseline still carries the initial `model_info: []`; rewriting it
+  // here would skip the very first PUT that syncs the user's first
+  // add/edit into the persisted model_info.
+  const handleInstanceModelsEdited = useCallback(() => {
+    if (isDraft) return;
+    if (!hasSyncedInstanceRef.current) return;
+    const prev = lastSavedPayloadRef.current;
+    if (!prev) return;
+    const parsed = JSON.parse(prev) as IUpdateProviderInstanceRequestBody;
+    parsed.model_info =
+      modelInfoRef.current.length > 0 ? modelInfoRef.current : [];
+    // Mirror the `verify: false` field that performAutoSave always
+    // attaches, otherwise the next signature comparison would diff on
+    // this key alone and re-fire the save.
+    (parsed as any).verify = false;
+    lastSavedPayloadRef.current = JSON.stringify(parsed);
+  }, [isDraft]);
+
   return (
     <div
       className="border-b border-border-button mb-5 pb-5"
@@ -867,16 +908,6 @@ function GenericProviderInstanceCard({
                 />
               </div>
 
-              {/*
-                Only mount ModelsSection when the card is expanded.
-                CollapsibleContent uses `forceMount` so the form above stays
-                in the DOM across open/close transitions, but we do NOT want
-                the per-instance models query (and the upstream catalog
-                fetch) to fire for every collapsed sibling — that would
-                produce one request per instance every time the provider is
-                clicked. Gating on `open` here ensures only the expanded
-                instance hits /api/v1/providers/<p>/instances/<i>/models.
-              */}
               {open && (
                 <div className=" pt-3">
                   <ModelsSection
@@ -892,6 +923,7 @@ function GenericProviderInstanceCard({
                     onInstanceModelsChange={(info) => {
                       modelInfoRef.current = info;
                     }}
+                    onInstanceModelsEdited={handleInstanceModelsEdited}
                   />
                 </div>
               )}
@@ -997,6 +1029,7 @@ function GenericProviderInstanceCard({
                 onInstanceModelsChange={(info) => {
                   modelInfoRef.current = info;
                 }}
+                onInstanceModelsEdited={handleInstanceModelsEdited}
               />
             </div>
           </fieldset>

@@ -199,12 +199,14 @@ interface UseModelsDerivedArgs {
   catalog: IProviderModelItem[];
   instanceModels: IInstanceModel[] | undefined;
   onInstanceModelsChange: ModelsSectionProps['onInstanceModelsChange'];
+  onInstanceModelsEdited?: ModelsSectionProps['onInstanceModelsEdited'];
 }
 
 export function useModelsDerived({
   catalog,
   instanceModels,
   onInstanceModelsChange,
+  onInstanceModelsEdited,
 }: UseModelsDerivedArgs) {
   const catalogFeatures = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -253,11 +255,51 @@ export function useModelsDerived({
     [instanceModels],
   );
 
-  // Push the latest per-instance model list up to the host so its
-  // auto-save can include `model_info` in the payload.
+  // Keep the latest callbacks in refs so the effect below only fires
+  // when `instanceItems` actually changes — not on every parent
+  // re-render that passes a new arrow for the callbacks. The previous
+  // deps included the callbacks directly, which made the effect re-run
+  // with the same data on every render; that was harmless for the
+  // idempotent model_info push, but the new "edited" callback updates
+  // the host's last-saved baseline and must not absorb in-flight form
+  // edits fired by an unrelated re-render.
+  const onChangeRef = useRef(onInstanceModelsChange);
+  const onEditedRef = useRef(onInstanceModelsEdited);
   useEffect(() => {
-    onInstanceModelsChange?.(buildModelInfo(instanceItems));
-  }, [instanceItems, onInstanceModelsChange]);
+    onChangeRef.current = onInstanceModelsChange;
+    onEditedRef.current = onInstanceModelsEdited;
+  });
+
+  // Track the previous set of instance model names so we can tell
+  // "patch" (same names, different data) apart from "add/remove"
+  // (different names). Only the patch case needs to fire the host-side
+  // baseline-update callback so the next blur auto-save short-circuits.
+  const prevNamesRef = useRef<Set<string>>(new Set());
+
+  // Push the latest per-instance model list up to the host so its
+  // auto-save can include `model_info` in the payload. When the change
+  // is purely a patch (same names, different data), also notify the
+  // host via `onInstanceModelsEdited` so it can absorb the model_info
+  // diff into its last-saved baseline — without this signal, the next
+  // blur would signature-mismatch and fire a redundant PUT carrying
+  // the already-PATCH-saved model_info. Adds/removes intentionally
+  // skip this signal so the next blur still carries the updated list
+  // into PUT (the standard sync path for the instance's model_info).
+  useEffect(() => {
+    const currentNames = new Set(instanceItems.map((m) => m.name));
+    const prevNames = prevNamesRef.current;
+    const isPatch =
+      currentNames.size > 0 &&
+      currentNames.size === prevNames.size &&
+      Array.from(currentNames).every((n) => prevNames.has(n));
+
+    onChangeRef.current?.(buildModelInfo(instanceItems));
+    if (isPatch) {
+      onEditedRef.current?.();
+    }
+
+    prevNamesRef.current = currentNames;
+  }, [instanceItems]);
 
   return { instanceItems, models, addedSet };
 }

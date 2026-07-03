@@ -51,6 +51,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     getFormValues,
     onBlurSuppressChange,
     onInstanceModelsChange,
+    onInstanceModelsEdited,
   } = props;
 
   const isDraftInstance =
@@ -86,6 +87,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     catalog,
     instanceModels,
     onInstanceModelsChange,
+    onInstanceModelsEdited,
   });
 
   // 5. Search + tag filter.
