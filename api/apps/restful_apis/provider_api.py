@@ -1023,7 +1023,7 @@ async def alter_model(tenant_id: str = None, provider_id_or_name: str = None, in
     if not data or ("status" not in data and "max_tokens" not in data):
         return get_error_argument_result(message="status or max_tokens required.")
 
-    update_dict = {k: data[k] for k in ["status", "max_tokens", "model_type"] if k in data}
+    update_dict = {k: data[k] for k in ["status", "max_tokens", "model_type", "extra"] if k in data}
     if update_dict.get("status") and update_dict["status"] not in ("active", "inactive"):
         return get_error_argument_result(message="status must be 'active' or 'inactive'")
 

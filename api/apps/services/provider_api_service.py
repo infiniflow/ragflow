@@ -1054,7 +1054,7 @@ def update_model(tenant_id: str, provider_id_or_name: str, instance_id_or_name: 
     to_update = {}
     if "status" in update_dict and update_dict.get("status") != model_obj.status:
         to_update.update({"status": update_dict["status"]})
-    new_extra = {}
+    new_extra = update_dict.get("extra", {})
     if "max_tokens" in update_dict:
         new_extra.update({"max_tokens": update_dict["max_tokens"]})
     if "verify" in update_dict:
