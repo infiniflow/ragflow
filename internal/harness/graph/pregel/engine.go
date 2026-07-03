@@ -909,36 +909,57 @@ func (e *Engine) applyWrites(
 
 	// Apply writes to channels with version management
 	for channelName, values := range writesByChannel {
-		if ch, ok := registry.Get(channelName); ok {
-			// Filter out nil values
-			filtered := make([]any, 0, len(values))
-			for _, val := range values {
-				if val != nil {
-					filtered = append(filtered, val)
-				}
+		ch, ok := registry.Get(channelName)
+		if !ok {
+			// Auto-create a LastValue channel for map-based schemas where no
+			// channels were pre-configured (e.g. map[string]any{} schema).
+			newCh := channels.NewLastValue(nil)
+			registry.Register(channelName, newCh)
+			ch = newCh
+		}
+
+		// Filter out nil values
+		filtered := make([]any, 0, len(values))
+		for _, val := range values {
+			if val != nil {
+				filtered = append(filtered, val)
+			}
+		}
+
+		// When multiple values target a LastValue channel in the same step
+		// (star-topology pattern), keep only the last value to avoid channel
+		// conflict errors.  BinaryOperatorAggregate and ReducerChannel handle
+		// multiple writes via their accumulator logic.
+		if len(filtered) > 1 {
+			_, isBO := ch.(*channels.BinaryOperatorAggregate)
+			_, isRC := ch.(*channels.ReducerChannel)
+			if !isBO && !isRC {
+				last := filtered[len(filtered)-1]
+				filtered = filtered[:1]
+				filtered[0] = last
+			}
+		}
+
+		// Update channel
+		updated, err := ch.Update(filtered)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update channel %s: %w", channelName, err)
+		}
+
+		if updated && ch.IsAvailable() {
+			updatedChannels[channelName] = struct{}{}
+
+			// Increment channel version (engine-level tracking).
+			e.channelVersions[channelName]++
+
+			// Also bump the version on the channel itself for ChannelChangedTrigger.
+			if vc, ok := ch.(interface{ SetVersion(int) }); ok {
+				vc.SetVersion(e.channelVersions[channelName])
 			}
 
-			// Update channel
-			updated, err := ch.Update(filtered)
-			if err != nil {
-				return nil, fmt.Errorf("failed to update channel %s: %w", channelName, err)
-			}
-
-			if updated && ch.IsAvailable() {
-				updatedChannels[channelName] = struct{}{}
-
-				// Increment channel version (engine-level tracking).
-				e.channelVersions[channelName]++
-
-				// Also bump the version on the channel itself for ChannelChangedTrigger.
-				if vc, ok := ch.(interface{ SetVersion(int) }); ok {
-					vc.SetVersion(e.channelVersions[channelName])
-				}
-
-				// Update checkpoint if available
-				if e.currentCheckpoint != nil {
-					e.currentCheckpoint.IncrementChannel(channelName)
-				}
+			// Update checkpoint if available
+			if e.currentCheckpoint != nil {
+				e.currentCheckpoint.IncrementChannel(channelName)
 			}
 		}
 	}
@@ -1234,7 +1255,9 @@ func (e *Engine) mapToStateSchema(input any) any {
 
 func (e *Engine) readTaskInput(registry *channels.Registry, task *Task) (any, error) {
 	if len(task.Channels) == 0 {
-		return nil, nil
+		// Return empty map instead of nil so that node functions expecting
+		// map[string]any receive a usable zero value rather than nil.
+		return map[string]any{}, nil
 	}
 
 	// Read values from specified channels

@@ -128,7 +128,7 @@ func NewSequentialGraph(ctx context.Context, cfg *SequentialConfig, cptr checkpo
 	sg.AddEdge(fmt.Sprintf("sub_%d", len(cfg.SubAgents)-1), constants.End)
 
 	compileOpts := []interface{}{
-		graph.WithRecursionLimit(len(cfg.SubAgents) + 2),
+		graph.WithRecursionLimit(len(cfg.SubAgents)*10 + 5),
 	}
 	if cptr != nil {
 		compileOpts = append(compileOpts, graph.WithCheckpointer(cptr))
@@ -205,7 +205,7 @@ func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr checkpoint.
 	}
 
 	compileOpts := []interface{}{
-		graph.WithRecursionLimit(len(cfg.SubAgents) * 2),
+		graph.WithRecursionLimit(len(cfg.SubAgents)*10 + 5),
 	}
 	if cptr != nil {
 		compileOpts = append(compileOpts, graph.WithCheckpointer(cptr))
@@ -274,6 +274,11 @@ func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr checkpoint.BaseChec
 				}
 			}
 			s.CurrentStep = idx + 1
+			// Increment LoopIter in the last node so it persists to channels.
+			// (The conditional edge only reads LoopIter for routing.)
+			if idx == len(cfg.SubAgents)-1 {
+				s.LoopIter++
+			}
 			return s, nil
 		})
 	}
@@ -289,12 +294,10 @@ func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr checkpoint.BaseChec
 	sg.AddConditionalEdges(lastNode,
 		func(ctx context.Context, state interface{}) (interface{}, error) {
 			s := state.(*WorkflowGraphState)
-			s.LoopIter++
 			if s.LoopIter >= maxIter {
 				s.Done = true
 				return constants.End, nil
 			}
-			s.CurrentStep = 0 // Reset for next iteration.
 			return "sub_0", nil
 		},
 		map[string]string{
@@ -306,8 +309,12 @@ func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr checkpoint.BaseChec
 	// conditional edge to End is the actual runtime termination path.
 	sg.SetFinishPoint(lastNode)
 
+	// Use a generous recursion limit. The sub-agent execution within each
+	// loop iteration can consume multiple steps internally; the parent graph
+	// recursion limit must account for this.
+	recLimit := maxIter*len(cfg.SubAgents)*50 + 50
 	compileOpts := []interface{}{
-		graph.WithRecursionLimit(maxIter*len(cfg.SubAgents) + 5),
+		graph.WithRecursionLimit(recLimit),
 	}
 	if cptr != nil {
 		compileOpts = append(compileOpts, graph.WithCheckpointer(cptr))
