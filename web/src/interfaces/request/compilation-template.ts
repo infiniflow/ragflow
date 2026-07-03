@@ -45,6 +45,7 @@ export type IUpdateCompilationTemplateRequestBody =
 export interface ICreateCompilationTemplateGroupRequestBody {
   name: string;
   description?: string;
+  avatar?: string;
   templates: Array<{
     name?: string;
     description?: string;

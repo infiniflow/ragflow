@@ -45,6 +45,7 @@ export const DefaultTemplateValues: TemplateSchemaType = {
 export const DefaultValues: FormSchemaType = {
   name: '',
   description: '',
+  avatar: '',
   templates: [DefaultTemplateValues],
 };
 
@@ -169,6 +170,7 @@ export const transformGroupDetailToForm = (
   return {
     name: detail.name ?? '',
     description: detail.description ?? '',
+    avatar: detail.avatar ?? '',
     templates: templates.length > 0 ? templates : [DefaultTemplateValues],
   };
 };
@@ -200,6 +202,7 @@ export const transformFormToPayload = (values: FormSchemaType) => {
   return {
     name: values.name,
     description: values.description,
+    avatar: values.avatar || undefined,
     templates: values.templates.map((template) =>
       transformTemplateToPayload(template),
     ),

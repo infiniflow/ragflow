@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -21,9 +21,22 @@ export const useCompilationTemplateGroupForm = ({
 }: UseCompilationTemplateGroupFormOptions) => {
   const { t } = useTranslation();
 
+  const defaultValues = useMemo<FormSchemaType>(() => {
+    if (!isCreate) return DefaultValues;
+    return {
+      ...DefaultValues,
+      templates: [
+        {
+          ...DefaultValues.templates[0],
+          name: `${t('setting.template')} #1`,
+        },
+      ],
+    };
+  }, [isCreate, t]);
+
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(buildFormSchema(t)),
-    defaultValues: DefaultValues,
+    defaultValues,
   });
 
   useEffect(() => {

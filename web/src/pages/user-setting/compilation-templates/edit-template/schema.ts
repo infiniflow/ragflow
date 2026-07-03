@@ -31,6 +31,7 @@ export const buildFormSchema = (t: (key: string) => string) =>
   z.object({
     name: z.string().min(1, t('setting.groupNameRequired')),
     description: z.string().optional(),
+    avatar: z.string().optional(),
     templates: z.array(buildTemplateSchema(t)).min(1),
   });
 

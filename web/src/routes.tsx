@@ -45,6 +45,7 @@ export enum Routes {
   Prompt = '/prompt',
   CompilationTemplates = '/compilation-templates',
   CompilationTemplate = `${CompilationTemplates}/:id`,
+  CompilationTemplatesCreateNext = '/compilation-templates/create-next',
   DataSource = '/data-source',
   DataSourceDetailPage = '/data-source-detail-page',
   ChatChannel = '/chat-channel',
@@ -322,6 +323,12 @@ const routeConfigOptions = [
     layout: false,
     Component: () =>
       import('@/pages/user-setting/compilation-templates/edit-template'),
+  },
+  {
+    path: Routes.CompilationTemplatesCreateNext,
+    layout: false,
+    Component: () =>
+      import('@/pages/user-setting/compilation-templates/create-next'),
   },
   {
     path: `${Routes.SearchShare}`,
