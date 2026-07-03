@@ -119,9 +119,15 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 		return nil, fmt.Errorf("File not found!")
 	}
 
-	// Process files to add additional info
+	// Process files to add additional info, deduplicating by ID as a safety net
+	// against any leftover duplicate rows (e.g. duplicate 'skills' or '.knowledgebase' folders).
 	fileResponses := make([]map[string]interface{}, 0, len(files))
+	seenIDs := make(map[string]struct{})
 	for _, file := range files {
+		if _, ok := seenIDs[file.ID]; ok {
+			continue
+		}
+		seenIDs[file.ID] = struct{}{}
 		fileInfo := s.toFileInfo(file)
 
 		// If folder, calculate size and check for child folders

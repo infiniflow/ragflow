@@ -31,19 +31,22 @@ export function MoveDialog({ hideModal, onOk, loading }: IModalProps<any>) {
       const ret = await fetchList(id as string);
       if (ret.code === 0) {
         setTreeData((tree) => {
-          return tree.concat(
-            ret.data.files
-              .filter((x: IFile) => x.type === 'folder')
-              .map((x: IFile) => ({
-                id: x.id,
-                parentId: x.parent_id,
-                title: x.name,
-                isLeaf:
-                  typeof x.has_child_folder === 'boolean'
-                    ? !x.has_child_folder
-                    : false,
-              })),
-          );
+          const existingIds = new Set(tree.map((n) => n.id));
+          const newNodes = ret.data.files
+            .filter(
+              (x: IFile) =>
+                x.type === 'folder' && !existingIds.has(x.id),
+            )
+            .map((x: IFile) => ({
+              id: x.id,
+              parentId: x.parent_id,
+              title: x.name,
+              isLeaf:
+                typeof x.has_child_folder === 'boolean'
+                  ? !x.has_child_folder
+                  : false,
+            }));
+          return tree.concat(newNodes);
         });
       }
     },

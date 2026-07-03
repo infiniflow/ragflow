@@ -75,6 +75,15 @@ class FileService(CommonService):
         files = files.paginate(page_number, items_per_page)
 
         res_files = list(files.dicts())
+        # Deduplicate by file ID as a safety net against any leftover duplicate rows
+        # (e.g. duplicate 'skills' or '.knowledgebase' folders created by race conditions).
+        seen_ids = set()
+        unique_files = []
+        for file in res_files:
+            if file["id"] not in seen_ids:
+                seen_ids.add(file["id"])
+                unique_files.append(file)
+        res_files = unique_files
         for file in res_files:
             if file["type"] == FileType.FOLDER.value:
                 file["size"] = cls.get_folder_size(file["id"])
