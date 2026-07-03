@@ -85,3 +85,8 @@ func DecodeFromBase64(encoded string) (string, error) {
 	}
 	return string(decoded), nil
 }
+
+func IsValidString(v interface{}) bool {
+	str, ok := v.(string)
+	return ok && str != ""
+}
