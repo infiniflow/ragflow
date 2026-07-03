@@ -26,7 +26,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/service/kg"
+	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
 	"regexp"
 	"sort"
@@ -788,7 +788,7 @@ func (s *ChatPipelineService) AsyncChat(
 				if useKG, _ := chat.PromptConfig["use_kg"].(bool); useKG && chatModel != nil && len(kbs) > 0 {
 					kgIDs := kbIDStrings(kbs)
 					if len(kgIDs) > 0 {
-						kgPipeline := kg.NewPipeline(engine.Get(), kgIDs, kbTenantIDStrings(kbs), searchQuestion)
+						kgPipeline := graph.NewPipeline(engine.Get(), kgIDs, kbTenantIDStrings(kbs), searchQuestion)
 						kgPipeline.SetChatModel(chatModel)
 						if embModel != nil {
 							kgPipeline.SetEmbModel(embModel)
@@ -2367,7 +2367,7 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 	usedTokenCount := 0
 	chunksNum := 0
 	for _, cc := range contents {
-		usedTokenCount += kg.NumTokensFromString(cc.content)
+		usedTokenCount += graph.NumTokensFromString(cc.content)
 		chunksNum++
 		if float64(maxTokens)*0.97 < float64(usedTokenCount) {
 			common.Warn("Not all the retrieval into prompt",
@@ -2462,28 +2462,28 @@ func (s *ChatPipelineService) messageFitIn(messages []map[string]interface{}, ma
 	}
 
 	// Step 3: trim content to fit.
-	ll := kg.NumTokensFromString(s.stringContent(result[0]))
-	ll2 := kg.NumTokensFromString(s.stringContent(result[len(result)-1]))
+	ll := graph.NumTokensFromString(s.stringContent(result[0]))
+	ll2 := graph.NumTokensFromString(s.stringContent(result[len(result)-1]))
 	total := ll + ll2
 	if total <= 0 {
 		return 0, result
 	}
 
 	if len(result) == 1 {
-		result[0]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[0]), maxTokens)
+		result[0]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[0]), maxTokens)
 		return s.countAllTokens(result), result
 	}
 
 	if float64(ll)/float64(total) > 0.8 {
 		preservedLast := min(ll2, maxTokens)
-		result[len(result)-1]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), preservedLast)
+		result[len(result)-1]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), preservedLast)
 		remaining := max(0, maxTokens-preservedLast)
-		result[0]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[0]), remaining)
+		result[0]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[0]), remaining)
 	} else {
 		preservedSystem := min(ll, maxTokens)
-		result[0]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[0]), preservedSystem)
+		result[0]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[0]), preservedSystem)
 		remaining := max(0, maxTokens-preservedSystem)
-		result[len(result)-1]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), remaining)
+		result[len(result)-1]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), remaining)
 	}
 
 	return s.countAllTokens(result), result
@@ -2493,7 +2493,7 @@ func (s *ChatPipelineService) messageFitIn(messages []map[string]interface{}, ma
 func (s *ChatPipelineService) countAllTokens(messages []map[string]interface{}) int {
 	total := 0
 	for _, m := range messages {
-		total += kg.NumTokensFromString(s.stringContent(m))
+		total += graph.NumTokensFromString(s.stringContent(m))
 	}
 	return total
 }
@@ -2816,7 +2816,7 @@ func (s *ChatPipelineService) decorateAnswer(
 	// token-count / token-speed lines that the existing OpenAI endpoint
 	// already exposes. Total wall-clock is rounded to ms.
 	totalMs := timer.Total().Seconds() * 1000
-	tkNum := kg.NumTokensFromString(think + ans)
+	tkNum := graph.NumTokensFromString(think + ans)
 
 	prompt += fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " "))
 
