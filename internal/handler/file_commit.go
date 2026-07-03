@@ -125,7 +125,7 @@ type CreateCommitRequest struct {
 func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -137,7 +137,7 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 
 	var req CreateCommitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeBadRequest, err.Error())
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 
@@ -184,7 +184,7 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -265,7 +265,7 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -326,7 +326,7 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 func (h *FileCommitHandler) ListCommitFiles(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -374,7 +374,7 @@ func (h *FileCommitHandler) ListCommitFiles(c *gin.Context) {
 func (h *FileCommitHandler) DiffCommits(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -426,7 +426,7 @@ func (h *FileCommitHandler) DiffCommits(c *gin.Context) {
 func (h *FileCommitHandler) GetUncommittedChanges(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -462,7 +462,7 @@ func (h *FileCommitHandler) GetUncommittedChanges(c *gin.Context) {
 func (h *FileCommitHandler) GetCommitTree(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -510,7 +510,7 @@ func (h *FileCommitHandler) GetCommitTree(c *gin.Context) {
 func (h *FileCommitHandler) GetCommitFileContent(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -560,7 +560,7 @@ func (h *FileCommitHandler) GetCommitFileContent(c *gin.Context) {
 func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 

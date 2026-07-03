@@ -55,7 +55,7 @@ func NewChatSessionHandler(chatSessionService *service.ChatSessionService, userS
 func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
@@ -129,7 +129,7 @@ type ChatCompletionsRequest struct {
 func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
@@ -260,7 +260,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -269,7 +269,7 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 
 	result, code, err := h.chatSessionService.GetSession(userID, chatID, sessionID)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 	common.SuccessWithData(c, result, "success")
@@ -279,7 +279,7 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -314,7 +314,7 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
@@ -325,7 +325,7 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -360,7 +360,7 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
@@ -370,7 +370,7 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -393,7 +393,7 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 
 	result, code, err := h.chatSessionService.UpdateSession(userID, chatID, sessionID, req)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 	common.SuccessWithData(c, result, "success")
@@ -402,7 +402,7 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
@@ -414,7 +414,7 @@ func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 	common.SuccessWithData(c, result, "success")
@@ -423,7 +423,7 @@ func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -450,7 +450,7 @@ func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 	common.SuccessWithData(c, result, "success")

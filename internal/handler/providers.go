@@ -1634,7 +1634,7 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 func (h *ProviderHandler) ListTenantAddedModels(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -1642,7 +1642,7 @@ func (h *ProviderHandler) ListTenantAddedModels(c *gin.Context) {
 
 	addedModels, code, err := h.modelProviderService.ListTenantAddedModels(user.ID, modelType)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 

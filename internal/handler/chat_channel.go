@@ -57,7 +57,7 @@ type CreateChatChannelRequest struct {
 func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -85,7 +85,7 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 func (h *ChatChannelHandler) ListChatChannel(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -101,7 +101,7 @@ func (h *ChatChannelHandler) ListChatChannel(c *gin.Context) {
 func (h *ChatChannelHandler) GetChatChannel(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -134,7 +134,7 @@ func (h *ChatChannelHandler) GetChatChannel(c *gin.Context) {
 func (h *ChatChannelHandler) UpdateChatChannel(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -169,7 +169,7 @@ func (h *ChatChannelHandler) UpdateChatChannel(c *gin.Context) {
 func (h *ChatChannelHandler) DeleteChatChannel(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 

@@ -71,7 +71,7 @@ func NewMCPHandler(mcpService *service.MCPService) *MCPHandler {
 func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -83,7 +83,7 @@ func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
 
 	result, code, err := h.mcpService.CreateMCPServer(user.ID, req)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
 func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -124,7 +124,7 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 			})
 			return
 		}
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
@@ -134,7 +134,7 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 func (h *MCPHandler) GetMCPServer(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -184,7 +184,7 @@ func mcpDetailError(c *gin.Context, code common.ErrorCode, err error) {
 func (h *MCPHandler) UpdateMCPServer(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -197,7 +197,7 @@ func (h *MCPHandler) UpdateMCPServer(c *gin.Context) {
 
 	result, code, err := h.mcpService.UpdateMCPServer(user.ID, mcpID, req)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
@@ -212,13 +212,13 @@ func (h *MCPHandler) UpdateMCPServer(c *gin.Context) {
 func (h *MCPHandler) DeleteMCPServer(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	result, code, err := h.mcpService.DeleteMCPServer(user.ID, c.Param("mcp_id"))
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
@@ -301,7 +301,7 @@ type ImportMCPRequest struct {
 func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -368,7 +368,7 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 func (h *MCPHandler) TestMCPServer(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 

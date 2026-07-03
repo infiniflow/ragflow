@@ -369,7 +369,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 func (h *UserHandler) Info(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -396,7 +396,7 @@ func (h *UserHandler) Info(c *gin.Context) {
 func (h *UserHandler) Setting(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -442,7 +442,7 @@ func (h *UserHandler) Setting(c *gin.Context) {
 func (h *UserHandler) ChangePassword(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -506,7 +506,7 @@ func (h *UserHandler) GetLoginChannels(c *gin.Context) {
 func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
