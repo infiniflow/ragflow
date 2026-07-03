@@ -76,8 +76,12 @@ func (cg *compiledGraph) GetState(ctx context.Context, config *types.RunnableCon
 		return nil, fmt.Errorf("checkpointer is required for GetState, configure with WithCheckpointer during Compile")
 	}
 
+	cp, err := cg.getCheckpointer()
+	if err != nil {
+		return nil, err
+	}
 	cpConfig := buildCheckpointerConfig(config)
-	cpData, err := cg.checkpointer.(checkpoint.BaseCheckpointer).Get(ctx, cpConfig)
+	cpData, err := cp.Get(ctx, cpConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get checkpoint: %w", err)
 	}
@@ -125,8 +129,12 @@ func (cg *compiledGraph) GetStateHistory(ctx context.Context, config *types.Runn
 		return nil, fmt.Errorf("checkpointer is required for GetStateHistory")
 	}
 
+	cp, err := cg.getCheckpointer()
+	if err != nil {
+		return nil, err
+	}
 	cpConfig := buildCheckpointerConfig(config)
-	entries, err := cg.checkpointer.(checkpoint.BaseCheckpointer).List(ctx, cpConfig, limit)
+	entries, err := cp.List(ctx, cpConfig, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list checkpoints: %w", err)
 	}
@@ -177,12 +185,16 @@ func (cg *compiledGraph) UpdateState(ctx context.Context, config *types.Runnable
 		return nil, fmt.Errorf("checkpointer is required for UpdateState")
 	}
 
+	cp, err := cg.getCheckpointer()
+	if err != nil {
+		return nil, err
+	}
 	// 1. Get the current checkpoint at the target config.
 	cpConfig := buildCheckpointerConfig(config)
 	if update.CheckID != "" {
 		cpConfig[constants.ConfigKeyCheckpointID] = update.CheckID
 	}
-	cpData, err := cg.checkpointer.(checkpoint.BaseCheckpointer).Get(ctx, cpConfig)
+	cpData, err := cp.Get(ctx, cpConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get checkpoint for update: %w", err)
 	}
@@ -218,7 +230,7 @@ func (cg *compiledGraph) UpdateState(ctx context.Context, config *types.Runnable
 		"parent_checkpoint_id":          parentID,
 		constants.ConfigKeyCheckpointID: "",
 	}
-	if err := cg.checkpointer.(checkpoint.BaseCheckpointer).Put(ctx, newConfig, cpData); err != nil {
+	if err := cp.Put(ctx, newConfig, cpData); err != nil {
 		return nil, fmt.Errorf("failed to save updated checkpoint: %w", err)
 	}
 
@@ -226,7 +238,7 @@ func (cg *compiledGraph) UpdateState(ctx context.Context, config *types.Runnable
 	listCfg := map[string]interface{}{
 		constants.ConfigKeyThreadID: newThreadID,
 	}
-	entries, err := cg.checkpointer.(checkpoint.BaseCheckpointer).List(ctx, listCfg, 1)
+	entries, err := cp.List(ctx, listCfg, 1)
 	if err == nil && len(entries) > 0 {
 		newCPID, _ := entries[0][constants.ConfigKeyCheckpointID].(string)
 		result := types.NewRunnableConfig()
@@ -248,6 +260,16 @@ func (cg *compiledGraph) UpdateState(ctx context.Context, config *types.Runnable
 }
 
 // ---- helpers ----
+
+// getCheckpointer performs a safe type assertion on the stored checkpointer.
+// Returns a BaseCheckpointer or a descriptive error if the cast fails.
+func (cg *compiledGraph) getCheckpointer() (checkpoint.BaseCheckpointer, error) {
+	cp, ok := cg.checkpointer.(checkpoint.BaseCheckpointer)
+	if !ok {
+		return nil, fmt.Errorf("checkpointer is not a BaseCheckpointer (got %T)", cg.checkpointer)
+	}
+	return cp, nil
+}
 
 // buildCheckpointerConfig builds a checkpointer config from a RunnableConfig.
 func buildCheckpointerConfig(config *types.RunnableConfig) map[string]interface{} {
@@ -338,6 +360,11 @@ func (cg *compiledGraph) ForkThread(ctx context.Context, sourceThreadID, newThre
 		return nil, fmt.Errorf("checkpointer is required for ForkThread")
 	}
 
+	cp, err := cg.getCheckpointer()
+	if err != nil {
+		return nil, err
+	}
+
 	// 1. Read source checkpoint.
 	cpConfig := map[string]interface{}{
 		constants.ConfigKeyThreadID: sourceThreadID,
@@ -345,7 +372,7 @@ func (cg *compiledGraph) ForkThread(ctx context.Context, sourceThreadID, newThre
 	if sourceCheckpointID != "" {
 		cpConfig[constants.ConfigKeyCheckpointID] = sourceCheckpointID
 	}
-	cpData, err := cg.checkpointer.(checkpoint.BaseCheckpointer).Get(ctx, cpConfig)
+	cpData, err := cp.Get(ctx, cpConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source checkpoint: %w", err)
 	}
@@ -357,12 +384,12 @@ func (cg *compiledGraph) ForkThread(ctx context.Context, sourceThreadID, newThre
 	newConfig := map[string]interface{}{
 		constants.ConfigKeyThreadID: newThreadID,
 	}
-	if err := cg.checkpointer.(checkpoint.BaseCheckpointer).Put(ctx, newConfig, cpData); err != nil {
+	if err := cp.Put(ctx, newConfig, cpData); err != nil {
 		return nil, fmt.Errorf("failed to write forked checkpoint: %w", err)
 	}
 
 	// 3. Return config pointing to the new thread.
-	entries, err := cg.checkpointer.(checkpoint.BaseCheckpointer).List(ctx, newConfig, 1)
+	entries, err := cp.List(ctx, newConfig, 1)
 	if err != nil || len(entries) == 0 {
 		return &types.RunnableConfig{
 			Configurable: map[string]interface{}{
