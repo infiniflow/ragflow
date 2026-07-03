@@ -40,15 +40,15 @@ def test_parse_txt_document(get_auth):
             break
         page_number += 1
 
-    filename = 'ragflow_test.txt'
+    filename = "ragflow_test.txt"
     res = upload_file(get_auth, dataset_id, f"../test_sdk_api/test_data/{filename}")
     assert res.get("code") == 0, f"{res.get('message')}"
 
     res = list_document(get_auth, dataset_id)
 
     doc_id_list = []
-    for doc in res['data']['docs']:
-        doc_id_list.append(doc['id'])
+    for doc in res["data"]["docs"]:
+        doc_id_list.append(doc["id"])
 
     res = get_docs_info(get_auth, dataset_id, doc_ids=doc_id_list)
     print(doc_id_list)
@@ -59,13 +59,13 @@ def test_parse_txt_document(get_auth):
     while True:
         res = get_docs_info(get_auth, dataset_id, doc_ids=doc_id_list)
         finished_count = 0
-        for doc_info in res['data']:
-            if doc_info['progress'] == 1:
+        for doc_info in res["data"]:
+            if doc_info["progress"] == 1:
                 finished_count += 1
         if finished_count == doc_count:
             break
         sleep(1)
-    print('time cost {:.1f}s'.format(timer() - start_ts))
+    print("time cost {:.1f}s".format(timer() - start_ts))
 
     # delete dataset
     if dataset_list:

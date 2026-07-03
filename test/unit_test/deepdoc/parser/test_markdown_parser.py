@@ -194,6 +194,7 @@ class TestMarkdownTableDedup:
         assert "After" in sections[0]
         assert "| Name | Value |" not in sections[0]
 
+
 class TestMarkdownElementExtractorDelimiterHeaders:
     def test_custom_delimiter_merges_consecutive_lone_headers_with_body(self, markdown_element_extractor):
         text = "# Title\n## Intro\nBody paragraph"

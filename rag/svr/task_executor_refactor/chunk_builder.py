@@ -126,10 +126,7 @@ async def extract_outline(cks: List[Dict], ctx: TaskContext) -> None:
                 ctx.write_interceptor.intercept("DocMetadataService.update_document_metadata")
             else:
                 temp_doc = DocMetadataService.get_document_metadata(ctx.doc_id) or {}
-                DocMetadataService.update_document_metadata(
-                    ctx.doc_id,
-                    update_metadata_to({"outline": outline}, temp_doc)
-                )
+                DocMetadataService.update_document_metadata(ctx.doc_id, update_metadata_to({"outline": outline}, temp_doc))
 
             logging.info("Persisted PDF outline (%d entries) for doc %s", len(outline), ctx.doc_id)
         except Exception as e:

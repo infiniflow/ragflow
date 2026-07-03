@@ -17,6 +17,7 @@
 Unit tests for MinIO health check (check_minio_alive) and scheme/verify helpers.
 Covers SSL/HTTPS and certificate verification (issues #13158, #13159).
 """
+
 from unittest.mock import patch, Mock
 
 
@@ -27,6 +28,7 @@ class TestMinioSchemeAndVerify:
     def test_scheme_http_when_secure_false(self, mock_settings):
         mock_settings.MINIO = {"host": "minio:9000", "secure": False}
         from api.utils.health_utils import _minio_scheme_and_verify
+
         scheme, verify = _minio_scheme_and_verify()
         assert scheme == "http"
         assert verify is True
@@ -35,6 +37,7 @@ class TestMinioSchemeAndVerify:
     def test_scheme_https_when_secure_true(self, mock_settings):
         mock_settings.MINIO = {"host": "minio:9000", "secure": True}
         from api.utils.health_utils import _minio_scheme_and_verify
+
         scheme, verify = _minio_scheme_and_verify()
         assert scheme == "https"
         assert verify is True
@@ -43,6 +46,7 @@ class TestMinioSchemeAndVerify:
     def test_scheme_https_when_secure_string_true(self, mock_settings):
         mock_settings.MINIO = {"host": "minio:9000", "secure": "true"}
         from api.utils.health_utils import _minio_scheme_and_verify
+
         scheme, verify = _minio_scheme_and_verify()
         assert scheme == "https"
 
@@ -50,6 +54,7 @@ class TestMinioSchemeAndVerify:
     def test_verify_false_for_self_signed(self, mock_settings):
         mock_settings.MINIO = {"host": "minio:9000", "secure": True, "verify": False}
         from api.utils.health_utils import _minio_scheme_and_verify
+
         scheme, verify = _minio_scheme_and_verify()
         assert scheme == "https"
         assert verify is False
@@ -58,6 +63,7 @@ class TestMinioSchemeAndVerify:
     def test_verify_string_false(self, mock_settings):
         mock_settings.MINIO = {"host": "minio:9000", "verify": "false"}
         from api.utils.health_utils import _minio_scheme_and_verify
+
         _, verify = _minio_scheme_and_verify()
         assert verify is False
 
@@ -65,6 +71,7 @@ class TestMinioSchemeAndVerify:
     def test_default_verify_true_when_key_missing(self, mock_settings):
         mock_settings.MINIO = {"host": "minio:9000"}
         from api.utils.health_utils import _minio_scheme_and_verify
+
         _, verify = _minio_scheme_and_verify()
         assert verify is True
 
@@ -80,6 +87,7 @@ class TestCheckMinioAlive:
         mock_response.status_code = 200
         mock_get.return_value = mock_response
         from api.utils.health_utils import check_minio_alive
+
         result = check_minio_alive()
         assert result["status"] == "alive"
         assert "elapsed" in result["message"]
@@ -96,6 +104,7 @@ class TestCheckMinioAlive:
         mock_response.status_code = 200
         mock_get.return_value = mock_response
         from api.utils.health_utils import check_minio_alive
+
         check_minio_alive()
         call_args = mock_get.call_args
         assert call_args[0][0] == "https://minio:9000/minio/health/live"
@@ -108,6 +117,7 @@ class TestCheckMinioAlive:
         mock_response.status_code = 200
         mock_get.return_value = mock_response
         from api.utils.health_utils import check_minio_alive
+
         check_minio_alive()
         call_args = mock_get.call_args
         assert call_args[1]["verify"] is False
@@ -120,6 +130,7 @@ class TestCheckMinioAlive:
         mock_response.status_code = 503
         mock_get.return_value = mock_response
         from api.utils.health_utils import check_minio_alive
+
         result = check_minio_alive()
         assert result["status"] == "timeout"
 
@@ -129,6 +140,7 @@ class TestCheckMinioAlive:
         mock_settings.MINIO = {"host": "minio:9000"}
         mock_get.side_effect = ConnectionError("Connection refused")
         from api.utils.health_utils import check_minio_alive
+
         result = check_minio_alive()
         assert result["status"] == "timeout"
         assert "error" in result["message"]
@@ -141,6 +153,7 @@ class TestCheckMinioAlive:
         mock_response.status_code = 200
         mock_get.return_value = mock_response
         from api.utils.health_utils import check_minio_alive
+
         check_minio_alive()
         call_args = mock_get.call_args
         assert call_args[1]["timeout"] == 10

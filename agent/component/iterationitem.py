@@ -21,6 +21,7 @@ class IterationItemParam(ComponentParamBase):
     """
     Define the IterationItem component parameters.
     """
+
     def check(self):
         return True
 
@@ -40,7 +41,7 @@ class IterationItem(ComponentBase, ABC):
         arr = self._canvas.get_variable_value(parent._param.items_ref)
         if not isinstance(arr, list):
             self._idx = -1
-            raise Exception(parent._param.items_ref + " must be an array, but its type is "+str(type(arr)))
+            raise Exception(parent._param.items_ref + " must be an array, but its type is " + str(type(arr)))
 
         if self._idx > 0:
             if self.check_if_canceled("IterationItem processing"):
