@@ -147,12 +147,12 @@ When debugging your chat assistant, you can use AI search as a reference to veri
 
 ---
 
-### Get a `Request error 404: undefined` when upgrading to v0.26.1
+### Get a `Request error 404: undefined` when upgrading to v0.26.3
 
 To resolve this issue, do either of the following:
 
-- Pull the latest source code from the [main branch](https://github.com/infiniflow/ragflow), then pull and start the v0.26.1 image.
-- Update `RAGFLOW_IMAGE` from `infiniflow/ragflow:latest` to `infiniflow/ragflow:v0.26.1` in the [.env file](https://github.com/infiniflow/ragflow/blob/main/docker/.env), then restart the service.
+- Pull the latest source code from the [main branch](https://github.com/infiniflow/ragflow), then pull and start the v0.26.3 image.
+- Update `RAGFLOW_IMAGE` from `infiniflow/ragflow:latest` to `infiniflow/ragflow:v0.26.3` in the [.env file](https://github.com/infiniflow/ragflow/blob/main/docker/.env), then restart the service.
 
 ### How to build the RAGFlow image from scratch?
 
@@ -258,6 +258,74 @@ You will not log in to RAGFlow unless the server is fully initialized. Run `dock
 Ignore this warning and continue. All system warnings can be ignored.
 
 ![](https://github.com/infiniflow/ragflow/assets/93570324/ef5a6194-084a-4fe3-bdd5-1c025b40865c)
+
+---
+
+### `xxx tasks are ahead in the queue`
+
+### For RAGFlow versions earlier than v0.26.0
+
+1. Clear the Redis task queue:
+
+```bash
+$ docker exec -it ragflow-redis /bin/bash
+# In container
+$ redis-cli -a infini_rag_flow
+# In redis-cli
+select 1
+XGROUP DESTROY rag_flow_svr_queue rag_flow_svr_task_broker
+XGROUP CREATE rag_flow_svr_queue rag_flow_svr_task_broker $ MKSTREAM
+# When CREATE raises and error:
+FLUSHDB
+```
+
+2. If the parser remains stuck at 0%, restart the RAGFlow containers using one of the following methods:
+
+```bash
+# Option 1: Restart specific container
+docekr restart docker-redis-1 docker-ragflow-cpu-1
+
+# Option 2: Recreate containers via Docker Compose
+docker compose -f docker/docker-compose.yml down
+docker compose -f docker/docker-compose.yml up -d
+
+# Option 3: Reset all Docker containers
+# WARNING: Run this ONLY if your environment contains no other non-RAGFlow containers.
+docker stop $(docker ps -aq)
+docker rm $(docker ps -aq)
+```
+
+### For RAGFlow v0.26.0 and later
+
+1. Clear the Redis task queue:
+
+```bash
+$ docker exec -it ragflow-redis /bin/bash
+# In container
+$ redis-cli -a infini_rag_flow
+# In redis-cli
+select 1
+XGROUP DESTROY te.0.common_queue te.0.common_task_broker
+XGROUP CREATE te.0.common_queue te.0.common_task_broker $ MKSTREAM
+# When CREATE raises and error:
+FLUSHDB
+```
+
+2. If the parser remains stuck at 0%, restart the RAGFlow containers using one of the following methods:
+
+```bash
+# Option 1: Restart specific container
+docekr restart docker-redis-1 docker-ragflow-cpu-1
+
+# Option 2: Recreate containers via Docker Compose
+docker compose -f docker/docker-compose.yml down
+docker compose -f docker/docker-compose.yml up -d
+
+# Option 3: Reset all Docker containers
+# WARNING: Run this ONLY if your environment contains no other non-RAGFlow containers.
+docker stop $(docker ps -aq)
+docker rm $(docker ps -aq)
+```
 
 ---
 

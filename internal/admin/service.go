@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"regexp"
@@ -975,7 +976,7 @@ func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{},
 	}
 
 	// 4. Save API token
-	if err := s.apiTokenDAO.Create(apiToken); err != nil {
+	if err = s.apiTokenDAO.Create(apiToken); err != nil {
 		return nil, fmt.Errorf("failed to generate API key: %w", err)
 	}
 
@@ -1023,7 +1024,7 @@ func (s *Service) DeleteUserAPIToken(username, key string) error {
 func (s *Service) ListServices() ([]map[string]interface{}, error) {
 	allConfigs := server.GetAllConfigs()
 
-	var result []map[string]interface{}
+	var results []map[string]interface{}
 	for _, configDict := range allConfigs {
 		serviceType := configDict["service_type"]
 		if serviceType != "ragflow_server" {
@@ -1038,19 +1039,18 @@ func (s *Service) ListServices() ([]map[string]interface{}, error) {
 			} else {
 				configDict["status"] = "timeout"
 			}
-			result = append(result, configDict)
+			if serviceDetail != nil {
+				results = append(results, configDict)
+			}
 		}
 	}
 
-	id := len(result)
 	serverList := GlobalServerStore.ListInfos()
 	now := time.Now()
 	for _, serverStatus := range serverList {
 		serverItem := make(map[string]interface{})
 		serverItem["name"] = serverStatus.ServerName
 		serverItem["service_type"] = serverStatus.ServerType
-		serverItem["id"] = id
-		id++
 		serverItem["host"] = serverStatus.Host
 		serverItem["port"] = serverStatus.Port
 		// the difference between now and serverStatus.Timestamp is less than 5 seconds, then the server is alive
@@ -1059,9 +1059,14 @@ func (s *Service) ListServices() ([]map[string]interface{}, error) {
 		} else {
 			serverItem["status"] = "timeout"
 		}
-		result = append(result, serverItem)
+		results = append(results, serverItem)
 	}
-	return result, nil
+
+	for id, result := range results {
+		result["id"] = id
+	}
+
+	return results, nil
 }
 
 // GetServicesByType get services by type
@@ -1079,7 +1084,20 @@ func (s *Service) GetServiceDetails(configDict map[string]interface{}) (map[stri
 	case "meta_data":
 		return s.getMySQLStatus(name)
 	case "message_queue":
-		return s.getRedisInfo(name)
+		switch name {
+		case "redis":
+			return s.getRedisInfo(name)
+		case "nats":
+			host := configDict["host"].(string)
+			port := configDict["port"].(int)
+			return s.checkNatsAlive(name, host, port)
+		default:
+			return map[string]interface{}{
+				"service_name": name,
+				"status":       "unknown",
+				"message":      "Service type not supported",
+			}, nil
+		}
 	case "retrieval":
 		// Check the extra.retrieval_type to determine which retrieval service
 		if extra, ok := configDict["extra"].(map[string]interface{}); ok {
@@ -1094,14 +1112,8 @@ func (s *Service) GetServiceDetails(configDict map[string]interface{}) (map[stri
 		return s.checkRAGFlowServerAlive(name)
 	case "file_store":
 		return s.checkMinioAlive(name)
-	case "task_executor":
-		return s.checkTaskExecutorAlive(name)
 	default:
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "unknown",
-			"message":      "Service type not supported",
-		}, nil
+		return nil, nil
 	}
 }
 
@@ -1404,6 +1416,18 @@ func (s *Service) checkTaskExecutorAlive(name string) (map[string]interface{}, e
 		"service_name": name,
 		"status":       "unknown",
 		"message":      "Task executor health check not implemented",
+	}, nil
+}
+
+// checkNatsAlive checks if NATS is alive
+func (s *Service) checkNatsAlive(name string, ip string, port int) (map[string]interface{}, error) {
+
+	msgQueueEngine := engine.GetMessageQueueEngine()
+	status := msgQueueEngine.CheckStatus()
+
+	return map[string]interface{}{
+		"service_name": name,
+		"status":       status,
 	}, nil
 }
 
@@ -1761,4 +1785,20 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	}
 
 	return dao.DB.Create(userTenant).Error
+}
+
+// ListAllModels list all models
+func (s *Service) ListAllModels(pageIndex, pageSize int) ([]map[string]interface{}, error) {
+	models, err := dao.GetModelProviderManager().ListAllModels()
+	if err != nil {
+		return nil, err
+	}
+	if pageSize > 0 && pageIndex >= 0 && pageIndex*pageSize < len(models) {
+		return models[pageIndex*pageSize : (pageIndex+1)*pageSize], nil
+	}
+	return models, nil
+}
+
+func (s *Service) GetModelByModelName(modelName string) (*modelModule.Model, error) {
+	return dao.GetModelProviderManager().GetModelByNameOrAlias(modelName), nil
 }

@@ -17,6 +17,7 @@
 import { Checkbox } from '@/components/ui/checkbox';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IProviderModelItem } from '@/interfaces/request/llm';
+import { Pencil } from 'lucide-react';
 import { useMemo } from 'react';
 
 interface UseListModelsOptionsParams {
@@ -25,29 +26,16 @@ interface UseListModelsOptionsParams {
   allSelected: boolean;
   handleSelectModel: (model: IProviderModelItem) => void;
   handleToggleAll: () => void;
+  onEditModel?: (model: IProviderModelItem) => void;
 }
 
-/**
- * Build ToggleList options from the fetched model list. The first item is
- * a sentinel "All models" row that toggles the full selection.
- *
- * Why the Checkbox uses `onClick` (not `onCheckedChange`):
- * Radix Checkbox calls `event.stopPropagation()` internally on its onClick
- * when the Checkbox lives inside a form, so the row's `onClick` (attached
- * by ToggleList) never fires when the user clicks the Checkbox itself.
- * To make the Checkbox click toggle selection, we handle it in our own
- * `onClick` and re-stop propagation to (a) prevent the row's onClick from
- * double-firing and (b) make Radix's CheckboxBubbleInput dispatch a
- * non-bubbling synthetic click on its hidden form input — without this,
- * the dispatched click would bubble back to the row and re-trigger the
- * toggle, causing "Maximum update depth exceeded".
- */
 export const useListModelsOptions = ({
   models,
   selectedModelItems,
   allSelected,
   handleSelectModel,
   handleToggleAll,
+  onEditModel,
 }: UseListModelsOptionsParams) => {
   const { t } = useTranslate('setting');
 
@@ -91,13 +79,29 @@ export const useListModelsOptions = ({
                   );
                 })}
             </div>
-            <Checkbox
-              checked={checked}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleSelectModel(m);
-              }}
-            />
+            <div className="flex items-center gap-1">
+              {onEditModel && (
+                <button
+                  type="button"
+                  aria-label="Edit model"
+                  title="Edit model"
+                  className="p-1 rounded hover:bg-bg-card text-text-secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditModel(m);
+                  }}
+                >
+                  <Pencil size={12} />
+                </button>
+              )}
+              <Checkbox
+                checked={checked}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSelectModel(m);
+                }}
+              />
+            </div>
           </div>
         ),
         onClick: () => handleSelectModel(m),
@@ -114,6 +118,7 @@ export const useListModelsOptions = ({
     handleSelectModel,
     allSelected,
     handleToggleAll,
+    onEditModel,
     t,
   ]);
 };

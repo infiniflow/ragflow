@@ -43,6 +43,7 @@ GRAPH_SCOPES = ["https://graph.microsoft.com/.default"]
 
 class TeamsCheckpoint(ConnectorCheckpoint):
     """Teams-specific checkpoint"""
+
     todo_team_ids: list[str] | None = None
 
 
@@ -84,9 +85,7 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
             token = app.acquire_token_for_client(scopes=GRAPH_SCOPES)
             if "access_token" not in token:
                 detail = token.get("error_description") or token.get("error") or token
-                raise ConnectorMissingCredentialError(
-                    f"Failed to acquire Microsoft Teams access token: {detail}"
-                )
+                raise ConnectorMissingCredentialError(f"Failed to acquire Microsoft Teams access token: {detail}")
             return token
 
         self.graph_client = GraphClient(_acquire_token)
@@ -104,9 +103,7 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
         except Exception as e:
             message = str(e)
             if "401" in message or "403" in message:
-                raise InsufficientPermissionsError(
-                    "Invalid credentials or insufficient permissions for Microsoft Teams"
-                )
+                raise InsufficientPermissionsError("Invalid credentials or insufficient permissions for Microsoft Teams")
             raise UnexpectedValidationError(f"Microsoft Teams validation error: {e}")
 
     # -- helpers -------------------------------------------------------------
@@ -172,9 +169,7 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
                 contents.append(text)
             if ctype == "html":
                 content_type = "html"
-            modified = self._parse_dt(self._prop(item, "lastModifiedDateTime")) or self._parse_dt(
-                self._prop(item, "createdDateTime")
-            )
+            modified = self._parse_dt(self._prop(item, "lastModifiedDateTime")) or self._parse_dt(self._prop(item, "createdDateTime"))
             if modified is not None and (latest is None or modified > latest):
                 latest = modified
 
@@ -232,9 +227,7 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
 
         for team_id, team_name, channel_id, channel_name, message in self._iter_channel_messages():
             try:
-                modified = self._parse_dt(self._prop(message, "lastModifiedDateTime")) or self._parse_dt(
-                    self._prop(message, "createdDateTime")
-                )
+                modified = self._parse_dt(self._prop(message, "lastModifiedDateTime")) or self._parse_dt(self._prop(message, "createdDateTime"))
                 if modified is not None:
                     ts = modified.timestamp()
                     # start is an exclusive lower bound; full reindex passes start=0.
@@ -242,9 +235,7 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
                         continue
 
                 replies = list(message.replies.get_all().execute_query())
-                yield self._message_to_document(
-                    message, replies, team_id, team_name, channel_id, channel_name
-                )
+                yield self._message_to_document(message, replies, team_id, team_name, channel_id, channel_name)
             except Exception as e:
                 logging.exception("Microsoft Teams failed to process message")
                 yield ConnectorFailure(

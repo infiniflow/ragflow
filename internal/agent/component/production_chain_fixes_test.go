@@ -34,7 +34,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
+	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 )
 
 type codeExecSandboxRecorder struct {
@@ -187,6 +193,203 @@ func TestRetrieval_KbIDsTranslatedToDatasetIDs(t *testing.T) {
 	ds3, ok := merged3["dataset_ids"].([]any)
 	if !ok || len(ds3) != 1 || ds3[0] != "kb-new" {
 		t.Errorf("dataset_ids should keep call-time value %v, got %v", "kb-new", merged3["dataset_ids"])
+	}
+}
+
+func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to unwrap sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatalf("failed to migrate knowledgebase: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+		t.Fatalf("failed to migrate user_tenant: %v", err)
+	}
+	origDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = origDB })
+	activeStatus := "1"
+	if err := db.Create(&entity.UserTenant{
+		ID:        "ut-1",
+		UserID:    "user-1",
+		TenantID:  "tenant-1",
+		Role:      "owner",
+		InvitedBy: "user-1",
+		Status:    &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed user_tenant: %v", err)
+	}
+
+	if err := db.Create(&entity.Knowledgebase{
+		ID:         "kb-da1",
+		Name:       "da1",
+		TenantID:   "tenant-1",
+		EmbdID:     "BAAI/bge-m3@yy2@SILICONFLOW",
+		Permission: "me",
+		CreatedBy:  "user-1",
+		Status:     func() *string { s := string(entity.StatusValid); return &s }(),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed kb: %v", err)
+	}
+
+	c, err := newRetrievalComponent(nil)
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+	rc := c.(*retrievalComponent)
+	merged := rc.applyDefaults(map[string]any{
+		"query": "UserFillUp:   da1\nInput diamond necklace\n",
+	})
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["user_id"] = "user-1"
+	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), merged)
+
+	if got, _ := merged["query"].(string); got != "diamond necklace" {
+		t.Fatalf("query = %q, want diamond necklace", got)
+	}
+	ds, ok := merged["dataset_ids"].([]string)
+	if !ok || len(ds) != 1 || ds[0] != "kb-da1" {
+		t.Fatalf("dataset_ids = %#v, want []string{\"kb-da1\"}", merged["dataset_ids"])
+	}
+}
+
+func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to unwrap sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("failed to migrate tables: %v", err)
+	}
+	origDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = origDB })
+
+	activeStatus := "1"
+	if err := db.Create(&entity.UserTenant{
+		ID:        "ut-1",
+		UserID:    "user-1",
+		TenantID:  "tenant-1",
+		Role:      "owner",
+		InvitedBy: "user-1",
+		Status:    &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed user_tenant: %v", err)
+	}
+	if err := db.Create(&entity.Knowledgebase{
+		ID:         "kb-da1",
+		Name:       "da1",
+		TenantID:   "tenant-1",
+		EmbdID:     "BAAI/bge-m3@yy2@SILICONFLOW",
+		Permission: "me",
+		CreatedBy:  "user-1",
+		Status:     func() *string { s := string(entity.StatusValid); return &s }(),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed kb: %v", err)
+	}
+
+	c, err := newRetrievalComponent(nil)
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+	rc := c.(*retrievalComponent)
+	merged := rc.applyDefaults(map[string]any{
+		"state": map[string]any{
+			"UserFillUp:KBInput": map[string]any{
+				"kb":    "da1",
+				"query": "合同",
+			},
+		},
+	})
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["user_id"] = "user-1"
+	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), merged)
+
+	if got, _ := merged["query"].(string); got != "合同" {
+		t.Fatalf("query = %q, want 合同", got)
+	}
+	ds, ok := merged["dataset_ids"].([]string)
+	if !ok || len(ds) != 1 || ds[0] != "kb-da1" {
+		t.Fatalf("dataset_ids = %#v, want []string{\"kb-da1\"}", merged["dataset_ids"])
+	}
+}
+
+func TestRetrieval_ResolveDatasetIDByTenantName(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to unwrap sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatalf("failed to migrate knowledgebase: %v", err)
+	}
+	origDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = origDB })
+
+	if err := db.Create(&entity.Knowledgebase{
+		ID:         "kb-da1",
+		Name:       "da1",
+		TenantID:   "tenant-1",
+		EmbdID:     "BAAI/bge-m3@yy2@SILICONFLOW",
+		Permission: "me",
+		CreatedBy:  "user-1",
+		Status:     func() *string { s := string(entity.StatusValid); return &s }(),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed kb: %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(context.Background(), state)
+
+	if got := resolveRetrievalDatasetID(ctx, "da1"); got != "kb-da1" {
+		t.Fatalf("resolveRetrievalDatasetID = %q, want kb-da1", got)
+	}
+}
+
+func TestRetrieval_StructuredInputPreservesQueryWhenDatasetIDsAlreadyPresent(t *testing.T) {
+	c, err := newRetrievalComponent(nil)
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+	rc := c.(*retrievalComponent)
+	merged := rc.applyDefaults(map[string]any{
+		"dataset_ids": []string{"kb-fixed"},
+		"state": map[string]any{
+			"UserFillUp:KBInput": map[string]any{
+				"kb":    "da1",
+				"query": "合同",
+			},
+		},
+	})
+
+	consumed := normalizeStructuredRetrievalInputs(context.Background(), merged)
+	if !consumed {
+		t.Fatal("normalizeStructuredRetrievalInputs should consume structured query")
+	}
+	if got, _ := merged["query"].(string); got != "合同" {
+		t.Fatalf("query = %q, want 合同", got)
+	}
+	ds, ok := merged["dataset_ids"].([]string)
+	if !ok || len(ds) != 1 || ds[0] != "kb-fixed" {
+		t.Fatalf("dataset_ids = %#v, want []string{\"kb-fixed\"}", merged["dataset_ids"])
 	}
 }
 

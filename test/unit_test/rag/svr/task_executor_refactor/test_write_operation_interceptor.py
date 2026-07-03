@@ -54,7 +54,7 @@ class TestAllowedMethodNames:
             "PipelineOperationLogService.create",
             "delete_raptor_chunks",
             "docStoreConn.insert",
-            "docStoreConn.delete"
+            "docStoreConn.delete",
         }
         assert ALLOWED_METHOD_NAMES == expected_methods
 
@@ -151,18 +151,21 @@ class TestWriteOperationInterceptorIntercept:
         result = interceptor.intercept("KnowledgebaseService.update_by_id", default_value=999)
         assert result == 100
 
-    @pytest.mark.parametrize("default_value", [
-        "default_string",
-        {"status": "success", "data": [1, 2, 3]},
-        [1, 2, 3, 4, 5],
-        (1, "two", 3.0),
-        True,
-        False,
-        0,
-        "",
-        [],
-        {},
-    ])
+    @pytest.mark.parametrize(
+        "default_value",
+        [
+            "default_string",
+            {"status": "success", "data": [1, 2, 3]},
+            [1, 2, 3, 4, 5],
+            (1, "two", 3.0),
+            True,
+            False,
+            0,
+            "",
+            [],
+            {},
+        ],
+    )
     def test_intercept_with_various_default_values(self, valid_recorded_values, default_value):
         """Test that intercept returns various default_value types when list is empty."""
         interceptor = WriteOperationInterceptor(valid_recorded_values)
@@ -176,6 +179,7 @@ class TestWriteOperationInterceptorIntercept:
         interceptor = WriteOperationInterceptor(valid_recorded_values)
         result = interceptor.intercept("DocMetadataService.update_document_metadata")
         assert result == complex_value
+
 
 class TestWriteOperationInterceptorRemainingCount:
     """Tests for WriteOperationInterceptor.remaining_count."""

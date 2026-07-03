@@ -1,3 +1,5 @@
+//go:build cgo && office
+
 //
 // Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -38,7 +40,6 @@ func NewXLSXParser(libType string) (*XLSXParser, error) {
 }
 
 func (p *XLSXParser) Parse(filename string, data []byte) error {
-	fmt.Printf("Parsing XLSX file: %s\n", filename)
 	switch p.libType {
 	case OfficeOxide:
 		return p.OfficeOxideParse(data)

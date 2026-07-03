@@ -31,6 +31,7 @@ type Factory func(params map[string]any) (einotool.BaseTool, error)
 var registry = map[string]Factory{
 	"akshare":           noConfig("akshare", func() einotool.BaseTool { return NewAkShareTool() }),
 	"arxiv":             noConfig("arxiv", func() einotool.BaseTool { return NewArxivTool() }),
+	"bgpt":              noConfig("bgpt", func() einotool.BaseTool { return NewBGPTTool() }),
 	"code_exec":         noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
 	"crawler":           noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
 	"deepl":             noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
@@ -42,6 +43,7 @@ var registry = map[string]Factory{
 	"google":            noConfig("google", func() einotool.BaseTool { return NewGoogleTool() }),
 	"google_scholar":    noConfig("google_scholar", func() einotool.BaseTool { return NewGoogleScholarTool() }),
 	"jin10":             noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
+	"keenable":          buildKeenableTool,
 	"pubmed":            noConfig("pubmed", func() einotool.BaseTool { return NewPubMedTool() }),
 	"qweather":          noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
 	"retrieval":         noConfig("retrieval", func() einotool.BaseTool { return NewRetrievalTool() }),
@@ -110,6 +112,22 @@ func buildExeSQLTool(params map[string]any) (einotool.BaseTool, error) {
 		return nil, err
 	}
 	return NewExeSQLTool(conn), nil
+}
+
+func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
+	if len(params) == 0 {
+		return NewKeenableTool(), nil
+	}
+	for key := range params {
+		if key != "api_key" {
+			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param api_key", "keenable")
+		}
+	}
+	apiKey, ok := params["api_key"].(string)
+	if !ok || strings.TrimSpace(apiKey) == "" {
+		return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param api_key", "keenable")
+	}
+	return NewKeenableToolWithAPIKey(nil, apiKey), nil
 }
 
 func decodeExeSQLConnParams(params map[string]any) (exesqlConnParams, error) {

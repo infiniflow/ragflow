@@ -24,13 +24,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 )
@@ -58,18 +58,23 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 	if mappingFileName == "" {
 		mappingFileName = "infinity_mapping.json"
 	}
-	confPath := filepath.Join(projectBaseDir(), "conf", mappingFileName)
-	data, err := os.ReadFile(confPath)
+
+	filePath, err := utility.FindConfFileInProject(mappingFileName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	data, err := os.ReadFile(*filePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return map[string]string{}, map[string]string{}, nil
 		}
-		return nil, nil, fmt.Errorf("load field mapping %q: %w", confPath, err)
+		return nil, nil, fmt.Errorf("load field mapping %q: %w", *filePath, err)
 	}
 
 	fields := map[string]fieldMappingEntry{}
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return nil, nil, fmt.Errorf("parse field mapping %q: %w", confPath, err)
+	if err = json.Unmarshal(data, &fields); err != nil {
+		return nil, nil, fmt.Errorf("parse field mapping %q: %w", *filePath, err)
 	}
 
 	aliasToActual = make(map[string]string, len(fields)*2)
@@ -94,24 +99,6 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 		}
 	}
 	return aliasToActual, actualToFirstAlias, nil
-}
-
-// projectBaseDir returns the project root. Honors RAG_PROJECT_BASE and
-// RAG_DEPLOY_BASE env vars; falls back to working directory.
-func projectBaseDir() string {
-	if v := os.Getenv("RAG_PROJECT_BASE"); v != "" {
-		return v
-	}
-	if v := os.Getenv("RAG_DEPLOY_BASE"); v != "" {
-		return v
-	}
-	// Fall back to the repository root. The Go engine package lives at
-	// internal/engine/infinity/; the repo root is three levels up.
-	wd, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	return wd
 }
 
 // preprocessSQL collapses spaces/backticks and strips '%'.

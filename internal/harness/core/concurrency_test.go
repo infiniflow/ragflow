@@ -353,11 +353,9 @@ func TestCancel_ConcurrentTrigger(t *testing.T) {
 	// Trigger cancel from multiple goroutines
 	var wg sync.WaitGroup
 	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			cancelFunc(WithCancelMode(CancelImmediate))
-		}()
+		})
 	}
 	wg.Wait()
 

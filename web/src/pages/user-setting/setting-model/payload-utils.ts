@@ -42,6 +42,17 @@ export const MODEL_EXTRA_KEYS = new Set([
   'vision',
   'provider_order',
   'api_version',
+  'somark_image_format',
+  'somark_formula_format',
+  'somark_table_format',
+  'somark_cs_format',
+  'somark_enable_text_cross_page',
+  'somark_enable_table_cross_page',
+  'somark_enable_title_level_recognition',
+  'somark_enable_inline_image',
+  'somark_enable_table_image',
+  'somark_enable_image_understanding',
+  'somark_keep_header_footer',
 ]);
 
 export const MODEL_FIELD_NAMES = new Set<string>([

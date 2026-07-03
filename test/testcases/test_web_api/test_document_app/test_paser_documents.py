@@ -319,8 +319,7 @@ class TestDocumentsParseStop:
             return True
 
         kb_id, document_ids = add_documents_func
-        parse_documents(WebApiAuth, {"doc_ids": document_ids, "run":
-            "1"})
+        parse_documents(WebApiAuth, {"doc_ids": document_ids, "run": "1"})
 
         if callable(payload):
             payload = payload(document_ids)

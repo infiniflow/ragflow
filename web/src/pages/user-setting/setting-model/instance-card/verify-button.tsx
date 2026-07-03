@@ -29,6 +29,10 @@ interface IVerifyButton {
   isAbsolute?: boolean;
   params?: any;
   className?: string;
+  /** Override the success label shown next to the button. Defaults to t('keyValid'). */
+  validLabel?: string;
+  /** Override the failure label shown next to the button. Defaults to t('keyInvalid'). */
+  invalidLabel?: string;
   verifyCallback?: (result: VerifyResult | null) => void;
   /**
    * Optional ref to a form-like object exposing `trigger()` and
@@ -46,6 +50,8 @@ const VerifyButton: React.FC<IVerifyButton> = ({
   isAbsolute = true,
   params,
   className,
+  validLabel,
+  invalidLabel,
   verifyCallback,
   formRef,
 }) => {
@@ -144,7 +150,9 @@ const VerifyButton: React.FC<IVerifyButton> = ({
             }`}
           >
             <span>
-              {verifyResult.isValid ? t('keyValid') : t('keyInvalid')}
+              {verifyResult.isValid
+                ? (validLabel ?? t('keyValid'))
+                : (invalidLabel ?? t('keyInvalid'))}
             </span>
           </div>
         )}

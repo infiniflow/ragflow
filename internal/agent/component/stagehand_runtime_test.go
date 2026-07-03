@@ -191,12 +191,10 @@ func TestStagehandRuntime_Cache_ConcurrentSameKey_NoDuplicateBuild(t *testing.T)
 	var wg sync.WaitGroup
 	var calls atomic.Int32
 	for i := 0; i < N; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, _ = r.clientFor(req)
 			calls.Add(1)
-		}()
+		})
 	}
 	wg.Wait()
 	if calls.Load() != N {
@@ -217,15 +215,13 @@ func TestStagehandRuntime_Cache_ConcurrentDifferentKeys(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < N; i++ {
 		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, _ = r.clientFor(RunTaskRequest{
 				ModelName: "openai/gpt-4o",
 				BaseURL:   "https://api.openai.com/v1",
 				APIKey:    "sk-" + string(rune('a'+i%26)) + string(rune('A'+(i/26)%26)),
 			})
-		}()
+		})
 	}
 	wg.Wait()
 	// 32 goroutines, but the apiKey pattern has 26*2 = 52 unique

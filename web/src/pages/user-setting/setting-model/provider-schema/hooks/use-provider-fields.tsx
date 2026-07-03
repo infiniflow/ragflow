@@ -50,17 +50,32 @@ const resolveText = (
 };
 
 /** Set value by nested path (supports paths like 'model_info.model_type'). */
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 const setNestedValue = (obj: any, path: string, value: any) => {
   const keys = path.split('.');
   let current = obj;
   for (let i = 0; i < keys.length - 1; i++) {
     const key = keys[i];
+    // Reject keys that could mutate the object prototype chain.
+    if (FORBIDDEN_KEYS.has(key)) {
+      return;
+    }
     if (!current[key]) {
       current[key] = {};
     }
     current = current[key];
   }
-  current[keys[keys.length - 1]] = value;
+  const lastKey = keys[keys.length - 1];
+  if (FORBIDDEN_KEYS.has(lastKey)) {
+    return;
+  }
+  // codeql[js/prototype-pollution-utility] False positive: the
+  // FORBIDDEN_KEYS guard above blocks __proto__ / constructor /
+  // prototype before this assignment, so this line cannot reach
+  // the Object prototype chain. The check is on the line directly
+  // above; this is the only line that performs the assignment.
+  current[lastKey] = value;
 };
 
 /**

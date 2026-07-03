@@ -70,10 +70,10 @@ def stable_largest_connected_component(graph: nx.Graph) -> nx.Graph:
 
 
 def _compute_leiden_communities(
-        graph: nx.Graph | nx.DiGraph,
-        max_cluster_size: int,
-        use_lcc: bool,
-        seed=0xDEADBEEF,
+    graph: nx.Graph | nx.DiGraph,
+    max_cluster_size: int,
+    use_lcc: bool,
+    seed=0xDEADBEEF,
 ) -> dict[int, dict[str, int]]:
     """Return Leiden root communities."""
     results: dict[int, dict[str, int]] = {}
@@ -82,9 +82,7 @@ def _compute_leiden_communities(
     if use_lcc:
         graph = stable_largest_connected_component(graph)
 
-    community_mapping = hierarchical_leiden(
-        graph, max_cluster_size=max_cluster_size, random_seed=seed
-    )
+    community_mapping = hierarchical_leiden(graph, max_cluster_size=max_cluster_size, random_seed=seed)
     for partition in community_mapping:
         results[partition.level] = results.get(partition.level, {})
         results[partition.level][partition.node] = partition.cluster
@@ -97,9 +95,7 @@ def run(graph: nx.Graph, args: dict[str, Any]) -> dict[int, dict[str, dict]]:
     max_cluster_size = args.get("max_cluster_size", 12)
     use_lcc = args.get("use_lcc", True)
     if args.get("verbose", False):
-        logging.debug(
-            "Running leiden with max_cluster_size=%s, lcc=%s", max_cluster_size, use_lcc
-        )
+        logging.debug("Running leiden with max_cluster_size=%s, lcc=%s", max_cluster_size, use_lcc)
     nodes = set(graph.nodes())
     if not nodes:
         return {}

@@ -44,16 +44,7 @@ func (c *CLI) PingAdmin(cmd *Command) (ResponseIf, error) {
 		return nil, err
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to ping: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "ping admin")
 }
 
 // AdminShowVersionCommand show RAGFlow admin version
@@ -63,20 +54,7 @@ func (c *CLI) AdminShowVersionCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to show admin version: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show admin version: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show admin version failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("show admin version"))
 }
 
 // AdminListResourcesCommand to list resources command (admin mode only)
@@ -90,21 +68,7 @@ func (c *CLI) AdminListResourcesCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list resources: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list resources: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list resources failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("list resources"))
 }
 
 // AdminListRolesCommand to list roles command (admin mode only)
@@ -163,21 +127,7 @@ func (c *CLI) AdminListProvidersCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list providers: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list providers failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list providers")
 }
 
 // AdminCreateRoleCommand creates a new role (admin mode only)
@@ -204,21 +154,7 @@ func (c *CLI) AdminCreateRoleCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to create role: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("create role failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("create role"))
 }
 
 // AdminDropRoleCommand deletes the role (admin mode only)
@@ -237,21 +173,7 @@ func (c *CLI) AdminDropRoleCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to drop role: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop role failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("drop role"))
 }
 
 // AdminAlterRole alters the role rights (admin mode only)
@@ -278,21 +200,7 @@ func (c *CLI) AdminAlterRole(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to alter role: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to alter role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("alter role failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("alter role"))
 }
 
 // AdminGrantUserAdminCommand grants admin privileges to a user (admin mode only)
@@ -314,21 +222,7 @@ func (c *CLI) AdminGrantUserAdminCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to grant admin: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to grant admin: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("grant admin failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "grant admin")
 }
 
 // AdminRevokeUserAdminCommand revokes admin privileges from a user (admin mode only)
@@ -350,21 +244,7 @@ func (c *CLI) AdminRevokeUserAdminCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to revoke admin: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to revoke admin: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("revoke admin failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "revoke admin")
 }
 
 // AdminGrantRolePermissionCommand grants permission to role (admin mode only)
@@ -400,20 +280,7 @@ func (c *CLI) AdminGrantRolePermissionCommand(cmd *Command) (ResponseIf, error) 
 		return nil, fmt.Errorf("failed to grant permission to role: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to grant permission to role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("grant permission to role failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("grant permission to role"))
 }
 
 // AdminRevokeRolePermissionCommand revokes permission from role (admin mode only)
@@ -449,21 +316,7 @@ func (c *CLI) AdminRevokeRolePermissionCommand(cmd *Command) (ResponseIf, error)
 		return nil, fmt.Errorf("failed to revoke permission from role: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to revoke permission from role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("revoke permission from role failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("revoke permission from role"))
 }
 
 // AdminShowRolePermissionCommand shows admin privileges from a user (admin mode only)
@@ -484,21 +337,7 @@ func (c *CLI) AdminShowRolePermissionCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to show role permission: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show role permission: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show role permission failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("show role permission"))
 }
 
 // AdminCreateUserCommand creates a new user (admin mode only)
@@ -539,21 +378,7 @@ func (c *CLI) AdminCreateUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("create user failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "create user")
 }
 
 // AdminCreateUserAPIKeyCommand creates a new user API key (admin mode only)
@@ -630,21 +455,7 @@ func (c *CLI) AdminActivateUser(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to update user status: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to update user status: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("update user status failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "update user status")
 }
 
 // AdminAlterUserPassword changes a user's password (admin mode only)
@@ -686,21 +497,7 @@ func (c *CLI) AdminAlterUserPassword(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to change user password: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to change user password: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("change user password failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "change user password")
 }
 
 type listServicesResponse struct {
@@ -720,21 +517,7 @@ func (c *CLI) AdminListServicesCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list services: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list services: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list services failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list services")
 }
 
 // AdminStartServiceCommand starts a service (admin mode only)
@@ -752,21 +535,7 @@ func (c *CLI) AdminStartServiceCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to start service: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to start service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("start service failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "start service")
 }
 
 // AdminRestartServiceCommand restarts a service (admin mode only)
@@ -784,21 +553,7 @@ func (c *CLI) AdminRestartServiceCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to restart service: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to restart service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("restart service failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "restart service")
 }
 
 // AdminShutdownServiceCommand shuts down a service (admin mode only)
@@ -816,21 +571,7 @@ func (c *CLI) AdminShutdownServiceCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to shutdown service: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to shutdown service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("shutdown service failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "shutdown service")
 }
 
 // AdminShowService show service (admin mode only)
@@ -848,21 +589,7 @@ func (c *CLI) AdminShowService(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to show service: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show service failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "show service")
 }
 
 func normalizeVariableRows(rows []map[string]interface{}) {
@@ -944,24 +671,10 @@ func (c *CLI) AdminListEnvironmentsCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.AdminServerClient.Request("GET", "/admin/environments", "admin", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list configs: %w", err)
+		return nil, fmt.Errorf("failed to list environments: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list configs: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list configs failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list environments")
 }
 
 // AdminShowVariable shows system variables by exact name or name prefix (admin mode only).
@@ -975,9 +688,11 @@ func (c *CLI) AdminShowVariable(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("var_name not provided")
 	}
 
-	payload := map[string]interface{}{"var_name": varName}
+	encodedVarName := common.EncodeToBase64(varName)
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/variables", "admin", nil, payload)
+	endPoint := fmt.Sprintf("/admin/variables/%s", encodedVarName)
+
+	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show variable: %w", err)
 	}
@@ -1018,20 +733,7 @@ func (c *CLI) AdminSetLicenseCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to set license: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to set license: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("set license failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "set license")
 }
 
 func (c *CLI) AdminSetLicenseConfigCommand(cmd *Command) (ResponseIf, error) {
@@ -1057,20 +759,7 @@ func (c *CLI) AdminSetLicenseConfigCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to set license config: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to set license config: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("set license config failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "set license config")
 }
 
 // AdminSetVariableCommand updates a system variable (admin mode only).
@@ -1154,21 +843,7 @@ func (c *CLI) AdminSetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error)
 		return nil, fmt.Errorf("failed to set role default models: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to set role default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("set role default models failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "set role default models")
 }
 
 // AdminSetLogLevelCommand set log level (admin mode only).
@@ -1191,17 +866,7 @@ func (c *CLI) AdminSetLogLevelCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to change log level: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to register user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("change log level failed: invalid JSON (%w)", err)
-	}
-	result.Code = 0
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "change log level")
 }
 
 // AdminResetRoleDefaultModelsCommand reset role default models (admin mode only).
@@ -1231,21 +896,7 @@ func (c *CLI) AdminResetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, erro
 		return nil, fmt.Errorf("failed to reset role default models: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to reset role default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("reset role default models failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "reset role default models")
 }
 
 // AdminDropUserCommand deletes a user (admin mode only)
@@ -1267,21 +918,7 @@ func (c *CLI) AdminDropUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to drop user: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop user failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleSimpleResponse(resp, "drop user")
 }
 
 // AdminDropUserAPIKeyCommand drops an API key for a user (admin mode only)
@@ -1308,21 +945,7 @@ func (c *CLI) AdminDropUserAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to drop API key: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop API key: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop API key failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "drop API key")
 }
 
 // ListUserDatasets lists datasets for a specific user (admin mode)
@@ -1431,24 +1054,10 @@ func (c *CLI) ListAdminTasks(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.AdminServerClient.Request("GET", "/admin/tasks", "admin", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop token: %w", err)
+		return nil, fmt.Errorf("failed to list tasks: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop token failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list tasks")
 }
 
 func (c *CLI) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
@@ -1460,21 +1069,7 @@ func (c *CLI) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list ingestors: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list ingestors: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list ingestors failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list ingestors")
 }
 
 func (c *CLI) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error) {
@@ -1487,21 +1082,7 @@ func (c *CLI) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list admin tasks: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list admin tasks: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list admin tasks failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list admin tasks")
 }
 
 func (c *CLI) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
@@ -1519,24 +1100,10 @@ func (c *CLI) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.AdminServerClient.Request("PUT", "/admin/ingestion/tasks", "admin", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to ingest file: %w", err)
+		return nil, fmt.Errorf("failed to stop ingestion: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "stop ingestion")
 }
 
 func (c *CLI) AdminRemoveIngestionCommand(cmd *Command) (ResponseIf, error) {
@@ -1554,24 +1121,10 @@ func (c *CLI) AdminRemoveIngestionCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.AdminServerClient.Request("DELETE", "/admin/ingestion/tasks", "admin", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to ingest file: %w", err)
+		return nil, fmt.Errorf("failed to remove ingestion: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "remove ingestion")
 }
 
 func (c *CLI) AdminShutdownIngestor(cmd *Command) (ResponseIf, error) {
@@ -1592,21 +1145,7 @@ func (c *CLI) AdminShutdownIngestor(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to shutdown ingestor: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to shutdown ingestor: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("shutdown ingestor failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "shutdown ingestor")
 }
 
 func (c *CLI) UserListMessageQueueCommand(cmd *Command) (ResponseIf, error) {
@@ -1624,24 +1163,10 @@ func (c *CLI) UserListMessageQueueCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.AdminServerClient.Request("GET", "/admin/queue/messages", "admin", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list tasks in message queue: %w", err)
+		return nil, fmt.Errorf("failed to list message queue: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list tasks in message queue: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list tasks in message queue failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "list message queue")
 }
 
 func (c *CLI) UserPublishMessageCommand(cmd *Command) (ResponseIf, error) {
@@ -1703,21 +1228,7 @@ func (c *CLI) UserPullMessageCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to pull message: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to pull message: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("pull message failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "pull message")
 }
 
 func (c *CLI) UserShowMessageQueueCommand(cmd *Command) (ResponseIf, error) {
@@ -1730,21 +1241,7 @@ func (c *CLI) UserShowMessageQueueCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to show message queue: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show message queue: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show message queue failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "show message queue")
 }
 
 // AdminCheckLicenseCommand check license command (admin mode only)
@@ -1760,21 +1257,7 @@ func (c *CLI) AdminCheckLicenseCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to check license: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to check license: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("check license failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "check license")
 }
 
 // AdminShowFingerprintCommand show fingerprint command (admin mode only)
@@ -1790,21 +1273,7 @@ func (c *CLI) AdminShowFingerprintCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to show fingerprint: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show fingerprint: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show fingerprint failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "show fingerprint")
 }
 
 // AdminShowLicenseCommand show license command (admin mode only)
@@ -1820,21 +1289,7 @@ func (c *CLI) AdminShowLicenseCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to show license: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show license: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show license failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "show license")
 }
 
 // AdminShowUserCommand show user command (admin mode only)
@@ -1856,21 +1311,7 @@ func (c *CLI) AdminShowUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to show user: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show user failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "show user")
 }
 
 // AdminShowRoleCommand show role command (admin mode only)
@@ -1888,21 +1329,7 @@ func (c *CLI) AdminShowRoleCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to show role: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show role failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "show role")
 }
 
 // AdminShowRoleDefaultModelsCommand show role default models command (admin mode only)
@@ -1920,21 +1347,7 @@ func (c *CLI) AdminShowRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error
 		return nil, fmt.Errorf("failed to show role default models: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show role default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show role default models failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, "show role default models")
 }
 
 func (c *CLI) AdminShowUserActivityCommand(cmd *Command) (ResponseIf, error) {
@@ -1966,21 +1379,7 @@ func (c *CLI) AdminShowUserActivityCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get user activity: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get user activity: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get user activity failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "get user activity")
 }
 
 func (c *CLI) AdminShowUserSummaryCommand(cmd *Command) (ResponseIf, error) {
@@ -2046,21 +1445,7 @@ func (c *CLI) AdminShowUserDatasetCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get user dataset: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get user dataset: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get user dataset failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "get user dataset")
 }
 
 func (c *CLI) AdminShowUserStorageCommand(cmd *Command) (ResponseIf, error) {
@@ -2190,21 +1575,7 @@ func (c *CLI) AdminShowUserPermissionCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get user permission: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get user permission: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get user permission failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "get user permission")
 }
 
 func (c *CLI) AdminShowUsersSummaryCommand(cmd *Command) (ResponseIf, error) {
@@ -2264,21 +1635,23 @@ func (c *CLI) AdminShowUsersActivityCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get users activity: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get users activity: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	return HandleCommonDataResponse(resp, "get users activity")
+}
+
+func (c *CLI) AdminShowUsersPlanCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get users activity failed: invalid JSON (%w)", err)
+	apiURL := "/admin/users/plan/summary"
+
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get users activity: %w", err)
 	}
 
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "get users plan")
 }
 
 // ListUsers lists all users (admin mode only)
@@ -2405,16 +1778,16 @@ func (c *CLI) AdminShowDataSummaryCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get users summary: %w", err)
+		return nil, fmt.Errorf("failed to get data summary: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get users summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to get data summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get users summary failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("get data summary failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -2442,7 +1815,7 @@ func (c *CLI) AdminShowDataOrphanCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get orphan data: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get orphan data failed: invalid JSON (%w)", err)
 	}
@@ -2472,7 +1845,7 @@ func (c *CLI) AdminShowDataStorageCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get data storage: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get data storage failed: invalid JSON (%w)", err)
 	}
@@ -2502,7 +1875,7 @@ func (c *CLI) AdminShowDataIndexCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get data index: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get data index failed: invalid JSON (%w)", err)
 	}
@@ -2532,7 +1905,7 @@ func (c *CLI) AdminShowQuotaSummaryCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get users quota summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result QuotaSummaryResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get users quota summary failed: invalid JSON (%w)", err)
 	}
@@ -2555,16 +1928,16 @@ func (c *CLI) AdminShowTasksSummaryCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get users quota summary: %w", err)
+		return nil, fmt.Errorf("failed to get tasks summary: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get users quota summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to get tasks summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get users quota summary failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("get tasks summary failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -2597,21 +1970,7 @@ func (c *CLI) AdminPurgeOrphanCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to purge orphan data: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to purge orphan data: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("purge orphan data failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "purge orphan data")
 }
 
 func (c *CLI) AdminPurgeUserCommand(cmd *Command) (ResponseIf, error) {
@@ -2641,21 +2000,7 @@ func (c *CLI) AdminPurgeUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to purge user %s: %w", userName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to purge user %s: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("purge user %s failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("purge user %s", userName))
 }
 
 func (c *CLI) AdminPurgeUsersCommand(cmd *Command) (ResponseIf, error) {
@@ -2706,21 +2051,7 @@ func (c *CLI) AdminPurgeUsersCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to purge users data: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to purge users data: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("purge users data failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, "purge users data")
 }
 
 func (c *CLI) AdminListUserIngestionTasksCommand(cmd *Command) (ResponseIf, error) {
@@ -2754,7 +2085,7 @@ func (c *CLI) AdminListUserIngestionTasksCommand(cmd *Command) (ResponseIf, erro
 		return nil, fmt.Errorf("failed to list user %s ingestion tasks: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
+	var result OrderedCommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list user %s ingestion tasks failed: invalid JSON (%w)", userName, err)
 	}
@@ -2786,21 +2117,7 @@ func (c *CLI) AdminListUserDatasetsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list user %s datasets: %w", userName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list user %s datasets: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list user %s datasets failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, fmt.Sprintf("list user %s datasets", userName))
 }
 func (c *CLI) AdminListUserAgentsCommand(cmd *Command) (ResponseIf, error) {
 
@@ -2821,21 +2138,7 @@ func (c *CLI) AdminListUserAgentsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list user %s agents: %w", userName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list user %s agents: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list user %s agents failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, fmt.Sprintf("list user %s agents", userName))
 }
 func (c *CLI) AdminListUserChatsCommand(cmd *Command) (ResponseIf, error) {
 
@@ -2856,22 +2159,9 @@ func (c *CLI) AdminListUserChatsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list user %s chats: %w", userName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list user %s chats: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list user %s chats failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, fmt.Sprintf("list user %s chats", userName))
 }
+
 func (c *CLI) AdminListUserSearchesCommand(cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -2891,22 +2181,9 @@ func (c *CLI) AdminListUserSearchesCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list user %s searches: %w", userName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list user %s searches: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list user %s searches failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, fmt.Sprintf("list user %s searches", userName))
 }
+
 func (c *CLI) AdminListUserModelsCommand(cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -2926,22 +2203,9 @@ func (c *CLI) AdminListUserModelsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list user %s models: %w", userName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list user %s models: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list user %s models failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, fmt.Sprintf("list user %s models", userName))
 }
+
 func (c *CLI) AdminListUserFilesCommand(cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -2961,21 +2225,7 @@ func (c *CLI) AdminListUserFilesCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list user %s files: %w", userName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list user %s files: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list user %s files failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, fmt.Sprintf("list user %s files", userName))
 }
 
 func (c *CLI) AdminListUserKeysCommand(cmd *Command) (ResponseIf, error) {
@@ -3042,21 +2292,7 @@ func (c *CLI) AdminListUserProvidersCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list user %s providers: %w", userName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list user %s providers: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list user %s providers failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, fmt.Sprintf("list user %s providers", userName))
 }
 
 func (c *CLI) AdminListUserProviderInstancesCommand(cmd *Command) (ResponseIf, error) {
@@ -3083,21 +2319,7 @@ func (c *CLI) AdminListUserProviderInstancesCommand(cmd *Command) (ResponseIf, e
 		return nil, fmt.Errorf("failed to list user %s providers: %w", userName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list user %s providers: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list user %s providers failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, fmt.Sprintf("list user %s provider instances", userName))
 }
 
 func (c *CLI) AdminListUserProviderInstanceModelsCommand(cmd *Command) (ResponseIf, error) {
@@ -3127,21 +2349,7 @@ func (c *CLI) AdminListUserProviderInstanceModelsCommand(cmd *Command) (Response
 		return nil, fmt.Errorf("failed to list user %s provider instance models: %w", userName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list user %s provider instance models: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list user %s provider instance models failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, fmt.Sprintf("list user %s provider instance models", userName))
 }
 
 func (c *CLI) AdminListUserDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
@@ -3163,21 +2371,7 @@ func (c *CLI) AdminListUserDefaultModelsCommand(cmd *Command) (ResponseIf, error
 		return nil, fmt.Errorf("failed to list user %s default models: %w", userName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list user %s default models: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list user %s default models failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, fmt.Sprintf("list user %s default models", userName))
 }
 
 func (c *CLI) AdminStopUserIngestionTasksCommand(cmd *Command) (ResponseIf, error) {
@@ -3207,21 +2401,7 @@ func (c *CLI) AdminStopUserIngestionTasksCommand(cmd *Command) (ResponseIf, erro
 		return nil, fmt.Errorf("failed to stop user %s ingestion tasks: %w", userName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to stop user %s ingestion tasks: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("stop user %s ingestion tasks failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, fmt.Sprintf("stop user %s ingestion tasks", userName))
 }
 
 func (c *CLI) AdminRemoveUserIngestionTasksCommand(cmd *Command) (ResponseIf, error) {
@@ -3251,21 +2431,7 @@ func (c *CLI) AdminRemoveUserIngestionTasksCommand(cmd *Command) (ResponseIf, er
 		return nil, fmt.Errorf("failed to remove user %s ingestion tasks: %w", userName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to remove user %s ingestion tasks: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("remove user %s ingestion tasks failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonResponse(resp, fmt.Sprintf("remove user %s ingestion tasks", userName))
 }
 
 // AdminAddProviderCommand add provider
@@ -3291,21 +2457,7 @@ func (c *CLI) AdminAddProviderCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to add provider %s: %w", providerName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to add provider %s: HTTP %d, body: %s", providerName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("add provider %s failed: invalid JSON (%w)", providerName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("add provider %s", providerName))
 }
 
 // AdminAddModelInstanceCommand add model instance
@@ -3336,21 +2488,7 @@ func (c *CLI) AdminAddModelInstanceCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to add model instance %s: %w", instanceName, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to add model instance %s: HTTP %d, body: %s", instanceName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("add model instance %s failed: invalid JSON (%w)", instanceName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("add model instance %s", instanceName))
 }
 
 // AdminAddModelsCommand add models
@@ -3386,21 +2524,7 @@ func (c *CLI) AdminAddModelsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to add models %s: %w", modelNames, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to add models %s: HTTP %d, body: %s", modelNames, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("add models %s failed: invalid JSON (%w)", modelNames, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("add models %s", modelNames))
 }
 
 // AdminDeleteProvidersCommand delete providers
@@ -3426,21 +2550,7 @@ func (c *CLI) AdminDeleteProvidersCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to remove providers %s: %w", providerNames, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to remove providers %s: HTTP %d, body: %s", providerNames, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("remove providers %s failed: invalid JSON (%w)", providerNames, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("remove providers %s", providerNames))
 }
 
 // AdminDeleteInstancesCommand delete instances
@@ -3471,21 +2581,7 @@ func (c *CLI) AdminDeleteInstancesCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to remove instance %s: %w", instanceNames, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to remove instance %s: HTTP %d, body: %s", instanceNames, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("remove instance %s failed: invalid JSON (%w)", instanceNames, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("remove instance %s", instanceNames))
 }
 
 // AdminDeleteModelsCommand delete models
@@ -3521,21 +2617,7 @@ func (c *CLI) AdminDeleteModelsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to remove model %s: %w", modelNames, err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to remove model %s: HTTP %d, body: %s", modelNames, resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("remove model %s failed: invalid JSON (%w)", modelNames, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("remove model %s", modelNames))
 }
 
 func (c *CLI) AdminShowLogLevelCommand(cmd *Command) (ResponseIf, error) {
@@ -3549,19 +2631,5 @@ func (c *CLI) AdminShowLogLevelCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get log level config: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get log level config: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get log level config failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+	return HandleCommonDataResponse(resp, fmt.Sprintf("get log level config"))
 }

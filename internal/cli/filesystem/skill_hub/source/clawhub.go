@@ -897,12 +897,12 @@ func extractQueryTerms(query string) []string {
 func isSafePath(path string) bool {
 	// Clean the path
 	clean := filepath.Clean(path)
-	
+
 	// Check for absolute paths
 	if filepath.IsAbs(clean) {
 		return false
 	}
-	
+
 	// Check for parent directory references
 	parts := strings.Split(clean, string(filepath.Separator))
 	for _, part := range parts {
@@ -910,7 +910,7 @@ func isSafePath(path string) bool {
 			return false
 		}
 	}
-	
+
 	return true
 }
 

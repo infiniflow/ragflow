@@ -129,7 +129,7 @@ func urlSafeB64Encode(data []byte) string {
 	return strings.TrimRight(encoded, "=")
 }
 
-// generateSecretKey generates a 32-byte hex string (equivalent to Python's secrets.token_hex(32))
+// GenerateSecretKey generates a 32-byte hex string (equivalent to Python's secrets.token_hex(32))
 func GenerateSecretKey() (string, error) {
 	bytes := make([]byte, 32) // 32 bytes = 256 bits
 	if _, err := rand.Read(bytes); err != nil {
