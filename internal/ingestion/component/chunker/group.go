@@ -298,9 +298,9 @@ func NewGroupTitleChunker(params map[string]any) (runtime.Component, error) {
 	for k, v := range params {
 		conf[k] = v
 	}
-	p := titleChunkerParam{}
+	p := defaultsTitle()
 	p.Update(conf)
-	if err := p.Check(); err != nil {
+	if err := p.TitleChunkerParam.Validate(); err != nil {
 		return nil, fmt.Errorf("GroupTitleChunker: %w", err)
 	}
 	return &GroupTitleChunkerComponent{

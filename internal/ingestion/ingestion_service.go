@@ -552,13 +552,7 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 	}
 	common.Info(fmt.Sprintf("Task %s resuming at stage %d (materialized=%q)", task.ID, res.StartAt, res.MaterializedFile))
 
-	// Phase 4 deferred-3: drive the pipeline through the canvas
-	// runner (p.Run) instead of the legacy direct-walk
-	// (Pipeline.Run). The legacy walker remains in place as a
-	// fallback for code paths that do not go through canvas;
-	// this site is the canonical entry point for production
-	// task execution.
-	_, runErr := pl.Run(ctx, res.Inputs)
+	_, runErr := pl.RunFromCheckpoint(ctx, res.Inputs, res.StartAt)
 	if runErr != nil {
 		if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s cancelled: %v", task.ID, runErr))

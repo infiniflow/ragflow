@@ -16,6 +16,8 @@
 
 package schema
 
+import "fmt"
+
 // ChunkerFromUpstream is the shared upstream payload consumed by all four
 // chunker variants (TokenChunker, TitleChunker, GroupTitleChunker,
 // HierarchyTitleChunker).
@@ -161,9 +163,28 @@ func (TokenChunkerParam) Defaults() TokenChunkerParam {
 	}
 }
 
-// Validate returns nil. The Python `check()` method enforces enum
-// values and numeric ranges; that lives in the component implementation.
-func (TokenChunkerParam) Validate() error { return nil }
+// Validate enforces the same enum/range checks the runtime component expects
+// at construction time, keeping the schema and component decoder aligned.
+func (p TokenChunkerParam) Validate() error {
+	switch p.DelimiterMode {
+	case "token_size", "delimiter", "one":
+	default:
+		return errInvalidValue{Field: "delimiter_mode", Value: p.DelimiterMode}
+	}
+	if p.ChunkTokenSize <= 0 {
+		return errInvalidValue{Field: "chunk_token_size", Value: fmt.Sprintf("%d", p.ChunkTokenSize)}
+	}
+	if p.OverlappedPercent < 0 || p.OverlappedPercent >= 1 {
+		return errInvalidValue{Field: "overlapped_percent", Value: fmt.Sprintf("%v", p.OverlappedPercent)}
+	}
+	if p.TableContextSize < 0 {
+		return errInvalidValue{Field: "table_context_size", Value: fmt.Sprintf("%d", p.TableContextSize)}
+	}
+	if p.ImageContextSize < 0 {
+		return errInvalidValue{Field: "image_context_size", Value: fmt.Sprintf("%d", p.ImageContextSize)}
+	}
+	return nil
+}
 
 // ---------------------------------------------------------------------------
 // TitleChunkerParam
@@ -214,6 +235,13 @@ func (TitleChunkerParam) Defaults() TitleChunkerParam {
 // expressible in pure-data terms: when Method == "hierarchy" the
 // hierarchy depth and level config must be present.
 func (p *TitleChunkerParam) Validate() error {
+	switch p.Method {
+	case "hierarchy", "group":
+	case "":
+		return nil
+	default:
+		return errInvalidValue{Field: "method", Value: p.Method}
+	}
 	switch p.Method {
 	case "hierarchy", "group":
 		if len(p.Levels) == 0 {

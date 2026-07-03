@@ -1,4 +1,4 @@
-//go:build cgo && office
+//go:build cgo
 
 //
 // Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
@@ -22,10 +22,6 @@ import (
 	"fmt"
 
 	officeOxide "github.com/yfedoseev/office_oxide/go"
-)
-
-const (
-	OfficeOxide string = "office_oxide"
 )
 
 type DOCXParser struct {

@@ -924,7 +924,7 @@ func TestPipeline_Resume_ChunkerBoundary_RehydratesChunks(t *testing.T) {
 		gotChunks, _ = in["chunks"].([]map[string]any)
 		return map[string]any{"y": "tok"}, nil
 	})
-	if _, err := pl.Run(context.Background(), res.Inputs); err != nil {
+	if _, err := pl.RunFromCheckpoint(context.Background(), res.Inputs, res.StartAt); err != nil {
 		t.Fatalf("Run from resumed inputs: %v", err)
 	}
 	if len(gotChunks) != 2 {

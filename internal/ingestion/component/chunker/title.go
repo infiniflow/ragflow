@@ -55,22 +55,13 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 const ComponentNameTitleChunker = "TitleChunker"
 
-// titleChunkerParam is the per-component configuration for the
-// TitleChunker / GroupTitleChunker / HierarchyTitleChunker family.
-// In python the three variants share a single param class
-// (common.py:TitleChunkerParam); Go's schema mirrors the same with a
-// type alias (schema.TitleChunkerParam). The Go Type carries Method
-// so the dispatcher can pick the right variant.
 type titleChunkerParam struct {
-	Method                string     // "hierarchy" or "group" (dispatched to Group/Hierarchy variant)
-	Levels                [][]string // regex family per heading level
-	Hierarchy             *int       // depth used by hierarchy variant
-	IncludeHeadingContent bool
-	RootChunkAsHeading    bool
+	schema.TitleChunkerParam
 }
 
 func (p *titleChunkerParam) Update(conf map[string]any) {
@@ -78,22 +69,22 @@ func (p *titleChunkerParam) Update(conf map[string]any) {
 		return
 	}
 	if v, ok := conf["method"].(string); ok {
-		p.Method = v
+		p.TitleChunkerParam.Method = v
 	}
 	if v, ok := conf["levels"].([]any); ok {
-		p.Levels = parseLevels(v)
+		p.TitleChunkerParam.Levels = parseLevels(v)
 	} else if v, ok := conf["levels"].([][]string); ok {
-		p.Levels = v
+		p.TitleChunkerParam.Levels = v
 	}
 	if v, ok := numericFromAny(conf["hierarchy"]); ok {
 		n := int(v)
-		p.Hierarchy = &n
+		p.TitleChunkerParam.Hierarchy = &n
 	}
 	if v, ok := conf["include_heading_content"].(bool); ok {
-		p.IncludeHeadingContent = v
+		p.TitleChunkerParam.IncludeHeadingContent = v
 	}
 	if v, ok := conf["root_chunk_as_heading"].(bool); ok {
-		p.RootChunkAsHeading = v
+		p.TitleChunkerParam.RootChunkAsHeading = v
 	}
 }
 
@@ -120,27 +111,8 @@ func parseLevels(in []any) [][]string {
 	return out
 }
 
-// Check mirrors python TitleChunkerParam.check. The dispatcher
-// additionally requires Method to be present — the python class
-// allows method to be unset at __init__ time (it's set externally),
-// but our constructor hard-requires it because a TitleChunker
-// without a method can't dispatch.
-func (p *titleChunkerParam) Check() error {
-	if p.Method != "hierarchy" && p.Method != "group" {
-		return fmt.Errorf("TitleChunker: method %q is not supported (allowed: hierarchy, group)", p.Method)
-	}
-	if len(p.Levels) == 0 {
-		return fmt.Errorf("TitleChunker: levels is required for method %q", p.Method)
-	}
-	if p.Method == "hierarchy" {
-		if p.Hierarchy == nil {
-			return fmt.Errorf("TitleChunker: hierarchy is required for method \"hierarchy\"")
-		}
-		if *p.Hierarchy <= 0 {
-			return fmt.Errorf("TitleChunker: hierarchy must be positive (got %d)", *p.Hierarchy)
-		}
-	}
-	return nil
+func defaultsTitle() titleChunkerParam {
+	return titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{}.Defaults()}
 }
 
 // selectLevelGroup mirrors common.py:select_level_group. Returns the
@@ -362,9 +334,10 @@ type TitleChunkerComponent struct {
 // NewTitleChunker constructs a TitleChunker from the DSL param map.
 // Errors here surface as canvas compile failures.
 func NewTitleChunker(params map[string]any) (runtime.Component, error) {
-	p := titleChunkerParam{Method: "group"} // default to group
+	p := defaultsTitle()
+	p.Method = "group" // default to group
 	p.Update(params)
-	if err := p.Check(); err != nil {
+	if err := p.TitleChunkerParam.Validate(); err != nil {
 		return nil, fmt.Errorf("TitleChunker: %w", err)
 	}
 	return &TitleChunkerComponent{

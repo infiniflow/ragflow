@@ -1,4 +1,4 @@
-//go:build !cgo || !office
+//go:build !cgo
 
 package parser
 
@@ -20,7 +20,7 @@ var ErrOfficeCGORequired = errors.New("parser: office family requires CGO (offic
 
 // docxParseWithResultNoCGO is the no-CGO stub for the DOCX
 // family. The CGO build's implementation lives in docx_parser.go
-// under //go:build cgo && office.
+// under //go:build cgo.
 func (p *DOCXParser) ParseWithResult(filename string, _ []byte) ParseResult {
 	return ParseResult{
 		File: map[string]any{"name": filename},

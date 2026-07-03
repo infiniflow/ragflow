@@ -1,4 +1,4 @@
-//go:build cgo && office
+//go:build cgo
 
 //
 // Copyright 2026 The InfiniFlow Authors. All Rights Reserved.

@@ -14,36 +14,32 @@
 //  limitations under the License.
 //
 
-// Slice 5: T0–T5 template acceptance harness.
+// Slice 5: template translation harness.
 //
 // The seven production templates under agent/templates/ingestion_pipeline_*.json
 // are the canonical acceptance suite for the ingestion pipeline port
 // (plan §8 "Acceptance Gate: Template Workflows"). This file
 // loads each template, runs the keyed-components → PipelineDSL
-// translator (commit Slice 4), instantiates the pipeline through
-// the existing NewPipelineFromDSL + Pipeline.Run path, and
-// asserts the chain produced non-empty output.
+// translator, and round-trips the translated pipeline into the
+// canvas DSL.
 //
 // What this harness proves:
 //
 //   - The template JSON shape is consumable by the Go pipeline.
 //   - The translation preserves every keyed-component node.
-//   - The runtime registry has every component the templates
+//   - The ingestion runtime registry has every component the templates
 //     reference (File / Parser / TokenChunker / TitleChunker /
 //     HierarchyTitleChunker / GroupTitleChunker / Tokenizer /
 //     Extractor).
 //   - The runtime contract (component_name + params) round-trips
-//     end-to-end without dropping keys.
+//     through TemplateToPipelineDSL + PipelineToCanvas without dropping keys.
 //
 // What this harness does NOT yet prove:
 //
-//   - The full Pipeline.Run → Runner.Run integration (Slice 4
-//     deferred — the adapter in place, the seam is the next
-//     slice). For now the harness drives the existing
-//     NewPipelineFromDSL + Pipeline.Run path which walks stages
-//     directly. Once the canvas integration lands (a follow-up
-//     wave) the harness assertions extend to assert on RunEvent
-//     semantics rather than direct stage outputs.
+//   - Full runtime execution of the production templates.
+//   - Pipeline resume semantics across materialized boundaries.
+//   - LLM-backed Extractor behavior.
+//   - Native-parser execution paths that require CGO/static libs.
 
 package pipeline
 

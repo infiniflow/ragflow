@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 type IngestionTaskDAO struct{}
@@ -405,6 +407,9 @@ func (dao *IngestionTaskLogDAO) LatestLogByTaskID(taskID string) (*entity.Ingest
 	// algorithm reads the latest row, so the tie-break MUST
 	// be deterministic.
 	err := DB.Where("task_id = ?", taskID).Order("id DESC").First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
 	return task, err
 }
 

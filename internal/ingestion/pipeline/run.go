@@ -33,12 +33,30 @@ import (
 // per-node CanvasState outputs so checkpoint semantics remain
 // unchanged.
 func (p *Pipeline) Run(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	return p.runFromStage(ctx, inputs, 0)
+}
+
+// RunFromCheckpoint resumes the pipeline from the given materialized stage
+// boundary. Unlike Run, this entry point is allowed to start from the middle
+// of the linear stage list because RestoreFromCheckpoint has already proven
+// the upstream boundary exists and rehydrated the required inputs.
+func (p *Pipeline) RunFromCheckpoint(ctx context.Context, inputs map[string]any, startAt int) (map[string]any, error) {
+	return p.runFromStage(ctx, inputs, startAt)
+}
+
+func (p *Pipeline) runFromStage(ctx context.Context, inputs map[string]any, startAt int) (map[string]any, error) {
 	if p == nil {
 		return nil, fmt.Errorf("pipeline: Run on nil pipeline")
 	}
+	if startAt < 0 {
+		startAt = 0
+	}
+	if startAt > len(p.stages) {
+		startAt = len(p.stages)
+	}
 
 	current := cloneMapOrEmpty(inputs)
-	if len(p.stages) == 0 {
+	if len(p.stages) == 0 || startAt == len(p.stages) {
 		return current, nil
 	}
 	if runtime.DefaultFactory() == nil {
@@ -48,7 +66,8 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any) (map[string]a
 		return nil, fmt.Errorf("pipeline: Run: runtime default component factory is not installed")
 	}
 
-	cnv, err := PipelineToCanvas(&p.dsl)
+	runDSL := p.sliceDSL(startAt)
+	cnv, err := PipelineToCanvas(runDSL)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: Run: adapt DSL to canvas: %w", err)
 	}
@@ -60,8 +79,9 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any) (map[string]a
 
 	runState := canvas.NewCanvasState("", p.taskID)
 	runCtx := canvas.WithState(ctx, runState)
+	runCtx = canvas.WithComponentTimeoutOverride(runCtx, stageTimeout())
 	if _, err := compiled.Workflow.Invoke(runCtx, current); err != nil {
-		failedStage := p.firstUnfinishedStage(runState.Snapshot())
+		failedStage := p.firstUnfinishedStage(runState.Snapshot(), startAt)
 		if failedStage != nil {
 			p.recordFailure(failedStage.Name, err)
 		}
@@ -70,8 +90,8 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any) (map[string]a
 	}
 
 	outputs := runState.Snapshot()
-	completed := make([]completedStage, 0, len(p.stages))
-	for i := 0; i < len(p.stages); i++ {
+	completed := make([]completedStage, 0, len(p.stages)-startAt)
+	for i := startAt; i < len(p.stages); i++ {
 		step := p.stages[i]
 		stageOut, ok := outputs[step.Name]
 		if !ok {
@@ -118,15 +138,15 @@ type completedStage struct {
 	fingerprint string
 }
 
-func (p *Pipeline) firstUnfinishedStage(outputs map[string]map[string]any) *ComponentStep {
-	for i := 0; i < len(p.stages); i++ {
+func (p *Pipeline) firstUnfinishedStage(outputs map[string]map[string]any, startAt int) *ComponentStep {
+	for i := startAt; i < len(p.stages); i++ {
 		step := &p.stages[i]
 		if _, ok := outputs[step.Name]; !ok {
 			return step
 		}
 	}
-	if len(p.stages) > 0 {
-		return &p.stages[0]
+	if startAt >= 0 && startAt < len(p.stages) {
+		return &p.stages[startAt]
 	}
 	return nil
 }
@@ -148,6 +168,24 @@ func stageStatuses(step ComponentStep) []GoroutineStatus {
 		statuses = append(statuses, GoroutineStatus{Goroutine: i, Status: "done"})
 	}
 	return statuses
+}
+
+func (p *Pipeline) sliceDSL(startAt int) *PipelineDSL {
+	stages := make([]StageDSL, 0, len(p.dsl.Stages)-startAt)
+	for i := startAt; i < len(p.dsl.Stages); i++ {
+		stage := p.dsl.Stages[i]
+		stages = append(stages, StageDSL{
+			Type:   stage.Type,
+			Params: cloneMap(stage.Params),
+		})
+	}
+	return &PipelineDSL{
+		Version:     p.dsl.Version,
+		Name:        p.dsl.Name,
+		Description: p.dsl.Description,
+		StageCount:  len(stages),
+		Stages:      stages,
+	}
 }
 
 func cloneMapOrEmpty(inputs map[string]any) map[string]any {

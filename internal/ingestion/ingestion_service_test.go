@@ -53,7 +53,10 @@ import (
 // Stub component for e2e testing.
 // ---------------------------------------------------------------------------
 
-const stubIngestionComp = "StubIngest"
+const (
+	stubIngestionComp = "StubIngest"
+	stubTokenizerComp = "ResumeTokenizer"
+)
 
 type stubIngest struct {
 	counter *int32
@@ -72,15 +75,40 @@ func (s *stubIngest) Invoke(ctx context.Context, inputs map[string]any) (map[str
 }
 
 var stubCounter int32
+var stubTokenizerCounter int32
 
 func newStubIngest(_ string, _ map[string]any) (runtime.Component, error) {
 	return &stubIngest{counter: &stubCounter}, nil
+}
+
+type stubTokenizer struct {
+	counter *int32
+}
+
+func (s *stubTokenizer) Parallelism() int { return 1 }
+func (s *stubTokenizer) Inputs() map[string]string {
+	return map[string]string{"chunks": "any"}
+}
+func (s *stubTokenizer) Outputs() map[string]string {
+	return map[string]string{"tokens": "any"}
+}
+func (s *stubTokenizer) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+	atomic.AddInt32(s.counter, 1)
+	return map[string]any{"tokens": inputs["chunks"]}, nil
+}
+
+func newStubTokenizer(_ string, _ map[string]any) (runtime.Component, error) {
+	return &stubTokenizer{counter: &stubTokenizerCounter}, nil
 }
 
 func init() {
 	runtime.MustRegister(stubIngestionComp, runtime.CategoryIngestion, newStubIngest, runtime.Metadata{
 		Inputs:  map[string]string{"x": "any"},
 		Outputs: map[string]string{"y": "any"},
+	})
+	runtime.MustRegister(stubTokenizerComp, runtime.CategoryIngestion, newStubTokenizer, runtime.Metadata{
+		Inputs:  map[string]string{"chunks": "any"},
+		Outputs: map[string]string{"tokens": "any"},
 	})
 }
 
@@ -339,6 +367,7 @@ func TestIngestor_ExecuteTask_DefaultDSL(t *testing.T) {
 // the stub DSL has no real Tokenizer).
 func TestIngestor_ExecuteTask_ResumeFromCheckpoint(t *testing.T) {
 	atomic.StoreInt32(&stubCounter, 0)
+	atomic.StoreInt32(&stubTokenizerCounter, 0)
 
 	db := setupIngestorTestDB(t)
 	origDB := dao.DB
@@ -346,7 +375,8 @@ func TestIngestor_ExecuteTask_ResumeFromCheckpoint(t *testing.T) {
 	t.Cleanup(func() { dao.DB = origDB })
 
 	origStorage := storage.GetStorageFactory().GetStorage()
-	storage.GetStorageFactory().SetStorage(storage.NewMemoryStorage())
+	mem := storage.NewMemoryStorage()
+	storage.GetStorageFactory().SetStorage(mem)
 	t.Cleanup(func() { storage.GetStorageFactory().SetStorage(origStorage) })
 
 	taskID := "resume-task"
@@ -361,27 +391,37 @@ func TestIngestor_ExecuteTask_ResumeFromCheckpoint(t *testing.T) {
 		t.Fatalf("create task: %v", err)
 	}
 
-	// Pre-seed a checkpoint log with files=[file_ref] so
-	// RestoreFromCheckpoint returns StartAt=1.
+	chunksPath := "resume-task/TokenChunker/chunks.jsonl"
+	if err := mem.Put("ragflow", chunksPath, []byte("{\"text\":\"chunk-a\"}\n{\"text\":\"chunk-b\"}\n")); err != nil {
+		t.Fatalf("seed chunks: %v", err)
+	}
+
+	// Pre-seed a structured chunker boundary so RestoreFromCheckpoint
+	// resumes at the Tokenizer-like stage.
 	cp := entity.JSONMap{
 		"current_component":    "MockA",
 		"completed_components": []string{},
-		"total_components":     1,
-		"files":                []any{"file_ref"},
+		"total_components":     2,
+		"files":                []any{chunksPath},
+		"boundaries": map[string]any{
+			"chunker": map[string]any{
+				"chunks_jsonl": chunksPath,
+				"stage":        "TokenChunker",
+			},
+		},
 	}
 	if err := db.Create(&entity.IngestionTaskLog{TaskID: taskID, Checkpoint: cp}).Error; err != nil {
 		t.Fatalf("seed log: %v", err)
 	}
 
-	// Single-stage DSL with the stub; with file_ref present,
-	// resume tries to skip to "Parser" — which doesn't exist
-	// in the stub DSL — so the pipeline runs no stages and
-	// the task completes (no work to do).
+	// Two-stage DSL: resume should skip the first stage and invoke only
+	// the Tokenizer-like stage matched by suffix.
 	dsl := map[string]any{
 		"version":     "1",
-		"stage_count": 1,
+		"stage_count": 2,
 		"stages": []map[string]any{
 			{"type": stubIngestionComp, "params": map[string]any{}},
+			{"type": stubTokenizerComp, "params": map[string]any{}},
 		},
 	}
 	dslBytes, _ := json.Marshal(dsl)
@@ -400,12 +440,15 @@ func TestIngestor_ExecuteTask_ResumeFromCheckpoint(t *testing.T) {
 	ing := NewIngestor("test-resume", 1, []string{"pdf"})
 	ing.executeTask(taskCtx)
 
-	// Stub should NOT be invoked — resume skipped the only
-	// stage.
+	// Stage 0 should be skipped; resume starts at the Tokenizer-like
+	// stage and rehydrates chunk inputs from chunks.jsonl.
 	if got := atomic.LoadInt32(&stubCounter); got != 0 {
 		t.Errorf("expected stub NOT invoked on resume-skip, got %d", got)
 	}
-	// Task should be COMPLETED (nothing to do).
+	if got := atomic.LoadInt32(&stubTokenizerCounter); got != 1 {
+		t.Errorf("expected tokenizer stub invoked 1 time, got %d", got)
+	}
+	// Task should be COMPLETED.
 	var reloaded entity.IngestionTask
 	if err := db.Where("id = ?", taskID).First(&reloaded).Error; err != nil {
 		t.Fatalf("reload task: %v", err)

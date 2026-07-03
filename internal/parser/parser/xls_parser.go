@@ -1,4 +1,4 @@
-//go:build cgo && office
+//go:build cgo
 
 //
 // Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
@@ -47,7 +47,7 @@ func (p *XLSParser) Parse(filename string, data []byte) error {
 	case OfficeOxide:
 		return p.OfficeOxideParse(data)
 	default:
-		return fmt.Errorf("unsupported XLS library type: %s", libType)
+		return fmt.Errorf("unsupported XLS library type: %s", p.libType)
 	}
 }
 

@@ -62,21 +62,14 @@ import (
 	"sync"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
 )
 
 const ComponentNameTokenChunker = "TokenChunker"
 
-// tokenChunkerParam is the runtime configuration for TokenChunker.
-// It mirrors rag/flow/chunker/token_chunker.py:TokenChunkerParam.
 type tokenChunkerParam struct {
-	DelimiterMode      string
-	ChunkTokenSize     int
-	Delimiters         []string
-	OverlappedPercent  float64
-	ChildrenDelimiters []string
-	TableContextSize   int
-	ImageContextSize   int
+	schema.TokenChunkerParam
 }
 
 func (p *tokenChunkerParam) Update(conf map[string]any) {
@@ -84,68 +77,34 @@ func (p *tokenChunkerParam) Update(conf map[string]any) {
 		return
 	}
 	if v, ok := conf["delimiter_mode"].(string); ok {
-		p.DelimiterMode = v
+		p.TokenChunkerParam.DelimiterMode = v
 	}
 	if v, ok := numericFromAny(conf["chunk_token_size"]); ok {
-		p.ChunkTokenSize = int(v)
+		p.TokenChunkerParam.ChunkTokenSize = int(v)
 	}
 	if v, ok := conf["delimiters"].([]any); ok {
-		p.Delimiters = stringListFromAny(v)
+		p.TokenChunkerParam.Delimiters = stringListFromAny(v)
 	} else if v, ok := conf["delimiters"].([]string); ok {
-		p.Delimiters = append([]string(nil), v...)
+		p.TokenChunkerParam.Delimiters = append([]string(nil), v...)
 	}
 	if v, ok := numericFromAny(conf["overlapped_percent"]); ok {
-		p.OverlappedPercent = v
+		p.TokenChunkerParam.OverlappedPercent = v
 	}
 	if v, ok := conf["children_delimiters"].([]any); ok {
-		p.ChildrenDelimiters = stringListFromAny(v)
+		p.TokenChunkerParam.ChildrenDelimiters = stringListFromAny(v)
 	} else if v, ok := conf["children_delimiters"].([]string); ok {
-		p.ChildrenDelimiters = append([]string(nil), v...)
+		p.TokenChunkerParam.ChildrenDelimiters = append([]string(nil), v...)
 	}
 	if v, ok := numericFromAny(conf["table_context_size"]); ok {
-		p.TableContextSize = int(v)
+		p.TokenChunkerParam.TableContextSize = int(v)
 	}
 	if v, ok := numericFromAny(conf["image_context_size"]); ok {
-		p.ImageContextSize = int(v)
+		p.TokenChunkerParam.ImageContextSize = int(v)
 	}
-}
-
-// Check enforces the python check() invariants that fall into the
-// "pure data" bucket.
-func (p *tokenChunkerParam) Check() error {
-	switch p.DelimiterMode {
-	case "token_size", "delimiter", "one":
-	default:
-		return fmt.Errorf("TokenChunker: delimiter_mode %q is not supported (allowed: token_size, delimiter, one)", p.DelimiterMode)
-	}
-	if p.ChunkTokenSize <= 0 {
-		return fmt.Errorf("TokenChunker: chunk_token_size must be positive (got %d)", p.ChunkTokenSize)
-	}
-	if p.OverlappedPercent < 0 || p.OverlappedPercent >= 1 {
-		return fmt.Errorf("TokenChunker: overlapped_percent must be in [0, 1) (got %v)", p.OverlappedPercent)
-	}
-	if p.TableContextSize < 0 {
-		return fmt.Errorf("TokenChunker: table_context_size must be non-negative (got %d)", p.TableContextSize)
-	}
-	if p.ImageContextSize < 0 {
-		return fmt.Errorf("TokenChunker: image_context_size must be non-negative (got %d)", p.ImageContextSize)
-	}
-	return nil
 }
 
 func defaultsToken(p tokenChunkerParam) tokenChunkerParam {
-	if p.DelimiterMode == "" {
-		p.DelimiterMode = "token_size"
-	}
-	if p.ChunkTokenSize <= 0 {
-		p.ChunkTokenSize = 512
-	}
-	if p.Delimiters == nil {
-		p.Delimiters = []string{"\n"}
-	}
-	if p.ChildrenDelimiters == nil {
-		p.ChildrenDelimiters = []string{}
-	}
+	p.TokenChunkerParam = schema.TokenChunkerParam{}.Defaults()
 	return p
 }
 
@@ -162,7 +121,7 @@ type TokenChunkerComponent struct {
 func NewTokenChunker(params map[string]any) (runtime.Component, error) {
 	p := defaultsToken(tokenChunkerParam{})
 	p.Update(params)
-	if err := p.Check(); err != nil {
+	if err := p.TokenChunkerParam.Validate(); err != nil {
 		return nil, fmt.Errorf("TokenChunker: %w", err)
 	}
 	return &TokenChunkerComponent{
