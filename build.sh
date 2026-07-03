@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 
 # Build directories
-CPP_DIR="$PROJECT_ROOT/internal/cpp"
+CPP_DIR="$PROJECT_ROOT/internal/binding/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
 RAGFLOW_MAIN_BINARY="$PROJECT_ROOT/bin/ragflow_main"
 RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
