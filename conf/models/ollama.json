@@ -1,6 +1,6 @@
 {
   "name": "ollama",
-  "rank": 830,
+  "rank": 978,
   "url_suffix": {
     "chat": "api/chat",
     "models": "api/tags",

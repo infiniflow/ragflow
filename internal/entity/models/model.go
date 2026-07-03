@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -380,6 +381,11 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 		}
 		providers = append(providers, providerData)
 	}
+
+	// Sort providers by rank
+	sort.Slice(providers, func(i, j int) bool {
+		return providers[i]["rank"].(int) > providers[j]["rank"].(int)
+	})
 
 	if len(providers) == 0 {
 		return nil, fmt.Errorf("no providers found")
