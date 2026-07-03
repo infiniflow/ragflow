@@ -15,7 +15,6 @@
  */
 
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,10 +24,9 @@ import {
 } from '@/components/ui/collapsible';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { MultiSelect } from '@/components/ui/multi-select';
-import { Segmented } from '@/components/ui/segmented';
+import { RAGFlowSelect } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import {
   useAddProviderInstance,
   useDeleteProviderInstance,
@@ -40,39 +38,68 @@ import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ListChevronsDownUp, ListChevronsUpDown, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { BedrockRegionList } from '../constants';
 import { VerifyResult } from '../hooks';
-import { splitProviderPayload } from '../payload-utils';
-import { ModelsSection } from './models-section';
 import VerifyButton from './verify-button';
 
-type AuthMode = 'access_key_secret' | 'iam_role' | 'assume_role';
+const IMAGE_FORMATS = ['url', 'base64', 'none'] as const;
+const FORMULA_FORMATS = ['latex', 'mathml', 'ascii'] as const;
+const TABLE_FORMATS = ['html', 'markdown', 'image'] as const;
+const CS_FORMATS = ['image'] as const;
+const FORMAT_LABELS = {
+  url: 'URL',
+  base64: 'Base64',
+  none: 'None',
+  latex: 'LaTeX',
+  mathml: 'MathML',
+  ascii: 'ASCII',
+  html: 'HTML',
+  markdown: 'Markdown',
+  image: 'Image',
+} as const;
 
-type BedrockFormValues = {
-  auth_mode: AuthMode;
-  bedrock_ak?: string;
-  bedrock_sk?: string;
-  aws_role_arn?: string;
-  bedrock_region: string;
-  llm_name: string;
-  max_tokens: number;
-  model_type: ('chat' | 'embedding')[];
-};
+const buildFormatOptions = <T extends keyof typeof FORMAT_LABELS>(
+  formats: readonly T[],
+) => formats.map((value) => ({ label: FORMAT_LABELS[value], value }));
 
-// Field names whose value commits via click (Segmented, Select,
-// MultiSelect) rather than blur. Their popovers render in Radix
-// portals outside the card's blur container, so blur-driven saves
-// don't catch them — a form.watch watcher is used instead.
-const BEDROCK_WATCHED_FIELDS = new Set([
-  'auth_mode',
-  'bedrock_region',
-  'model_type',
+// Field names whose value commits via click (Selects, Switches) rather
+// than blur. Their popovers render in Radix portals outside the card's
+// blur container, so blur-driven saves don't catch them — a form.watch
+// watcher is used instead to schedule a save when they change.
+const SOMARK_WATCHED_FIELDS = new Set([
+  'somark_image_format',
+  'somark_formula_format',
+  'somark_table_format',
+  'somark_cs_format',
+  'somark_enable_text_cross_page',
+  'somark_enable_table_cross_page',
+  'somark_enable_title_level_recognition',
+  'somark_enable_inline_image',
+  'somark_enable_table_image',
+  'somark_enable_image_understanding',
+  'somark_keep_header_footer',
 ]);
 
-interface BedrockInstanceCardProps {
+type SoMarkFormValues = {
+  llm_name: string;
+  somark_base_url: string;
+  somark_api_key?: string;
+  somark_image_format: (typeof IMAGE_FORMATS)[number];
+  somark_formula_format: (typeof FORMULA_FORMATS)[number];
+  somark_table_format: (typeof TABLE_FORMATS)[number];
+  somark_cs_format: (typeof CS_FORMATS)[number];
+  somark_enable_text_cross_page: boolean;
+  somark_enable_table_cross_page: boolean;
+  somark_enable_title_level_recognition: boolean;
+  somark_enable_inline_image: boolean;
+  somark_enable_table_image: boolean;
+  somark_enable_image_understanding: boolean;
+  somark_keep_header_footer: boolean;
+};
+
+interface SoMarkInstanceCardProps {
   providerName: string;
   instance: IProviderInstance;
   isDraft?: boolean;
@@ -88,13 +115,26 @@ interface BedrockInstanceCardProps {
 }
 
 /**
- * Inline instance card for AWS Bedrock. Mirrors the two-stage UX of
- * `ProviderInstanceCard` (save name first, then edit fields) but renders
- * Bedrock-specific fields (auth_mode segmented, ak/sk/arn, region, model
- * name, max tokens, model_type) directly instead of going through the
- * generic DynamicForm path.
+ * Inline instance card for SoMark. Mirrors the two-stage UX of
+ * `BedrockInstanceCard` (save name first, then edit fields) but renders
+ * SoMark-specific fields (model name, base URL, API key, 4 element-format
+ * selects, 7 feature toggles) directly. The model type is fixed to
+ * `['ocr']` (SoMark is an OCR provider) and not exposed in the form.
+ *
+ * Payload shape (matches the legacy `useSubmitSoMark` hook so the
+ * backend contract is unchanged):
+ *   {
+ *     instance_name, llm_factory: 'SoMark',
+ *     api_key: somark_api_key || '',
+ *     base_url: somark_base_url,
+ *     max_tokens: 0,
+ *     model_info: [{
+ *       llm_name, model_type: ['ocr'], max_tokens: 0,
+ *       extra: { somark_image_format, somark_formula_format, ... }
+ *     }]
+ *   }
  */
-export function BedrockInstanceCard({
+export function SoMarkInstanceCard({
   providerName,
   instance,
   isDraft = false,
@@ -102,10 +142,9 @@ export function BedrockInstanceCard({
   onNameSaved,
   onDelete,
   defaultOpen = false,
-}: BedrockInstanceCardProps) {
+}: SoMarkInstanceCardProps) {
   const { t } = useTranslation();
   const { t: tSetting } = useTranslate('setting');
-  const { buildModelTypeOptions } = useBuildModelTypeOptions();
   const [open, setOpen] = useState(isDraft || defaultOpen);
   const [draftName, setDraftName] = useState('');
   const [nameSaved, setNameSaved] = useState(!isDraft);
@@ -122,57 +161,26 @@ export function BedrockInstanceCard({
 
   const FormSchema = useMemo(
     () =>
-      z
-        .object({
-          auth_mode: z
-            .enum(['access_key_secret', 'iam_role', 'assume_role'])
-            .default('access_key_secret'),
-          bedrock_ak: z.string().optional(),
-          bedrock_sk: z.string().optional(),
-          aws_role_arn: z.string().optional(),
-          bedrock_region: z
-            .string()
-            .min(1, { message: tSetting('bedrockRegionMessage') }),
-          llm_name: z
-            .string()
-            .min(1, { message: tSetting('bedrockModelNameMessage') }),
-          max_tokens: z
-            .number({
-              required_error: tSetting('maxTokensMessage'),
-              invalid_type_error: tSetting('maxTokensInvalidMessage'),
-            })
-            .nonnegative({ message: tSetting('maxTokensMinMessage') }),
-          model_type: z
-            .array(z.enum(['chat', 'embedding']))
-            .min(1, { message: tSetting('modelTypeMessage') }),
-        })
-        .superRefine((data, ctx) => {
-          if (data.auth_mode === 'access_key_secret') {
-            if (!data.bedrock_ak || !data.bedrock_ak.trim()) {
-              ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: tSetting('bedrockAKMessage'),
-                path: ['bedrock_ak'],
-              });
-            }
-            if (!data.bedrock_sk || !data.bedrock_sk.trim()) {
-              ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: tSetting('bedrockSKMessage'),
-                path: ['bedrock_sk'],
-              });
-            }
-          }
-          if (data.auth_mode === 'iam_role') {
-            if (!data.aws_role_arn || !data.aws_role_arn.trim()) {
-              ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: tSetting('awsRoleArnMessage'),
-                path: ['aws_role_arn'],
-              });
-            }
-          }
+      z.object({
+        llm_name: z.string().min(1, {
+          message: tSetting('somark.modelNameMessage'),
         }),
+        somark_base_url: z.string().min(1, {
+          message: tSetting('somark.baseUrlMessage'),
+        }),
+        somark_api_key: z.string().optional(),
+        somark_image_format: z.enum(IMAGE_FORMATS),
+        somark_formula_format: z.enum(FORMULA_FORMATS),
+        somark_table_format: z.enum(TABLE_FORMATS),
+        somark_cs_format: z.enum(CS_FORMATS),
+        somark_enable_text_cross_page: z.boolean(),
+        somark_enable_table_cross_page: z.boolean(),
+        somark_enable_title_level_recognition: z.boolean(),
+        somark_enable_inline_image: z.boolean(),
+        somark_enable_table_image: z.boolean(),
+        somark_enable_image_understanding: z.boolean(),
+        somark_keep_header_footer: z.boolean(),
+      }),
     [tSetting],
   );
 
@@ -183,9 +191,8 @@ export function BedrockInstanceCard({
     );
 
   // Lazily fetch full instance details only when the card is open.
-  // Mirrors the generic ProviderInstanceCard: collapsed cards never
-  // hit /providers/<name>/instances/<instance_name>; expanding one
-  // triggers a fresh refetch.
+  // Collapsed cards never hit /providers/<name>/instances/<instance_name>;
+  // expanding one triggers a fresh refetch.
   useEffect(() => {
     if (!isDraft && open && providerName && instance.instance_name) {
       refetchInstanceDetails();
@@ -198,26 +205,44 @@ export function BedrockInstanceCard({
     refetchInstanceDetails,
   ]);
 
-  const initialValues = useMemo<BedrockFormValues>(() => {
-    const merged = { ...instance, ...(instanceDetails ?? {}) } as any;
+  // Build initial values from the persisted instance + lazy-loaded details.
+  // SoMark stores its provider-specific fields inside
+  // `model_info[0].extra`; `api_key` and `base_url` live at the
+  // instance top level. Map them back to the form's flat shape.
+  const initialValues = useMemo<SoMarkFormValues>(() => {
+    const merged: any = { ...instance, ...(instanceDetails ?? {}) };
+    const rawApiKey = merged.api_key;
     const apiKey =
-      merged.api_key && typeof merged.api_key === 'object'
-        ? merged.api_key
-        : {};
+      typeof rawApiKey === 'string'
+        ? rawApiKey
+        : rawApiKey && typeof rawApiKey === 'object'
+          ? (rawApiKey.api_key ?? '')
+          : '';
+    const modelInfo = Array.isArray(merged.model_info)
+      ? merged.model_info[0]
+      : null;
+    const extra = (modelInfo?.extra ?? {}) as Record<string, any>;
     return {
-      auth_mode: (apiKey.auth_mode as AuthMode) ?? 'access_key_secret',
-      bedrock_ak: apiKey.bedrock_ak ?? '',
-      bedrock_sk: apiKey.bedrock_sk ?? '',
-      aws_role_arn: apiKey.aws_role_arn ?? '',
-      bedrock_region:
-        merged.region && merged.region !== 'default' ? merged.region : '',
-      llm_name: '',
-      max_tokens: 8192,
-      model_type: ['chat'],
+      llm_name: modelInfo?.llm_name ?? modelInfo?.model_name ?? '',
+      somark_base_url: (merged.base_url as string) ?? '',
+      somark_api_key: apiKey,
+      somark_image_format: (extra.somark_image_format as (typeof IMAGE_FORMATS)[number]) ?? 'url',
+      somark_formula_format: (extra.somark_formula_format as (typeof FORMULA_FORMATS)[number]) ?? 'latex',
+      somark_table_format: (extra.somark_table_format as (typeof TABLE_FORMATS)[number]) ?? 'html',
+      somark_cs_format: (extra.somark_cs_format as (typeof CS_FORMATS)[number]) ?? 'image',
+      somark_enable_text_cross_page: extra.somark_enable_text_cross_page ?? false,
+      somark_enable_table_cross_page: extra.somark_enable_table_cross_page ?? false,
+      somark_enable_title_level_recognition:
+        extra.somark_enable_title_level_recognition ?? false,
+      somark_enable_inline_image: extra.somark_enable_inline_image ?? false,
+      somark_enable_table_image: extra.somark_enable_table_image ?? true,
+      somark_enable_image_understanding:
+        extra.somark_enable_image_understanding ?? true,
+      somark_keep_header_footer: extra.somark_keep_header_footer ?? false,
     };
   }, [instance, instanceDetails]);
 
-  const form = useForm<BedrockFormValues>({
+  const form = useForm<SoMarkFormValues>({
     resolver: zodResolver(FormSchema),
     defaultValues: initialValues,
   });
@@ -228,43 +253,56 @@ export function BedrockInstanceCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialValues]);
 
-  const authMode = useWatch({ control: form.control, name: 'auth_mode' });
-
-  const regionOptions = useMemo(
-    () => BedrockRegionList.map((x) => ({ value: x, label: tSetting(x) })),
-    [tSetting],
+  const imageFormatOptions = useMemo(
+    () => buildFormatOptions(IMAGE_FORMATS),
+    [],
   );
+  const formulaFormatOptions = useMemo(
+    () => buildFormatOptions(FORMULA_FORMATS),
+    [],
+  );
+  const tableFormatOptions = useMemo(
+    () => buildFormatOptions(TABLE_FORMATS),
+    [],
+  );
+  const csFormatOptions = useMemo(() => buildFormatOptions(CS_FORMATS), []);
 
-  // Build a Bedrock-shaped payload for both submit and verify flows.
+  // Build a SoMark-shaped payload for both submit and verify flows.
+  // Mirrors the legacy `useSubmitSoMark` hook so the backend contract
+  // is unchanged: api_key/base_url at the instance level, all somark_*
+  // feature/format fields inside model_info[0].extra.
   const buildPayload = useCallback(
-    (values: BedrockFormValues, instanceName: string) => {
-      const cleaned: Record<string, any> = { ...values };
-      const fieldsByMode: Record<AuthMode, string[]> = {
-        access_key_secret: ['bedrock_ak', 'bedrock_sk'],
-        iam_role: ['aws_role_arn'],
-        assume_role: [],
+    (values: SoMarkFormValues, instanceName: string) => {
+      const extra = {
+        somark_image_format: values.somark_image_format,
+        somark_formula_format: values.somark_formula_format,
+        somark_table_format: values.somark_table_format,
+        somark_cs_format: values.somark_cs_format,
+        somark_enable_text_cross_page: values.somark_enable_text_cross_page,
+        somark_enable_table_cross_page: values.somark_enable_table_cross_page,
+        somark_enable_title_level_recognition:
+          values.somark_enable_title_level_recognition,
+        somark_enable_inline_image: values.somark_enable_inline_image,
+        somark_enable_table_image: values.somark_enable_table_image,
+        somark_enable_image_understanding:
+          values.somark_enable_image_understanding,
+        somark_keep_header_footer: values.somark_keep_header_footer,
       };
-      (Object.keys(fieldsByMode) as AuthMode[]).forEach((mode) => {
-        if (mode !== values.auth_mode) {
-          fieldsByMode[mode].forEach((f) => {
-            delete cleaned[f];
-          });
-        }
-      });
-
-      const flat = {
-        ...cleaned,
+      return {
         instance_name: instanceName,
         llm_factory: providerName,
-        max_tokens: values.max_tokens,
-        model_type: values.model_type,
-      };
-      const { instancePayload, modelPayload } = splitProviderPayload(flat);
-      return {
-        ...instancePayload,
-        max_tokens: modelPayload.max_tokens,
-        model_info: [modelPayload],
-      } as IAddProviderInstanceRequestBody;
+        api_key: values.somark_api_key ?? '',
+        base_url: values.somark_base_url,
+        max_tokens: 0,
+        model_info: [
+          {
+            model_name: values.llm_name,
+            model_type: ['ocr'],
+            max_tokens: 0,
+            extra,
+          },
+        ],
+      } as unknown as IAddProviderInstanceRequestBody;
     },
     [providerName],
   );
@@ -276,7 +314,7 @@ export function BedrockInstanceCard({
       if (!isValid) {
         return {
           isValid: false,
-          logs: tSetting('bedrockRegionMessage'),
+          logs: tSetting('somark.baseUrlMessage'),
         } as VerifyResult;
       }
       const values = form.getValues();
@@ -284,18 +322,11 @@ export function BedrockInstanceCard({
         values,
         draftName.trim() || instance.instance_name,
       );
-      const { instancePayload, modelPayload } = splitProviderPayload({
-        ...payload,
-        ...values,
-        llm_factory: providerName,
-        instance_name: draftName.trim() || instance.instance_name,
-      });
       const ret = await verifyProviderConnection({
         provider_name: providerName,
-        api_key: JSON.stringify(instancePayload.api_key),
-        base_url: instancePayload.base_url,
-        region: instancePayload.region,
-        model_info: [modelPayload],
+        api_key: (payload as any).api_key,
+        base_url: (payload as any).base_url,
+        model_info: (payload as any).model_info,
         ...params,
       });
       return {
@@ -366,15 +397,11 @@ export function BedrockInstanceCard({
   }, [isDraft, nameSaved, form, draftName, buildPayload, onSaved]);
 
   // Saved-mode auto-save. Both blur-driven (text inputs) and
-  // change-driven (Segmented / Select / MultiSelect) edits are
-  // coalesced through a shared debounced `scheduleSave`. Selects render
-  // in Radix portals outside the card's blur container, so blur-driven
-  // saves don't catch them — a form.watch watcher is used instead.
+  // change-driven (Selects / Switches) edits are coalesced through
+  // a shared debounced `scheduleSave`. Selects render in Radix portals
+  // outside the card's blur container, and Switches are click-based
+  // (no blur), so a `form.watch` watcher is needed to catch them.
   const blurSavingRef = useRef(false);
-  // Flipped to true while a child (e.g. ModelsSection's
-  // AddCustomModelDialog) opens a Portal-based dialog. Suppresses the
-  // spurious blur-save fired when focus moves into the Portal.
-  const blurSuppressRef = useRef(false);
   const lastSavedSigRef = useRef('');
   const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -384,7 +411,6 @@ export function BedrockInstanceCard({
   const performSave = useCallback(async () => {
     if (isDraft) return;
     if (blurSavingRef.current) return;
-    if (blurSuppressRef.current) return;
     const isValid = await form.trigger();
     if (!isValid) return;
     const values = form.getValues();
@@ -439,9 +465,9 @@ export function BedrockInstanceCard({
     [isDraft, scheduleSave],
   );
 
-  // Segmented / Select / MultiSelect change-driven save (saved mode
-  // only). These commit via click and their popovers render in portals,
-  // so blur-driven saves don't catch them. Watch the form directly.
+  // Dropdown / Switch change-driven save (saved mode only). Text
+  // inputs are handled by blur; Selects and Switches commit via click
+  // and their popovers live in portals, so we watch the form directly.
   // Only react to user-driven changes (type === 'change'); ignore
   // programmatic resets (form.reset when instanceDetails loads).
   useEffect(() => {
@@ -452,7 +478,7 @@ export function BedrockInstanceCard({
       (_values: any, meta: { name?: string; type?: string }) => {
         if (cancelled) return;
         if (meta?.type !== 'change') return;
-        if (!meta?.name || !BEDROCK_WATCHED_FIELDS.has(meta.name)) return;
+        if (!meta?.name || !SOMARK_WATCHED_FIELDS.has(meta.name)) return;
         scheduleSave();
       },
     );
@@ -499,119 +525,175 @@ export function BedrockInstanceCard({
     <Form {...form}>
       <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
         <RAGFlowFormItem
-          name="model_type"
-          label={tSetting('modelType')}
+          name="llm_name"
+          label={tSetting('modelName')}
           required
         >
-          {(field) => (
-            <MultiSelect
-              options={buildModelTypeOptions(['chat', 'embedding'])}
-              placeholder={tSetting('modelTypeMessage')}
-              onValueChange={field.onChange}
-              defaultValue={field.value}
-              variant="inverted"
-              maxCount={100}
-            />
-          )}
+          <Input placeholder="somark-from-env-1" />
         </RAGFlowFormItem>
 
-        <RAGFlowFormItem name="llm_name" label={tSetting('modelName')} required>
-          <Input placeholder={tSetting('bedrockModelNameMessage')} />
+        <RAGFlowFormItem
+          name="somark_base_url"
+          label={tSetting('somark.baseUrl')}
+          required
+        >
+          <Input placeholder={tSetting('somark.baseUrlPlaceholder')} />
         </RAGFlowFormItem>
 
-        <div>
-          <RAGFlowFormItem name="auth_mode">
-            {(field) => (
-              <Segmented
-                value={field.value}
-                onChange={(value) => {
-                  if (value !== 'access_key_secret') {
-                    form.setValue('bedrock_ak', '');
-                    form.setValue('bedrock_sk', '');
-                  }
-                  if (value !== 'iam_role') {
-                    form.setValue('aws_role_arn', '');
-                  }
-                  field.onChange(value);
-                }}
-                options={[
-                  {
-                    label: tSetting('awsAuthModeAccessKeySecret'),
-                    value: 'access_key_secret',
-                  },
-                  { label: tSetting('awsAuthModeIamRole'), value: 'iam_role' },
-                  {
-                    label: tSetting('awsAuthModeAssumeRole'),
-                    value: 'assume_role',
-                  },
-                ]}
-              />
-            )}
-          </RAGFlowFormItem>
+        <RAGFlowFormItem name="somark_api_key" label={tSetting('somark.apiKey')}>
+          <Input
+            type="password"
+            placeholder={tSetting('somark.apiKeyPlaceholder')}
+          />
+        </RAGFlowFormItem>
+
+        <div className="text-sm font-semibold text-muted-foreground border-b pb-1">
+          {tSetting('somark.sectionElementFormats')}
         </div>
 
-        {authMode === 'access_key_secret' && (
-          <>
-            <RAGFlowFormItem
-              name="bedrock_ak"
-              label={tSetting('awsAccessKeyId')}
-              required
-            >
-              <Input placeholder={tSetting('bedrockAKMessage')} />
-            </RAGFlowFormItem>
-            <RAGFlowFormItem
-              name="bedrock_sk"
-              label={tSetting('awsSecretAccessKey')}
-              required
-            >
-              <Input placeholder={tSetting('bedrockSKMessage')} />
-            </RAGFlowFormItem>
-          </>
-        )}
-
-        {authMode === 'iam_role' && (
-          <RAGFlowFormItem
-            name="aws_role_arn"
-            label={tSetting('awsRoleArn')}
-            required
-          >
-            <Input placeholder={tSetting('awsRoleArnMessage')} />
-          </RAGFlowFormItem>
-        )}
-
-        {authMode === 'assume_role' && (
-          <div className="text-sm text-text-secondary">
-            {tSetting('awsAssumeRoleTip')}
-          </div>
-        )}
-
         <RAGFlowFormItem
-          name="bedrock_region"
-          label={tSetting('bedrockRegion')}
-          required
+          name="somark_image_format"
+          label={tSetting('somark.imageFormat')}
         >
           {(field) => (
-            <SelectWithSearch
+            <RAGFlowSelect
               value={field.value}
               onChange={field.onChange}
-              options={regionOptions}
-              placeholder={tSetting('bedrockRegionMessage')}
-              allowClear
+              options={imageFormatOptions}
             />
           )}
         </RAGFlowFormItem>
 
         <RAGFlowFormItem
-          name="max_tokens"
-          label={tSetting('maxTokens')}
-          required
+          name="somark_formula_format"
+          label={tSetting('somark.formulaFormat')}
         >
           {(field) => (
-            <Input
-              type="number"
-              placeholder={tSetting('maxTokensTip')}
+            <RAGFlowSelect
               value={field.value}
-              onChange={(e) => field.onChange(Number(e.target.value))}
+              onChange={field.onChange}
+              options={formulaFormatOptions}
+            />
+          )}
+        </RAGFlowFormItem>
+
+        <RAGFlowFormItem
+          name="somark_table_format"
+          label={tSetting('somark.tableFormat')}
+        >
+          {(field) => (
+            <RAGFlowSelect
+              value={field.value}
+              onChange={field.onChange}
+              options={tableFormatOptions}
+            />
+          )}
+        </RAGFlowFormItem>
+
+        <RAGFlowFormItem
+          name="somark_cs_format"
+          label={tSetting('somark.csFormat')}
+        >
+          {(field) => (
+            <RAGFlowSelect
+              value={field.value}
+              onChange={field.onChange}
+              options={csFormatOptions}
+            />
+          )}
+        </RAGFlowFormItem>
+
+        <div className="text-sm font-semibold text-muted-foreground border-b pb-1">
+          {tSetting('somark.sectionFeatureConfig')}
+        </div>
+
+        <RAGFlowFormItem
+          name="somark_enable_text_cross_page"
+          label={tSetting('somark.enableTextCrossPage')}
+          labelClassName="!mb-0"
+        >
+          {(field) => (
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
+          )}
+        </RAGFlowFormItem>
+
+        <RAGFlowFormItem
+          name="somark_enable_table_cross_page"
+          label={tSetting('somark.enableTableCrossPage')}
+          labelClassName="!mb-0"
+        >
+          {(field) => (
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
+          )}
+        </RAGFlowFormItem>
+
+        <RAGFlowFormItem
+          name="somark_enable_title_level_recognition"
+          label={tSetting('somark.enableTitleLevelRecognition')}
+          labelClassName="!mb-0"
+        >
+          {(field) => (
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
+          )}
+        </RAGFlowFormItem>
+
+        <RAGFlowFormItem
+          name="somark_enable_inline_image"
+          label={tSetting('somark.enableInlineImage')}
+          labelClassName="!mb-0"
+        >
+          {(field) => (
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
+          )}
+        </RAGFlowFormItem>
+
+        <RAGFlowFormItem
+          name="somark_enable_table_image"
+          label={tSetting('somark.enableTableImage')}
+          labelClassName="!mb-0"
+        >
+          {(field) => (
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
+          )}
+        </RAGFlowFormItem>
+
+        <RAGFlowFormItem
+          name="somark_enable_image_understanding"
+          label={tSetting('somark.enableImageUnderstanding')}
+          labelClassName="!mb-0"
+        >
+          {(field) => (
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
+          )}
+        </RAGFlowFormItem>
+
+        <RAGFlowFormItem
+          name="somark_keep_header_footer"
+          label={tSetting('somark.keepHeaderFooter')}
+          labelClassName="!mb-0"
+        >
+          {(field) => (
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
             />
           )}
         </RAGFlowFormItem>
@@ -621,7 +703,12 @@ export function BedrockInstanceCard({
           internal useFormContext() resolves the form instance.
           Rendered outside <form> so it never triggers submission. */}
       <div className="pt-3">
-        <VerifyButton onVerify={handleVerify} isAbsolute={false} />
+        <VerifyButton
+          onVerify={handleVerify}
+          isAbsolute={false}
+          validLabel={tSetting('somark.verifyPassed')}
+          invalidLabel={tSetting('somark.verifyFailed')}
+        />
       </div>
     </Form>
   );
@@ -682,20 +769,6 @@ export function BedrockInstanceCard({
               onBlurCapture={handleFieldsBlur}
             >
               {renderFields()}
-
-              <div className="pt-3">
-                <ModelsSection
-                  providerName={providerName}
-                  instanceName={instance.instance_name || '__draft__'}
-                  instance={instance}
-                  hideActions={false}
-                  hideIfEmpty={false}
-                  getFormValues={() => form.getValues()}
-                  onBlurSuppressChange={(s) => {
-                    blurSuppressRef.current = s;
-                  }}
-                />
-              </div>
             </div>
           </CollapsibleContent>
         </Collapsible>
@@ -762,17 +835,6 @@ export function BedrockInstanceCard({
             data-testid="instance-locked-fields"
           >
             {renderFields()}
-
-            <div className="pt-3">
-              <ModelsSection
-                providerName={providerName}
-                instanceName={instance.instance_name || '__draft__'}
-                instance={instance}
-                hideActions={false}
-                hideIfEmpty={false}
-                getFormValues={() => form.getValues()}
-              />
-            </div>
           </fieldset>
         </div>
       )}
@@ -780,4 +842,4 @@ export function BedrockInstanceCard({
   );
 }
 
-export default BedrockInstanceCard;
+export default SoMarkInstanceCard;

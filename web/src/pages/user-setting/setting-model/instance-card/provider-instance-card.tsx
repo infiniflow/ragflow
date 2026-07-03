@@ -22,6 +22,7 @@ import { BedrockInstanceCard } from './bedrock-instance-card';
 import { DraftModeCard } from './components/draft-mode-card';
 import { InstanceNameSection } from './components/instance-name-section';
 import { SavedModeCard } from './components/saved-mode-card';
+import { SoMarkInstanceCard } from './somark-instance-card';
 import {
   useDeleteInstance,
   useDraftAutoSave,
@@ -59,10 +60,17 @@ export function ProviderInstanceCard(props: ProviderInstanceCardProps) {
   // role ARN, model name, max_tokens) that don't fit the generic
   // DynamicForm path. Render its own inline card instead.
   //
+  // SoMark is similar: its many provider-specific fields (image /
+  // formula / table / cs formats + 7 boolean feature toggles) don't
+  // fit the generic DynamicForm path. Render its own inline card too.
+  //
   // Dispatch BEFORE any hooks so each branch component has a stable
   // hook-call order (Rules of Hooks).
   if (props.providerName === 'Bedrock') {
     return <BedrockInstanceCard {...props} />;
+  }
+  if (props.providerName === 'SoMark') {
+    return <SoMarkInstanceCard {...props} />;
   }
   return <GenericProviderInstanceCard {...props} />;
 }

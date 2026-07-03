@@ -21,7 +21,6 @@ import {
   useAddProviderInstance,
   useFetchProviderInstances,
 } from '@/hooks/use-llm-request';
-import { LLMFactory } from '@/constants/llm';
 import { IProviderInstance } from '@/interfaces/database/llm';
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
@@ -30,8 +29,6 @@ import { ProviderInstanceCard } from './instance-card/provider-instance-card';
 import { ProviderHeaderBar } from './layout/provider-header-bar';
 import { Sidebar, SidebarSelection } from './layout/sidebar';
 import SystemSetting from './layout/system-setting';
-import { useSubmitSoMark, useVerifySettings } from './hooks';
-import SoMarkModal from './modal/somark-modal';
 
 /**
  * Sidebar-driven model provider settings page.
@@ -46,13 +43,9 @@ import SoMarkModal from './modal/somark-modal';
  *        that button adds a new draft card; multiple drafts can coexist
  *        and be saved / cancelled independently.
  *
- * Special-case providers:
- *  - `Bedrock`: rendered inline via `BedrockInstanceCard` (handled inside
- *    `ProviderInstanceCard`).
- *  - `SoMark`: its many provider-specific fields (image/formula/table/cs
- *    formats + 7 boolean feature toggles) don't fit the generic draft
- *    card, so the legacy `SoMarkModal` is retained and triggered in
- *    place of a draft card when the user adds a SoMark instance.
+ * Special-case providers (handled inside `ProviderInstanceCard`):
+ *  - `Bedrock`: rendered inline via `BedrockInstanceCard`.
+ *  - `SoMark`: rendered inline via `SoMarkInstanceCard`.
  */
 const SettingModelV2: FC = () => {
   const { t: tSetting } = useTranslate('setting');
@@ -68,20 +61,6 @@ const SettingModelV2: FC = () => {
   // for the current selection. Reset on every selection change.
   const cancelledRef = useRef(false);
 
-  // SoMark uses a dedicated modal (its fields don't fit the generic
-  // draft card). The hook owns the modal's visibility, submit, and
-  // verify handlers.
-  const {
-    somarkVisible,
-    hideSoMarkModal,
-    showSoMarkModal,
-    onSoMarkOk,
-    somarkLoading,
-  } = useSubmitSoMark();
-  const { onApiKeyVerifying: onSoMarkVerifying } = useVerifySettings({
-    onVerify: onSoMarkOk,
-  });
-
   // Always re-fetch when the selection changes. Passing an empty string
   // disables the query.
   const providerQueryName = selection === 'default' ? '' : selection;
@@ -89,19 +68,12 @@ const SettingModelV2: FC = () => {
     useFetchProviderInstances(providerQueryName);
   const queryClient = useQueryClient();
 
-  // Append a new draft id to the visible list. SoMark is special-cased
-  // because its many provider-specific fields (image/formula/table/cs
-  // formats + 7 boolean feature toggles) don't fit the generic draft
-  // card — open the legacy `SoMarkModal` instead of a draft.
+  // Append a new draft id to the visible list.
   const addDraft = useCallback(() => {
-    if (selection === LLMFactory.SoMark) {
-      showSoMarkModal();
-      return;
-    }
     draftIdCounterRef.current += 1;
     const id = `draft-${draftIdCounterRef.current}`;
     setDraftIds((prev) => [...prev, id]);
-  }, [selection, showSoMarkModal]);
+  }, []);
 
   // Remove a draft id from the visible list (called on save / cancel).
   const removeDraft = useCallback((id: string) => {
@@ -127,14 +99,9 @@ const SettingModelV2: FC = () => {
   // already has saved instances, only to remove it once the query
   // resolves. Gating on `!instancesLoading` skips that flicker and
   // keeps the UI clean for providers that do have instances.
-  //
-  // SoMark is skipped because it uses a modal (triggered by `addDraft`
-  // via `showSoMarkModal`) rather than the inline draft-card flow —
-  // auto-opening the modal on selection would be intrusive.
   useEffect(() => {
     if (selection === 'default' || cancelledRef.current) return;
     if (instancesLoading) return;
-    if (selection === LLMFactory.SoMark) return;
     if (instances.length === 0 && draftIds.length === 0) {
       addDraft();
     }
@@ -264,13 +231,6 @@ const SettingModelV2: FC = () => {
           </>
         )}
       </section>
-      <SoMarkModal
-        visible={somarkVisible}
-        hideModal={hideSoMarkModal}
-        onOk={onSoMarkOk}
-        loading={somarkLoading}
-        onVerify={onSoMarkVerifying}
-      ></SoMarkModal>
     </div>
   );
 };
