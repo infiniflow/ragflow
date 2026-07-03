@@ -237,13 +237,21 @@ func TestIngestor_ExecuteTask_PipelineRuns(t *testing.T) {
 		t.Fatalf("create task: %v", err)
 	}
 
-	// Custom 1-stage DSL pointing at the stub component.
+	// Canonical template wrapper carrying a tiny canvas DSL.
 	dsl := map[string]any{
-		"version":     "1",
-		"name":        "e2e-stub",
-		"stage_count": 1,
-		"stages": []map[string]any{
-			{"type": stubIngestionComp, "params": map[string]any{}},
+		"dsl": map[string]any{
+			"components": map[string]any{
+				"begin": map[string]any{
+					"obj":        map[string]any{"component_name": "Begin", "params": map[string]any{}},
+					"downstream": []string{"stub"},
+				},
+				"stub": map[string]any{
+					"obj":      map[string]any{"component_name": stubIngestionComp, "params": map[string]any{}},
+					"upstream": []string{"begin"},
+				},
+			},
+			"path":  []string{"begin", "stub"},
+			"graph": map[string]any{"nodes": []any{}},
 		},
 	}
 	dslBytes, _ := json.Marshal(dsl)
@@ -276,14 +284,14 @@ func TestIngestor_ExecuteTask_PipelineRuns(t *testing.T) {
 	if len(logs) == 0 {
 		t.Fatal("expected at least one IngestionTaskLog row, got 0")
 	}
-	// The latest log should reflect the stub stage as
-	// completed.
+	// The latest log should carry the structured component_done entry.
 	latest := logs[len(logs)-1]
-	if comp, ok := latest.Checkpoint["current_component"].(string); !ok || comp != stubIngestionComp {
-		t.Errorf("expected current_component=%q, got %v", stubIngestionComp, latest.Checkpoint["current_component"])
+	done, ok := latest.Checkpoint["component_done"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected component_done map, got %T", latest.Checkpoint["component_done"])
 	}
-	if completed, ok := latest.Checkpoint["completed_components"].([]any); !ok || len(completed) != 1 {
-		t.Errorf("expected 1 completed component, got %v", latest.Checkpoint["completed_components"])
+	if _, ok := done[stubIngestionComp].(map[string]any); !ok {
+		t.Fatalf("expected component_done entry for %s, got %v", stubIngestionComp, done)
 	}
 
 	// (c) task is COMPLETED.
@@ -304,32 +312,21 @@ func TestIngestor_ExecuteTask_PipelineRuns(t *testing.T) {
 	}
 }
 
-// TestIngestor_ExecuteTask_DefaultDSL exercises the path
-// where task.Schema has no `pipeline` key — executeTask
-// falls back to the production 5-stage DSL. The 5 stages
-// will fail at Invoke time (no real storage / LLM), so
-// executeTask should mark the task as FAILED and call Ack()
-// (terminal-failure path).
-func TestIngestor_ExecuteTask_DefaultDSL(t *testing.T) {
-	atomic.StoreInt32(&stubCounter, 0)
-
+// TestIngestor_ExecuteTask_MissingDSL verifies the task fails cleanly when
+// no canonical DSL is present on the task schema.
+func TestIngestor_ExecuteTask_MissingDSL(t *testing.T) {
 	db := setupIngestorTestDB(t)
 	origDB := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = origDB })
 
-	origStorage := storage.GetStorageFactory().GetStorage()
-	storage.GetStorageFactory().SetStorage(storage.NewMemoryStorage())
-	t.Cleanup(func() { storage.GetStorageFactory().SetStorage(origStorage) })
-
-	taskID := "default-dsl-task"
+	taskID := "missing-dsl-task"
 	task := &entity.IngestionTask{
 		ID:         taskID,
 		UserID:     "user-1",
 		DocumentID: "doc-1",
 		DatasetID:  "ds-1",
 		Status:     common.RUNNING,
-		// No Schema — default DSL applies.
 	}
 	if err := db.Create(task).Error; err != nil {
 		t.Fatalf("create task: %v", err)
@@ -342,12 +339,9 @@ func TestIngestor_ExecuteTask_DefaultDSL(t *testing.T) {
 		TaskHandle: handle,
 	}
 
-	ing := NewIngestor("test-default", 1, []string{"pdf"})
+	ing := NewIngestor("test-missing-dsl", 1, []string{"pdf"})
 	ing.executeTask(taskCtx)
 
-	// The default 5-stage DSL fails at the first stage
-	// (File: needs a real storage binary), so the task
-	// should be FAILED and Ack() should have been called.
 	var reloaded entity.IngestionTask
 	if err := db.Where("id = ?", taskID).First(&reloaded).Error; err != nil {
 		t.Fatalf("reload task: %v", err)
@@ -357,108 +351,6 @@ func TestIngestor_ExecuteTask_DefaultDSL(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&handle.acked); got != 1 {
 		t.Errorf("expected Ack() called 1 time on FAILED, got %d", got)
-	}
-}
-
-// TestIngestor_ExecuteTask_ResumeFromCheckpoint verifies the
-// resume decision: a task whose latest log has files=[file_ref]
-// starts the pipeline at the Parser-equivalent stage (or
-// falls through to the "no Tokenizer stage" sentinel, since
-// the stub DSL has no real Tokenizer).
-func TestIngestor_ExecuteTask_ResumeFromCheckpoint(t *testing.T) {
-	atomic.StoreInt32(&stubCounter, 0)
-	atomic.StoreInt32(&stubTokenizerCounter, 0)
-
-	db := setupIngestorTestDB(t)
-	origDB := dao.DB
-	dao.DB = db
-	t.Cleanup(func() { dao.DB = origDB })
-
-	origStorage := storage.GetStorageFactory().GetStorage()
-	mem := storage.NewMemoryStorage()
-	storage.GetStorageFactory().SetStorage(mem)
-	t.Cleanup(func() { storage.GetStorageFactory().SetStorage(origStorage) })
-
-	taskID := "resume-task"
-	task := &entity.IngestionTask{
-		ID:         taskID,
-		UserID:     "u",
-		DocumentID: "d",
-		DatasetID:  "ds",
-		Status:     common.RUNNING,
-	}
-	if err := db.Create(task).Error; err != nil {
-		t.Fatalf("create task: %v", err)
-	}
-
-	chunksPath := "resume-task/TokenChunker/chunks.jsonl"
-	if err := mem.Put("ragflow", chunksPath, []byte("{\"text\":\"chunk-a\"}\n{\"text\":\"chunk-b\"}\n")); err != nil {
-		t.Fatalf("seed chunks: %v", err)
-	}
-
-	// Pre-seed a structured chunker boundary so RestoreFromCheckpoint
-	// resumes at the Tokenizer-like stage.
-	cp := entity.JSONMap{
-		"current_component":    "MockA",
-		"completed_components": []string{},
-		"total_components":     2,
-		"files":                []any{chunksPath},
-		"boundaries": map[string]any{
-			"chunker": map[string]any{
-				"chunks_jsonl": chunksPath,
-				"stage":        "TokenChunker",
-			},
-		},
-	}
-	if err := db.Create(&entity.IngestionTaskLog{TaskID: taskID, Checkpoint: cp}).Error; err != nil {
-		t.Fatalf("seed log: %v", err)
-	}
-
-	// Two-stage DSL: resume should skip the first stage and invoke only
-	// the Tokenizer-like stage matched by suffix.
-	dsl := map[string]any{
-		"version":     "1",
-		"stage_count": 2,
-		"stages": []map[string]any{
-			{"type": stubIngestionComp, "params": map[string]any{}},
-			{"type": stubTokenizerComp, "params": map[string]any{}},
-		},
-	}
-	dslBytes, _ := json.Marshal(dsl)
-	task.Schema = entity.JSONMap{"pipeline": []byte(dslBytes)}
-	if err := db.Save(task).Error; err != nil {
-		t.Fatalf("save task: %v", err)
-	}
-
-	handle := &stubTaskHandle{taskID: taskID}
-	taskCtx := &TaskContext{
-		Ctx:        context.Background(),
-		Task:       task,
-		TaskHandle: handle,
-	}
-
-	ing := NewIngestor("test-resume", 1, []string{"pdf"})
-	ing.executeTask(taskCtx)
-
-	// Stage 0 should be skipped; resume starts at the Tokenizer-like
-	// stage and rehydrates chunk inputs from chunks.jsonl.
-	if got := atomic.LoadInt32(&stubCounter); got != 0 {
-		t.Errorf("expected stub NOT invoked on resume-skip, got %d", got)
-	}
-	if got := atomic.LoadInt32(&stubTokenizerCounter); got != 1 {
-		t.Errorf("expected tokenizer stub invoked 1 time, got %d", got)
-	}
-	// Task should be COMPLETED.
-	var reloaded entity.IngestionTask
-	if err := db.Where("id = ?", taskID).First(&reloaded).Error; err != nil {
-		t.Fatalf("reload task: %v", err)
-	}
-	if reloaded.Status != common.COMPLETED {
-		t.Errorf("expected status=COMPLETED, got %s", reloaded.Status)
-	}
-	// Ack() called once (success path).
-	if got := atomic.LoadInt32(&handle.acked); got != 1 {
-		t.Errorf("expected Ack() called 1 time, got %d", got)
 	}
 }
 
@@ -494,10 +386,19 @@ func TestIngestor_ExecuteTask_Cancellation(t *testing.T) {
 	cancel()
 
 	dsl := map[string]any{
-		"version":     "1",
-		"stage_count": 1,
-		"stages": []map[string]any{
-			{"type": stubIngestionComp, "params": map[string]any{}},
+		"dsl": map[string]any{
+			"components": map[string]any{
+				"begin": map[string]any{
+					"obj":        map[string]any{"component_name": "Begin", "params": map[string]any{}},
+					"downstream": []string{"stub"},
+				},
+				"stub": map[string]any{
+					"obj":      map[string]any{"component_name": stubIngestionComp, "params": map[string]any{}},
+					"upstream": []string{"begin"},
+				},
+			},
+			"path":  []string{"begin", "stub"},
+			"graph": map[string]any{"nodes": []any{}},
 		},
 	}
 	dslBytes, _ := json.Marshal(dsl)

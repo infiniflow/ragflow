@@ -14,11 +14,6 @@
 //  limitations under the License.
 //
 
-// Slice 4 deferred-2 tests for port-rag-flow-pipeline-to-go.md.
-// Pins the canvas-driven pipeline entry point (Pipeline.p.Run)
-// against a small 2-stage chain using mock components registered
-// under runtime.CategoryIngestion.
-
 package pipeline
 
 import (
@@ -28,40 +23,27 @@ import (
 	"ragflow/internal/agent/runtime"
 )
 
-// mockCanvasStage is a minimal runtime.Component that records
-// the call and emits a synthetic output. Used by the p.Run
-// tests below.
 type mockCanvasStage struct {
-	name   string
 	output map[string]any
 	called bool
 }
 
 func (m *mockCanvasStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	m.called = true
-	out := map[string]any{"name": inputs["name"]}
+	out := cloneMapOrEmpty(inputs)
 	for k, v := range m.output {
 		out[k] = v
 	}
 	return out, nil
 }
 
-func (m *mockCanvasStage) Parallelism() int { return 1 }
-func (m *mockCanvasStage) Inputs() map[string]string {
-	return map[string]string{"name": "string"}
-}
-func (m *mockCanvasStage) Outputs() map[string]string {
-	return map[string]string{"output": "any"}
-}
+func (m *mockCanvasStage) Parallelism() int           { return 1 }
+func (m *mockCanvasStage) Inputs() map[string]string  { return map[string]string{"name": "string"} }
+func (m *mockCanvasStage) Outputs() map[string]string { return map[string]string{"output": "any"} }
 
-// TestPipeline_TestPipeline_Run_HappyPath pins the canvas-driven Run
-// path. Two mock components are registered under
-// CategoryIngestion; the pipeline drives them through the
-// canvas runner and the per-stage outputs accumulate into the
-// final state map.
-func TestPipeline_TestPipeline_Run_HappyPath(t *testing.T) {
-	stageA := &mockCanvasStage{name: "StageA", output: map[string]any{"a": 1}}
-	stageB := &mockCanvasStage{name: "StageB", output: map[string]any{"b": 2}}
+func TestPipelineRunHappyPath(t *testing.T) {
+	stageA := &mockCanvasStage{output: map[string]any{"a": 1}}
+	stageB := &mockCanvasStage{output: map[string]any{"b": 2}}
 
 	const (
 		nameA = "p.RunStageA"
@@ -75,106 +57,88 @@ func TestPipeline_TestPipeline_Run_HappyPath(t *testing.T) {
 		runtime.Metadata{Version: "1.0.0"})
 
 	pipe, err := NewPipelineFromDSL([]byte(`{
-		"version": "1",
-		"name": "run-canvas-test",
-		"stage_count": 2,
-		"stages": [
-			{"type": "`+nameA+`", "params": {}},
-			{"type": "`+nameB+`", "params": {}}
-		]
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
 	}`), "task-canvas-happy", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	out, err := pipe.Run(context.Background(), map[string]any{
-		"name": "doc-canvas",
-	})
+	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-canvas"})
 	if err != nil {
-		t.Fatalf("p.Run: %v", err)
+		t.Fatalf("Run: %v", err)
 	}
-	if !stageA.called {
-		t.Error("StageA not invoked")
+	if !stageA.called || !stageB.called {
+		t.Fatalf("expected both stages to run, got A=%v B=%v", stageA.called, stageB.called)
 	}
-	if !stageB.called {
-		t.Error("StageB not invoked")
+	if got := out["name"]; got != "doc-canvas" {
+		t.Fatalf("name = %v, want doc-canvas", got)
 	}
-	if got, want := out["name"], "doc-canvas"; got != want {
-		t.Errorf("name = %v, want %v", got, want)
+	gotB, ok := out["b"].(map[string]any)
+	if !ok {
+		t.Fatalf("b = %T, want map[string]any", out["b"])
 	}
-	if got, want := out["b"], 2; got != want {
-		t.Errorf("b = %v, want %v (StageB output)", got, want)
+	if got := gotB["b"]; got != 2 {
+		t.Fatalf("b.b = %v, want 2", got)
 	}
 }
 
-// TestPipeline_TestPipeline_Run_FullGraphAlwaysRuns pins the
-// canvas-entry contract: Pipeline.Run always executes the full graph
-// from the graph entry.
-func TestPipeline_TestPipeline_Run_FullGraphAlwaysRuns(t *testing.T) {
-	stageA := &mockCanvasStage{name: "StageA"}
-	stageB := &mockCanvasStage{name: "StageB"}
-
-	const (
-		nameA = "p.RunStartAtStageA"
-		nameB = "p.RunStartAtStageB"
-	)
-	runtime.MustRegister(nameA, runtime.CategoryIngestion,
-		func(_ string, _ map[string]any) (runtime.Component, error) { return stageA, nil },
-		runtime.Metadata{Version: "1.0.0"})
-	runtime.MustRegister(nameB, runtime.CategoryIngestion,
-		func(_ string, _ map[string]any) (runtime.Component, error) { return stageB, nil },
-		runtime.Metadata{Version: "1.0.0"})
-
-	pipe, _ := NewPipelineFromDSL([]byte(`{
-		"version": "1",
-		"stage_count": 2,
-		"stages": [
-			{"type": "`+nameA+`", "params": {}},
-			{"type": "`+nameB+`", "params": {}}
-		]
-	}`), "task-canvas-skip", nil, nil, nil)
-
-	_, err := pipe.Run(context.Background(), map[string]any{"name": "x"})
-	if err != nil {
-		t.Fatalf("p.Run: %v", err)
-	}
-	if !stageA.called {
-		t.Error("StageA should be invoked")
-	}
-	if !stageB.called {
-		t.Error("StageB should be invoked")
-	}
-}
-
-// TestPipeline_TestPipeline_Run_NilPipeline pins the nil receiver
-// rejection. p.Run must not panic on a nil pipeline.
-func TestPipeline_TestPipeline_Run_NilPipeline(t *testing.T) {
+func TestPipelineRunNilPipeline(t *testing.T) {
 	var p *Pipeline
-	_, err := p.Run(context.Background(), nil)
-	if err == nil {
-		t.Fatal("nil pipeline: want error, got nil")
+	if _, err := p.Run(context.Background(), nil); err == nil {
+		t.Fatal("expected error for nil pipeline")
 	}
 }
 
-// TestPipeline_TestPipeline_Run_StageErrorBubbles pins the per-stage
-// error propagation. A stage that returns an error surfaces as
-// a wrapped p.Run error.
-func TestPipeline_TestPipeline_Run_StageErrorBubbles(t *testing.T) {
-	stageErr := &errCanvasStage{}
+func TestPipelineRunStageErrorBubbles(t *testing.T) {
 	const name = "p.RunErrStage"
 	runtime.MustRegister(name, runtime.CategoryIngestion,
-		func(_ string, _ map[string]any) (runtime.Component, error) { return stageErr, nil },
+		func(_ string, _ map[string]any) (runtime.Component, error) { return &errCanvasStage{}, nil },
 		runtime.Metadata{Version: "1.0.0"})
 
-	pipe, _ := NewPipelineFromDSL([]byte(`{
-		"version": "1",
-		"stage_count": 1,
-		"stages": [{"type": "`+name+`", "params": {}}]
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["err"]},
+				"err": {"obj": {"component_name": "`+name+`", "params": {}}, "upstream": ["begin"]}
+			},
+			"path": ["begin", "err"],
+			"graph": {"nodes": []}
+		}
 	}`), "task-canvas-err", nil, nil, nil)
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
 
-	_, err := pipe.Run(context.Background(), map[string]any{"name": "x"})
-	if err == nil {
-		t.Fatal("stage error: want error, got nil")
+	if _, err := pipe.Run(context.Background(), map[string]any{"name": "x"}); err == nil {
+		t.Fatal("expected stage error")
+	}
+}
+
+func TestNewPipelineFromDSLUnwrapsTemplateDSL(t *testing.T) {
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"id": "template-1",
+		"title": "template",
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}}
+			},
+			"path": ["begin"],
+			"graph": {"nodes": []}
+		}
+	}`), "task-template", nil, nil, nil)
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+	if pipe.canvas == nil {
+		t.Fatal("expected decoded canvas")
 	}
 }
 

@@ -16,33 +16,15 @@
 
 package pipeline
 
-import (
-	"errors"
-	"strconv"
-)
+import "errors"
 
-// Sentinel errors returned by the pipeline package. Callers
-// should compare with errors.Is so the messages can evolve.
 var (
-	errNilDSL             = errors.New("pipeline: nil DSL")
-	errEmptyStages        = errors.New("pipeline: DSL has no stages")
-	errStageCountMismatch = errors.New("pipeline: stage_count does not match len(stages)")
-	errUnknownComponent   = errors.New("pipeline: unknown component")
-	errUnknownStage       = errors.New("pipeline: unknown stage")
+	errNilDSL           = errors.New("pipeline: nil DSL")
+	errEmptyStages      = errors.New("pipeline: DSL has no components")
+	errUnknownComponent = errors.New("pipeline: unknown component")
+	errUnknownStage     = errors.New("pipeline: unknown stage")
 )
 
-func errEmptyStageType(idx int) error {
-	return &stageError{Stage: strconv.Itoa(idx), Reason: "empty type"}
-}
-
-func errDuplicateStage(typeName string) error {
-	return &stageError{Stage: typeName, Reason: "duplicate stage type"}
-}
-
-// stageError is a small structured error type for stage-level
-// validation. It carries the offending stage's type name (or
-// index as a string for the empty-type case) plus a reason.
-// Callers can errors.As to it for programmatic handling.
 type stageError struct {
 	Stage  string
 	Reason string
@@ -52,8 +34,6 @@ func (e *stageError) Error() string {
 	return "pipeline: stage " + e.Stage + ": " + e.Reason
 }
 
-// sinkError is a small structured error type for ProgressSink
-// misconfigurations (nil DAO, missing factory, etc.).
 type sinkError struct {
 	Reason string
 }

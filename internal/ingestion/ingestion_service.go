@@ -492,13 +492,16 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 	task := taskCtx.Task
 	common.Info(fmt.Sprintf("Starting task %s", task.ID))
 
-	// Phase 3 (plan §4 task 4): replace the placeholder sleep
-	// loop with a real pipeline.Run. The DSL is taken from the
-	// task's Schema field; on missing/empty schema we fall
-	// back to a sensible 5-stage default that matches the
-	// production ingestion flow (File → Parser → Chunker →
-	// Tokenizer → Extractor).
+	// Execute the canonical ingestion canvas DSL carried by the task.
+	// The Go ingestion path no longer synthesizes a parallel `stages[]`
+	// schema; the only accepted format is the template/canvas DSL.
 	dslBytes := defaultPipelineDSL(task)
+	if len(dslBytes) == 0 {
+		err := fmt.Errorf("task %s missing canonical ingestion DSL in schema.pipeline or schema.dsl", task.ID)
+		common.Error(fmt.Sprintf("Failed to load pipeline DSL for task %s", task.ID), err)
+		e.failTask(taskCtx, err)
+		return
+	}
 	sink := pipeline.NewTaskLogSink()
 	stg := storage.GetStorageFactory().GetStorage()
 
@@ -509,19 +512,10 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 		return
 	}
 
-	// Resume decision (plan §2 AD-5c): read the latest log
-	// row, find the last materialized boundary, and skip
-	// stages before it. RestoreFromCheckpoint returns StartAt
-	// >= 0 (0 = full re-run).
-	res, err := pl.RestoreFromCheckpoint(task.ID)
-	if err != nil {
-		common.Error(fmt.Sprintf("Failed to restore checkpoint for task %s", task.ID), err)
-		e.failTask(taskCtx, err)
-		return
+	inputs := map[string]any{
+		"doc_id": task.DocumentID,
 	}
-	common.Info(fmt.Sprintf("Task %s resuming at stage %d (materialized=%q)", task.ID, res.StartAt, res.MaterializedFile))
-
-	_, runErr := pl.RunFromCheckpoint(ctx, res.Inputs, res.StartAt)
+	_, runErr := pl.Run(ctx, inputs)
 	if runErr != nil {
 		if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s cancelled: %v", task.ID, runErr))
@@ -549,21 +543,10 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 	_ = e.ackOrNack(taskCtx, true)
 }
 
-// defaultPipelineDSL returns the canonical 5-stage ingestion
-// DSL (File → Parser → TokenChunker → Tokenizer → Extractor).
-// If the task carries a custom schema with a "pipeline" key
-// (a []byte / json.RawMessage), it is used verbatim. Otherwise
-// the default is returned.
-//
-// The default is intentionally hard-coded here (not driven by
-// plan §1 "DSL schema" because that work is deferred to a §11
-// follow-up) — it gives executeTask a working pipeline today
-// while the schema-migration tool is being built.
+// defaultPipelineDSL returns the canonical ingestion canvas DSL bytes carried
+// by the task schema. The ingestion runtime accepts only the template/canvas
+// DSL shape; it does not synthesize a separate linear stages[] schema.
 func defaultPipelineDSL(task *entity.IngestionTask) []byte {
-	// Schema may carry a `pipeline` key. If it does, use it
-	// verbatim. This is the test-injection point: an e2e
-	// test that wants a stub-driven pipeline stores its DSL
-	// bytes in the schema and executeTask honours them.
 	if task != nil && task.Schema != nil {
 		if raw, ok := task.Schema["pipeline"]; ok {
 			switch v := raw.(type) {
@@ -577,20 +560,20 @@ func defaultPipelineDSL(task *entity.IngestionTask) []byte {
 				}
 			}
 		}
+		if raw, ok := task.Schema["dsl"]; ok {
+			switch v := raw.(type) {
+			case []byte:
+				if len(v) > 0 {
+					return v
+				}
+			case string:
+				if v != "" {
+					return []byte(v)
+				}
+			}
+		}
 	}
-	return []byte(`{
-  "version": "1",
-  "name": "default-ingestion",
-  "description": "Default 5-stage ingestion flow: File -> Parser -> TokenChunker -> Tokenizer -> Extractor",
-  "stage_count": 5,
-  "stages": [
-    {"type": "File",          "params": {}},
-    {"type": "Parser",        "params": {}},
-    {"type": "TokenChunker",  "params": {}},
-    {"type": "Tokenizer",     "params": {}},
-    {"type": "Extractor",     "params": {}}
-  ]
-}`)
+	return nil
 }
 
 // failTask updates the task to FAILED and Acks the message

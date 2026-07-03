@@ -52,9 +52,8 @@ type GoroutineStatus struct {
 
 // TaskLogSink is the production sink. Each call to Persist
 // inserts a new IngestionTaskLog row (mirrors the Python
-// REDIS_CONN.set_obj(log_key, obj) cadence — every component
-// transition writes a fresh row, and the runner reads the LATEST
-// row on resume).
+// REDIS_CONN.set_obj(log_key, obj) cadence — every pipeline
+// completion checkpoint writes a fresh row).
 type TaskLogSink struct {
 	dao *dao.IngestionTaskLogDAO
 }
@@ -70,10 +69,8 @@ func NewTaskLogSink() *TaskLogSink {
 // copied into a fresh entity.JSONMap so the caller's mutations
 // (the runner mutates the map after each stage) don't leak into
 // the persisted record. We intentionally create a NEW log row
-// per checkpoint rather than UPDATE: the latest-row-by-task-id
-// read in RestoreFromCheckpoint is the resume algorithm's only
-// source of truth, and a per-row insert is race-free under
-// concurrent stage invocations from a single pipeline run.
+// per checkpoint rather than UPDATE so task-log history stays
+// append-only and race-free.
 func (s *TaskLogSink) Persist(ctx context.Context, taskID string, checkpoint map[string]any) error {
 	if s == nil || s.dao == nil {
 		return errNilSink
