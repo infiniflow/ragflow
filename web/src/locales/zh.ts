@@ -2604,6 +2604,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       selected: '已选择',
       bulkManage: '批量管理',
       exitBulkManage: '退出批量管理',
+      noServerSelected: '请至少选择一个 MCP 服务器',
     },
     search: {
       searchApps: '搜索',
