@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,6 +64,7 @@ type CreateMCPServerRequest struct {
 	Description *string         `json:"description,omitempty"`
 	Variables   json.RawMessage `json:"variables,omitempty"`
 	Headers     json.RawMessage `json:"headers,omitempty"`
+	Timeout     float64         `json:"timeout,omitempty"`
 }
 
 // CreateMCPServerResponse is the response payload for creating an MCP server.
@@ -139,7 +141,12 @@ func (s *MCPService) CreateMCPServer(tenantID string, req CreateMCPServerRequest
 	headers := safeJSONMap(req.Headers)
 	variables := safeJSONMap(req.Variables)
 	delete(variables, "tools")
-	variables["tools"] = map[string]interface{}{}
+
+	tools, err := fetchMCPTools(context.Background(), req.URL, req.ServerType, headers, variables, req.Timeout)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	variables["tools"] = tools
 
 	server := &entity.MCPServer{
 		ID:          common.GenerateUUID(),
@@ -166,6 +173,57 @@ func (s *MCPService) CreateMCPServer(tenantID string, req CreateMCPServerRequest
 		Variables:   server.Variables,
 		Headers:     server.Headers,
 	}, common.CodeSuccess, nil
+}
+
+func optionalFloat64(req UpdateMCPServerRequest, key string, defaultValue float64) (float64, error) {
+	raw, ok := req[key]
+	if !ok || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return defaultValue, nil
+	}
+
+	var value float64
+	if err := json.Unmarshal(raw, &value); err == nil {
+		return value, nil
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return defaultValue, fmt.Errorf("%s must be a number", key)
+	}
+	value, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
+	if err != nil {
+		return defaultValue, fmt.Errorf("%s must be a number", key)
+	}
+	return value, nil
+}
+
+func fetchMCPTools(ctx context.Context, url, serverType string, headers, variables entity.JSONMap, timeoutSeconds float64) (map[string]interface{}, error) {
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = defaultMCPFetchTimeoutSec
+	}
+	timeout := time.Duration(timeoutSeconds * float64(time.Second))
+
+	tools, err := utility.FetchTools(ctx, utility.FetchOptions{
+		URL:        url,
+		ServerType: serverType,
+		Headers:    jsonMapStringValues(headers),
+		Variables:  jsonMapStringValues(variables),
+		Timeout:    timeout,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toolsAsMap(tools), nil
+}
+
+func jsonMapStringValues(values entity.JSONMap) map[string]string {
+	out := map[string]string{}
+	for key, value := range values {
+		if text, ok := value.(string); ok {
+			out[key] = text
+		}
+	}
+	return out
 }
 
 func (s *MCPService) GetMCPServer(tenantID, mcpID string) (*entity.MCPServer, common.ErrorCode, error) {
@@ -285,7 +343,16 @@ func (s *MCPService) UpdateMCPServer(tenantID, mcpID string, req UpdateMCPServer
 		variables = entity.JSONMap{}
 	}
 	delete(variables, "tools")
-	variables["tools"] = map[string]interface{}{}
+	timeoutSeconds, err := optionalFloat64(req, "timeout", defaultMCPFetchTimeoutSec)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+
+	tools, err := fetchMCPTools(context.Background(), serverURL, serverType, headers, variables, timeoutSeconds)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	variables["tools"] = tools
 
 	updates := map[string]interface{}{
 		"id":        mcpID,
