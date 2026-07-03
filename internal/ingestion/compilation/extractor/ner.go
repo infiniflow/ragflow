@@ -23,12 +23,12 @@
 package extractor
 
 // #cgo CXXFLAGS: -std=c++20 -I${SRCDIR}/../../..
-// #cgo linux LDFLAGS: ${SRCDIR}/../../../cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread -lpcre2-8
-// #cgo darwin LDFLAGS: ${SRCDIR}/../../../cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread -lpcre2-8
+// #cgo linux LDFLAGS: ${SRCDIR}/../../../binding/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread -lpcre2-8
+// #cgo darwin LDFLAGS: ${SRCDIR}/../../../binding/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread -lpcre2-8
 //
 // #include <stdlib.h>
-// #include "../../../cpp/rag_analyzer_c_api.h"
-// #include "../../../cpp/thinc_parser.h"
+// #include "../../../binding/cpp/rag_analyzer_c_api.h"
+// #include "../../../binding/cpp/thinc_parser.h"
 import "C"
 import (
 	"encoding/json"

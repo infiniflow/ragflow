@@ -1,4 +1,4 @@
-package kg
+package graph
 
 // KGEntity represents a knowledge graph entity.
 type KGEntity struct {
