@@ -317,7 +317,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             return 0, []
 
         # Degrade too much ??
-        n_neighbors = int((len(embeddings) - 1) ** 0.8)
+        n_neighbors = min(int((len(embeddings) - 1) ** 0.8), 100)
         import umap
 
         reduced_embeddings = umap.UMAP(
