@@ -25,7 +25,6 @@ _INITIAL_USER_INPUT_CONSUMED_KEY = "sys.__initial_user_input_consumed__"
 
 
 class UserFillUpParam(ComponentParamBase):
-
     def __init__(self):
         super().__init__()
         self.enable_tips = True
@@ -55,11 +54,7 @@ class UserFillUp(ComponentBase):
             return {}
 
         if isinstance(query, dict):
-            matched = {
-                key: value if isinstance(value, dict) else {"value": value}
-                for key, value in query.items()
-                if key in fields
-            }
+            matched = {key: value if isinstance(value, dict) else {"value": value} for key, value in query.items() if key in fields}
             if matched:
                 self._canvas.globals[_INITIAL_USER_INPUT_CONSUMED_KEY] = True
             return matched
@@ -108,7 +103,7 @@ class UserFillUp(ComponentBase):
                     ans = v
                 if not ans:
                     ans = ""
-                content = re.sub(r"\{%s\}"%k, ans, content)
+                content = re.sub(r"\{%s\}" % k, ans, content)
 
             self.set_output("tips", content)
         layout_recognize = self._param.layout_recognize or None

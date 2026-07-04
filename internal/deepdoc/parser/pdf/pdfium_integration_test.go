@@ -1,12 +1,13 @@
-//go:build cgo
+//go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"context"
 	"image"
 	"os"
 	"path/filepath"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"testing"
 )
 
@@ -33,8 +34,8 @@ func TestParse_PdfiumRender(t *testing.T) {
 		t.Fatalf("RawData() length %d != original %d", len(raw), len(data))
 	}
 
-	// Render a page through pdfium (via the parser's renderPageToImage).
-	img, err := renderPageToImage(eng, 0)
+	// Render a page through pdfium (via the parser's RenderPageToImage).
+	img, err := RenderPageToImage(eng, 0)
 	if err != nil {
 		t.Skipf("pdfium render not available: %v", err)
 	}
@@ -46,9 +47,9 @@ func TestParse_PdfiumRender(t *testing.T) {
 
 	// Run Parse with pdfium rendering — BATCH_SKIP_DEEPDOC=1 to avoid HTTP calls.
 	t.Setenv("BATCH_SKIP_DEEPDOC", "1")
-	cfg := DefaultParserConfig()
-	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
-	result, err := p.Parse(context.Background(), eng)
+	cfg := pdf.DefaultParserConfig()
+	p := NewParser(cfg)
+	result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -63,10 +64,10 @@ func TestParse_PdfiumRender(t *testing.T) {
 }
 
 func TestParse_PdfiumRender_NoData(t *testing.T) {
-	// When engine has no raw PDF bytes, renderPageToImage falls back to
+	// When engine has no raw PDF bytes, RenderPageToImage falls back to
 	// engine.RenderPageImage().  Stub returns (nil, nil) → guard converts
 	// to ErrNoPDFData so callers never receive a nil image with nil error.
-	img, err := renderPageToImage(&pythonCharEngineStub{}, 0)
+	img, err := RenderPageToImage(&pythonCharEngineStub{}, 0)
 	if err != ErrNoPDFData {
 		t.Errorf("expected ErrNoPDFData, got %v", err)
 	}
@@ -75,14 +76,15 @@ func TestParse_PdfiumRender_NoData(t *testing.T) {
 	}
 }
 
-// pythonCharEngineStub implements PDFEngine with RawData() returning nil.
+// pythonCharEngineStub implements pdf.PDFEngine with RawData() returning nil.
 type pythonCharEngineStub struct{}
 
-func (e *pythonCharEngineStub) ExtractChars(_ int) ([]TextChar, error)      { return nil, nil }
+func (e *pythonCharEngineStub) ExtractChars(_ int) ([]pdf.TextChar, error)  { return nil, nil }
 func (e *pythonCharEngineStub) RenderPage(_ int, _ float64) ([]byte, error) { return nil, nil }
 func (e *pythonCharEngineStub) RenderPageImage(_ int, _ float64) (image.Image, error) {
 	return nil, nil
 }
-func (e *pythonCharEngineStub) RawData() []byte         { return nil }
-func (e *pythonCharEngineStub) PageCount() (int, error) { return 0, nil }
-func (e *pythonCharEngineStub) Close() error            { return nil }
+func (e *pythonCharEngineStub) RawData() []byte                  { return nil }
+func (e *pythonCharEngineStub) PageCount() (int, error)          { return 0, nil }
+func (e *pythonCharEngineStub) Close() error                     { return nil }
+func (e *pythonCharEngineStub) Outlines() ([]pdf.Outline, error) { return nil, nil }

@@ -489,10 +489,7 @@ class SandboxMgr:
         """List all available sandbox providers."""
         result = []
         for provider_id, metadata in SandboxMgr.PROVIDER_REGISTRY.items():
-            result.append({
-                "id": provider_id,
-                **metadata
-            })
+            result.append({"id": provider_id, **metadata})
         return result
 
     @staticmethod
@@ -635,6 +632,7 @@ class SandboxMgr:
             config_json = json.dumps(config)
             SettingsMgr.update_by_name(f"sandbox.{provider_type}", config_json)
             from agent.sandbox.client import reload_provider
+
             reload_provider()
 
             return {"provider_type": provider_type, "config": config}
@@ -727,11 +725,7 @@ def main() -> dict:
             # Build detailed result message
             success = execution_result.exit_code == 0 and "TEST_PASSED" in execution_result.stdout
 
-            message_parts = [
-                f"Test {success and 'PASSED' or 'FAILED'}",
-                f"Exit code: {execution_result.exit_code}",
-                f"Execution time: {execution_result.execution_time:.2f}s"
-            ]
+            message_parts = [f"Test {success and 'PASSED' or 'FAILED'}", f"Exit code: {execution_result.exit_code}", f"Execution time: {execution_result.execution_time:.2f}s"]
 
             if execution_result.stdout.strip():
                 stdout_preview = execution_result.stdout.strip()[:200]
@@ -751,12 +745,13 @@ def main() -> dict:
                     "execution_time": execution_result.execution_time,
                     "stdout": execution_result.stdout,
                     "stderr": execution_result.stderr,
-                }
+                },
             }
 
         except AdminException:
             raise
         except Exception as e:
             import traceback
+
             error_details = traceback.format_exc()
             raise AdminException(f"Connection test failed: {str(e)}\\n\\nStack trace:\\n{error_details}")

@@ -1,15 +1,19 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"context"
 	"os"
 	"path/filepath"
-	"ragflow/internal/deepdoc/parser/pdf/tools"
 	"sort"
 	"strings"
 	"testing"
+
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
+	"ragflow/internal/deepdoc/parser/pdf/tool"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 // TestPipelineParity verifies Go pipeline logic equivalence with Python.
@@ -41,17 +45,18 @@ func TestPipelineParity(t *testing.T) {
 
 		// Load Python chars
 		jsonPath := filepath.Join(charspyDir, e.Name())
-		engine, err := LoadPythonChars(jsonPath)
+		engine, err := tool.LoadPythonChars(jsonPath)
 		if err != nil {
-			t.Errorf("%s: LoadPythonChars: %v", name, err)
+			t.Errorf("%s: tool.LoadPythonChars: %v", name, err)
 			continue
 		}
 
 		// Run Go pipeline (SKIP_OCR — no DeepDoc)
-		cfg := DefaultParserConfig()
+		cfg := pdf.DefaultParserConfig()
 		cfg.SortByTop = true
-		p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
-		result, err := p.Parse(context.Background(), engine)
+		mockAnalyzer := &MockDocAnalyzer{Healthy: true}
+		p := NewParser(cfg)
+		result, err := p.ParseRaw(context.Background(), engine, mockAnalyzer)
 		if err != nil {
 			t.Errorf("%s: Parse: %v", name, err)
 			continue
@@ -73,7 +78,7 @@ func TestPipelineParity(t *testing.T) {
 		}
 
 		// Compare
-		sim := tools.CharSimilarity(goText.String(), tools.StripMeta(string(pyData)))
+		sim := tool.CharSimilarity(goText.String(), tool.StripMeta(string(pyData)))
 		total++
 		if sim >= 100.0 {
 			passed++
@@ -104,7 +109,7 @@ func TestPipelineParity(t *testing.T) {
 // bottom extension never happens and the cascade fails to start.
 func TestVMWhitespaceGapBridge(t *testing.T) {
 	// Coordinates extracted from RAG PDF charspy data, "服务体系" region.
-	boxes := []TextBox{
+	boxes := []pdf.TextBox{
 		// Content A: merged result of 3 preceding lines
 		{X0: 37.6, X1: 491.0, Top: 339.35, Bottom: 382.39,
 			Text: "生成文本再用standard分词建立索引", PageNumber: 1},
@@ -128,7 +133,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 	// We simulate this by letting whitespace through gap/xov checks
 	// and absorbing it into prev when the checks pass.
 	vWithWS := func() int {
-		bxs := make([]TextBox, len(boxes))
+		bxs := make([]pdf.TextBox, len(boxes))
 		copy(bxs, boxes)
 		sort.Slice(bxs, func(i, j int) bool {
 			if bxs[i].Top != bxs[j].Top {
@@ -136,7 +141,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 			}
 			return bxs[i].X0 < bxs[j].X0
 		})
-		out := make([]TextBox, 0, len(bxs))
+		out := make([]pdf.TextBox, 0, len(bxs))
 		for i := 0; i < len(bxs); i++ {
 			b := bxs[i]
 			isWS := strings.TrimSpace(b.Text) == ""
@@ -148,7 +153,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 			if isWS && len(out) > 0 {
 				prev := &out[len(out)-1]
 				gap := b.Top - prev.Bottom
-				ov := OverlapX(prev, &b)
+				ov := util.OverlapX(prev, &b)
 				// Python: gap passes AND xov passes → whitespace merged
 				// into prev, extending bottom.  i advances (Go for-loop).
 				if gap <= thr && ov >= 0.3 {
@@ -166,7 +171,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 				continue
 			}
 			gap := b.Top - prev.Bottom
-			ov := OverlapX(prev, &b)
+			ov := util.OverlapX(prev, &b)
 			if gap > thr {
 				out = append(out, b)
 				continue
@@ -191,7 +196,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 
 	// Run VM with whitespace PRE-FILTERED (Go current behavior).
 	vNoWS := func() int {
-		bxs := make([]TextBox, 0, len(boxes))
+		bxs := make([]pdf.TextBox, 0, len(boxes))
 		for _, b := range boxes {
 			if strings.TrimSpace(b.Text) != "" {
 				bxs = append(bxs, b)
@@ -203,7 +208,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 			}
 			return bxs[i].X0 < bxs[j].X0
 		})
-		out := make([]TextBox, 0, len(bxs))
+		out := make([]pdf.TextBox, 0, len(bxs))
 		for i := 0; i < len(bxs); i++ {
 			b := bxs[i]
 			if len(out) == 0 {
@@ -216,7 +221,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 				continue
 			}
 			gap := b.Top - prev.Bottom
-			ov := OverlapX(prev, &b)
+			ov := util.OverlapX(prev, &b)
 			if gap > thr {
 				out = append(out, b)
 				continue
@@ -247,18 +252,18 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 	t.Logf("Gap with bridge:    420.16 - 406.79 = %.2f < %.2f = MERGE", 420.16-406.79, thr)
 
 	// The manual vWithWS (Python-like) and vNoWS (old Go pre-filter) still
-	// differ — the mechanism is real.  But production NaiveVerticalMerge now
+	// differ — the mechanism is real.  But production lyt.NaiveVerticalMerge now
 	// handles whitespace inline (gap bridge), matching Python.
 	if nWS == nNoWS {
 		t.Error("Manual implementations should differ — the gap bridge mechanism is real")
 	}
 
-	// Verify production NaiveVerticalMerge matches vWithWS (Python behavior).
+	// Verify production lyt.NaiveVerticalMerge matches vWithWS (Python behavior).
 	mhMap := map[int]float64{1: mh}
 	mwMap := map[int]float64{1: 5}
-	vmResult := NaiveVerticalMerge(boxes, mhMap, mwMap, false)
-	t.Logf("NaiveVerticalMerge (production): %d sections", len(vmResult))
+	vmResult := lyt.NaiveVerticalMerge(boxes, mhMap, mwMap, false)
+	t.Logf("lyt.NaiveVerticalMerge (production): %d sections", len(vmResult))
 	if len(vmResult) != nWS {
-		t.Errorf("NaiveVerticalMerge produced %d sections, want %d (Python-like with gap bridge)", len(vmResult), nWS)
+		t.Errorf("lyt.NaiveVerticalMerge produced %d sections, want %d (Python-like with gap bridge)", len(vmResult), nWS)
 	}
 }

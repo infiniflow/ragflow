@@ -41,7 +41,6 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_5_raw_message_func")
 class TestMessageList:
-
     @pytest.mark.p2
     def test_params_unset(self, client):
         memory_id = self.memory_id
@@ -66,8 +65,7 @@ class TestMessageList:
             ({"page": 3, "page_size": 2}, 1),
             ({"page": 5, "page_size": 10}, 0),
         ],
-        ids=["normal_first_page", "beyond_max_page", "normal_last_partial_page", "normal_middle_page",
-             "full_data_single_page"],
+        ids=["normal_first_page", "beyond_max_page", "normal_last_partial_page", "normal_middle_page", "full_data_single_page"],
     )
     def test_page_size(self, client, params, expected_page_size):
         # have added 5 messages in fixture

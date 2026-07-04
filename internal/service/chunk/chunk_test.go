@@ -77,6 +77,55 @@ func TestHydrateChunkVectors_NoDim(t *testing.T) {
 	// Empty vectors have dim=0 → early return. No crash.
 }
 
+func TestKnowledgebaseEmbeddingKey(t *testing.T) {
+	tenantEmbdID := int64(42)
+
+	tests := []struct {
+		name     string
+		kb       *entity.Knowledgebase
+		tenantID string
+		want     string
+	}{
+		{
+			name: "uses tenant embedding id before embd id",
+			kb: &entity.Knowledgebase{
+				EmbdID:       "shared-model",
+				TenantEmbdID: &tenantEmbdID,
+			},
+			want: "tenant:42",
+		},
+		{
+			name: "uses embd id without tenant embedding id",
+			kb: &entity.Knowledgebase{
+				EmbdID: "shared-model",
+			},
+			want: "embd:shared-model",
+		},
+		{
+			name:     "uses tenant default when embedding id is empty",
+			kb:       &entity.Knowledgebase{},
+			tenantID: "tenant-1",
+			want:     "default:tenant-1",
+		},
+		{
+			name: "ignores non-positive tenant embedding id",
+			kb: &entity.Knowledgebase{
+				EmbdID:       "shared-model",
+				TenantEmbdID: new(int64),
+			},
+			want: "embd:shared-model",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := knowledgebaseEmbeddingKey(tt.kb, tt.tenantID); got != tt.want {
+				t.Fatalf("knowledgebaseEmbeddingKey() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
@@ -718,6 +767,186 @@ func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 	}
 }
 
+func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	setChunkTestStats(t, "doc-1", "kb-1", 70, 7, 100, 10)
+
+	engine := &parseTestDocEngine{deleteChunksCount: 3}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	deletedCount, err := svc.RemoveChunks(&service.RemoveChunksRequest{
+		DocID:    "doc-1",
+		ChunkIDs: []string{"chunk-1", "chunk-2", "chunk-3"},
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("RemoveChunks() error = %v", err)
+	}
+	if deletedCount != 3 {
+		t.Fatalf("deleted count = %d, want 3", deletedCount)
+	}
+	if engine.deleteChunksCalls != 1 {
+		t.Fatalf("DeleteChunks calls = %d, want 1", engine.deleteChunksCalls)
+	}
+	if engine.deleteIndexName != "ragflow_tenant-1" || engine.deleteDatasetID != "kb-1" {
+		t.Fatalf("unexpected delete target index=%q dataset=%q", engine.deleteIndexName, engine.deleteDatasetID)
+	}
+	if engine.deleteChunksCondition["doc_id"] != "doc-1" {
+		t.Fatalf("delete doc_id condition = %#v, want doc-1", engine.deleteChunksCondition["doc_id"])
+	}
+	if !reflect.DeepEqual(engine.deleteChunksCondition["id"], []interface{}{"chunk-1", "chunk-2", "chunk-3"}) {
+		t.Fatalf("delete id condition = %#v", engine.deleteChunksCondition["id"])
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	if err != nil {
+		t.Fatalf("get doc: %v", err)
+	}
+	if doc.TokenNum != 70 {
+		t.Fatalf("document token_num = %d, want 70", doc.TokenNum)
+	}
+	if doc.ChunkNum != 4 {
+		t.Fatalf("document chunk_num = %d, want 4", doc.ChunkNum)
+	}
+
+	kb, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get kb: %v", err)
+	}
+	if kb.TokenNum != 100 {
+		t.Fatalf("knowledgebase token_num = %d, want 100", kb.TokenNum)
+	}
+	if kb.ChunkNum != 7 {
+		t.Fatalf("knowledgebase chunk_num = %d, want 7", kb.ChunkNum)
+	}
+}
+
+func TestRemoveChunksSkipsStatsWhenNothingDeleted(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	setChunkTestStats(t, "doc-1", "kb-1", 70, 7, 100, 10)
+
+	var decrementCalls int
+	svc := &ChunkService{
+		docEngine:     &parseTestDocEngine{deleteChunksCount: 0},
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		decrementChunkStatsFunc: func(string, string, int64, int64, float64) error {
+			decrementCalls++
+			return nil
+		},
+	}
+
+	deletedCount, err := svc.RemoveChunks(&service.RemoveChunksRequest{
+		DocID:     "doc-1",
+		DeleteAll: true,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("RemoveChunks() error = %v", err)
+	}
+	if deletedCount != 0 {
+		t.Fatalf("deleted count = %d, want 0", deletedCount)
+	}
+	if decrementCalls != 0 {
+		t.Fatalf("decrement calls = %d, want 0", decrementCalls)
+	}
+}
+
+func TestRemoveChunksReturnsStatsError(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+
+	svc := &ChunkService{
+		docEngine:     &parseTestDocEngine{deleteChunksCount: 2},
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		decrementChunkStatsFunc: func(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {
+			if docID != "doc-1" || kbID != "kb-1" || tokenNum != 0 || chunkNum != 2 || duration != 0 {
+				t.Fatalf("unexpected decrement args doc=%s kb=%s token=%d chunk=%d duration=%v", docID, kbID, tokenNum, chunkNum, duration)
+			}
+			return errors.New("stats update failed")
+		},
+	}
+
+	deletedCount, err := svc.RemoveChunks(&service.RemoveChunksRequest{
+		DocID:    "doc-1",
+		ChunkIDs: []string{"chunk-1", "chunk-2"},
+	}, "user-1")
+	if err == nil || !strings.Contains(err.Error(), "failed to update chunk stats") {
+		t.Fatalf("expected stats update error, got count=%d err=%v", deletedCount, err)
+	}
+	if deletedCount != 2 {
+		t.Fatalf("deleted count on error = %d, want 2", deletedCount)
+	}
+}
+
+func TestDecrementChunkStatsClampsCounters(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	setChunkTestStats(t, "doc-1", "kb-1", 2, 1, 3, 2)
+	if err := dao.DB.Model(&entity.Document{}).
+		Where("id = ?", "doc-1").
+		Update("process_duration", 0.5).Error; err != nil {
+		t.Fatalf("set process duration: %v", err)
+	}
+
+	svc := &ChunkService{}
+	if err := svc.decrementChunkStats("doc-1", "kb-1", 5, 7, -1); err != nil {
+		t.Fatalf("decrementChunkStats() error = %v", err)
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	if err != nil {
+		t.Fatalf("get doc: %v", err)
+	}
+	if doc.TokenNum != 0 || doc.ChunkNum != 0 || doc.ProcessDuration != 0 {
+		t.Fatalf("document stats token=%d chunk=%d duration=%v, want zeros", doc.TokenNum, doc.ChunkNum, doc.ProcessDuration)
+	}
+
+	kb, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get kb: %v", err)
+	}
+	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
+		t.Fatalf("knowledgebase stats token=%d chunk=%d, want zeros", kb.TokenNum, kb.ChunkNum)
+	}
+}
+
+func TestDecrementChunkStatsRollsBackWhenKnowledgebaseMissing(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestDoc(t, "doc-1", "missing-kb")
+
+	svc := &ChunkService{}
+	err := svc.decrementChunkStats("doc-1", "missing-kb", 0, 3, 0)
+	if err == nil || !strings.Contains(err.Error(), "knowledgebase not found") {
+		t.Fatalf("expected missing knowledgebase error, got %v", err)
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	if err != nil {
+		t.Fatalf("get doc: %v", err)
+	}
+	if doc.ChunkNum != 7 {
+		t.Fatalf("document chunk_num after rollback = %d, want 7", doc.ChunkNum)
+	}
+}
+
 func setupChunkTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -728,6 +957,7 @@ func setupChunkTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 	if err := db.AutoMigrate(
+		&entity.UserTenant{},
 		&entity.Knowledgebase{},
 		&entity.Document{},
 		&entity.Task{},
@@ -763,6 +993,23 @@ func newParseTestService(t *testing.T) *ChunkService {
 		queueParseTasksFunc: func(*entity.Document, string, string, int64) error {
 			return nil
 		},
+	}
+}
+
+func insertChunkTestUserTenant(t *testing.T, userID, tenantID string) {
+	t.Helper()
+
+	status := "1"
+	userTenant := &entity.UserTenant{
+		ID:        userID + "-" + tenantID,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Role:      "owner",
+		InvitedBy: userID,
+		Status:    &status,
+	}
+	if err := dao.DB.Create(userTenant).Error; err != nil {
+		t.Fatalf("insert user tenant: %v", err)
 	}
 }
 
@@ -810,6 +1057,21 @@ func insertChunkTestDoc(t *testing.T, id, kbID string) {
 	}
 }
 
+func setChunkTestStats(t *testing.T, docID, kbID string, docTokenNum, docChunkNum, kbTokenNum, kbChunkNum int64) {
+	t.Helper()
+
+	if err := dao.DB.Model(&entity.Document{}).
+		Where("id = ?", docID).
+		Updates(map[string]interface{}{"token_num": docTokenNum, "chunk_num": docChunkNum}).Error; err != nil {
+		t.Fatalf("set doc stats: %v", err)
+	}
+	if err := dao.DB.Model(&entity.Knowledgebase{}).
+		Where("id = ?", kbID).
+		Updates(map[string]interface{}{"token_num": kbTokenNum, "chunk_num": kbChunkNum}).Error; err != nil {
+		t.Fatalf("set kb stats: %v", err)
+	}
+}
+
 func insertChunkTestTask(t *testing.T, id, docID string) {
 	t.Helper()
 
@@ -825,8 +1087,12 @@ func insertChunkTestTask(t *testing.T, id, docID string) {
 }
 
 type parseTestDocEngine struct {
-	deleteChunksErr   error
-	deleteChunksCalls int
+	deleteChunksErr       error
+	deleteChunksCount     int64
+	deleteChunksCalls     int
+	deleteChunksCondition map[string]interface{}
+	deleteIndexName       string
+	deleteDatasetID       string
 }
 
 func (e *parseTestDocEngine) CreateChunkStore(context.Context, string, string, int, string) error {
@@ -841,9 +1107,12 @@ func (e *parseTestDocEngine) UpdateChunks(context.Context, map[string]interface{
 	return nil
 }
 
-func (e *parseTestDocEngine) DeleteChunks(context.Context, map[string]interface{}, string, string) (int64, error) {
+func (e *parseTestDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
 	e.deleteChunksCalls++
-	return 0, e.deleteChunksErr
+	e.deleteChunksCondition = copyMap(condition)
+	e.deleteIndexName = indexName
+	e.deleteDatasetID = datasetID
+	return e.deleteChunksCount, e.deleteChunksErr
 }
 
 func (e *parseTestDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {

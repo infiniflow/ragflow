@@ -86,3 +86,77 @@ func TestBegin_PassesThroughInputs(t *testing.T) {
 func withStateForTest(ctx context.Context, s *canvas.CanvasState) context.Context {
 	return canvas.WithState(ctx, s)
 }
+
+// TestBegin_InjectsWebhookPayload pins the contract added for the
+// webhook HTTP handler: when inputs["webhook_payload"] is present, Begin
+// must surface it on state.Sys["webhook_payload"] so downstream
+// components (Retrieval, Agent, etc.) can read sys.webhook_payload the
+// same way they read sys.query / sys.user_id.
+//
+// Mirrors python: agent/canvas.py (Begin component) reading
+// `webhook_payload` from inputs and writing to state.Sys in the webhook
+// branch.
+func TestBegin_InjectsWebhookPayload(t *testing.T) {
+	c, _ := NewBeginComponent(nil)
+	state := canvas.NewCanvasState("run-3", "task-3")
+	ctx := canvas.WithState(context.Background(), state)
+
+	payload := map[string]any{
+		"query":   map[string]any{"q": "hello"},
+		"headers": map[string]any{"x-token": "abc"},
+		"body":    map[string]any{"k": "v"},
+	}
+	inputs := map[string]any{
+		"query":           "",
+		"webhook_payload": payload,
+	}
+	out, err := c.Invoke(ctx, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, ok := state.Sys["webhook_payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("state.Sys[webhook_payload] missing or wrong type: %T", state.Sys["webhook_payload"])
+	}
+	if !reflect.DeepEqual(got, payload) {
+		t.Errorf("state.Sys[webhook_payload] mismatch:\n got  %v\n want %v", got, payload)
+	}
+	// Passthrough preserved.
+	if outPayload, _ := out["webhook_payload"].(map[string]any); !reflect.DeepEqual(outPayload, payload) {
+		t.Errorf("outputs[webhook_payload] mismatch:\n got  %v\n want %v", outPayload, payload)
+	}
+}
+
+// TestBegin_AbsentWebhookPayload confirms that the chat path (no
+// webhook_payload key in inputs) leaves state.Sys["webhook_payload"]
+// unset — adding the new branch must NOT pollute existing callers.
+func TestBegin_AbsentWebhookPayload(t *testing.T) {
+	c, _ := NewBeginComponent(nil)
+	state := canvas.NewCanvasState("run-4", "task-4")
+	ctx := canvas.WithState(context.Background(), state)
+
+	if _, err := c.Invoke(ctx, map[string]any{"query": "plain chat"}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if _, ok := state.Sys["webhook_payload"]; ok {
+		t.Errorf("state.Sys[webhook_payload] should not be set when inputs lack it; got %v", state.Sys["webhook_payload"])
+	}
+}
+
+// TestBegin_EmptyWebhookPayload confirms that an explicitly empty map
+// is treated as "not present" — matching the python `if payload:` guard.
+func TestBegin_EmptyWebhookPayload(t *testing.T) {
+	c, _ := NewBeginComponent(nil)
+	state := canvas.NewCanvasState("run-5", "task-5")
+	ctx := canvas.WithState(context.Background(), state)
+
+	if _, err := c.Invoke(ctx, map[string]any{
+		"query":           "",
+		"webhook_payload": map[string]any{},
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if _, ok := state.Sys["webhook_payload"]; ok {
+		t.Errorf("state.Sys[webhook_payload] should not be set for empty payload; got %v", state.Sys["webhook_payload"])
+	}
+}

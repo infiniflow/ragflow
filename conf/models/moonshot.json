@@ -1,5 +1,6 @@
 {
   "name": "Moonshot",
+  "rank": 994,
   "url": {
     "default": "https://api.moonshot.cn/v1"
   },

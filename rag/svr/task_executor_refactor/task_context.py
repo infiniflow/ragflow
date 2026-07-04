@@ -143,6 +143,7 @@ class TaskDict(TypedDict, total=False):
     message_dict: Dict[str, Any]
     """Message dictionary for memory tasks."""
 
+
 # ============================================================================
 # Data Classes
 # ============================================================================
@@ -269,7 +270,6 @@ class TaskContext:
         self.callbacks = callbacks
         self._write_interceptor = write_interceptor
         self._recording_context = recording_context
-
 
         # Prepare progress callback and set it on the context
         progress_cb = partial(

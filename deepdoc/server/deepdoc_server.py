@@ -32,32 +32,17 @@ def parse_args():
         description="Unified OSS DeepDoc Model Server",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
-        "--port", type=int, default=9390, help="Serving port (default: 9390)"
-    )
-    parser.add_argument(
-        "--timeout", type=int, default=100, help="Request timeout in seconds (default: 100)"
-    )
+    parser.add_argument("--port", type=int, default=9390, help="Serving port (default: 9390)")
+    parser.add_argument("--timeout", type=int, default=100, help="Request timeout in seconds (default: 100)")
     parser.add_argument(
         "--model-dir",
         type=str,
-        default=os.path.join(
-            os.path.dirname(__file__), "..", "..", "..", "rag", "res", "deepdoc"
-        ),
+        default=os.path.join(os.path.dirname(__file__), "..", "..", "..", "rag", "res", "deepdoc"),
         help="Model file directory",
     )
-    parser.add_argument(
-        "--disable-dla", action="store_true", dest="disable_dla", default=False,
-        help="Disable DLA endpoint"
-    )
-    parser.add_argument(
-        "--disable-ocr", action="store_true", dest="disable_ocr", default=False,
-        help="Disable OCR endpoint"
-    )
-    parser.add_argument(
-        "--disable-tsr", action="store_true", dest="disable_tsr", default=False,
-        help="Disable TSR endpoint"
-    )
+    parser.add_argument("--disable-dla", action="store_true", dest="disable_dla", default=False, help="Disable DLA endpoint")
+    parser.add_argument("--disable-ocr", action="store_true", dest="disable_ocr", default=False, help="Disable OCR endpoint")
+    parser.add_argument("--disable-tsr", action="store_true", dest="disable_tsr", default=False, help="Disable TSR endpoint")
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level")
     return parser.parse_args()
 

@@ -151,6 +151,14 @@ func (m *ModelProviderService) AddModelProvider(providerName, userID string) (co
 
 	tenantID := tenants[0].TenantID
 
+	existing, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return common.CodeServerError, err
+	}
+	if existing != nil {
+		return common.CodeSuccess, nil
+	}
+
 	providerID := utility.GenerateToken()
 
 	tenantModelProvider := &entity.TenantModelProvider{
@@ -220,7 +228,7 @@ func isExcludedTenantProvider(name string) bool {
 	return false
 }
 
-func (m *ModelProviderService) DeleteModelProvider(providerName, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) DeleteModelProvider(userID, providerName string) (common.ErrorCode, error) {
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err

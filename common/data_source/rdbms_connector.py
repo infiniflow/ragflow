@@ -25,6 +25,7 @@ from common.data_source.models import Document, SlimDocument
 
 class DatabaseType(str, Enum):
     """Supported database types."""
+
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"
     MSSQL = "mssql"
@@ -43,6 +44,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     6. For incremental sync, treat the timestamp column as an ordered cursor and only compare values by size.
     7. For deleted-file sync, read a slim snapshot of current row IDs and let the sync worker remove stale documents.
     """
+
     def __init__(
         self,
         db_type: str,
@@ -58,7 +60,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     ) -> None:
         """
         Initialize the RDBMS connector.
-        
+
         Args:
             db_type: Database type ('mysql', 'postgresql', or 'mssql')
             host: Database host
@@ -83,7 +85,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.id_column = id_column.strip() if id_column else None
         self.timestamp_column = timestamp_column.strip() if timestamp_column else None
         self.batch_size = batch_size
-        
+
         self._connection = None
         self._credentials: Dict[str, Any] = {}
         self._sync_connector_id: str | None = None
@@ -131,12 +133,12 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def load_credentials(self, credentials: Dict[str, Any]) -> Dict[str, Any] | None:
         """Load database credentials."""
         logging.debug(f"Loading credentials for {self.db_type} database: {self.database}")
-        
+
         required_keys = ["username", "password"]
         for key in required_keys:
             if not credentials.get(key):
                 raise ConnectorMissingCredentialError(f"RDBMS ({self.db_type}): missing {key}")
-        
+
         self._credentials = credentials
         return None
 
@@ -144,17 +146,15 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         """Create and return a database connection."""
         if self._connection is not None:
             return self._connection
-            
+
         username = self._credentials.get("username")
         password = self._credentials.get("password")
-        
+
         if self.db_type == DatabaseType.MYSQL:
             try:
                 import mysql.connector
             except ImportError:
-                raise ConnectorValidationError(
-                    "MySQL connector not installed. Please install mysql-connector-python."
-                )
+                raise ConnectorValidationError("MySQL connector not installed. Please install mysql-connector-python.")
             try:
                 self._connection = mysql.connector.connect(
                     host=self.host,
@@ -162,7 +162,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                     database=self.database,
                     user=username,
                     password=password,
-                    charset='utf8mb4',
+                    charset="utf8mb4",
                     use_unicode=True,
                 )
             except Exception as e:
@@ -171,9 +171,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             try:
                 import psycopg2
             except ImportError:
-                raise ConnectorValidationError(
-                    "PostgreSQL connector not installed. Please install psycopg2-binary."
-                )
+                raise ConnectorValidationError("PostgreSQL connector not installed. Please install psycopg2-binary.")
             try:
                 self._connection = psycopg2.connect(
                     host=self.host,
@@ -188,9 +186,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             try:
                 import pymssql
             except ImportError:
-                raise ConnectorValidationError(
-                    "pymssql not installed. Please install pymssql."
-                )
+                raise ConnectorValidationError("pymssql not installed. Please install pymssql.")
             try:
                 self._connection = pymssql.connect(
                     server=self.host,
@@ -218,25 +214,18 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         """Get list of all tables in the database."""
         connection = self._get_connection()
         cursor = connection.cursor()
-        
+
         try:
             if self.db_type == DatabaseType.MYSQL:
                 cursor.execute("SHOW TABLES")
             elif self.db_type == DatabaseType.MSSQL:
-                cursor.execute(
-                    "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
-                    "WHERE TABLE_TYPE = 'BASE TABLE'"
-                )
+                cursor.execute("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'")
             else:
-                cursor.execute(
-                    "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
-                )
+                cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")
             tables = [row[0] for row in cursor.fetchall()]
             return tables
         finally:
             cursor.close()
-
 
     def _get_base_queries(self) -> list[str]:
         """Return the list of base SQL queries to execute.
@@ -248,7 +237,6 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         if self.query:
             return [self.query.rstrip(";")]
         return [f"SELECT * FROM {table}" for table in self._get_tables()]
-
 
     @staticmethod
     def _strip_trailing_order_by(query: str) -> str:
@@ -275,7 +263,6 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         inner = self._strip_trailing_order_by(base_query)
         return f"SELECT {select_clause} FROM ({inner}) AS ragflow_src"
 
-
     @staticmethod
     def serialize_cursor_value(value: Any) -> Any:
         """Serialize a cursor value to a JSON-safe representation.
@@ -291,7 +278,6 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             }
         return value
 
-
     @staticmethod
     def deserialize_cursor_value(value: Any) -> Any:
         """Deserialize a cursor value produced by :meth:`serialize_cursor_value`.
@@ -299,13 +285,9 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         Recognises the ``__ragflow_rdbms_cursor_type__`` wrapper and converts it
         back to a ``datetime``. Any other value is returned unchanged.
         """
-        if (
-            isinstance(value, dict)
-            and value.get("__ragflow_rdbms_cursor_type__") == "datetime"
-        ):
+        if isinstance(value, dict) and value.get("__ragflow_rdbms_cursor_type__") == "datetime":
             return datetime.fromisoformat(value["value"])
         return value
-
 
     def _format_sql_value(self, value: Any) -> str:
         """Format a Python value as a SQL literal suitable for embedding in a WHERE clause.
@@ -330,10 +312,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             return str(value)
         if isinstance(value, str):
             return "'" + value.replace("'", "''") + "'"
-        raise ConnectorValidationError(
-            f"Unsupported timestamp cursor value type: {type(value).__name__}"
-        )
-
+        raise ConnectorValidationError(f"Unsupported timestamp cursor value type: {type(value).__name__}")
 
     def _build_time_filtered_query(
         self,
@@ -358,27 +337,18 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
         conditions = []
         if start is not None:
-            conditions.append(
-                f"ragflow_src.{self.timestamp_column} > {self._format_sql_value(start)}"
-            )
+            conditions.append(f"ragflow_src.{self.timestamp_column} >= {self._format_sql_value(start)}")
         if end is not None:
-            conditions.append(
-                f"ragflow_src.{self.timestamp_column} <= {self._format_sql_value(end)}"
-            )
+            conditions.append(f"ragflow_src.{self.timestamp_column} <= {self._format_sql_value(end)}")
 
         query = self._wrap_query(base_query)
         if conditions:
             query = f"{query} WHERE {' AND '.join(conditions)}"
         return query
 
-
     def _build_max_timestamp_query(self, base_query: str) -> str:
         """Build a query that returns the maximum value of the timestamp column."""
-        return (
-            f"SELECT MAX(ragflow_src.{self.timestamp_column}) "
-            f"FROM ({base_query}) AS ragflow_src"
-        )
-
+        return f"SELECT MAX(ragflow_src.{self.timestamp_column}) FROM ({base_query}) AS ragflow_src"
 
     def _build_slim_query(self, base_query: str) -> str:
         """Build a lightweight query that fetches only the columns needed to identify documents.
@@ -395,7 +365,6 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         select_clause = ", ".join(f"ragflow_src.{column}" for column in columns)
         return self._wrap_query(base_query, select_clause)
 
-
     def _build_content(self, row_dict: Dict[str, Any]) -> str:
         """Build the document content string from the resolved content columns of a row."""
         content_parts = []
@@ -408,7 +377,6 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             content_parts.append(f"【{col}】:\n{value}")
         return "\n\n".join(content_parts)
 
-
     def _build_document_id_from_row(self, row_dict: Dict[str, Any]) -> str:
         """Derive a stable document id from a database row.
 
@@ -420,7 +388,6 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         content = self._build_content(row_dict)
         content_hash = hashlib.md5(content.encode()).hexdigest()
         return f"{self.db_type}:{self.database}:{content_hash}"
-
 
     def _row_to_document(
         self,
@@ -456,12 +423,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
         resolved_content_columns = self._content_columns_for_row(row_dict)
         first_content_col = resolved_content_columns[0] if resolved_content_columns else "record"
-        semantic_id = (
-            str(row_dict.get(first_content_col, "database_record"))
-            .replace("\n", " ")
-            .replace("\r", " ")
-            .strip()[:100]
-        )
+        semantic_id = str(row_dict.get(first_content_col, "database_record")).replace("\n", " ").replace("\r", " ").strip()[:100]
         blob = content.encode("utf-8")
 
         return Document(
@@ -475,7 +437,6 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             metadata=metadata if metadata else None,
         )
 
-
     def _yield_documents_from_query(
         self,
         query: str,
@@ -483,35 +444,34 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         """Generate documents from a single query."""
         connection = self._get_connection()
         cursor = connection.cursor()
-        
+
         try:
             logging.info(f"Executing query: {query[:200]}...")
             cursor.execute(query)
             column_names = [desc[0] for desc in cursor.description]
-            
+
             batch: list[Document] = []
             for row in cursor:
                 try:
                     doc = self._row_to_document(row, column_names)
                     batch.append(doc)
-                    
+
                     if len(batch) >= self.batch_size:
                         yield batch
                         batch = []
                 except Exception as e:
                     logging.warning(f"Error converting row to document: {e}")
                     continue
-            
+
             if batch:
                 yield batch
-                
+
         finally:
             try:
                 cursor.fetchall()
             except Exception:
                 pass
             cursor.close()
-
 
     def _yield_slim_documents_from_query(
         self,
@@ -547,7 +507,6 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 pass
             cursor.close()
 
-
     def get_max_cursor_value(self) -> Any:
         """Return the maximum value of the timestamp column across all base queries.
 
@@ -577,7 +536,6 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
         return max_cursor_value
 
-
     def _yield_documents(
         self,
         start: Any = None,
@@ -595,12 +553,10 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         finally:
             self._close_connection()
 
-
     def load_from_state(self) -> Generator[list[Document], None, None]:
         """Load all documents from the database (full sync)."""
         logging.debug(f"Loading all records from {self.db_type} database: {self.database}")
         return self._yield_documents()
-
 
     def retrieve_all_slim_docs_perm_sync(
         self,
@@ -615,9 +571,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
         try:
             for base_query in base_queries:
-                yield from self._yield_slim_documents_from_query(
-                    self._build_slim_query(base_query)
-                )
+                yield from self._yield_slim_documents_from_query(self._build_slim_query(base_query))
         finally:
             self._close_connection()
 
@@ -635,13 +589,11 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             return
         self._pending_sync_cursor_value = self.get_max_cursor_value()
 
-
     def get_saved_sync_cursor_value(self) -> Any:
         """Return the cursor value that was persisted at the end of the previous sync run."""
         if self._sync_config is None:
             return None
         return self.deserialize_cursor_value(self._sync_config.get("sync_cursor_value"))
-
 
     def persist_sync_state(self) -> None:
         """Write the pending cursor value back to the connector config in the database.
@@ -655,53 +607,44 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         from api.db.services.connector_service import ConnectorService
 
         updated_conf = copy.deepcopy(self._sync_config)
-        updated_conf["sync_cursor_value"] = self.serialize_cursor_value(
-            self._pending_sync_cursor_value
-        )
+        updated_conf["sync_cursor_value"] = self.serialize_cursor_value(self._pending_sync_cursor_value)
         ConnectorService.update_by_id(self._sync_connector_id, {"config": updated_conf})
         self._sync_config = updated_conf
-
 
     def load_from_cursor_range(
         self,
         start_value: Any = None,
         end_value: Any = None,
+        start_id: Any = None,
     ) -> Generator[list[Document], None, None]:
-        """Yield documents whose timestamp column falls in ``(start_value, end_value]``.
+        """Yield documents whose timestamp column falls in ``[start_value, end_value]``.
 
         Returns an empty iterator when *end_value* is ``None`` or the range is
-        empty (``end_value <= start_value``).
+        empty (``end_value < start_value``).
         """
         if end_value is None:
             self._close_connection()
             return iter(())
-        if start_value is not None and end_value <= start_value:
+        if start_value is not None and end_value < start_value:
             self._close_connection()
             return iter(())
         return self._yield_documents(start_value, end_value)
 
-
-    def poll_source(
-        self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
-    ) -> Generator[list[Document], None, None]:
+    def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> Generator[list[Document], None, None]:
         """Poll for new/updated documents since the last sync (incremental sync)."""
         if not self.timestamp_column:
-            logging.warning(
-                "No timestamp column configured for incremental sync. "
-                "Falling back to full sync."
-            )
+            logging.warning("No timestamp column configured for incremental sync. Falling back to full sync.")
             return self.load_from_state()
         return self._yield_documents(start, end)
-
 
     def validate_connector_settings(self) -> None:
         """Validate connector settings by testing the connection."""
         if not self._credentials:
             raise ConnectorMissingCredentialError("RDBMS credentials not loaded.")
-        
+
         if not self.host:
             raise ConnectorValidationError("Database host is required.")
-        
+
         if not self.database:
             raise ConnectorValidationError("Database name is required.")
 
@@ -711,34 +654,32 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         try:
             connection = self._get_connection()
             cursor = connection.cursor()
-            
+
             test_query = "SELECT 1"
             cursor.execute(test_query)
             cursor.fetchone()
             cursor.close()
-            
+
             logging.info(f"Successfully connected to {self.db_type} database: {self.database}")
-            
+
         except ConnectorValidationError:
             self._close_connection()
             raise
         except Exception as e:
             self._close_connection()
-            raise ConnectorValidationError(
-                f"Failed to connect to {self.db_type} database: {str(e)}"
-            )
+            raise ConnectorValidationError(f"Failed to connect to {self.db_type} database: {str(e)}")
         finally:
             self._close_connection()
 
 
 if __name__ == "__main__":
     import os
-    
+
     credentials_dict = {
         "username": os.environ.get("DB_USERNAME", "root"),
         "password": os.environ.get("DB_PASSWORD", ""),
     }
-    
+
     connector = RDBMSConnector(
         db_type="mysql",
         host=os.environ.get("DB_HOST", "localhost"),
@@ -750,16 +691,16 @@ if __name__ == "__main__":
         id_column="id",
         timestamp_column="updated_at",
     )
-    
+
     try:
         connector.load_credentials(credentials_dict)
         connector.validate_connector_settings()
-        
+
         for batch in connector.load_from_state():
             print(f"Batch of {len(batch)} documents:")
             for doc in batch:
                 print(f"  - {doc.id}: {doc.semantic_identifier}")
             break
-            
+
     except Exception as e:
         print(f"Error: {e}")

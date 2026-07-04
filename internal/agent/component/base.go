@@ -81,3 +81,15 @@ var ErrNotImplemented = runtime.ErrNotImplemented
 // &ParamError{Field: ..., Reason: ...} continues to work; the value
 // it produces is the same type runtime.SetDefaultFactory consumers see.
 type ParamError = runtime.ParamError
+
+// BeOutput wraps a single output value into the canonical
+// {"content": v} frame downstream components (Message, VariableAggregator)
+// consume. Mirrors agent/component/base.py:ComponentBase.be_output
+// (restored by PR #16363 after the agent refactor dropped it). Most
+// components can just return `map[string]any{"content": v}` inline,
+// but this helper keeps the wrapper construction in one place so
+// error/empty paths can produce a uniform output shape without
+// duplicating the literal everywhere.
+func BeOutput(v any) map[string]any {
+	return map[string]any{"content": v}
+}

@@ -169,6 +169,34 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 	}
 }
 
+func TestChunkHandlerListChunksMapsAvailableFalse(t *testing.T) {
+	mock := &mockChunkSvc{}
+	r, h := setupChunkHandlerWithUser("user-1", mock)
+	r.GET("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.ListChunks)
+
+	mock.listFn = func(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
+		if userID != "user-1" {
+			t.Fatalf("userID = %q, want user-1", userID)
+		}
+		if req.AvailableInt == nil || *req.AvailableInt != 0 {
+			t.Fatalf("available_int = %v, want 0", req.AvailableInt)
+		}
+		return &service.ListChunksResponse{
+			Total:  0,
+			Chunks: []map[string]interface{}{},
+			Doc:    map[string]interface{}{"id": "doc-1"},
+		}, nil
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-1/documents/doc-1/chunks?available=false", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+}
+
 func TestChunkHandlerSwitchChunksCallsService(t *testing.T) {
 	mock := &mockChunkSvc{}
 	r, h := setupChunkHandlerWithUser("user-1", mock)
