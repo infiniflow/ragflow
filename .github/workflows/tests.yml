@@ -100,7 +100,9 @@ jobs:
             trap 'rm -f "$changed_files"' EXIT
             git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
               | while read -r file; do
-                  [[ -f "$file" ]] && printf '%s\0' "$file"
+                  if [[ -f "$file" ]]; then
+                    printf '%s\0' "$file"
+                  fi
                 done > "$changed_files"
             echo "Changed files to run lefthook on:"
             if [[ -s "$changed_files" ]]; then
@@ -178,7 +180,7 @@ jobs:
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
             -v "${PWD}:/ragflow" \
-            -v "${PWD}/internal/cpp/resource:/usr/share/infinity/resource" \
+            -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
@@ -622,7 +624,7 @@ jobs:
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
             -v "${PWD}:/ragflow" \
-            -v "${PWD}/internal/cpp/resource:/usr/share/infinity/resource" \
+            -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go

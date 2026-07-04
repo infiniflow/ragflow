@@ -1,0 +1,50 @@
+kind: session_essence
+display_name: Session Essence — Cross-source entity synopses from conversations
+config:
+  kind: knowledge_graph
+  entity:
+    description: >-
+      You are a robust entity and fact extractor for conversational data.
+    fields:
+      - type: person
+        description: A person mentioned or participating in the conversation.
+        rule: |
+          - Full name preferred (e.g., "Alice Zhang", not "A. Zhang").
+          - Max length: 60 characters.
+      - type: org
+        description: Organization, company, team, or department.
+        rule: |
+          - Use the official name when possible (e.g., "Acme Corp").
+          - Max length: 80 characters.
+      - type: topic
+        description: Discussed topic, theme, or subject area.
+        rule: |
+          - Use the phrasing from the conversation (e.g., "API migration").
+          - Max length: 80 characters.
+      - type: fact
+        description: A verifiable factual statement extracted from the conversation.
+        rule: |
+          - Must be a single proposition (subject + predicate + object).
+          - Must be directly supported by the source text.
+          - Do not include opinions, speculation, or hypotheticals.
+        fact_fields:
+          - subject
+          - predicate
+          - object
+          - polarity
+          - confidence
+  relation:
+    description: >-
+      You are an expert in extracting semantic relations from conversations.
+    fields:
+      - type: mentions
+        description: One entity references or brings up another.
+        rule: |
+          - Direction from referrer to referred: (A mentions B).
+  synthesis:
+    enabled: true
+    compile_kwd: "essence"
+    example: |
+      Write a 3-5 sentence executive summary about the entity.
+      Synthesize what multiple sources collectively say.
+      Output ONLY the paragraph. No headers, no JSON, no preamble.

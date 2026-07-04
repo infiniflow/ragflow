@@ -438,7 +438,7 @@ func BenchmarkFault_EngineReuseManyTimes(b *testing.B) {
 }
 
 // newBenchGraph creates a simple graph for benchmarks without *testing.T.
-func newBenchGraph() *graphPkg.StateGraph {
+func newBenchGraph() types.StateGraph {
 	sg := graphPkg.NewStateGraph(map[string]any{"value": ""})
 	sg.AddChannel("value", channels.NewLastValue(""))
 	sg.AddNode("n1", func(ctx context.Context, state any) (any, error) {

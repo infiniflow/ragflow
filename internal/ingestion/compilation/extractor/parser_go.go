@@ -2,7 +2,7 @@ package extractor
 
 /*
 #include <stdlib.h>
-#include "../../../cpp/thinc_parser.h"
+#include "../../../binding/cpp/thinc_parser.h"
 */
 import "C"
 import (
