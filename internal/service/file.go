@@ -30,7 +30,6 @@ import (
 	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/parser"
 	"ragflow/internal/storage"
@@ -46,6 +45,7 @@ import (
 type FileService struct {
 	fileDAO          *dao.FileDAO
 	file2DocumentDAO *dao.File2DocumentDAO
+	documentService  *DocumentService
 }
 
 // NewFileService create file service
@@ -53,6 +53,7 @@ func NewFileService() *FileService {
 	return &FileService{
 		fileDAO:          dao.NewFileDAO(),
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
+		documentService:  NewDocumentService(),
 	}
 }
 
@@ -692,35 +693,14 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 		return fmt.Errorf("failed to get file2document mappings: %w", err)
 	}
 	if len(informs) > 0 {
-		documentDAO := dao.NewDocumentDAO()
-		datasetDAO := dao.NewKnowledgebaseDAO()
-
 		for _, inform := range informs {
 			if inform.DocumentID == nil {
 				continue
 			}
 			docID := *inform.DocumentID
-
-			doc, err := documentDAO.GetByID(docID)
-			if err == nil && doc != nil {
-				// Get tenant ID from KB
-				ds, err := datasetDAO.GetByID(doc.KbID)
-				if err == nil && ds != nil {
-					tenantID := ds.TenantID
-					if tenantID != "" {
-						// Delete from document engine
-						if err := s.deleteDocumentFromEngine(ctx, doc, tenantID); err != nil {
-							common.Logger.Error(fmt.Sprintf("Fail to delete document from engine: %s, error: %v", doc.ID, err))
-						}
-					}
-				}
-
-				// Delete document record
-				if _, err := documentDAO.Delete(docID); err != nil {
-					common.Logger.Error(fmt.Sprintf("Fail to delete document: %s, error: %v", docID, err))
-				}
+			if err := s.documentService.RemoveDocumentKeepFile(docID); err != nil {
+				common.Logger.Error(fmt.Sprintf("Fail to remove document: %s, error: %v", docID, err))
 			}
-
 		}
 
 		// Delete file2document mapping (outside the loop, called once - matching Python behavior)
@@ -734,27 +714,6 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 		return err
 	}
 
-	return nil
-}
-
-// deleteDocumentFromEngine deletes a document from the document engine
-func (s *FileService) deleteDocumentFromEngine(ctx context.Context, doc *entity.Document, tenantID string) error {
-	// Get document engine
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return nil
-	}
-
-	// Build index name: ragflow_<tenant_id>_<kb_id>
-	indexName := fmt.Sprintf("ragflow_%s_%s", tenantID, doc.KbID)
-
-	// Delete document from engine with timeout
-	reqCtx, cancel := context.WithTimeout(ctx, 300*time.Second)
-	defer cancel()
-	condition := map[string]interface{}{"doc_id": doc.ID}
-	if _, err := docEngine.DeleteChunks(reqCtx, condition, indexName, doc.KbID); err != nil {
-		return fmt.Errorf("delete document from engine: %w", err)
-	}
 	return nil
 }
 

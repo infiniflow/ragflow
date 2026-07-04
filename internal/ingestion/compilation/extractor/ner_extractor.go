@@ -18,7 +18,7 @@
 // pipeline. It mirrors the Python rag/graphrag/ner package so that both
 // code paths produce identical output.
 //
-// The C++ ThincNER engine (internal/cpp/) loads spaCy model.ckpt+model.bin
+// The C++ ThincNER engine (internal/binding/cpp/) loads spaCy model.ckpt+model.bin
 // directly for NER inference. Relation extraction is pure Go regex.
 //
 // Usage:

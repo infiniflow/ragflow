@@ -230,20 +230,39 @@ func emitEventFromCtx(ctx context.Context, ev RunEvent) {
 	PushEvent(meta.Events, ev)
 }
 
+func sanitizeNodeInputs(inputs map[string]any) map[string]any {
+	if len(inputs) == 0 {
+		return map[string]any{}
+	}
+
+	out := make(map[string]any, len(inputs))
+	for k, v := range inputs {
+		switch k {
+		case "state", "__cpn_id__", "__legacy_noop__":
+			continue
+		default:
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // nodeStartedAt records the per-node start time in state.Sys and emits a
 // node_started RunEvent. Called from the per-node statePre wrapper.
 // Metadata (message/task/session ids) is read from ctx via RunMeta.
-func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string) {
+func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string, inputs map[string]any) {
 	common.Debug("node_started", zap.String("cpnID", cpnID), zap.String("componentName", componentName))
 	if state == nil {
 		return
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
+
 	if state.Sys != nil {
 		state.Sys["_node_start_"+cpnID] = now
+		state.Sys["_node_inputs_"+cpnID] = sanitizeNodeInputs(inputs)
 	}
 	nsData, _ := json.Marshal(NodeStartedData{
-		Inputs:        nil,
+		Inputs:        sanitizeNodeInputs(inputs),
 		CreatedAt:     now,
 		ComponentID:   cpnID,
 		ComponentName: componentName,
@@ -291,13 +310,20 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 		}
 	}
 
+	inputs := map[string]any{}
+	if state.Sys != nil {
+		if v, ok := state.Sys["_node_inputs_"+cpnID].(map[string]any); ok {
+			inputs = v
+		}
+	}
+
 	var nfErr interface{}
 	if nodeErr != nil {
 		nfErr = nodeErr.Error()
 	}
 
 	nfData, _ := json.Marshal(NodeFinishedData{
-		Inputs:        map[string]any{},
+		Inputs:        inputs,
 		Outputs:       outputs,
 		ComponentID:   cpnID,
 		ComponentName: componentName,
@@ -407,7 +433,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 			node := wf.AddGraphNode(cpnID, exp.Graph,
 				compose.WithNodeName(cpnID),
 				compose.WithStatePreHandler[map[string]any, *CanvasState](func(ctx context.Context, in map[string]any, state *CanvasState) (map[string]any, error) {
-					nodeStartedAt(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName)
+					nodeStartedAt(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, in)
 					return statePre(ctx, in, state)
 				}),
 				compose.WithStatePostHandler[map[string]any, *CanvasState](func(ctx context.Context, out map[string]any, state *CanvasState) (map[string]any, error) {
@@ -472,7 +498,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		// service layer before invoke).
 		componentName := c.Components[cpnID].Obj.ComponentName
 		nodePre := func(ctx context.Context, in map[string]any, state *CanvasState) (map[string]any, error) {
-			nodeStartedAt(ctx, state, cpnID, componentName, componentName)
+			nodeStartedAt(ctx, state, cpnID, componentName, componentName, in)
 			return statePre(ctx, in, state)
 		}
 		nodePost := func(ctx context.Context, out map[string]any, state *CanvasState) (map[string]any, error) {

@@ -3718,6 +3718,7 @@ func (s *DocumentService) UploadDocumentInfos(userID string, files []*multipart.
 	fileSvc := &FileService{
 		fileDAO:          s.fileDAO,
 		file2DocumentDAO: s.file2DocumentDAO,
+		documentService:  s,
 	}
 	data, err := fileSvc.UploadInfos(userID, files)
 	if err != nil {
@@ -3730,6 +3731,7 @@ func (s *DocumentService) UploadDocumentInfoByURL(userID, rawURL string) (map[st
 	fileSvc := &FileService{
 		fileDAO:          s.fileDAO,
 		file2DocumentDAO: s.file2DocumentDAO,
+		documentService:  s,
 	}
 	data, err := fileSvc.UploadFromURL(userID, rawURL)
 	if err != nil {
