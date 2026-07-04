@@ -222,6 +222,11 @@ func (n *NatsEngine) GetMessages(messageCount int) ([]common.TaskHandle, error) 
 	return resultMessages, nil
 }
 
+func (n *NatsEngine) CheckStatus() string {
+	n.nc.Stats()
+	return n.nc.Status().String()
+}
+
 type NatsMessageHandle struct {
 	message jetstream.Msg
 }
