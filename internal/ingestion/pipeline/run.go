@@ -58,12 +58,8 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any) (map[string]a
 		return current, fmt.Errorf("pipeline: run canvas workflow: %w", err)
 	}
 	if out == nil {
-		p.recordCanvasCompletion(current)
-		_ = p.flushCheckpoint(runCtx, "completed")
 		return current, nil
 	}
 	current = mergeInto(current, out)
-	p.recordCanvasCompletion(current)
-	_ = p.flushCheckpoint(runCtx, "completed")
 	return current, nil
 }

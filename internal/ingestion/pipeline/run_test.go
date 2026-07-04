@@ -66,7 +66,7 @@ func TestPipelineRunHappyPath(t *testing.T) {
 			"path": ["begin", "a", "b"],
 			"graph": {"nodes": []}
 		}
-	}`), "task-canvas-happy", nil, nil, nil)
+	}`), "task-canvas-happy")
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestPipelineRunStageErrorBubbles(t *testing.T) {
 			"path": ["begin", "err"],
 			"graph": {"nodes": []}
 		}
-	}`), "task-canvas-err", nil, nil, nil)
+	}`), "task-canvas-err")
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestNewPipelineFromDSLUnwrapsTemplateDSL(t *testing.T) {
 			"path": ["begin"],
 			"graph": {"nodes": []}
 		}
-	}`), "task-template", nil, nil, nil)
+	}`), "task-template")
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}

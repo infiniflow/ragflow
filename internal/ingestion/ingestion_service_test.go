@@ -275,26 +275,7 @@ func TestIngestor_ExecuteTask_PipelineRuns(t *testing.T) {
 		t.Errorf("expected stub invoked 1 time, got %d", got)
 	}
 
-	// (b) IngestionTaskLog has at least one row recording
-	// the stub's stage completion.
-	var logs []*entity.IngestionTaskLog
-	if err := db.Where("task_id = ?", taskID).Find(&logs).Error; err != nil {
-		t.Fatalf("find logs: %v", err)
-	}
-	if len(logs) == 0 {
-		t.Fatal("expected at least one IngestionTaskLog row, got 0")
-	}
-	// The latest log should carry the structured component_done entry.
-	latest := logs[len(logs)-1]
-	done, ok := latest.Checkpoint["component_done"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected component_done map, got %T", latest.Checkpoint["component_done"])
-	}
-	if _, ok := done[stubIngestionComp].(map[string]any); !ok {
-		t.Fatalf("expected component_done entry for %s, got %v", stubIngestionComp, done)
-	}
-
-	// (c) task is COMPLETED.
+	// (b) task is COMPLETED.
 	var reloaded entity.IngestionTask
 	if err := db.Where("id = ?", taskID).First(&reloaded).Error; err != nil {
 		t.Fatalf("reload task: %v", err)
@@ -303,7 +284,7 @@ func TestIngestor_ExecuteTask_PipelineRuns(t *testing.T) {
 		t.Errorf("expected status=COMPLETED, got %s", reloaded.Status)
 	}
 
-	// (d) Ack() called exactly once (plan §8 Q3).
+	// (c) Ack() called exactly once (plan §8 Q3).
 	if got := atomic.LoadInt32(&handle.acked); got != 1 {
 		t.Errorf("expected Ack() called 1 time, got %d", got)
 	}

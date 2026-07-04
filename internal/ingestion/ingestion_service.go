@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/pipeline"
-	"ragflow/internal/storage"
 	"sync"
 	"time"
 
@@ -502,10 +501,7 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 		e.failTask(taskCtx, err)
 		return
 	}
-	sink := pipeline.NewTaskLogSink()
-	stg := storage.GetStorageFactory().GetStorage()
-
-	pl, err := pipeline.NewPipelineFromDSL(dslBytes, task.ID, sink, stg, e.ingestionTaskLogDAO)
+	pl, err := pipeline.NewPipelineFromDSL(dslBytes, task.ID)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to compile pipeline for task %s", task.ID), err)
 		e.failTask(taskCtx, err)
