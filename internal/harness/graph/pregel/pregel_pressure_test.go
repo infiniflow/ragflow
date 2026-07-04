@@ -31,7 +31,7 @@ func safeMap(state any) map[string]any {
 // P1: 多步循环图 — 条件路由循环 10 轮
 // ============================================================
 
-func newLoopGraph(t *testing.T, maxIter int) *graph.StateGraph {
+func newLoopGraph(t *testing.T, maxIter int) types.StateGraph {
 	t.Helper()
 	sg := graph.NewStateGraph(map[string]any{
 		"counter": 0,
@@ -116,7 +116,7 @@ func TestEngine_Loop100Iterations(t *testing.T) {
 // P2: 50 节点顺序链 — 线性图可靠性
 // ============================================================
 
-func newChainGraph(t *testing.T, n int) *graph.StateGraph {
+func newChainGraph(t *testing.T, n int) types.StateGraph {
 	t.Helper()
 	sg := graph.NewStateGraph(map[string]any{"idx": 0})
 	sg.AddChannel("idx", channels.NewLastValue(0))
@@ -161,7 +161,7 @@ func TestEngine_Chain50Nodes(t *testing.T) {
 
 func TestEngine_FanOut10_FanInDAG(t *testing.T) {
 	sg := graph.NewStateGraph(map[string]any{"count": 0, "value": ""})
-	sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+	sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 	sg.AddChannel("count", channels.NewBinaryOperatorAggregate(0, func(a, b any) any {
 		return a.(int) + b.(int)
 	}))
@@ -289,7 +289,7 @@ func TestEngine_MultiTenant50Engines(t *testing.T) {
 
 func TestEngine_BinaryOperatorAggregate(t *testing.T) {
 	sg := graph.NewStateGraph(map[string]any{"total": 0})
-	sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+	sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 	sg.AddChannel("total", channels.NewBinaryOperatorAggregate(0, func(a, b any) any {
 		return a.(int) + b.(int)
 	}))
@@ -435,7 +435,7 @@ func TestEngine_NodeErrorPropagation(t *testing.T) {
 func TestEngine_PartialNodeFailureInFanOut(t *testing.T) {
 	t.Parallel()
 	sg := graph.NewStateGraph(map[string]any{"count": 0, "value": ""})
-	sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+	sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 	sg.AddChannel("count", channels.NewBinaryOperatorAggregate(0, func(a, b any) any {
 		return a.(int) + b.(int)
 	}))
@@ -674,7 +674,7 @@ func TestEngine_LargeFanIn100(t *testing.T) {
 	t.Parallel()
 	const n = 100
 	sg := graph.NewStateGraph(map[string]any{"count": 0, "value": ""})
-	sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+	sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 	sg.AddChannel("count", channels.NewBinaryOperatorAggregate(0, func(a, b any) any {
 		return a.(int) + b.(int)
 	}))
@@ -730,7 +730,7 @@ func TestEngine_LargeFanOut100(t *testing.T) {
 	t.Parallel()
 	const n = 100
 	sg := graph.NewStateGraph(map[string]any{"aggregated": 0, "done": ""})
-	sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+	sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 	sg.AddChannel("aggregated", channels.NewBinaryOperatorAggregate(0, func(a, b any) any {
 		return a.(int) + b.(int)
 	}))
@@ -1013,7 +1013,7 @@ func TestEngine_ChannelWriteConflict(t *testing.T) {
 	t.Run("binop_multiple_writes_merged", func(t *testing.T) {
 		t.Parallel()
 		sg := graph.NewStateGraph(map[string]any{"sum": 0})
-		sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+		sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 		sg.AddChannel("sum", channels.NewBinaryOperatorAggregate(0, func(a, b any) any {
 			return a.(int) + b.(int)
 		}))
@@ -1215,7 +1215,7 @@ func TestEngine_MaxIterationsVsConditionStable(t *testing.T) {
 func TestEngine_ChannelTypeCombinations(t *testing.T) {
 	t.Parallel()
 	sg := graph.NewStateGraph(map[string]any{"val": "", "total": 0})
-	sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+	sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 	sg.AddChannel("val", channels.NewLastValue(""))
 	sg.AddChannel("total", channels.NewBinaryOperatorAggregate(0, func(a, b any) any {
 		return a.(int) + b.(int)
@@ -1610,7 +1610,7 @@ func TestEngine_NodeTimeout(t *testing.T) {
 func TestEngine_MultipleFanInNodes(t *testing.T) {
 	t.Parallel()
 	sg := graph.NewStateGraph(map[string]any{"a": 0, "b": 0, "result": ""})
-	sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+	sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 	sg.AddChannel("a", channels.NewBinaryOperatorAggregate(0, func(x, y any) any {
 		return x.(int) + y.(int)
 	}))
@@ -1825,7 +1825,7 @@ func TestEngine_SingleNodeGraph(t *testing.T) {
 		t.Run(string(mode), func(t *testing.T) {
 			t.Parallel()
 			sg := graph.NewStateGraph(map[string]any{"val": ""})
-			sg.NodeTriggerMode = mode
+			sg.SetNodeTriggerMode(mode)
 			sg.AddChannel("val", channels.NewLastValue(""))
 			sg.AddNode("only", func(ctx context.Context, state any) (any, error) {
 				return map[string]any{"val": "single"}, nil

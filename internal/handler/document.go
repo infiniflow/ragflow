@@ -1189,61 +1189,6 @@ func stringValue(value *string) string {
 	return *value
 }
 
-// GetDocumentsByAuthorID get documents by author ID
-// @Summary Get Author Documents
-// @Description Get paginated document list by author ID
-// @Tags documents
-// @Accept json
-// @Produce json
-// @Param author_id path int true "author ID"
-// @Param page query int false "page number" default(1)
-// @Param page_size query int false "items per page" default(10)
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/authors/{author_id}/documents [get]
-func (h *DocumentHandler) GetDocumentsByAuthorID(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	authorIDStr := c.Param("author_id")
-	authorID, err := strconv.Atoi(authorIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid author id",
-		})
-		return
-	}
-
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
-
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 10
-	}
-
-	documents, total, err := h.documentService.GetDocumentsByAuthorID(authorID, page, pageSize)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to get documents",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"data": gin.H{
-			"items":     documents,
-			"total":     total,
-			"page":      page,
-			"page_size": pageSize,
-		},
-	})
-}
-
 // MetadataSummary handles the metadata summary request
 func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)

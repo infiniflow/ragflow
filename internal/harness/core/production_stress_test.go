@@ -43,24 +43,25 @@ func makeWorkflowGraphAgents(n int, prefix string) ([]Agent, []Tool) {
 				}},
 				finalResp: fmt.Sprintf("done from %s", name),
 			},
-			Tools: []Tool{tools[i]},
+			Tools:       []Tool{tools[i]},
+			RetryConfig: &TypedModelRetryConfig[*schema.Message]{MaxRetries: 0},
 		}).WithName(name)
 	}
 	return agents, tools
 }
 
 // runGraphAndCollect drains all events from a graph execution.
-func runGraphAndCollect(t testing.TB, wfg *WorkflowGraph, input *AgentInput) (msgCount int, hasError bool) {
+func runGraphAndCollect(t testing.TB, wfg *WorkflowGraph, input *AgentInput) (msgCount int, err error) {
 	t.Helper()
 	ctx := context.Background()
-	s, err := wfg.Invoke(ctx, input)
-	if err != nil {
-		return 0, true
+	s, invokeErr := wfg.Invoke(ctx, input)
+	if invokeErr != nil {
+		return 0, invokeErr
 	}
 	if s == nil {
-		return 0, false
+		return 0, nil
 	}
-	return len(s.Messages), false
+	return len(s.Messages), nil
 }
 
 // ============================================================================
@@ -104,7 +105,7 @@ func TestProduction_MassiveConcurrentGraphs(t *testing.T) {
 			}
 			sg.AddEdge(fmt.Sprintf("g%d_n%d", id, nodesPerGraph-1), constants.End)
 
-			compiled, compileErr := sg.Compile(graph.WithRecursionLimit(nodesPerGraph + 5))
+			compiled, compileErr := sg.Compile(graph.WithRecursionLimit(nodesPerGraph + 20))
 			if compileErr != nil {
 				errCh <- fmt.Errorf("graph %d compile: %w", id, compileErr)
 				return
@@ -171,10 +172,10 @@ func TestProduction_MixedWorkloadHighConcurrency(t *testing.T) {
 				results <- result{fmt.Sprintf("seq_%d", id), err, 0}
 				return
 			}
-			msgs, hasErr := runGraphAndCollect(t, wfg, &AgentInput{
+			msgs, invokeErr := runGraphAndCollect(t, wfg, &AgentInput{
 				Messages: []Message{schema.UserMessage(fmt.Sprintf("seq %d", id))},
 			})
-			if hasErr {
+			if invokeErr != nil {
 				results <- result{fmt.Sprintf("seq_%d", id), fmt.Errorf("failed"), 0}
 				return
 			}
@@ -200,10 +201,10 @@ func TestProduction_MixedWorkloadHighConcurrency(t *testing.T) {
 				results <- result{fmt.Sprintf("par_%d", id), err, 0}
 				return
 			}
-			msgs, hasErr := runGraphAndCollect(t, wfg, &AgentInput{
+			msgs, invokeErr := runGraphAndCollect(t, wfg, &AgentInput{
 				Messages: []Message{schema.UserMessage(fmt.Sprintf("par %d", id))},
 			})
-			if hasErr {
+			if invokeErr != nil {
 				results <- result{fmt.Sprintf("par_%d", id), fmt.Errorf("failed"), 0}
 				return
 			}
@@ -229,11 +230,11 @@ func TestProduction_MixedWorkloadHighConcurrency(t *testing.T) {
 				results <- result{fmt.Sprintf("loop_%d", id), err, 0}
 				return
 			}
-			msgs, hasErr := runGraphAndCollect(t, wfg, &AgentInput{
+			msgs, invokeErr := runGraphAndCollect(t, wfg, &AgentInput{
 				Messages: []Message{schema.UserMessage(fmt.Sprintf("loop %d", id))},
 			})
-			if hasErr {
-				results <- result{fmt.Sprintf("loop_%d", id), fmt.Errorf("failed"), 0}
+			if invokeErr != nil {
+				results <- result{fmt.Sprintf("loop_%d", id), invokeErr, 0}
 				return
 			}
 			results <- result{fmt.Sprintf("loop_%d", id), nil, msgs}
@@ -251,7 +252,7 @@ func TestProduction_MixedWorkloadHighConcurrency(t *testing.T) {
 				}
 			}()
 			sg := graph.NewStateGraph(&dagState{})
-			sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+			sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 			branchCount := 5
 
 			sg.AddNode(fmt.Sprintf("s_%d", id), func(ctx context.Context, state interface{}) (interface{}, error) {
@@ -279,7 +280,7 @@ func TestProduction_MixedWorkloadHighConcurrency(t *testing.T) {
 			sg.AddEdge(mName, constants.End)
 
 			compiled, err := sg.Compile(
-				graph.WithRecursionLimit(branchCount+5),
+				graph.WithRecursionLimit(branchCount+20),
 				graph.WithNodeTriggerMode(types.NodeTriggerAllPredecessor),
 			)
 			if err != nil {
@@ -331,10 +332,10 @@ func TestProduction_Soak_1000Executions(t *testing.T) {
 	const iterations = 1000
 
 	for i := 0; i < iterations; i++ {
-		_, hasErr := runGraphAndCollect(t, wfg, &AgentInput{
+		_, invokeErr := runGraphAndCollect(t, wfg, &AgentInput{
 			Messages: []Message{schema.UserMessage(fmt.Sprintf("soak %d", i))},
 		})
-		if hasErr {
+		if invokeErr != nil {
 			t.Fatalf("iteration %d failed", i)
 		}
 		if i%200 == 199 {
@@ -563,7 +564,7 @@ func TestProduction_CheckpointPressure(t *testing.T) {
 			sg.AddEdge(fmt.Sprintf("n%d_g%d", nodesPerGraph-1, id), constants.End)
 
 			compiled, compileErr := sg.Compile(
-				graph.WithRecursionLimit(nodesPerGraph+5),
+				graph.WithRecursionLimit(nodesPerGraph+20),
 				graph.WithCheckpointer(memSaver),
 			)
 			if compileErr != nil {

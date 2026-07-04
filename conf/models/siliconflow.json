@@ -1,5 +1,6 @@
 {
   "name": "SiliconFlow",
+  "rank": 980,
   "url": {
     "default": "https://api.siliconflow.cn/v1"
   },

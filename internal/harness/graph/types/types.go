@@ -337,3 +337,119 @@ type NodeFunc func(context.Context, interface{}) (interface{}, error)
 
 // EdgeFunc is the signature of an edge/condition function.
 type EdgeFunc func(context.Context, interface{}) (interface{}, error)
+
+// ============================================================
+// Graph type definitions (shared by graph/graph and pregel)
+// ============================================================
+
+// Node represents a node in a StateGraph.
+type Node struct {
+	Name         string
+	Function     NodeFunc
+	Triggers     []string
+	Writes       []string
+	RetryPolicy  *RetryPolicy
+	Tags         []string
+	Metadata     map[string]interface{}
+	FieldMapping []FieldMapping
+}
+
+// Edge is a directed connection between two nodes.
+type Edge struct {
+	From string
+	To   string
+}
+
+// FieldMapping specifies how a field from a source node's output is mapped
+// to a target node's input.
+type FieldMapping struct {
+	From string
+	To   string
+}
+
+// DataEdge is a directed data-flow connection with field-level mapping.
+type DataEdge struct {
+	From    string
+	To      string
+	Mapping []FieldMapping
+}
+
+// ConditionalEdge routes to different nodes based on a condition.
+type ConditionalEdge struct {
+	From      string
+	Condition EdgeFunc
+	Mapping   map[string]string
+}
+
+// Branch provides a higher-level conditional edge.
+type Branch struct {
+	From      string
+	Condition EdgeFunc
+	Then      func(interface{}) []string
+}
+
+// NodeOptions contains options for adding a node.
+type NodeOptions struct {
+	RetryPolicy  *RetryPolicy
+	Tags         []string
+	Metadata     map[string]interface{}
+	Triggers     []string
+	Writes       []string
+	FieldMapping []FieldMapping
+	StatePre     NodeFunc
+	StatePost    NodeFunc
+}
+
+// StateGraph is the interface for graph building and inspection.
+type StateGraph interface {
+	AddNode(name string, fn NodeFunc) *Node
+	AddNodeWithOptions(name string, fn NodeFunc, opts NodeOptions) *Node
+	AddEdge(from, to string) error
+	AddConditionalEdges(from string, condition EdgeFunc, mapping map[string]string) error
+	AddBranch(from string, condition EdgeFunc, then func(interface{}) []string) error
+	AddDataEdge(from, to string, mappings ...FieldMapping) error
+	AddChannel(name string, channel interface{}) // channel must be channels.Channel
+	SetReducer(channelName string, reducer ReducerFunc)
+	AddChannelWithReducer(name string, channel interface{}, reducer ReducerFunc)
+	SetEntryPoint(node string) error
+	SetFinishPoint(node string) error
+	WithInputSchema(schema interface{}) StateGraph
+	WithOutputSchema(schema interface{}) StateGraph
+	SetNodeTriggerMode(mode NodeTriggerMode)
+	Compile(opts ...interface{}) (CompiledGraph, error)
+	Validate() error
+
+	GetChannels() map[string]interface{}
+	GetEntryPoint() string
+	GetNode(name string) (*Node, bool)
+	GetEdges() []*Edge
+	GetConditionalEdges() []*ConditionalEdge
+	GetBranches() []*Branch
+	GetNodes() map[string]*Node
+	GetNodeTriggerMode() NodeTriggerMode
+	GetDataEdges() []*DataEdge
+
+	// GetStateSchema returns the raw state schema (struct, map, etc.)
+	GetStateSchema() interface{}
+}
+
+// CompiledGraph is the interface for executing a compiled graph.
+type CompiledGraph interface {
+	Invoke(ctx context.Context, input interface{}, config ...*RunnableConfig) (interface{}, error)
+	Stream(ctx context.Context, input interface{}, mode StreamMode, config ...*RunnableConfig) (<-chan interface{}, <-chan error)
+	GetGraph() StateGraph
+	GetCheckpointer() interface{} // cast to checkpoint.BaseCheckpointer
+	GetInterrupts() map[string]bool
+	GetInterruptsAfter() map[string]bool
+	GetRecursionLimit() int
+	IsDebug() bool
+}
+
+// PregelRunFunc is the pluggable pregel execution function.
+// Set by pregel.init() via SetPregelRunFunc.
+var PregelRunFunc func(ctx context.Context, cg CompiledGraph, input interface{}, config *RunnableConfig, streamMode StreamMode) (interface{}, error)
+
+// SetPregelRunFunc sets the pregel execution function for compiled graphs.
+func SetPregelRunFunc(fn func(ctx context.Context, cg CompiledGraph, input interface{}, config *RunnableConfig, streamMode StreamMode) (interface{}, error)) {
+	PregelRunFunc = fn
+}

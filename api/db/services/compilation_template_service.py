@@ -229,3 +229,53 @@ class CompilationTemplateService(CommonService):
             except Exception as e:
                 logging.exception("Add compilation template error for %s: %s", template_path, e)
         return cls._sort_builtins(templates)
+
+    @classmethod
+    def load_wiki_presets_from_files(cls) -> list[dict]:
+        """Load wiki page-structure presets from
+        ``api/db/init_data/compilation_templates/wiki/*.yaml``.
+
+        Each file contributes one preset dict with ``topic`` /
+        ``instruction`` / ``page_example`` fields (plus ``id`` derived
+        from the filename stem so the frontend can key list items
+        even when several presets share the same ``topic`` — which is
+        by design; the UI groups presets by topic).
+
+        Filesystem-fresh on every call: these are read-only reference
+        data with low request volume, so no DB seed / no ES cache.
+        Same failure-isolation policy as :meth:`load_builtins_from_files`
+        — a single malformed file logs and is skipped; the rest still
+        load. Ordered by filename for stability.
+        """
+        wiki_dir = os.path.join(
+            get_project_base_directory(),
+            "api", "db", "init_data", "compilation_templates", "wiki",
+        )
+        if not os.path.exists(wiki_dir):
+            logging.warning("Missing wiki presets directory: %s", wiki_dir)
+            return []
+
+        presets: list[dict] = []
+        yaml = YAML(typ="safe", pure=True)
+        for filename in sorted(os.listdir(wiki_dir)):
+            if not filename.endswith((".yaml", ".yml")):
+                continue
+            path = os.path.join(wiki_dir, filename)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    doc = yaml.load(f) or {}
+            except Exception:
+                logging.exception("wiki preset load failed for %s", path)
+                continue
+            if not isinstance(doc, dict):
+                logging.warning("wiki preset skipped (not a mapping): %s", path)
+                continue
+            # Missing fields degrade to empty strings so the frontend
+            # doesn't have to null-check every row.
+            presets.append({
+                "id": os.path.splitext(filename)[0],
+                "topic": str(doc.get("topic") or "").strip(),
+                "instruction": str(doc.get("instruction") or ""),
+                "page_example": str(doc.get("page_example") or ""),
+            })
+        return presets
