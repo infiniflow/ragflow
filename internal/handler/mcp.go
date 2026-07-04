@@ -303,12 +303,7 @@ type ImportMCPRequest struct {
 	Timeout    float64                           `json:"timeout,omitempty"`
 }
 
-// ImportMCPServers bulk-imports MCP servers from a JSON config, fetching the
-// remote tool list for each entry and persisting it under variables.tools.
-// Mirrors Python's import_multiple, including the same distinction between
-// "mcpServers key missing" (101 ARGUMENT_ERROR) and "mcpServers key
-// present but empty" (102 DATA_ERROR).
-//
+// ImportMCPServers bulk-imports MCP servers from a JSON config
 // @Summary Import MCP Servers
 // @Tags mcp
 // @Accept json
@@ -322,10 +317,6 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 		return
 	}
 
-	// Read the raw body so we can distinguish "key absent" from "key
-	// present but empty" — the Python @validate_request("mcpServers")
-	// decorator returns RetCode.ARGUMENT_ERROR for the former, while the
-	// handler body returns RetCode.DATA_ERROR for the latter.
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "Invalid request body: " + err.Error()})
@@ -378,11 +369,7 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": gin.H{"results": results}, "message": "success"})
 }
 
-// TestMCPServer opens a live MCP session and returns the tools the server
-// advertises. The mcp_id path parameter identifies the stored record the
-// user is trying to validate; the actual connection uses the request body
-// so the user can preview unsaved edits — matching Python's test_mcp.
-//
+// TestMCPServer opens a live MCP session and returns the tools the server advertises.
 // @Summary Test MCP Server
 // @Tags mcp
 // @Accept json
@@ -409,8 +396,6 @@ func (h *MCPHandler) TestMCPServer(c *gin.Context) {
 		return
 	}
 
-	// Mirror Python's @validate_request("url", "server_type"): missing
-	// required fields → code 101 (ARGUMENT_ERROR), not code 102.
 	var missingFields []string
 	if req.URL == "" {
 		missingFields = append(missingFields, "url")

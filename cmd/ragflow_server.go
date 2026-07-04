@@ -661,7 +661,6 @@ func startServer(config *server.Config) {
 	userService := service.NewUserService()
 	documentService := service.NewDocumentService()
 	datasetsService := service.NewDatasetService()
-	datasetService := service.NewKnowledgebaseService()
 	metadataService := service.NewMetadataService()
 	chunkService := chunk.NewChunkService()
 	llmService := service.NewLLMService()
@@ -689,11 +688,10 @@ func startServer(config *server.Config) {
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
 	userHandler := handler.NewUserHandler(userService)
-	tenantHandler := handler.NewTenantHandler(tenantService, userService, datasetService)
+	tenantHandler := handler.NewTenantHandler(tenantService, userService, datasetsService)
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
 	systemHandler := handler.NewSystemHandler(systemService)
-	datasetHandler := handler.NewKnowledgebaseHandler(datasetService, userService, documentService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
@@ -775,7 +773,7 @@ func startServer(config *server.Config) {
 	docDAO := documentDAO
 	retrievalService := nlp.NewRetrievalService(docEngine, docDAO)
 	difyRetrievalHandler := handler.NewDifyRetrievalHandler(
-		datasetService,
+		datasetsService,
 		modelProviderService,
 		metadataService,
 		retrievalService,
@@ -807,7 +805,6 @@ func startServer(config *server.Config) {
 		documentHandler,
 		datasetsHandler,
 		systemHandler,
-		datasetHandler,
 		chunkHandler,
 		llmHandler,
 		chatHandler,

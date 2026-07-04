@@ -417,6 +417,7 @@ func Init(configPath string) error {
 			configDict["name"] = "nats"
 			configDict["host"] = host
 			configDict["port"] = port
+			configDict["service_type"] = "message_queue"
 		case "admin":
 			// Skip admin section
 			continue

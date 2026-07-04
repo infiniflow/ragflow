@@ -15,15 +15,17 @@
 #
 
 import asyncio
+import builtins
+import json
+import logging
+import os
 import re
 import time
 from abc import ABC
-import builtins
-import json
-import os
-import logging
 from typing import Any, List, Union
+
 import pandas as pd
+
 from agent import settings
 from common.connection_utils import timeout
 
@@ -517,7 +519,12 @@ class ComponentBase(ABC):
         res = {}
         for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE | re.DOTALL):
             exp = r.group(1)
-            cpn_id, var_nm = exp.split("@") if exp.find("@") > 0 else ("", exp)
+            # Use maxsplit=1 to be defensive: although `exp` here comes
+            # from `variable_ref_patt` (which constrains `var_nm` to
+            # `[A-Za-z0-9_.-]+`), a future regex relaxation or a non-
+            # pattern caller should not raise `ValueError: too many values
+            # to unpack` if the trailing part happens to contain '@'.
+            cpn_id, var_nm = exp.split("@", 1) if exp.find("@") > 0 else ("", exp)
             res[exp] = {
                 "name": (self._canvas.get_component_name(cpn_id) + f"@{var_nm}") if cpn_id else exp,
                 "value": self._canvas.get_variable_value(exp),
