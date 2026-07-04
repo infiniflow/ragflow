@@ -278,7 +278,7 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         while true; do
             echo "Starting Admin go server..."
-            bin/ragflow_main --admin
+            bin/ragflow_server --admin
             echo "Admin go server started."
             sleep 1;
         done &
@@ -301,7 +301,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         while true; do
             echo "Starting RAGFlow go server..."
-            bin/ragflow_main --api
+            bin/ragflow_server --api
             echo "RAGFlow go server started."
             sleep 1;
         done &
@@ -335,7 +335,7 @@ if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
         if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
             while true; do
                 echo "Starting go ingestor..."
-                bin/ragflow_main --ingestor
+                bin/ragflow_server --ingestor
                 sleep 1;
             done &
         fi
@@ -353,7 +353,7 @@ if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
           if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
               while true; do
                   echo "Starting go ingestor..."
-                  bin/ragflow_main --ingestor
+                  bin/ragflow_server --ingestor
                   sleep 1;
               done &
           fi

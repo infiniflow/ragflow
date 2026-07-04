@@ -1419,13 +1419,14 @@ func (s *MemoryService) ListMemories(userID string, tenantIDs []string, memoryTy
 		if err != nil {
 			return nil, fmt.Errorf("failed to get user tenants: %w", err)
 		}
-		tenantIDs = make([]string, len(userTenants))
-		for i, tenant := range userTenants {
-			tenantIDs[i] = tenant.TenantID
+		tenantIDs = make([]string, 0, len(userTenants)+1)
+		tenantIDs = append(tenantIDs, userID)
+		for _, tenant := range userTenants {
+			tenantIDs = append(tenantIDs, tenant.TenantID)
 		}
 	}
 
-	memories, total, err := s.memoryDAO.GetByFilter(tenantIDs, memoryTypes, storageType, keywords, page, pageSize)
+	memories, total, err := s.memoryDAO.GetByFilter(userID, tenantIDs, memoryTypes, storageType, keywords, page, pageSize)
 	if err != nil {
 		return nil, err
 	}
