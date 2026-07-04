@@ -26,11 +26,7 @@ from unittest.mock import patch
 import pytest
 
 from common import ssrf_guard
-<<<<<<< HEAD
 from common.misc_utils import convert_bytes, download_img, get_uuid, hash_str2int, once, thread_pool_exec
-=======
-from common.misc_utils import convert_bytes, download_img, get_uuid, hash_str2int, once
->>>>>>> 811f1b160 (fix(common/misc_utils): allow once decorator retries after failure)
 
 
 class _Hdr:
