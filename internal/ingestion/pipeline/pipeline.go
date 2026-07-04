@@ -17,11 +17,14 @@
 package pipeline
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"ragflow/internal/agent/canvas"
+	_ "ragflow/internal/agent/component"
+	"ragflow/internal/agent/runtime"
 )
 
 // Pipeline is a compiled ingestion canvas plus task-scoped metadata.
@@ -95,3 +98,44 @@ func stageTimeout() time.Duration {
 }
 
 var defaultStageTimeout = 60 * time.Second
+
+// Run executes the full ingestion graph described by the canonical DSL.
+// There is no pipeline-layer partial resume entry point: execution always
+// starts from the graph entry and component-level replay decisions belong to
+// the components themselves.
+func (p *Pipeline) Run(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	if p == nil {
+		return nil, fmt.Errorf("pipeline: Run on nil pipeline")
+	}
+	if p.canvas == nil {
+		return nil, fmt.Errorf("pipeline: canvas is nil")
+	}
+	if runtime.DefaultFactory() == nil {
+		runtime.InstallDefaultRegistryFactory()
+	}
+	if runtime.DefaultFactory() == nil {
+		return nil, fmt.Errorf("pipeline: Run: runtime default component factory is not installed")
+	}
+
+	compiled, err := canvas.Compile(ctx, p.canvas)
+	if err != nil {
+		return nil, fmt.Errorf("pipeline: Run: compile canvas: %w", err)
+	}
+
+	runState := canvas.NewCanvasState("", p.taskID)
+	runCtx := canvas.WithState(ctx, runState)
+	runCtx = canvas.WithComponentTimeoutOverride(runCtx, stageTimeout())
+
+	current := cloneMapOrEmpty(inputs)
+	out, err := compiled.Workflow.Invoke(runCtx, current)
+	if err != nil {
+		return current, fmt.Errorf("pipeline: run canvas workflow: %w", err)
+	}
+	if out == nil {
+		current["state"] = runState.Snapshot()
+		return current, nil
+	}
+	merged := mergeInto(current, out)
+	merged["state"] = runState.Snapshot()
+	return merged, nil
+}

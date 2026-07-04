@@ -110,8 +110,7 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 	}
 	all := append(plain, custom...)
 	if len(all) == 0 {
-		// Match-nothing regex (avoids the nil-pointer below).
-		return regexp.MustCompile(`\A(?!)`)
+		return nil
 	}
 	sort.SliceStable(all, func(i, j int) bool { return len(all[i]) > len(all[j]) })
 	return regexp.MustCompile(strings.Join(all, "|"))

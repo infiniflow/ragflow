@@ -18,7 +18,6 @@ package component
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"strings"
 	"sync/atomic"
@@ -86,7 +85,7 @@ func TestFileComponent_Registered(t *testing.T) {
 
 // TestFileComponent_Invoke_HappyPath pre-loads memory storage
 // with bytes, invokes the component, and verifies the binary
-// output base64-decodes to the original bytes.
+// output bytes equal the original payload.
 func TestFileComponent_Invoke_HappyPath(t *testing.T) {
 	ms := withMemoryStorage(t)
 	want := []byte("hello, ragflow")
@@ -104,13 +103,9 @@ func TestFileComponent_Invoke_HappyPath(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	enc, ok := out["binary"].(string)
-	if !ok || enc == "" {
+	got, ok := out["binary"].([]byte)
+	if !ok || len(got) == 0 {
 		t.Fatalf("binary not produced: %v", out["binary"])
-	}
-	got, err := base64.StdEncoding.DecodeString(enc)
-	if err != nil {
-		t.Fatalf("base64 decode: %v", err)
 	}
 	if string(got) != string(want) {
 		t.Errorf("binary = %q, want %q", got, want)
@@ -159,9 +154,9 @@ func TestFileComponent_Invoke_ResolvesDocIDViaDocumentLocation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, err := base64.StdEncoding.DecodeString(out["binary"].(string))
-	if err != nil {
-		t.Fatalf("decode: %v", err)
+	got, ok := out["binary"].([]byte)
+	if !ok {
+		t.Fatalf("binary = %T, want []byte", out["binary"])
 	}
 	if string(got) != "doc-location" {
 		t.Fatalf("binary = %q, want %q", got, "doc-location")
@@ -220,9 +215,9 @@ func TestFileComponent_Invoke_ResolvesDocIDViaFileMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, err := base64.StdEncoding.DecodeString(out["binary"].(string))
-	if err != nil {
-		t.Fatalf("decode: %v", err)
+	got, ok := out["binary"].([]byte)
+	if !ok {
+		t.Fatalf("binary = %T, want []byte", out["binary"])
 	}
 	if string(got) != "file-mapping" {
 		t.Fatalf("binary = %q, want %q", got, "file-mapping")

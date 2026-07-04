@@ -261,7 +261,10 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 			}
 		}
 		merged := strings.Join(parts, "\n")
-		return chunkOutputs([]schema.ChunkDoc{{Text: merged}})
+		if merged == "" {
+			return emptyOutputs()
+		}
+		return chunkOutputs([]schema.ChunkDoc{buildChunkDoc(items[0], "text", merged, "", "")})
 	}
 
 	workers := c.Parallelism()

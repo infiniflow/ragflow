@@ -35,10 +35,11 @@
 //     Python intent in dataflow_service.py / pipeline.py: pipeline.run()
 //     can rely on doc_id-only execution.
 //
-//   - BINARY ENCODING: matched. Output `binary` is base64-encoded
-//     raw bytes, matching the python set_output contract. Base64
-//     is the wire form for []byte across the canvas map (Go JSON
-//     cannot carry raw bytes through a map[string]any).
+//   - BINARY PAYLOAD: deliberately upgraded. The Go runtime carries
+//     component outputs in-process via map[string]any, so File emits
+//     raw []byte instead of base64. This keeps the File -> Parser
+//     contract typed and avoids accidental double-encoding on the
+//     real ingestion path.
 //
 //   - ASYNC RACE / DOCUMENT-LEVEL LOCKING: not applicable in Go;
 //     the python `self._canvas.callback(1, ...)` short-circuit is
@@ -53,7 +54,6 @@ package component
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -79,8 +79,7 @@ const ComponentNameFile = "File"
 var fileFetchTimeout = 30 * time.Second
 
 // FileComponent fetches the document binary from external storage
-// (MinIO / S3 / OSS / in-memory mock) and emits it as a base64-
-// encoded string.
+// (MinIO / S3 / OSS / in-memory mock) and emits it as raw bytes.
 //
 // Inputs (per rag/flow/file.py:File._invoke):
 //
@@ -91,7 +90,7 @@ var fileFetchTimeout = 30 * time.Second
 //
 // Outputs:
 //
-//	binary  (string)                      — base64 of the raw bytes
+//	binary  ([]byte)                      — raw bytes
 //	name    (string)                      — file/document name
 //	path    (string)                      — storage path echoed for the checkpoint
 //	bucket  (string)                      — storage bucket echoed for the checkpoint
@@ -148,7 +147,7 @@ func (c *FileComponent) Inputs() map[string]string {
 // set_output contract (see schema.FileOutputs).
 func (c *FileComponent) Outputs() map[string]string {
 	return map[string]string{
-		"binary": "Base64-encoded raw bytes of the document.",
+		"binary": "Raw bytes of the document ([]byte).",
 		"name":   "Document / file name.",
 		"path":   "Storage object key echoed for the checkpoint.",
 		"bucket": "Storage bucket echoed for the checkpoint.",
@@ -162,8 +161,7 @@ func (c *FileComponent) Outputs() map[string]string {
 // re-runs.
 func (c *FileComponent) Parallelism() int { return 1 }
 
-// Invoke fetches the document binary and returns the base64-
-// encoded bytes along with the storage location for downstream
+// Invoke fetches the document binary and returns the raw bytes along with the storage location for downstream
 // use (Parser) and for the materialized-boundary checkpoint.
 //
 // The implementation mirrors the python flow's two paths:
@@ -223,8 +221,7 @@ func (c *FileComponent) Invoke(ctx context.Context, inputs map[string]any) (map[
 		if progressErr != nil {
 			return nil, progressErr
 		}
-		enc := base64.StdEncoding.EncodeToString(binary)
-		out["binary"] = enc
+		out["binary"] = binary
 		return out, nil
 	})
 	if err != nil {
