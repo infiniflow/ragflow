@@ -31,7 +31,7 @@ func (s *Service) ListRoles() ([]map[string]interface{}, error) {
 	result := []map[string]interface{}{
 		{
 			"command": "list_roles",
-			"error":   "'list roles' is implemented in enterprise edition",
+			"error":   "'list roles' is not supported",
 		},
 	}
 
@@ -44,7 +44,7 @@ func (s *Service) CreateRole(roleName, description string) (map[string]interface
 		"command":     "create_role",
 		"role_name":   roleName,
 		"description": description,
-		"error":       "'create role' is implemented in enterprise edition",
+		"error":       "'create role' is not supported",
 	}
 
 	return result, nil
@@ -55,7 +55,7 @@ func (s *Service) ShowRole(roleName string) (map[string]interface{}, error) {
 	result := map[string]interface{}{
 		"command":   "show_role",
 		"role_name": roleName,
-		"error":     "'show role' is implemented in enterprise edition",
+		"error":     "'show role' is not supported",
 	}
 
 	return result, nil
@@ -68,7 +68,7 @@ func (s *Service) UpdateRole(roleName, description string) (map[string]interface
 		"command":     "update_role",
 		"role_name":   roleName,
 		"description": description,
-		"error":       "'update role' is implemented in enterprise edition",
+		"error":       "'update role' is not supported",
 	}
 
 	return result, nil
@@ -79,7 +79,7 @@ func (s *Service) DropRole(roleName string) (map[string]interface{}, error) {
 	result := map[string]interface{}{
 		"command":   "drop_role",
 		"role_name": roleName,
-		"error":     "'drop role' is implemented in enterprise edition",
+		"error":     "'drop role' is not supported",
 	}
 
 	return result, nil
@@ -90,7 +90,7 @@ func (s *Service) ShowRolePermission(roleName string) (map[string]interface{}, e
 	result := map[string]interface{}{
 		"command":   "show_role_permission",
 		"role_name": roleName,
-		"error":     "'show role permissions' is implemented in enterprise edition",
+		"error":     "'show role permissions' is not supported",
 	}
 
 	return result, nil
@@ -103,7 +103,7 @@ func (s *Service) GrantRolePermission(roleName string, actions []string, resourc
 		"role_name": roleName,
 		"actions":   actions,
 		"resource":  resource,
-		"error":     "'grant role permission' is implemented in enterprise edition",
+		"error":     "'grant role permission' is not supported",
 	}
 
 	return result, nil
@@ -116,7 +116,7 @@ func (s *Service) RevokeRolePermission(roleName string, actions []string, resour
 		"role_name": roleName,
 		"actions":   actions,
 		"resource":  resource,
-		"error":     "'revoke role permission' is implemented in enterprise edition",
+		"error":     "'revoke role permission' is not supported",
 	}
 
 	return result, nil
@@ -126,7 +126,7 @@ func (s *Service) RevokeRolePermission(roleName string, actions []string, resour
 func (s *Service) ListResources() (map[string]interface{}, error) {
 	result := map[string]interface{}{
 		"command": "list_resources",
-		"error":   "'list resources for role' is implemented in enterprise edition",
+		"error":   "'list resources for role' is not supported",
 	}
 
 	return result, nil
@@ -137,7 +137,7 @@ func (s *Service) ShowRoleDefaultModels(roleName string) ([]map[string]interface
 		{
 			"command":   "show_role_default_models",
 			"role_name": roleName,
-			"error":     "'show role default models' is implemented in enterprise edition",
+			"error":     "'show role default models' is not supported",
 		},
 	}, nil
 }
@@ -149,7 +149,7 @@ func (s *Service) SetRoleDefaultModel(roleName, modelID, modelType string) (map[
 		"role_name":  roleName,
 		"model_id":   modelID,
 		"model_type": modelType,
-		"error":      "'set role default model' is implemented in enterprise edition",
+		"error":      "'set role default model' is not supported",
 	}, nil
 }
 
@@ -159,7 +159,7 @@ func (s *Service) ResetRoleDefaultModel(roleName, modelType string) (map[string]
 		"command":    "reset_role_default_model",
 		"role_name":  roleName,
 		"model_type": modelType,
-		"error":      "'reset role default model' is implemented in enterprise edition",
+		"error":      "'reset role default model' is not supported",
 	}, nil
 }
 
@@ -168,7 +168,7 @@ func (s *Service) ListModelProviders() ([]map[string]interface{}, error) {
 	return []map[string]interface{}{
 		{
 			"command": "list_model_providers",
-			"error":   "'list model providers' is implemented in enterprise edition",
+			"error":   "'list model providers' is not supported",
 		},
 	}, nil
 }
@@ -180,7 +180,7 @@ func (s *Service) AddModelProvider(userID, providerName string) (map[string]inte
 		"command":     "add_model_provider",
 		"user_id":     userID,
 		"provider_id": providerName,
-		"error":       "'add model provider' is implemented in enterprise edition",
+		"error":       "'add model provider' is not supported",
 	}, nil
 }
 
@@ -190,7 +190,7 @@ func (s *Service) DeleteModelProviders(userID string, providerNames []string) (m
 		"command":        "delete_model_providers",
 		"user_id":        userID,
 		"provider_names": providerNames,
-		"error":          "'delete model providers' is implemented in enterprise edition",
+		"error":          "'delete model providers' is not supported",
 	}, nil
 }
 
@@ -202,7 +202,7 @@ func (s *Service) ListModelInstances(userID, providerName string) ([]map[string]
 			"command":     "list_model_instances",
 			"user_id":     userID,
 			"provider_id": providerName,
-			"error":       "'list model instances' is implemented in enterprise edition",
+			"error":       "'list model instances' is not supported",
 		},
 	}, nil
 }
@@ -215,7 +215,7 @@ func (s *Service) ShowProviderInstance(userID, providerName, instanceName string
 		"user_id":       userID,
 		"provider_id":   providerName,
 		"instance_name": instanceName,
-		"error":         "'show provider instance' is implemented in enterprise edition",
+		"error":         "'show provider instance' is not supported",
 	}, nil
 }
 
@@ -226,7 +226,7 @@ func (s *Service) ShowProviderInstanceBalance(userID, providerName, instanceName
 		"user_id":       userID,
 		"provider_id":   providerName,
 		"instance_name": instanceName,
-		"error":         "'show provider instance balance' is implemented in enterprise edition",
+		"error":         "'show provider instance balance' is not supported",
 	}, nil
 }
 
@@ -237,7 +237,7 @@ func (s *Service) CheckInstanceConnection(userID, providerName, instanceName str
 		"user_id":       userID,
 		"provider_id":   providerName,
 		"instance_name": instanceName,
-		"error":         "'check instance connection' is implemented in enterprise edition",
+		"error":         "'check instance connection' is not supported",
 	}, nil
 }
 
@@ -262,7 +262,7 @@ func (s *Service) AlterProviderInstance(userID, providerName, instanceName, newI
 		"instance_name":     instanceName,
 		"new_instance_name": newInstanceName,
 		"new_api_key":       newAPIKey,
-		"error":             "'alter provider instance' is implemented in enterprise edition",
+		"error":             "'alter provider instance' is not supported",
 	}, nil
 }
 
@@ -274,7 +274,7 @@ func (s *Service) AddModelInstance(userID, providerName, instanceName string) (m
 		"user_id":       userID,
 		"provider_id":   providerName,
 		"instance_name": instanceName,
-		"error":         "'add model instance' is implemented in enterprise edition",
+		"error":         "'add model instance' is not supported",
 	}, nil
 }
 
@@ -285,7 +285,7 @@ func (s *Service) DeleteModelInstances(userID, providerName string, instances []
 		"user_id":     userID,
 		"provider_id": providerName,
 		"instances":   instances,
-		"error":       "'delete model instances' is implemented in enterprise edition",
+		"error":       "'delete model instances' is not supported",
 	}, nil
 }
 
@@ -297,7 +297,7 @@ func (s *Service) ListInstanceModels(userID, providerName, instanceName string) 
 			"user_id":       userID,
 			"provider_id":   providerName,
 			"instance_name": instanceName,
-			"error":         "'list instance models' is implemented in enterprise edition",
+			"error":         "'list instance models' is not supported",
 		},
 	}, nil
 }
@@ -312,7 +312,7 @@ func (s *Service) EnableOrDisableModel(userID, providerName, instanceName, model
 		"model_name":    modelName,
 		"model_id":      modelID,
 		"status":        status,
-		"error":         "'enable or disable model' is implemented in enterprise edition",
+		"error":         "'enable or disable model' is not supported",
 	}, nil
 }
 
@@ -327,7 +327,7 @@ func (s *Service) AddModels(userID, providerName, instanceName string, modelName
 		"provider_id":   providerName,
 		"instance_name": instanceName,
 		"model_names":   modelNames,
-		"error":         "'add model' is implemented in enterprise edition",
+		"error":         "'add model' is not supported",
 	}, nil
 }
 
@@ -339,21 +339,21 @@ func (s *Service) DeleteModels(userID, providerName, instanceName string, models
 		"provider_id":   providerName,
 		"instance_name": instanceName,
 		"models":        models,
-		"error":         "'delete models' is implemented in enterprise edition",
+		"error":         "'delete models' is not supported",
 	}, nil
 }
 
 func (s *Service) GetSystemFingerprint() (map[string]interface{}, error) {
 	result := map[string]interface{}{
 		"command": "get_system_fingerprint",
-		"error":   "'get system fingerprint' is implemented in enterprise edition",
+		"error":   "'get system fingerprint' is not supported",
 	}
 
 	return result, nil
 }
 
 func (s *Service) SetSystemLicense(license string) error {
-	return errors.New("'set system license' is implemented in enterprise edition")
+	return errors.New("'set system license' is not supported")
 }
 
 func (s *Service) ShowSystemLicense(check bool) (map[string]interface{}, error) {
@@ -361,13 +361,13 @@ func (s *Service) ShowSystemLicense(check bool) (map[string]interface{}, error) 
 	if check {
 		result = map[string]interface{}{
 			"command": "check_system_license",
-			"error":   "'check system license' is implemented in enterprise edition",
+			"error":   "'check system license' is not supported",
 		}
 
 	} else {
 		result = map[string]interface{}{
 			"command": "show_system_license",
-			"error":   "'show system license' is implemented in enterprise edition",
+			"error":   "'show system license' is not supported",
 		}
 	}
 
@@ -379,7 +379,7 @@ func (s *Service) UpdateSystemLicenseConfig(timeRecordSaveInterval, timeRecordTa
 		"command":                   "update_system_license_config",
 		"time_record_save_interval": timeRecordSaveInterval,
 		"time_record_task_duration": timeRecordTaskDuration,
-		"error":                     "'update system license config' is implemented in enterprise edition",
+		"error":                     "'update system license config' is not supported",
 	}
 
 	return result, nil
@@ -398,7 +398,7 @@ func (s *Service) ShowUserActivity(email string, days int) (map[string]interface
 		"email":    user.Email,
 		"nickname": user.Nickname,
 		"days":     days,
-		"error":    "'show user activity' is implemented in enterprise edition",
+		"error":    "'show user activity' is not supported",
 	}
 
 	return result, nil
@@ -417,7 +417,7 @@ func (s *Service) ShowUserDatasetSummary(email, dataset string) (map[string]inte
 		"email":    user.Email,
 		"nickname": user.Nickname,
 		"dataset":  dataset,
-		"error":    "'show user dataset summary' is implemented in enterprise edition",
+		"error":    "'show user dataset summary' is not supported",
 	}
 
 	return result, nil
@@ -435,7 +435,7 @@ func (s *Service) ShowUserSummary(email string) (map[string]interface{}, error) 
 	result := map[string]interface{}{
 		"email":    user.Email,
 		"nickname": user.Nickname,
-		"error":    "'show user summary' is implemented in enterprise edition",
+		"error":    "'show user summary' is not supported",
 	}
 
 	return result, nil
@@ -453,7 +453,7 @@ func (s *Service) ShowUserStorage(email string) (map[string]interface{}, error) 
 	result := map[string]interface{}{
 		"email":    user.Email,
 		"nickname": user.Nickname,
-		"error":    "'show user storage' is implemented in enterprise edition",
+		"error":    "'show user storage' is not supported",
 	}
 
 	return result, nil
@@ -471,7 +471,7 @@ func (s *Service) ShowUserQuota(email string) (map[string]interface{}, error) {
 	result := map[string]interface{}{
 		"email":    user.Email,
 		"nickname": user.Nickname,
-		"error":    "'show user quota' is implemented in enterprise edition",
+		"error":    "'show user quota' is not supported",
 	}
 
 	return result, nil
@@ -489,7 +489,7 @@ func (s *Service) ShowUserIndex(email string) (map[string]interface{}, error) {
 	result := map[string]interface{}{
 		"email":    user.Email,
 		"nickname": user.Nickname,
-		"error":    "'show user index' is implemented in enterprise edition",
+		"error":    "'show user index' is not supported",
 	}
 
 	return result, nil
@@ -509,7 +509,7 @@ func (s *Service) UpdateUserRole(email, roleName string) (map[string]interface{}
 		"role":     roleName,
 		"email":    user.Email,
 		"nickname": user.Nickname,
-		"error":    "'update user role' is implemented in enterprise edition",
+		"error":    "'update user role' is not supported",
 	}
 
 	return result, nil
@@ -528,7 +528,7 @@ func (s *Service) ShowUserPermission(email string) (map[string]interface{}, erro
 		"command":  "show_user_permission",
 		"email":    user.Email,
 		"nickname": user.Nickname,
-		"error":    "'show user permission' is implemented in enterprise edition",
+		"error":    "'show user permission' is not supported",
 	}
 
 	return result, nil
@@ -548,7 +548,7 @@ func (s *Service) ListUserDatasets(email string) ([]map[string]interface{}, erro
 			"command":  "list_user_datasets",
 			"email":    user.Email,
 			"nickname": user.Nickname,
-			"error":    "'list user datasets' is implemented in enterprise edition",
+			"error":    "'list user datasets' is not supported",
 		},
 	}
 
@@ -569,7 +569,7 @@ func (s *Service) ListUserAgents(email string) ([]map[string]interface{}, error)
 			"command":  "list_user_agents",
 			"email":    user.Email,
 			"nickname": user.Nickname,
-			"error":    "'list user agents' is implemented in enterprise edition",
+			"error":    "'list user agents' is not supported",
 		},
 	}
 
@@ -590,7 +590,7 @@ func (s *Service) ListUserChats(email string) ([]map[string]interface{}, error) 
 			"command":  "list_user_chats",
 			"email":    user.Email,
 			"nickname": user.Nickname,
-			"error":    "'list user chats' is implemented in enterprise edition",
+			"error":    "'list user chats' is not supported",
 		},
 	}
 
@@ -611,7 +611,7 @@ func (s *Service) ListUserSearches(email string) ([]map[string]interface{}, erro
 			"command":  "list_user_searches",
 			"email":    user.Email,
 			"nickname": user.Nickname,
-			"error":    "'list user searches' is implemented in enterprise edition",
+			"error":    "'list user searches' is not supported",
 		},
 	}
 
@@ -632,7 +632,7 @@ func (s *Service) ListUserModels(email string) ([]map[string]interface{}, error)
 			"command":  "list_user_models",
 			"email":    user.Email,
 			"nickname": user.Nickname,
-			"error":    "'list user models' is implemented in enterprise edition",
+			"error":    "'list user models' is not supported",
 		},
 	}
 
@@ -653,7 +653,7 @@ func (s *Service) ListUserFiles(email string) ([]map[string]interface{}, error) 
 			"command":  "list_user_files",
 			"email":    user.Email,
 			"nickname": user.Nickname,
-			"error":    "'list user files' is implemented in enterprise edition",
+			"error":    "'list user files' is not supported",
 		},
 	}
 
@@ -674,7 +674,7 @@ func (s *Service) ListUserProviders(email string) ([]map[string]interface{}, err
 			"command":  "list_user_providers",
 			"email":    user.Email,
 			"nickname": user.Nickname,
-			"error":    "'list user providers' is implemented in enterprise edition",
+			"error":    "'list user providers' is not supported",
 		},
 	}
 
@@ -696,7 +696,7 @@ func (s *Service) ListUserProviderInstances(email, providerName string) ([]map[s
 			"email":         user.Email,
 			"nickname":      user.Nickname,
 			"provider_name": providerName,
-			"error":         "'list user provider instances' is implemented in enterprise edition",
+			"error":         "'list user provider instances' is not supported",
 		},
 	}
 
@@ -719,7 +719,7 @@ func (s *Service) ListUserProviderInstanceModels(email, providerName, instanceNa
 			"nickname":      user.Nickname,
 			"provider_name": providerName,
 			"instance_name": instanceName,
-			"error":         "'list user provider instance models' is implemented in enterprise edition",
+			"error":         "'list user provider instance models' is not supported",
 		},
 	}
 
@@ -740,7 +740,7 @@ func (s *Service) ListUserDefaultModels(email string) ([]map[string]interface{},
 			"command":  "list_user_default_models",
 			"email":    user.Email,
 			"nickname": user.Nickname,
-			"error":    "'list user default models' is implemented in enterprise edition",
+			"error":    "'list user default models' is not supported",
 		},
 	}
 
@@ -751,7 +751,7 @@ func (s *Service) ListUserDefaultModels(email string) ([]map[string]interface{},
 func (s *Service) ShowUsersSummary() (map[string]interface{}, error) {
 	result := map[string]interface{}{
 		"command": "show_users_summary",
-		"error":   "'show users summary' is implemented in enterprise edition",
+		"error":   "'show users summary' is not supported",
 	}
 
 	return result, nil
@@ -771,7 +771,7 @@ func (s *Service) ShowUsersActivity(days, windows *int) (map[string]interface{},
 		"days":    daysInt,
 		"windows": windowsInt,
 		"command": "show_users_activity",
-		"error":   "'show users activity' is implemented in enterprise edition",
+		"error":   "'show users activity' is not supported",
 	}
 
 	return result, nil
@@ -826,7 +826,7 @@ func (s *Service) ListUsersReports(pageIndex, pageSize int, status, plan *string
 		"plan":       planStr,
 		"days":       daysInt,
 		"command":    "list_users_reports",
-		"error":      "'List users reports' is implemented in enterprise edition",
+		"error":      "'List users reports' is not supported",
 	}
 
 	return result, nil
@@ -840,7 +840,7 @@ func (s *Service) ListUsersStorage(pageIndex, pageSize, top int) (map[string]int
 		"page_size":  pageSize,
 		"top":        top,
 		"command":    "list_users_storage",
-		"error":      "'List users storage' is implemented in enterprise edition",
+		"error":      "'List users storage' is not supported",
 	}
 
 	return result, nil
@@ -854,7 +854,7 @@ func (s *Service) ListUsersDocuments(pageIndex, pageSize, top int) (map[string]i
 		"page_size":  pageSize,
 		"top":        top,
 		"command":    "list_users_documents",
-		"error":      "'List users documents' is implemented in enterprise edition",
+		"error":      "'List users documents' is not supported",
 	}
 
 	return result, nil
@@ -868,7 +868,7 @@ func (s *Service) ListUsersIndex(pageIndex, pageSize, top int) (map[string]inter
 		"page_size":  pageSize,
 		"top":        top,
 		"command":    "list_users_index",
-		"error":      "'List users index' is implemented in enterprise edition",
+		"error":      "'List users index' is not supported",
 	}
 
 	return result, nil
@@ -898,7 +898,7 @@ func (s *Service) ListUsersQuota(pageIndex, pageSize, top int, quotaThreshold *i
 		"plan":            planStr,
 		"days":            daysInt,
 		"command":         "list_users_quota",
-		"error":           "'List users quota' is implemented in enterprise edition",
+		"error":           "'List users quota' is not supported",
 	}
 
 	return result, nil
@@ -909,7 +909,7 @@ func (s *Service) ShowUsersPlanSummary() (map[string]interface{}, error) {
 
 	result := map[string]interface{}{
 		"command": "show_users_plan_summary",
-		"error":   "'Show users plan summary' is implemented in enterprise edition",
+		"error":   "'Show users plan summary' is not supported",
 	}
 
 	return result, nil
@@ -920,7 +920,7 @@ func (s *Service) ShowUsersQuotaSummary() (map[string]interface{}, error) {
 
 	result := map[string]interface{}{
 		"command": "show_users_quota_summary",
-		"error":   "'Show users quota summary' is implemented in enterprise edition",
+		"error":   "'Show users quota summary' is not supported",
 	}
 
 	return result, nil
@@ -931,7 +931,7 @@ func (s *Service) ShowIngestionTasksSummary() (map[string]interface{}, error) {
 
 	result := map[string]interface{}{
 		"command": "show_ingestion_tasks_summary",
-		"error":   "'Show ingestion tasks summary' is implemented in enterprise edition",
+		"error":   "'Show ingestion tasks summary' is not supported",
 	}
 
 	return result, nil
@@ -942,7 +942,7 @@ func (s *Service) ShowDataSummary() (map[string]interface{}, error) {
 
 	result := map[string]interface{}{
 		"command": "show_data_summary",
-		"error":   "'Show data summary' is implemented in enterprise edition",
+		"error":   "'Show data summary' is not supported",
 	}
 
 	return result, nil
@@ -953,7 +953,7 @@ func (s *Service) ShowDataOrphan() (map[string]interface{}, error) {
 
 	result := map[string]interface{}{
 		"command": "show_data_orphan",
-		"error":   "'Show data orphan' is implemented in enterprise edition",
+		"error":   "'Show data orphan' is not supported",
 	}
 
 	return result, nil
@@ -964,7 +964,7 @@ func (s *Service) ShowDataStorage() (map[string]interface{}, error) {
 
 	result := map[string]interface{}{
 		"command": "show_data_storage",
-		"error":   "'Show data storage' is implemented in enterprise edition",
+		"error":   "'Show data storage' is not supported",
 	}
 
 	return result, nil
@@ -975,7 +975,7 @@ func (s *Service) ShowDataIndex() (map[string]interface{}, error) {
 
 	result := map[string]interface{}{
 		"command": "show_data_index",
-		"error":   "'Show data index' is implemented in enterprise edition",
+		"error":   "'Show data index' is not supported",
 	}
 
 	return result, nil
@@ -987,7 +987,7 @@ func (s *Service) PurgeOrphanData(preview bool) (map[string]interface{}, error) 
 	result := map[string]interface{}{
 		"command": "purge_orphan_data",
 		"preview": preview,
-		"error":   "'Purge orphan data' is implemented in enterprise edition",
+		"error":   "'Purge orphan data' is not supported",
 	}
 
 	return result, nil
@@ -1006,7 +1006,7 @@ func (s *Service) PurgeUserData(email string, preview bool) (map[string]interfac
 		"email":    user.Email,
 		"nickname": user.Nickname,
 		"preview":  preview,
-		"error":    "'Purge user data' is implemented in enterprise edition",
+		"error":    "'Purge user data' is not supported",
 	}
 
 	return result, nil
@@ -1030,7 +1030,7 @@ func (s *Service) PurgeUsersData(preview bool, days int, userPlan *string, userA
 		"days":     days,
 		"plan":     plan,
 		"activity": activity,
-		"error":    "'Purge users data' is implemented in enterprise edition",
+		"error":    "'Purge users data' is not supported",
 	}
 
 	return result, nil
@@ -1048,7 +1048,7 @@ func (s *Service) GenerateUserAPIKey(username string) (map[string]interface{}, e
 		"command":  "create_user_api_key",
 		"email":    user.Email,
 		"nickname": user.Nickname,
-		"error":    "'Create user API key' is implemented in enterprise edition",
+		"error":    "'Create user API key' is not supported",
 	}
 
 	return result, nil
@@ -1067,7 +1067,7 @@ func (s *Service) DeleteUserAPIKey(username, key string) (map[string]interface{}
 		"email":    user.Email,
 		"nickname": user.Nickname,
 		"api_key":  key,
-		"error":    "'Delete user API key' is implemented in enterprise edition",
+		"error":    "'Delete user API key' is not supported",
 	}
 
 	return result, nil
@@ -1086,7 +1086,7 @@ func (s *Service) ListUserAPIKeys(username string) ([]map[string]interface{}, er
 			"command":  "list_user_api_keys",
 			"email":    user.Email,
 			"nickname": user.Nickname,
-			"error":    "'List user API keys' is implemented in enterprise edition",
+			"error":    "'List user API keys' is not supported",
 		},
 	}
 
@@ -1101,7 +1101,7 @@ func (s *Service) ListIngestionTasksByCondition(email, status *string) ([]map[st
 
 	element := map[string]interface{}{
 		"command": "list_ingestion_tasks_by_condition",
-		"error":   "'List ingestion tasks by condition' is implemented in enterprise edition",
+		"error":   "'List ingestion tasks by condition' is not supported",
 	}
 
 	if email != nil {
@@ -1123,7 +1123,7 @@ func (s *Service) StopIngestionTasksByCondition(tasks []string, email, status *s
 	element := map[string]interface{}{
 		"command": "stop_ingestion_tasks_by_condition",
 		"tasks":   tasks,
-		"error":   "'Stop ingestion tasks by condition' is implemented in enterprise edition",
+		"error":   "'Stop ingestion tasks by condition' is not supported",
 	}
 
 	if email != nil {
@@ -1145,7 +1145,7 @@ func (s *Service) RemoveIngestionTasksByCondition(tasks []string, email, status 
 	element := map[string]interface{}{
 		"command": "remove_ingestion_tasks_by_condition",
 		"tasks":   tasks,
-		"error":   "'Remove ingestion tasks by condition' is implemented in enterprise edition",
+		"error":   "'Remove ingestion tasks by condition' is not supported",
 	}
 
 	if email != nil {

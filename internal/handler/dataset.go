@@ -40,6 +40,24 @@ type DatasetsHandler struct {
 	searchDatasetService  searchDatasetService
 }
 
+// jsonResponse sends a JSON response with code and message
+func jsonResponse(c *gin.Context, code common.ErrorCode, data interface{}, message string) {
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"data":    data,
+		"message": message,
+	})
+}
+
+// jsonError sends a JSON error response
+func jsonError(c *gin.Context, code common.ErrorCode, message string) {
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"data":    nil,
+		"message": message,
+	})
+}
+
 type searchDatasetsService interface {
 	SearchDatasets(req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
 }

@@ -1,4 +1,4 @@
-package kg
+package graph
 
 import (
 	"context"
