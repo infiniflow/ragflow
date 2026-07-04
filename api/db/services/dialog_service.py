@@ -257,6 +257,27 @@ class DialogService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_owner_summaries_by_tenant_ids(cls, tenant_ids):
+        from api.db.db_models import User
+
+        owners = (
+            cls.model.select(
+                cls.model.tenant_id,
+                User.nickname,
+                User.avatar.alias('tenant_avatar'),
+            )
+            .join(User, on=(cls.model.tenant_id == User.id))
+            .where(
+                cls.model.tenant_id.in_(tenant_ids),
+                cls.model.status == StatusEnum.VALID.value,
+            )
+            .distinct()
+            .order_by(User.nickname.asc())
+        )
+        return list(owners.dicts())
+
+    @classmethod
+    @DB.connection_context()
     def get_all_dialogs_by_tenant_id(cls, tenant_id):
         fields = [cls.model.id]
         dialogs = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id)

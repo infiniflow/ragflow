@@ -196,6 +196,7 @@ export default {
   // chat
   createChat: `${restAPIv1}/chats`,
   listChats: `${restAPIv1}/chats`,
+  listChatOwners: `${restAPIv1}/chats/owners`,
   getChat: (chatId: string) => `${restAPIv1}/chats/${chatId}`,
   updateChat: (chatId: string) => `${restAPIv1}/chats/${chatId}`,
   patchChat: (chatId: string) => `${restAPIv1}/chats/${chatId}`,

@@ -491,6 +491,39 @@ async def list_chats():
         return server_error_response(ex)
 
 
+@manager.route("/chats/owners", methods=["GET"])  # noqa: F821
+@login_required
+async def list_chat_owners():
+    owner_ids = request.args.getlist("owner_ids")
+    try:
+        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+        authorized_owner_ids = {member["tenant_id"] for member in tenants}
+        authorized_owner_ids.add(current_user.id)
+
+        if owner_ids:
+            requested_owner_ids = set(owner_ids)
+            unauthorized_owner_ids = requested_owner_ids - authorized_owner_ids
+            if unauthorized_owner_ids:
+                logging.warning(
+                    "Rejected list_chat_owners request: user=%s attempted unauthorized owner_ids=%s",
+                    current_user.id,
+                    sorted(unauthorized_owner_ids),
+                )
+                return get_json_result(
+                    data=False,
+                    message="Only authorized owner_ids can be queried.",
+                    code=RetCode.OPERATING_ERROR,
+                )
+            effective_owner_ids = list(requested_owner_ids)
+        else:
+            effective_owner_ids = list(authorized_owner_ids)
+
+        owners = await thread_pool_exec(DialogService.get_owner_summaries_by_tenant_ids, effective_owner_ids)
+        return get_json_result(data={"owners": owners})
+    except Exception as ex:
+        return server_error_response(ex)
+
+
 @manager.route("/chats/<chat_id>", methods=["GET"])  # noqa: F821
 @login_required
 async def get_chat(chat_id):
