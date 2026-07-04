@@ -1,0 +1,42 @@
+
+instruction: |
+    - Each page must be a proper encyclopedic article, NOT a flat bullet list:
+    - 1. Take prefix ">" or "-" in the "page_example" as instructions to generate the content.
+    - 2. Sections with H2 headings, each starting with prose before sub-bullets.
+page_example: |
+    # Secret feature(Title)
+
+    ## Background & research
+    > Explain the context behind why we are doing this project. Data is a great source of insight.
+
+
+    ## Problem statement
+    > As a who, I am trying to outcome/job. But problem/barrier because root cause which makes me feel emotion.
+
+    ## Goals
+    - List goals
+    - KPIs
+    - What success looks like
+    
+    ## Hypothesis
+    > If we achieve/enable X, then user behavior Y changes in this way leading to positive metrics Z.
+
+    ## Technical solution
+    > Outline the solution step by step and illustrate your points with specific code structure.
+    ```
+    Fill code snippet
+    ```
+
+    ## Scope
+    > Explain the solution is, how it works and the extent of the work involved.
+    - Requirements
+    - Future evolutions
+    - Out of scope
+    
+    ## Designs and assets
+    > Add any necessary figma project link, hi-fi mockups, SVGs, font files, images, prototypes...
+
+    ## Open questions
+    [x] E.g. is this part of the free plan?
+
+topic: engineering
