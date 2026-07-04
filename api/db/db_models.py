@@ -269,19 +269,13 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
                 return super().execute_sql(sql, params, commit)
             except (OperationalError, InterfaceError) as e:
                 error_codes = [2013, 2006]
-                error_messages = ['', 'Lost connection']
-                should_retry = (
-                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
-                    (str(e) in error_messages) or
-                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
-                )
+                error_messages = ["", "Lost connection"]
+                should_retry = (hasattr(e, "args") and e.args and e.args[0] in error_codes) or (str(e) in error_messages) or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"Database connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
-                    )
+                    logging.warning(f"Database connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     logging.error(f"DB execution failure: {e}")
                     raise
@@ -311,20 +305,14 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
                 return super().begin()
             except (OperationalError, InterfaceError) as e:
                 error_codes = [2013, 2006]
-                error_messages = ['', 'Lost connection']
+                error_messages = ["", "Lost connection"]
 
-                should_retry = (
-                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
-                    (str(e) in error_messages) or
-                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
-                )
+                should_retry = (hasattr(e, "args") and e.args and e.args[0] in error_codes) or (str(e) in error_messages) or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
-                    )
+                    logging.warning(f"Lost connection during transaction (attempt {attempt + 1}/{self.max_retries})")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     raise
         return None
@@ -369,11 +357,9 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
                 should_retry = _is_postgresql_connection_error(e)
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"PostgreSQL connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
-                    )
+                    logging.warning(f"PostgreSQL connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     logging.error(f"PostgreSQL execution failure: {e}")
                     raise
@@ -400,17 +386,14 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
             try:
                 return super().begin()
             except (OperationalError, InterfaceError) as e:
-                error_messages = ['connection', 'server closed', 'connection refused',
-                                'no connection to the server', 'terminating connection']
+                error_messages = ["connection", "server closed", "connection refused", "no connection to the server", "terminating connection"]
 
                 should_retry = _is_postgresql_connection_error(e)
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"PostgreSQL connection lost during transaction (attempt {attempt+1}/{self.max_retries})"
-                    )
+                    logging.warning(f"PostgreSQL connection lost during transaction (attempt {attempt + 1}/{self.max_retries})")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     raise
         return None
@@ -422,6 +405,7 @@ class RetryingPooledOceanBaseDatabase(PooledMySQLDatabase):
     OceanBase is compatible with MySQL protocol, so we inherit from PooledMySQLDatabase.
     This class provides connection pooling and automatic retry for connection issues.
     """
+
     def __init__(self, *args, **kwargs):
         self.max_retries = kwargs.pop("max_retries", 5)
         self.retry_delay = kwargs.pop("retry_delay", 1)
@@ -436,20 +420,18 @@ class RetryingPooledOceanBaseDatabase(PooledMySQLDatabase):
                 # 2013: Lost connection to MySQL server during query
                 # 2006: MySQL server has gone away
                 error_codes = [2013, 2006]
-                error_messages = ['', 'Lost connection', 'gone away']
+                error_messages = ["", "Lost connection", "gone away"]
 
                 should_retry = (
-                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
-                    any(msg in str(e).lower() for msg in error_messages) or
-                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
+                    (hasattr(e, "args") and e.args and e.args[0] in error_codes)
+                    or any(msg in str(e).lower() for msg in error_messages)
+                    or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
                 )
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"OceanBase connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
-                    )
+                    logging.warning(f"OceanBase connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     logging.error(f"OceanBase execution failure: {e}")
                     raise
@@ -477,20 +459,14 @@ class RetryingPooledOceanBaseDatabase(PooledMySQLDatabase):
                 return super().begin()
             except (OperationalError, InterfaceError) as e:
                 error_codes = [2013, 2006]
-                error_messages = ['', 'Lost connection']
+                error_messages = ["", "Lost connection"]
 
-                should_retry = (
-                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
-                    (str(e) in error_messages) or
-                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
-                )
+                should_retry = (hasattr(e, "args") and e.args and e.args[0] in error_codes) or (str(e) in error_messages) or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
-                    )
+                    logging.warning(f"Lost connection during transaction (attempt {attempt + 1}/{self.max_retries})")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     raise
         return None
@@ -515,13 +491,11 @@ class BaseDataBase:
         db_name = database_config.pop("name")
 
         pool_config = {
-            'max_retries': 5,
-            'retry_delay': 1,
+            "max_retries": 5,
+            "retry_delay": 1,
         }
         database_config.update(pool_config)
-        self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(
-            db_name, **database_config
-        )
+        self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
         # self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
         logging.info("init database on cluster mode successfully")
 
@@ -999,9 +973,7 @@ class TenantLLM(DataBaseModel):
 
     class Meta:
         db_table = "tenant_llm"
-        indexes = (
-            (("tenant_id", "llm_factory", "llm_name"), True),
-        )
+        indexes = ((("tenant_id", "llm_factory", "llm_name"), True),)
 
 
 class TenantLangfuse(DataBaseModel):
@@ -1045,6 +1017,10 @@ class Knowledgebase(DataBaseModel):
     raptor_task_finish_at = DateTimeField(null=True)
     mindmap_task_id = CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True)
     mindmap_task_finish_at = DateTimeField(null=True)
+    artifact_task_id = CharField(max_length=32, null=True, help_text="Artifact compilation task ID", index=True)
+    artifact_task_finish_at = DateTimeField(null=True)
+    skill_task_id = CharField(max_length=32, null=True, help_text="Skill generation task ID", index=True)
+    skill_task_finish_at = DateTimeField(null=True)
 
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
@@ -1117,6 +1093,13 @@ class FileCommit(DataBaseModel):
     author_id = CharField(max_length=32, null=False, help_text="user who created the commit", index=True)
     file_count = IntegerField(default=0, help_text="number of files in this commit")
     tree_state = LongTextField(null=True, help_text="JSON snapshot of the full folder tree at this commit")
+    # ---- Artifact-commit extension ----
+    # Populated only for commits recorded via
+    # ``FileCommitService.record_page_edit`` (i.e. artifact-page saves).
+    # For workspace file commits both fields stay null and the ``message``
+    # column carries the commit body.
+    title = CharField(max_length=255, null=True, help_text="commit title (artifact-page edits)")
+    comments = TextField(null=True, help_text="commit body/description (artifact-page edits)")
 
     class Meta:
         db_table = "file_commit"
@@ -1133,12 +1116,27 @@ class FileCommitItem(DataBaseModel):
     new_location = CharField(max_length=255, null=True, help_text="new storage location")
     old_name = CharField(max_length=255, null=True, help_text="old file name (for rename)")
     new_name = CharField(max_length=255, null=True, help_text="new file name (for rename)")
+    # ---- Artifact-commit extension ----
+    # Populated only for artifact-page saves recorded via
+    # ``FileCommitService.record_page_edit``.
+    diff = LongTextField(null=True, help_text="pre-computed unified diff (artifact-page edits)")
+    content_after_storage = CharField(max_length=16, null=True, help_text="'minio' | 'es' — where the post-save blob lives", index=True)
+    content_after_location = CharField(max_length=512, null=True, help_text="storage key/id for the post-save blob")
+    slug_kwd = CharField(max_length=512, null=True, help_text="artifact page slug (<page_type>/<name>)", index=True)
+    page_type_kwd = CharField(max_length=32, null=True, help_text="artifact page type", index=True)
 
     class Meta:
         db_table = "file_commit_item"
         indexes = (
             (("commit_id", "file_id"), True),  # unique composite index
         )
+
+
+# ``ArtifactCommit`` retired — artifact page history is now stored under
+# ``FileCommit`` + ``FileCommitItem`` via ``FileCommitService.record_page_edit``
+# (see the artifact-commit extension columns on those models above).
+# Pre-existing ``artifact_commit`` rows are intentionally left in place;
+# no code path reads them.
 
 
 class Task(DataBaseModel):
@@ -1299,6 +1297,35 @@ class MCPServer(DataBaseModel):
         db_table = "mcp_server"
 
 
+class CompilationTemplate(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=True, index=True)
+    group_id = CharField(max_length=32, null=True, index=True)
+    name = CharField(max_length=128, null=False, index=True)
+    description = TextField(null=True, default="")
+    kind = CharField(max_length=64, null=False, index=True)
+    config = JSONField(null=False, default={})
+    is_builtin = BooleanField(null=False, default=False, index=True)
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "compilation_template"
+        indexes = ((("tenant_id", "name", "is_builtin", "status"), True),)
+
+
+class CompilationTemplateGroup(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, index=True)
+    description = TextField(null=True, default="")
+    scope = CharField(max_length=16, null=False, index=True, help_text="file | dataset")
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "compilation_template_group"
+        indexes = ((("tenant_id", "name", "status"), True),)
+
+
 class Search(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
@@ -1417,9 +1444,9 @@ class ChatChannel(DataBaseModel):
 
 
 class DateTimeTzField(CharField):
-    field_type = 'VARCHAR'
+    field_type = "VARCHAR"
 
-    def db_value(self, value: datetime|None) -> str|None:
+    def db_value(self, value: datetime | None) -> str | None:
         if value is not None:
             if value.tzinfo is not None:
                 return value.isoformat()
@@ -1427,11 +1454,12 @@ class DateTimeTzField(CharField):
                 return value.replace(tzinfo=timezone.utc).isoformat()
         return value
 
-    def python_value(self, value: str|None) -> datetime|None:
+    def python_value(self, value: str | None) -> datetime | None:
         if value is not None:
             dt = datetime.fromisoformat(value)
             if dt.tzinfo is None:
                 import pytz
+
                 return dt.replace(tzinfo=pytz.UTC)
             return dt
         return value
@@ -1460,6 +1488,7 @@ class SyncLogs(DataBaseModel):
 
 class EvaluationDataset(DataBaseModel):
     """Ground truth dataset for RAG evaluation"""
+
     id = CharField(max_length=32, primary_key=True)
     tenant_id = CharField(max_length=32, null=False, index=True, help_text="tenant ID")
     name = CharField(max_length=255, null=False, index=True, help_text="dataset name")
@@ -1476,6 +1505,7 @@ class EvaluationDataset(DataBaseModel):
 
 class EvaluationCase(DataBaseModel):
     """Individual test case in an evaluation dataset"""
+
     id = CharField(max_length=32, primary_key=True)
     dataset_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_datasets")
     question = TextField(null=False, help_text="test question")
@@ -1491,6 +1521,7 @@ class EvaluationCase(DataBaseModel):
 
 class EvaluationRun(DataBaseModel):
     """A single evaluation run"""
+
     id = CharField(max_length=32, primary_key=True)
     dataset_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_datasets")
     dialog_id = CharField(max_length=32, null=False, index=True, help_text="dialog configuration being evaluated")
@@ -1508,6 +1539,7 @@ class EvaluationRun(DataBaseModel):
 
 class EvaluationResult(DataBaseModel):
     """Result for a single test case in an evaluation run"""
+
     id = CharField(max_length=32, primary_key=True)
     run_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_runs")
     case_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_cases")
@@ -1528,7 +1560,7 @@ class Memory(DataBaseModel):
     avatar = TextField(null=True, help_text="avatar base64 string")
     tenant_id = CharField(max_length=32, null=False, index=True)
     memory_type = IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=raw, 2=semantic, 4=episodic, 8=procedural. E.g., 5 enables raw + episodic.")
-    storage_type = CharField(max_length=32, default='table', null=False, index=True, help_text="table|graph")
+    storage_type = CharField(max_length=32, default="table", null=False, index=True, help_text="table|graph")
     embd_id = CharField(max_length=128, null=False, index=False, help_text="embedding model ID")
     tenant_embd_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     llm_id = CharField(max_length=128, null=False, index=False, help_text="chat model ID")
@@ -1544,13 +1576,16 @@ class Memory(DataBaseModel):
     class Meta:
         db_table = "memory"
 
+
 class SystemSettings(DataBaseModel):
     name = CharField(max_length=128, primary_key=True)
     source = CharField(max_length=32, null=False, index=False)
     data_type = CharField(max_length=32, null=False, index=False)
     value = TextField(null=False, help_text="Configuration value (JSON, string, etc.)")
+
     class Meta:
         db_table = "system_settings"
+
 
 class TenantModelProvider(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
@@ -1559,9 +1594,8 @@ class TenantModelProvider(DataBaseModel):
 
     class Meta:
         db_table = "tenant_model_provider"
-        indexes = (
-            (("tenant_id", "provider_name"), True),
-        )
+        indexes = ((("tenant_id", "provider_name"), True),)
+
 
 class TenantModelInstance(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
@@ -1597,6 +1631,7 @@ class TenantModelGroup(DataBaseModel):
     class Meta:
         db_table = "tenant_model_group"
 
+
 class TenantModelGroupMapping(DataBaseModel):
     group_id = CharField(max_length=32, null=False, index=True, help_text="Group ID")
     provider_id = CharField(max_length=32, null=False, index=False)
@@ -1615,12 +1650,9 @@ def alter_db_add_column(migrator, table_name, column_name, column_type):
         migrate(migrator.add_column(table_name, column_name, column_type))
     except OperationalError as ex:
         error_codes = [1060]
-        error_messages = ['Duplicate column name']
+        error_messages = ["Duplicate column name"]
 
-        should_skip_error = (
-                (hasattr(ex, 'args') and ex.args and ex.args[0] in error_codes) or
-                (str(ex) in error_messages)
-        )
+        should_skip_error = (hasattr(ex, "args") and ex.args and ex.args[0] in error_codes) or (str(ex) in error_messages)
 
         if not should_skip_error:
             logging.critical(f"Failed to add {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name}, operation error: {ex}")
@@ -1629,12 +1661,14 @@ def alter_db_add_column(migrator, table_name, column_name, column_type):
         logging.critical(f"Failed to add {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name}, error: {ex}")
         pass
 
+
 def alter_db_column_type(migrator, table_name, column_name, new_column_type):
     try:
         migrate(migrator.alter_column_type(table_name, column_name, new_column_type))
     except Exception as ex:
         logging.critical(f"Failed to alter {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name} type, error: {ex}")
         pass
+
 
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
     try:
@@ -1643,6 +1677,7 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
         # rename fail will lead to a weired error.
         # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
         pass
+
 
 def migrate_add_unique_email(migrator):
     """Deduplicates user emails and add UNIQUE constraint to email column (idempotent)"""
@@ -1688,13 +1723,7 @@ def migrate_add_unique_email(migrator):
         duplicates = User.select(User.email).group_by(User.email).having(fn.COUNT(User.id) > 1).tuples()
         for (dup_email,) in duplicates:
             # Keep the superuser row, or the oldest row if there is no superuser
-            rows = list(
-                User
-                    .select(User.id)
-                    .where(User.email == dup_email)
-                    .order_by(User.is_superuser.desc(), User.create_time.asc())
-                    .tuples()
-            )
+            rows = list(User.select(User.id).where(User.email == dup_email).order_by(User.is_superuser.desc(), User.create_time.asc()).tuples())
             for (uid,) in rows[1:]:
                 new_email = f"{dup_email}_DUPLICATE_{uid[:8]}"
                 User.update(email=new_email).where(User.id == uid).execute()
@@ -1715,7 +1744,6 @@ def migrate_add_unique_email(migrator):
             logging.critical("Failed to add UNIQUE constraint on user.email: %s", ex)
     except Exception as ex:
         logging.critical("Failed to add UNIQUE constraint on user.email: %s", ex)
-
 
 
 def update_tenant_llm_to_id_primary_key():
@@ -1902,6 +1930,10 @@ def migrate_db():
     alter_db_add_column(migrator, "knowledgebase", "raptor_task_finish_at", CharField(null=True))
     alter_db_add_column(migrator, "knowledgebase", "mindmap_task_id", CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "mindmap_task_finish_at", CharField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "artifact_task_id", CharField(max_length=32, null=True, help_text="Artifact compilation task ID", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "artifact_task_finish_at", DateTimeField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "skill_task_id", CharField(max_length=32, null=True, help_text="Skill generation task ID", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "skill_task_finish_at", DateTimeField(null=True))
     alter_db_column_type(migrator, "tenant_llm", "api_key", TextField(null=True, help_text="API KEY"))
     alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
     alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))
@@ -1932,6 +1964,14 @@ def migrate_db():
     alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
     alter_db_column_type(migrator, "chat_channel", "status", IntegerField(default=1, index=True))
     alter_db_rename_column(migrator, "chat_channel", "dialog_id", "chat_id")
+    # ---- FileCommit / FileCommitItem: artifact-page commit extension ----
+    alter_db_add_column(migrator, "file_commit", "title", CharField(max_length=255, null=True))
+    alter_db_add_column(migrator, "file_commit", "comments", TextField(null=True))
+    alter_db_add_column(migrator, "file_commit_item", "diff", LongTextField(null=True))
+    alter_db_add_column(migrator, "file_commit_item", "content_after_storage", CharField(max_length=16, null=True, index=True))
+    alter_db_add_column(migrator, "file_commit_item", "content_after_location", CharField(max_length=512, null=True))
+    alter_db_add_column(migrator, "file_commit_item", "slug_kwd", CharField(max_length=512, null=True, index=True))
+    alter_db_add_column(migrator, "file_commit_item", "page_type_kwd", CharField(max_length=32, null=True, index=True))
     # Drop both the explicit "idx_*" name from later migrations AND the
     # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
     # original TenantModelInstance definition (commit dc4b82523). Databases

@@ -301,13 +301,18 @@ func (dao *MemoryDAO) GetWithOwnerNameByID(id string) (*entity.MemoryListItem, e
 // Example:
 //
 //	memories, total, err := dao.GetByFilter([]string{"tenant1"}, []string{"semantic"}, "table", "test", 1, 10)
-func (dao *MemoryDAO) GetByFilter(tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int) ([]*entity.MemoryListItem, int64, error) {
+func (dao *MemoryDAO) GetByFilter(userID string, tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int) ([]*entity.MemoryListItem, int64, error) {
 	var conditions []string
 	var args []interface{}
 
 	if len(tenantIDs) > 0 {
 		conditions = append(conditions, "m.tenant_id IN ?")
 		args = append(args, tenantIDs)
+	}
+
+	if userID != "" {
+		conditions = append(conditions, "(m.tenant_id = ? OR m.permissions = ?)")
+		args = append(args, userID, "team")
 	}
 
 	if len(memoryTypes) > 0 {

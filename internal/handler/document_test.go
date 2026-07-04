@@ -42,6 +42,10 @@ type fakeDocumentService struct {
 	err             error
 	stopResult      map[string]interface{}
 	stopErr         error
+	thumbnails      map[string]string
+	thumbnailErr    error
+	thumbnailUserID string
+	thumbnailDocIDs []string
 	metadataSummary map[string]interface{}
 	metadataErr     error
 	metadataKBID    string
@@ -55,6 +59,12 @@ type fakeDocumentService struct {
 	ingestErr       error
 	ingestUserID    string
 	ingestReq       *service.IngestDocumentRequest
+	listOpts        dao.DocumentListOptions
+	filterOpts      dao.DocumentListOptions
+	filterResult    map[string]interface{}
+	filterTotal     int64
+	listIDs         []string
+	metadataByKBs   map[string]interface{}
 }
 
 func (f *fakeDocumentService) Ingest(userID string, req *service.IngestDocumentRequest) (common.ErrorCode, error) {
@@ -81,7 +91,7 @@ func (f *fakeDocumentService) UploadDocumentInfoByURL(userID, rawURL string) (ma
 	return nil, common.CodeSuccess, nil
 }
 
-func (f *fakeDocumentService) GetDocumentArtifact(filename string) (*service.ArtifactResponse, error) {
+func (f *fakeDocumentService) GetDocumentArtifact(filename, _ string) (*service.ArtifactResponse, error) {
 	if filename == "error.txt" {
 		return nil, service.ErrArtifactNotFound
 	}
@@ -139,14 +149,37 @@ func (f *fakeDocumentService) StopParseDocuments(datasetID string, docIDs []stri
 func (f *fakeDocumentService) ListDocuments(page, pageSize int) ([]*service.DocumentResponse, int64, error) {
 	return nil, 0, nil
 }
-func (f *fakeDocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+func (f *fakeDocumentService) ListDocumentsByDatasetID(kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	return nil, 0, nil
+}
+func (f *fakeDocumentService) ListDocumentsByDatasetIDWithOptions(opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+	f.listOpts = opts
+	return nil, 0, nil
+}
+func (f *fakeDocumentService) ListDocumentIDsByDatasetIDWithOptions(opts dao.DocumentListOptions) ([]string, error) {
+	f.listOpts = opts
+	return f.listIDs, nil
+}
+func (f *fakeDocumentService) GetDocumentFiltersByDatasetID(opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
+	f.filterOpts = opts
+	if f.filterResult != nil {
+		return f.filterResult, f.filterTotal, nil
+	}
+	return map[string]interface{}{}, 0, nil
+}
+func (f *fakeDocumentService) GetMetadataByKBs(kbIDs []string) (map[string]interface{}, error) {
+	if f.metadataByKBs != nil {
+		return f.metadataByKBs, nil
+	}
+	return map[string]interface{}{}, nil
 }
 func (f *fakeDocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
 	return map[string]interface{}{}, common.CodeSuccess, nil
 }
-func (f *fakeDocumentService) GetThumbnail(docID string) (*service.ThumbnailResponse, error) {
-	return nil, nil
+func (f *fakeDocumentService) GetThumbnails(userID string, docIDs []string) (map[string]string, error) {
+	f.thumbnailUserID = userID
+	f.thumbnailDocIDs = append([]string(nil), docIDs...)
+	return f.thumbnails, f.thumbnailErr
 }
 func (f *fakeDocumentService) GetDocumentImage(imageID string) ([]byte, error) {
 	return nil, nil
@@ -755,6 +788,101 @@ func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 // sptr returns a pointer to the given string (copy of service test helper).
 func sptr(s string) *string { return &s }
 
+func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{
+		filterResult: map[string]interface{}{
+			"suffix":     map[string]int64{"pdf": 2},
+			"run_status": map[string]int64{"3": 2},
+			"metadata":   map[string]interface{}{},
+		},
+		filterTotal: 2,
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?type=filter&keywords=report&suffix=pdf&run=DONE&types=doc&desc=false", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.ListDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if fake.filterOpts.KbID != "ds-1" {
+		t.Fatalf("expected dataset filter ds-1, got %q", fake.filterOpts.KbID)
+	}
+	if fake.filterOpts.Keywords != "report" {
+		t.Fatalf("expected keywords report, got %q", fake.filterOpts.Keywords)
+	}
+	if len(fake.filterOpts.Suffixes) != 1 || fake.filterOpts.Suffixes[0] != "pdf" {
+		t.Fatalf("expected suffix pdf, got %#v", fake.filterOpts.Suffixes)
+	}
+	if len(fake.filterOpts.RunStatuses) != 1 || fake.filterOpts.RunStatuses[0] != string(entity.TaskStatusDone) {
+		t.Fatalf("expected run DONE to map to %q, got %#v", string(entity.TaskStatusDone), fake.filterOpts.RunStatuses)
+	}
+	if len(fake.filterOpts.Types) != 1 || fake.filterOpts.Types[0] != "doc" {
+		t.Fatalf("expected type doc, got %#v", fake.filterOpts.Types)
+	}
+	if fake.filterOpts.Desc {
+		t.Fatal("expected desc=false to be parsed")
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid json response: %v", err)
+	}
+	data := resp["data"].(map[string]interface{})
+	if data["total"] != float64(2) {
+		t.Fatalf("expected total 2, got %v", data["total"])
+	}
+}
+
+func TestListDocumentsHandler_MetadataFilterNarrowsDocumentIDs(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{
+		listIDs: []string{"doc-1", "doc-2", "doc-3"},
+		metadataByKBs: map[string]interface{}{
+			"author": map[string][]string{
+				"Alice": []string{"doc-2", "doc-4"},
+			},
+		},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?metadata[author][]=Alice", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.ListDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !fake.listOpts.DocIDFilterApplied {
+		t.Fatal("expected metadata filter to apply doc id filter")
+	}
+	if len(fake.listOpts.DocIDs) != 1 || fake.listOpts.DocIDs[0] != "doc-2" {
+		t.Fatalf("expected metadata filter to keep doc-2, got %#v", fake.listOpts.DocIDs)
+	}
+}
+
 func TestStopParseDocumentsHandler_Success(t *testing.T) {
 	db := setupHandlerAccessDB(t)
 	orig := dao.DB
@@ -905,6 +1033,48 @@ func TestMetadataSummaryByDataset_Success(t *testing.T) {
 	author := summary["author"].(map[string]interface{})
 	if author["type"] != "string" {
 		t.Fatalf("expected author type string, got %v", author["type"])
+	}
+}
+
+func TestGetThumbnail_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeDocumentService{
+		thumbnails: map[string]string{
+			"doc-1": "/api/v1/documents/images/kb-1-thumb-1.png",
+			"doc-2": "",
+		},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+	}
+
+	c, w := setupGinContextWithUser("GET", "/api/v1/thumbnails?doc_ids=doc-1&doc_ids=doc-2", "")
+
+	h.GetThumbnail(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(fake.thumbnailDocIDs) != 2 || fake.thumbnailDocIDs[0] != "doc-1" || fake.thumbnailDocIDs[1] != "doc-2" {
+		t.Fatalf("unexpected docIDs: %#v", fake.thumbnailDocIDs)
+	}
+	if fake.thumbnailUserID != "user-1" {
+		t.Fatalf("unexpected userID: %s", fake.thumbnailUserID)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v", common.CodeSuccess, resp["code"])
+	}
+	data := resp["data"].(map[string]interface{})
+	if data["doc-1"] != "/api/v1/documents/images/kb-1-thumb-1.png" {
+		t.Fatalf("unexpected thumbnail for doc-1: %v", data["doc-1"])
+	}
+	if data["doc-2"] != "" {
+		t.Fatalf("unexpected thumbnail for doc-2: %v", data["doc-2"])
 	}
 }
 

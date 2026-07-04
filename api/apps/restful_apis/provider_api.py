@@ -336,11 +336,11 @@ async def create_provider_instance(tenant_id: str = None, provider_id_or_name: s
           type: object
     """
     data = await request.get_json()
-    if not data or "instance_name" not in data or "api_key" not in data:
-        return get_error_argument_result(message="instance_name and api_key are required")
+    if not data or "instance_name" not in data:
+        return get_error_argument_result(message="instance_name is required")
 
     instance_name = data["instance_name"]
-    api_key = data["api_key"]
+    api_key = data.get("api_key", "")
     base_url = data.get("base_url", "")
     region = data.get("region", "")
     model_info = data.get("model_info", [])
@@ -405,11 +405,11 @@ async def verify_provider_api_key(provider_id_or_name: str = None):
           type: object
     """
     data = await request.get_json()
-    if not data or "api_key" not in data:
+    if not data or ("api_key" not in data and provider_id_or_name != "VLLM"):
         return get_error_argument_result(message="api_key is required")
 
     base_url = data.get("base_url", "")
-    api_key = data["api_key"]
+    api_key = data.get("api_key", "")
     region = data.get("region", "default")
     model_info = data.get("model_info", [])
 
@@ -618,9 +618,7 @@ def list_instance_models(tenant_id: str = None, provider_id_or_name: str = None,
     """
     supported_only = request.args.get("supported", "").lower() == "true"
     try:
-        success, result = provider_api_service.list_instance_models(
-            tenant_id, provider_id_or_name, instance_id_or_name, supported_only
-        )
+        success, result = provider_api_service.list_instance_models(tenant_id, provider_id_or_name, instance_id_or_name, supported_only)
         if success:
             return get_result(data=result)
         else:
@@ -680,9 +678,7 @@ async def update_instance_models(tenant_id: str, provider_id_or_name: str, insta
     model_name = data["model_name"]
     model_type = data["model_type"]
     try:
-        success, msg = provider_api_service.update_instance_models(
-            tenant_id, provider_id_or_name, instance_id_or_name, model_name, model_type
-        )
+        success, msg = provider_api_service.update_instance_models(tenant_id, provider_id_or_name, instance_id_or_name, model_name, model_type)
         if success:
             return get_result(message=msg)
         else:
@@ -755,9 +751,7 @@ async def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instan
     extra = data.get("extra", {})
 
     try:
-        success, result = provider_api_service.add_model_to_instance(
-            tenant_id, provider_id_or_name, instance_id_or_name, model_name, model_type, max_tokens, extra
-        )
+        success, result = provider_api_service.add_model_to_instance(tenant_id, provider_id_or_name, instance_id_or_name, model_name, model_type, max_tokens, extra)
         if success:
             return get_result(message=result)
         else:
@@ -827,9 +821,7 @@ async def enable_or_disable_model(tenant_id: str = None, provider_id_or_name: st
         return get_error_argument_result(message="status must be 'active' or 'inactive'")
 
     try:
-        success, msg = provider_api_service.update_model_status(
-            tenant_id, provider_id_or_name, instance_id_or_name, model_name, status
-        )
+        success, msg = provider_api_service.update_model_status(tenant_id, provider_id_or_name, instance_id_or_name, model_name, status)
         if success:
             return get_result(message=msg)
         else:
@@ -904,15 +896,14 @@ async def chat_to_model(tenant_id: str = None, provider_id_or_name: str = None, 
     thinking = data.get("thinking", False)
 
     try:
-        success, result = await provider_api_service.chat_to_model(
-            tenant_id, provider_id_or_name, instance_id_or_name, model_name, message, stream, thinking
-        )
+        success, result = await provider_api_service.chat_to_model(tenant_id, provider_id_or_name, instance_id_or_name, model_name, message, stream, thinking)
         if not success:
             return get_error_data_result(message=result)
 
         if stream and isinstance(result, dict) and result.get("type") == "stream":
             # Streaming response using SSE
             from quart import Response
+
             llm = result["llm"]
 
             async def generate():
@@ -925,10 +916,14 @@ async def chat_to_model(tenant_id: str = None, provider_id_or_name: str = None, 
                         yield f"data: [MESSAGE]{chunk}\n\n"
                 yield "data: [DONE]\n\n"
 
-            return Response(generate(), mimetype="text/event-stream", headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-            })
+            return Response(
+                generate(),
+                mimetype="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                },
+            )
 
         # Non-streaming response
         return get_result(data=result)

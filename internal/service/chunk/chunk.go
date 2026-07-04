@@ -20,11 +20,17 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
 	"io"
+	"math"
 	"math/rand"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -36,10 +42,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	_ "image/gif"
+	_ "image/png"
 
 	"github.com/cespare/xxhash/v2"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -55,6 +66,27 @@ const (
 	maximumPageNumber     = 100000
 	maximumTaskPageNumber = maximumPageNumber * 1000
 )
+
+var chunkImageMergeLocks = struct {
+	sync.Mutex
+	locks map[string]*chunkImageMergeLock
+}{locks: make(map[string]*chunkImageMergeLock)}
+
+type chunkImageMergeLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+func searchConfigMap(value interface{}) (map[string]interface{}, bool) {
+	switch typed := value.(type) {
+	case entity.JSONMap:
+		return map[string]interface{}(typed), true
+	case map[string]interface{}:
+		return typed, true
+	default:
+		return nil, false
+	}
+}
 
 // ChunkService chunk service
 type ChunkService struct {
@@ -74,6 +106,13 @@ type ChunkService struct {
 	queueParseTasksFunc           func(*entity.Document, string, string, int64) error
 	beginParseDocumentFunc        func(string) error
 	deleteTasksByDocIDsFunc       func([]string) (int64, error)
+	getEmbeddingModelFunc         func(string, string) (*models.EmbeddingModel, error)
+	incrementChunkStatsFunc       func(string, string, int64, int64, float64) error
+	decrementChunkStatsFunc       func(string, string, int64, int64, float64) error
+	storeChunkImageFunc           func(string, string, []byte) error
+	tokenizeFunc                  func(string) (string, error)
+	fineGrainedTokenizeFunc       func(string) (string, error)
+	numTokensFunc                 func(string) int
 }
 
 // NewChunkService creates chunk service
@@ -173,9 +212,9 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 
 	// Check if all kbs have the same embedding model
 	if len(kbRecords) > 1 {
-		firstEmbdID := kbRecords[0].EmbdID
+		firstEmbeddingKey := knowledgebaseEmbeddingKey(kbRecords[0], tenantIDs[0])
 		for i := 1; i < len(kbRecords); i++ {
-			if kbRecords[i].EmbdID != firstEmbdID {
+			if knowledgebaseEmbeddingKey(kbRecords[i], tenantIDs[i]) != firstEmbeddingKey {
 				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
 			}
 		}
@@ -191,8 +230,8 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 		searchDetail, err := s.searchService.GetDetail(*req.SearchID)
 		if err != nil {
 			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", *req.SearchID), zap.Error(err))
-		} else if searchConfig, ok := searchDetail["search_config"].(entity.JSONMap); ok && searchConfig != nil {
-			if searchMetaFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
+		} else if searchConfig, ok := searchConfigMap(searchDetail["search_config"]); ok && searchConfig != nil {
+			if searchMetaFilter, ok := searchConfigMap(searchConfig["meta_data_filter"]); ok {
 				filter = searchMetaFilter
 			}
 			chatID, _ = searchConfig["chat_id"].(string)
@@ -318,41 +357,47 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 	labels := metadataSvc.LabelQuestion(modifiedQuestion, kbRecords)
 	common.Debug("LabelQuestion result", zap.Any("labels", labels))
 
-	// Determine embedding model
+	// Determine embedding model.
+	modelProviderSvc := service.NewModelProviderService()
+	var embeddingModel *models.EmbeddingModel
 	var embdID string
-	var tenantLLM *entity.TenantLLM
 	if kbRecords[0].TenantEmbdID != nil && *kbRecords[0].TenantEmbdID > 0 {
-		tenantLLM, embdID, err = dao.LookupTenantLLMByID(dao.NewTenantLLMDAO(), *kbRecords[0].TenantEmbdID)
+		_, embdID, err = dao.LookupTenantLLMByID(dao.NewTenantLLMDAO(), *kbRecords[0].TenantEmbdID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get embedding model by tenant_embd_id: %w", err)
 		}
+		driver, modelName, apiConfig, maxTokens, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeEmbedding, embdID)
+		if getErr != nil {
+			return nil, fmt.Errorf("failed to get embedding model by tenant_embd_id: %w", getErr)
+		}
+		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
 	} else if kbRecords[0].EmbdID != "" {
-		parts := strings.Split(kbRecords[0].EmbdID, "@")
-		if len(parts) == 2 && parts[1] != "" {
-			tenantLLM, embdID, err = dao.LookupTenantLLMByFactory(dao.NewTenantLLMDAO(), tenantIDs[0], parts[1], parts[0], entity.ModelTypeEmbedding)
-		} else {
-			tenantLLM, embdID, err = dao.LookupTenantLLMByName(dao.NewTenantLLMDAO(), tenantIDs[0], kbRecords[0].EmbdID, entity.ModelTypeEmbedding)
+		embdID = kbRecords[0].EmbdID
+		driver, modelName, apiConfig, maxTokens, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeEmbedding, embdID)
+		if getErr != nil {
+			_, embdID, err = dao.LookupTenantLLMByName(dao.NewTenantLLMDAO(), tenantIDs[0], kbRecords[0].EmbdID, entity.ModelTypeEmbedding)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", getErr)
+			}
+			driver, modelName, apiConfig, maxTokens, getErr = modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeEmbedding, embdID)
+			if getErr != nil {
+				return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", getErr)
+			}
 		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
-		}
+		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
 	} else {
-		tenantLLM, err = dao.NewTenantLLMDAO().GetByTenantAndType(tenantIDs[0], entity.ModelTypeEmbedding)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get tenant default embedding model: %w", err)
+		driver, modelName, apiConfig, maxTokens, getErr := modelProviderSvc.GetTenantDefaultModelByType(tenantIDs[0], entity.ModelTypeEmbedding)
+		if getErr != nil {
+			return nil, fmt.Errorf("failed to get tenant default embedding model: %w", getErr)
 		}
-		if tenantLLM == nil || tenantLLM.LLMName == nil || *tenantLLM.LLMName == "" {
-			return nil, fmt.Errorf("no default embedding model found for tenant %s", tenantIDs[0])
-		}
-		embdID = fmt.Sprintf("%s@%s", *tenantLLM.LLMName, tenantLLM.LLMFactory)
+		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+		embdID = fmt.Sprintf("%s@default", modelName)
 	}
 
-	// Get embedding model for the tenant
-	modelProviderSvc := service.NewModelProviderService()
-	embeddingModel, err := modelProviderSvc.GetEmbeddingModel(tenantIDs[0], embdID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get embedding model: %w", err)
+	if embeddingModel == nil {
+		return nil, fmt.Errorf("no embedding model found for tenant %s", tenantIDs[0])
 	}
+
 	common.Info("Fetched embedding model for retrieval",
 		zap.String("tenantID", tenantIDs[0]),
 		zap.String("embdID", embdID))
@@ -370,9 +415,12 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 			return nil, fmt.Errorf("failed to get rerank model by tenant_rerank_id: %w", err)
 		}
 	} else if req.RerankID != nil && *req.RerankID != "" {
-		_, rerankCompositeName, err = dao.LookupTenantLLMByName(dao.NewTenantLLMDAO(), tenantIDs[0], *req.RerankID, entity.ModelTypeRerank)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", err)
+		rerankCompositeName = *req.RerankID
+		if _, _, _, _, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeRerank, rerankCompositeName); getErr != nil {
+			_, rerankCompositeName, err = dao.LookupTenantLLMByName(dao.NewTenantLLMDAO(), tenantIDs[0], *req.RerankID, entity.ModelTypeRerank)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", getErr)
+			}
 		}
 	}
 	if rerankCompositeName != "" {
@@ -433,6 +481,16 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
+}
+
+func knowledgebaseEmbeddingKey(kb *entity.Knowledgebase, tenantID string) string {
+	if kb.TenantEmbdID != nil && *kb.TenantEmbdID > 0 {
+		return fmt.Sprintf("tenant:%d", *kb.TenantEmbdID)
+	}
+	if kb.EmbdID == "" {
+		return fmt.Sprintf("default:%s", tenantID)
+	}
+	return fmt.Sprintf("embd:%s", kb.EmbdID)
 }
 
 // hydrateChunkVectors replaces zero (placeholder) vectors in chunks with real
@@ -1709,5 +1767,425 @@ func (s *ChunkService) RemoveChunks(req *service.RemoveChunksRequest, userID str
 		return 0, fmt.Errorf("failed to delete chunks: %w", err)
 	}
 
+	if deletedCount > 0 {
+		if err := s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
+			return deletedCount, fmt.Errorf("failed to update chunk stats: %w", err)
+		}
+	}
+
 	return deletedCount, nil
+}
+
+func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+	if s.docEngine == nil {
+		return nil, addChunkError{code: common.CodeServerError, message: "doc engine not initialized"}
+	}
+	if req == nil {
+		return nil, addChunkError{code: common.CodeDataError, message: "invalid request payload"}
+	}
+	if !s.accessible(req.DatasetID, userID) {
+		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
+	}
+
+	kb, err := s.getKnowledgebaseByID(req.DatasetID)
+	if err != nil || kb == nil {
+		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
+	}
+
+	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(req.DocumentID, req.DatasetID)
+	if err != nil || doc == nil {
+		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the document %s.", req.DocumentID)}
+	}
+
+	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		return nil, addChunkError{code: common.CodeDataError, message: "`content` is required"}
+	}
+
+	var tagFeas map[string]float64
+	if req.TagFeas != nil {
+		tagFeas, err = validateTagFeatures(req.TagFeas)
+		if err != nil {
+			return nil, addChunkError{code: common.CodeDataError, message: "`tag_feas` " + err.Error()}
+		}
+	}
+
+	chunkID := strconv.FormatUint(xxhash.Sum64([]byte(req.Content+req.DocumentID)), 16)
+	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+	contentLtks, err := s.tokenize(req.Content)
+	if err != nil {
+		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize content: %v", err)}
+	}
+	contentSmLtks, err := s.fineGrainedTokenize(contentLtks)
+	if err != nil {
+		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize content fine-grained: %v", err)}
+	}
+	importantTks, err := s.tokenize(strings.Join(req.ImportantKeywords, " "))
+	if err != nil {
+		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize important keywords: %v", err)}
+	}
+	questionKwd := filterTrimmedStrings(req.Questions)
+	questionTks, err := s.tokenize(strings.Join(req.Questions, "\n"))
+	if err != nil {
+		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize questions: %v", err)}
+	}
+
+	now := time.Now()
+	docName := ""
+	if doc.Name != nil {
+		docName = *doc.Name
+	}
+	importantKeywords := req.ImportantKeywords
+	if importantKeywords == nil {
+		importantKeywords = []string{}
+	}
+
+	chunkData := map[string]interface{}{
+		"id":                   chunkID,
+		"content_with_weight":  req.Content,
+		"content_ltks":         contentLtks,
+		"content_sm_ltks":      contentSmLtks,
+		"important_kwd":        importantKeywords,
+		"important_tks":        importantTks,
+		"question_kwd":         questionKwd,
+		"question_tks":         questionTks,
+		"create_time":          now.Format("2006-01-02 15:04:05"),
+		"create_timestamp_flt": float64(now.UnixNano()) / float64(time.Second),
+		"kb_id":                req.DatasetID,
+		"docnm_kwd":            docName,
+		"doc_id":               req.DocumentID,
+	}
+	if req.TagKwd != nil {
+		chunkData["tag_kwd"] = req.TagKwd
+	}
+	if tagFeas != nil {
+		chunkData["tag_feas"] = tagFeas
+	}
+
+	if req.ImageBase64 != nil {
+		imageBinary, err := decodeChunkImageBase64(*req.ImageBase64)
+		if err != nil {
+			return nil, addChunkError{code: common.CodeDataError, message: err.Error()}
+		}
+		if err := s.storeChunkImage(req.DatasetID, chunkID, imageBinary); err != nil {
+			return nil, addChunkError{code: common.CodeDataError, message: "Failed to store chunk image"}
+		}
+		chunkData["img_id"] = fmt.Sprintf("%s-%s", req.DatasetID, chunkID)
+		chunkData["doc_type_kwd"] = "image"
+	}
+
+	embeddingModel, err := s.getEmbeddingModel(kb.TenantID, kb.EmbdID)
+	if err != nil {
+		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("get embedding model: %v", err)}
+	}
+	embeddingText := req.Content
+	if len(questionKwd) > 0 {
+		embeddingText = strings.Join(questionKwd, "\n")
+	}
+	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{docName, embeddingText}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0})
+	if err != nil {
+		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("encode chunk embedding: %v", err)}
+	}
+	if len(embeddings) != 2 {
+		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("unexpected embedding count: %d", len(embeddings))}
+	}
+	mergedVec, err := mergeChunkEmbeddings(embeddings[0].Embedding, embeddings[1].Embedding)
+	if err != nil {
+		return nil, addChunkError{code: common.CodeServerError, message: err.Error()}
+	}
+	chunkData[fmt.Sprintf("q_%d_vec", len(mergedVec))] = mergedVec
+
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second)
+	defer cancel()
+	if _, err := s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID); err != nil {
+		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("insert chunk: %v", err)}
+	}
+
+	tokenNum := int64(s.numTokens(req.Content))
+	if err := s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0); err != nil {
+		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("increment chunk stats: %v", err)}
+	}
+
+	renamedChunk := map[string]interface{}{
+		"id":                 chunkID,
+		"content":            req.Content,
+		"document_id":        req.DocumentID,
+		"document":           docName,
+		"important_keywords": importantKeywords,
+		"questions":          questionKwd,
+		"dataset_id":         req.DatasetID,
+		"create_timestamp":   chunkData["create_timestamp_flt"],
+		"create_time":        chunkData["create_time"],
+	}
+	if req.TagKwd != nil {
+		renamedChunk["tag_kwd"] = req.TagKwd
+	}
+	if imgID, ok := chunkData["img_id"]; ok {
+		renamedChunk["image_id"] = imgID
+	}
+
+	return &service.AddChunkResponse{Chunk: renamedChunk}, nil
+}
+
+type addChunkError struct {
+	code    common.ErrorCode
+	message string
+}
+
+func (e addChunkError) Error() string {
+	return e.message
+}
+
+func (e addChunkError) Code() common.ErrorCode {
+	return e.code
+}
+
+func validateTagFeatures(raw interface{}) (map[string]float64, error) {
+	parsed, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("must be an object mapping string tags to finite numeric scores")
+	}
+	cleaned := make(map[string]float64, len(parsed))
+	for key, value := range parsed {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("keys must be non-empty strings")
+		}
+		switch typed := value.(type) {
+		case float64:
+			if math.IsNaN(typed) || math.IsInf(typed, 0) {
+				return nil, fmt.Errorf("values must be finite numbers")
+			}
+			cleaned[key] = typed
+		case float32:
+			if math.IsNaN(float64(typed)) || math.IsInf(float64(typed), 0) {
+				return nil, fmt.Errorf("values must be finite numbers")
+			}
+			cleaned[key] = float64(typed)
+		case int:
+			cleaned[key] = float64(typed)
+		case int8:
+			cleaned[key] = float64(typed)
+		case int16:
+			cleaned[key] = float64(typed)
+		case int32:
+			cleaned[key] = float64(typed)
+		case int64:
+			cleaned[key] = float64(typed)
+		default:
+			return nil, fmt.Errorf("values must be finite numbers")
+		}
+	}
+	return cleaned, nil
+}
+
+func decodeChunkImageBase64(raw string) ([]byte, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, fmt.Errorf("`image_base64` must be a non-empty string")
+	}
+	imageBinary, err := base64.StdEncoding.Strict().DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("Invalid `image_base64`")
+	}
+	if len(imageBinary) == 0 {
+		return nil, fmt.Errorf("`image_base64` is empty")
+	}
+	return imageBinary, nil
+}
+
+func mergeChunkEmbeddings(a, b []float64) ([]float64, error) {
+	if len(a) == 0 || len(b) == 0 || len(a) != len(b) {
+		return nil, fmt.Errorf("unexpected embedding dimensions")
+	}
+	merged := make([]float64, len(a))
+	for i := range a {
+		merged[i] = 0.1*a[i] + 0.9*b[i]
+	}
+	return merged, nil
+}
+
+func filterTrimmedStrings(values []string) []string {
+	filtered := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			filtered = append(filtered, trimmed)
+		}
+	}
+	return filtered
+}
+
+func (s *ChunkService) tokenize(text string) (string, error) {
+	if s.tokenizeFunc != nil {
+		return s.tokenizeFunc(text)
+	}
+	return tokenizer.Tokenize(text)
+}
+
+func (s *ChunkService) fineGrainedTokenize(text string) (string, error) {
+	if s.fineGrainedTokenizeFunc != nil {
+		return s.fineGrainedTokenizeFunc(text)
+	}
+	return tokenizer.FineGrainedTokenize(text)
+}
+
+func (s *ChunkService) numTokens(text string) int {
+	if s.numTokensFunc != nil {
+		return s.numTokensFunc(text)
+	}
+	return tokenizer.NumTokensFromString(text)
+}
+
+func (s *ChunkService) getEmbeddingModel(tenantID, embdID string) (*models.EmbeddingModel, error) {
+	if s.getEmbeddingModelFunc != nil {
+		return s.getEmbeddingModelFunc(tenantID, embdID)
+	}
+	return service.NewModelProviderService().GetEmbeddingModel(tenantID, embdID)
+}
+
+func (s *ChunkService) incrementChunkStats(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {
+	if s.incrementChunkStatsFunc != nil {
+		return s.incrementChunkStatsFunc(docID, kbID, tokenNum, chunkNum, duration)
+	}
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&entity.Document{}).
+			Where("id = ? AND kb_id = ?", docID, kbID).
+			Updates(map[string]interface{}{
+				"token_num":        gorm.Expr("token_num + ?", tokenNum),
+				"chunk_num":        gorm.Expr("chunk_num + ?", chunkNum),
+				"process_duration": gorm.Expr("process_duration + ?", duration),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("document not found")
+		}
+
+		result = tx.Model(&entity.Knowledgebase{}).
+			Where("id = ?", kbID).
+			Updates(map[string]interface{}{
+				"token_num": gorm.Expr("token_num + ?", tokenNum),
+				"chunk_num": gorm.Expr("chunk_num + ?", chunkNum),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("knowledgebase not found")
+		}
+		return nil
+	})
+}
+
+func (s *ChunkService) decrementChunkStats(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {
+	if s.decrementChunkStatsFunc != nil {
+		return s.decrementChunkStatsFunc(docID, kbID, tokenNum, chunkNum, duration)
+	}
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&entity.Document{}).
+			Where("id = ? AND kb_id = ?", docID, kbID).
+			Updates(map[string]interface{}{
+				"token_num":        gorm.Expr("CASE WHEN token_num - ? >= 0 THEN token_num - ? ELSE 0 END", tokenNum, tokenNum),
+				"chunk_num":        gorm.Expr("CASE WHEN chunk_num - ? >= 0 THEN chunk_num - ? ELSE 0 END", chunkNum, chunkNum),
+				"process_duration": gorm.Expr("CASE WHEN process_duration + ? >= 0 THEN process_duration + ? ELSE 0 END", duration, duration),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("document not found")
+		}
+
+		result = tx.Model(&entity.Knowledgebase{}).
+			Where("id = ?", kbID).
+			Updates(map[string]interface{}{
+				"token_num": gorm.Expr("CASE WHEN token_num - ? >= 0 THEN token_num - ? ELSE 0 END", tokenNum, tokenNum),
+				"chunk_num": gorm.Expr("CASE WHEN chunk_num - ? >= 0 THEN chunk_num - ? ELSE 0 END", chunkNum, chunkNum),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("knowledgebase not found")
+		}
+		return nil
+	})
+}
+
+func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byte) error {
+	if s.storeChunkImageFunc != nil {
+		return s.storeChunkImageFunc(bucket, chunkID, imageBinary)
+	}
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return fmt.Errorf("storage not initialized")
+	}
+	lockKey := bucket + "/" + chunkID
+	lock := acquireChunkImageMergeLock(lockKey)
+	lock.mu.Lock()
+	defer func() {
+		lock.mu.Unlock()
+		releaseChunkImageMergeLock(lockKey)
+	}()
+
+	if !storageImpl.ObjExist(bucket, chunkID) {
+		return storageImpl.Put(bucket, chunkID, imageBinary)
+	}
+
+	oldBinary, err := storageImpl.Get(bucket, chunkID)
+	if err != nil {
+		return err
+	}
+	oldImage, _, err := image.Decode(bytes.NewReader(oldBinary))
+	if err != nil {
+		return err
+	}
+	newImage, _, err := image.Decode(bytes.NewReader(imageBinary))
+	if err != nil {
+		return err
+	}
+	oldBounds, newBounds := oldImage.Bounds(), newImage.Bounds()
+	width := oldBounds.Dx()
+	if newBounds.Dx() > width {
+		width = newBounds.Dx()
+	}
+	height := oldBounds.Dy() + newBounds.Dy()
+	combined := image.NewRGBA(image.Rect(0, 0, width, height))
+	draw.Draw(combined, combined.Bounds(), &image.Uniform{C: color.White}, image.Point{}, draw.Src)
+	draw.Draw(combined, oldBounds, oldImage, oldBounds.Min, draw.Src)
+	draw.Draw(combined, image.Rect(0, oldBounds.Dy(), newBounds.Dx(), oldBounds.Dy()+newBounds.Dy()), newImage, newBounds.Min, draw.Src)
+
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, combined, nil); err != nil {
+		return err
+	}
+	return storageImpl.Put(bucket, chunkID, buf.Bytes())
+}
+
+func acquireChunkImageMergeLock(key string) *chunkImageMergeLock {
+	chunkImageMergeLocks.Lock()
+	defer chunkImageMergeLocks.Unlock()
+
+	lock := chunkImageMergeLocks.locks[key]
+	if lock == nil {
+		lock = &chunkImageMergeLock{}
+		chunkImageMergeLocks.locks[key] = lock
+	}
+	lock.refs++
+	return lock
+}
+
+func releaseChunkImageMergeLock(key string) {
+	chunkImageMergeLocks.Lock()
+	defer chunkImageMergeLocks.Unlock()
+
+	lock := chunkImageMergeLocks.locks[key]
+	if lock == nil {
+		return
+	}
+	lock.refs--
+	if lock.refs == 0 {
+		delete(chunkImageMergeLocks.locks, key)
+	}
 }

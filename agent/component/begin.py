@@ -14,21 +14,20 @@
 #  limitations under the License.
 #
 from agent.component.fillup import UserFillUpParam, UserFillUp
-from api.db.services.file_service import FileService
 
 
 class BeginParam(UserFillUpParam):
-
     """
     Define the Begin component parameters.
     """
+
     def __init__(self):
         super().__init__()
         self.mode = "conversational"
         self.prologue = "Hi! I'm your smart assistant. What can I do for you?"
 
     def check(self):
-        self.check_valid_value(self.mode, "The 'mode' should be either `conversational` or `task`", ["conversational", "task","Webhook"])
+        self.check_valid_value(self.mode, "The 'mode' should be either `conversational` or `task`", ["conversational", "task", "Webhook"])
 
     def get_input_form(self) -> dict[str, dict]:
         return getattr(self, "inputs")
@@ -42,20 +41,11 @@ class Begin(UserFillUp):
             return
 
         layout_recognize = self._param.layout_recognize or None
-        for k, v in kwargs.get("inputs", {}).items():
+        merged_inputs = self._merge_runtime_inputs(kwargs.get("inputs", {}))
+        for k, v in merged_inputs.items():
             if self.check_if_canceled("Begin processing"):
                 return
-
-            if isinstance(v, dict) and v.get("type", "").lower().find("file") >= 0:
-                if v.get("optional") and v.get("value", None) is None:
-                    v = None
-                else:
-                    file_value = v["value"]
-                    # Support both single file (backward compatibility) and multiple files
-                    files = file_value if isinstance(file_value, list) else [file_value]
-                    v = FileService.get_files(files, layout_recognize=layout_recognize)
-            else:
-                v = v.get("value")
+            v = self._resolve_input_value(v, layout_recognize)
             self.set_output(k, v)
             self.set_input_value(k, v)
 

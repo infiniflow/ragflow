@@ -17,12 +17,12 @@ package nlp
 import (
 	"encoding/json"
 	"os"
-	"sync/atomic"
 	"path/filepath"
 	"ragflow/internal/common"
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"

@@ -1,5 +1,6 @@
 {
   "name": "Anthropic",
+  "rank": 998,
   "url": {
     "default": "https://api.anthropic.com"
   },

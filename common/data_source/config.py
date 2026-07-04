@@ -1,4 +1,5 @@
 """Configuration constants and enum definitions"""
+
 import json
 import os
 from datetime import datetime, timezone
@@ -31,6 +32,7 @@ ONYX_SLACK_LOCK_TOTAL_BLOCKING_TIMEOUT = 3600
 
 class BlobType(str, Enum):
     """Supported storage types"""
+
     S3 = "s3"
     R2 = "r2"
     GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
@@ -40,6 +42,7 @@ class BlobType(str, Enum):
 
 class DocumentSource(str, Enum):
     """Document sources"""
+
     RSS = "rss"
     S3 = "s3"
     NOTION = "notion"
@@ -68,6 +71,7 @@ class DocumentSource(str, Enum):
     SEAFILE = "seafile"
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"
+    BIGQUERY = "bigquery"
     DINGTALK_AI_TABLE = "dingtalk_ai_table"
     ONEDRIVE = "onedrive"
     OUTLOOK = "outlook"
@@ -77,6 +81,7 @@ class DocumentSource(str, Enum):
 
 class FileOrigin(str, Enum):
     """File origins"""
+
     CONNECTOR = "connector"
 
 
@@ -126,10 +131,7 @@ BOT_CHANNEL_PERCENTAGE_THRESHOLD = 0.95
 DOWNLOAD_CHUNK_SIZE = 1024 * 1024  # 1MB
 SIZE_THRESHOLD_BUFFER = 64
 
-NOTION_CONNECTOR_DISABLE_RECURSIVE_PAGE_LOOKUP = (
-    os.environ.get("NOTION_CONNECTOR_DISABLE_RECURSIVE_PAGE_LOOKUP", "").lower()
-    == "true"
-)
+NOTION_CONNECTOR_DISABLE_RECURSIVE_PAGE_LOOKUP = os.environ.get("NOTION_CONNECTOR_DISABLE_RECURSIVE_PAGE_LOOKUP", "").lower() == "true"
 
 SLIM_BATCH_SIZE = 100
 
@@ -145,48 +147,28 @@ _ITERATION_LIMIT = 100_000
 # NOTE: Currently only supported in the Confluence and Google Drive connectors +
 # only handles some failures (Confluence = handles API call failures, Google
 # Drive = handles failures pulling files / parsing them)
-CONTINUE_ON_CONNECTOR_FAILURE = os.environ.get(
-    "CONTINUE_ON_CONNECTOR_FAILURE", ""
-).lower() not in ["false", ""]
+CONTINUE_ON_CONNECTOR_FAILURE = os.environ.get("CONTINUE_ON_CONNECTOR_FAILURE", "").lower() not in ["false", ""]
 
 
 #####
 # Confluence Connector Configs
 #####
 
-CONFLUENCE_CONNECTOR_LABELS_TO_SKIP = [
-    ignored_tag
-    for ignored_tag in os.environ.get("CONFLUENCE_CONNECTOR_LABELS_TO_SKIP", "").split(
-        ","
-    )
-    if ignored_tag
-]
+CONFLUENCE_CONNECTOR_LABELS_TO_SKIP = [ignored_tag for ignored_tag in os.environ.get("CONFLUENCE_CONNECTOR_LABELS_TO_SKIP", "").split(",") if ignored_tag]
 
 # Avoid to get archived pages
-CONFLUENCE_CONNECTOR_INDEX_ARCHIVED_PAGES = (
-    os.environ.get("CONFLUENCE_CONNECTOR_INDEX_ARCHIVED_PAGES", "").lower() == "true"
-)
+CONFLUENCE_CONNECTOR_INDEX_ARCHIVED_PAGES = os.environ.get("CONFLUENCE_CONNECTOR_INDEX_ARCHIVED_PAGES", "").lower() == "true"
 
 # Attachments exceeding this size will not be retrieved (in bytes)
-CONFLUENCE_CONNECTOR_ATTACHMENT_SIZE_THRESHOLD = int(
-    os.environ.get("CONFLUENCE_CONNECTOR_ATTACHMENT_SIZE_THRESHOLD", 10 * 1024 * 1024)
-)
+CONFLUENCE_CONNECTOR_ATTACHMENT_SIZE_THRESHOLD = int(os.environ.get("CONFLUENCE_CONNECTOR_ATTACHMENT_SIZE_THRESHOLD", 10 * 1024 * 1024))
 # Attachments with more chars than this will not be indexed. This is to prevent extremely
 # large files from freezing indexing. 200,000 is ~100 google doc pages.
-CONFLUENCE_CONNECTOR_ATTACHMENT_CHAR_COUNT_THRESHOLD = int(
-    os.environ.get("CONFLUENCE_CONNECTOR_ATTACHMENT_CHAR_COUNT_THRESHOLD", 200_000)
-)
+CONFLUENCE_CONNECTOR_ATTACHMENT_CHAR_COUNT_THRESHOLD = int(os.environ.get("CONFLUENCE_CONNECTOR_ATTACHMENT_CHAR_COUNT_THRESHOLD", 200_000))
 
-_RAW_CONFLUENCE_CONNECTOR_USER_PROFILES_OVERRIDE = os.environ.get(
-    "CONFLUENCE_CONNECTOR_USER_PROFILES_OVERRIDE", ""
-)
+_RAW_CONFLUENCE_CONNECTOR_USER_PROFILES_OVERRIDE = os.environ.get("CONFLUENCE_CONNECTOR_USER_PROFILES_OVERRIDE", "")
 CONFLUENCE_CONNECTOR_USER_PROFILES_OVERRIDE = cast(
     list[dict[str, str]] | None,
-    (
-        json.loads(_RAW_CONFLUENCE_CONNECTOR_USER_PROFILES_OVERRIDE)
-        if _RAW_CONFLUENCE_CONNECTOR_USER_PROFILES_OVERRIDE
-        else None
-    ),
+    (json.loads(_RAW_CONFLUENCE_CONNECTOR_USER_PROFILES_OVERRIDE) if _RAW_CONFLUENCE_CONNECTOR_USER_PROFILES_OVERRIDE else None),
 )
 
 # enter as a floating point offset from UTC in hours (-24 < val < 24)
@@ -195,53 +177,29 @@ CONFLUENCE_CONNECTOR_USER_PROFILES_OVERRIDE = cast(
 # For the default value, we assume that the user's local timezone is more likely to be
 # correct (i.e. the configured user's timezone or the default server one) than UTC.
 # https://developer.atlassian.com/cloud/confluence/cql-fields/#created
-CONFLUENCE_TIMEZONE_OFFSET = float(
-    os.environ.get("CONFLUENCE_TIMEZONE_OFFSET", get_current_tz_offset())
-)
+CONFLUENCE_TIMEZONE_OFFSET = float(os.environ.get("CONFLUENCE_TIMEZONE_OFFSET", get_current_tz_offset()))
 
-CONFLUENCE_SYNC_TIME_BUFFER_SECONDS = int(
-    os.environ.get("CONFLUENCE_SYNC_TIME_BUFFER_SECONDS", ONE_DAY)
-)
+CONFLUENCE_SYNC_TIME_BUFFER_SECONDS = int(os.environ.get("CONFLUENCE_SYNC_TIME_BUFFER_SECONDS", ONE_DAY))
 
-GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS = int(
-    os.environ.get("GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS", ONE_DAY)
-)
+GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS = int(os.environ.get("GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS", ONE_DAY))
 
-GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD = int(
-    os.environ.get("GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
-)
+GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD = int(os.environ.get("GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024))
 
-JIRA_CONNECTOR_LABELS_TO_SKIP = [
-    ignored_tag
-    for ignored_tag in os.environ.get("JIRA_CONNECTOR_LABELS_TO_SKIP", "").split(",")
-    if ignored_tag
-]
-JIRA_CONNECTOR_MAX_TICKET_SIZE = int(
-    os.environ.get("JIRA_CONNECTOR_MAX_TICKET_SIZE", 100 * 1024)
-)
-JIRA_SYNC_TIME_BUFFER_SECONDS = int(
-    os.environ.get("JIRA_SYNC_TIME_BUFFER_SECONDS", ONE_MINUTE)
-)
-JIRA_TIMEZONE_OFFSET = float(
-    os.environ.get("JIRA_TIMEZONE_OFFSET", get_current_tz_offset())
-)
+JIRA_CONNECTOR_LABELS_TO_SKIP = [ignored_tag for ignored_tag in os.environ.get("JIRA_CONNECTOR_LABELS_TO_SKIP", "").split(",") if ignored_tag]
+JIRA_CONNECTOR_MAX_TICKET_SIZE = int(os.environ.get("JIRA_CONNECTOR_MAX_TICKET_SIZE", 100 * 1024))
+JIRA_SYNC_TIME_BUFFER_SECONDS = int(os.environ.get("JIRA_SYNC_TIME_BUFFER_SECONDS", ONE_MINUTE))
+JIRA_TIMEZONE_OFFSET = float(os.environ.get("JIRA_TIMEZONE_OFFSET", get_current_tz_offset()))
 
 OAUTH_SLACK_CLIENT_ID = os.environ.get("OAUTH_SLACK_CLIENT_ID", "")
 OAUTH_SLACK_CLIENT_SECRET = os.environ.get("OAUTH_SLACK_CLIENT_SECRET", "")
-OAUTH_CONFLUENCE_CLOUD_CLIENT_ID = os.environ.get(
-    "OAUTH_CONFLUENCE_CLOUD_CLIENT_ID", ""
-)
+OAUTH_CONFLUENCE_CLOUD_CLIENT_ID = os.environ.get("OAUTH_CONFLUENCE_CLOUD_CLIENT_ID", "")
 
-OAUTH_CONFLUENCE_CLOUD_CLIENT_SECRET = os.environ.get(
-    "OAUTH_CONFLUENCE_CLOUD_CLIENT_SECRET", ""
-)
+OAUTH_CONFLUENCE_CLOUD_CLIENT_SECRET = os.environ.get("OAUTH_CONFLUENCE_CLOUD_CLIENT_SECRET", "")
 
 OAUTH_JIRA_CLOUD_CLIENT_ID = os.environ.get("OAUTH_JIRA_CLOUD_CLIENT_ID", "")
 OAUTH_JIRA_CLOUD_CLIENT_SECRET = os.environ.get("OAUTH_JIRA_CLOUD_CLIENT_SECRET", "")
 OAUTH_GOOGLE_DRIVE_CLIENT_ID = os.environ.get("OAUTH_GOOGLE_DRIVE_CLIENT_ID", "")
-OAUTH_GOOGLE_DRIVE_CLIENT_SECRET = os.environ.get(
-    "OAUTH_GOOGLE_DRIVE_CLIENT_SECRET", ""
-)
+OAUTH_GOOGLE_DRIVE_CLIENT_SECRET = os.environ.get("OAUTH_GOOGLE_DRIVE_CLIENT_SECRET", "")
 GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI = os.environ.get("GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI", "http://localhost:9380/v1/connector/google-drive/oauth/web/callback")
 GMAIL_WEB_OAUTH_REDIRECT_URI = os.environ.get("GMAIL_WEB_OAUTH_REDIRECT_URI", "http://localhost:9380/v1/connector/gmail/oauth/web/callback")
 
@@ -257,6 +215,7 @@ BOX_WEB_OAUTH_REDIRECT_URI = os.environ.get("BOX_WEB_OAUTH_REDIRECT_URI", "http:
 
 GITHUB_CONNECTOR_BASE_URL = os.environ.get("GITHUB_CONNECTOR_BASE_URL") or None
 
+
 class HtmlBasedConnectorTransformLinksStrategy(str, Enum):
     # remove links entirely
     STRIP = "strip"
@@ -271,28 +230,16 @@ HTML_BASED_CONNECTOR_TRANSFORM_LINKS_STRATEGY = os.environ.get(
 
 PARSE_WITH_TRAFILATURA = os.environ.get("PARSE_WITH_TRAFILATURA", "").lower() == "true"
 
-WEB_CONNECTOR_IGNORED_CLASSES = os.environ.get(
-    "WEB_CONNECTOR_IGNORED_CLASSES", "sidebar,footer"
-).split(",")
-WEB_CONNECTOR_IGNORED_ELEMENTS = os.environ.get(
-    "WEB_CONNECTOR_IGNORED_ELEMENTS", "nav,footer,meta,script,style,symbol,aside"
-).split(",")
+WEB_CONNECTOR_IGNORED_CLASSES = os.environ.get("WEB_CONNECTOR_IGNORED_CLASSES", "sidebar,footer").split(",")
+WEB_CONNECTOR_IGNORED_ELEMENTS = os.environ.get("WEB_CONNECTOR_IGNORED_ELEMENTS", "nav,footer,meta,script,style,symbol,aside").split(",")
 
-AIRTABLE_CONNECTOR_SIZE_THRESHOLD = int(
-    os.environ.get("AIRTABLE_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
-)
+AIRTABLE_CONNECTOR_SIZE_THRESHOLD = int(os.environ.get("AIRTABLE_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024))
 
-ASANA_CONNECTOR_SIZE_THRESHOLD = int(
-    os.environ.get("ASANA_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
-)
+ASANA_CONNECTOR_SIZE_THRESHOLD = int(os.environ.get("ASANA_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024))
 
-IMAP_CONNECTOR_SIZE_THRESHOLD = int(
-    os.environ.get("IMAP_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
-)
+IMAP_CONNECTOR_SIZE_THRESHOLD = int(os.environ.get("IMAP_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024))
 
-ZENDESK_CONNECTOR_SKIP_ARTICLE_LABELS = os.environ.get(
-    "ZENDESK_CONNECTOR_SKIP_ARTICLE_LABELS", ""
-).split(",")
+ZENDESK_CONNECTOR_SKIP_ARTICLE_LABELS = os.environ.get("ZENDESK_CONNECTOR_SKIP_ARTICLE_LABELS", "").split(",")
 
 _USER_NOT_FOUND = "Unknown Confluence User"
 

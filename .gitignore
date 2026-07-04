@@ -225,9 +225,9 @@ uv-aarch64-unknown-linux-gnu.tar.gz
 docker/launch_backend_service_windows.sh
 
 # C++ build directories
-internal/cpp/build/
-internal/cpp/cmake-build-release/
-internal/cpp/cmake-build-debug/
+internal/binding/cpp/build/
+internal/binding/cpp/cmake-build-release/
+internal/binding/cpp/cmake-build-debug/
 
 # Trae IDE config
 .trae/
@@ -241,3 +241,9 @@ bin/*
 # Local agent tooling state (per-developer; not for commit)
 .omc/
 .marscode/
+
+# Parser test fixtures and python tools
+internal/deepdoc/parser/pdf/testdata/
+internal/deepdoc/parser/pdf/tools-py/
+internal/deepdoc/parser/docx/testdata/
+internal/deepdoc/parser/docx/tool/

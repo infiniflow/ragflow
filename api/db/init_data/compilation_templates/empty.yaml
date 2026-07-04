@@ -1,0 +1,17 @@
+kind: empty
+display_name: Empty
+config:
+  kind: empty
+  entity:
+    description: ''
+    fields:
+      - type: ''
+        description: ''
+        rule: ''
+  relation:
+    description: ''
+    fields:
+      - type: ''
+        description: ''
+        rule: ''
+  global_rules: ''

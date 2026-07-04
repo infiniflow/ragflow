@@ -158,9 +158,7 @@ def test_equal_translates_to_term_with_lowercased_value(es_translator):
         return f"{META_FIELDS_PREFIX}.{key}"
 
     clauses = es_translator.translate({"key": "tag", "op": "=", "value": "Alpha"}).to_clauses()
-    assert clauses == [
-        {"term": {_field("tag") + ".keyword": {"value": "alpha", "case_insensitive": True}}}
-    ]
+    assert clauses == [{"term": {_field("tag") + ".keyword": {"value": "alpha", "case_insensitive": True}}}]
 
 
 def test_equal_parses_numeric_literal(es_translator):
@@ -181,9 +179,7 @@ def test_equal_multiword_uses_keyword_subfield(es_translator):
     def _field(key: str) -> str:
         return f"{META_FIELDS_PREFIX}.{key}"
 
-    clauses = es_translator.translate(
-        {"key": "author", "op": "=", "value": "Alice Wonderland"}
-    ).to_clauses()
+    clauses = es_translator.translate({"key": "author", "op": "=", "value": "Alice Wonderland"}).to_clauses()
     assert clauses == [
         {
             "term": {
@@ -207,9 +203,7 @@ def test_not_equal_requires_field_to_exist(es_translator):
         {
             "bool": {
                 "must": [{"exists": {"field": _field("tag")}}],
-                "must_not": [
-                    {"term": {_field("tag") + ".keyword": {"value": "alpha", "case_insensitive": True}}}
-                ],
+                "must_not": [{"term": {_field("tag") + ".keyword": {"value": "alpha", "case_insensitive": True}}}],
             }
         }
     ]
@@ -253,10 +247,7 @@ def test_in_operator_csv_value_lowercased(es_translator):
     def _string_terms_should(field_path: str, members):
         return {
             "bool": {
-                "should": [
-                    {"term": {field_path + ".keyword": {"value": m, "case_insensitive": True}}}
-                    for m in members
-                ],
+                "should": [{"term": {field_path + ".keyword": {"value": m, "case_insensitive": True}}} for m in members],
                 "minimum_should_match": 1,
             }
         }
@@ -274,10 +265,7 @@ def test_in_operator_python_list_literal(es_translator):
     def _string_terms_should(field_path: str, members):
         return {
             "bool": {
-                "should": [
-                    {"term": {field_path + ".keyword": {"value": m, "case_insensitive": True}}}
-                    for m in members
-                ],
+                "should": [{"term": {field_path + ".keyword": {"value": m, "case_insensitive": True}}} for m in members],
                 "minimum_should_match": 1,
             }
         }
@@ -305,10 +293,7 @@ def test_not_in_negates_with_existence_guard(es_translator):
     def _string_terms_should(field_path: str, members):
         return {
             "bool": {
-                "should": [
-                    {"term": {field_path + ".keyword": {"value": m, "case_insensitive": True}}}
-                    for m in members
-                ],
+                "should": [{"term": {field_path + ".keyword": {"value": m, "case_insensitive": True}}} for m in members],
                 "minimum_should_match": 1,
             }
         }
@@ -387,9 +372,7 @@ def test_start_with_uses_prefix(es_translator):
         return f"{META_FIELDS_PREFIX}.{key}"
 
     clauses = es_translator.translate({"key": "name", "op": "start with", "value": "pre"}).to_clauses()
-    assert clauses == [
-        {"prefix": {_field("name") + ".keyword": {"value": "pre", "case_insensitive": True}}}
-    ]
+    assert clauses == [{"prefix": {_field("name") + ".keyword": {"value": "pre", "case_insensitive": True}}}]
 
 
 def test_end_with_uses_trailing_wildcard(es_translator):

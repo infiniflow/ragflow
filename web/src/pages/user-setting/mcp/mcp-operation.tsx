@@ -16,7 +16,7 @@ export function McpOperation({
 }: { mcp: IMcpServer } & Pick<UseEditMcpReturnType, 'showEditModal'>) {
   const { t } = useTranslation();
   const { deleteMcpServer } = useDeleteMcpServer();
-  const { handleExportMcpJson } = useExportMcp();
+  const { handleExportMcpJson } = useExportMcp(mcp);
 
   const handleDelete: MouseEventHandler<HTMLDivElement> = useCallback(() => {
     deleteMcpServer([mcp.id]);
