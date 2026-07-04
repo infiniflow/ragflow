@@ -857,22 +857,14 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 if produced == 0:
                     logging.warning("RAPTOR layer produced no summaries; stopping materialization")
                     break
+                logging.info(
+                    "RAPTOR small-N collapse: layer of %d node(s) [%d:%d] collapsed into %d summary; stopping at tree top",
+                    end - start, start, end, produced,
+                )
                 layers.append((end, len(chunks)))
                 if callback:
                     callback(msg="Cluster one layer: {} -> {} (small-N collapse)".format(end - start, produced))
                 break
-            if len(embeddings) == 2:
-                await summarize([start, start + 1])
-                produced = len(chunks) - end
-                if produced == 0:
-                    logging.warning("RAPTOR layer produced no summaries; stopping materialization")
-                    break
-                if callback:
-                    callback(msg="Cluster one layer: {} -> {}".format(end - start, produced))
-                layers.append((end, len(chunks)))
-                start = end
-                end = len(chunks)
-                continue
 
             n_clusters, lbls = self.clustering(
                 embeddings,
