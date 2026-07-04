@@ -25,18 +25,18 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import partial
-from typing import Any, Union, Tuple
+from typing import Any, Tuple, Union
 
 from agent.component import component_class
 from agent.component.base import ComponentBase
 from agent.dsl_migration import normalize_chunker_dsl
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from common.constants import LLMType
-from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
+from common.misc_utils import get_uuid, hash_str2int
 from common.token_utils import token_usage_sink, langfuse_run_attrs
 from rag.prompts.generator import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
@@ -229,7 +229,13 @@ class Graph:
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
         if exp.find("@") < 0:
             return self.globals[exp]
-        cpn_id, var_nm = exp.split("@")
+        # Split from the left with maxsplit=1 so the trailing var_nm can
+        # legitimately contain '@' characters (defensive: although the
+        # upstream regex in `get_value_with_variable` constrains `var_nm`
+        # to `[A-Za-z0-9_.-]+`, direct callers of this method may pass
+        # any string and should not raise `ValueError: too many values
+        # to unpack`). `cpn_id` is system-generated and never contains '@'.
+        cpn_id, var_nm = exp.split("@", 1)
         cpn = self.get_component(cpn_id)
         if not cpn:
             raise Exception(f"Can't find variable: '{cpn_id}@{var_nm}'")
@@ -276,7 +282,10 @@ class Graph:
         if exp.find("@") < 0:
             self.globals[exp] = value
             return
-        cpn_id, var_nm = exp.split("@")
+        # See `get_variable_value` above for rationale on `maxsplit=1`.
+        # Without it, a var_nm containing '@' would raise
+        # `ValueError: too many values to unpack` instead of being preserved.
+        cpn_id, var_nm = exp.split("@", 1)
         cpn = self.get_component(cpn_id)
         if not cpn:
             raise Exception(f"Can't find variable: '{cpn_id}@{var_nm}'")

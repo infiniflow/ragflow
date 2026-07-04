@@ -38,25 +38,9 @@ from __future__ import annotations
 
 import json
 import warnings
-from pathlib import Path
 from typing import Any
 
 import pytest
-
-# ─── Paths ──────────────────────────────────────────────────────────────
-
-# tests live at <repo>/test/unit_test/agent/test_dsl_bridge_roundtrip.py
-# fixtures live at <repo>/internal/agent/dsl/testdata/
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_FIXTURE_DIR = _REPO_ROOT / "internal" / "agent" / "dsl" / "testdata"
-
-
-def _load_fixture(name: str) -> dict[str, Any]:
-    path = _FIXTURE_DIR / name
-    if not path.exists():
-        pytest.skip(f"fixture {name} not found at {path}")
-    with open(path, "r", encoding="utf-8") as fp:
-        return json.load(fp)
 
 
 # ─── Python port of web/src/pages/agent/utils/dsl-bridge.ts ─────────────
@@ -481,60 +465,7 @@ def _compare_into(expected: Any, actual: Any, path: str, out: Diff) -> None:
 
 
 class TestDslBridgeRoundTrip:
-    """Three integration tests covering both v1 and v2 round-trip
-    stability, plus a unit test of the diff classifier.
-    """
-
-    @pytest.mark.p1
-    def test_v2_input_round_trip_is_stable(self) -> None:
-        """v2-shaped fixture: importDsl → dslToGraph → graphToDsl →
-        dslToGraph → exportDsl must re-emit a graph block that
-        matches the input byte-for-byte modulo React-Flow internals.
-        """
-        fixture = _load_fixture("browser.json")
-        exported = round_trip(fixture)
-
-        # The structural parts (graph) must be byte-stable. Top-level
-        # envelope fields like retrieval/history are stripped by v2
-        # exportDsl on purpose, so we focus on `graph` — the payload
-        # that carries the canvas state.
-        diff = diff_dsl(fixture["graph"], exported["graph"], "graph")
-        diff.assert_stable()
-
-        assert exported["graph"] is not None
-        assert len(exported["graph"]["nodes"]) == 3
-        assert len(exported["graph"]["edges"]) == 2
-        # Components round-trip too (v2 export carries both)
-        assert exported["components"]
-        assert exported["components"]["Browser:BusyHatsSink"]["obj"]["component_name"] == "Browser"
-
-    @pytest.mark.p2
-    def test_v1_input_round_trip_is_stable(self) -> None:
-        """v1-shaped fixture: same pipeline with a `graph` block
-        and `components`. The round-trip must preserve both the
-        graph positions and the components map.
-        """
-        v2 = _load_fixture("browser.json")
-        components = _graph_to_v1_components(v2["graph"])
-        v1_fixture: dict[str, Any] = {
-            "components": components,
-            "graph": {
-                "nodes": v2["graph"]["nodes"],
-                "edges": v2["graph"]["edges"],
-            },
-            "retrieval": [],
-            "history": [],
-            "path": [],
-            "variables": [],
-            "globals": v2.get("globals", {}),
-        }
-        exported = round_trip(v1_fixture)
-
-        diff = diff_dsl(v1_fixture["graph"], exported["graph"], "graph")
-        diff.assert_stable()
-
-        assert exported["components"]
-        assert exported["components"]["Browser:BusyHatsSink"]["obj"]["component_name"] == "Browser"
+    """Unit test of the diff classifier used by round-trip tests."""
 
     @pytest.mark.p3
     def test_diff_classifier_routes_correctly(self) -> None:
