@@ -52,6 +52,75 @@ func (d *DeepSeekModel) Name() string {
 	return "deepseek"
 }
 
+type deepSeekThinkingRequest struct {
+	thinkingType       string
+	reasoningEffort    string
+	hasReasoningEffort bool
+	expectReasoning    bool
+}
+
+func deepSeekThinkingRequestFromConfig(chatModelConfig *ChatConfig, allowCustomEffort bool) (*deepSeekThinkingRequest, error) {
+	if chatModelConfig == nil || chatModelConfig.Thinking == nil {
+		return nil, nil
+	}
+
+	if !*chatModelConfig.Thinking {
+		return &deepSeekThinkingRequest{thinkingType: "disabled"}, nil
+	}
+
+	effort := "high"
+	if chatModelConfig.Effort != nil {
+		effort = *chatModelConfig.Effort
+	}
+
+	switch effort {
+	case "none", "low", "medium":
+		return &deepSeekThinkingRequest{thinkingType: "disabled"}, nil
+	case "high", "default":
+		return &deepSeekThinkingRequest{
+			thinkingType:       "enabled",
+			reasoningEffort:    "high",
+			hasReasoningEffort: true,
+			expectReasoning:    true,
+		}, nil
+	case "max":
+		return &deepSeekThinkingRequest{
+			thinkingType:       "enabled",
+			reasoningEffort:    "max",
+			hasReasoningEffort: true,
+			expectReasoning:    true,
+		}, nil
+	default:
+		if !allowCustomEffort {
+			return nil, fmt.Errorf("invalid effort level")
+		}
+		return &deepSeekThinkingRequest{
+			thinkingType:       "enabled",
+			reasoningEffort:    effort,
+			hasReasoningEffort: true,
+			expectReasoning:    true,
+		}, nil
+	}
+}
+
+func applyDeepSeekThinkingConfig(reqBody map[string]interface{}, chatModelConfig *ChatConfig, allowCustomEffort bool) (bool, error) {
+	thinkingReq, err := deepSeekThinkingRequestFromConfig(chatModelConfig, allowCustomEffort)
+	if err != nil {
+		return false, err
+	}
+	if thinkingReq == nil {
+		return false, nil
+	}
+
+	if thinkingReq.hasReasoningEffort {
+		reqBody["reasoning_effort"] = thinkingReq.reasoningEffort
+	}
+	reqBody["thinking"] = map[string]interface{}{
+		"type": thinkingReq.thinkingType,
+	}
+	return thinkingReq.expectReasoning, nil
+}
+
 func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -104,46 +173,11 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+	}
 
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				var thinkingFlag string
-				effort := "high"
-				if chatModelConfig.Effort != nil {
-					effort = *chatModelConfig.Effort
-				}
-				switch effort {
-				case "none":
-					thinkingFlag = "disabled"
-					chatModelConfig.Thinking = nil
-				case "low":
-					thinkingFlag = "disabled"
-					chatModelConfig.Thinking = nil
-				case "medium":
-					thinkingFlag = "disabled"
-					chatModelConfig.Thinking = nil
-				case "high":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-				case "default":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-				case "max":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "max"
-				default:
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = effort
-				}
-				reqBody["thinking"] = map[string]interface{}{
-					"type": thinkingFlag,
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
-		}
+	expectReasoning, err := applyDeepSeekThinkingConfig(reqBody, chatModelConfig, true)
+	if err != nil {
+		return nil, err
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -204,7 +238,7 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 	}
 
 	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+	if expectReasoning {
 		reasonContent, ok = messageMap["reasoning_content"].(string)
 		if !ok {
 			return nil, fmt.Errorf("invalid content format")
@@ -281,46 +315,8 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
 
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				var thinkingFlag string
-				effort := "high"
-				if chatModelConfig.Effort != nil {
-					effort = *chatModelConfig.Effort
-				}
-				switch effort {
-				case "none":
-					thinkingFlag = "disabled"
-					break
-				case "low":
-					thinkingFlag = "disabled"
-					break
-				case "medium":
-					thinkingFlag = "disabled"
-					break
-				case "high":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-					break
-				case "default":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-					break
-				case "max":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "max"
-					break
-				default:
-					return fmt.Errorf("invalid effort level")
-				}
-				reqBody["thinking"] = map[string]interface{}{
-					"type": thinkingFlag,
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
+		if _, err := applyDeepSeekThinkingConfig(reqBody, chatModelConfig, false); err != nil {
+			return err
 		}
 	}
 
