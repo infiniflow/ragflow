@@ -1346,13 +1346,6 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				"content": content,
 			})
 		}
-		// Append text attachments to the last user message (no separator).
-		if attachmentsStr != "" && len(msg) > 0 {
-			if lastContent, ok := msg[len(msg)-1]["content"].(string); ok {
-				msg[len(msg)-1]["content"] = lastContent + attachmentsStr
-			}
-		}
-
 		// 4. Build the chat model wrapper.
 		driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(chat.TenantID, chat.LLMID)
 		if err != nil {
@@ -1363,6 +1356,14 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			return
 		}
 		chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+		msg = applyPromptTransforms(ctx, chat, msg, chatModel)
+
+		// Append text attachments to the last user message (no separator).
+		if attachmentsStr != "" && len(msg) > 0 {
+			if lastContent, ok := msg[len(msg)-1]["content"].(string); ok {
+				msg[len(msg)-1]["content"] = lastContent + attachmentsStr
+			}
+		}
 
 		// 5. Resolve TTS model. Best-effort: warn and proceed without TTS on lookup failure.
 		var ttsModel *modelModule.ChatModel

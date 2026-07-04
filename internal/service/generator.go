@@ -17,28 +17,26 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
-	"text/template"
 	"time"
 
-	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	modelModule "ragflow/internal/entity/models"
-
 	"go.uber.org/zap"
+
+	modelModule "ragflow/internal/entity/models"
 )
 
 // KeywordExtraction extracts keywords from content using LLM.
+// Corresponds to rag/prompts/generator.py:keyword_extraction().
 //
 // Uses ChatModel to call the LLM with a keyword extraction prompt.
 // Returns comma-separated top N important keywords/phrases from the content.
 func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, content string, topN int) (string, error) {
-	if chatModel == nil {
-		return "", fmt.Errorf("chat model is nil")
+	if !isUsableChatModel(chatModel) {
+		return "", nil
 	}
 
 	if content == "" {
@@ -96,46 +94,55 @@ func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, co
 	return result, nil
 }
 
-// CrossLanguages translates a question into multiple languages using LLM.
-// The model is fetched internally based on llmID:
-//   - If llmID is empty, fetches tenant's default chat model
-//   - If llmID is not empty, fetches the specified model (or image2text if type matches)
-func CrossLanguages(ctx context.Context, tenantID string, llmID string, query string, languages []string) (string, error) {
-	common.Debug("CrossLanguages invoked",
-		zap.String("tenantID", tenantID),
-		zap.String("llmID", llmID),
-		zap.Strings("languages", languages))
-
-	modelProviderSvc := NewModelProviderService()
-	var chatModel *modelModule.ChatModel
-	var err error
-
-	if llmID != "" {
-		modelTypes, err := modelProviderSvc.GetModelTypeByName(tenantID, llmID)
-		if err != nil {
-			return query, fmt.Errorf("failed to get model type: %w", err)
-		}
-		resolvedType := entity.ModelTypeChat
-		for _, mt := range modelTypes {
-			if mt == entity.ModelTypeImage2Text {
-				resolvedType = entity.ModelTypeImage2Text
-				break
-			}
-		}
-		driver, modelName, apiConfig, _, err := modelProviderSvc.GetModelConfigFromProviderInstance(tenantID, resolvedType, llmID)
-		if err != nil {
-			return query, fmt.Errorf("failed to get chat model: %w", err)
-		}
-		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
-	} else {
-		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(tenantID, entity.ModelTypeChat)
-		if err != nil {
-			return query, fmt.Errorf("failed to get default chat model: %w", err)
-		}
-		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
+// FullQuestion rewrites a multi-turn conversation into a standalone question.
+// Corresponds to rag/prompts/generator.py:full_question().
+func FullQuestion(ctx context.Context, chatModel *modelModule.ChatModel, messages []map[string]interface{}, language string) (string, error) {
+	fallback := latestUserMessageText(messages)
+	if !isUsableChatModel(chatModel) {
+		return fallback, nil
 	}
-	if chatModel == nil {
-		return query, fmt.Errorf("failed to get chat model: nil chat model")
+	if len(messages) == 0 || fallback == "" {
+		return fallback, nil
+	}
+
+	promptTemplate, err := LoadPrompt("full_question_prompt")
+	if err != nil {
+		return fallback, fmt.Errorf("failed to load full question prompt: %w", err)
+	}
+
+	now := time.Now()
+	conversation := conversationText(messages)
+	renderedPrompt := RenderPrompt(promptTemplate, map[string]interface{}{
+		"today":        now.Format("2006-01-02"),
+		"yesterday":    now.AddDate(0, 0, -1).Format("2006-01-02"),
+		"tomorrow":     now.AddDate(0, 0, 1).Format("2006-01-02"),
+		"conversation": conversation,
+		"language":     language,
+	})
+
+	response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, []modelModule.Message{
+		{Role: "system", Content: renderedPrompt},
+		{Role: "user", Content: "Output: "},
+	}, chatModel.APIConfig, nil)
+	if err != nil {
+		return fallback, fmt.Errorf("failed to generate full question: %w", err)
+	}
+	if response == nil || response.Answer == nil {
+		return fallback, fmt.Errorf("empty response from full question generation")
+	}
+
+	result := strings.TrimSpace(*response.Answer)
+	result = thinkBlockRE.ReplaceAllString(result, "")
+	result = strings.TrimSpace(result)
+	if result == "" || strings.Contains(result, "**ERROR**") {
+		return fallback, nil
+	}
+	return result, nil
+}
+
+func crossLanguagesWithChatModel(ctx context.Context, chatModel *modelModule.ChatModel, query string, languages []string) (string, error) {
+	if !isUsableChatModel(chatModel) {
+		return query, nil
 	}
 
 	if query == "" {
@@ -214,163 +221,73 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	return query, nil
 }
 
-// fullQuestionTmpl mirrors the Python Jinja2 template
-// rag/prompts/full_question_prompt.md. The rendered output is used as the
-// system message; the user message is just "Output: ".
-var fullQuestionTmpl = template.Must(template.New("full_question").Parse(`## Role
-A helpful assistant.
+func isUsableChatModel(chatModel *modelModule.ChatModel) bool {
+	return chatModel != nil &&
+		chatModel.ModelDriver != nil &&
+		chatModel.ModelName != nil &&
+		strings.TrimSpace(*chatModel.ModelName) != ""
+}
 
-## Task & Steps
-1. Generate a full user question that would follow the conversation.
-2. If the user's question involves relative dates, convert them into absolute dates based on today ({{.Today}}).
-   - "yesterday" = {{.Yesterday}}, "tomorrow" = {{.Tomorrow}}
-
-## Requirements & Restrictions
-- If the user's latest question is already complete, don't do anything — just return the original question.
-- DON'T generate anything except a refined question.
-{{- if .Language }}
-- Text generated MUST be in {{.Language}}.
-{{- else }}
-- Text generated MUST be in the same language as the original user's question.
-{{- end }}
-
----
-
-## Examples
-
-### Example 1
-**Conversation:**
-
-USER: What is the name of Donald Trump's father?
-ASSISTANT: Fred Trump.
-USER: And his mother?
-
-**Output:** What's the name of Donald Trump's mother?
-
----
-
-### Example 2
-**Conversation:**
-
-USER: What is the name of Donald Trump's father?
-ASSISTANT: Fred Trump.
-USER: And his mother?
-ASSISTANT: Mary Trump.
-USER: What's her full name?
-
-**Output:** What's the full name of Donald Trump's mother Mary Trump?
-
----
-
-### Example 3
-**Conversation:**
-
-USER: What's the weather today in London?
-ASSISTANT: Cloudy.
-USER: What's about tomorrow in Rochester?
-
-**Output:** What's the weather in Rochester on {{.Tomorrow}}?
-
----
-
-## Real Data
-
-**Conversation:**
-
-{{.Conversation}}
-`))
-
-var errorMarkerRE = regexp.MustCompile(`\*\*ERROR\*\*`)
-
-// FullQuestion rewrites the latest user question in light of prior
-// conversation context (pronouns, dates, follow-ups). Falls back to the
-// latest user message on LLM error.
-// When language is empty, the original language is preserved (matching Python).
-//
-// The prompt structure mirrors Python's full_question():
-//   - System: fullQuestionTmpl (instructions, examples, conversation)
-//   - User: "Output: "
-//
-// This matches rag/prompts/full_question_prompt.md rendered via Jinja2.
-func FullQuestion(
-	ctx context.Context,
-	chatModel *modelModule.ChatModel,
-	messages []map[string]interface{},
-	language string,
-) (string, error) {
-	if chatModel == nil || chatModel.ModelDriver == nil {
-		return "", fmt.Errorf("FullQuestion: nil chat model")
-	}
-	if len(messages) == 0 {
-		return "", fmt.Errorf("FullQuestion: empty messages")
-	}
-
-	var convLines []string
-	for _, m := range messages {
-		role, _ := m["role"].(string)
+func conversationText(messages []map[string]interface{}) string {
+	var parts []string
+	for _, msg := range messages {
+		role, _ := msg["role"].(string)
 		if role != "user" && role != "assistant" {
 			continue
 		}
-		content, _ := m["content"].(string)
-		convLines = append(convLines, fmt.Sprintf("%s: %s", strings.ToUpper(role), content))
+		content := messageContentText(msg["content"])
+		if content == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s: %s", strings.ToUpper(role), content))
 	}
-	conv := strings.Join(convLines, "\n")
-
-	today := time.Now().Format("2006-01-02")
-	tomorrow := time.Now().Add(24 * time.Hour).Format("2006-01-02")
-	yesterday := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
-
-	var buf bytes.Buffer
-	if err := fullQuestionTmpl.Execute(&buf, map[string]string{
-		"Today":        today,
-		"Yesterday":    yesterday,
-		"Tomorrow":     tomorrow,
-		"Conversation": conv,
-		"Language":     language,
-	}); err != nil {
-		return fallbackToLatestUser(messages), fmt.Errorf("FullQuestion: render template: %w", err)
-	}
-	system := buf.String()
-
-	modelName := ""
-	if chatModel.ModelName != nil {
-		modelName = *chatModel.ModelName
-	}
-	msgs := []modelModule.Message{
-		{Role: "system", Content: system},
-		{Role: "user", Content: "Output: "},
-	}
-	resp, err := chatModel.ModelDriver.ChatWithMessages(
-		modelName, msgs, chatModel.APIConfig, nil,
-	)
-	if err != nil {
-		return fallbackToLatestUser(messages), err
-	}
-	if resp == nil || resp.Answer == nil {
-		return fallbackToLatestUser(messages), fmt.Errorf("FullQuestion: empty response")
-	}
-	cleaned := strings.TrimSpace(*resp.Answer)
-	cleaned = thinkBlockRE.ReplaceAllString(cleaned, "")
-	cleaned = strings.TrimSpace(cleaned)
-	if errorMarkerRE.MatchString(cleaned) {
-		return fallbackToLatestUser(messages), nil
-	}
-	if cleaned == "" {
-		return fallbackToLatestUser(messages), nil
-	}
-	return cleaned, nil
+	return strings.Join(parts, "\n")
 }
 
-// fallbackToLatestUser returns the last user message, or "" if none.
-func fallbackToLatestUser(messages []map[string]interface{}) string {
+func latestUserMessageText(messages []map[string]interface{}) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		role, _ := messages[i]["role"].(string)
-		if role == "user" {
-			if c, ok := messages[i]["content"].(string); ok {
-				return c
-			}
-			return ""
+		if role != "user" {
+			continue
 		}
+		return messageContentText(messages[i]["content"])
 	}
 	return ""
+}
+
+func messageContentText(content interface{}) string {
+	switch typed := content.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case []interface{}:
+		return strings.TrimSpace(strings.Join(textBlocksFromMessageContent(typed), "\n"))
+	case []map[string]interface{}:
+		blocks := make([]interface{}, 0, len(typed))
+		for _, block := range typed {
+			blocks = append(blocks, block)
+		}
+		return strings.TrimSpace(strings.Join(textBlocksFromMessageContent(blocks), "\n"))
+	default:
+		if content == nil {
+			return ""
+		}
+		return strings.TrimSpace(fmt.Sprint(content))
+	}
+}
+
+func textBlocksFromMessageContent(blocks []interface{}) []string {
+	texts := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		switch typed := block.(type) {
+		case string:
+			if text := strings.TrimSpace(typed); text != "" {
+				texts = append(texts, text)
+			}
+		case map[string]interface{}:
+			if text, ok := typed["text"].(string); ok && strings.TrimSpace(text) != "" {
+				texts = append(texts, strings.TrimSpace(text))
+			}
+		}
+	}
+	return texts
 }
