@@ -10,6 +10,7 @@ import (
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/constants"
+	"ragflow/internal/harness/graph/types"
 )
 
 // ============================================================
@@ -393,7 +394,7 @@ func TestCheckpoint_100ConcurrentReaders(t *testing.T) {
 // TestTopology_MultipleIndependentGraphs compiles and invokes
 // 10 different graph topologies.
 func TestTopology_MultipleIndependentGraphs(t *testing.T) {
-	graphs := make([]*CompiledGraph, 10)
+	graphs := make([]types.CompiledGraph, 10)
 	for i := 0; i < 10; i++ {
 		name := fmt.Sprintf("g_%d", i)
 		b := NewStateGraph(map[string]any{})
@@ -414,7 +415,7 @@ func TestTopology_MultipleIndependentGraphs(t *testing.T) {
 	var wg sync.WaitGroup
 	for i, cg := range graphs {
 		wg.Add(1)
-		go func(idx int, compiled *CompiledGraph) {
+		go func(idx int, compiled types.CompiledGraph) {
 			defer wg.Done()
 			_, err := compiled.Invoke(context.Background(), map[string]any{})
 			if err != nil {
