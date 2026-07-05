@@ -563,8 +563,10 @@ class DoclingParser(RAGFlowPdfParser):
         except Exception as e:
             self.logger.warning(f"[Docling] render pages failed: {e}")
 
+        do_formula_enrichment = os.environ.get("DOCLING_FORMULA_ENRICHMENT", "0").strip().lower() in ("1", "true", "yes", "on")
+        self.logger.info(f"[Docling] Local conversion (formula_enrichment={do_formula_enrichment}): {src_path}")
         pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_formula_enrichment = bool(int(os.environ.get("DOCLING_FORMULA_ENRICHMENT", 0)))
+        pipeline_options.do_formula_enrichment = do_formula_enrichment
         conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
         conv_res = conv.convert(str(src_path))
         doc = conv_res.document
