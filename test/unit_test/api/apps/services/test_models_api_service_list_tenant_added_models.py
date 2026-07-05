@@ -285,15 +285,24 @@ def test_list_tenant_added_models_still_works_for_plain_model_names(monkeypatch)
 
 @pytest.mark.p2
 def test_get_model_info_two_part_embedded_at(monkeypatch):
-    """Two-part bare model ID with embedded '@' parses correctly.
+    """Two-part default_model is parsed as model@provider (suffix wins).
 
-    A model name like `text-embedding-nomic-embed-text-v1.5@q8_0` has
-    exactly one '@' so rsplit("@", 2) yields 2 parts. The second part
-    ``q8_0`` is treated as the provider_name and the model is looked up
-    against the standard provider/instance chain. The stub always creates
-    a matching provider/instance, so the function returns a valid result
-    with provider_name="q8_0" — confirming that the '@' in the model name
-    portion is preserved.
+    A default_model like `text-embedding-nomic-embed-text-v1.5@q8_0` has
+    exactly one '@'. `_get_model_info`'s 2-segment branch does
+    `default_model.rsplit('@', 2)` and assigns the right-anchored suffix
+    as `provider_name`:
+
+        model_name     = "text-embedding-nomic-embed-text-v1.5"
+        provider_name  = "q8_0"
+        instance_name  = "default"
+
+    So the embedded '@' is interpreted as the provider separator, not
+    preserved within `model_name`. The legacy `tenant_llm`-based bare-model
+    fallback that would have recognised `q8_0` as a quantization suffix
+    was removed per maintainer request; the 2-part branch now always
+    treats the suffix as a provider. The stub returns a matching
+    provider/instance for any provider name, so the function resolves
+    to a valid result.
     """
     module, _ = _load_module(
         monkeypatch,
