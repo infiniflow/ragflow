@@ -1139,13 +1139,24 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     ):
         index_nm = search.index_name(tenant_id)
 
-        res0 = docStoreConn.search(
-            select_fields=[], highlight_fields=[],
-            condition={"kb_id": kb_id, "available_int": 1},
-            match_expressions=[], order_by=OrderByExpr(),
-            offset=0, limit=1,
-            index_names=index_nm, knowledgebase_ids=[kb_id],
-        )
+        try:
+            res0 = docStoreConn.search(
+                select_fields=[], highlight_fields=[],
+                condition={"kb_id": kb_id, "available_int": 1},
+                match_expressions=[], order_by=OrderByExpr(),
+                offset=0, limit=1,
+                index_names=index_nm, knowledgebase_ids=[kb_id],
+            )
+        except Exception as e:
+            if "not_found_exception" in repr(e) or "index_not_found_exception" in repr(e):
+                logging.info(
+                    "sample_random_chunks_with_vectors: index %s not yet created for tenant %s; "
+                    "returning empty sample set",
+                    index_nm,
+                    tenant_id,
+                )
+                return []
+            raise
         total = docStoreConn.get_total(res0)
         if total <= 0:
             return []
