@@ -1,11 +1,12 @@
 //go:build cgo
 
-package parser
+package pdf
 
 import (
 	"context"
 	"errors"
 	"image"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"testing"
 )
 
@@ -27,7 +28,7 @@ func TestOCRRecognizeBatch_EmptyList(t *testing.T) {
 func TestOCRRecognizeBatch_SingleImage(t *testing.T) {
 	mock := &MockDocAnalyzer{
 		Healthy:  true,
-		OCRTexts: []OCRText{{Text: "hello", Confidence: 0.9}},
+		OCRTexts: []pdf.OCRText{{Text: "hello", Confidence: 0.9}},
 	}
 	dummy := image.NewRGBA(image.Rect(0, 0, 10, 10))
 	results, errs := mock.OCRRecognizeBatch(context.Background(), []image.Image{dummy})
@@ -45,7 +46,7 @@ func TestOCRRecognizeBatch_SingleImage(t *testing.T) {
 func TestOCRRecognizeBatch_MultipleImages(t *testing.T) {
 	mock := &MockDocAnalyzer{
 		Healthy: true,
-		OCRBatchTexts: [][]OCRText{
+		OCRBatchTexts: [][]pdf.OCRText{
 			{{Text: "img0", Confidence: 0.9}},
 			{{Text: "img1", Confidence: 0.8}},
 			{{Text: "img2", Confidence: 0.7}},
@@ -69,7 +70,7 @@ func TestOCRRecognizeBatch_MultipleImages(t *testing.T) {
 func TestOCRRecognizeBatch_NilImage(t *testing.T) {
 	mock := &MockDocAnalyzer{
 		Healthy:  true,
-		OCRTexts: []OCRText{{Text: "ok", Confidence: 0.9}},
+		OCRTexts: []pdf.OCRText{{Text: "ok", Confidence: 0.9}},
 	}
 	dummy := image.NewRGBA(image.Rect(0, 0, 10, 10))
 	results, errs := mock.OCRRecognizeBatch(context.Background(), []image.Image{dummy, nil, dummy})
@@ -93,7 +94,7 @@ func TestOCRRecognizeBatch_NilImage(t *testing.T) {
 func TestOCRRecognizeBatch_ErrorHandling(t *testing.T) {
 	mock := &MockDocAnalyzer{
 		Healthy:  true,
-		OCRTexts: []OCRText{{Text: "ok", Confidence: 0.9}},
+		OCRTexts: []pdf.OCRText{{Text: "ok", Confidence: 0.9}},
 		OCRBatchErr: func(i int) error {
 			if i == 1 {
 				return errors.New("simulated error")
@@ -130,7 +131,7 @@ func TestOCRRecognizeBatch_ErrorHandling(t *testing.T) {
 func TestOCRRecognizeBatch_EmptyText(t *testing.T) {
 	mock := &MockDocAnalyzer{
 		Healthy:  true,
-		OCRTexts: []OCRText{}, // empty — simulate no text recognized
+		OCRTexts: []pdf.OCRText{}, // empty — simulate no text recognized
 	}
 	dummy := image.NewRGBA(image.Rect(0, 0, 10, 10))
 	results, errs := mock.OCRRecognizeBatch(context.Background(), []image.Image{dummy})
@@ -149,7 +150,7 @@ func TestOCRRecognizeBatch_FallbackToOCRTexts(t *testing.T) {
 	// When OCRBatchTexts is nil, fall back to OCRTexts for every image.
 	mock := &MockDocAnalyzer{
 		Healthy:  true,
-		OCRTexts: []OCRText{{Text: "default", Confidence: 0.5}},
+		OCRTexts: []pdf.OCRText{{Text: "default", Confidence: 0.5}},
 	}
 	dummy := image.NewRGBA(image.Rect(0, 0, 10, 10))
 	results, errs := mock.OCRRecognizeBatch(context.Background(), []image.Image{dummy, dummy, dummy})
@@ -170,8 +171,8 @@ func TestOCRRecognizeBatch_PartialBatchTexts(t *testing.T) {
 	// OCRBatchTexts shorter than images — remaining fall back to OCRTexts.
 	mock := &MockDocAnalyzer{
 		Healthy:  true,
-		OCRTexts: []OCRText{{Text: "fallback", Confidence: 0.5}},
-		OCRBatchTexts: [][]OCRText{
+		OCRTexts: []pdf.OCRText{{Text: "fallback", Confidence: 0.5}},
+		OCRBatchTexts: [][]pdf.OCRText{
 			{{Text: "custom0", Confidence: 0.9}},
 		},
 	}

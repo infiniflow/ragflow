@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 ## Project Overview
 
 RAGFlow frontend is a React/TypeScript application built with UmiJS:
+
 - **Components**: shadcn/ui
 - **Styling**: Tailwind CSS
 - **State**: Zustand
@@ -24,28 +25,40 @@ npm run test       # Jest tests
 ## Development Conventions
 
 ### CSS and Layout Debugging
+
 When fixing CSS/layout issues (especially flex truncation, ellipsis, or element sizing), **always inspect the full parent hierarchy** for `flex-shrink`, `min-width`, and `overflow` constraints before applying fixes like `min-w-0`. Do not repeatedly apply the same fix without verifying the root cause.
+
 - Before editing, explain: (1) the full flex/container hierarchy from the target element up to the nearest non-flex ancestor, (2) what constraint is actually causing the bug, and (3) how the proposed fix addresses that root cause.
 
 ### Scope and Boundaries
+
 Respect explicit boundaries from the user. If the user says **"only fix the selected line"** or **"do not touch shared types/files"**, follow that instruction exactly. Do not investigate unrelated errors, modify shared schemas (e.g., `LlmSettingFieldSchema`), or refactor other files without confirmation. If a change outside the described scope seems necessary, ask for permission first.
 
 ### Internationalization (i18n)
+
 For translation tasks, add keys **only to the explicitly requested language files** (commonly `src/locales/zh.ts` and `src/locales/en.ts`). Do not auto-propagate changes to all language files unless the user explicitly asks.
+
 - **Style for `en.ts`**: Sentence case — first word capitalized, rest lowercase (e.g., `referenceAnswer: 'Reference answer'`). Proper nouns remain as-is.
 
 ### React Component Refactoring
+
 When refactoring or extracting components, **verify layout behavior after each structural change** (especially `flex-1`, conditional rendering, or flex direction changes). Check that existing buttons, alignment, and responsive behavior remain intact. After extraction, verify: (1) all original props and behavior are preserved, (2) layout in parent contexts is identical, and (3) no syntax or type errors were introduced.
 
 ### State Management and Data Fetching
 
 #### Query Key Factory (Mandatory)
+
 **Never write raw `queryKey` arrays inline.** Always use a query key factory object that returns `as const` tuples. Raw arrays duplicated across `useQuery` and `invalidateQueries` are brittle, unreadable, and cause stale-cache bugs when key structures drift.
 
 ```ts
 // ❌ Bad — raw array, hard to match with useQuery
 queryClient.invalidateQueries({
-  queryKey: [LLMApiAction.AddedProviders, params.provider_name, params.instance_name, 'models'],
+  queryKey: [
+    LLMApiAction.AddedProviders,
+    params.provider_name,
+    params.instance_name,
+    'models',
+  ],
 });
 
 // ✅ Good — factory reference, self-documenting
@@ -59,22 +72,28 @@ queryClient.invalidateQueries({
 - Use `as const` on each factory return value for type-safe readonly tuples.
 
 #### Cache Debugging
+
 For React Query / cache invalidation bugs, **carefully compare query keys across all consuming components and mutation hooks**. Mismatched keys (e.g., with/without `refreshCount`) are a common root cause of stale data or duplicate requests.
+
 - Systematically: (1) list every component/hook that calls `useQuery` for this data, (2) compare their query keys character-for-character, (3) check every mutation's `onSuccess` for cache invalidation, and (4) verify no parent re-renders are remounting the observer.
 
 ### Network Request Layering
+
 HTTP requests are organized in three layers. **Never import `@/utils/request`, `@/utils/next-request`, or `@/utils/api` directly inside a hook**:
+
 1. `src/hooks/use-xx-request.ts(x)` — React Query hooks; only call the service layer.
 2. `src/services/xx-service.ts` — Register endpoints via `registerNextServer`, all going through `@/utils/next-request`.
 3. `src/utils/next-request.ts` — The single axios instance; handles token, 401 redirects, and error notifications.
 
 Interface types are split between two folders:
+
 - Response/data shape → `src/interfaces/database/xx.ts`
 - Request params/body → `src/interfaces/request/xx.ts`
 
 Model-related endpoints (LLM provider / factory / my LLM, etc.) are consolidated in `src/services/llm-service.ts` rather than scattered across hooks. For GET endpoints, register with `method: 'get'` in the service, and on the call site pass `true` as the second argument to use the native axios config (e.g., `service.listProviders({ params: { available: true } }, true)`).
 
 ### Shared UI Component Lock
+
 The folder `src/components/ui/` is the project's **shared UI library** — it contains both official shadcn/ui primitives and project-authored common components built on top of shadcn. Both kinds are intended to be reused across the app and **must not be modified casually**.
 
 - **Do not modify, refactor, restyle, or "improve"** any file under `src/components/ui/` (including subfolders), even if it seems like the most direct fix.
@@ -83,6 +102,7 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
 - Adding a new shared component to `src/components/ui/`, or upgrading a shadcn primitive via the official `shadcn` CLI, is allowed only when the user explicitly requests it.
 
 ### React Patterns and Conventions
+
 - **Prefer `requestAnimationFrame` or `useLayoutEffect`** over `setTimeout(..., 0)` for focus or DOM measurement operations.
 - **Prefer `useTranslation` from `react-i18next`** over project-wrapped utilities like `useTranslate`.
 - Extract complex logic into hooks or utils; keep components lean.
@@ -90,6 +110,7 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
 - Avoid duplicating component structures in JSX; favor render props or reusable components.
 
 ### Utility Libraries and Reuse
+
 - **Time/date handling**: Use `dayjs` for all date/time formatting, parsing, and manipulation.
 - **Utility hooks**: Prefer `ahooks` for common reusable hooks (e.g., `useDebounce`, `useSetState`).
 - **General utilities**: Lodash is available for utility functions when needed.

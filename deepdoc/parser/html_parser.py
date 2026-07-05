@@ -23,18 +23,14 @@ import chardet
 from bs4 import BeautifulSoup, NavigableString, Tag, Comment
 import html
 
-def get_encoding(file):
-    with open(file,'rb') as f:
-        tmp = chardet.detect(f.read())
-        return tmp['encoding']
 
-BLOCK_TAGS = [
-    "h1", "h2", "h3", "h4", "h5", "h6",
-    "p", "div", "article", "section", "aside",
-    "ul", "ol", "li",
-    "table", "pre", "code", "blockquote",
-    "figure", "figcaption"
-]
+def get_encoding(file):
+    with open(file, "rb") as f:
+        tmp = chardet.detect(f.read())
+        return tmp["encoding"]
+
+
+BLOCK_TAGS = ["h1", "h2", "h3", "h4", "h5", "h6", "p", "div", "article", "section", "aside", "ul", "ol", "li", "table", "pre", "code", "blockquote", "figure", "figcaption"]
 TITLE_TAGS = {"h1": "#", "h2": "##", "h3": "###", "h4": "####", "h5": "#####", "h6": "######"}
 
 
@@ -44,7 +40,7 @@ class RAGFlowHtmlParser:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
         else:
-            with open(fnm, "r",encoding=get_encoding(fnm)) as f:
+            with open(fnm, "r", encoding=get_encoding(fnm)) as f:
                 txt = f.read()
         return self.parser_txt(txt, chunk_token_num)
 
@@ -64,13 +60,16 @@ class RAGFlowHtmlParser:
                 script_tag.decompose()
         # delete inline style
         for tag in soup.find_all(True):
-            if 'style' in tag.attrs:
-                del tag.attrs['style']
+            if "style" in tag.attrs:
+                del tag.attrs["style"]
         # delete HTML comment
         for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
             comment.extract()
 
-        cls.read_text_recursively(soup.body, temp_sections, chunk_token_num=chunk_token_num)
+        root = soup.body or soup
+        if soup.body is None:
+            logging.debug("html_parser: parsing HTML fragment without <body>; falling back to soup root")
+        cls.read_text_recursively(root, temp_sections, chunk_token_num=chunk_token_num)
         block_txt_list, table_list = cls.merge_block_text(temp_sections)
         sections = cls.chunk_block(block_txt_list, chunk_token_num=chunk_token_num)
         for table in table_list:
@@ -130,21 +129,18 @@ class RAGFlowHtmlParser:
                     return_info.append(info)
             return return_info
         elif isinstance(element, Tag):
-
             if str.lower(element.name) == "table":
                 table_info_list = []
                 table_id = str(uuid.uuid1())
                 table_list = [html.unescape(str(element))]
                 for t in table_list:
-                    table_info_list.append({"content": t, "tag_name": "table",
-                                            "metadata": {"table_id": table_id, "index": table_list.index(t)}})
+                    table_info_list.append({"content": t, "tag_name": "table", "metadata": {"table_id": table_id, "index": table_list.index(t)}})
                 return table_info_list
             else:
                 if str.lower(element.name) in BLOCK_TAGS:
                     block_id = str(uuid.uuid1())
                 for child in element.children:
-                    child_info = cls.read_text_recursively(child, parser_result, chunk_token_num, element.name,
-                                                           block_id)
+                    child_info = cls.read_text_recursively(child, parser_result, chunk_token_num, element.name, block_id)
                     parser_result.extend(child_info)
         return []
 
@@ -227,13 +223,12 @@ class RAGFlowHtmlParser:
                 # A single atom longer than the budget (e.g. a very long
                 # unbroken token): fall back to fixed character windows.
                 logging.debug(
-                    "html_parser: atom of %d chars exceeds chunk_token_num=%d; "
-                    "falling back to character windows",
+                    "html_parser: atom of %d chars exceeds chunk_token_num=%d; falling back to character windows",
                     len(atom),
                     chunk_token_num,
                 )
                 for i in range(0, len(atom), chunk_token_num):
-                    pieces.append(atom[i:i + chunk_token_num])
+                    pieces.append(atom[i : i + chunk_token_num])
                 continue
             current += atom
             current_tokens += atom_tokens

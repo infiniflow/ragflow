@@ -109,8 +109,7 @@ class ChunkService:
         ctx = self._task_context
         # Validate file size
         if ctx.size > settings.DOC_MAXIMUM_SIZE:
-            self._progress(prog=-1, msg="File size exceeds( <= %dMb )" %
-                          (int(settings.DOC_MAXIMUM_SIZE / 1024 / 1024)))
+            self._progress(prog=-1, msg="File size exceeds( <= %dMb )" % (int(settings.DOC_MAXIMUM_SIZE / 1024 / 1024)))
             self._task_context.recording_context.record("file_size_exceeded", True)
             return []
         ctx.recording_context.record("file_size_exceeded", False)
@@ -123,9 +122,7 @@ class ChunkService:
         chunk_config = {
             "parser_id": ctx.parser_id,
             "chunk_token_num": ctx.parser_config.get("chunk_token_num", 128),
-            "overlapped_percent": normalize_overlapped_percent(
-                ctx.parser_config.get("overlapped_percent", 0)
-            ),
+            "overlapped_percent": normalize_overlapped_percent(ctx.parser_config.get("overlapped_percent", 0)),
             "delimiter": ctx.parser_config.get("delimiter", "\n!?。；！？"),
             "from_page": ctx.from_page,
             "to_page": ctx.to_page,
@@ -160,9 +157,7 @@ class ChunkService:
         questions = [d for d in docs if d.get("question_kwd")]
         self._task_context.recording_context.record("questions_generated", questions)
 
-        if ctx.parser_config.get("enable_metadata", False) and (
-            ctx.parser_config.get("metadata") or ctx.parser_config.get("built_in_metadata")
-        ):
+        if ctx.parser_config.get("enable_metadata", False) and (ctx.parser_config.get("metadata") or ctx.parser_config.get("built_in_metadata")):
             await generate_metadata(docs, ctx)
         metadata_list = [d for d in docs if d.get("metadata_obj")]
         self._task_context.recording_context.record("metadata_list_generated", metadata_list)
@@ -183,10 +178,7 @@ class ChunkService:
         """Prepare docs and upload images to MinIO."""
         ctx = self._task_context
         docs = []
-        doc = {
-            "doc_id": ctx.doc_id,
-            "kb_id": str(ctx.kb_id)
-        }
+        doc = {"doc_id": ctx.doc_id, "kb_id": str(ctx.kb_id)}
         if ctx.pagerank:
             doc[PAGERANK_FLD] = int(ctx.pagerank)
 
@@ -197,8 +189,7 @@ class ChunkService:
             try:
                 d = copy.deepcopy(document)
                 d.update(chunk)
-                d["id"] = xxhash.xxh64(
-                    (chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
+                d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
                 d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
                 d["create_timestamp_flt"] = datetime.now().timestamp()
 
@@ -215,8 +206,7 @@ class ChunkService:
                 await image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=ctx.tenant_id), d["id"], ctx.kb_id)
                 docs.append(d)
             except Exception:
-                logging.exception(
-                    "Saving image of chunk {}/{}/{} got exception".format(ctx.location, ctx.name, d["id"]))
+                logging.exception("Saving image of chunk {}/{}/{} got exception".format(ctx.location, ctx.name, d["id"]))
                 raise
 
         tasks = []
@@ -303,11 +293,7 @@ class ChunkService:
             mom_ck["available_int"] = 0
 
             # Keep only essential fields
-            allowed_fields = [
-                "id", "content_with_weight", "doc_id", "docnm_kwd",
-                "kb_id", "available_int", "position_int",
-                "create_timestamp_flt", "page_num_int", "top_int"
-            ]
+            allowed_fields = ["id", "content_with_weight", "doc_id", "docnm_kwd", "kb_id", "available_int", "position_int", "create_timestamp_flt", "page_num_int", "top_int"]
             for fld in list(mom_ck.keys()):
                 if fld not in allowed_fields:
                     del mom_ck[fld]
@@ -326,11 +312,7 @@ class ChunkService:
     ) -> bool:
         """Insert mother chunks in batches."""
         for b in range(0, len(mothers), doc_bulk_size):
-            await self._intercept_doc_store_insert(
-                mothers[b:b + doc_bulk_size],
-                search.index_name(task_tenant_id),
-                task_dataset_id
-            )
+            await self._intercept_doc_store_insert(mothers[b : b + doc_bulk_size], search.index_name(task_tenant_id), task_dataset_id)
 
             if self._task_context.has_canceled_func(task_id):
                 self._task_context.progress_cb(-1, msg="Task has been canceled.")
@@ -346,7 +328,7 @@ class ChunkService:
 
     async def _intercept_doc_store_insert(self, chunks: list, index_name: str, task_dataset_id: str) -> Any:
         if self._task_context.write_interceptor:
-            if self._task_context.doc_id == GRAPH_RAPTOR_FAKE_DOC_ID: # raptor - non-determinisic
+            if self._task_context.doc_id == GRAPH_RAPTOR_FAKE_DOC_ID:  # raptor - non-determinisic
                 return self._task_context.write_interceptor.intercept("docStoreConn.insert", [])
             return self._task_context.write_interceptor.intercept("docStoreConn.insert")
         else:
@@ -362,40 +344,28 @@ class ChunkService:
     ) -> bool:
         """Insert main chunks in batches with cancellation handling."""
         for b in range(0, len(chunks), doc_bulk_size):
-            doc_store_result = await self._intercept_doc_store_insert(
-                chunks[b:b + doc_bulk_size],
-                search.index_name(task_tenant_id),
-                task_dataset_id
-            )
+            doc_store_result = await self._intercept_doc_store_insert(chunks[b : b + doc_bulk_size], search.index_name(task_tenant_id), task_dataset_id)
 
             if self._task_context.has_canceled_func(task_id):
                 # Roll back partial RAPTOR summary inserts
-                await self._rollback_raptor_chunks(
-                    task_id, task_tenant_id, task_dataset_id, chunks, b, doc_bulk_size
-                )
+                await self._rollback_raptor_chunks(task_id, task_tenant_id, task_dataset_id, chunks, b, doc_bulk_size)
                 self._task_context.progress_cb(-1, msg="Task has been canceled.")
                 return False
 
             if b % 128 == 0:
-                self._task_context.progress_cb(prog=0.8 + 0.1 * (b + 1) / len(chunks),msg="")
+                self._task_context.progress_cb(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
 
             if doc_store_result:
-                error_message = (
-                    f"Insert chunk error: {doc_store_result}, "
-                    "please check log file and Elasticsearch/Infinity status!"
-                )
+                error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
                 self._task_context.progress_cb(-1, msg=error_message)
                 raise Exception(error_message)
 
             # Update chunk IDs in task
-            chunk_ids = [chunk["id"] for chunk in chunks[:b + doc_bulk_size]]
+            chunk_ids = [chunk["id"] for chunk in chunks[: b + doc_bulk_size]]
             if not await self._update_task_chunk_ids(task_id, chunk_ids):
                 # Roll back on failure
                 await self._rollback_insertion(task_tenant_id, task_dataset_id, chunk_ids)
-                self._task_context.progress_cb(
-                    -1,
-                    msg=f"Chunk updates failed since task {task_id} is unknown."
-                )
+                self._task_context.progress_cb(-1, msg=f"Chunk updates failed since task {task_id} is unknown.")
                 return False
 
         return True
@@ -410,19 +380,15 @@ class ChunkService:
         doc_bulk_size: int,
     ):
         """Roll back partial RAPTOR summary inserts after cancellation."""
-        raptor_ids = [
-            c["id"] for c in chunks[:up_to_batch + doc_bulk_size]
-            if c.get("raptor_kwd") == "raptor"
-        ]
+        raptor_ids = [c["id"] for c in chunks[: up_to_batch + doc_bulk_size] if c.get("raptor_kwd") == "raptor"]
 
         if raptor_ids:
             try:
-                await self._intercept_doc_store_delete(
-                    {"id": raptor_ids}, search.index_name(task_tenant_id), task_dataset_id
-                )
+                await self._intercept_doc_store_delete({"id": raptor_ids}, search.index_name(task_tenant_id), task_dataset_id)
                 logging.info(
                     "insert_chunks: rolled back %d partial RAPTOR chunks after cancellation (task=%s)",
-                    len(raptor_ids), task_id,
+                    len(raptor_ids),
+                    task_id,
                 )
             except Exception:
                 logging.exception(
@@ -454,9 +420,7 @@ class ChunkService:
         chunk_ids: List[str],
     ):
         """Roll back an insertion by deleting chunks and images."""
-        await self._intercept_doc_store_delete(
-            {"id": chunk_ids}, search.index_name(task_tenant_id), task_dataset_id
-        )
+        await self._intercept_doc_store_delete({"id": chunk_ids}, search.index_name(task_tenant_id), task_dataset_id)
 
         # Delete associated images
         tasks = []

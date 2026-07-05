@@ -15,6 +15,7 @@
 #
 import asyncio
 import base64
+import contextvars
 import datetime
 import inspect
 import json
@@ -24,64 +25,66 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import partial
-from typing import Any, Union, Tuple
+from typing import Any, Tuple, Union
 
 from agent.component import component_class
 from agent.component.base import ComponentBase
 from agent.dsl_migration import normalize_chunker_dsl
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from common.constants import LLMType
-from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
+from common.misc_utils import get_uuid, hash_str2int
+from common.token_utils import token_usage_sink, langfuse_run_attrs
 from rag.prompts.generator import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.tts_cache import synthesize_with_cache
 
 _logger = logging.getLogger(__name__)
 
+
 class Graph:
     """
-        dsl = {
-            "components": {
-                "begin": {
-                    "obj":{
-                        "component_name": "Begin",
-                        "params": {},
-                    },
-                    "downstream": ["answer_0"],
-                    "upstream": [],
+    dsl = {
+        "components": {
+            "begin": {
+                "obj":{
+                    "component_name": "Begin",
+                    "params": {},
                 },
-                "retrieval_0": {
-                    "obj": {
-                        "component_name": "Retrieval",
-                        "params": {}
-                    },
-                    "downstream": ["generate_0"],
-                    "upstream": ["answer_0"],
-                },
-                "generate_0": {
-                    "obj": {
-                        "component_name": "Generate",
-                        "params": {}
-                    },
-                    "downstream": ["answer_0"],
-                    "upstream": ["retrieval_0"],
-                }
+                "downstream": ["answer_0"],
+                "upstream": [],
             },
-            "history": [],
-            "path": ["begin"],
-            "retrieval": {"chunks": [], "doc_aggs": []},
-            "globals": {
-                "sys.query": "",
-                "sys.user_id": tenant_id,
-                "sys.conversation_turns": 0,
-                "sys.files": []
+            "retrieval_0": {
+                "obj": {
+                    "component_name": "Retrieval",
+                    "params": {}
+                },
+                "downstream": ["generate_0"],
+                "upstream": ["answer_0"],
+            },
+            "generate_0": {
+                "obj": {
+                    "component_name": "Generate",
+                    "params": {}
+                },
+                "downstream": ["answer_0"],
+                "upstream": ["retrieval_0"],
             }
+        },
+        "history": [],
+        "path": ["begin"],
+        "retrieval": {"chunks": [], "doc_aggs": []},
+        "globals": {
+            "sys.query": "",
+            "sys.user_id": tenant_id,
+            "sys.conversation_turns": 0,
+            "sys.files": []
         }
-        """
+    }
+    """
 
     def __init__(self, dsl: str, tenant_id=None, task_id=None, custom_header=None):
         self.path = []
@@ -115,13 +118,15 @@ class Graph:
     def __str__(self):
         self.dsl["path"] = self.path
         self.dsl["task_id"] = self.task_id
-        dsl = {
-            "components": {}
-        }
+        dsl = {"components": {}}
         for k in self.dsl.keys():
             if k in ["components"]:
                 continue
-            dsl[k] = deepcopy(self.dsl[k])
+            try:
+                dsl[k] = deepcopy(self.dsl[k])
+            except Exception as e:
+                logging.warning("Graph.__str__: deepcopy failed for dsl key '%s' (type=%s): %s. Using shallow reference.", k, type(self.dsl[k]).__name__, e)
+                dsl[k] = self.dsl[k]
 
         for k, cpn in self.components.items():
             if k not in dsl["components"]:
@@ -130,8 +135,19 @@ class Graph:
                 if c == "obj":
                     dsl["components"][k][c] = json.loads(str(cpn["obj"]))
                     continue
-                dsl["components"][k][c] = deepcopy(cpn[c])
-        return json.dumps(dsl, ensure_ascii=False)
+                try:
+                    dsl["components"][k][c] = deepcopy(cpn[c])
+                except Exception as e:
+                    logging.warning("Graph.__str__: deepcopy failed for component '%s' key '%s' (type=%s): %s. Using shallow reference.", k, c, type(cpn[c]).__name__, e)
+                    dsl["components"][k][c] = cpn[c]
+
+        def _serialize_default(obj):
+            if callable(obj):
+                return None
+            logging.warning("Graph.__str__: JSON fallback via str() for type=%s", type(obj).__name__)
+            return str(obj)
+
+        return json.dumps(dsl, ensure_ascii=False, default=_serialize_default)
 
     def reset(self):
         self.path = []
@@ -142,6 +158,21 @@ class Graph:
             REDIS_CONN.delete(f"{self.task_id}-cancel")
         except Exception as e:
             logging.exception(e)
+
+    def close(self):
+        from common.mcp_tool_call_conn import MCPToolCallSession
+
+        seen = set()
+        for cpn in self.components.values():
+            obj = cpn.get("obj")
+            if obj and hasattr(obj, "tools"):
+                for tool in obj.tools.values():
+                    if isinstance(tool, MCPToolCallSession) and id(tool) not in seen:
+                        seen.add(id(tool))
+                        try:
+                            tool.close_sync(timeout=3)
+                        except Exception:
+                            pass
 
     def get_component_name(self, cid):
         for n in self.dsl.get("graph", {}).get("nodes", []):
@@ -167,13 +198,13 @@ class Graph:
     def get_tenant_id(self):
         return self._tenant_id
 
-    def get_value_with_variable(self,value: str) -> Any:
+    def get_value_with_variable(self, value: str) -> Any:
         pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*")
         out_parts = []
         last = 0
 
         for m in pat.finditer(value):
-            out_parts.append(value[last:m.start()])
+            out_parts.append(value[last : m.start()])
             key = m.group(1)
             v = self.get_variable_value(key)
             if v is None:
@@ -192,13 +223,19 @@ class Graph:
             last = m.end()
 
         out_parts.append(value[last:])
-        return("".join(out_parts))
+        return "".join(out_parts)
 
     def get_variable_value(self, exp: str) -> Any:
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
         if exp.find("@") < 0:
             return self.globals[exp]
-        cpn_id, var_nm = exp.split("@")
+        # Split from the left with maxsplit=1 so the trailing var_nm can
+        # legitimately contain '@' characters (defensive: although the
+        # upstream regex in `get_value_with_variable` constrains `var_nm`
+        # to `[A-Za-z0-9_.-]+`, direct callers of this method may pass
+        # any string and should not raise `ValueError: too many values
+        # to unpack`). `cpn_id` is system-generated and never contains '@'.
+        cpn_id, var_nm = exp.split("@", 1)
         cpn = self.get_component(cpn_id)
         if not cpn:
             raise Exception(f"Can't find variable: '{cpn_id}@{var_nm}'")
@@ -209,13 +246,13 @@ class Graph:
 
         if not rest:
             return root_val
-        return self.get_variable_param_value(root_val,rest)
+        return self.get_variable_param_value(root_val, rest)
 
     def get_variable_param_value(self, obj: Any, path: str) -> Any:
         cur = obj
         if not path:
             return cur
-        for key in path.split('.'):
+        for key in path.split("."):
             if cur is None:
                 return None
 
@@ -240,12 +277,15 @@ class Graph:
             cur = getattr(cur, key, None)
         return cur
 
-    def set_variable_value(self, exp: str,value):
+    def set_variable_value(self, exp: str, value):
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
         if exp.find("@") < 0:
             self.globals[exp] = value
             return
-        cpn_id, var_nm = exp.split("@")
+        # See `get_variable_value` above for rationale on `maxsplit=1`.
+        # Without it, a var_nm containing '@' would raise
+        # `ValueError: too many values to unpack` instead of being preserved.
+        cpn_id, var_nm = exp.split("@", 1)
         cpn = self.get_component(cpn_id)
         if not cpn:
             raise Exception(f"Can't find variable: '{cpn_id}@{var_nm}'")
@@ -258,11 +298,11 @@ class Graph:
         root_val = cpn["obj"].output(root_key)
         if not root_val:
             root_val = {}
-        cpn["obj"].set_output(root_key, self.set_variable_param_value(root_val,rest,value))
+        cpn["obj"].set_output(root_key, self.set_variable_param_value(root_val, rest, value))
 
     def set_variable_param_value(self, obj: Any, path: str, value) -> Any:
         cur = obj
-        keys = path.split('.')
+        keys = path.split(".")
         if not path:
             return value
         for key in keys[:-1]:
@@ -285,7 +325,6 @@ class Graph:
 
 
 class Canvas(Graph):
-
     def __init__(self, dsl: str, tenant_id=None, task_id=None, canvas_id=None, custom_header=None):
         self.globals = {
             "sys.query": "",
@@ -293,9 +332,14 @@ class Canvas(Graph):
             "sys.conversation_turns": 0,
             "sys.files": [],
             "sys.history": [],
-            "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         }
         self.variables = {}
+        # Aggregated provider token usage (prompt/completion/total) across every LLM
+        # call in a single run — query rewriting, cross-language translation, tool
+        # reasoning and the final answer. Populated via the token_usage_sink context
+        # variable that each LLMBundle chat call writes to. Reset at run() start.
+        self._run_token_usage: dict = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
         super().__init__(dsl, tenant_id, task_id, custom_header=custom_header)
         self._id = canvas_id
 
@@ -310,13 +354,13 @@ class Canvas(Graph):
                 self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         else:
             self.globals = {
-            "sys.query": "",
-            "sys.user_id": "",
-            "sys.conversation_turns": 0,
-            "sys.files": [],
-            "sys.history": [],
-            "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        }
+                "sys.query": "",
+                "sys.user_id": "",
+                "sys.conversation_turns": 0,
+                "sys.files": [],
+                "sys.history": [],
+                "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            }
         if "variables" in self.dsl:
             self.variables = self.dsl["variables"]
         else:
@@ -380,6 +424,38 @@ class Canvas(Graph):
                     self.globals[k] = ""
 
     async def run(self, **kwargs):
+        # Install a fresh per-run token usage sink and Langfuse correlation context,
+        # and guarantee both are torn down when the run ends (even on early return or
+        # exception) so later LLM calls in the same task never inherit a previous
+        # run's sink or session/user attributes.
+        self._run_token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
+        _lf_attrs = {}
+        _user_id = kwargs.get("user_id")
+        if _user_id:
+            _lf_attrs["user_id"] = str(_user_id)[:200]
+        _session_id = kwargs.get("session_id") or self._id
+        if _session_id:
+            _lf_attrs["session_id"] = str(_session_id)[:200]
+        sink_token = token_usage_sink.set(self._run_token_usage)
+        attrs_token = langfuse_run_attrs.set(_lf_attrs)
+        try:
+            async for ev in self._run_impl(**kwargs):
+                yield ev
+        finally:
+            # reset() can raise if the generator is closed from a different context
+            # (e.g. client disconnect); fall back to clearing the values in that case.
+            try:
+                token_usage_sink.reset(sink_token)
+            except ValueError:
+                logging.debug("Failed to reset token usage ContextVar", exc_info=True)
+                token_usage_sink.set(None)
+            try:
+                langfuse_run_attrs.reset(attrs_token)
+            except ValueError:
+                logging.debug("Failed to reset Langfuse run attributes ContextVar", exc_info=True)
+                langfuse_run_attrs.set(None)
+
+    async def _run_impl(self, **kwargs):
         self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         st = time.perf_counter()
         self._loop = asyncio.get_running_loop()
@@ -393,7 +469,7 @@ class Canvas(Graph):
 
         if kwargs.get("webhook_payload"):
             for k, cpn in self.components.items():
-                if self.components[k]["obj"].component_name.lower() == "begin"  and self.components[k]["obj"]._param.mode == "Webhook":
+                if self.components[k]["obj"].component_name.lower() == "begin" and self.components[k]["obj"]._param.mode == "Webhook":
                     payload = kwargs.get("webhook_payload", {})
                     if "input" in payload:
                         self.components[k]["obj"].set_input_value("request", payload["input"])
@@ -414,7 +490,7 @@ class Canvas(Graph):
                     self.globals[f"sys.{k}"] = await self.get_files_async(kwargs[k], layout_recognize)
                 else:
                     self.globals[f"sys.{k}"] = kwargs[k]
-        if not self.globals["sys.conversation_turns"] :
+        if not self.globals["sys.conversation_turns"]:
             self.globals["sys.conversation_turns"] = 0
         self.globals["sys.conversation_turns"] += 1
         is_resume = bool(self.path) and self.path[0].lower().find("userfillup") >= 0
@@ -423,11 +499,11 @@ class Canvas(Graph):
             nonlocal created_at
             return {
                 "event": event,
-                #"conversation_id": "f3cc152b-24b0-4258-a1a1-7d5e9fc8a115",
+                # "conversation_id": "f3cc152b-24b0-4258-a1a1-7d5e9fc8a115",
                 "message_id": self.message_id,
                 "created_at": created_at,
                 "task_id": self.task_id,
-                "data": dt
+                "data": dt,
             }
 
         if not is_resume:
@@ -463,7 +539,11 @@ class Canvas(Graph):
                     if use_async:
                         await cpn_obj.invoke_async(**(call_kwargs or {}))
                         return
-                    await loop.run_in_executor(self._thread_pool, partial(sync_fn, **(call_kwargs or {})))
+                    # run_in_executor does not propagate context variables; copy the
+                    # current context so the token usage sink / Langfuse attributes set
+                    # by run() remain visible to LLMBundle calls inside sync components.
+                    ctx = contextvars.copy_context()
+                    await loop.run_in_executor(self._thread_pool, lambda: ctx.run(partial(sync_fn, **(call_kwargs or {}))))
 
             i = f
             while i < t:
@@ -512,16 +592,19 @@ class Canvas(Graph):
                 json.dumps(outputs, ensure_ascii=False, default=str)[:500],
                 cpn_obj.error(),
             )
-            return decorate("node_finished",{
-                           "inputs": cpn_obj.get_input_values(),
-                           "outputs": outputs,
-                           "component_id": cpn_obj._id,
-                           "component_name": self.get_component_name(cpn_obj._id),
-                           "component_type": self.get_component_type(cpn_obj._id),
-                           "error": cpn_obj.error(),
-                           "elapsed_time": time.perf_counter() - cpn_obj.output("_created_time"),
-                           "created_at": cpn_obj.output("_created_time"),
-                       })
+            return decorate(
+                "node_finished",
+                {
+                    "inputs": cpn_obj.get_input_values(),
+                    "outputs": outputs,
+                    "component_id": cpn_obj._id,
+                    "component_name": self.get_component_name(cpn_obj._id),
+                    "component_type": self.get_component_type(cpn_obj._id),
+                    "error": cpn_obj.error(),
+                    "elapsed_time": time.perf_counter() - cpn_obj.output("_created_time"),
+                    "created_at": cpn_obj.output("_created_time"),
+                },
+            )
 
         self.error = ""
         idx = 0 if is_resume else len(self.path) - 1
@@ -530,13 +613,17 @@ class Canvas(Graph):
         while idx < len(self.path):
             to = len(self.path)
             for i in range(idx, to):
-                yield decorate("node_started", {
-                    "inputs": None, "created_at": int(time.time()),
-                    "component_id": self.path[i],
-                    "component_name": self.get_component_name(self.path[i]),
-                    "component_type": self.get_component_type(self.path[i]),
-                    "thoughts": self.get_component_thoughts(self.path[i])
-                })
+                yield decorate(
+                    "node_started",
+                    {
+                        "inputs": None,
+                        "created_at": int(time.time()),
+                        "component_id": self.path[i],
+                        "component_name": self.get_component_name(self.path[i]),
+                        "component_type": self.get_component_type(self.path[i]),
+                        "thoughts": self.get_component_thoughts(self.path[i]),
+                    },
+                )
             await _run_batch(idx, to)
             to = len(self.path)
             # post-processing of components invocation
@@ -551,6 +638,7 @@ class Canvas(Graph):
                         _m = ""
                         buff_m = ""
                         stream = cpn_obj.output("content")()
+
                         async def _process_stream(m):
                             nonlocal buff_m, _m, tts_mdl
                             if not m:
@@ -565,13 +653,7 @@ class Canvas(Graph):
                             _m += m
 
                             if len(buff_m) > 16:
-                                ev = decorate(
-                                    "message",
-                                    {
-                                        "content": m,
-                                        "audio_binary": self.tts(tts_mdl, buff_m)
-                                    }
-                                )
+                                ev = decorate("message", {"content": m, "audio_binary": self.tts(tts_mdl, buff_m)})
                                 buff_m = ""
                                 return ev
 
@@ -579,12 +661,12 @@ class Canvas(Graph):
 
                         if inspect.isasyncgen(stream):
                             async for m in stream:
-                                ev= await _process_stream(m)
+                                ev = await _process_stream(m)
                                 if ev:
                                     yield ev
                         else:
                             for m in stream:
-                                ev= await _process_stream(m)
+                                ev = await _process_stream(m)
                                 if ev:
                                     yield ev
                         if buff_m:
@@ -616,7 +698,7 @@ class Canvas(Graph):
                     else:
                         self.error = cpn_obj.error()
 
-                if cpn_obj.component_name.lower() not in ("iteration","loop"):
+                if cpn_obj.component_name.lower() not in ("iteration", "loop"):
                     if isinstance(cpn_obj.output("content"), partial):
                         if self.error:
                             cpn_obj.set_output("content", None)
@@ -641,7 +723,7 @@ class Canvas(Graph):
                     for cpn_id in cpn_ids:
                         _append_path(cpn_id)
 
-                if cpn_obj.component_name.lower() in ("iterationitem","loopitem") and cpn_obj.end():
+                if cpn_obj.component_name.lower() in ("iterationitem", "loopitem") and cpn_obj.end():
                     iter = cpn_obj.get_parent()
                     yield _node_finished(iter)
                     _extend_path(self.get_component(cpn["parent_id"])["downstream"])
@@ -670,10 +752,7 @@ class Canvas(Graph):
                     o = self.get_component_obj(c)
                     if o.component_name.lower() == "userfillup":
                         o.invoke()
-                        another_inputs.update({
-                            k: v for k, v in o.get_input_elements().items()
-                            if not self._is_input_field_satisfied(v)
-                        })
+                        another_inputs.update({k: v for k, v in o.get_input_elements().items() if not self._is_input_field_satisfied(v)})
                         if o.get_param("enable_tips"):
                             tips = o.output("tips")
                 if not another_inputs:
@@ -683,23 +762,30 @@ class Canvas(Graph):
                 return
         self.path = self.path[:idx]
         if not self.error:
-            yield decorate("workflow_finished",
-                       {
-                           "inputs": kwargs.get("inputs"),
-                           "outputs": self.get_component_obj(self.path[-1]).output(),
-                           "elapsed_time": time.perf_counter() - st,
-                           "created_at": st,
-                       })
+            yield decorate(
+                "workflow_finished",
+                {
+                    "inputs": kwargs.get("inputs"),
+                    "outputs": self.get_component_obj(self.path[-1]).output(),
+                    "elapsed_time": time.perf_counter() - st,
+                    "created_at": st,
+                    # Run-level total of all LLM calls — emitted once here.
+                    "usage": self._run_usage_payload(),
+                },
+            )
             self.history.append(("assistant", self.get_component_obj(self.path[-1]).output()))
             self.globals["sys.history"].append(f"{self.history[-1][0]}: {self.history[-1][1]}")
         elif "Task has been canceled" in self.error:
-            yield decorate("workflow_finished",
-                       {
-                           "inputs": kwargs.get("inputs"),
-                           "outputs": "Task has been canceled",
-                           "elapsed_time": time.perf_counter() - st,
-                           "created_at": st,
-                       })
+            yield decorate(
+                "workflow_finished",
+                {
+                    "inputs": kwargs.get("inputs"),
+                    "outputs": "Task has been canceled",
+                    "elapsed_time": time.perf_counter() - st,
+                    "created_at": st,
+                    "usage": self._run_usage_payload(),
+                },
+            )
 
     def is_reff(self, exp: str) -> bool:
         exp = exp.strip("{").strip("}")
@@ -712,8 +798,7 @@ class Canvas(Graph):
             return False
         return True
 
-
-    def tts(self,tts_mdl, text):
+    def tts(self, tts_mdl, text):
         def clean_tts_text(text: str) -> str:
             if not text:
                 return ""
@@ -723,15 +808,8 @@ class Canvas(Graph):
             text = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
 
             emoji_pattern = re.compile(
-                "[\U0001F600-\U0001F64F"
-                "\U0001F300-\U0001F5FF"
-                "\U0001F680-\U0001F6FF"
-                "\U0001F1E0-\U0001F1FF"
-                "\U00002700-\U000027BF"
-                "\U0001F900-\U0001F9FF"
-                "\U0001FA70-\U0001FAFF"
-                "\U0001FAD0-\U0001FAFF]+",
-                flags=re.UNICODE
+                "[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff\U0001fad0-\U0001faff]+",
+                flags=re.UNICODE,
             )
             text = emoji_pattern.sub("", text)
 
@@ -742,6 +820,7 @@ class Canvas(Graph):
                 text = text[:MAX_LEN]
 
             return text
+
         if not tts_mdl or not text:
             return None
         text = clean_tts_text(text)
@@ -753,7 +832,7 @@ class Canvas(Graph):
         convs = []
         if window_size <= 0:
             return convs
-        for role, obj in self.history[window_size * -2:]:
+        for role, obj in self.history[window_size * -2 :]:
             if isinstance(obj, dict):
                 convs.append({"role": role, "content": obj.get("content", "")})
             else:
@@ -802,17 +881,19 @@ class Canvas(Graph):
 
     async def get_files_async(self, files: Union[None, list[dict]], layout_recognize: str = None) -> list[str]:
         if not files:
-            return  []
+            return []
+
         def image_to_base64(file):
-            return "data:{};base64,{}".format(file["mime_type"],
-                                        base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
+            return "data:{};base64,{}".format(file["mime_type"], base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
+
         def parse_file(file):
             blob = FileService.get_blob(file["created_by"], file["id"])
             return FileService.parse(file["name"], blob, True, file["created_by"], layout_recognize)
+
         loop = asyncio.get_running_loop()
         tasks = []
         for file in files:
-            if file["mime_type"].find("image") >=0:
+            if file["mime_type"].find("image") >= 0:
                 tasks.append(loop.run_in_executor(self._thread_pool, image_to_base64, file))
                 continue
             tasks.append(loop.run_in_executor(self._thread_pool, parse_file, file))
@@ -831,7 +912,7 @@ class Canvas(Graph):
     def tool_use_callback(self, agent_id: str, func_name: str, params: dict, result: Any, elapsed_time=None):
         agent_ids = agent_id.split("-->")
         agent_name = self.get_component_name(agent_ids[0])
-        path = agent_name if len(agent_ids) < 2 else agent_name+"-->"+"-->".join(agent_ids[1:])
+        path = agent_name if len(agent_ids) < 2 else agent_name + "-->" + "-->".join(agent_ids[1:])
         try:
             bin = REDIS_CONN.get(f"{self.task_id}-{self.message_id}-logs")
             if bin:
@@ -839,16 +920,10 @@ class Canvas(Graph):
                 if obj[-1]["component_id"] == agent_ids[0]:
                     obj[-1]["trace"].append({"path": path, "tool_name": func_name, "arguments": params, "result": result, "elapsed_time": elapsed_time})
                 else:
-                    obj.append({
-                    "component_id": agent_ids[0],
-                    "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result, "elapsed_time": elapsed_time}]
-                })
+                    obj.append({"component_id": agent_ids[0], "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result, "elapsed_time": elapsed_time}]})
             else:
-                obj = [{
-                    "component_id": agent_ids[0],
-                    "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result, "elapsed_time": elapsed_time}]
-                }]
-            REDIS_CONN.set_obj(f"{self.task_id}-{self.message_id}-logs", obj, 60*10)
+                obj = [{"component_id": agent_ids[0], "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result, "elapsed_time": elapsed_time}]}]
+            REDIS_CONN.set_obj(f"{self.task_id}-{self.message_id}-logs", obj, 60 * 10)
         except Exception as e:
             logging.exception(e)
 
@@ -886,9 +961,22 @@ class Canvas(Graph):
             message_end["attachment"] = cpn_obj.output("attachment")
         if self._has_reference():
             message_end["reference"] = self.get_reference()
+        # NOTE: aggregated run token usage is intentionally NOT attached here.
+        # _build_message_end runs once per Message component, so a multi-Message graph
+        # would emit cumulative usage repeatedly and double count. The run total is
+        # emitted exactly once on the terminal workflow_finished event instead.
         return message_end
 
-    def add_memory(self, user:str, assist:str, summ: str):
+    def _run_usage_payload(self) -> dict:
+        usage = getattr(self, "_run_token_usage", None) or {}
+        return {
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+            "calls": usage.get("calls", 0),
+        }
+
+    def add_memory(self, user: str, assist: str, summ: str):
         self.memory.append((user, assist, summ))
 
     def get_memory(self) -> list[Tuple]:

@@ -266,6 +266,7 @@ func TestEnterprise_NestedSubGraph(t *testing.T) {
 
 // TestEnterprise_ConditionalEdge_MultiWay verifies a 3-way conditional edge.
 func TestEnterprise_ConditionalEdge_MultiWay(t *testing.T) {
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	b := NewStateGraph(map[string]any{})
 
 	b.AddNode("router", func(ctx context.Context, state any) (any, error) {
@@ -396,9 +397,7 @@ func TestEnterprise_ConcurrentStream(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for i := 0; i < numStreams; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			outputCh, errCh := cg.Stream(ctx, map[string]any{"value": "concurrent"}, types.StreamModeValues)
@@ -407,7 +406,7 @@ func TestEnterprise_ConcurrentStream(t *testing.T) {
 			if err := <-errCh; err != nil {
 				t.Errorf("Stream error: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -540,6 +539,7 @@ func TestEnterprise_MapReduceChain(t *testing.T) {
 // TestEnterprise_DAGWithConditionalEdge verifies DAG AllPredecessor mode
 // combined with conditional routing.
 func TestEnterprise_DAGWithConditionalEdge(t *testing.T) {
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	b := NewStateGraph(map[string]any{})
 	b.AddNode("prep", func(ctx context.Context, state any) (any, error) {
 		m := state.(map[string]any)

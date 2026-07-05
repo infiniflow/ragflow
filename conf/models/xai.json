@@ -1,5 +1,6 @@
 {
   "name": "xAI",
+  "rank": 992,
   "url": {
     "default": "https://api.x.ai/v1"
   },

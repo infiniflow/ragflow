@@ -30,8 +30,7 @@ from rag.utils.redis_conn import REDIS_CONN
 @manager.route("/tasks/<task_id>/cancel", methods=["POST"])  # noqa: F821
 @login_required
 async def cancel_task(task_id):
-    """Cancel a running task.
-    """
+    """Cancel a running task."""
     return await _cancel_task(task_id)
 
 
@@ -77,11 +76,7 @@ async def _cancel_task(task_id):
         TaskService.model.update(
             progress_msg=TaskService.model.progress_msg + cancel_msg,
             progress=-1,
-        ).where(
-            (TaskService.model.id == task_id)
-            & (TaskService.model.progress >= 0)
-            & (TaskService.model.progress < 1)
-        ).execute()
+        ).where((TaskService.model.id == task_id) & (TaskService.model.progress >= 0) & (TaskService.model.progress < 1)).execute()
     except Exception as e:
         logging.warning("Failed to update task %s progress after cancellation: %s", task_id, str(e))
 
@@ -89,6 +84,7 @@ async def _cancel_task(task_id):
     # cancelled so that the UI reflects the state correctly.
     try:
         from api.db.services.document_service import DocumentService
+
         doc_id = task.doc_id
         if doc_id and doc_id not in (CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID):
             _, doc = DocumentService.get_by_id(doc_id)

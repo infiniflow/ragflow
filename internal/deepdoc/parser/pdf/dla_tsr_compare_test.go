@@ -1,6 +1,6 @@
 //go:build cgo && integration
 
-package parser
+package pdf
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 	"testing"
 )
 
@@ -22,11 +24,11 @@ import (
 //  2. Run Python:     python3 tools/dla_tsr_compare.py
 //  3. Diff the JSON:  diff testdata/output/render_compare/go_dla.json testdata/output/render_compare/py_dla.json
 func TestDLATSRResponseCompare(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "06_table_content.pdf")
 	defer eng.Close()
 
-	pageImg, err := renderPageToImage(eng, 0)
+	pageImg, err := RenderPageToImage(eng, 0)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -35,7 +37,7 @@ func TestDLATSRResponseCompare(t *testing.T) {
 	os.MkdirAll(outDir, 0755)
 
 	// Save rendered image as JPEG (matching what DLA/TSR actually send).
-	jpegData, err := encodeJPEG(pageImg)
+	jpegData, err := util.EncodeJPEG(pageImg)
 	if err != nil {
 		t.Fatalf("encode jpeg: %v", err)
 	}
@@ -57,7 +59,7 @@ func TestDLATSRResponseCompare(t *testing.T) {
 	}
 
 	// ── TSR (crop first table region) ──
-	var tableRegion *DLARegion
+	var tableRegion *pdf.DLARegion
 	for i := range regions {
 		if regions[i].Label == "table" {
 			tableRegion = &regions[i]
@@ -72,7 +74,7 @@ func TestDLATSRResponseCompare(t *testing.T) {
 			int(tableRegion.X1), int(tableRegion.Y1))
 
 		cropPath := filepath.Join(outDir, "tsr_input.jpeg")
-		cropJPEG, _ := encodeJPEG(cropped)
+		cropJPEG, _ := util.EncodeJPEG(cropped)
 		os.WriteFile(cropPath, cropJPEG, 0644)
 
 		cells, err := client.TSR(context.Background(), cropped)
@@ -104,7 +106,7 @@ func TestDLATSRResponseCompare(t *testing.T) {
 			int(b.X0), int(b.Y0), int(b.X2), int(b.Y2))
 
 		cropPath := filepath.Join(outDir, "ocr_rec_input.jpeg")
-		recJPEG, _ := encodeJPEG(cropped)
+		recJPEG, _ := util.EncodeJPEG(cropped)
 		os.WriteFile(cropPath, recJPEG, 0644)
 
 		texts, err := client.OCRRecognize(context.Background(), cropped)

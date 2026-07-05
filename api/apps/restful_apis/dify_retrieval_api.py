@@ -109,7 +109,7 @@ def _parse_retrieval_options(retrieval_setting):
     return retrieval_setting, similarity_threshold, top
 
 
-@manager.route('/dify/retrieval', methods=['POST', 'GET'])  # noqa: F821
+@manager.route("/dify/retrieval", methods=["POST", "GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def retrieval(tenant_id):
@@ -276,7 +276,6 @@ async def retrieval(tenant_id):
 
     doc_ids = []
     try:
-
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
             return build_error_result(message="Knowledgebase not found!", code=RetCode.NOT_FOUND)
@@ -320,11 +319,7 @@ async def retrieval(tenant_id):
 
         if use_kg:
             model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
-            ck = await settings.kg_retriever.retrieval(question,
-                                                 [tenant_id],
-                                                 [kb_id],
-                                                 embd_mdl,
-                                                 LLMBundle(kb.tenant_id, model_config))
+            ck = await settings.kg_retriever.retrieval(question, [tenant_id], [kb_id], embd_mdl, LLMBundle(kb.tenant_id, model_config))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
@@ -338,30 +333,21 @@ async def retrieval(tenant_id):
             if not doc:
                 continue
             c.pop("vector", None)
-            meta = getattr(doc, 'meta_fields', {})
+            meta = getattr(doc, "meta_fields", {})
             meta["doc_id"] = c["doc_id"]
             # Dify expects metadata.document_id for external retrieval sources.
             meta["document_id"] = c["doc_id"]
-            records.append({
-                "content": c["content_with_weight"],
-                "score": c["similarity"],
-                "title": c["docnm_kwd"],
-                "metadata": meta
-            })
+            records.append({"content": c["content_with_weight"], "score": c["similarity"], "title": c["docnm_kwd"], "metadata": meta})
 
         return jsonify({"records": records})
     except Exception as e:
         if "not_found" in str(e):
-            return build_error_result(
-                message='No chunk found! Check the chunk status please!',
-                code=RetCode.NOT_FOUND
-            )
+            return build_error_result(message="No chunk found! Check the chunk status please!", code=RetCode.NOT_FOUND)
         logging.exception(e)
         return build_error_result(message=str(e), code=RetCode.SERVER_ERROR)
-   
-  
-@manager.route('/dify/retrieval/health', methods=['GET'])  # noqa: F821
+
+
+@manager.route("/dify/retrieval/health", methods=["GET"])  # noqa: F821
 async def retrieval_health_check():
     """Health check endpoint for Dify external knowledge base connectivity verification."""
     return get_json_result(data=True)
-  

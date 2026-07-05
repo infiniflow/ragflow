@@ -103,8 +103,8 @@ func TestSetEntryPoint(t *testing.T) {
 		t.Errorf("Unexpected error: %v", err)
 	}
 
-	if builder.entryPoint != "entry" {
-		t.Errorf("Expected entry point 'entry', got '%s'", builder.entryPoint)
+	if builder.GetEntryPoint() != "entry" {
+		t.Errorf("Expected entry point 'entry', got '%s'", builder.GetEntryPoint())
 	}
 
 	// Non-existent node should error
@@ -284,8 +284,8 @@ func TestCompileOptions(t *testing.T) {
 		t.Fatalf("Failed to compile with options: %v", err)
 	}
 
-	if graph.recursionLimit != 50 {
-		t.Errorf("Expected recursion limit 50, got %d", graph.recursionLimit)
+	if graph.GetRecursionLimit() != 50 {
+		t.Errorf("Expected recursion limit 50, got %d", graph.GetRecursionLimit())
 	}
 
 	// Test with debug
@@ -294,7 +294,7 @@ func TestCompileOptions(t *testing.T) {
 		t.Fatalf("Failed to compile with debug: %v", err)
 	}
 
-	if !graph.debug {
+	if !graph.IsDebug() {
 		t.Error("Expected debug to be true")
 	}
 
@@ -304,7 +304,7 @@ func TestCompileOptions(t *testing.T) {
 		t.Fatalf("Failed to compile with interrupts: %v", err)
 	}
 
-	if !graph.interrupts["node"] {
+	if !graph.GetInterrupts()["node"] {
 		t.Error("Expected interrupt for 'node'")
 	}
 }

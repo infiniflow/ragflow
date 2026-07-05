@@ -161,7 +161,7 @@ func sortedToolNames() []string {
 		"email", "execute_sql", "exesql", "github", "google", "google_scholar",
 		"jin10", "pubmed", "qweather", "retrieval", "search_my_dataset",
 		"search_my_dateset", "searxng", "tavily", "tushare", "wencai",
-		"wikipedia", "yahoo_finance",
+		"web_crawler", "wikipedia", "yahoo_finance",
 	}
 	sort.Strings(known)
 	return known

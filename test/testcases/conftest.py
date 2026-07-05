@@ -180,10 +180,7 @@ def get_added_models(auth, factory_name):
     # Go server (post-Python port) serializes this field as `model_provider`
     # in the RESTful `/api/v1/models` response. Fall back to the legacy
     # `provider_name` key so this conftest works against both.
-    added_factory = {
-        model.get("model_provider") or model["provider_name"]
-        for model in res.get("data", [])
-    }
+    added_factory = {model.get("model_provider") or model["provider_name"] for model in res.get("data", [])}
     if factory_name in added_factory:
         return True
     return False
@@ -225,12 +222,7 @@ def add_model_instance(auth):
         # and BAAI/bge-reranker-v2-m3@CI@SILICONFLOW).
         instance_name = "CI"
         add_instance_api = HOST_ADDRESS + f"/api/v1/providers/{provider_name}/instances"
-        add_instance_response = requests.post(url=add_instance_api, headers=authorization, json={
-            "instance_name": instance_name,
-            "api_key": api_key,
-            "region": "default",
-            "base_url": ""
-        })
+        add_instance_response = requests.post(url=add_instance_api, headers=authorization, json={"instance_name": instance_name, "api_key": api_key, "region": "default", "base_url": ""})
         add_instance_res = add_instance_response.json()
         if add_instance_res.get("code") != 0:
             msg = add_instance_res.get("message", "")
@@ -248,10 +240,7 @@ def add_model_instance(auth):
             if "cannot be 'default'" in msg:
                 print("Note: model instance name is reserved, skipping")
                 continue
-            pytest.exit(
-                f"Critical error in add model instance {provider_name}/{instance_name}: "
-                f"{msg}"
-            )
+            pytest.exit(f"Critical error in add model instance {provider_name}/{instance_name}: {msg}")
 
         add_success = get_added_models(auth, provider_name)
         if not add_success:
@@ -262,10 +251,7 @@ def add_model_instance(auth):
                 # on PUT. Downgrade to a warning so tests that don't depend
                 # on the model can still run; tests that do will fail with
                 # a real error rather than this opaque setup crash.
-                print(
-                    "WARNING: provider already exists in catalog but missing from "
-                    "this tenant's /api/v1/models. Tests that depend on it may fail."
-                )
+                print("WARNING: provider already exists in catalog but missing from this tenant's /api/v1/models. Tests that depend on it may fail.")
                 continue
             pytest.exit(f"Critical error in check added model: {provider_name} add model failed")
 
@@ -280,15 +266,7 @@ def set_tenant_info(auth):
     url = HOST_ADDRESS + "/api/v1/models/default"
     authorization = {"Authorization": auth}
     # set chat model
-    set_default_llm_response = requests.patch(
-        url=url,
-        headers=authorization,
-        json={
-            "model_provider": "ZHIPU-AI",
-            "model_instance": "CI",
-            "model_type": "chat",
-            "model_name": "glm-4-flash"
-        })
+    set_default_llm_response = requests.patch(url=url, headers=authorization, json={"model_provider": "ZHIPU-AI", "model_instance": "CI", "model_type": "chat", "model_name": "glm-4-flash"})
     llm_res = set_default_llm_response.json()
     if llm_res.get("code") != 0:
         # The Go server (post-Python port) doesn't yet implement
@@ -296,40 +274,18 @@ def set_tenant_info(auth):
         # can't be set via API. Downgrade to a warning so tests that
         # don't rely on a default LLM can still run; tests that do
         # will fail with their own real error.
-        print(
-            f"WARNING: failed to set default chat LLM via {url}: "
-            f"{llm_res.get('message')!r}. Continuing."
-        )
+        print(f"WARNING: failed to set default chat LLM via {url}: {llm_res.get('message')!r}. Continuing.")
     # set embedding model
     set_default_embedding_response = requests.patch(
-        url=url,
-        headers=authorization,
-        json={
-            "model_provider": "Builtin",
-            "model_instance": "Local",
-            "model_type": "embedding",
-            "model_name": "BAAI/bge-small-en-v1.5"
-        })
+        url=url, headers=authorization, json={"model_provider": "Builtin", "model_instance": "Local", "model_type": "embedding", "model_name": "BAAI/bge-small-en-v1.5"}
+    )
     embd_res = set_default_embedding_response.json()
     if embd_res.get("code") != 0:
-        print(
-            f"WARNING: failed to set default embedding LLM via {url}: "
-            f"{embd_res.get('message')!r}. Continuing."
-        )
+        print(f"WARNING: failed to set default embedding LLM via {url}: {embd_res.get('message')!r}. Continuing.")
     # set rerank model
     set_default_rerank_response = requests.patch(
-        url=url,
-        headers=authorization,
-        json={
-            "model_provider": "SILICONFLOW",
-            "model_instance": "CI",
-            "model_type": "rerank",
-            "model_name": "BAAI/bge-reranker-v2-m3"
-        }
+        url=url, headers=authorization, json={"model_provider": "SILICONFLOW", "model_instance": "CI", "model_type": "rerank", "model_name": "BAAI/bge-reranker-v2-m3"}
     )
     rerank_res = set_default_rerank_response.json()
     if rerank_res.get("code") != 0:
-        print(
-            f"WARNING: failed to set default rerank LLM via {url}: "
-            f"{rerank_res.get('message')!r}. Continuing."
-        )
+        print(f"WARNING: failed to set default rerank LLM via {url}: {rerank_res.get('message')!r}. Continuing.")
