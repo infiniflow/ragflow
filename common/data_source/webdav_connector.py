@@ -235,7 +235,8 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                         
         except Exception as e:
             logging.error(f"Error listing directory {path}: {e}")
-            
+            raise
+
         return files
 
     def _yield_webdav_documents(
