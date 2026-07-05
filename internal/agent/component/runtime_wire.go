@@ -23,6 +23,15 @@
 // orchestrator (cmd/server_main, cmd/ragflow-cli, ...) blank-imports
 // internal/agent/component to trigger this init, which is the same
 // trigger that drives each component's Register(...) call.
+//
+// As of plan §4 Phase 0, this wires the factory via
+// runtime.InstallDefaultRegistryFactory rather than calling
+// runtime.SetDefaultFactory directly. The install helper installs a
+// closure that performs a runtime.DefaultRegistry.Lookup on every
+// invocation, so the same single source of truth serves both the
+// canvas builder and any other consumer that resolves a component by
+// name. Tests that want to stub the factory call
+// runtime.SetDefaultFactory directly and restore it on t.Cleanup.
 package component
 
 import (
@@ -30,16 +39,5 @@ import (
 )
 
 func init() {
-	// Adapter: component.New returns (component.Component, error),
-	// and component.Component satisfies runtime.Component
-	// structurally (Invoke is the only method runtime.Component
-	// declares). A typed return is required so the closure's
-	// signature matches runtime.ComponentFactory.
-	runtime.SetDefaultFactory(func(name string, params map[string]any) (runtime.Component, error) {
-		c, err := New(name, params)
-		if err != nil {
-			return nil, err
-		}
-		return c, nil
-	})
+	runtime.InstallDefaultRegistryFactory()
 }
