@@ -173,9 +173,6 @@ func walkHTMLLeaf(n *html.Node, b *strings.Builder) {
 			b.WriteString("\n")
 		}
 	}
-	for sib := n.NextSibling; sib != nil; sib = sib.NextSibling {
-		walkHTMLLeaf(sib, b)
-	}
 }
 
 func isBlockTag(tag string) bool {

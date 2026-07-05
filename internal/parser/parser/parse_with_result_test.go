@@ -142,11 +142,20 @@ func TestHTMLParser_ParseWithResult_BlockSplit(t *testing.T) {
 	if got, want := res.JSON[0]["ck_type"], "heading"; got != want {
 		t.Errorf("JSON[0].ck_type = %v, want %v", got, want)
 	}
+	if got, want := res.JSON[0]["text"], "Title"; got != want {
+		t.Errorf("JSON[0].text = %v, want %v", got, want)
+	}
 	if got, want := res.JSON[1]["ck_type"], "paragraph"; got != want {
 		t.Errorf("JSON[1].ck_type = %v, want %v", got, want)
 	}
+	if got, want := res.JSON[1]["text"], "First paragraph."; got != want {
+		t.Errorf("JSON[1].text = %v, want %v", got, want)
+	}
 	if got, want := res.JSON[2]["ck_type"], "list"; got != want {
 		t.Errorf("JSON[2].ck_type = %v, want %v", got, want)
+	}
+	if got, want := res.JSON[2]["text"], "Item one"; got != want {
+		t.Errorf("JSON[2].text = %v, want %v", got, want)
 	}
 }
 
