@@ -49,12 +49,6 @@ type ChunkOptions struct {
 // The check is cheap; an option set that fails validation will not
 // produce meaningful results at run time.
 func (o ChunkOptions) validate() error {
-	if o.SplitStrategy == "" {
-		// Default to sentence to match the operator's own default;
-		// callers that want a no-op split should override with
-		// "paragraph" + a FilterMinLength >= 1.
-		o.SplitStrategy = "sentence"
-	}
 	if o.MergeTargetSize < 0 {
 		return fmt.Errorf("chunk: MergeTargetSize must be >= 0 (got %d)", o.MergeTargetSize)
 	}

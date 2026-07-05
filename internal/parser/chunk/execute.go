@@ -26,7 +26,10 @@ func Run(text string, opts ChunkOptions) (*ChunkContext, error) {
 		return nil, err
 	}
 
-	ctx := &ChunkContext{Origin: text}
+	ctx := &ChunkContext{
+		Origin:              text,
+		TextAfterPreprocess: text,
+	}
 
 	var stages []Operator
 	var stageNames []string
@@ -56,13 +59,13 @@ func Run(text string, opts ChunkOptions) (*ChunkContext, error) {
 	postCfg := map[string]interface{}{}
 	if opts.MergeTargetSize > 0 {
 		postCfg["merge"] = map[string]interface{}{
-			"target_size": opts.MergeTargetSize,
+			"target_size": float64(opts.MergeTargetSize),
 			"strategy":    "greedy",
 		}
 	}
 	if opts.FilterMinLength > 0 {
 		postCfg["filter"] = map[string]interface{}{
-			"min_length": opts.FilterMinLength,
+			"min_length": float64(opts.FilterMinLength),
 		}
 	}
 	if len(postCfg) > 0 {
@@ -84,6 +87,9 @@ func Run(text string, opts ChunkOptions) (*ChunkContext, error) {
 		if err := op.Finish(ctx); err != nil {
 			return ctx, fmt.Errorf("%s: finish: %w", stageNames[i], err)
 		}
+	}
+	if len(ctx.ResultChunks) == 0 && len(ctx.SplitChunks) > 0 {
+		ctx.ResultChunks = ctx.SplitChunks
 	}
 	return ctx, nil
 }

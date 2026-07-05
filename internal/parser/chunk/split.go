@@ -74,7 +74,7 @@ func (o *SplitOperator) String() string {
 	return buf.String()
 }
 
-var sentenceBoundaries = []string{"。", "！", "？", "\n"}
+var sentenceBoundaries = []string{"。", "！", "？", ".", "!", "?", ";", "\n"}
 
 // splitSentences splits text at the built-in sentence boundaries.
 func (o *SplitOperator) splitSentences(text string) []ChunkData {
@@ -94,13 +94,16 @@ func (o *SplitOperator) splitSentences(text string) []ChunkData {
 
 		if matchedBound != "" {
 			if buf.Len() > 0 {
-				chunks = append(chunks, ChunkData{
-					Content: buf.String(),
-					Index:   len(chunks),
-					Metadata: map[string]interface{}{
-						"language": DetectLanguage(buf.String()),
-					},
-				})
+				content := strings.TrimSpace(buf.String())
+				if content != "" {
+					chunks = append(chunks, ChunkData{
+						Content: content,
+						Index:   len(chunks),
+						Metadata: map[string]interface{}{
+							"language": DetectLanguage(content),
+						},
+					})
+				}
 				buf.Reset()
 			}
 			i += len(matchedBound)
@@ -113,13 +116,16 @@ func (o *SplitOperator) splitSentences(text string) []ChunkData {
 
 	// flush remaining text
 	if buf.Len() > 0 {
-		chunks = append(chunks, ChunkData{
-			Content: buf.String(),
-			Index:   len(chunks),
-			Metadata: map[string]interface{}{
-				"language": DetectLanguage(buf.String()),
-			},
-		})
+		content := strings.TrimSpace(buf.String())
+		if content != "" {
+			chunks = append(chunks, ChunkData{
+				Content: content,
+				Index:   len(chunks),
+				Metadata: map[string]interface{}{
+					"language": DetectLanguage(content),
+				},
+			})
+		}
 	}
 
 	return chunks
