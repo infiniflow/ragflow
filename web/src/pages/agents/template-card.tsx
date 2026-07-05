@@ -6,6 +6,7 @@ import { IFlowTemplate } from '@/interfaces/database/agent';
 import i18n from '@/locales/config';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+
 interface IProps {
   data: IFlowTemplate;
   isCreate?: boolean;
@@ -23,7 +24,10 @@ export function TemplateCard({ data, showModal }: IProps) {
     if (i18n.language === LanguageAbbreviation.Zh) {
       return 'zh';
     }
-    return i18n.language || 'en';
+    if (i18n.language === LanguageAbbreviation.De) {
+      return 'de';
+    }
+    return 'en';
   }, []) as 'en' | 'zh' | 'de';
 
   return (
