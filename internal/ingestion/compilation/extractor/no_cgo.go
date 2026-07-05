@@ -20,8 +20,8 @@
 //
 // The C++ ThincNER engine (and its ThincParser / ThincTagger
 // siblings) is wired through cgo in ner.go, parser_go.go, and
-// ner_extractor.go — those files carry `//go:build cgo`. Without
-// the CGO build tag, the test binary cannot link the missing
+// ner_extractor.go — those files carry `//go:build cgo_thincner`.
+// Without the `cgo_thincner` build tag, the test binary cannot link the missing
 // ThincNER_* / ThincParser_* / ThincTagger_* symbols.
 //
 // This file declares the same exported surface the rest of the
@@ -33,9 +33,8 @@
 //
 // The cgo-backed functions return an explicit ErrNoCGO error so
 // any caller that reaches the C++ engine on a no-CGO build fails
-// loudly rather than silently degrading. Production builds keep
-// the CGO path (the `//go:build cgo` files are selected when
-// CGO_ENABLED=1, which is the default).
+// loudly rather than silently degrading. Production builds use
+// the `cgo_thincner` path only when that explicit build tag is enabled.
 
 package extractor
 
@@ -104,13 +103,13 @@ func NewExtractor(lang string) *Extractor {
 }
 
 // RunParser is the no-CGO stub. The cgo-backed implementation is
-// in parser_go.go (build tag: cgo).
+// in parser_go.go (build tag: cgo_thincner).
 func RunParser(nerDir, parserDir string, tokensJSON string) (string, error) {
 	return "", ErrNoCGO
 }
 
 // RunTagger is the no-CGO stub. The cgo-backed implementation is
-// in parser_go.go (build tag: cgo).
+// in parser_go.go (build tag: cgo_thincner).
 func RunTagger(nerDir, taggerDir string, tokensJSON string) (string, error) {
 	return "", ErrNoCGO
 }

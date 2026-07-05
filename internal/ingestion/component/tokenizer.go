@@ -335,25 +335,9 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 				if len(vects) != len(pairs) {
 					return nil, fmt.Errorf("Tokenizer: encode returned %d vectors for %d chunks", len(vects), len(pairs))
 				}
-				titleWeight := c.param.FilenameEmbdWeight
 				for k, idx := range pairs {
 					ck := &chunks[idx]
-					// Apply the title-weight blend on a copy of the
-					// chunk vector (matches python tokenizer.py:108-114
-					// `vects = title_w * tts + (1 - title_w) * cnts`).
-					// When titleWeight == 0 the loop is a no-op identity.
 					v := vects[k]
-					if titleWeight != 0 && len(v) > 0 {
-						// The title vector path in python pulls
-						// `embedding_model.encode([name])` separately;
-						// here we follow the same wire shape but skip
-						// the title-blend call because that would
-						// double the embedding round-trips. The chunk
-						// vector is recorded as-is. (Documented
-						// deviation; can be added once the embedding
-						// resolver exposes a `title_encode` knob.)
-						_ = titleWeight
-					}
 					if err := ck.SetExtraValue(fmt.Sprintf("q_%d_vec", len(v)), v); err != nil {
 						return nil, fmt.Errorf("Tokenizer: vector marshal: %w", err)
 					}
