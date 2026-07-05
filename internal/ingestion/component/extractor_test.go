@@ -374,6 +374,29 @@ func TestExtractorComponent_Invoke_NoChunksFastPath(t *testing.T) {
 	}
 }
 
+func TestExtractorComponent_Invoke_JSONListInput(t *testing.T) {
+	withStubChatInvoker(t,
+		stubResponse{Content: "json chunk answer"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "answer",
+	}}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"json": []map[string]any{{"text": "json payload chunk"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("chunks malformed: %v", out["chunks"])
+	}
+	if chunks[0]["answer"] != "json chunk answer" {
+		t.Errorf("answer = %v, want %q", chunks[0]["answer"], "json chunk answer")
+	}
+}
+
 // TestExtractorComponent_Invoke_PerCallLLMIDOverride verifies an
 // inputs["llm_id"] override wins over Param.LLMID and reaches
 // the chat invoker verbatim (the per-call override is the

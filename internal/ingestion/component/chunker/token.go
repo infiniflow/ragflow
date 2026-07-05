@@ -42,16 +42,17 @@
 //
 //   - MODE "one" emits a single chunk containing the entire payload.
 //
-//   - JSON-STRUCTURED INPUT (output_format == "json" or upstream
-//     "chunks") is normalized into the same internal chunk shape via
-//     a parallel fan-out (Plan §4 Phase 2 row 2.3a, Parallelism=4).
+//   - JSON-STRUCTURED INPUT (output_format == "json", or the default
+//     parser-style branch when output_format is unset) is normalized
+//     into the same internal chunk shape via a parallel fan-out
+//     (Plan §4 Phase 2 row 2.3a, Parallelism=4).
 //     Media-context attachment is per-item sequential; merge is
 //     index-deterministic (Plan §8 R8).
 //
 //   - No PDF/outline awareness (Python `restore_pdf_text_previews`).
 //     That depends on deepdoc/parser which is out of scope for this
-//     phase; the chunker accepts arbitrary upstream "chunks" payloads
-//     and runs the same logic against them.
+//     phase; the chunker accepts the parser-style structured JSON
+//     payload and runs the same logic against it.
 package chunker
 
 import (
@@ -160,30 +161,67 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
-	if _, ok := inputs["name"].(string); !ok {
+	upstream, err := decodeChunkerFromUpstream(inputs)
+	if err != nil {
 		return map[string]any{
 			"output_format": "chunks",
 			"chunks":        []map[string]any{},
-			"_ERROR":        "TokenChunker: missing required upstream field \"name\"",
+			"_ERROR":        fmt.Sprintf("Input error: %v", err),
 		}, nil
 	}
 
 	delimPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 
-	if text, ok := stringFromInputs(inputs, "text", "content"); ok {
-		return c.invokeTextPayload(ctx, text, delimPattern, childrenPattern), nil
+	switch upstream.OutputFormat {
+	case schema.PayloadFormatMarkdown:
+		if upstream.MarkdownResult == nil {
+			return emptyOutputs(), nil
+		}
+		return c.invokeTextPayload(ctx, *upstream.MarkdownResult, delimPattern, childrenPattern), nil
+	case schema.PayloadFormatText:
+		if upstream.TextResult == nil {
+			return emptyOutputs(), nil
+		}
+		return c.invokeTextPayload(ctx, *upstream.TextResult, delimPattern, childrenPattern), nil
+	case schema.PayloadFormatHTML:
+		if upstream.HTMLResult == nil {
+			return emptyOutputs(), nil
+		}
+		return c.invokeTextPayload(ctx, *upstream.HTMLResult, delimPattern, childrenPattern), nil
+	default:
+		return c.invokeJSONPayload(ctx, upstream.JSONResult, delimPattern, childrenPattern), nil
 	}
-	if chunksAny := chunksFromInputs(inputs); chunksAny != nil {
-		return c.invokeJSONPayload(ctx, chunksAny, delimPattern, childrenPattern), nil
+}
+
+func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstream, error) {
+	var out schema.ChunkerFromUpstream
+	data, err := json.Marshal(stripChunkerRuntimeTimestamps(inputs))
+	if err != nil {
+		return out, err
 	}
-	return emptyOutputs(), nil
+	if err := json.Unmarshal(data, &out); err != nil {
+		return out, err
+	}
+	if err := out.Validate(); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+func stripChunkerRuntimeTimestamps(inputs map[string]any) map[string]any {
+	out := make(map[string]any, len(inputs))
+	for k, v := range inputs {
+		if k == "_created_time" || k == "_elapsed_time" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 // invokeTextPayload handles plain-text input (output_format in
-// {markdown,text,html} on the python side; here we collapse all three
-// because the text payload's distinction lives in the upstream
-// component, not in the chunker).
+// {markdown,text,html} on the python side).
 func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
 	if text == "" {
 		return emptyOutputs()
@@ -264,7 +302,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		if merged == "" {
 			return emptyOutputs()
 		}
-		return chunkOutputs([]schema.ChunkDoc{buildChunkDoc(items[0], "text", merged, "", "")})
+		return chunkOutputs([]schema.ChunkDoc{{Text: merged}})
 	}
 
 	workers := c.Parallelism()

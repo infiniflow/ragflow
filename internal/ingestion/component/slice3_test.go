@@ -37,7 +37,8 @@ func TestTokenizer_FallsBackToContentWithWeight(t *testing.T) {
 	c.param.FilenameEmbdWeight = 0
 
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"name": "doc",
+		"name":          "doc",
+		"output_format": "chunks",
 		"chunks": []map[string]any{
 			{"content_with_weight": "fallback text", "doc_type_kwd": "text"},
 		},
@@ -66,7 +67,8 @@ func TestTokenizer_DoesNotChangeChunkText(t *testing.T) {
 	c.param.FilenameEmbdWeight = 0
 
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"name": "doc",
+		"name":          "doc",
+		"output_format": "chunks",
 		"chunks": []map[string]any{
 			{"text": "primary text", "content_with_weight": "fallback", "doc_type_kwd": "text"},
 		},

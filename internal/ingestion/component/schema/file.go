@@ -49,19 +49,19 @@ type FileFromUpstream struct {
 	// Python code branches on truthiness, so we use *string.
 	DocID *string `json:"doc_id,omitempty"`
 
-	// Files is the optional list of file descriptors passed when no
+	// File is the optional list of file descriptors passed when no
 	// doc_id is bound. In Python: `file = kwargs.get("file")[0]`.
 	// Shape: `[]map[string]any` — same as rag/flow/parser's `file` field.
-	Files []map[string]any `json:"files,omitempty"`
+	File []map[string]any `json:"file,omitempty"`
 }
 
 // Validate enforces the File component's wire-shape requirement: at
-// least one of DocID or Files must be set. The Python code branches on
+// least one of DocID or File must be set. The Python code branches on
 // `_canvas._doc_id` vs. `kwargs.get("file")[0]`, which corresponds to
 // "one of the two upstream paths is wired".
 func (f *FileFromUpstream) Validate() error {
-	if (f.DocID == nil || *f.DocID == "") && len(f.Files) == 0 {
-		return errRequiredField{Field: "doc_id|files"}
+	if (f.DocID == nil || *f.DocID == "") && len(f.File) == 0 {
+		return errRequiredField{Field: "doc_id|file"}
 	}
 	return nil
 }

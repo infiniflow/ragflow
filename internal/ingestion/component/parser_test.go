@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 )
 
@@ -315,6 +316,68 @@ func TestParserComponent_Invoke_DocIDCarried(t *testing.T) {
 	}
 	if got, _ := out["name"].(string); got != "doc-123" {
 		t.Errorf("name = %q, want %q", got, "doc-123")
+	}
+}
+
+func TestParserComponent_Invoke_ResolvesBinaryFromDocID(t *testing.T) {
+	ms := withMemoryStorage(t)
+	db := withFileComponentTestDB(t)
+	location := "docs/from-parser.txt"
+	if err := ms.Put("kb-parser", location, []byte("alpha\fbeta")); err != nil {
+		t.Fatalf("seed storage: %v", err)
+	}
+	docName := "parser.txt"
+	if err := db.Create(&entity.Document{
+		ID:           "doc-parser",
+		KbID:         "kb-parser",
+		ParserID:     "na",
+		ParserConfig: entity.JSONMap{},
+		Type:         "txt",
+		CreatedBy:    "u1",
+		Name:         &docName,
+		Location:     &location,
+		Suffix:       ".txt",
+	}).Error; err != nil {
+		t.Fatalf("seed doc: %v", err)
+	}
+
+	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
+	out, err := c.Invoke(context.Background(), map[string]any{"doc_id": "doc-parser"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	pages, ok := out["pages"].([]schema.Page)
+	if !ok || len(pages) != 2 {
+		t.Fatalf("pages = %T/%v, want 2 schema.Page entries", out["pages"], out["pages"])
+	}
+	if pages[0]["text"] != "alpha" || pages[1]["text"] != "beta" {
+		t.Fatalf("pages = %+v, want [alpha beta]", pages)
+	}
+	if got, _ := out["name"].(string); got != "doc-parser" {
+		t.Fatalf("name = %q, want %q", got, "doc-parser")
+	}
+}
+
+func TestParserComponent_Invoke_ResolvesBinaryFromBucketPath(t *testing.T) {
+	ms := withMemoryStorage(t)
+	if err := ms.Put("bucket-1", "docs/explicit.txt", []byte("bucket content")); err != nil {
+		t.Fatalf("seed storage: %v", err)
+	}
+
+	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"bucket": "bucket-1",
+		"path":   "docs/explicit.txt",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	pages, ok := out["pages"].([]schema.Page)
+	if !ok || len(pages) != 1 {
+		t.Fatalf("pages = %T/%v, want 1 schema.Page entry", out["pages"], out["pages"])
+	}
+	if got := pages[0]["text"]; got != "bucket content" {
+		t.Fatalf("pages[0][text] = %q, want %q", got, "bucket content")
 	}
 }
 

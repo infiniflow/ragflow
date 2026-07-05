@@ -45,8 +45,8 @@ func TestTokenChunker_Registered(t *testing.T) {
 	}
 }
 
-// TestTokenChunker_InvokeEmptyInput returns the no-chunks sentinel
-// (empty list, output_format="chunks"). No panic.
+// TestTokenChunker_InvokeEmptyInput mirrors Python validation:
+// missing upstream shape is surfaced under _ERROR.
 func TestTokenChunker_InvokeEmptyInput(t *testing.T) {
 	c, err := NewTokenChunker(nil)
 	if err != nil {
@@ -59,9 +59,8 @@ func TestTokenChunker_InvokeEmptyInput(t *testing.T) {
 	if got, want := out["output_format"], "chunks"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) != 0 {
-		t.Errorf("chunks = %d, want 0", len(chunks))
+	if out["_ERROR"] == nil {
+		t.Fatalf("_ERROR missing: %v", out)
 	}
 }
 
@@ -78,8 +77,9 @@ func TestTokenChunker_InvokeDelimMode_BasicChunking(t *testing.T) {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"name": "doc.txt",
-		"text": "alpha\n\nbeta\n\ngamma",
+		"name":          "doc.txt",
+		"output_format": "text",
+		"text":          "alpha\n\nbeta\n\ngamma",
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -114,8 +114,9 @@ func TestTokenChunker_InvokeTokenSize_FallbackToMerge(t *testing.T) {
 	// Input without any \n\n so the delimiter miss branch triggers
 	// the token_size merge.
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"name": "doc.txt",
-		"text": "First sentence. Second sentence. Third sentence. Fourth.",
+		"name":          "doc.txt",
+		"output_format": "text",
+		"text":          "First sentence. Second sentence. Third sentence. Fourth.",
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -140,8 +141,9 @@ func TestTokenChunker_InvokeOneMode_EmitsSingleChunk(t *testing.T) {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"name": "doc.txt",
-		"text": "first\n\nsecond\n\nthird",
+		"name":          "doc.txt",
+		"output_format": "text",
+		"text":          "first\n\nsecond\n\nthird",
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -168,8 +170,9 @@ func TestTokenChunker_InvokeChildrenDelim(t *testing.T) {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"name": "doc.txt",
-		"text": "alpha line\nbeta line",
+		"name":          "doc.txt",
+		"output_format": "text",
+		"text":          "alpha line\nbeta line",
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -180,8 +183,8 @@ func TestTokenChunker_InvokeChildrenDelim(t *testing.T) {
 	}
 }
 
-// TestTokenChunker_InvokeJSONPayload feeds a structured chunks list
-// (mirrors upstream output_format == "json" or "chunks") and
+// TestTokenChunker_InvokeJSONPayload feeds a structured JSON list
+// (mirrors upstream output_format == "json") and
 // verifies the chunker fans out into goroutines and merges
 // deterministically.
 func TestTokenChunker_InvokeJSONPayload(t *testing.T) {
@@ -197,8 +200,9 @@ func TestTokenChunker_InvokeJSONPayload(t *testing.T) {
 		{"text": "Gamma text\nDelta text", "doc_type_kwd": "text"},
 	}
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"name":   "doc.md",
-		"chunks": items,
+		"name":          "doc.md",
+		"output_format": "json",
+		"json":          items,
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -229,7 +233,7 @@ func TestTokenChunker_InvokeDeterministic(t *testing.T) {
 			"chunk_id":     i,
 		})
 	}
-	inputs := map[string]any{"name": "x", "chunks": items}
+	inputs := map[string]any{"name": "x", "output_format": "json", "json": items}
 	type fingerprint struct {
 		count int
 		first string

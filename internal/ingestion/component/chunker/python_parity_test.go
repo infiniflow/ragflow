@@ -47,9 +47,9 @@ func invokeAsTokenChunker(t *testing.T, items []map[string]any) map[string]any {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
 	out, err := comp.Invoke(context.Background(), map[string]any{
-		"name":   "test",
-		"json":   items, // upstream Parser emits "json"
-		"chunks": items, // TokenChunker reads "chunks" — both keys accepted
+		"name":          "test",
+		"output_format": "json",
+		"json":          items,
 	})
 	if err != nil {
 		t.Fatalf("TokenChunker.Invoke: %v", err)

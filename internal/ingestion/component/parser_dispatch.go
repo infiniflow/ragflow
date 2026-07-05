@@ -329,7 +329,8 @@ func pagesFromDispatch(pages []schema.Page) [][]byte {
 // succeeded). The output shape:
 //
 //   - pages          []schema.Page — sorted by PageNumber
-//   - name           string        — from inputs.doc_id
+//   - name           string        — from the upstream file/document name
+//     (or doc_id when no filename is available)
 //   - output_format  string        — the dispatch's OutputFormat,
 //     or "text" for the raw-text
 //     fallback
@@ -344,10 +345,10 @@ func pagesFromDispatch(pages []schema.Page) [][]byte {
 // at rag/flow/parser/parser.py:_invoke — the downstream chunker
 // / tokenizer / extractor components read the matching family
 // key, with "pages" as the universal fallback shape.
-func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, docID string, fileType utility.FileType) map[string]any {
+func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, name string, fileType utility.FileType) map[string]any {
 	out := map[string]any{
 		"pages": toAnyPages(parsed),
-		"name":  docID,
+		"name":  name,
 	}
 	if dispatched.Err == nil && dispatched.OutputFormat != "" {
 		out["output_format"] = dispatched.OutputFormat
@@ -371,4 +372,53 @@ func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, d
 	out["output_format"] = "text"
 	_ = fileType // reserved for a future "raw_text per-family" extension
 	return out
+}
+
+func hydrateEmptyDispatchPayload(dispatched parserDispatchResult, binary []byte) parserDispatchResult {
+	if dispatched.Err != nil || len(binary) == 0 {
+		return dispatched
+	}
+	switch dispatched.OutputFormat {
+	case "json":
+		if len(dispatched.JSON) == 0 {
+			dispatched.JSON = pagesToJSONItems(splitIntoPages(binary))
+		}
+	case "text":
+		if dispatched.Text == "" {
+			dispatched.Text = string(binary)
+		}
+	}
+	return dispatched
+}
+
+func pagesToJSONItems(pages [][]byte) []map[string]any {
+	if len(pages) == 0 {
+		pages = splitIntoPages(nil)
+	}
+	out := make([]map[string]any, 0, len(pages))
+	for _, page := range pages {
+		text := string(page)
+		if text == "" {
+			continue
+		}
+		out = append(out, map[string]any{
+			"text":         text,
+			"doc_type_kwd": "text",
+		})
+	}
+	return out
+}
+
+func parserInputName(inputs map[string]any, docID string) string {
+	if inputs != nil {
+		if name, ok := inputs["name"].(string); ok && name != "" {
+			return name
+		}
+		if m, ok := inputs["file"].(map[string]any); ok {
+			if name, ok := m["name"].(string); ok && name != "" {
+				return name
+			}
+		}
+	}
+	return docID
 }

@@ -66,6 +66,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -402,25 +403,51 @@ func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInput
 	if v, ok := inputs["system_prompt"].(string); ok && v != "" {
 		out.systemPrompt = v
 	}
-	// Mirror the python _invoke path that finds the first
-	// list-typed entry inside the input map. The Extractor's
-	// primary upstream (Tokenizer) wires its chunks under the
-	// "chunks" key — accept that exact name; any other list-
-	// typed key is also accepted for forward compatibility.
-	if v, ok := inputs["chunks"]; ok {
-		switch list := v.(type) {
-		case []map[string]any:
-			out.chunks = list
-		case []any:
-			out.chunks = make([]map[string]any, 0, len(list))
-			for _, item := range list {
-				if m, ok := item.(map[string]any); ok {
-					out.chunks = append(out.chunks, m)
-				}
-			}
+	for _, key := range extractorChunkInputOrder(inputs) {
+		if chunks, ok := extractorChunkList(inputs[key]); ok {
+			out.chunks = chunks
+			break
 		}
 	}
 	return out
+}
+
+func extractorChunkInputOrder(inputs map[string]any) []string {
+	order := make([]string, 0, len(inputs))
+	for _, preferred := range []string{"chunks", "json"} {
+		if _, ok := inputs[preferred]; ok {
+			order = append(order, preferred)
+		}
+	}
+	var extra []string
+	for key := range inputs {
+		if key == "chunks" || key == "json" {
+			continue
+		}
+		extra = append(extra, key)
+	}
+	sort.Strings(extra)
+	order = append(order, extra...)
+	return order
+}
+
+func extractorChunkList(v any) ([]map[string]any, bool) {
+	switch list := v.(type) {
+	case []map[string]any:
+		return list, true
+	case []any:
+		out := make([]map[string]any, 0, len(list))
+		for _, item := range list {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			out = append(out, m)
+		}
+		return out, true
+	default:
+		return nil, false
+	}
 }
 
 // Invoke performs LLM-based extraction. Inputs:

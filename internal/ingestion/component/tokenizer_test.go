@@ -137,10 +137,11 @@ func TestTokenizerComponent_Invoke_HappyPath(t *testing.T) {
 		{"text": "charlie chunk text"},
 	}
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"tenant_id": "t1",
-		"model_id":  "embd-1",
-		"name":      "doc.pdf",
-		"chunks":    chunks,
+		"tenant_id":     "t1",
+		"model_id":      "embd-1",
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks":        chunks,
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -197,7 +198,8 @@ func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 	}
 
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"chunks": []map[string]any{},
+		"output_format": "chunks",
+		"chunks":        []map[string]any{},
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -220,7 +222,9 @@ func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
 	withStubEmbedder(t, 4)
 	c, _ := NewTokenizerComponent(map[string]any{})
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"output_format": "chunks",
+	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -251,7 +255,8 @@ func TestTokenizerComponent_Invoke_Unicode(t *testing.T) {
 	}
 
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"chunks": chunks,
+		"output_format": "chunks",
+		"chunks":        chunks,
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -272,6 +277,53 @@ func TestTokenizerComponent_Invoke_Unicode(t *testing.T) {
 	}
 }
 
+func TestTokenizerComponent_Invoke_TextPayload(t *testing.T) {
+	withStubEmbedder(t, 4)
+	c, _ := NewTokenizerComponent(map[string]any{
+		"search_method": []any{"full_text"},
+	})
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "note.txt",
+		"output_format": "text",
+		"text":          "plain payload",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, _ := out["chunks"].([]map[string]any)
+	if len(got) != 1 {
+		t.Fatalf("chunks len = %d, want 1", len(got))
+	}
+	if got[0]["text"] != "plain payload" {
+		t.Errorf("text = %v, want plain payload", got[0]["text"])
+	}
+	if got[0]["content_ltks"] == nil {
+		t.Errorf("content_ltks missing: %v", got[0])
+	}
+}
+
+func TestTokenizerComponent_Invoke_JSONPayload(t *testing.T) {
+	withStubEmbedder(t, 4)
+	c, _ := NewTokenizerComponent(map[string]any{
+		"search_method": []any{"full_text"},
+	})
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "note.pdf",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "row one"}, {"text": "row two"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, _ := out["chunks"].([]map[string]any)
+	if len(got) != 2 {
+		t.Fatalf("chunks len = %d, want 2", len(got))
+	}
+	if got[0]["content_ltks"] == nil || got[1]["content_ltks"] == nil {
+		t.Errorf("content_ltks missing: %v", got)
+	}
+}
+
 // TestTokenizerComponent_Invoke_BatchedEmbedding asserts the
 // embedding client is called ONCE with all chunks (not fanned per
 // chunk — plan §AD-5a). 3 chunks → 1 call.
@@ -284,7 +336,8 @@ func TestTokenizerComponent_Invoke_BatchedEmbedding(t *testing.T) {
 		{"text": "three"},
 	}
 	if _, err := c.Invoke(context.Background(), map[string]any{
-		"chunks": chunks,
+		"output_format": "chunks",
+		"chunks":        chunks,
 	}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -302,7 +355,8 @@ func TestTokenizerComponent_Invoke_FullTextOnly(t *testing.T) {
 		"search_method": []any{"full_text"},
 	})
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"chunks": []map[string]any{{"text": "alpha bravo"}},
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "alpha bravo"}},
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -329,7 +383,8 @@ func TestTokenizerComponent_Invoke_EmbedNoEncodeFunc(t *testing.T) {
 
 	c, _ := NewTokenizerComponent(map[string]any{})
 	_, err := c.Invoke(context.Background(), map[string]any{
-		"chunks": []map[string]any{{"text": "alpha"}},
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "alpha"}},
 	})
 	if err == nil {
 		t.Fatal("expected error when embedding requested without EncodeFunc, got nil")
@@ -347,7 +402,8 @@ func TestTokenizerComponent_Invoke_EmbedderError(t *testing.T) {
 
 	c, _ := NewTokenizerComponent(map[string]any{})
 	_, err := c.Invoke(context.Background(), map[string]any{
-		"chunks": []map[string]any{{"text": "alpha"}},
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "alpha"}},
 	})
 	if err == nil {
 		t.Fatal("expected error from embedder, got nil")
@@ -373,7 +429,8 @@ func TestTokenizerComponent_Invoke_EncoderCountMismatch(t *testing.T) {
 
 	c, _ := NewTokenizerComponent(map[string]any{})
 	_, err := c.Invoke(context.Background(), map[string]any{
-		"chunks": []map[string]any{{"text": "a"}, {"text": "b"}, {"text": "c"}},
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "a"}, {"text": "b"}, {"text": "c"}},
 	})
 	if err == nil {
 		t.Fatal("expected error from count mismatch, got nil")
@@ -409,7 +466,8 @@ func TestTokenizerComponent_Invoke_HonorsTimeout(t *testing.T) {
 	defer cancel()
 
 	_, err := c.Invoke(ctx, map[string]any{
-		"chunks": []map[string]any{{"text": "alpha"}},
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "alpha"}},
 	})
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")
@@ -525,10 +583,11 @@ func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
 
 	start := time.Now()
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"tenant_id": "tenant-smoke",
-		"model_id":  "embd-smoke",
-		"name":      "smoke.pdf",
-		"chunks":    chunks,
+		"tenant_id":     "tenant-smoke",
+		"model_id":      "embd-smoke",
+		"name":          "smoke.pdf",
+		"output_format": "chunks",
+		"chunks":        chunks,
 	})
 	elapsed := time.Since(start)
 

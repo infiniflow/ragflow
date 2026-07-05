@@ -36,7 +36,7 @@ func TestFileParamDefaults(t *testing.T) {
 func TestFileFromUpstreamValidate(t *testing.T) {
 	// Empty upstream: nothing to bind to -> error.
 	if err := (&FileFromUpstream{}).Validate(); err == nil {
-		t.Fatal("expected Validate to fail when neither doc_id nor files is set")
+		t.Fatal("expected Validate to fail when neither doc_id nor file is set")
 	}
 
 	// DocID path: valid.
@@ -46,10 +46,10 @@ func TestFileFromUpstreamValidate(t *testing.T) {
 		t.Fatalf("FileFromUpstream with DocID unexpectedly failed Validate: %v", err)
 	}
 
-	// Files path: valid.
-	fu = FileFromUpstream{Files: []map[string]any{{"name": "input.pdf"}}}
+	// File path: valid.
+	fu = FileFromUpstream{File: []map[string]any{{"name": "input.pdf"}}}
 	if err := fu.Validate(); err != nil {
-		t.Fatalf("FileFromUpstream with Files unexpectedly failed Validate: %v", err)
+		t.Fatalf("FileFromUpstream with File unexpectedly failed Validate: %v", err)
 	}
 }
 
@@ -61,7 +61,7 @@ func TestFileFromUpstreamJSONRoundTrip(t *testing.T) {
 		CreatedTime: &created,
 		ElapsedTime: &elapsed,
 		DocID:       &docID,
-		Files:       []map[string]any{{"name": "input.pdf"}},
+		File:        []map[string]any{{"name": "input.pdf"}},
 	}
 	data, err := json.Marshal(original)
 	if err != nil {
@@ -81,8 +81,8 @@ func TestFileFromUpstreamJSONRoundTrip(t *testing.T) {
 	if decoded.DocID == nil || *decoded.DocID != docID {
 		t.Errorf("DocID round-trip mismatch: got %v", decoded.DocID)
 	}
-	if len(decoded.Files) != 1 {
-		t.Errorf("Files round-trip mismatch: got %d", len(decoded.Files))
+	if len(decoded.File) != 1 {
+		t.Errorf("File round-trip mismatch: got %d", len(decoded.File))
 	}
 }
 

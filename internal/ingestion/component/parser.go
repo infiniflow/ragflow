@@ -187,18 +187,20 @@ func (c *ParserComponent) Parallelism() int { return parserParallelism }
 // Inputs returns the static parameter metadata. The component
 // reads the following from the inputs map at Invoke time:
 //
-//	binary    ([]byte, required) — file bytes from upstream File.
-//	doc_id    (string, optional) — for naming + checkpoint
-//	                                (NOT used by text-page mode;
-//	                                reserved for the future
-//	                                per-doc format dispatch).
+//	binary    ([]byte, optional) — file bytes from upstream File.
+//	                                When absent, Parser resolves
+//	                                them from bucket/path or doc_id.
+//	doc_id    (string, optional) — document ID used for naming and,
+//	                                when binary is absent, storage lookup.
 //	page_size (int, optional)    — pages per goroutine for
 //	                                fan-out. Defaults to
 //	                                ceil(totalPages / Parallelism).
 func (c *ParserComponent) Inputs() map[string]string {
 	return map[string]string{
-		"binary":    "File bytes ([]byte). The component parses this and emits one page per slice.",
-		"doc_id":    "Optional document ID (string). Carried for downstream checkpoint correlation; not consumed by text-page mode.",
+		"binary":    "Optional file bytes ([]byte). When absent, Parser resolves them from bucket/path or doc_id.",
+		"doc_id":    "Optional document ID (string). Used for downstream correlation and doc_id-driven storage lookup.",
+		"bucket":    "Optional storage bucket override. Used when binary is absent.",
+		"path":      "Optional storage object key override. Used when binary is absent.",
 		"page_size": "Optional integer. Pages per goroutine for fan-out. Default: ceil(totalPages / 4).",
 	}
 }
@@ -208,8 +210,8 @@ func (c *ParserComponent) Inputs() map[string]string {
 //
 //	pages   []schema.Page — sorted by PageNumber. Deterministic
 //	                        merge per plan §8 R8.
-//	name    string        — carried over from inputs.doc_id
-//	                        (or empty when doc_id is absent).
+//	name    string        — carried over from the upstream file/document
+//	                        name (or doc_id when no name is available).
 //	output_format string  — "text" when emitting text pages,
 //	                        otherwise the parser-selected wire
 //	                        format.
@@ -219,7 +221,7 @@ func (c *ParserComponent) Inputs() map[string]string {
 func (c *ParserComponent) Outputs() map[string]string {
 	return map[string]string{
 		"pages":         "[]schema.Page: parsed pages sorted by PageNumber.",
-		"name":          "string: the document ID carried over from inputs.doc_id (or empty).",
+		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
 		"output_format": "string: the active output format (\"text\" when emitting text pages).",
 		"_ERROR":        "string: set on short-circuit errors.",
 	}
@@ -250,11 +252,12 @@ func (c *ParserComponent) Outputs() map[string]string {
 // in input order).
 func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	// 1. Decode the binary input.
-	binary, err := readParserBinary(inputs)
+	binary, err := readParserBinary(ctx, inputs)
 	if err != nil {
 		return nil, err
 	}
 	docID, _ := inputs["doc_id"].(string)
+	filename := parserInputName(inputs, docID)
 
 	// 2. Resolve the file family from the inputs. When the family
 	//    is known, dispatchParse returns a typed parser payload.
@@ -288,7 +291,8 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		}
 	}
 
-	dispatched := dispatchParse(fileTypeExt, docID, binary, c.Param.Setups)
+	dispatched := dispatchParse(fileTypeExt, filename, binary, c.Param.Setups)
+	dispatched = hydrateEmptyDispatchPayload(dispatched, binary)
 
 	// 3. Build the legacy `pages` slice. When the dispatch path
 	//    produced a JSON payload, we re-shape it into the page
@@ -340,7 +344,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		}
 		// Sort by PageNumber — DETERMINISTIC MERGE (plan §8 R8).
 		sortPagesByNumber(parsed)
-		out = buildParserOutputs(parsed, dispatched, docID, fileTypeExt)
+		out = buildParserOutputs(parsed, dispatched, filename, fileTypeExt)
 		return nil
 	})
 	if progressErr != nil {
@@ -451,7 +455,7 @@ func parseBatch(ctx context.Context, batch [][]byte) ([]schema.Page, error) {
 // A non-UTF-8 string is rejected with a clear error so a caller
 // that mistakenly hands a base64 string sees the failure
 // immediately (mirrors pipeline_chunker's "no try-base64" rule).
-func readParserBinary(inputs map[string]any) ([]byte, error) {
+func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error) {
 	if inputs == nil {
 		return nil, nil
 	}
@@ -465,6 +469,18 @@ func readParserBinary(inputs map[string]any) ([]byte, error) {
 					"Text-page mode only accepts UTF-8 text input.")
 		}
 		return []byte(s), nil
+	}
+	bucket, _ := getString(inputs, "bucket")
+	path, _ := getString(inputs, "path")
+	if bucket != "" && path != "" {
+		return fetchBinary(ctx, bucket, path)
+	}
+	if docID, ok := getString(inputs, "doc_id"); ok && docID != "" {
+		ref, err := resolveDocumentStorage(docID)
+		if err != nil {
+			return nil, fmt.Errorf("Parser: resolve doc_id %q: %w", docID, err)
+		}
+		return fetchBinary(ctx, ref.Bucket, ref.Path)
 	}
 	return nil, nil
 }

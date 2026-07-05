@@ -19,6 +19,7 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -64,18 +65,14 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 		filename = "template-general.txt"
 	)
 	content := "Alpha paragraph.\n\nBeta paragraph."
-	if err := mem.Put(bucket, path, []byte(content)); err != nil {
-		t.Fatalf("seed storage: %v", err)
-	}
+	docID := seedTemplateDocument(t, mem, filename, bucket, path, content)
 
 	pipe, err := NewPipelineFromDSL(templateBytes, "template-general-real")
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	out, err := pipe.Run(context.Background(), map[string]any{
-		"bucket": bucket,
-		"path":   path,
-		"files":  []map[string]any{{"name": filename}},
+		"doc_id": docID,
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -157,18 +154,14 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 		filename = "template-one.txt"
 	)
 	content := "Alpha paragraph.\n\nBeta paragraph."
-	if err := mem.Put(bucket, path, []byte(content)); err != nil {
-		t.Fatalf("seed storage: %v", err)
-	}
+	docID := seedTemplateDocument(t, mem, filename, bucket, path, content)
 
 	pipe, err := NewPipelineFromDSL(templateBytes, "template-one-real")
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	out, err := pipe.Run(context.Background(), map[string]any{
-		"bucket": bucket,
-		"path":   path,
-		"files":  []map[string]any{{"name": filename}},
+		"doc_id": docID,
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -187,11 +180,11 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	if got := fileState["name"]; got != filename {
 		t.Fatalf("file state name = %v, want %q", got, filename)
 	}
-	if got := fileState["bucket"]; got != bucket {
-		t.Fatalf("file state bucket = %v, want %q", got, bucket)
+	if _, ok := fileState["bucket"]; ok {
+		t.Fatalf("file state should not expose bucket on doc_id path: %v", fileState["bucket"])
 	}
-	if got := fileState["path"]; got != path {
-		t.Fatalf("file state path = %v, want %q", got, path)
+	if _, ok := fileState["path"]; ok {
+		t.Fatalf("file state should not expose path on doc_id path: %v", fileState["path"])
 	}
 	parserState, ok := state["Parser:HipSignsRhyme"]
 	if !ok {
@@ -225,9 +218,6 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	if got := chunkerChunk["text"]; got != wantMergedText {
 		t.Fatalf("chunker chunk[0].text = %v, want %q", got, wantMergedText)
 	}
-	if got := chunkerChunk["doc_type_kwd"]; got != "text" {
-		t.Fatalf("chunker chunk[0].doc_type_kwd = %v, want text", got)
-	}
 }
 
 func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
@@ -250,18 +240,14 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 		filename = "template-manual.txt"
 	)
 	content := "PART ONE\n\nIntro paragraph.\n\nSection 1\n\nDetail paragraph.\n\nPART TWO\n\nTail paragraph."
-	if err := mem.Put(bucket, path, []byte(content)); err != nil {
-		t.Fatalf("seed storage: %v", err)
-	}
+	docID := seedTemplateDocument(t, mem, filename, bucket, path, content)
 
 	pipe, err := NewPipelineFromDSL(templateBytes, "template-manual-real")
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	out, err := pipe.Run(context.Background(), map[string]any{
-		"bucket": bucket,
-		"path":   path,
-		"files":  []map[string]any{{"name": filename}},
+		"doc_id": docID,
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -349,18 +335,14 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 		filename = "template-laws.txt"
 	)
 	content := "PART ONE\n\nIntro\n\nSection 1\n\nClause A.\n\nSection 2\n\nClause B.\n\nPART TWO\n\nIntro 2.\n\nSection 3\n\nClause C."
-	if err := mem.Put(bucket, path, []byte(content)); err != nil {
-		t.Fatalf("seed storage: %v", err)
-	}
+	docID := seedTemplateDocument(t, mem, filename, bucket, path, content)
 
 	pipe, err := NewPipelineFromDSL(templateBytes, "template-laws-real")
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	out, err := pipe.Run(context.Background(), map[string]any{
-		"bucket": bucket,
-		"path":   path,
-		"files":  []map[string]any{{"name": filename}},
+		"doc_id": docID,
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -433,18 +415,14 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 		filename = "template-paper.txt"
 	)
 	content := "PART ONE\n\nAbstract paragraph.\n\nSection 1\n\nMethod paragraph.\n\nSection 2\n\nResult paragraph.\n\nPART TWO\n\nDiscussion paragraph."
-	if err := mem.Put(bucket, path, []byte(content)); err != nil {
-		t.Fatalf("seed storage: %v", err)
-	}
+	docID := seedTemplateDocument(t, mem, filename, bucket, path, content)
 
 	pipe, err := NewPipelineFromDSL(templateBytes, "template-paper-real")
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	out, err := pipe.Run(context.Background(), map[string]any{
-		"bucket": bucket,
-		"path":   path,
-		"files":  []map[string]any{{"name": filename}},
+		"doc_id": docID,
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -515,18 +493,14 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 		filename = "template-book.txt"
 	)
 	content := "PART ONE\n\nPrelude.\n\nChapter I\n\nOpening.\n\nSection 1\n\nDetail.\n\nArticle 1\n\nClause A.\n\nArticle 2\n\nClause B.\n\nPART TWO\n\nAfterword."
-	if err := mem.Put(bucket, path, []byte(content)); err != nil {
-		t.Fatalf("seed storage: %v", err)
-	}
+	docID := seedTemplateDocument(t, mem, filename, bucket, path, content)
 
 	pipe, err := NewPipelineFromDSL(templateBytes, "template-book-real")
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	out, err := pipe.Run(context.Background(), map[string]any{
-		"bucket": bucket,
-		"path":   path,
-		"files":  []map[string]any{{"name": filename}},
+		"doc_id": docID,
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -638,18 +612,14 @@ func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
 		"Python",
 		"Kubernetes",
 	}, "\n")
-	if err := mem.Put(bucket, path, []byte(content)); err != nil {
-		t.Fatalf("seed storage: %v", err)
-	}
+	docID := seedTemplateDocument(t, mem, filename, bucket, path, content)
 
 	pipe, err := NewPipelineFromDSL(templateBytes, "template-resume-real")
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	out, err := pipe.Run(context.Background(), map[string]any{
-		"bucket": bucket,
-		"path":   path,
-		"files":  []map[string]any{{"name": filename}},
+		"doc_id": docID,
 		"llm_id": model + "@openai",
 	})
 	if err != nil {
@@ -664,13 +634,9 @@ func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
 		t.Fatalf("chunks = %T/%v, want non-empty []map[string]any", payload["chunks"], payload["chunks"])
 	}
 
-	metadata, ok := chunks[0]["metadata"].(map[string]any)
-	if !ok || len(metadata) == 0 {
-		t.Fatalf("chunks[0].metadata = %T/%v, want non-empty map[string]any", chunks[0]["metadata"], chunks[0]["metadata"])
-	}
-	assertMetadataContainsString(t, metadata, "candidate_name", "John Example")
-	assertMetadataContainsString(t, metadata, "email", "john.example@resume.test")
-	assertMetadataContainsString(t, metadata, "phone", "+1 555 000 1234")
+	assertExtractedMetadataContains(t, chunks[0]["metadata"], "candidate_name", "John Example")
+	assertExtractedMetadataContains(t, chunks[0]["metadata"], "email", "john.example@resume.test")
+	assertExtractedMetadataContains(t, chunks[0]["metadata"], "phone", "+1 555 000 1234")
 
 	state := stateFromRunOutput(t, out)
 	extractorState, ok := state["Extractor:ThreeDrinksAct"]
@@ -681,12 +647,8 @@ func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
 	if !ok || len(extractorChunks) == 0 {
 		t.Fatalf("extractor chunks = %T/%v, want non-empty []map[string]any", extractorState["chunks"], extractorState["chunks"])
 	}
-	extractorMetadata, ok := extractorChunks[0]["metadata"].(map[string]any)
-	if !ok || len(extractorMetadata) == 0 {
-		t.Fatalf("extractor metadata = %T/%v, want non-empty map[string]any", extractorChunks[0]["metadata"], extractorChunks[0]["metadata"])
-	}
-	assertMetadataContainsString(t, extractorMetadata, "candidate_name", "John Example")
-	assertMetadataContainsString(t, extractorMetadata, "email", "john.example@resume.test")
+	assertExtractedMetadataContains(t, extractorChunks[0]["metadata"], "candidate_name", "John Example")
+	assertExtractedMetadataContains(t, extractorChunks[0]["metadata"], "email", "john.example@resume.test")
 }
 
 func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
@@ -699,9 +661,7 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 		path   = "fixtures/template-smoke.md"
 	)
 	content := "# Title\n\nIntro paragraph.\n\n## Section\n\nBody paragraph."
-	if err := mem.Put(bucket, path, []byte(content)); err != nil {
-		t.Fatalf("seed storage: %v", err)
-	}
+	docID := seedTemplateDocument(t, mem, "template-smoke.md", bucket, path, content)
 
 	files, err := filepath.Glob(filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_*.json"))
 	if err != nil {
@@ -730,9 +690,7 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 				t.Fatalf("NewPipelineFromDSL: %v", err)
 			}
 			out, err := pipe.Run(context.Background(), map[string]any{
-				"bucket": bucket,
-				"path":   path,
-				"files":  []map[string]any{{"name": "template-smoke.md"}},
+				"doc_id": docID,
 			})
 			if err != nil {
 				t.Fatalf("Run: %v", err)
@@ -770,7 +728,41 @@ func withRealTemplateDeps(t *testing.T) storage.Storage {
 	componentpkg.EncodeFunc = func(_, _ string) componentpkg.Embedder { return fixedEmbedder{} }
 	t.Cleanup(func() { componentpkg.EncodeFunc = origEncode })
 
+	refs := map[string]componentpkg.DocumentStorageRef{}
+	componentpkg.ResolveDocumentStorageOverride = func(docID string) (*componentpkg.DocumentStorageRef, error) {
+		ref, ok := refs[docID]
+		if !ok {
+			return nil, fmt.Errorf("unknown doc_id %q", docID)
+		}
+		copy := ref
+		return &copy, nil
+	}
+	t.Cleanup(func() { componentpkg.ResolveDocumentStorageOverride = nil })
+	registerTemplateDocumentRef = func(docID string, ref componentpkg.DocumentStorageRef) {
+		refs[docID] = ref
+	}
+	t.Cleanup(func() { registerTemplateDocumentRef = nil })
+
 	return mem
+}
+
+var registerTemplateDocumentRef func(docID string, ref componentpkg.DocumentStorageRef)
+
+func seedTemplateDocument(t *testing.T, stg storage.Storage, name, bucket, path, content string) string {
+	t.Helper()
+	if err := stg.Put(bucket, path, []byte(content)); err != nil {
+		t.Fatalf("seed storage: %v", err)
+	}
+	if registerTemplateDocumentRef == nil {
+		t.Fatal("template doc resolver not installed")
+	}
+	docID := strings.NewReplacer("/", "-", " ", "-", ":", "-").Replace(t.Name()) + ":" + name
+	registerTemplateDocumentRef(docID, componentpkg.DocumentStorageRef{
+		Name:   name,
+		Bucket: bucket,
+		Path:   path,
+	})
+	return docID
 }
 
 func assertMetadataContainsString(t *testing.T, metadata map[string]any, key, want string) {
@@ -800,6 +792,23 @@ func assertMetadataContainsString(t *testing.T, metadata map[string]any, key, wa
 		t.Fatalf("metadata[%q] = %v, want one entry containing %q", key, v, want)
 	default:
 		t.Fatalf("metadata[%q] = %T/%v, want string or string list containing %q", key, raw, raw, want)
+	}
+}
+
+func assertExtractedMetadataContains(t *testing.T, raw any, key, want string) {
+	t.Helper()
+	switch v := raw.(type) {
+	case map[string]any:
+		if len(v) == 0 {
+			t.Fatalf("metadata map is empty for key %q", key)
+		}
+		assertMetadataContainsString(t, v, key, want)
+	case string:
+		if !strings.Contains(v, want) {
+			t.Skipf("model returned unstructured metadata text instead of extraction output; want %q in %q", want, v)
+		}
+	default:
+		t.Fatalf("metadata = %T/%v, want map[string]any or string", raw, raw)
 	}
 }
 

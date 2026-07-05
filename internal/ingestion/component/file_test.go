@@ -18,11 +18,8 @@ package component
 
 import (
 	"context"
-	"errors"
 	"strings"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
@@ -83,19 +80,17 @@ func TestFileComponent_Registered(t *testing.T) {
 	}
 }
 
-// TestFileComponent_Invoke_HappyPath pre-loads memory storage
-// with bytes, invokes the component, and verifies the binary
-// output bytes equal the original payload.
+// TestFileComponent_Invoke_HappyPath verifies File remains metadata-only
+// even when explicit storage overrides are supplied.
 func TestFileComponent_Invoke_HappyPath(t *testing.T) {
 	ms := withMemoryStorage(t)
-	want := []byte("hello, ragflow")
-	if err := ms.Put("bucketA", "path/to/file.txt", want); err != nil {
+	if err := ms.Put("bucketA", "path/to/file.txt", []byte("hello, ragflow")); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
 	c := &FileComponent{}
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"doc_id": "doc-1",
+		"file":   []map[string]any{{"name": "file.txt"}},
 		"bucket": "bucketA",
 		"path":   "path/to/file.txt",
 	})
@@ -103,21 +98,17 @@ func TestFileComponent_Invoke_HappyPath(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	got, ok := out["binary"].([]byte)
-	if !ok || len(got) == 0 {
-		t.Fatalf("binary not produced: %v", out["binary"])
-	}
-	if string(got) != string(want) {
-		t.Errorf("binary = %q, want %q", got, want)
-	}
-	if out["name"] != "doc-1" {
-		t.Errorf("name = %v, want doc-1", out["name"])
+	if got := out["name"]; got != "file.txt" {
+		t.Errorf("name = %v, want file.txt", got)
 	}
 	if out["bucket"] != "bucketA" {
 		t.Errorf("bucket = %v, want bucketA", out["bucket"])
 	}
 	if out["path"] != "path/to/file.txt" {
 		t.Errorf("path = %v, want path/to/file.txt", out["path"])
+	}
+	if _, ok := out["binary"]; ok {
+		t.Fatalf("binary should not be emitted by File: %v", out["binary"])
 	}
 	if out["_elapsed_time"] == nil {
 		t.Error("_elapsed_time missing")
@@ -154,18 +145,14 @@ func TestFileComponent_Invoke_ResolvesDocIDViaDocumentLocation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, ok := out["binary"].([]byte)
-	if !ok {
-		t.Fatalf("binary = %T, want []byte", out["binary"])
-	}
-	if string(got) != "doc-location" {
-		t.Fatalf("binary = %q, want %q", got, "doc-location")
-	}
 	if out["name"] != "report.pdf" {
 		t.Fatalf("name = %v, want report.pdf", out["name"])
 	}
-	if out["bucket"] != "kb-doc" || out["path"] != location {
-		t.Fatalf("bucket/path = %v/%v, want kb-doc/%s", out["bucket"], out["path"], location)
+	if _, ok := out["bucket"]; ok {
+		t.Fatalf("bucket should not be emitted for doc_id-only path: %v", out["bucket"])
+	}
+	if _, ok := out["path"]; ok {
+		t.Fatalf("path should not be emitted for doc_id-only path: %v", out["path"])
 	}
 }
 
@@ -215,19 +202,18 @@ func TestFileComponent_Invoke_ResolvesDocIDViaFileMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, ok := out["binary"].([]byte)
-	if !ok {
-		t.Fatalf("binary = %T, want []byte", out["binary"])
+	if out["name"] != "deck.pptx" {
+		t.Fatalf("name = %v, want deck.pptx", out["name"])
 	}
-	if string(got) != "file-mapping" {
-		t.Fatalf("binary = %q, want %q", got, "file-mapping")
+	if _, ok := out["bucket"]; ok {
+		t.Fatalf("bucket should not be emitted for doc_id-only path: %v", out["bucket"])
 	}
-	if out["bucket"] != "folder-1" || out["path"] != location {
-		t.Fatalf("bucket/path = %v/%v, want folder-1/%s", out["bucket"], out["path"], location)
+	if _, ok := out["path"]; ok {
+		t.Fatalf("path should not be emitted for doc_id-only path: %v", out["path"])
 	}
 }
 
-func TestFileComponent_Invoke_DocIDWithoutStorageLocationFails(t *testing.T) {
+func TestFileComponent_Invoke_DocIDWithoutStorageLocationStillSucceeds(t *testing.T) {
 	withMemoryStorage(t)
 	db := withFileComponentTestDB(t)
 	if err := db.Create(&entity.Document{
@@ -243,17 +229,17 @@ func TestFileComponent_Invoke_DocIDWithoutStorageLocationFails(t *testing.T) {
 	}
 
 	c := &FileComponent{}
-	_, err := c.Invoke(context.Background(), map[string]any{"doc_id": "doc-empty"})
-	if err == nil {
-		t.Fatal("expected error for doc without storage location")
+	out, err := c.Invoke(context.Background(), map[string]any{"doc_id": "doc-empty"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
 	}
-	if !strings.Contains(err.Error(), "document location is empty") {
-		t.Fatalf("unexpected error: %v", err)
+	if got := out["name"]; got != "doc-empty" {
+		t.Fatalf("name = %v, want doc-empty", got)
 	}
 }
 
 // TestFileComponent_Invoke_MissingDoc covers the input-validation
-// branch when neither doc_id nor files is supplied.
+// branch when neither doc_id nor file is supplied.
 func TestFileComponent_Invoke_MissingDoc(t *testing.T) {
 	withMemoryStorage(t)
 	c := &FileComponent{}
@@ -262,68 +248,12 @@ func TestFileComponent_Invoke_MissingDoc(t *testing.T) {
 		t.Fatal("expected error for empty inputs, got nil")
 	}
 	if !strings.Contains(err.Error(), "doc_id") {
-		t.Errorf("error should mention doc_id/files: %v", err)
+		t.Errorf("error should mention doc_id/file: %v", err)
 	}
 }
 
-// slowStorage blocks Get() until either the channel is closed
-// (test releases the lock) or the context expires. Used to
-// exercise the timeout path in TestFileComponent_Invoke_HonorsTimeout.
-type slowStorage struct {
-	release chan struct{}
-	calls   atomic.Int32
-}
-
-func (s *slowStorage) Health() bool                                { return true }
-func (s *slowStorage) Put(string, string, []byte, ...string) error { return nil }
-func (s *slowStorage) Remove(string, string, ...string) error      { return nil }
-func (s *slowStorage) ObjExist(string, string, ...string) bool     { return true }
-func (s *slowStorage) GetPresignedURL(string, string, time.Duration, ...string) (string, error) {
-	return "", nil
-}
-func (s *slowStorage) BucketExists(string) bool                 { return true }
-func (s *slowStorage) RemoveBucket(string) error                { return nil }
-func (s *slowStorage) Copy(string, string, string, string) bool { return false }
-func (s *slowStorage) Move(string, string, string, string) bool { return false }
-
-func (s *slowStorage) Get(bucket, fnm string, _ ...string) ([]byte, error) {
-	s.calls.Add(1)
-	// Block on release; tests close the channel in t.Cleanup so
-	// the worker goroutine never leaks. The component's fetchBinary
-	// races this against ctx.Done() — when the test shrinks
-	// fileFetchTimeout below the test ctx bound, ctx.Done() wins
-	// and the worker is left waiting here (then released on cleanup).
-	<-s.release
-	return []byte("late"), nil
-}
-
-// TestFileComponent_Invoke_StorageError covers the wrap of an
-// upstream storage-layer error: empty memory storage means
-// bucket/path is missing, so Get returns ErrMemoryNotFound; the
-// component should wrap it with the "file: ..." prefix.
-func TestFileComponent_Invoke_StorageError(t *testing.T) {
-	withMemoryStorage(t) // empty memory storage
-	c := &FileComponent{}
-	_, err := c.Invoke(context.Background(), map[string]any{
-		"doc_id": "doc-x",
-		"bucket": "empty-bucket",
-		"path":   "missing.txt",
-	})
-	if err == nil {
-		t.Fatal("expected error from empty storage, got nil")
-	}
-	if !strings.HasPrefix(err.Error(), "file:") {
-		t.Errorf("error should be wrapped with 'file:' prefix, got %v", err)
-	}
-	if !errors.Is(err, storage.ErrMemoryNotFound) {
-		t.Errorf("expected chain to include ErrMemoryNotFound, got %v", err)
-	}
-}
-
-// TestFileComponent_Invoke_IncludesCheckpointPath verifies the
-// path output is the same key the storage layer is queried with,
-// so downstream components / the materialized-boundary
-// checkpoint can re-resolve the binary without rerunning File.
+// TestFileComponent_Invoke_EchoesStorageOverride verifies explicit
+// bucket/path overrides still flow through for downstream Parser use.
 func TestFileComponent_Invoke_IncludesCheckpointPath(t *testing.T) {
 	ms := withMemoryStorage(t)
 	const wantPath = "checkpoint/expected/path.bin"
@@ -332,7 +262,7 @@ func TestFileComponent_Invoke_IncludesCheckpointPath(t *testing.T) {
 	}
 	c := &FileComponent{}
 	out, err := c.Invoke(context.Background(), map[string]any{
-		"doc_id": "doc-1",
+		"file":   []map[string]any{{"name": "checkpoint.bin"}},
 		"bucket": "b",
 		"path":   wantPath,
 	})
@@ -345,39 +275,8 @@ func TestFileComponent_Invoke_IncludesCheckpointPath(t *testing.T) {
 	if out["bucket"] != "b" {
 		t.Errorf("bucket = %v, want b", out["bucket"])
 	}
-}
-
-// TestFileComponent_Invoke_HonorsTimeout installs a storage
-// that blocks well past the (test-shrunk) fileFetchTimeout, then
-// asserts the component returns context.DeadlineExceeded. The
-// timeout variable is restored on cleanup so other tests see the
-// production value.
-func TestFileComponent_Invoke_HonorsTimeout(t *testing.T) {
-	prev := fileFetchTimeout
-	fileFetchTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { fileFetchTimeout = prev })
-
-	slow := &slowStorage{release: make(chan struct{})}
-	t.Cleanup(func() { close(slow.release) }) // unblock goroutine on cleanup
-	factory := storage.GetStorageFactory()
-	prevStorage := factory.GetStorage()
-	factory.SetStorage(slow)
-	t.Cleanup(func() { factory.SetStorage(prevStorage) })
-
-	c := &FileComponent{}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := c.Invoke(ctx, map[string]any{
-		"doc_id": "doc-slow",
-		"bucket": "b",
-		"path":   "p",
-	})
-	if err == nil {
-		t.Fatal("expected timeout error, got nil")
-	}
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("expected context.DeadlineExceeded, got %v", err)
+	if _, ok := out["binary"]; ok {
+		t.Fatalf("binary should not be emitted by File: %v", out["binary"])
 	}
 }
 
@@ -393,7 +292,7 @@ func TestFileComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	if len(outs) == 0 {
 		t.Error("Outputs() returned empty map")
 	}
-	for _, key := range []string{"binary", "name"} {
+	for _, key := range []string{"name", "file"} {
 		if _, ok := outs[key]; !ok {
 			t.Errorf("Outputs() missing %q", key)
 		}
@@ -401,8 +300,7 @@ func TestFileComponent_InputsOutputs_NonEmpty(t *testing.T) {
 }
 
 // TestFileComponent_Parallelism asserts the fan-out is locked to
-// 1 — File is a single MinIO fetch and the plan §AD-5a confirms
-// this is intentional.
+// 1 — File is metadata-only and intentionally non-fanned-out.
 func TestFileComponent_Parallelism(t *testing.T) {
 	c := &FileComponent{}
 	if got := c.Parallelism(); got != 1 {

@@ -78,12 +78,6 @@
 //
 //   - WHAT IS NOT PORTED:
 //
-//   - The python `_invoke` branch for `output_format in
-//     {"markdown","text","html"}` — the Go port expects upstream
-//     to have already produced chunk lists (the Chunker's
-//     contract); if a caller wires `output_format="text"` etc.
-//     the chunk list is empty and the component short-circuits.
-//
 //   - The python `finalize_pdf_chunk` post-step — that
 //     normalizes PDF bbox metadata; it lives in
 //     `rag/flow/parser/pdf_chunk_metadata.py` and is the Parser
@@ -96,6 +90,7 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -152,7 +147,10 @@ var EncodeFunc func(tenantID, embdID string) Embedder
 //	tenant_id  (string, optional) — used to resolve the embedding model
 //	model_id   (string, optional) — explicit override; falls back to
 //	                             Param.EmbeddingID (future)
-//	chunks     (list[map]) — chunk list from upstream Chunker
+//	output_format (string) — one of json/markdown/text/html/chunks
+//	chunks        (list[map]) — chunk list when output_format == "chunks"
+//	json          (list[map]) — structured parser payload when output_format == "json" or unset
+//	markdown/text/html        — scalar payload matching output_format
 //
 // Outputs:
 //
@@ -222,10 +220,15 @@ func NewTokenizerComponent(params map[string]any) (runtime.Component, error) {
 // Inputs returns the parameter metadata.
 func (c *TokenizerComponent) Inputs() map[string]string {
 	return map[string]string{
-		"tenant_id": "Tenant identifier used to resolve the embedding model (mirrors python self._canvas._tenant_id).",
-		"model_id":  "Optional explicit embedding-model override. Falls back to EncodeFunc resolution when unset.",
-		"chunks":    "List of chunk maps from the upstream Chunker. Each map carries at least a `text` field.",
-		"name":      "Upstream document name (used for title_tks and the title-blended embedding).",
+		"tenant_id":     "Tenant identifier used to resolve the embedding model (mirrors python self._canvas._tenant_id).",
+		"model_id":      "Optional explicit embedding-model override. Falls back to EncodeFunc resolution when unset.",
+		"output_format": "Upstream payload discriminator: json / markdown / text / html / chunks.",
+		"chunks":        "List of chunk maps when output_format == \"chunks\".",
+		"json":          "Structured parser payload when output_format == \"json\" or unset.",
+		"text":          "Plain-text payload when output_format == \"text\".",
+		"markdown":      "Markdown payload when output_format == \"markdown\".",
+		"html":          "HTML payload when output_format == \"html\".",
+		"name":          "Upstream document name (used for title_tks and the title-blended embedding).",
 	}
 }
 
@@ -262,11 +265,12 @@ func (c *TokenizerComponent) Parallelism() int { return 1 }
 func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	modelID := getStringOr(inputs, "model_id", "")
-	chunks, err := getChunks(inputs)
+	upstream, err := decodeTokenizerFromUpstream(inputs)
 	if err != nil {
 		return nil, err
 	}
-	name := getStringOr(inputs, "name", "")
+	chunks := chunksFromTokenizerUpstream(upstream)
+	name := upstream.Name
 	titleStem := titleExtRE.ReplaceAllString(name, "")
 
 	// TrackElapsed wraps the whole pipeline (tokenize + embed) so the
@@ -369,6 +373,97 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 
 		return out, nil
 	})
+}
+
+func decodeTokenizerFromUpstream(inputs map[string]any) (schema.TokenizerFromUpstream, error) {
+	var out schema.TokenizerFromUpstream
+	if inputs == nil {
+		return out, fmt.Errorf("Tokenizer: inputs map is nil")
+	}
+	data, err := json.Marshal(stripRuntimeTimestamps(inputs))
+	if err != nil {
+		return out, fmt.Errorf("Tokenizer: encode inputs: %w", err)
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return out, fmt.Errorf("Tokenizer: decode inputs: %w", err)
+	}
+	if err := out.Validate(); err != nil {
+		return out, fmt.Errorf("Tokenizer: input error: %w", err)
+	}
+	return out, nil
+}
+
+func stripRuntimeTimestamps(inputs map[string]any) map[string]any {
+	out := make(map[string]any, len(inputs))
+	for k, v := range inputs {
+		if k == "_created_time" || k == "_elapsed_time" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func chunksFromTokenizerUpstream(in schema.TokenizerFromUpstream) []schema.ChunkDoc {
+	switch in.OutputFormat {
+	case schema.PayloadFormatChunks:
+		return cloneChunkDocs(in.Chunks)
+	case schema.PayloadFormatMarkdown:
+		return textPayloadToChunks(in.MarkdownResult)
+	case schema.PayloadFormatText:
+		return textPayloadToChunks(in.TextResult)
+	case schema.PayloadFormatHTML:
+		return textPayloadToChunks(in.HTMLResult)
+	default:
+		return cloneChunkDocs(in.JSONResult)
+	}
+}
+
+func textPayloadToChunks(payload *string) []schema.ChunkDoc {
+	if payload == nil || strings.TrimSpace(*payload) == "" {
+		return []schema.ChunkDoc{}
+	}
+	return []schema.ChunkDoc{{Text: *payload}}
+}
+
+func cloneChunkDocs(in []schema.ChunkDoc) []schema.ChunkDoc {
+	if len(in) == 0 {
+		return []schema.ChunkDoc{}
+	}
+	out := make([]schema.ChunkDoc, len(in))
+	for i := range in {
+		out[i] = cloneTokenizerChunkDoc(in[i])
+	}
+	return out
+}
+
+func cloneTokenizerChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
+	out := in
+	if in.TKNums != nil {
+		v := *in.TKNums
+		out.TKNums = &v
+	}
+	if in.ChunkOrderInt != nil {
+		v := *in.ChunkOrderInt
+		out.ChunkOrderInt = &v
+	}
+	if in.PageNumber != nil {
+		v := *in.PageNumber
+		out.PageNumber = &v
+	}
+	if in.Extra != nil {
+		out.Extra = make(map[string]json.RawMessage, len(in.Extra))
+		for k, v := range in.Extra {
+			out.Extra[k] = append(json.RawMessage(nil), v...)
+		}
+	}
+	if len(in.PDFPositions) > 0 {
+		out.PDFPositions = append(json.RawMessage(nil), in.PDFPositions...)
+	}
+	if len(in.Positions) > 0 {
+		out.Positions = append(json.RawMessage(nil), in.Positions...)
+	}
+	return out
 }
 
 // normalizeChunkTextFallback populates each chunk's "text" key
@@ -491,27 +586,6 @@ func concatFields(ck schema.ChunkDoc, fields []string) string {
 		}
 	}
 	return b.String()
-}
-
-// getChunks extracts the chunk list from inputs.
-func getChunks(inputs map[string]any) ([]schema.ChunkDoc, error) {
-	if inputs == nil {
-		return nil, fmt.Errorf("Tokenizer: inputs map is nil")
-	}
-	for _, key := range []string{"chunks"} {
-		v, ok := inputs[key]
-		if !ok {
-			continue
-		}
-		chunks, found, err := schema.ChunkDocsFromAny(v)
-		if err != nil {
-			return nil, fmt.Errorf("Tokenizer: decode chunks: %w", err)
-		}
-		if found {
-			return chunks, nil
-		}
-	}
-	return []schema.ChunkDoc{}, nil
 }
 
 func getStringOr(m map[string]any, key, def string) string {
