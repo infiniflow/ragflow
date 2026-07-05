@@ -1,9 +1,11 @@
+
 package table
 
 import (
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"strings"
 	"testing"
+
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 func TestCellTexts(t *testing.T) {
@@ -16,8 +18,6 @@ func TestCellTexts(t *testing.T) {
 		t.Errorf("cellTexts: got %q, want 'A,B,C'", got)
 	}
 }
-
-// ── constructTable unit tests ─────────────────────────────────────────
 
 func TestConstructTable_Simple3x2(t *testing.T) {
 	// 3 columns × 2 rows — cells pre-filled (simulating extractTableBoxesFromImage).
@@ -140,10 +140,6 @@ func TestConstructTable_YBasedFallback(t *testing.T) {
 	}
 }
 
-// TestExtractTableAndReplace_CellTextFilled verifies that extractTableAndReplace
-// fills cell text correctly with realistic coordinate transforms (Scale=3, CropOff≠0).
-// This simulates the real pipeline where TSR cells are in crop pixel space and
-// post-merge boxes are in PDF point space.
 func TestExtractTableAndReplace_CellTextFilled(t *testing.T) {
 	// Simulate 公司差旅费 page 0 table coordinates.
 	// DLA region: X0=217, X1=1584, Y0=985, Y1=1599 at 216 DPI → PDF: 72-528 x 328-533
@@ -168,9 +164,9 @@ func TestExtractTableAndReplace_CellTextFilled(t *testing.T) {
 	// Cells pre-filled (extractTableBoxesFromImage already ran fillText + OCR).
 	cells := []pdf.TSRCell{
 		{X0: 35, Y0: 441, X1: 456, Y1: 500, Text: "标职务", Label: "table row"},
-		{X0: 460, Y0: 442, X1: 630, Y1: 500, Text: "飞机", Label: "table row"},
+		{X0: 460, Y0: 441, X1: 630, Y1: 500, Text: "飞机", Label: "table row"},
 		{X0: 35, Y0: 501, X1: 456, Y1: 560, Text: "公司级领导", Label: "table row"},
-		{X0: 460, Y0: 502, X1: 630, Y1: 560, Text: "经济舱位", Label: "table row"},
+		{X0: 460, Y0: 501, X1: 630, Y1: 560, Text: "经济舱位", Label: "table row"},
 	}
 
 	tables := []pdf.TableItem{{
@@ -208,8 +204,6 @@ func TestExtractTableAndReplace_CellTextFilled(t *testing.T) {
 	}
 }
 
-// TestConstructTable_FromBoxesRC builds HTML directly from boxes with R/C
-// annotations, matching Python's construct_table.  No cells needed for text.
 func TestConstructTable_FromBoxesRC(t *testing.T) {
 	// Boxes with R (row) and C (col) annotations — like the output of
 	// annotateTableBoxes after layout cleanup.
@@ -245,10 +239,6 @@ func TestConstructTable_FromBoxesRC(t *testing.T) {
 	t.Logf("HTML: %s", html)
 }
 
-// TestFillCellTextFromBoxes_RCAnnotations fills text via R/C when spatial
-// overlap is marginal.  Real-world TSR cells and pdf_oxide boxes have pixel-level
-// offsets — R/C annotations (set by annotateTableBoxes) are the Python-equivalent
-// way to assign boxes to cells regardless of coordinate deviations.
 func TestFillCellTextFromBoxes_RCAnnotations(t *testing.T) {
 	// Cells with real-world coordinate offsets (box shifted by 2px from cell).
 	// Spatial overlap <30% for the shifted case — fillCellTextFromBoxes fails.
@@ -260,19 +250,19 @@ func TestFillCellTextFromBoxes_RCAnnotations(t *testing.T) {
 	}
 
 	// Boxes have R/C annotations but their spatial overlap with cell rects
-	// is marginal (real-world scenario).  R/C path should still fill text.
+	// is marginal (real-world scenario). R/C path should still fill text.
 	boxes := []pdf.TextBox{
-		{X0: 12, X1: 198, Top: 12, Bottom: 48, Text: "A", R: 0, C: 0},  // overlap ~92% → OK
+		{X0: 12, X1: 198, Top: 12, Bottom: 48, Text: "A", R: 0, C: 0}, // overlap ~92% → OK
 		{X0: 215, X1: 395, Top: 12, Bottom: 48, Text: "B", R: 0, C: 1}, // overlap ~90% → OK
-		{X0: 12, X1: 198, Top: 58, Bottom: 92, Text: "C", R: 1, C: 0},  // overlap ~92% → OK
-		{X0: 215, X1: 350, Top: 58, Bottom: 90, Text: "D", R: 1, C: 1}, // overlap ~50% → MARGINAL
+		{X0: 12, X1: 198, Top: 58, Bottom: 92, Text: "C", R: 1, C: 0}, // overlap ~92% → OK
+		{X0: 215, X1: 350, Top: 58, Bottom: 92, Text: "D", R: 1, C: 1}, // overlap ~50% → MARGINAL
 	}
 
 	// This SHOULD fill all 4 cells via R/C, but spatial-only may fail on D.
 	FillCellTextFromBoxes(cells, boxes)
 
 	// When spatial overlap is marginal (box "D" at 50%), fillCellTextFromBoxes
-	// may still match because cell is empty (0.3 threshold).  But the real
+	// may still match because cell is empty (0.3 threshold). But the real
 	// problem is that fillCellTextFromBoxes depends on coordinates, while
 	// R/C annotations don't.
 	hasText := false
@@ -293,7 +283,7 @@ func TestFillCellTextFromBoxes_RCAnnotations(t *testing.T) {
 		{X0: 10, Y0: 55, X1: 200, Y1: 95},
 		{X0: 210, Y0: 55, X1: 400, Y1: 95},
 	}
-	rows := [][]pdf.TSRCell{{cells2[0], cells2[1]}, {cells2[2], cells2[3]}}
+	rows := GroupTSRCellsToRows(cells2)
 	FillCellTextFromAnnotations(rows, boxes)
 
 	if rows[0][0].Text != "A" {
@@ -310,9 +300,6 @@ func TestFillCellTextFromBoxes_RCAnnotations(t *testing.T) {
 	}
 }
 
-// TestConstructTable_SingleRowMultiCol covers R=0 with multiple columns
-// (table header pattern). boxesHaveAnnotations must detect valid annotations
-// even though maxR=0.
 func TestConstructTable_SingleRowMultiCol(t *testing.T) {
 	boxes := []pdf.TextBox{
 		{X0: 0, X1: 100, Top: 0, Bottom: 30, Text: "姓名", R: 0, C: 0},
@@ -329,9 +316,6 @@ func TestConstructTable_SingleRowMultiCol(t *testing.T) {
 	}
 }
 
-// TestConstructTable_MultiRowSingleCol covers C=0 with multiple rows
-// (vertical list pattern). boxesHaveAnnotations must detect valid
-// annotations even though maxC=0.
 func TestConstructTable_MultiRowSingleCol(t *testing.T) {
 	boxes := []pdf.TextBox{
 		{X0: 0, X1: 100, Top: 0, Bottom: 30, Text: "第一行", R: 0, C: 0},
@@ -348,8 +332,6 @@ func TestConstructTable_MultiRowSingleCol(t *testing.T) {
 	}
 }
 
-// TestConstructTable_RCAfterMerge verifies that R/C annotations survive
-// text merge. The merged box expands bounds but keeps the first box's R/C.
 func TestConstructTable_RCAfterMerge(t *testing.T) {
 	// Simulate two adjacent fragments merged into one box.
 	// The merged box keeps R/C from the first fragment.
@@ -372,11 +354,6 @@ func TestConstructTable_RCAfterMerge(t *testing.T) {
 	}
 }
 
-// TestGroupTSRCellsToRowsLabeled_DefaultTableLabel verifies that cells with
-// the real TSR default label "table" (class 0) are grouped correctly.
-// The current deepDocReRowHdr regex only matches ".* (row|header)" — it misses
-// the default "table" label, causing gatherTSR to return empty and forcing
-// a fallback to pure Y-based grouping (which loses R/C annotations).
 func TestGroupTSRCellsToRowsLabeled_DefaultTableLabel(t *testing.T) {
 	cells := []pdf.TSRCell{
 		{X0: 10, Y0: 0, X1: 100, Y1: 30, Label: "table"},
@@ -393,129 +370,6 @@ func TestGroupTSRCellsToRowsLabeled_DefaultTableLabel(t *testing.T) {
 	}
 }
 
-// TestGroupBoxesByRC_RDiffSplitsRows verifies that groupBoxesByRC
-// creates separate rows for different R values (Python: R differs → new row).
-// Even when boxes share the same Y, different R → different grid row.
-func TestGroupBoxesByRC_RDiffSplitsRows(t *testing.T) {
-	// 6 boxes with 6 different R values → 6 rows (Python R-first splitting).
-	boxes := []pdf.TextBox{
-		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "A", R: 0, C: 0},
-		{X0: 110, X1: 190, Top: 0, Bottom: 30, Text: "B", R: 1, C: 1},
-		{X0: 210, X1: 290, Top: 0, Bottom: 30, Text: "C", R: 2, C: 2},
-		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "D", R: 3, C: 0},
-		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "E", R: 4, C: 1},
-		{X0: 210, X1: 290, Top: 35, Bottom: 65, Text: "F", R: 5, C: 2},
-	}
-	rows := GroupBoxesByRC(boxes)
-	// R=0,1,2,3,4,5 → 6 rows (Python: R differs → new row).
-	if len(rows) != 6 {
-		t.Fatalf("expected 6 rows (R differs → split), got %d", len(rows))
-	}
-}
-
-// TestGroupBoxesByRC_MergesCloseCols verifies that C compression works
-// within each R group — merging different C values that are close in X.
-func TestGroupBoxesByRC_MergesCloseCols(t *testing.T) {
-	// R=0 has C=0,1. R=1 has C=0,1. C compression → 2 cols each.
-	boxes := []pdf.TextBox{
-		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "A", R: 0, C: 0},
-		{X0: 110, X1: 190, Top: 0, Bottom: 30, Text: "B", R: 0, C: 1},
-		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "C", R: 1, C: 0},
-		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "D", R: 1, C: 1},
-	}
-	rows := GroupBoxesByRC(boxes)
-	if len(rows) != 2 {
-		t.Fatalf("expected 2 rows (R diff), got %d", len(rows))
-	}
-	if len(rows[0]) != 2 || len(rows[1]) != 2 {
-		t.Errorf("expected 2 cols/row, got %d/%d", len(rows[0]), len(rows[1]))
-	}
-	if rows[0][0].Text != "A" || rows[0][1].Text != "B" {
-		t.Errorf("row0 wrong: %q %q", rows[0][0].Text, rows[0][1].Text)
-	}
-	if rows[1][0].Text != "C" || rows[1][1].Text != "D" {
-		t.Errorf("row1 wrong: %q %q", rows[1][0].Text, rows[1][1].Text)
-	}
-}
-
-// TestGroupBoxesByRC_RDiffSplitsRow verifies that boxes with different R
-// values are placed in separate rows even when their Y ranges overlap.
-// Matches Python: R differs → new row unconditionally.
-func TestGroupBoxesByRC_RDiffSplitsRow(t *testing.T) {
-	// R=0 and R=1 at same Y (overlapping) → two separate rows in the grid.
-	boxes := []pdf.TextBox{
-		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "A", R: 0, C: 0},
-		{X0: 110, X1: 190, Top: 0, Bottom: 30, Text: "B", R: 1, C: 1},
-		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "C", R: 2, C: 0},
-		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "D", R: 3, C: 1},
-	}
-	rows := GroupBoxesByRC(boxes)
-	// R=0,1,2,3 → 4 different R values → 4 rows (Python: R differs → new row).
-	if len(rows) != 4 {
-		t.Fatalf("expected 4 rows (R differs → split), got %d", len(rows))
-	}
-	if rows[0][0].Text != "A" || rows[1][0].Text != "B" {
-		t.Errorf("row0/1 wrong: A=%q B=%q", rows[0][0].Text, rows[1][0].Text)
-	}
-}
-
-// TestFillCellTextFromBoxes_RCOnly verifies that box text goes to exactly
-// one cell via R/C annotations, not multiple cells via spatial overlap.
-// A box overlapping two cells should only fill the one matching its R/C.
-func TestFillCellTextFromBoxes_RCOnly(t *testing.T) {
-	cells := []pdf.TSRCell{
-		{X0: 0, Y0: 0, X1: 100, Y1: 50, Label: "table"},
-		{X0: 90, Y0: 0, X1: 200, Y1: 50, Label: "table"},
-	}
-	// This box straddles cell 0 (X=0-100) and cell 1 (X=90-200).
-	// Spatial overlap: both match. R/C: should go to cell R=0, C=0 only.
-	boxes := []pdf.TextBox{
-		{X0: 80, X1: 120, Top: 0, Bottom: 50, Text: "TEXT", LayoutType: "table", R: 0, C: 0},
-	}
-	rows := GroupTSRCellsToRows(cells)
-	for _, b := range boxes {
-		t := strings.TrimSpace(b.Text)
-		if t == "" {
-			continue
-		}
-		if b.R >= 0 && b.R < len(rows) && b.C >= 0 && b.C < len(rows[b.R]) {
-			rows[b.R][b.C].Text = t
-		}
-	}
-	// Cell 0 should have text, cell 1 should NOT.
-	if rows[0][0].Text != "TEXT" {
-		t.Errorf("cell[0][0] = %q, want %q", rows[0][0].Text, "TEXT")
-	}
-	if rows[0][1].Text != "" {
-		t.Errorf("cell[0][1] = %q, should be empty (spatial overlap leak)", rows[0][1].Text)
-	}
-}
-
-// TestRowsToHTML_HeaderRows verifies that header rows use <th > instead of <td >.
-func TestRowsToHTML_HeaderRows(t *testing.T) {
-	cells := []pdf.TSRCell{
-		{X0: 0, Y0: 0, X1: 100, Y1: 30, Text: "Name", Label: "table column header"},
-		{X0: 101, Y0: 0, X1: 200, Y1: 30, Text: "Age", Label: "table column header"},
-		{X0: 0, Y0: 35, X1: 100, Y1: 65, Text: "John", Label: "table row"},
-		{X0: 101, Y0: 35, X1: 200, Y1: 65, Text: "30", Label: "table row"},
-	}
-	// constructTable should produce <th > for header row.
-	item := &pdf.TableItem{}
-	html := ConstructTable(cells, nil, "", item)
-	// Header row should use <th >, data row <td >.
-	if !strings.Contains(html, "<th >") {
-		t.Errorf("expected <th > for header row. HTML: %s", html)
-	}
-	if strings.Count(html, "<th ") != 2 {
-		t.Errorf("expected 2 <th > cells, got %d. HTML: %s", strings.Count(html, "<th "), html)
-	}
-	if strings.Count(html, "<td ") != 2 {
-		t.Errorf("expected 2 <td > cells (data row), got %d", strings.Count(html, "<td "))
-	}
-}
-
-// TestExtractTableAndReplace_OnlyTableBoxes verifies that only boxes with
-// LayoutType=="table" are passed to constructTable (Python: filters by layout_type).
 func TestExtractTableAndReplace_OnlyTableBoxes(t *testing.T) {
 	boxes := []pdf.TextBox{
 		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "A", R: 0, C: 0, LayoutType: "table"},
@@ -538,11 +392,8 @@ func TestExtractTableAndReplace_OnlyTableBoxes(t *testing.T) {
 	}
 }
 
-// TestFillCellText_RCOverSpatial verifies that R/C-based fill puts a
-// box into exactly one cell (matching Python), unlike spatial fill which
-// puts it into all overlapping cells.
 func TestFillCellText_RCOverSpatial(t *testing.T) {
-	// Box at X=30..270 overlaps all 3 cells (>30% each — spatial fills ALL).
+	// Box at X=30-270 overlaps all 3 cells (>30% each — spatial fills ALL).
 	// With R/C, it belongs only to cell[1] (R=0, C=1).
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 30, Label: "table"},
@@ -553,7 +404,7 @@ func TestFillCellText_RCOverSpatial(t *testing.T) {
 		{X0: 30, X1: 270, Top: 0, Bottom: 30, Text: "TEXT", LayoutType: "table", R: 0, C: 1},
 	}
 
-	// Spatial fill: fills ALL overlapping cells —> duplication.
+	// Spatial fill: fills ALL overlapping cells → duplication.
 	cellsCopy := make([]pdf.TSRCell, 3)
 	copy(cellsCopy, cells)
 	FillCellTextFromBoxes(cellsCopy, boxes)
@@ -599,7 +450,7 @@ func TestIsCaptionBox(t *testing.T) {
 		{"Table 1: Transport Levels", true},
 		{"图表 1: 测试", true},
 		{"公司领导班子成员、出差地", false}, // plain text, not caption
-		{"第十条到厂矿单位出差", false},   // normal paragraph
+		{"第十条到厂矿单位出差", false}, // normal paragraph
 		{"", false},
 	}
 	for _, tt := range tests {
@@ -631,7 +482,7 @@ func TestFillCellTextFromBoxes_SkipsCaption(t *testing.T) {
 
 func TestFillCellText_RCPreventsCrossCellLeak(t *testing.T) {
 	// Caption box at Y=0-15 overlaps BOTH cell rows (both are "empty").
-	// Spatial fill: text leaks to both cells. R/C fill: only cell[0] gets text.
+	// Spatial fill: text leaks to cells[1]. R/C fill: only cell[0] gets text.
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 300, Y1: 30, Label: "table"},
 		{X0: 0, Y0: 35, X1: 300, Y1: 65, Label: "table"},
@@ -664,44 +515,6 @@ func TestFillCellText_RCPreventsCrossCellLeak(t *testing.T) {
 	}
 }
 
-func TestGroupBoxesByRC_FallbackToYXWhenNoAnnotations(t *testing.T) {
-	// When all boxes have R=-1 (Python's case: regex didn't match "table" label),
-	// groupBoxesByRC should fall back to YX coordinate grouping.
-	boxes := []pdf.TextBox{
-		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "A", R: -1, C: -1},
-		{X0: 110, X1: 190, Top: 0, Bottom: 30, Text: "B", R: -1, C: -1},
-		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "C", R: -1, C: -1},
-		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "D", R: -1, C: -1},
-	}
-	rows := GroupBoxesByRC(boxes)
-	// R=-1 for all → maxR = -1 → grid would be 0 rows. Must fall back to YX.
-	if len(rows) == 0 {
-		t.Fatal("groupBoxesByRC returned 0 rows when R=-1 — no YX fallback")
-	}
-	if len(rows) != 2 {
-		t.Errorf("expected 2 rows (Y-split), got %d", len(rows))
-	}
-}
-
-func TestRowsToHTML_Colspan(t *testing.T) {
-	// Box spanning 2 columns: SP annotation with HLeft/HRight covering cols 0-1.
-	boxes := []pdf.TextBox{
-		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "Name", R: 0, C: 0, H: 1, HLeft: 10, HRight: 190},
-		{X0: 110, X1: 190, Top: 0, Bottom: 30, Text: "", R: 0, C: 1, SP: 1},
-		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "John", R: 1, C: 0},
-		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "30", R: 1, C: 1},
-	}
-	rows := GroupBoxesByRC(boxes)
-	spans, covered := CalSpans(rows)
-	html := RowsToHTML(rows, "", nil, spans, covered)
-	if !strings.Contains(html, "colspan") {
-		t.Errorf("expected colspan attribute, got: %s", html)
-	}
-	t.Logf("HTML: %s", html)
-}
-
-// TestStripCaptionFromCells verifies that caption-like text is cleared
-// from TSR cells before the table HTML is built.
 func TestStripCaptionFromCells_ClearsCaptionPattern(t *testing.T) {
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "表1：差旅费标准"},
@@ -718,8 +531,6 @@ func TestStripCaptionFromCells_ClearsCaptionPattern(t *testing.T) {
 	}
 }
 
-// TestStripCaptionFromCells_PreservesData verifies that non-caption
-// cells are not cleared.
 func TestStripCaptionFromCells_PreservesData(t *testing.T) {
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "姓名"},
@@ -735,19 +546,16 @@ func TestStripCaptionFromCells_PreservesData(t *testing.T) {
 	StripCaptionFromCells(cells)
 	for i := range cells {
 		if cells[i].Text != orig[i] {
-			t.Errorf("cell[%d] changed: %q -> %q", i, orig[i], cells[i].Text)
+			t.Errorf("cell[%d] changed: %q → %q", i, orig[i], cells[i].Text)
 		}
 	}
 }
 
-// TestStripCaptionFromCells_Empty is a no-op on empty cells.
 func TestStripCaptionFromCells_Empty(t *testing.T) {
 	cells := []pdf.TSRCell{}
 	StripCaptionFromCells(cells) // must not panic
 }
 
-// TestConstructTable_StripsCaptionFromCells verifies that constructTable
-// strips caption text from cells before building HTML.
 func TestConstructTable_StripsCaptionFromCells(t *testing.T) {
 	// Cell[0] has caption text "表1：标题"; cell[1] has real data.
 	cells := []pdf.TSRCell{
@@ -765,115 +573,6 @@ func TestConstructTable_StripsCaptionFromCells(t *testing.T) {
 	}
 	t.Logf("HTML: %s", html)
 }
-
-// TestCalSpans_NonSpanningCellsNotPolluted verifies that a regular cell
-// at position [0,0] is NOT detected as spanning when a spanning cell at
-// [0,1] extends to the left, polluting column boundary calculations.
-// Bug: calSpans computed column boundaries from ALL cells including
-// spanning cells. "部门开支汇总" at [0,1] with X0=0 extends colLeft[1]
-// to 0 instead of 101, shifting the center and causing "Q1" at [0,0]
-// to be incorrectly detected as spanning 2 columns.
-func TestCalSpans_NonSpanningCellsNotPolluted(t *testing.T) {
-	// Simulate the SpannedTable test grid: row 0 has Q1(regular), 部门开支汇总(span), Q2(regular)
-	rows := [][]pdf.TSRCell{
-		{
-			{X0: 0, Y0: 0, X1: 100, Y1: 30, Text: "Q1", Label: "table row"},
-			{X0: 0, Y0: 0, X1: 200, Y1: 30, Text: "部门开支汇总", Label: "table spanning cell"},
-			{X0: 101, Y0: 0, X1: 200, Y1: 30, Text: "Q2", Label: "table row"},
-		},
-		{
-			{X0: 0, Y0: 35, X1: 100, Y1: 65, Text: "100", Label: "table row"},
-			{X0: 101, Y0: 35, X1: 200, Y1: 65, Text: "200", Label: "table row"},
-		},
-	}
-
-	spans, covered := CalSpans(rows)
-
-	// Q1 at [0,0] has X0=0, X1=100 which should only cover its own column.
-	// It should NOT get a colspan.
-	if s, ok := spans[[2]int{0, 0}]; ok {
-		t.Errorf("Q1 at [0,0] should NOT have colspan, got %v. "+
-			"Spanning cell at [0,1] polluted column boundaries", s)
-	}
-
-	// 部门开支汇总 at [0,1] has X0=0, X1=200 which DOES span columns 0 and 1.
-	if s, ok := spans[[2]int{0, 1}]; !ok {
-		t.Error("部门开支汇总 at [0,1] should have colspan=2 (covers X=0-200)")
-	} else if s[0] != 2 {
-		t.Errorf("部门开支汇总 colspan = %d, want 2", s[0])
-	}
-
-	// Q2 at [0,2] should be covered by the spanning cell (col 2 is within X=0-200).
-	if !covered[[2]int{0, 2}] {
-		t.Error("Q2 at [0,2] should be covered by spanning cell at [0,1]")
-	}
-
-	t.Logf("spans: %v, covered: %v", spans, covered)
-}
-
-// ── coordinate space conversion helpers ─────────────────────────────────
-func TestRowsToHTML(t *testing.T) {
-	// rowsToHTML takes [][]pdf.TSRCell instead of [][]string (tableToHTML removed).
-	toCells := func(rows [][]string) [][]pdf.TSRCell {
-		out := make([][]pdf.TSRCell, len(rows))
-		for ri, row := range rows {
-			out[ri] = make([]pdf.TSRCell, len(row))
-			for ci, s := range row {
-				out[ri][ci] = pdf.TSRCell{Text: s}
-			}
-		}
-		return out
-	}
-
-	t.Run("simple 2x2 table", func(t *testing.T) {
-		rows := toCells([][]string{
-			{"姓名", "年龄"},
-			{"张三", "25"},
-		})
-		html := RowsToHTML(rows, "", nil, nil, nil)
-		expected := "<table><tr><td >姓名</td><td >年龄</td></tr><tr><td >张三</td><td >25</td></tr></table>"
-		if html != expected {
-			t.Errorf("got  %q\nwant %q", html, expected)
-		}
-	})
-
-	t.Run("empty table", func(t *testing.T) {
-		html := RowsToHTML(nil, "", nil, nil, nil)
-		if html != "<table></table>" {
-			t.Errorf("expected '<table></table>', got %q", html)
-		}
-	})
-
-	t.Run("single cell", func(t *testing.T) {
-		rows := toCells([][]string{{"X"}})
-		html := RowsToHTML(rows, "", nil, nil, nil)
-		expected := "<table><tr><td >X</td></tr></table>"
-		if html != expected {
-			t.Errorf("got  %q\nwant %q", html, expected)
-		}
-	})
-
-	t.Run("matches Python format for 公司差旅费", func(t *testing.T) {
-		rows := toCells([][]string{
-			{"标职务", "飞机", "火车", "轮船", "其他交通工具（不含的士）"},
-			{"公司级领导人员", "经济舱位", "火车软席", "二等舱位", "按实报销"},
-			{"其他工作人员", "经济舱位", "火车硬席", "三等舱位", "按实报销"},
-		})
-		html := RowsToHTML(rows, "", nil, nil, nil)
-		if !strings.HasPrefix(html, "<table>") || !strings.HasSuffix(html, "</table>") {
-			t.Errorf("not valid HTML: %s", html)
-		}
-		if !strings.Contains(html, "<td >标职务</td>") {
-			t.Errorf("missing cell '标职务': %s", html)
-		}
-		if strings.Count(html, "<tr>") != 3 {
-			t.Errorf("expected 3 rows, got %d", strings.Count(html, "<tr>"))
-		}
-	})
-}
-
-// TestExtractTableAndReplace verifies that extractTableAndReplace pops
-// table boxes and replaces them with consolidated HTML, matching Python.
 
 func TestExtractTableAndReplace(t *testing.T) {
 	// Build boxes with table labels and a pdf.TableItem with cells.
@@ -906,15 +605,13 @@ func TestExtractTableAndReplace(t *testing.T) {
 }
 
 func TestBoxMatchesCell_FalsePositive(t *testing.T) {
-	// Cell: narrow table cell (40×20 px)
+	// Cell: narrow table cell (40x20 px)
 	cell := pdf.TSRCell{X0: 0, Y0: 0, X1: 40, Y1: 20}
 
-	// Box A: entirely inside the cell → should match.
+	// Box A: entirely inside the cell → should match
 	boxA := pdf.TextBox{X0: 5, X1: 35, Top: 2, Bottom: 18, Text: "标职务"}
 
-	// Box B: a wide body-text box that only slightly overlaps the cell.
-	// It covers x=30..200 but the cell is only x=0..40.
-	// Overlap: x=30..40 (10px), box width=170 → ratio=10/170=0.059 < 0.3.
+	// Box B: a wide body-text box that only slightly overlaps the cell
 	boxB := pdf.TextBox{X0: 30, X1: 200, Top: 5, Bottom: 15, Text: "第二条出差人员应按规定等级乘坐交通工具..."}
 
 	if !BoxMatchesCell(cell, boxA, true) {
@@ -931,10 +628,6 @@ func TestBoxMatchesCell_FalsePositive(t *testing.T) {
 	}
 }
 
-// TestFillCellTextFromBoxes_PageGlobal verifies that fillCellTextFromBoxes
-// correctly matches text boxes to cells when both use page-global 72 DPI
-// coordinates, matching Python's construct_table approach.
-
 func TestFillCellTextFromBoxes_PageGlobal(t *testing.T) {
 	t.Run("exact alignment matches", func(t *testing.T) {
 		cells := []pdf.TSRCell{
@@ -949,13 +642,13 @@ func TestFillCellTextFromBoxes_PageGlobal(t *testing.T) {
 		}
 		FillCellTextFromBoxes(cells, boxes)
 		if cells[0].Text != "标职务" {
-			t.Errorf("cell[0] = %q, want '标职务'", cells[0].Text)
+			t.Errorf("cell[0] = %q, want %q", cells[0].Text, "标职务")
 		}
 		if cells[1].Text != "飞机" {
-			t.Errorf("cell[1] = %q, want '飞机'", cells[1].Text)
+			t.Errorf("cell[1] = %q, want %q", cells[1].Text, "飞机")
 		}
 		if cells[2].Text != "火车" {
-			t.Errorf("cell[2] = %q, want '火车'", cells[2].Text)
+			t.Errorf("cell[2] = %q, want %q", cells[2].Text, "火车")
 		}
 	})
 
@@ -967,7 +660,7 @@ func TestFillCellTextFromBoxes_PageGlobal(t *testing.T) {
 		}
 		FillCellTextFromBoxes(cells, boxes)
 		if cells[0].Text != "标职务" {
-			t.Errorf("cell text = %q, want '标职务' (body text should not leak in)", cells[0].Text)
+			t.Errorf("cell text = %q, want %q (body text should not leak in)", cells[0].Text, "标职务")
 		}
 	})
 
@@ -982,109 +675,6 @@ func TestFillCellTextFromBoxes_PageGlobal(t *testing.T) {
 			t.Errorf("existing text should be preserved, got %q", cells[0].Text)
 		}
 	})
-}
-
-// spans and generates "@@5-6\t..." tags.
-
-func TestCrossPageTableMerge(t *testing.T) {
-	// Page 0 table: 2 cells, positioned at page 0.
-	pg0 := pdf.TableItem{
-		Positions: []pdf.Position{
-			{PageNumbers: []int{0}, Left: 50, Right: 500, Top: 100, Bottom: 800},
-		},
-		Scale: 1.0,
-		Cells: []pdf.TSRCell{
-			{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "pg0_r0c0"},
-			{X0: 100, Y0: 0, X1: 200, Y1: 50, Text: "pg0_r0c1"},
-		},
-	}
-	// Page 1 table: 2 cells, same X range, positioned at page 1.
-	pg1 := pdf.TableItem{
-		Positions: []pdf.Position{
-			{PageNumbers: []int{1}, Left: 50, Right: 500, Top: 100, Bottom: 300},
-		},
-		Scale: 1.0,
-		Cells: []pdf.TSRCell{
-			{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "pg1_r0c0"},
-			{X0: 100, Y0: 0, X1: 200, Y1: 50, Text: "pg1_r0c1"},
-		},
-	}
-	tables := []pdf.TableItem{pg0, pg1}
-
-	// mergeTablesAcrossPages merges tables on consecutive pages with X overlap.
-	merged := MergeTablesAcrossPages(tables, nil)
-	if len(merged) != 1 {
-		t.Fatalf("expected 1 merged table, got %d", len(merged))
-	}
-	if len(merged[0].Cells) != 4 {
-		t.Errorf("expected 4 merged cells, got %d", len(merged[0].Cells))
-	}
-	if len(merged[0].Positions) != 2 {
-		t.Errorf("expected 2 merged positions, got %d", len(merged[0].Positions))
-	}
-	t.Logf("Merged %d cells across %d pages", len(merged[0].Cells), len(merged[0].Positions))
-}
-
-// TestMergeTablesAcrossPages_NoOverlap verifies that non-adjacent or
-// non-overlapping tables are NOT merged.
-
-func TestMergeTablesAcrossPages_NoOverlap(t *testing.T) {
-	// Tables with no X overlap should NOT be merged.
-	tables := []pdf.TableItem{
-		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 50, Right: 100, Top: 100, Bottom: 500}},
-			Scale:     1.0,
-			Cells:     []pdf.TSRCell{{Text: "left"}},
-		},
-		{
-			Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 500, Right: 600, Top: 100, Bottom: 500}},
-			Scale:     1.0,
-			Cells:     []pdf.TSRCell{{Text: "right"}},
-		},
-	}
-	merged := MergeTablesAcrossPages(tables, nil)
-	if len(merged) != 2 {
-		t.Fatalf("non-overlapping tables: expected 2 tables, got %d", len(merged))
-	}
-}
-
-// TestMergeTablesAcrossPages_NonConsecutive verifies that tables on
-// non-consecutive pages are NOT merged.
-
-func TestMergeTablesAcrossPages_NonConsecutive(t *testing.T) {
-	tables := []pdf.TableItem{
-		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 50, Right: 500, Top: 100, Bottom: 500}},
-			Scale:     1.0,
-			Cells:     []pdf.TSRCell{{Text: "page0"}},
-		},
-		{
-			Positions: []pdf.Position{{PageNumbers: []int{3}, Left: 50, Right: 500, Top: 100, Bottom: 500}},
-			Scale:     1.0,
-			Cells:     []pdf.TSRCell{{Text: "page3"}},
-		},
-	}
-	merged := MergeTablesAcrossPages(tables, nil)
-	if len(merged) != 2 {
-		t.Fatalf("non-consecutive pages: expected 2 tables, got %d", len(merged))
-	}
-}
-
-// TestMergeTablesAcrossPages_SingleTable verifies that a single table
-// passes through unchanged.
-
-func TestMergeTablesAcrossPages_SingleTable(t *testing.T) {
-	tables := []pdf.TableItem{
-		{
-			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 50, Right: 500, Top: 100, Bottom: 500}},
-			Scale:     1.0,
-			Cells:     []pdf.TSRCell{{Text: "only"}},
-		},
-	}
-	merged := MergeTablesAcrossPages(tables, nil)
-	if len(merged) != 1 {
-		t.Fatalf("single table: expected 1 table, got %d", len(merged))
-	}
 }
 
 func TestMergeCaptions_NeedsCaptionLayoutType(t *testing.T) {
@@ -1107,23 +697,200 @@ func TestMergeCaptions_NeedsCaptionLayoutType(t *testing.T) {
 	}
 }
 
-// TestGroupBoxesByRC_ColspanMissing exposes that groupBoxesByRC doesn't
-// compute colspan/rowspan from SP annotations (__cal_spans in Python).
+func TestCleanupOrphanColumns(t *testing.T) {
+	// Test 1: Less than 4 rows - no cleanup
+	t.Run("less than 4 rows", func(t *testing.T) {
+		rows := [][]pdf.TSRCell{
+			{{Text: "a"}},
+			{{Text: "b"}},
+			{{Text: "c"}},
+		}
+		result := CleanupOrphanColumns(rows)
+		if len(result) != 3 {
+			t.Errorf("expected 3 rows, got %d", len(result))
+		}
+	})
 
-func TestGroupBoxesByRC_ColspanMissing(t *testing.T) {
-	// Box with SP annotation spanning 2 columns (HLeft→HRight covers cols 0-1).
-	boxes := []pdf.TextBox{
-		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "Name", R: 0, C: 0, H: 1,
-			HLeft: 10, HRight: 200},
-		{X0: 110, X1: 200, Top: 0, Bottom: 30, Text: "", R: 0, C: 1, SP: 1},
-		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "A", R: 1, C: 0},
-		{X0: 110, X1: 200, Top: 35, Bottom: 65, Text: "B", R: 1, C: 1},
+	// Test 2: 4 rows, no orphan columns
+	t.Run("4 rows no orphans", func(t *testing.T) {
+		rows := [][]pdf.TSRCell{
+			{{Text: "a"}, {Text: "b"}},
+			{{Text: "c"}, {Text: "d"}},
+			{{Text: "e"}, {Text: "f"}},
+			{{Text: "g"}, {Text: "h"}},
+		}
+		result := CleanupOrphanColumns(rows)
+		if len(result[0]) != 2 {
+			t.Errorf("expected 2 columns, got %d", len(result[0]))
+		}
+	})
+
+	// Test 3: 4 rows, one orphan column in the middle
+	t.Run("4 rows orphan column in middle kept", func(t *testing.T) {
+		rows := [][]pdf.TSRCell{
+			{{Text: "a", X0: 0, X1: 10}, {Text: ""}, {Text: "b", X0: 30, X1: 40}},
+			{{Text: "c", X0: 0, X1: 10}, {Text: ""}, {Text: "d", X0: 30, X1: 40}},
+			{{Text: "e", X0: 0, X1: 10}, {Text: "orphan", X0: 15, X1: 25}, {Text: "f", X0: 30, X1: 40}},
+			{{Text: "g", X0: 0, X1: 10}, {Text: ""}, {Text: "h", X0: 30, X1: 40}},
+		}
+		result := CleanupOrphanColumns(rows)
+		if len(result[0]) != 3 {
+			t.Errorf("expected 3 columns (kept because both sides have text), got %d", len(result[0]))
+		}
+	})
+}
+
+func TestCountNonEmptyCells(t *testing.T) {
+	rows := [][]pdf.TSRCell{
+		{{Text: "a"}, {Text: ""}},
+		{{Text: ""}, {Text: ""}},
+		{{Text: "b"}, {Text: "c"}},
+		{{Text: ""}, {Text: ""}},
 	}
-	rows := GroupBoxesByRC(boxes)
-	// The result should have colspan=2 for cell [0,0] and skip [0,1].
-	// Currently groupBoxesByRC produces a flat grid without span info.
-	if len(rows) >= 1 && len(rows[0]) >= 2 && rows[0][1].Text == "" {
-		t.Log("KNOWN LIMITATION: colspan not computed — cell [0,1] is empty instead of merged")
+
+	count, rowIdx := countNonEmptyCells(rows, 0)
+	if count != 2 {
+		t.Errorf("expected 2 non-empty cells in column 0, got %d", count)
 	}
-	_ = rows
+	if rowIdx != 2 {
+		t.Errorf("expected last non-empty cell at row 2, got %d", rowIdx)
+	}
+
+	count, rowIdx = countNonEmptyCells(rows, 1)
+	if count != 1 {
+		t.Errorf("expected 1 non-empty cell in column 1, got %d", count)
+	}
+	if rowIdx != 2 {
+		t.Errorf("expected last non-empty cell at row 2, got %d", rowIdx)
+	}
+
+	count, rowIdx = countNonEmptyCells(rows, 999)
+	if count != 0 {
+		t.Errorf("expected 0 non-empty cells for invalid column, got %d", count)
+	}
+}
+
+func TestCheckAdjacentColumns(t *testing.T) {
+	rows := [][]pdf.TSRCell{
+		{{Text: "left"}, {Text: "orphan"}, {Text: "right"}},
+	}
+
+	hasLeft, hasRight := checkAdjacentColumns(rows, 1, 0)
+	if !hasLeft {
+		t.Error("expected left column to have text")
+	}
+	if !hasRight {
+		t.Error("expected right column to have text")
+	}
+
+	rows2 := [][]pdf.TSRCell{
+		{{Text: ""}, {Text: "orphan"}, {Text: ""}},
+	}
+	hasLeft, hasRight = checkAdjacentColumns(rows2, 1, 0)
+	if hasLeft {
+		t.Error("expected left column to be empty")
+	}
+	if hasRight {
+		t.Error("expected right column to be empty")
+	}
+
+	// Test edge cases
+	rows3 := [][]pdf.TSRCell{
+		{{Text: "only column"}},
+	}
+	hasLeft, hasRight = checkAdjacentColumns(rows3, 0, 0)
+	if !hasLeft { // j == 0 should count hasLeft as true
+		t.Error("expected hasLeft to be true when j == 0")
+	}
+	if !hasRight { // j+1 >= len should count hasRight as true
+		t.Error("expected hasRight to be true when j+1 >= len")
+	}
+}
+
+func TestCalculateMergeDistance(t *testing.T) {
+	rows := [][]pdf.TSRCell{
+		{{Text: "left", X0: 0, X1: 10}, {Text: "orphan", X0: 15, X1: 25}, {Text: "right", X0: 30, X1: 40}},
+	}
+
+	leftDist, rightDist := calculateMergeDistance(rows, 1, 0, 3, false, false)
+	if leftDist != 5 { // 15 - 10 = 5
+		t.Errorf("expected left distance 5, got %v", leftDist)
+	}
+	if rightDist != 5 { // 30 - 25 = 5
+		t.Errorf("expected right distance 5, got %v", rightDist)
+	}
+}
+
+func TestMergeColumn(t *testing.T) {
+	tests := []struct {
+		name     string
+		mergeDir string // "left" or "right"
+		srcCol   int
+		wantCol0 string
+		wantCol1 string
+	}{
+		{
+			name:     "merge left",
+			mergeDir: "left",
+			srcCol:   1,
+			wantCol0: "a b",
+			wantCol1: "b",
+		},
+		{
+			name:     "merge right",
+			mergeDir: "right",
+			srcCol:   0,
+			wantCol0: "a",
+			wantCol1: "a b",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows := [][]pdf.TSRCell{
+				{{Text: "a"}, {Text: "b"}},
+				{{Text: ""}, {Text: "d"}},
+				{{Text: "e"}, {Text: ""}},
+			}
+
+			if tt.mergeDir == "left" {
+				mergeColumnIntoLeft(rows, tt.srcCol)
+				if rows[0][0].Text != tt.wantCol0 {
+					t.Errorf("expected '%s', got '%s'", tt.wantCol0, rows[0][0].Text)
+				}
+				if rows[1][0].Text != "d" {
+					t.Errorf("expected 'd', got '%s'", rows[1][0].Text)
+				}
+				if rows[2][0].Text != "e" {
+					t.Errorf("expected 'e', got '%s'", rows[2][0].Text)
+				}
+			} else {
+				mergeColumnIntoRight(rows, tt.srcCol)
+				if rows[0][1].Text != tt.wantCol1 {
+					t.Errorf("expected '%s' in right column, got '%s'", tt.wantCol1, rows[0][1].Text)
+				}
+				if rows[1][1].Text != "d" {
+					t.Errorf("expected 'd' in right column, got '%s'", rows[1][1].Text)
+				}
+				if rows[2][1].Text != "e" {
+					t.Errorf("expected 'e' in right column, got '%s'", rows[2][1].Text)
+				}
+			}
+		})
+	}
+}
+
+func TestRemoveColumn(t *testing.T) {
+	rows := [][]pdf.TSRCell{
+		{{Text: "a"}, {Text: "b"}, {Text: "c"}},
+		{{Text: "d"}, {Text: "e"}, {Text: "f"}},
+	}
+
+	result := removeColumn(rows, 1)
+	if len(result[0]) != 2 {
+		t.Errorf("expected 2 columns after removal, got %d", len(result[0]))
+	}
+	if result[0][0].Text != "a" || result[0][1].Text != "c" {
+		t.Errorf("unexpected column content after removal")
+	}
 }

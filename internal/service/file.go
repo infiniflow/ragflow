@@ -31,7 +31,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/ingestion/parser"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"regexp"
@@ -1138,10 +1138,22 @@ func parseFileContent(filename string, data []byte) string {
 	if err != nil {
 		return string(data)
 	}
-	if err := fp.Parse(filename, data); err != nil {
+	res := fp.ParseWithResult(filename, data)
+	if res.Err != nil {
 		return string(data)
 	}
-	return fp.String()
+	switch res.OutputFormat {
+	case "text":
+		return res.Text
+	case "markdown":
+		return res.Markdown
+	case "html":
+		return res.HTML
+	case "json":
+		return string(data)
+	default:
+		return string(data)
+	}
 }
 
 // toUploadInfoResponse converts a newly-uploaded file record to the shape
