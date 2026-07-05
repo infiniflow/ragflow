@@ -52,10 +52,10 @@ export function TemplateCard({ data, showModal }: IProps) {
         <div className="group-hover:bg-gradient-to-t from-black/70 from-10% via-black/0 via-50% to-black/0 w-full h-full group-hover:block absolute top-0 left-0 hidden rounded-xl">
           <Button
             variant="default"
-            className="w-1/3 absolute bottom-4 right-4 left-4 justify-center text-center m-auto"
             onClick={handleClick}
+            className="absolute bottom-4 left-4 right-4 mx-auto px-4 py-2 max-w-[280px] whitespace-normal text-center"
           >
-            {t('flow.useTemplate')}
+            <span className="inline-block">{t('flow.useTemplate')}</span>
           </Button>
         </div>
       </CardContent>
