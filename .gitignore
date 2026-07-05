@@ -245,5 +245,11 @@ bin/*
 # Parser test fixtures and python tools
 internal/deepdoc/parser/pdf/testdata/
 internal/deepdoc/parser/pdf/tools-py/
+
+# IDE tooling artifacts
+.codebuddy/
+
+# Local build output
+build/
 internal/deepdoc/parser/docx/testdata/
 internal/deepdoc/parser/docx/tool/
