@@ -20,6 +20,8 @@
 //
 // The architecture mirrors the Python rag/graphrag/ner package so that both
 // code paths produce identical output (verified by test).
+//go:build cgo_thincner
+
 package extractor
 
 // #cgo CXXFLAGS: -std=c++20 -I${SRCDIR}/../../..

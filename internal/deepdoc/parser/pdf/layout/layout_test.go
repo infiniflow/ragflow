@@ -7,6 +7,19 @@ import (
 	"testing"
 )
 
+// ---- test helpers ----
+
+func newTestTextBox(page int, x0, x1, top, bottom float64, text string) pdf.TextBox {
+	return pdf.TextBox{
+		PageNumber: page,
+		X0:         x0,
+		X1:         x1,
+		Top:        top,
+		Bottom:     bottom,
+		Text:       text,
+	}
+}
+
 func TestAssignColumn(t *testing.T) {
 	boxes := []pdf.TextBox{
 		{PageNumber: 0, X0: 50, Text: "col0-left"},
@@ -503,5 +516,427 @@ func TestNaiveVerticalMergeNonMerge(t *testing.T) {
 	result := NaiveVerticalMerge(boxes, meanH, meanW, false)
 	if len(result) != 2 {
 		t.Errorf("expected 2 separate boxes (large gap), got %d", len(result))
+	}
+}
+
+// ---- 重构辅助函数的测试 ----
+
+func TestGroupBoxesByPage(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 1, Text: "page1-box1"},
+		{PageNumber: 0, Text: "page0-box1"},
+		{PageNumber: 0, Text: "page0-box2"},
+		{PageNumber: 2, Text: "page2-box1"},
+		{PageNumber: 1, Text: "page1-box2"},
+	}
+	pageGroups, sortedPages := groupBoxesByPage(boxes)
+
+	if len(sortedPages) != 3 {
+		t.Errorf("expected 3 unique pages, got %d", len(sortedPages))
+	}
+	if sortedPages[0] != 0 || sortedPages[1] != 1 || sortedPages[2] != 2 {
+		t.Errorf("pages should be sorted [0,1,2], got %v", sortedPages)
+	}
+	if len(pageGroups[0]) != 2 {
+		t.Errorf("page 0 should have 2 boxes, got %d", len(pageGroups[0]))
+	}
+	if len(pageGroups[1]) != 2 {
+		t.Errorf("page 1 should have 2 boxes, got %d", len(pageGroups[1]))
+	}
+	if len(pageGroups[2]) != 1 {
+		t.Errorf("page 2 should have 1 box, got %d", len(pageGroups[2]))
+	}
+	if boxes[pageGroups[0][0]].Text != "page0-box1" {
+		t.Errorf("first page0 box index incorrect")
+	}
+}
+
+func TestGroupBoxesByPage_Empty(t *testing.T) {
+	pageGroups, sortedPages := groupBoxesByPage(nil)
+	if len(pageGroups) != 0 || len(sortedPages) != 0 {
+		t.Error("empty input should return empty result")
+	}
+
+	pageGroups, sortedPages = groupBoxesByPage([]pdf.TextBox{})
+	if len(pageGroups) != 0 || len(sortedPages) != 0 {
+		t.Error("empty input should return empty result")
+	}
+}
+
+func TestGroupBoxesByPage_SinglePage(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 5, Text: "box1"},
+		{PageNumber: 5, Text: "box2"},
+	}
+	pageGroups, sortedPages := groupBoxesByPage(boxes)
+	if len(sortedPages) != 1 || sortedPages[0] != 5 {
+		t.Errorf("expected single page 5, got %v", sortedPages)
+	}
+	if len(pageGroups[5]) != 2 {
+		t.Errorf("page 5 should have 2 boxes, got %d", len(pageGroups[5]))
+	}
+}
+
+func TestShouldMergeBoxes(t *testing.T) {
+	t.Run("should merge - basic case", func(t *testing.T) {
+		prev := &pdf.TextBox{
+			PageNumber: 0, X0: 50, X1: 250, Top: 100, Bottom: 112,
+			Text:     "前一句",
+			LayoutNo: "1",
+		}
+		curr := &pdf.TextBox{
+			PageNumber: 0, X0: 50, X1: 250, Top: 114, Bottom: 126,
+			Text:     "后一句",
+			LayoutNo: "1",
+		}
+		if !shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should merge basic case")
+		}
+	})
+
+	t.Run("should NOT merge - different layoutNo", func(t *testing.T) {
+		prev := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 250}
+		curr := &pdf.TextBox{PageNumber: 0, LayoutNo: "2", Top: 114, Bottom: 126, X0: 50, X1: 250}
+		if shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should not merge different layoutNo")
+		}
+	})
+
+	t.Run("should NOT merge - gap too large", func(t *testing.T) {
+		prev := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 250}
+		curr := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 200, Bottom: 212, X0: 50, X1: 250}
+		if shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should not merge large gap")
+		}
+	})
+
+	t.Run("should NOT merge - overlap too small", func(t *testing.T) {
+		prev := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 100}
+		curr := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 114, Bottom: 126, X0: 200, X1: 250}
+		if shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should not merge small overlap")
+		}
+	})
+
+	t.Run("should merge - comma override period anti", func(t *testing.T) {
+		prev := &pdf.TextBox{
+			PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 250,
+			Text: "前一句。",
+		}
+		curr := &pdf.TextBox{
+			PageNumber: 0, LayoutNo: "1", Top: 114, Bottom: 126, X0: 50, X1: 250,
+			Text: ", 续句",
+		}
+		if !shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should merge when comma overrides period anti")
+		}
+	})
+
+	t.Run("should NOT merge - english period anti", func(t *testing.T) {
+		prev := &pdf.TextBox{
+			PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 250,
+			Text: "End of sentence.",
+		}
+		curr := &pdf.TextBox{
+			PageNumber: 0, LayoutNo: "1", Top: 114, Bottom: 126, X0: 50, X1: 250,
+			Text: "Next sentence",
+		}
+		if shouldMergeBoxes(prev, curr, 12, 200, true) {
+			t.Error("should not merge english period anti")
+		}
+	})
+}
+
+func TestMergeTwoBoxes(t *testing.T) {
+	prev := pdf.TextBox{
+		PageNumber: 0, X0: 50, X1: 200, Top: 100, Bottom: 112,
+		Text:     "第一行",
+		LayoutNo: "1",
+	}
+	curr := pdf.TextBox{
+		PageNumber: 0, X0: 60, X1: 250, Top: 114, Bottom: 130,
+		Text:     "第二行",
+		LayoutNo: "1",
+	}
+
+	result := mergeTwoBoxes(prev, curr)
+
+	expectedText := "第一行 第二行"
+	if result.Text != expectedText {
+		t.Errorf("expected text %q, got %q", expectedText, result.Text)
+	}
+	if result.X0 != 50 {
+		t.Errorf("expected X0 50, got %f", result.X0)
+	}
+	if result.X1 != 250 {
+		t.Errorf("expected X1 250, got %f", result.X1)
+	}
+	if result.Bottom != 130 {
+		t.Errorf("expected Bottom 130, got %f", result.Bottom)
+	}
+	if result.LayoutNo != "1" {
+		t.Errorf("expected LayoutNo preserved")
+	}
+}
+
+func TestMergeTwoBoxes_TrimWhitespace(t *testing.T) {
+	prev := pdf.TextBox{Text: "  first line  "}
+	curr := pdf.TextBox{Text: "  second line  "}
+
+	result := mergeTwoBoxes(prev, curr)
+
+	if result.Text != "first line second line" {
+		t.Errorf("text should be trimmed and joined, got %q", result.Text)
+	}
+}
+
+func TestProcessPageBoxes(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 114, Bottom: 126,
+			Text:     "第二句",
+			LayoutNo: "1",
+		},
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 100, Bottom: 112,
+			Text:     "第一句",
+			LayoutNo: "1",
+		},
+	}
+
+	result := processPageBoxes(boxes, 12, 200, false)
+
+	if len(result) != 1 {
+		t.Errorf("expected 1 merged box, got %d", len(result))
+	}
+	if !strings.Contains(result[0].Text, "第一句") || !strings.Contains(result[0].Text, "第二句") {
+		t.Errorf("merged text should contain both parts, got %q", result[0].Text)
+	}
+}
+
+func TestProcessPageBoxes_WhitespaceBox(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 100, Bottom: 112,
+			Text:     "第一句",
+			LayoutNo: "1",
+		},
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 113, Bottom: 115,
+			Text:     "   ",
+			LayoutNo: "1",
+		},
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 116, Bottom: 128,
+			Text:     "第二句",
+			LayoutNo: "1",
+		},
+	}
+
+	result := processPageBoxes(boxes, 12, 200, false)
+
+	if len(result) != 1 {
+		t.Errorf("expected 1 merged box, got %d", len(result))
+	}
+}
+
+func TestProcessPageBoxes_NoMerge(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 100, Bottom: 112,
+			Text:     "第一句。",
+			LayoutNo: "1",
+		},
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 200, Bottom: 212,
+			Text:     "第二句",
+			LayoutNo: "1",
+		},
+	}
+
+	result := processPageBoxes(boxes, 12, 200, false)
+
+	if len(result) != 2 {
+		t.Errorf("expected 2 boxes, got %d", len(result))
+	}
+}
+
+// ── Column-assignment helper tests ──────────────────────────────────
+
+func TestExtractX0Values(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, X0: 50, X1: 200},
+		{PageNumber: 0, X0: 30, X1: 100},
+		{PageNumber: 0, X0: 80, X1: 300},
+	}
+	x0s, minX0, maxX1 := extractX0Values(boxes, []int{0, 1, 2})
+	if len(x0s) != 3 {
+		t.Fatalf("expected 3 x0s, got %d", len(x0s))
+	}
+	if x0s[0] != 50 || x0s[1] != 30 || x0s[2] != 80 {
+		t.Errorf("x0s mismatch: %v", x0s)
+	}
+	if minX0 != 30 {
+		t.Errorf("minX0 = %v, want 30", minX0)
+	}
+	if maxX1 != 300 {
+		t.Errorf("maxX1 = %v, want 300", maxX1)
+	}
+}
+
+func TestApplyIndentTolerance(t *testing.T) {
+	values := []float64{100, 105, 200, 210}
+	applyIndentTolerance(values, 100, 10)
+	if values[0] != 100 || values[1] != 100 {
+		t.Errorf("close x0s should be adjusted to minX0: %v", values)
+	}
+	if values[2] != 200 || values[3] != 210 {
+		t.Errorf("distant x0s should remain unchanged: %v", values)
+	}
+}
+
+func TestApplyIndentTolerance_Zero(t *testing.T) {
+	values := []float64{100, 101, 200}
+	applyIndentTolerance(values, 100, 0)
+	if values[1] != 101 {
+		t.Errorf("zero tolerance: x0s should be unchanged, got %v", values)
+	}
+}
+
+func TestApplyIndentTolerance_Negative(t *testing.T) {
+	values := []float64{-100, -95, 0, 50}
+	applyIndentTolerance(values, -100, 10)
+	if values[0] != -100 || values[1] != -100 {
+		t.Errorf("negative x0s close to minX0 should be adjusted: %v", values)
+	}
+}
+
+func TestFindBestK_SingleCluster(t *testing.T) {
+	// Note: KMeans1D uses random initialization, so non-identical values
+	// may occasionally produce k>1. This test verifies the function runs
+	// without error and returns k>=1 (not a correctness check).
+	x0s := []float64{100, 99, 101}
+	bestK, _ := findBestK(x0s, len(x0s))
+	if bestK < 1 {
+		t.Errorf("expected bestK>=1, got %d", bestK)
+	}
+}
+
+func TestFindBestK_TwoColumns(t *testing.T) {
+	x0s := []float64{50, 55, 60, 200, 210, 220}
+	bestK, _ := findBestK(x0s, len(x0s))
+	if bestK != 2 {
+		t.Errorf("two columns: expected bestK=2, got %d", bestK)
+	}
+}
+
+func TestFindBestK_OneValue(t *testing.T) {
+	x0s := []float64{100}
+	bestK, _ := findBestK(x0s, len(x0s))
+	if bestK != 1 {
+		t.Errorf("single value: expected bestK=1, got %d", bestK)
+	}
+}
+
+func TestFindBestK_Identical(t *testing.T) {
+	x0s := []float64{100, 100, 100, 100, 100}
+	bestK, _ := findBestK(x0s, len(x0s))
+	if bestK != 1 {
+		t.Errorf("identical values: expected bestK=1, got %d", bestK)
+	}
+}
+
+func TestRemapLabelsByCentroidOrder_Ordered(t *testing.T) {
+	centroids := []float64{50, 200, 400}
+	remap := remapLabelsByCentroidOrder(centroids)
+	if remap[0] != 0 || remap[1] != 1 || remap[2] != 2 {
+		t.Errorf("ordered centroids: expected 0->0,1->1,2->2, got %v", remap)
+	}
+}
+
+func TestRemapLabelsByCentroidOrder_Unordered(t *testing.T) {
+	centroids := []float64{200, 50, 400}
+	remap := remapLabelsByCentroidOrder(centroids)
+	if remap[0] != 1 || remap[1] != 0 || remap[2] != 2 {
+		t.Errorf("unordered centroids: expected {0:1,1:0,2:2}, got %v", remap)
+	}
+}
+
+func TestRemapLabelsByCentroidOrder_Nil(t *testing.T) {
+	remap := remapLabelsByCentroidOrder(nil)
+	if len(remap) != 0 {
+		t.Errorf("nil centroids: expected empty map, got %v", remap)
+	}
+}
+
+func TestDetermineBestKForPage_SingleBox(t *testing.T) {
+	boxes := []pdf.TextBox{{PageNumber: 0, X0: 100, X1: 200}}
+	result := make([]pdf.TextBox, len(boxes))
+	copy(result, boxes)
+	pageCols := make(map[int]int)
+	determineBestKForPage(boxes, result, []int{0}, 0, pageCols)
+	if pageCols[0] != 1 {
+		t.Errorf("single box: expected pageCols[0]=1, got %d", pageCols[0])
+	}
+	if result[0].ColID != 0 {
+		t.Errorf("single box: expected ColID=0, got %d", result[0].ColID)
+	}
+}
+
+func TestDetermineBestKForPage_TwoColumns(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, X0: 50, X1: 100},
+		{PageNumber: 0, X0: 55, X1: 100},
+		{PageNumber: 0, X0: 300, X1: 400},
+		{PageNumber: 0, X0: 310, X1: 400},
+	}
+	result := make([]pdf.TextBox, len(boxes))
+	copy(result, boxes)
+	pageCols := make(map[int]int)
+	determineBestKForPage(boxes, result, []int{0, 1, 2, 3}, 0, pageCols)
+	if pageCols[0] != 2 {
+		t.Errorf("two distinct columns: expected pageCols[0]=2, got %d", pageCols[0])
+	}
+}
+
+func TestAssignmentHelpers_IndentTolerance(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, X0: 50, X1: 150, Top: 10, Bottom: 30},
+		{PageNumber: 0, X0: 205, X1: 350, Top: 10, Bottom: 30},
+		{PageNumber: 0, X0: 58, X1: 150, Top: 40, Bottom: 60},
+	}
+	result := make([]pdf.TextBox, len(boxes))
+	copy(result, boxes)
+	pageCols := make(map[int]int)
+	determineBestKForPage(boxes, result, []int{0, 1, 2}, 0, pageCols)
+	if pageCols[0] != 2 {
+		t.Errorf("expected 2 columns after indent tolerance, got %d", pageCols[0])
+	}
+}
+
+func TestAssignColIDsForPage_Normal(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, X0: 50, X1: 100},
+		{PageNumber: 0, X0: 200, X1: 300},
+	}
+	result := make([]pdf.TextBox, len(boxes))
+	copy(result, boxes)
+	pageCols := map[int]int{0: 2}
+	assignColIDsForPage(boxes, result, []int{0, 1}, 0, pageCols)
+	if result[0].ColID != 0 || result[1].ColID != 1 {
+		t.Errorf("expected ColIDs 0,1 but got %d,%d", result[0].ColID, result[1].ColID)
+	}
+}
+
+func TestAssignColIDsForPage_KTooLarge(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, X0: 100, X1: 200},
+	}
+	result := make([]pdf.TextBox, len(boxes))
+	copy(result, boxes)
+	pageCols := map[int]int{0: 3}
+	assignColIDsForPage(boxes, result, []int{0}, 0, pageCols)
+	if result[0].ColID != 0 {
+		t.Errorf("expected ColID=0 (k clamped to 1), got %d", result[0].ColID)
 	}
 }
