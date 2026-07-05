@@ -97,11 +97,11 @@ export function TemporalRetrieval({ prefix = '' }: TemporalRetrievalProps) {
     if (!enabled) {
       clearDerivedProfileFields();
     }
-  }, [enabled, form, prefix]);
+  }, [enabled, form, prefix, clearDerivedProfileFields]);
 
   useEffect(() => {
     clearDerivedProfileFields();
-  }, [temporalField, form, prefix]);
+  }, [temporalField, form, prefix, clearDerivedProfileFields]);
 
   useEffect(() => {
     if (!enabled || profileLoading || profileError || !profile?.temporal_field) {
