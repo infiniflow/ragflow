@@ -413,6 +413,282 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 	}
 }
 
+func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
+	requireTokenizerPool(t)
+
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_paper.json")
+	templateBytes, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	terminalIDs := terminalComponentIDsFromTemplate(t, templateBytes)
+	if len(terminalIDs) != 1 || terminalIDs[0] != "Tokenizer:GreatCarsWash" {
+		t.Fatalf("terminal ids = %v, want [Tokenizer:GreatCarsWash]", terminalIDs)
+	}
+
+	mem := withRealTemplateDeps(t)
+	const (
+		bucket   = "test-bucket"
+		path     = "fixtures/template-paper.txt"
+		filename = "template-paper.txt"
+	)
+	content := "PART ONE\n\nAbstract paragraph.\n\nSection 1\n\nMethod paragraph.\n\nSection 2\n\nResult paragraph.\n\nPART TWO\n\nDiscussion paragraph."
+	if err := mem.Put(bucket, path, []byte(content)); err != nil {
+		t.Fatalf("seed storage: %v", err)
+	}
+
+	pipe, err := NewPipelineFromDSL(templateBytes, "template-paper-real")
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+	out, err := pipe.Run(context.Background(), map[string]any{
+		"bucket": bucket,
+		"path":   path,
+		"files":  []map[string]any{{"name": filename}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	payload := terminalPayloadFromRunOutput(t, out, terminalIDs[0])
+	if got := payload["output_format"]; got != "chunks" {
+		t.Fatalf("output_format = %v, want chunks", got)
+	}
+	chunks, ok := payload["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
+	}
+	wantChunkTexts := []string{
+		"PART ONE\nAbstract paragraph.\nSection 1\nMethod paragraph.\nSection 2\nResult paragraph.\nPART TWO\nDiscussion paragraph.\n",
+	}
+	if len(chunks) != len(wantChunkTexts) {
+		t.Fatalf("len(chunks) = %d, want %d; chunks=%v", len(chunks), len(wantChunkTexts), chunks)
+	}
+	totalTokens := 0
+	for i, wantText := range wantChunkTexts {
+		if got := chunks[i]["text"]; got != wantText {
+			t.Fatalf("chunks[%d].text = %v, want %q", i, got, wantText)
+		}
+		wantEmbedText := strings.TrimSpace(wantText)
+		vec := floatSliceFromAny(t, chunks[i]["q_4_vec"])
+		if len(vec) != 4 || vec[0] != float64(len(wantEmbedText)) {
+			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, float64(len(wantEmbedText)))
+		}
+		totalTokens += tokenizer.NumTokensFromString(wantText)
+	}
+	if got := payload["embedding_token_consumption"]; got != totalTokens {
+		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens)
+	}
+
+	state := stateFromRunOutput(t, out)
+	chunkerState, ok := state["TitleChunker:SparklySchoolsTravel"]
+	if !ok {
+		t.Fatal("missing TitleChunker:SparklySchoolsTravel state")
+	}
+	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
+	if !ok || len(chunkerChunks) != len(wantChunkTexts) {
+		t.Fatalf("chunker chunks = %T/%v, want %d items", chunkerState["chunks"], chunkerState["chunks"], len(wantChunkTexts))
+	}
+	for i, wantText := range wantChunkTexts {
+		if got := chunkerChunks[i]["text"]; got != wantText {
+			t.Fatalf("chunker chunks[%d].text = %v, want %q", i, got, wantText)
+		}
+	}
+}
+
+func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
+	requireTokenizerPool(t)
+
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_book.json")
+	templateBytes, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	terminalIDs := terminalComponentIDsFromTemplate(t, templateBytes)
+	if len(terminalIDs) != 1 || terminalIDs[0] != "Tokenizer:HotDonutsRing" {
+		t.Fatalf("terminal ids = %v, want [Tokenizer:HotDonutsRing]", terminalIDs)
+	}
+
+	mem := withRealTemplateDeps(t)
+	const (
+		bucket   = "test-bucket"
+		path     = "fixtures/template-book.txt"
+		filename = "template-book.txt"
+	)
+	content := "PART ONE\n\nPrelude.\n\nChapter I\n\nOpening.\n\nSection 1\n\nDetail.\n\nArticle 1\n\nClause A.\n\nArticle 2\n\nClause B.\n\nPART TWO\n\nAfterword."
+	if err := mem.Put(bucket, path, []byte(content)); err != nil {
+		t.Fatalf("seed storage: %v", err)
+	}
+
+	pipe, err := NewPipelineFromDSL(templateBytes, "template-book-real")
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+	out, err := pipe.Run(context.Background(), map[string]any{
+		"bucket": bucket,
+		"path":   path,
+		"files":  []map[string]any{{"name": filename}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	payload := terminalPayloadFromRunOutput(t, out, terminalIDs[0])
+	if got := payload["output_format"]; got != "chunks" {
+		t.Fatalf("output_format = %v, want chunks", got)
+	}
+	chunks, ok := payload["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
+	}
+	wantChunkTexts := []string{
+		"PART ONE\nPrelude.\n",
+		"PART ONE\nChapter I\nOpening.\n",
+		"PART ONE\nChapter I\nSection 1\nDetail.\n",
+		"PART ONE\nChapter I\nSection 1\nArticle 1\nClause A.\n",
+		"PART ONE\nChapter I\nSection 1\nArticle 2\nClause B.\n",
+		"PART TWO\nAfterword.\n",
+	}
+	if len(chunks) != len(wantChunkTexts) {
+		t.Fatalf("len(chunks) = %d, want %d; chunks=%v", len(chunks), len(wantChunkTexts), chunks)
+	}
+	totalTokens := 0
+	for i, wantText := range wantChunkTexts {
+		if got := chunks[i]["text"]; got != wantText {
+			t.Fatalf("chunks[%d].text = %v, want %q", i, got, wantText)
+		}
+		wantEmbedText := strings.TrimSpace(wantText)
+		vec := floatSliceFromAny(t, chunks[i]["q_4_vec"])
+		if len(vec) != 4 || vec[0] != float64(len(wantEmbedText)) {
+			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, float64(len(wantEmbedText)))
+		}
+		totalTokens += tokenizer.NumTokensFromString(wantText)
+	}
+	if got := payload["embedding_token_consumption"]; got != totalTokens {
+		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens)
+	}
+
+	state := stateFromRunOutput(t, out)
+	chunkerState, ok := state["TitleChunker:GrumpyGarlicsBake"]
+	if !ok {
+		t.Fatal("missing TitleChunker:GrumpyGarlicsBake state")
+	}
+	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
+	if !ok || len(chunkerChunks) != len(wantChunkTexts) {
+		t.Fatalf("chunker chunks = %T/%v, want %d items", chunkerState["chunks"], chunkerState["chunks"], len(wantChunkTexts))
+	}
+	for i, wantText := range wantChunkTexts {
+		if got := chunkerChunks[i]["text"]; got != wantText {
+			t.Fatalf("chunker chunks[%d].text = %v, want %q", i, got, wantText)
+		}
+	}
+}
+
+func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
+	requireTokenizerPool(t)
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	baseURL := os.Getenv("OPENAI_BASE_URL")
+	model := os.Getenv("OPENAI_MODEL")
+	if apiKey == "" || baseURL == "" || model == "" {
+		t.Skip("missing required env (OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL); skipping real resume extractor integration test")
+	}
+
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_resume.json")
+	templateBytes, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	terminalIDs := terminalComponentIDsFromTemplate(t, templateBytes)
+	if len(terminalIDs) != 1 || terminalIDs[0] != "Tokenizer:KindHandsWin" {
+		t.Fatalf("terminal ids = %v, want [Tokenizer:KindHandsWin]", terminalIDs)
+	}
+
+	mem := withRealTemplateDeps(t)
+	componentpkg.SetExtractorChatTargetResolverOverride(func(llmID string) (driver, modelName, apiKeyOut, baseURLOut string, ok bool) {
+		return "openai", model, apiKey, baseURL, true
+	})
+	t.Cleanup(func() { componentpkg.SetExtractorChatTargetResolverOverride(nil) })
+
+	const (
+		bucket   = "test-bucket"
+		path     = "fixtures/template-resume.txt"
+		filename = "template-resume.txt"
+	)
+	content := strings.Join([]string{
+		"PERSONAL INFORMATION",
+		"",
+		"John Example",
+		"Email: john.example@resume.test",
+		"Phone: +1 555 000 1234",
+		"City: Seattle",
+		"",
+		"EDUCATION",
+		"",
+		"Bachelor of Science in Computer Science",
+		"Example University",
+		"Graduation Year: 2024",
+		"",
+		"WORK EXPERIENCE",
+		"",
+		"Software Engineer",
+		"Example Corp",
+		"2024 - Present",
+		"",
+		"SKILLS",
+		"",
+		"Go",
+		"Python",
+		"Kubernetes",
+	}, "\n")
+	if err := mem.Put(bucket, path, []byte(content)); err != nil {
+		t.Fatalf("seed storage: %v", err)
+	}
+
+	pipe, err := NewPipelineFromDSL(templateBytes, "template-resume-real")
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+	out, err := pipe.Run(context.Background(), map[string]any{
+		"bucket": bucket,
+		"path":   path,
+		"files":  []map[string]any{{"name": filename}},
+		"llm_id": model + "@openai",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	payload := terminalPayloadFromRunOutput(t, out, terminalIDs[0])
+	if got := payload["output_format"]; got != "chunks" {
+		t.Fatalf("output_format = %v, want chunks", got)
+	}
+	chunks, ok := payload["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatalf("chunks = %T/%v, want non-empty []map[string]any", payload["chunks"], payload["chunks"])
+	}
+
+	metadata, ok := chunks[0]["metadata"].(map[string]any)
+	if !ok || len(metadata) == 0 {
+		t.Fatalf("chunks[0].metadata = %T/%v, want non-empty map[string]any", chunks[0]["metadata"], chunks[0]["metadata"])
+	}
+	assertMetadataContainsString(t, metadata, "candidate_name", "John Example")
+	assertMetadataContainsString(t, metadata, "email", "john.example@resume.test")
+	assertMetadataContainsString(t, metadata, "phone", "+1 555 000 1234")
+
+	state := stateFromRunOutput(t, out)
+	extractorState, ok := state["Extractor:ThreeDrinksAct"]
+	if !ok {
+		t.Fatal("missing Extractor:ThreeDrinksAct state")
+	}
+	extractorChunks, ok := extractorState["chunks"].([]map[string]any)
+	if !ok || len(extractorChunks) == 0 {
+		t.Fatalf("extractor chunks = %T/%v, want non-empty []map[string]any", extractorState["chunks"], extractorState["chunks"])
+	}
+	extractorMetadata, ok := extractorChunks[0]["metadata"].(map[string]any)
+	if !ok || len(extractorMetadata) == 0 {
+		t.Fatalf("extractor metadata = %T/%v, want non-empty map[string]any", extractorChunks[0]["metadata"], extractorChunks[0]["metadata"])
+	}
+	assertMetadataContainsString(t, extractorMetadata, "candidate_name", "John Example")
+	assertMetadataContainsString(t, extractorMetadata, "email", "john.example@resume.test")
+}
+
 func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 	requireTokenizerPool(t)
 
@@ -495,6 +771,36 @@ func withRealTemplateDeps(t *testing.T) storage.Storage {
 	t.Cleanup(func() { componentpkg.EncodeFunc = origEncode })
 
 	return mem
+}
+
+func assertMetadataContainsString(t *testing.T, metadata map[string]any, key, want string) {
+	t.Helper()
+	raw, ok := metadata[key]
+	if !ok {
+		t.Fatalf("metadata missing key %q in %v", key, metadata)
+	}
+	switch v := raw.(type) {
+	case string:
+		if !strings.Contains(v, want) {
+			t.Fatalf("metadata[%q] = %q, want contains %q", key, v, want)
+		}
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok && strings.Contains(s, want) {
+				return
+			}
+		}
+		t.Fatalf("metadata[%q] = %v, want one entry containing %q", key, v, want)
+	case []string:
+		for _, item := range v {
+			if strings.Contains(item, want) {
+				return
+			}
+		}
+		t.Fatalf("metadata[%q] = %v, want one entry containing %q", key, v, want)
+	default:
+		t.Fatalf("metadata[%q] = %T/%v, want string or string list containing %q", key, raw, raw, want)
+	}
 }
 
 func assertTokenizerTerminalChunk(t *testing.T, payload map[string]any, wantMergedText string) {

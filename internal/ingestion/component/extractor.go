@@ -218,12 +218,35 @@ var extractorChatInvokerMu sync.RWMutex
 // uses einoExtractorChatInvoker; tests inject a stub.
 var defaultExtractorChatInvoker extractorChatInvoker = &einoExtractorChatInvoker{}
 
+var extractorChatTargetResolverMu sync.RWMutex
+
+// extractorChatTargetResolverOverride is a narrow test seam for
+// integration tests that need to supply real credentials without
+// teaching the production Extractor a tenant-credential lookup path.
+// When set, resolveExtractorChatTarget consults it first.
+var extractorChatTargetResolverOverride func(llmID string) (driver, modelName, apiKey, baseURL string, ok bool)
+
 // SetExtractorChatInvoker swaps the package-level chat invoker
 // for tests. Pass nil to restore the default. Concurrent-safe.
 func SetExtractorChatInvoker(inv extractorChatInvoker) {
 	extractorChatInvokerMu.Lock()
 	defer extractorChatInvokerMu.Unlock()
 	defaultExtractorChatInvoker = inv
+}
+
+// SetExtractorChatTargetResolverOverride swaps the package-level
+// llm_id target resolver override for tests. Pass nil to restore
+// the default split-only resolver. Concurrent-safe.
+func SetExtractorChatTargetResolverOverride(fn func(llmID string) (driver, modelName, apiKey, baseURL string, ok bool)) {
+	extractorChatTargetResolverMu.Lock()
+	defer extractorChatTargetResolverMu.Unlock()
+	extractorChatTargetResolverOverride = fn
+}
+
+func getExtractorChatTargetResolverOverride() func(llmID string) (driver, modelName, apiKey, baseURL string, ok bool) {
+	extractorChatTargetResolverMu.RLock()
+	defer extractorChatTargetResolverMu.RUnlock()
+	return extractorChatTargetResolverOverride
 }
 
 // getExtractorChatInvoker returns the current default invoker.
@@ -512,6 +535,11 @@ func (c *ExtractorComponent) call(ctx context.Context, in extractorInputs, chunk
 // uses (resolveTenantLLMConfig). For Phase 2.5 the test seam
 // (SetExtractorChatInvoker) carries the wire-level signals.
 func resolveExtractorChatTarget(llmID string) (driver, modelName, apiKey, baseURL string) {
+	if override := getExtractorChatTargetResolverOverride(); override != nil {
+		if driver, modelName, apiKey, baseURL, ok := override(llmID); ok {
+			return driver, modelName, apiKey, baseURL
+		}
+	}
 	if llmID == "" {
 		return "", "", "", ""
 	}
