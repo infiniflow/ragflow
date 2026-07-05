@@ -23,9 +23,7 @@ import (
 )
 
 type SplitOperator struct {
-	strategy       string
-	boundaries     []string
-	keepSeparators bool
+	strategy string
 }
 
 func NewSplitOperator(config map[string]interface{}) (*SplitOperator, error) {
@@ -34,23 +32,6 @@ func NewSplitOperator(config map[string]interface{}) (*SplitOperator, error) {
 	if v, ok := config["strategy"]; ok {
 		if s, ok := v.(string); ok {
 			op.strategy = s
-		}
-	}
-
-	if params, ok := config["params"].(map[string]interface{}); ok {
-		if b, ok := params["boundaries"]; ok {
-			if boundStrs, ok := b.([]interface{}); ok {
-				for _, bs := range boundStrs {
-					if s, ok := bs.(string); ok {
-						op.boundaries = append(op.boundaries, s)
-					}
-				}
-			}
-		}
-		if ks, ok := params["keep_separators"]; ok {
-			if b, ok := ks.(bool); ok {
-				op.keepSeparators = b
-			}
 		}
 	}
 
@@ -90,20 +71,13 @@ func (o *SplitOperator) String() string {
 	var buf strings.Builder
 	buf.WriteString("split:\n")
 	fmt.Fprintf(&buf, "  strategy: %q\n", o.strategy)
-	fmt.Fprintf(&buf, "  boundaries:\n")
-	for _, r := range o.boundaries {
-		fmt.Fprintf(&buf, "    - %q\n", r)
-	}
-	fmt.Fprintf(&buf, "  keep_separators: %t\n", o.keepSeparators)
 	return buf.String()
 }
 
-// splitSentences splits text at multi-rune boundaries, optionally keeping separators.
-func (o *SplitOperator) splitSentences(text string) []ChunkData {
-	if len(o.boundaries) == 0 {
-		o.boundaries = []string{"。", "！", "？", "\n"}
-	}
+var sentenceBoundaries = []string{"。", "！", "？", "\n"}
 
+// splitSentences splits text at the built-in sentence boundaries.
+func (o *SplitOperator) splitSentences(text string) []ChunkData {
 	var chunks []ChunkData
 	var buf strings.Builder
 	i := 0
@@ -111,7 +85,7 @@ func (o *SplitOperator) splitSentences(text string) []ChunkData {
 	for i < len(text) {
 		// Try to match any boundary at current position (first match wins)
 		matchedBound := ""
-		for _, bound := range o.boundaries {
+		for _, bound := range sentenceBoundaries {
 			if bound != "" && i+len(bound) <= len(text) && text[i:i+len(bound)] == bound {
 				matchedBound = bound
 				break
@@ -119,9 +93,6 @@ func (o *SplitOperator) splitSentences(text string) []ChunkData {
 		}
 
 		if matchedBound != "" {
-			if o.keepSeparators {
-				buf.WriteString(matchedBound)
-			}
 			if buf.Len() > 0 {
 				chunks = append(chunks, ChunkData{
 					Content: buf.String(),

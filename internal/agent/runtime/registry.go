@@ -95,7 +95,7 @@ type Registry interface {
 // This matches internal/agent/component/registry.go:28, 43, which lowercases
 // at both ends. A case-sensitive implementation would silently fail canvas
 // build with "unknown component" errors when an existing init() registers
-// "PipelineChunker" but the canvas looks up "pipelinechunker" (or vice
+// "ExampleComponent" but the canvas looks up "examplecomponent" (or vice
 // versa).
 type memoryRegistry struct {
 	mu      sync.RWMutex

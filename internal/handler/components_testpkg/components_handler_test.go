@@ -24,9 +24,8 @@
 // JSON-shaped response.
 //
 // Counters are derived from runtime.DefaultRegistry.Names() /
-// NamesByCategory() at test time rather than hardcoded to 30/8/1 —
-// the spec mentions 30 agent / 8 ingestion / 1 shared but the
-// registry is the source of truth, so any future registration
+// NamesByCategory() at test time rather than hardcoded constants —
+// the registry is the source of truth, so any future registration
 // change just moves the expected values with it.
 //
 // This file lives in its own subpackage (components_testpkg) so
@@ -47,7 +46,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	_ "ragflow/internal/agent/component" // registers agent + PipelineChunker (shared)
+	_ "ragflow/internal/agent/component" // registers agent components
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/handler"
 	_ "ragflow/internal/ingestion/component"         // registers ingestion main components
@@ -120,13 +119,13 @@ func TestComponentsHandler_NoFilter(t *testing.T) {
 		t.Errorf("got %d components, want %d (== Names())", len(data), wantTotal)
 	}
 
-	// Spot-check that all three categories are represented when no
-	// filter is applied.
+	// Spot-check that the default registry includes agent and
+	// ingestion components when no filter is applied.
 	seen := map[string]bool{}
 	for _, d := range data {
 		seen[d.Category] = true
 	}
-	for _, cat := range []string{"agent", "ingestion", "shared"} {
+	for _, cat := range []string{"agent", "ingestion"} {
 		if !seen[cat] {
 			t.Errorf("expected category %q in unfiltered response; got categories %v", cat, seen)
 		}
@@ -160,8 +159,8 @@ func TestComponentsHandler_FilterIngestion(t *testing.T) {
 }
 
 // TestComponentsHandler_FilterMultiple verifies comma-separated
-// category values work: ?category=ingestion,shared returns 9
-// components (8 ingestion + PipelineChunker shared).
+// category values work. The shared category may currently be empty,
+// so ?category=ingestion,shared must still return the ingestion set.
 func TestComponentsHandler_FilterMultiple(t *testing.T) {
 	eng := newComponentsTestRig(t)
 	w := doRequest(t, eng, "/api/v1/components?category=ingestion,shared")
@@ -173,7 +172,7 @@ func TestComponentsHandler_FilterMultiple(t *testing.T) {
 
 	wantNames := []string{
 		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
-		"parser", "pipelinechunker", "titlechunker", "tokenchunker", "tokenizer",
+		"parser", "titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertNameSet(t, "ingestion,shared", data, wantNames)
 }

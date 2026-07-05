@@ -81,11 +81,11 @@ func TestRegistry_RegisterAndLookup_HappyPath(t *testing.T) {
 
 func TestRegistry_Lookup_CaseInsensitive(t *testing.T) {
 	r := NewMemoryRegistry()
-	if err := r.Register("PipelineChunker", CategoryShared, stubFactory, Metadata{Version: "legacy"}); err != nil {
+	if err := r.Register("ExampleComponent", CategoryShared, stubFactory, Metadata{Version: "legacy"}); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 
-	for _, variant := range []string{"PipelineChunker", "pipelinechunker", "PIPELINECHUNKER", "  pipelinechunker  "} {
+	for _, variant := range []string{"ExampleComponent", "examplecomponent", "EXAMPLECOMPONENT", "  examplecomponent  "} {
 		if _, _, _, ok := r.Lookup(variant); !ok {
 			t.Errorf("Lookup(%q) missed; case-insensitive lookup must succeed for all variants", variant)
 		}

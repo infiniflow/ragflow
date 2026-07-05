@@ -3774,13 +3774,17 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 	if !ok {
 		return nil, fmt.Errorf("filename not provided")
 	}
-	dslFilename, ok := cmd.Params["dsl"].(string)
+	optionsFilename, ok := cmd.Params["dsl"].(string)
 	if !ok {
-		return nil, fmt.Errorf("dsl not provided")
+		return nil, fmt.Errorf("chunk options file not provided")
 	}
-	dsl, err := os.ReadFile(dslFilename)
+	optionsRaw, err := os.ReadFile(optionsFilename)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read dsl file: %w", err)
+		return nil, fmt.Errorf("failed to read chunk options file: %w", err)
+	}
+	options, err := parseChunkOptions(optionsRaw)
+	if err != nil {
+		return nil, err
 	}
 
 	explain, ok := cmd.Params["explain"].(bool)
@@ -3788,10 +3792,8 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 		explain = false
 	}
 
-	// This CLI command is the only caller that reads a chunk DSL
-	// file at run time, so it uses the package-level DSL helpers.
 	if explain {
-		explanation, err := chunk.ExplainDSL(string(dsl))
+		explanation, err := explainChunkOptions(options)
 		if err != nil {
 			return nil, fmt.Errorf("explain error: %w", err)
 		}
@@ -3802,7 +3804,7 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 			return nil, fmt.Errorf("failed to read file: %w", err)
 		}
 
-		chunkContext, err := chunk.RunDSL(string(dsl), string(fileToChunking))
+		chunkContext, err := chunk.Run(string(fileToChunking), options)
 		if err != nil {
 			return nil, fmt.Errorf("chunking error: %w", err)
 		}
@@ -3818,6 +3820,22 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 	result.Code = 0
 	result.Message = fmt.Sprintf("Success to chunk %s", filename)
 	return &result, nil
+}
+
+func parseChunkOptions(raw []byte) (chunk.ChunkOptions, error) {
+	var options chunk.ChunkOptions
+	if err := json.Unmarshal(raw, &options); err != nil {
+		return options, fmt.Errorf("failed to parse chunk options file: %w", err)
+	}
+	return options, nil
+}
+
+func explainChunkOptions(options chunk.ChunkOptions) (string, error) {
+	formatted, err := json.MarshalIndent(options, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(formatted), nil
 }
 
 // APIOpenaiChatCommand dispatches the parsed OPENAI_CHAT command to either a

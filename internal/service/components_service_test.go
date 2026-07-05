@@ -25,7 +25,7 @@ import (
 	"sort"
 	"testing"
 
-	_ "ragflow/internal/agent/component" // registers agent + PipelineChunker
+	_ "ragflow/internal/agent/component" // registers agent components
 	"ragflow/internal/agent/runtime"
 	_ "ragflow/internal/ingestion/component"         // registers ingestion main components
 	_ "ragflow/internal/ingestion/component/chunker" // registers 4 chunker variants
@@ -86,7 +86,7 @@ func TestComponentsService_List_FilterIngestionAndShared(t *testing.T) {
 	}
 	wantNames := []string{
 		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
-		"parser", "pipelinechunker", "titlechunker", "tokenchunker", "tokenizer",
+		"parser", "titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertComponentNameSet(t, "ingestion+shared", namesOf(got), wantNames)
 }

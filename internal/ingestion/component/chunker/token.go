@@ -262,12 +262,11 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 // same operator sequence, no DSL round-trip.
 func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *regexp.Regexp) map[string]any {
 	target := c.param.ChunkTokenSize
-	result, err := chunk.Run(text, chunk.PipelineOptions{
+	result, err := chunk.Run(text, chunk.ChunkOptions{
 		StripWhitespace:  true,
 		RemoveEmptyLines: true,
 		SplitStrategy:    "sentence",
 		MergeTargetSize:  target,
-		MergeStrategy:    "greedy",
 	})
 	if err != nil {
 		return chunkOutputs([]schema.ChunkDoc{{Text: text}})
