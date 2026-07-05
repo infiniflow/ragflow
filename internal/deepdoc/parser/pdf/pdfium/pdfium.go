@@ -1,3 +1,5 @@
+//go:build cgo
+
 // Package pdfium renders PDF pages using libpdfium (statically linked
 // at build time via CGO_LDFLAGS). It exists solely to replace pdf_oxide's
 // RenderPageRaw for use cases where image quality matters for downstream

@@ -29,8 +29,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"ragflow/internal/common"
-	"ragflow/internal/ingestion"
-	"ragflow/internal/ingestion/parser"
+	"ragflow/internal/parser/chunk"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 	"strings"
 	"time"
@@ -3561,8 +3561,9 @@ func (c *CLI) APIParseLocalFileCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to read dsl file: %w", err)
 	}
 
-	if err = fileParser.Parse(filename, fileContent); err != nil {
-		return nil, formatRequestError("parse local file", err)
+	parseResult := fileParser.ParseWithResult(filename, fileContent)
+	if parseResult.Err != nil {
+		return nil, formatRequestError("parse local file", parseResult.Err)
 	}
 
 	var result SimpleResponse
@@ -3773,13 +3774,17 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 	if !ok {
 		return nil, fmt.Errorf("filename not provided")
 	}
-	dslFilename, ok := cmd.Params["dsl"].(string)
+	optionsFilename, ok := cmd.Params["dsl"].(string)
 	if !ok {
-		return nil, fmt.Errorf("dsl not provided")
+		return nil, fmt.Errorf("chunk options file not provided")
 	}
-	dsl, err := os.ReadFile(dslFilename)
+	optionsRaw, err := os.ReadFile(optionsFilename)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read dsl file: %w", err)
+		return nil, fmt.Errorf("failed to read chunk options file: %w", err)
+	}
+	options, err := parseChunkOptions(optionsRaw)
+	if err != nil {
+		return nil, err
 	}
 
 	explain, ok := cmd.Params["explain"].(bool)
@@ -3787,19 +3792,11 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 		explain = false
 	}
 
-	engine := ingestion.NewChunkEngine()
-	plan, err := engine.Compile(string(dsl))
-	if err != nil {
-		return nil, fmt.Errorf("compile failed: %w", err)
-	}
-
 	if explain {
-
-		explanation, err := engine.Explain(plan)
+		explanation, err := explainChunkOptions(options)
 		if err != nil {
 			return nil, fmt.Errorf("explain error: %w", err)
 		}
-
 		result.Message = explanation
 	} else {
 		fileToChunking, err := os.ReadFile(filename)
@@ -3807,7 +3804,7 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 			return nil, fmt.Errorf("failed to read file: %w", err)
 		}
 
-		chunkContext, err := engine.Execute(plan, string(fileToChunking))
+		chunkContext, err := chunk.Run(string(fileToChunking), options)
 		if err != nil {
 			return nil, fmt.Errorf("chunking error: %w", err)
 		}
@@ -3823,6 +3820,22 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 	result.Code = 0
 	result.Message = fmt.Sprintf("Success to chunk %s", filename)
 	return &result, nil
+}
+
+func parseChunkOptions(raw []byte) (chunk.ChunkOptions, error) {
+	var options chunk.ChunkOptions
+	if err := json.Unmarshal(raw, &options); err != nil {
+		return options, fmt.Errorf("failed to parse chunk options file: %w", err)
+	}
+	return options, nil
+}
+
+func explainChunkOptions(options chunk.ChunkOptions) (string, error) {
+	formatted, err := json.MarshalIndent(options, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(formatted), nil
 }
 
 // APIOpenaiChatCommand dispatches the parsed OPENAI_CHAT command to either a

@@ -384,8 +384,8 @@ setup_cgo_env() {
     echo "CGO_LDFLAGS:  $CGO_LDFLAGS"
 }
 
-# Run Go unit tests with the same CGO env as `build_go`. Pass any extra args
-# to `go test`, e.g. `./build.sh --test -run TestFoo ./internal/admin/...`.
+# Run Go unit tests with the same CGO env as `build_go`. Any extra args are
+# forwarded to `go test`, e.g. `./build.sh --test -run TestFoo ./internal/admin/...`.
 run_go_tests() {
     print_section "Running Go tests"
 
@@ -456,8 +456,8 @@ OPTIONS:
     --cpp-test      Build C++ test executable (requires --cpp first)
     --go, -g        Build only Go server (requires C++ library to be built)
     --test, -t      Run Go unit tests (sets up CGO env for office_oxide).
-                    Pass extra args after `--` to forward to `go test`, e.g.
-                    `$0 --test -- -run TestFoo ./internal/admin/...`
+                    Any extra args are forwarded to `go test`, e.g.
+                    `$0 --test -run TestFoo ./internal/admin/...`
     --clean, -C     Clean all build artifacts
     --run, -r       Build and run the server
     --strip, -s     Strip debug symbols from Go binaries (-ldflags="-s -w")
@@ -470,7 +470,7 @@ EXAMPLES:
     $0 --go         # Build only Go server
     $0 --cpp-test   # Build C++ test executable
     $0 --test       # Run all Go tests
-    $0 --test -- -run TestFoo ./internal/admin/...   # Targeted Go tests
+    $0 --test -run TestFoo ./internal/admin/...      # Targeted Go tests
     $0 --run        # Build and run
     $0 --clean      # Clean build artifacts
 
@@ -513,12 +513,10 @@ main() {
             ;;
         --test|-t)
             check_go_deps
-            # Forward any args after `--` to `go test`.
-            if [ "${2:-}" = "--" ]; then
-                shift 2
-                run_go_tests "$@"
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests "${args[@]:2}"
             else
-                run_go_tests
+                run_go_tests "${args[@]:1}"
             fi
             ;;
         --clean|-C)
