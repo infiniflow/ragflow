@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// SCOPE (honest) for title.go (Phase 2.3b):
+// SCOPE (honest) for title.go:
 //
 //   - TitleChunker is the dispatcher for the three Go chunks: this
 //     file holds the TitleChunker variant itself, which mirrors
@@ -23,11 +23,11 @@
 //     happens in group.go / hierarchy.go depending on the
 //     `method` param.
 //
-//   - PARALLELISM: 2 goroutines (matches plan §4 Phase 2 row 2.3b).
-//     Heading detection is sequential; chunk splits fan out across 2
-//     goroutines.
+//   - PARALLELISM: Parallelism() is only a hint for outer executors.
+//     TitleChunker.Invoke dispatches synchronously to group.go or
+//     hierarchy.go.
 //
-//   - HEADING DETECTION PARITY (plan §8 R2):
+//   - HEADING DETECTION PARITY:
 //     The Python side uses three heading-detection strategies in
 //     `common.py:resolve_title_levels`:
 //     (1) PDF outlines   (extract_pdf_outlines, requires deepdoc/parser)
@@ -35,13 +35,12 @@
 //     (3) Layout hints   (layout field matches section/title/head)
 //     The Go port ships ONLY strategy (2). Strategies (1) and (3)
 //     require PDF binary access (deepdoc is Python-only) and a parser
-//     that emits a layout field; both are out of scope for
-//     Phase 2.3. A canvas author who needs PDF-outline heading
+//     that emits a layout field. A canvas author who needs PDF-outline heading
 //     detection must wait for the deepdoc/parser port.
 //
 //   - TODO: parity-gap — non-ASCII heading formats and PDFs without
 //     user-supplied `levels` are not detected. Tests assert ASCII
-//     input only (per plan).
+//     input only.
 //
 //   - GROUP-TITLE and HIERARCHY-TITLE are separate Go files
 //     (`group.go`, `hierarchy.go`); they share the resolve_levels

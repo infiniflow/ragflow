@@ -14,16 +14,15 @@
 //  limitations under the License.
 //
 
-// SCOPE (honest) for group.go (Phase 2.3c):
+// SCOPE (honest) for group.go:
 //
 //   - Implements the GroupTitleChunker variant: aggregates adjacent
 //     text records into chunks that span multiple body records while
 //     staying inside one heading section.
 //
-//   - PARALLELISM: 2 goroutines (plan §4 Phase 2 row 2.3c).
-//     Heading detection runs sequentially; the 2 goroutines fan out
-//     over the resolved text-bucket groups (each bucket is a span of
-//     text records under the same logical heading).
+//   - PARALLELISM: Parallelism() advertises a fan-out hint to outer
+//     executors. Heading detection stays sequential; grouping work is
+//     local to one invocation.
 //
 //   - MIRRORS python `_build_section_ids` + `GroupTitleChunker.build_chunks`:
 //     consecutive records with the same (target_level-derived) sec_id
@@ -149,7 +148,9 @@ func groupRecords(records []lineRecord, secIDs []int, p *titleChunkerParam) [][]
 	for i, rec := range records {
 		secID := secIDs[i]
 		if !rec.isText() {
-			recordGroups = append(recordGroups, append([]lineRecord(nil), currentGroup...))
+			if len(currentGroup) > 0 {
+				recordGroups = append(recordGroups, append([]lineRecord(nil), currentGroup...))
+			}
 			recordGroups = append(recordGroups, []lineRecord{rec})
 			currentGroup = currentGroup[:0]
 			tkCnt = 0

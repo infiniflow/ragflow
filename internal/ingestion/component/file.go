@@ -68,7 +68,6 @@ const ComponentNameFile = "File"
 //	file    (map[string]any, optional)    — file-list input echoed through
 //	_created_time, _elapsed_time          — TrackElapsed bookkeeping
 type FileComponent struct {
-	bucket string // static config: storage bucket override (rare; default empty)
 }
 
 // SetStorageFactoryOverride lets a test inject a Storage-backed
@@ -85,12 +84,10 @@ type FileComponent struct {
 var SetStorageFactoryOverride func() storage.Storage
 
 // NewFileComponent constructs a FileComponent from DSL params.
-// The current schema (schema.FileParam) has no fields; the
-// constructor is intentionally a thin wrapper today and grows
-// once Phase 2.5+ adds runtime knobs.
+// The current schema (schema.FileParam) has no fields.
 func NewFileComponent(params map[string]any) (runtime.Component, error) {
 	p := schema.FileParam{}.Defaults()
-	_ = p // FileParam has no configurable fields today; reserved for forward compat.
+	_ = p
 	if err := p.Validate(); err != nil {
 		return nil, fmt.Errorf("File: param check: %w", err)
 	}

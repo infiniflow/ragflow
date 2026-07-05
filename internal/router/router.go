@@ -566,7 +566,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// ?category=ingestion,agent,shared filter; defaults to
 			// all categories. The data source is
 			// runtime.DefaultRegistry.
-			v1.GET("/components", r.componentsHandler.Get)
+			if r.componentsHandler != nil {
+				v1.GET("/components", r.componentsHandler.Get)
+			}
 
 			// Admin routes — Phase 6 per-tenant canvas runtime override.
 			// RegisterAdminRuntimeRoutes lives in admin_routes.go; a nil

@@ -14,8 +14,7 @@
 //  limitations under the License.
 //
 
-// Package chunker holds the ingestion chunker components (Phase 2.3
-// of plan port-rag-flow-pipeline-to-go.md): TokenChunker,
+// Package chunker holds the ingestion chunker components: TokenChunker,
 // TitleChunker, GroupTitleChunker, HierarchyTitleChunker. The four
 // components share the same upstream payload (schema.ChunkerFromUpstream)
 // and the same output shape (schema.ChunkerOutputs).
@@ -23,7 +22,7 @@
 // The package is intentionally separate from internal/agent/component/
 // (the agent canvas) and from internal/ingestion/component/schema/
 // (the wire types). Wiring it as a separate package keeps the
-// registry tidy and matches the plan §3 target layout.
+// registry tidy.
 package chunker
 
 import (
@@ -35,9 +34,7 @@ import (
 // init() that calls this with the registered component's name; the
 // factory body resolves the typed constructor via newChunkerByName
 // (in common.go).
-//
-// One helper call per file keeps the registration surface flat
-// (plan §4 Phase 2 "one init() per file" hard rule).
+// One helper call per file keeps the registration surface flat.
 func MustRegisterChunker(name string) {
 	factory := func(_ string, params map[string]any) (runtime.Component, error) {
 		comp, err := newChunkerByName(name, params)

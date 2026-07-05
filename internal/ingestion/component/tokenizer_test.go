@@ -39,8 +39,9 @@ import (
 // because the Tokenizer component touches tokenizer.Tokenize.
 //
 // If Init fails (e.g., dict path missing in some CI sandboxes),
-// we log the failure but still run the tests — the affected tests
-// are skipped via `t.Skip` at runtime.
+// we log the failure but still run the tests. Cases that exercise
+// tokenizeChunks will fail rather than skip when the pool is not
+// initialized.
 func TestMain(m *testing.M) {
 	cfg := &tokenizer.PoolConfig{
 		DictPath:       os.Getenv("RAGFLOW_DICT_PATH"),

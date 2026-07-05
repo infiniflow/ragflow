@@ -513,8 +513,11 @@ main() {
             ;;
         --test|-t)
             check_go_deps
-            shift
-            run_go_tests "$@"
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests "${args[@]:2}"
+            else
+                run_go_tests "${args[@]:1}"
+            fi
             ;;
         --clean|-C)
             clean

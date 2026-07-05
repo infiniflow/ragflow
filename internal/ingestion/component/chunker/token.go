@@ -330,6 +330,13 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		}(lane.start, lane.end)
 	}
 	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return map[string]any{
+			"output_format": "chunks",
+			"chunks":        []map[string]any{},
+			"_ERROR":        fmt.Sprintf("TokenChunker: %v", err),
+		}
+	}
 
 	// Attach surrounding media context (token_chunker.py:358).
 	attached := attachMediaContext(perItem, c.param.TableContextSize, c.param.ImageContextSize)
