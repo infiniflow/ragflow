@@ -135,8 +135,8 @@ class PubMed(ToolBase, ABC):
         # Authors
         authors = []
         for author in child.findall(".//AuthorList/Author"):
-            lastname = safe_find("LastName") or ""
-            forename = safe_find("ForeName") or ""
+            lastname = author.findtext("LastName") or ""
+            forename = author.findtext("ForeName") or ""
             fullname = f"{forename} {lastname}".strip()
             if fullname:
                 authors.append(fullname)
