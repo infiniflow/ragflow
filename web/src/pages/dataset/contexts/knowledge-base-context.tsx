@@ -22,7 +22,7 @@ export const KnowledgeBaseProvider: React.FC<{
   );
 };
 
-// eslint-disable-next-line react-refresh/only-export-components
+ 
 export const useKnowledgeBaseContext = (): KnowledgeBaseContextType => {
   const context = useContext(KnowledgeBaseContext);
   if (context === undefined) {

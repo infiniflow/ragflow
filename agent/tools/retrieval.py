@@ -23,6 +23,7 @@ from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.constants import LLMType
 from api.db.services.doc_metadata_service import DocMetadataService
 from common.temporal_retrieval import resolve_temporal_retrieval_context
+from common.metadata_utils import apply_meta_data_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.memory_service import MemoryService

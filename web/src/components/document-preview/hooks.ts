@@ -132,7 +132,7 @@ export const useFetchExcel = (filePath: string) => {
         setStatus(true);
       })
       .catch((e) => {
-        // eslint-disable-next-line no-console
+         
         console.warn('failed', e);
         myExcelPreviewer.destroy();
         setStatus(false);

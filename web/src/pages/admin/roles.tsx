@@ -340,7 +340,7 @@ function AdminRoles() {
               onSubmit={(evt) => {
                 evt.preventDefault();
                 updateRoleDescriptionMutation.mutate({
-                  name: roleToMakeAction!?.role_name,
+                  name: roleToMakeAction?.role_name,
                   description: roleDescription.trim(),
                 });
               }}
@@ -417,7 +417,7 @@ function AdminRoles() {
               variant="destructive"
               onClick={() =>
                 roleToMakeAction &&
-                deleteRoleMutation.mutate(roleToMakeAction!?.role_name)
+                deleteRoleMutation.mutate(roleToMakeAction?.role_name)
               }
               disabled={deleteRoleMutation.isPending}
               loading={deleteRoleMutation.isPending}

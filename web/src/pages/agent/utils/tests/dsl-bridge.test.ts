@@ -334,7 +334,7 @@ describe('dsl-bridge round-trip stability', () => {
     // state.
     const diff = diffDsl(v2BrowserLike.graph, exported.graph, 'graph');
     if (diff.warnings.length > 0) {
-      // eslint-disable-next-line no-console
+       
       console.warn(
         '[v2 round-trip] React-Flow-internal mismatches (warnings, not failures):',
         diff.warnings,
