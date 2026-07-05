@@ -52,6 +52,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
+	_ "ragflow/internal/ingestion/wire" // single owner for ingestion-component registration (File / Parser / Tokenizer / Extractor + 4 Chunker variants)
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 )
@@ -797,6 +798,7 @@ func startServer(config *server.Config) {
 		}
 	}
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
+	componentsHandler := handler.NewComponentsHandler(service.NewComponentsService())
 
 	// Initialize router
 	r := router.NewRouter(authHandler,
@@ -827,7 +829,8 @@ func startServer(config *server.Config) {
 		fileCommitHandler,
 		adminRuntimeHandler,
 		openaiChatHandler,
-		botHandler)
+		botHandler,
+		componentsHandler)
 
 	// Create Gin enginegit diff
 
