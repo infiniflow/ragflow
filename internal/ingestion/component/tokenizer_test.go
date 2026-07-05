@@ -30,6 +30,8 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
+var tokenizerPoolInitErr error
+
 // TestMain initializes the tokenizer pool before any test runs.
 // The tokenizer package needs the C++ RAGAnalyzer dictionaries
 // (see internal/tokenizer.Init) for `Tokenize` /
@@ -53,10 +55,18 @@ func TestMain(m *testing.M) {
 	if cfg.DictPath == "" {
 		cfg.DictPath = "/usr/share/infinity/resource"
 	}
-	if err := tokenizer.Init(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "tokenizer pool init failed (tests will skip tokenize-dependent cases): %v\n", err)
+	tokenizerPoolInitErr = tokenizer.Init(cfg)
+	if tokenizerPoolInitErr != nil {
+		fmt.Fprintf(os.Stderr, "tokenizer pool init failed (tests will skip tokenize-dependent cases): %v\n", tokenizerPoolInitErr)
 	}
 	os.Exit(m.Run())
+}
+
+func requireTokenizerPool(t *testing.T) {
+	t.Helper()
+	if tokenizerPoolInitErr != nil {
+		t.Skipf("tokenizer pool unavailable: %v", tokenizerPoolInitErr)
+	}
 }
 
 // stubEmbedder records every call and returns canned vectors.
@@ -124,6 +134,7 @@ func TestTokenizerComponent_Registered(t *testing.T) {
 // every chunk gains `content_ltks`, `content_sm_ltks`, and a
 // `q_<n>_vec` vector keyed by the embedder's vector dimension.
 func TestTokenizerComponent_Invoke_HappyPath(t *testing.T) {
+	requireTokenizerPool(t)
 	const dim = 4
 	withStubEmbedder(t, dim)
 
@@ -241,6 +252,7 @@ func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
 // Python returns 0 — both are valid as long as the count is
 // finite).
 func TestTokenizerComponent_Invoke_Unicode(t *testing.T) {
+	requireTokenizerPool(t)
 	withStubEmbedder(t, 4)
 	c, _ := NewTokenizerComponent(map[string]any{})
 
@@ -279,6 +291,7 @@ func TestTokenizerComponent_Invoke_Unicode(t *testing.T) {
 }
 
 func TestTokenizerComponent_Invoke_TextPayload(t *testing.T) {
+	requireTokenizerPool(t)
 	withStubEmbedder(t, 4)
 	c, _ := NewTokenizerComponent(map[string]any{
 		"search_method": []any{"full_text"},
@@ -304,6 +317,7 @@ func TestTokenizerComponent_Invoke_TextPayload(t *testing.T) {
 }
 
 func TestTokenizerComponent_Invoke_JSONPayload(t *testing.T) {
+	requireTokenizerPool(t)
 	withStubEmbedder(t, 4)
 	c, _ := NewTokenizerComponent(map[string]any{
 		"search_method": []any{"full_text"},
@@ -329,6 +343,7 @@ func TestTokenizerComponent_Invoke_JSONPayload(t *testing.T) {
 // embedding client is called ONCE with all chunks (not fanned per
 // chunk — plan §AD-5a). 3 chunks → 1 call.
 func TestTokenizerComponent_Invoke_BatchedEmbedding(t *testing.T) {
+	requireTokenizerPool(t)
 	stub := withStubEmbedder(t, 8)
 	c, _ := NewTokenizerComponent(map[string]any{})
 	chunks := []map[string]any{
@@ -351,6 +366,7 @@ func TestTokenizerComponent_Invoke_BatchedEmbedding(t *testing.T) {
 // search_method=["full_text"] branch: no embedding, no encoder
 // call, but tokenized fields present.
 func TestTokenizerComponent_Invoke_FullTextOnly(t *testing.T) {
+	requireTokenizerPool(t)
 	stub := withStubEmbedder(t, 4)
 	c, _ := NewTokenizerComponent(map[string]any{
 		"search_method": []any{"full_text"},
@@ -378,6 +394,7 @@ func TestTokenizerComponent_Invoke_FullTextOnly(t *testing.T) {
 // "embedding requested but EncodeFunc is nil" branch — must
 // return a clear error, not panic.
 func TestTokenizerComponent_Invoke_EmbedNoEncodeFunc(t *testing.T) {
+	requireTokenizerPool(t)
 	prev := EncodeFunc
 	EncodeFunc = nil
 	t.Cleanup(func() { EncodeFunc = prev })
@@ -398,6 +415,7 @@ func TestTokenizerComponent_Invoke_EmbedNoEncodeFunc(t *testing.T) {
 // TestTokenizerComponent_Invoke_EmbedderError covers the
 // propagation of an error from the embedding driver.
 func TestTokenizerComponent_Invoke_EmbedderError(t *testing.T) {
+	requireTokenizerPool(t)
 	stub := withStubEmbedder(t, 4)
 	stub.err = errors.New("simulated upstream error")
 
@@ -417,6 +435,7 @@ func TestTokenizerComponent_Invoke_EmbedderError(t *testing.T) {
 // TestTokenizerComponent_Invoke_EncoderCountMismatch covers the
 // "embedder returned wrong number of vectors" defensive branch.
 func TestTokenizerComponent_Invoke_EncoderCountMismatch(t *testing.T) {
+	requireTokenizerPool(t)
 	stub := withStubEmbedder(t, 4)
 	// Inject an embedder that returns the wrong number of vectors
 	// regardless of input.
@@ -455,6 +474,7 @@ func (c *countMismatchedEmbedder) Encode(texts []string) ([][]float64, error) {
 // embedder that blocks past a (test-shrunk) tokenizerTimeout and
 // asserts the component returns context.DeadlineExceeded.
 func TestTokenizerComponent_Invoke_HonorsTimeout(t *testing.T) {
+	requireTokenizerPool(t)
 	prevTimeout := tokenizerTimeout
 	tokenizerTimeout = 50 * time.Millisecond
 	t.Cleanup(func() { tokenizerTimeout = prevTimeout })
@@ -559,6 +579,7 @@ func TestTokenizerComponent_NewTokenizerComponent_BadParam(t *testing.T) {
 // wiring (TrackElapsed, WithTimeout, batched Encode, vector
 // stamping).
 func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
+	requireTokenizerPool(t)
 	const dim = 1024
 	withStubEmbedder(t, dim)
 
