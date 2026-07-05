@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { LanguageAbbreviation } from '@/constants/common';
 import { IFlowTemplate } from '@/interfaces/database/agent';
 import i18n from '@/locales/config';
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface IProps {
@@ -20,15 +20,13 @@ export function TemplateCard({ data, showModal }: IProps) {
     showModal(data);
   }, [data, showModal]);
 
-  const language = useMemo(() => {
-    if (i18n.language === LanguageAbbreviation.Zh) {
-      return 'zh';
-    }
-    if (i18n.language === LanguageAbbreviation.De) {
-      return 'de';
-    }
-    return 'en';
-  }, []) as 'en' | 'zh' | 'de';
+  const language = (
+    i18n.language === LanguageAbbreviation.Zh
+      ? 'zh'
+      : i18n.language === LanguageAbbreviation.De
+        ? 'de'
+        : 'en'
+  ) as 'en' | 'zh' | 'de';
 
   return (
     <Card className="border-colors-outline-neutral-standard group relative min-h-40">
