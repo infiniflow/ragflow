@@ -77,6 +77,8 @@ class LLMParam(ComponentParamBase):
             conf["presence_penalty"] = float(self.presence_penalty)
         if float(self.frequency_penalty) > 0 and get_attr("frequencyPenaltyEnabled"):
             conf["frequency_penalty"] = float(self.frequency_penalty)
+        if hasattr(self, "thinking") and self.thinking and self.thinking != "default":
+            conf["thinking"] = self.thinking
         return conf
 
 
