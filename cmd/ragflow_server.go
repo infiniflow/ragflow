@@ -55,6 +55,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
+	_ "ragflow/internal/ingestion/wire" // single owner for ingestion-component registration (File / Parser / Tokenizer / Extractor + 4 Chunker variants)
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 )
@@ -839,6 +840,7 @@ func startServer(config *server.Config) {
 		}
 	}
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
+	componentsHandler := handler.NewComponentsHandler(service.NewComponentsService())
 
 	openaiChatSvc := service.NewOpenAIChatService()
 	openaiChatHandler := handler.NewOpenAIChatHandler(openaiChatSvc)
@@ -872,7 +874,8 @@ func startServer(config *server.Config) {
 		fileCommitHandler,
 		adminRuntimeHandler,
 		openaiChatHandler,
-		botHandler)
+		botHandler,
+		componentsHandler)
 
 	// Create Gin engine
 
