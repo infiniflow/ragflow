@@ -569,7 +569,7 @@ func (s *DocumentService) CreateDocument(req *CreateDocumentRequest) (*entity.Do
 		Type:         req.Type,
 		SourceType:   req.Source,
 		Suffix:       ".doc",
-		Status:       func() *string { s := "0"; return &s }(),
+		Status:       func() *string { s := "1"; return &s }(),
 	}
 
 	if err := s.InsertDocument(document); err != nil {
@@ -3466,7 +3466,7 @@ func normalizeWebDocumentName(name, contentType string, blob []byte) string {
 // suffix and content hash. blob may be nil for the empty/virtual document.
 func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID, filename, location, filetype string, parserConfig entity.JSONMap, src string, size int64, blob []byte) *entity.Document {
 	docID := strings.ReplaceAll(uuid.New().String(), "-", "")
-	zero := "0"
+	run := "0"
 	status := "1"
 	suffix := ""
 	if i := strings.LastIndex(filename, "."); i >= 0 {
@@ -3486,7 +3486,7 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 		Location:     &loc,
 		Size:         size,
 		Suffix:       suffix,
-		Run:          &zero,
+		Run:          &run,
 		Status:       &status,
 	}
 	if blob != nil {
@@ -3499,10 +3499,6 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 // docToRawMap serialises a freshly created Document into the raw key shape the
 // handler remaps (chunk_num→chunk_count, kb_id→dataset_id, parser_id→chunk_method).
 func docToRawMap(doc *entity.Document) map[string]interface{} {
-	status := "0"
-	if doc.Status != nil {
-		status = *doc.Status
-	}
 	m := map[string]interface{}{
 		"id":            doc.ID,
 		"kb_id":         doc.KbID,
@@ -3516,7 +3512,6 @@ func docToRawMap(doc *entity.Document) map[string]interface{} {
 		"token_num":     doc.TokenNum,
 		"suffix":        doc.Suffix,
 		"run":           "0",
-		"status":        status,
 	}
 	if doc.Name != nil {
 		m["name"] = *doc.Name
