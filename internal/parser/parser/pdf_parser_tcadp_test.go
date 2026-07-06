@@ -16,7 +16,8 @@ func TestPDFParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 		switch r.URL.Path {
 		case "/reconstruct_document":
 			if got, want := r.Header.Get("Authorization"), "Bearer tcadp-secret"; got != want {
-				t.Fatalf("Authorization = %q, want %q", got, want)
+				t.Errorf("Authorization = %q, want %q", got, want)
+				return
 			}
 			_, _ = w.Write([]byte(`{"DocumentRecognizeResultUrl":"` + server.URL + `/download.zip"}`))
 		case "/download.zip":

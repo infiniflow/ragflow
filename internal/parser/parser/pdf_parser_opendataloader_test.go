@@ -16,11 +16,13 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderJSONIntegration(t *testing.T) {
 			return
 		}
 		if got, want := r.Header.Get("Authorization"), "Bearer odl-secret"; got != want {
-			t.Fatalf("Authorization = %q, want %q", got, want)
+			t.Errorf("Authorization = %q, want %q", got, want)
+			return
 		}
 		reader, err := r.MultipartReader()
 		if err != nil {
-			t.Fatalf("MultipartReader: %v", err)
+			t.Errorf("MultipartReader: %v", err)
+			return
 		}
 		seenHybrid := false
 		seenSanitize := false
@@ -30,13 +32,15 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderJSONIntegration(t *testing.T) {
 				break
 			}
 			if err != nil {
-				t.Fatalf("NextPart: %v", err)
+				t.Errorf("NextPart: %v", err)
+				return
 			}
 			switch part.FormName() {
 			case "file":
 				body, _ := io.ReadAll(part)
 				if !strings.HasPrefix(string(body), "%PDF") {
-					t.Fatalf("uploaded file = %q, want PDF bytes", string(body))
+					t.Errorf("uploaded file = %q, want PDF bytes", string(body))
+					return
 				}
 			case "hybrid":
 				body, _ := io.ReadAll(part)
@@ -47,7 +51,8 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderJSONIntegration(t *testing.T) {
 			}
 		}
 		if !seenHybrid || !seenSanitize {
-			t.Fatalf("multipart fields missing: hybrid=%v sanitize=%v", seenHybrid, seenSanitize)
+			t.Errorf("multipart fields missing: hybrid=%v sanitize=%v", seenHybrid, seenSanitize)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"json_doc":{"type":"title","content":"ODL Title","children":[{"type":"paragraph","content":"ODL Body"},{"type":"table","html":"<table><tr><td>a</td></tr></table>"}]}}`))
@@ -126,5 +131,22 @@ func TestOpenDataLoaderItems_TableCellsFallback(t *testing.T) {
 	}
 	if got, _ := json.Marshal(items[0]); !strings.Contains(string(got), "a | b") {
 		t.Fatalf("item = %s, want row text", string(got))
+	}
+}
+
+func TestOpenDataLoaderItems_TableCellsFallbackSparseRows(t *testing.T) {
+	root := map[string]any{
+		"type": "table",
+		"cells": []any{
+			map[string]any{"row": 0, "content": "a"},
+			map[string]any{"row": 5, "content": "z"},
+		},
+	}
+	items := openDataLoaderItems(root)
+	if len(items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(items))
+	}
+	if got, _ := json.Marshal(items[0]); !strings.Contains(string(got), "z") {
+		t.Fatalf("item = %s, want sparse row text", string(got))
 	}
 }

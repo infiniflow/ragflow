@@ -9,7 +9,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
 
-var pdfHeaderFooterPattern = regexp.MustCompile(`(header|footer|number)`)
+var pdfHeaderFooterPattern = regexp.MustCompile(`(?i)^(header|footer|number)$`)
 var pdfTOCTitlePattern = regexp.MustCompile(`(?i)^(contents|目录|目次|table of contents|致谢|acknowledge)$`)
 
 type pdfPostProcessOptions struct {
@@ -131,14 +131,10 @@ outer:
 	return
 }
 
-func reorderPDFMultiColumn(result *deepdoctype.ParseResult, pageWidth, zoom float64) {
+func reorderPDFMultiColumn(result *deepdoctype.ParseResult, pageWidth, _ float64) {
 	if result == nil || len(result.Sections) < 2 {
 		return
 	}
-	if zoom <= 0 {
-		zoom = 1
-	}
-	pageWidth = pageWidth / zoom
 
 	var widths []float64
 	for _, s := range result.Sections {

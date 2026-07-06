@@ -19,11 +19,13 @@ func TestPDFParser_ParseWithResult_MinerUMarkdownIntegration(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/file_parse":
 			submitCalled.Store(true)
 			if got, want := r.Header.Get("Authorization"), "Bearer secret"; got != want {
-				t.Fatalf("Authorization = %q, want %q", got, want)
+				t.Errorf("Authorization = %q, want %q", got, want)
+				return
 			}
 			reader, err := r.MultipartReader()
 			if err != nil {
-				t.Fatalf("MultipartReader: %v", err)
+				t.Errorf("MultipartReader: %v", err)
+				return
 			}
 			var backend string
 			var fileSeen bool
@@ -33,7 +35,8 @@ func TestPDFParser_ParseWithResult_MinerUMarkdownIntegration(t *testing.T) {
 					break
 				}
 				if err != nil {
-					t.Fatalf("NextPart: %v", err)
+					t.Errorf("NextPart: %v", err)
+					return
 				}
 				if part.FormName() == "backend" {
 					body, _ := io.ReadAll(part)
@@ -43,15 +46,18 @@ func TestPDFParser_ParseWithResult_MinerUMarkdownIntegration(t *testing.T) {
 					fileSeen = true
 					body, _ := io.ReadAll(part)
 					if !strings.HasPrefix(string(body), "%PDF") {
-						t.Fatalf("uploaded file = %q, want PDF bytes", string(body))
+						t.Errorf("uploaded file = %q, want PDF bytes", string(body))
+						return
 					}
 				}
 			}
 			if backend != "pipeline" {
-				t.Fatalf("backend = %q, want pipeline", backend)
+				t.Errorf("backend = %q, want pipeline", backend)
+				return
 			}
 			if !fileSeen {
-				t.Fatal("multipart upload missing files part")
+				t.Error("multipart upload missing files part")
+				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"data":{"task_id":"task-1"}}`))

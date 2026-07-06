@@ -34,9 +34,5 @@ func parsePDFWithPlainText(filename string, data []byte, parser *PDFParser) Pars
 			"page_number":  page + 1,
 		})
 	}
-	res := pdfItemsToResult(filename, items, parser.OutputFormat)
-	if res.Err == nil {
-		res.File["page_count"] = pageCount
-	}
-	return res
+	return pdfItemsToResult(filename, items, parser.OutputFormat, pageCount)
 }

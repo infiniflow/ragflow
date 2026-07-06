@@ -59,15 +59,19 @@ type parserSetupConfigurer interface {
 	ConfigureFromSetup(setup map[string]any)
 }
 
+func resolveParserFamily(fileType utility.FileType) string {
+	if family := pythonFamilyName(string(fileType)); family != "" {
+		return family
+	}
+	return string(fileType)
+}
+
 func configureParserFromSetups(p any, fileType utility.FileType, setups map[string]schema.ParserSetup) {
 	cfg, ok := p.(parserSetupConfigurer)
 	if !ok {
 		return
 	}
-	family := pythonFamilyName(string(fileType))
-	if family == "" {
-		family = string(fileType)
-	}
+	family := resolveParserFamily(fileType)
 	setup, ok := setups[family]
 	if !ok {
 		return
@@ -128,10 +132,7 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 // tell the difference between "explicit OCR" and "default DeepDOC"
 // without re-reading setups.
 func resolveLibType(fileType utility.FileType, setups map[string]schema.ParserSetup) (libType, parseMethod string) {
-	family := pythonFamilyName(string(fileType))
-	if family == "" {
-		family = string(fileType)
-	}
+	family := resolveParserFamily(fileType)
 	setup, ok := setups[family]
 	if !ok {
 		return "", ""

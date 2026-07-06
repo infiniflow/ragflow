@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -37,11 +38,11 @@ func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseRe
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	items := soMarkItems(result, parser.SoMarkKeepHeaderFooter)
+	items, pageCount := soMarkItems(result, parser.SoMarkKeepHeaderFooter)
 	if len(items) == 0 {
 		return ParseResult{Err: fmt.Errorf("parser: SoMark returned no usable blocks")}
 	}
-	return pdfItemsToResult(filename, items, parser.OutputFormat)
+	return pdfItemsToResult(filename, items, parser.OutputFormat, pageCount)
 }
 
 func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiKey string) (string, error) {
@@ -112,8 +113,11 @@ func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiK
 }
 
 func soMarkPoll(baseURL, taskID, apiKey string) (map[string]any, error) {
-	form := urlEncoded(map[string]string{"task_id": taskID, "api_key": apiKey})
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form))
+	form := url.Values{"task_id": {taskID}}
+	if apiKey != "" {
+		form.Set("api_key", apiKey)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("parser: SoMark poll request: %w", err)
 	}
@@ -149,7 +153,7 @@ func soMarkPoll(baseURL, taskID, apiKey string) (map[string]any, error) {
 	return result, nil
 }
 
-func soMarkItems(result map[string]any, keepHeaderFooter bool) []map[string]any {
+func soMarkItems(result map[string]any, keepHeaderFooter bool) ([]map[string]any, int) {
 	outputs, _ := result["outputs"].(map[string]any)
 	jsonPayload, _ := outputs["json"].(map[string]any)
 	pages, _ := jsonPayload["pages"].([]any)
@@ -170,7 +174,7 @@ func soMarkItems(result map[string]any, keepHeaderFooter bool) []map[string]any 
 			}
 		}
 	}
-	return items
+	return items, len(pages)
 }
 
 func soMarkBlockToItem(block map[string]any, keepHeaderFooter bool) map[string]any {

@@ -65,8 +65,8 @@ func parsePDFWithTCADP(filename string, data []byte, parser *PDFParser) ParseRes
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP download request: %w", err)}
 	}
-	if apiKey != "" {
-		downloadReq.Header.Set("Authorization", "Bearer "+apiKey)
+	if auth := bearer(apiKey); auth != "" {
+		downloadReq.Header.Set("Authorization", auth)
 	}
 	downloadResp, err := models.NewDriverHTTPClient().Do(downloadReq)
 	if err != nil {
@@ -77,31 +77,35 @@ func parsePDFWithTCADP(filename string, data []byte, parser *PDFParser) ParseRes
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP read zip: %w", err)}
 	}
-	items, err := tcadpItemsFromZip(zipBytes)
+	items, pageCount, err := tcadpItemsFromZip(zipBytes)
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	return pdfItemsToResult(filename, items, parser.OutputFormat)
+	return pdfItemsToResult(filename, items, parser.OutputFormat, pageCount)
 }
 
-func tcadpItemsFromZip(zipBytes []byte) ([]map[string]any, error) {
+func tcadpItemsFromZip(zipBytes []byte) ([]map[string]any, int, error) {
 	reader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
-		return nil, fmt.Errorf("parser: TCADP zip: %w", err)
+		return nil, 0, fmt.Errorf("parser: TCADP zip: %w", err)
 	}
 	items := make([]map[string]any, 0)
+	pageCount := 0
 	for _, file := range reader.File {
 		if strings.HasSuffix(file.Name, ".md") {
 			rc, err := file.Open()
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 			body, err := io.ReadAll(rc)
 			rc.Close()
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 			items = append(items, map[string]any{"text": strings.TrimSpace(string(body)), "doc_type_kwd": "text", "layout": "text"})
+			if strings.TrimSpace(string(body)) != "" && pageCount == 0 {
+				pageCount = 1
+			}
 			continue
 		}
 		if !strings.HasSuffix(file.Name, ".json") {
@@ -109,20 +113,23 @@ func tcadpItemsFromZip(zipBytes []byte) ([]map[string]any, error) {
 		}
 		rc, err := file.Open()
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		var raw any
 		err = json.NewDecoder(rc).Decode(&raw)
 		rc.Close()
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		items = append(items, tcadpAnyToItems(raw)...)
+		if pages := collectPDFPageNumbers(raw); len(pages) > pageCount {
+			pageCount = len(pages)
+		}
 	}
 	if len(items) == 0 {
-		return nil, fmt.Errorf("parser: TCADP zip contained no supported content")
+		return nil, 0, fmt.Errorf("parser: TCADP zip contained no supported content")
 	}
-	return items, nil
+	return items, pageCount, nil
 }
 
 func tcadpAnyToItems(raw any) []map[string]any {

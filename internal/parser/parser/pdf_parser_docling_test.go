@@ -16,7 +16,8 @@ func TestPDFParser_ParseWithResult_DoclingChunkedMarkdownIntegration(t *testing.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		current := requestCount.Add(1)
 		if got, want := r.Header.Get("Authorization"), "Bearer doc-secret"; got != want {
-			t.Fatalf("Authorization = %q, want %q", got, want)
+			t.Errorf("Authorization = %q, want %q", got, want)
+			return
 		}
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/convert/source" {
 			http.NotFound(w, r)
@@ -24,30 +25,37 @@ func TestPDFParser_ParseWithResult_DoclingChunkedMarkdownIntegration(t *testing.
 		}
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("Decode: %v", err)
+			t.Errorf("Decode: %v", err)
+			return
 		}
 		options, _ := body["options"].(map[string]any)
 		if got, want := options["do_chunking"], true; got != want {
-			t.Fatalf("do_chunking = %#v, want %#v", got, want)
+			t.Errorf("do_chunking = %#v, want %#v", got, want)
+			return
 		}
 		chunkingOptions, _ := options["chunking_options"].(map[string]any)
 		if got, want := chunkingOptions["tokenizer"], "sentencepiece"; got != want {
-			t.Fatalf("chunking_options.tokenizer = %#v, want %#v", got, want)
+			t.Errorf("chunking_options.tokenizer = %#v, want %#v", got, want)
+			return
 		}
 		sources, _ := body["sources"].([]any)
 		if len(sources) != 1 {
-			t.Fatalf("sources len = %d, want 1", len(sources))
+			t.Errorf("sources len = %d, want 1", len(sources))
+			return
 		}
 		source, _ := sources[0].(map[string]any)
 		raw, err := base64.StdEncoding.DecodeString(source["base64_string"].(string))
 		if err != nil {
-			t.Fatalf("DecodeString: %v", err)
+			t.Errorf("DecodeString: %v", err)
+			return
 		}
 		if got := string(raw); !strings.HasPrefix(got, "%PDF") {
-			t.Fatalf("uploaded file = %q, want PDF bytes", got)
+			t.Errorf("uploaded file = %q, want PDF bytes", got)
+			return
 		}
 		if current != 1 {
-			t.Fatalf("request count = %d, want first chunked request only", current)
+			t.Errorf("request count = %d, want first chunked request only", current)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[{"text":"Chunk A"},{"chunk":{"text":"Chunk B"}}]`))
@@ -82,27 +90,32 @@ func TestPDFParser_ParseWithResult_DoclingFallbackToStandardJSONIntegration(t *t
 		switch current {
 		case 1:
 			if r.URL.Path != "/v1/convert/source" {
-				t.Fatalf("request 1 path = %q, want /v1/convert/source", r.URL.Path)
+				t.Errorf("request 1 path = %q, want /v1/convert/source", r.URL.Path)
+				return
 			}
 			w.WriteHeader(http.StatusUnprocessableEntity)
 			_, _ = w.Write([]byte(`{"detail":"chunking unsupported"}`))
 		case 2:
 			if r.URL.Path != "/v1alpha/convert/source" {
-				t.Fatalf("request 2 path = %q, want /v1alpha/convert/source", r.URL.Path)
+				t.Errorf("request 2 path = %q, want /v1alpha/convert/source", r.URL.Path)
+				return
 			}
 			w.WriteHeader(http.StatusUnprocessableEntity)
 			_, _ = w.Write([]byte(`{"detail":"chunking unsupported"}`))
 		case 3:
 			if r.URL.Path != "/v1/convert/source" {
-				t.Fatalf("request 3 path = %q, want /v1/convert/source", r.URL.Path)
+				t.Errorf("request 3 path = %q, want /v1/convert/source", r.URL.Path)
+				return
 			}
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatalf("Decode: %v", err)
+				t.Errorf("Decode: %v", err)
+				return
 			}
 			options, _ := body["options"].(map[string]any)
 			if _, exists := options["do_chunking"]; exists {
-				t.Fatalf("standard fallback payload unexpectedly contains do_chunking: %#v", options)
+				t.Errorf("standard fallback payload unexpectedly contains do_chunking: %#v", options)
+				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"document":{"md_content":"# Docling Title\n\nDocling body.\n"}}`))

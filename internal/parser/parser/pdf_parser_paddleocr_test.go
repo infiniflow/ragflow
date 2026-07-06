@@ -20,24 +20,34 @@ func TestPDFParser_ParseWithResult_PaddleOCRMarkdownIntegration(t *testing.T) {
 		}
 		called.Store(true)
 		if got, want := r.Header.Get("Authorization"), "Bearer paddle-secret"; got != want {
-			t.Fatalf("Authorization = %q, want %q", got, want)
+			t.Errorf("Authorization = %q, want %q", got, want)
+			return
 		}
 		var body struct {
-			File     string `json:"file"`
-			FileType int    `json:"fileType"`
+			File      string `json:"file"`
+			FileType  int    `json:"fileType"`
+			Algorithm string `json:"algorithm"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("Decode: %v", err)
+			t.Errorf("Decode: %v", err)
+			return
 		}
 		if got, want := body.FileType, 0; got != want {
-			t.Fatalf("fileType = %d, want %d for PDF", got, want)
+			t.Errorf("fileType = %d, want %d for PDF", got, want)
+			return
+		}
+		if got, want := body.Algorithm, "PaddleOCR-VL"; got != want {
+			t.Errorf("algorithm = %q, want %q", got, want)
+			return
 		}
 		raw, err := base64.StdEncoding.DecodeString(body.File)
 		if err != nil {
-			t.Fatalf("DecodeString: %v", err)
+			t.Errorf("DecodeString: %v", err)
+			return
 		}
 		if got := string(raw); !strings.HasPrefix(got, "%PDF") {
-			t.Fatalf("uploaded file = %q, want PDF bytes", got)
+			t.Errorf("uploaded file = %q, want PDF bytes", got)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Paddle Title\n\nBody paragraph.\n"}}]}}`))

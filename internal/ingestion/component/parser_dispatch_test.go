@@ -454,6 +454,61 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 	t.Fatalf("Invoke: %v", err)
 }
 
+func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
+	origPromptLoader := pdfVisionPromptLoader
+	origRenderer := pdfVisionPageRenderer
+	origResolver := pdfVisionModelResolver
+	origInvoker := pdfVisionChatInvoker
+	t.Cleanup(func() {
+		pdfVisionPromptLoader = origPromptLoader
+		pdfVisionPageRenderer = origRenderer
+		pdfVisionModelResolver = origResolver
+		pdfVisionChatInvoker = origInvoker
+	})
+
+	pdfVisionPromptLoader = func(string) (string, error) { return "Describe page {{ page }}.", nil }
+	pdfVisionPageRenderer = func(_ []byte) ([]pdfVisionPage, error) {
+		return []pdfVisionPage{
+			{PageNumber: 1, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,aaa"},
+			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
+		}, nil
+	}
+	pdfVisionModelResolver = func(string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		return nil, "resolved-vlm", nil, nil
+	}
+	call := 0
+	pdfVisionChatInvoker = func(_ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+		call++
+		answer := ""
+		if call == 1 {
+			answer = "First page"
+		}
+		return &modelModule.ChatResponse{Answer: &answer}, nil
+	}
+
+	param := schema.ParserParam{}.Defaults()
+	param.Setups["pdf"]["parse_method"] = "CustomVLM"
+	param.Setups["pdf"]["output_format"] = "json"
+	c := &ParserComponent{Param: param}
+
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "vision.pdf",
+		"tenant_id": "tenant-1",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok || len(jsonItems) != 2 {
+		t.Fatalf("json payload = %#v, want 2 items", out["json"])
+	}
+	if got := jsonItems[1]["text"]; got != "" {
+		t.Fatalf("json[1].text = %#v, want empty string placeholder", got)
+	}
+}
+
 func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -499,7 +554,8 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesConfiguredBackend(t *testing.T) {
 			return
 		}
 		if got, want := r.Header.Get("Authorization"), "Bearer paddle-secret"; got != want {
-			t.Fatalf("Authorization = %q, want %q", got, want)
+			t.Errorf("Authorization = %q, want %q", got, want)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Paddle Title\n\nPaddle body.\n"}}]}}`))
@@ -535,7 +591,8 @@ func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
 		if got, want := r.Header.Get("Authorization"), "Bearer doc-secret"; got != want {
-			t.Fatalf("Authorization = %q, want %q", got, want)
+			t.Errorf("Authorization = %q, want %q", got, want)
+			return
 		}
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/convert/source" && requestCount == 1:

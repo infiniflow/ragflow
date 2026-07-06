@@ -34,6 +34,10 @@ func parsePDFWithMinerU(filename string, data []byte, parser *PDFParser) ParseRe
 	if backend == "" {
 		backend = "pipeline"
 	}
+	timeout := parser.MinerUPollTimeout
+	if timeout <= 0 {
+		timeout = minerUPollTimeout
+	}
 
 	driver := models.NewMinerLocalUModel(
 		map[string]string{"default": apiServer},
@@ -50,15 +54,22 @@ func parsePDFWithMinerU(filename string, data []byte, parser *PDFParser) ParseRe
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU submit: %w", err)}
 	}
-	content, err := pollMinerUTask(driver, task.TaskID, apiConfig)
+	content, err := pollMinerUTask(driver, task.TaskID, apiConfig, timeout)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU result: %w", err)}
 	}
-	return parseMinerUMarkdownResult(filename, content, parser.OutputFormat)
+	pageCount := 0
+	if strings.TrimSpace(content) != "" {
+		pageCount = 1
+	}
+	return parseMinerUMarkdownResult(filename, content, parser.OutputFormat, pageCount)
 }
 
-func pollMinerUTask(driver *models.MinerULocalModel, taskID string, apiConfig *models.APIConfig) (string, error) {
-	deadline := time.Now().Add(minerUPollTimeout)
+func pollMinerUTask(driver *models.MinerULocalModel, taskID string, apiConfig *models.APIConfig, timeout time.Duration) (string, error) {
+	if timeout <= 0 {
+		timeout = minerUPollTimeout
+	}
+	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for {
 		task, err := driver.ShowTask(taskID, apiConfig)
@@ -82,12 +93,8 @@ func pollMinerUTask(driver *models.MinerULocalModel, taskID string, apiConfig *m
 	}
 }
 
-func parseMinerUMarkdownResult(filename, markdown, outputFormat string) ParseResult {
-	fileMeta := map[string]any{
-		"name":       filename,
-		"page_count": 0,
-		"outline":    []map[string]any{},
-	}
+func parseMinerUMarkdownResult(filename, markdown, outputFormat string, pageCount int) ParseResult {
+	fileMeta := pdfFileMeta(filename, pageCount)
 	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
 	case "", "json":
 		mp, err := NewMarkdownParser(GoMarkdown)

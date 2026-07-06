@@ -18,7 +18,8 @@ func TestPDFParser_ParseWithResult_SoMarkJSONIntegration(t *testing.T) {
 			submitSeen = true
 			reader, err := r.MultipartReader()
 			if err != nil {
-				t.Fatalf("MultipartReader: %v", err)
+				t.Errorf("MultipartReader: %v", err)
+				return
 			}
 			fields := map[string]string{}
 			for {
@@ -27,23 +28,27 @@ func TestPDFParser_ParseWithResult_SoMarkJSONIntegration(t *testing.T) {
 					break
 				}
 				if err != nil {
-					t.Fatalf("NextPart: %v", err)
+					t.Errorf("NextPart: %v", err)
+					return
 				}
 				body, _ := io.ReadAll(part)
 				fields[part.FormName()] = string(body)
 			}
 			if fields["api_key"] != "somark-secret" {
-				t.Fatalf("api_key = %q, want somark-secret", fields["api_key"])
+				t.Errorf("api_key = %q, want somark-secret", fields["api_key"])
+				return
 			}
 			if !strings.Contains(fields["element_formats"], "image") {
-				t.Fatalf("element_formats = %q", fields["element_formats"])
+				t.Errorf("element_formats = %q", fields["element_formats"])
+				return
 			}
 			_, _ = w.Write([]byte(`{"code":0,"data":{"task_id":"task-1"}}`))
 		case "/parse/async_check":
 			pollSeen = true
 			body, _ := io.ReadAll(r.Body)
 			if !strings.Contains(string(body), "task_id=task-1") {
-				t.Fatalf("poll body = %q, want task_id", string(body))
+				t.Errorf("poll body = %q, want task_id", string(body))
+				return
 			}
 			_, _ = w.Write([]byte(`{"code":0,"data":{"status":"SUCCESS","result":{"outputs":{"json":{"pages":[{"blocks":[{"type":"title","content":"SoMark Title","title_level":2},{"type":"figure","content":"Figure caption"},{"type":"table","content":"<table><tr><td>x</td></tr></table>"}]}]}}}}}`))
 		default:

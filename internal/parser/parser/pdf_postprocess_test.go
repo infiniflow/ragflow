@@ -117,14 +117,24 @@ func TestApplyPDFPostProcess_RemoveTOCByOutlines(t *testing.T) {
 }
 
 func TestApplyPDFPostProcess_ReordersMultiColumnText(t *testing.T) {
-	result := &deepdoctype.ParseResult{
-		Sections: []deepdoctype.Section{
-			makePDFSection("right", "text", 0, 300, 500, 100, 120),
-			makePDFSection("left", "text", 0, 50, 250, 100, 120),
-		},
+	cases := []struct {
+		name      string
+		pageWidth float64
+		zoom      float64
+	}{
+		{name: "unit zoom", pageWidth: 600, zoom: 1},
+		{name: "pre-normalized width", pageWidth: 200, zoom: 3},
 	}
-	applyPDFPostProcess(result, pdfPostProcessOptions{pageWidth: 600, zoom: 1, enableMultiColumn: true})
-	if got, want := result.Sections[0].Text, "left"; got != want {
-		t.Fatalf("Sections[0].Text = %q, want %q", got, want)
+	for _, tc := range cases {
+		result := &deepdoctype.ParseResult{
+			Sections: []deepdoctype.Section{
+				makePDFSection("right", "text", 0, 100, 166, 100, 120),
+				makePDFSection("left", "text", 0, 10, 76, 100, 120),
+			},
+		}
+		applyPDFPostProcess(result, pdfPostProcessOptions{pageWidth: tc.pageWidth, zoom: tc.zoom, enableMultiColumn: true})
+		if got, want := result.Sections[0].Text, "left"; got != want {
+			t.Fatalf("%s: Sections[0].Text = %q, want %q", tc.name, got, want)
+		}
 	}
 }

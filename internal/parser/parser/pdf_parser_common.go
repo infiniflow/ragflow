@@ -25,6 +25,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	"ragflow/internal/deepdoc/parser/pdf/inference"
@@ -64,6 +65,7 @@ type PDFParser struct {
 	MinerUAPIServer                   string
 	MinerUAPIKey                      string
 	MinerUBackend                     string
+	MinerUPollTimeout                 time.Duration
 	PaddleOCRBaseURL                  string
 	PaddleOCRAPIKey                   string
 	PaddleOCRAlgorithm                string
@@ -102,6 +104,7 @@ func NewPDFParser() *PDFParser {
 		ParseMethod:                    "deepdoc",
 		OutputFormat:                   "json",
 		MinerUBackend:                  "pipeline",
+		MinerUPollTimeout:              minerUPollTimeout,
 		PaddleOCRAlgorithm:             "PaddleOCR-VL",
 		OpenDataLoaderTimeout:          600,
 		SoMarkBaseURL:                  "https://somark.tech/api/v1",
@@ -148,6 +151,12 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["mineru_backend"].(string); ok && v != "" {
 		p.MinerUBackend = v
+	}
+	if v, ok := setup["mineru_timeout_seconds"].(int); ok && v > 0 {
+		p.MinerUPollTimeout = time.Duration(v) * time.Second
+	}
+	if v, ok := setup["mineru_timeout_seconds"].(float64); ok && v > 0 {
+		p.MinerUPollTimeout = time.Duration(v * float64(time.Second))
 	}
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v

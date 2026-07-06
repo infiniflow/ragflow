@@ -135,10 +135,6 @@ func dispatchPDFVision(
 			return parserDispatchResult{}, fmt.Errorf("Parser: pdf vision page %d: %w", page.PageNumber, err)
 		}
 		text := extractPDFVisionAnswer(resp)
-		if text == "" {
-			continue
-		}
-
 		positions := [][]any{{page.PageNumber, 0.0, page.WidthPts, 0.0, page.HeightPts}}
 		items = append(items, map[string]any{
 			"text":           text,
@@ -147,7 +143,9 @@ func dispatchPDFVision(
 			"_pdf_positions": positions,
 			"positions":      positions,
 		})
-		markdownParts = append(markdownParts, text)
+		if text != "" {
+			markdownParts = append(markdownParts, text)
+		}
 	}
 
 	outputFormat := "json"

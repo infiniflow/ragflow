@@ -63,11 +63,11 @@ func parsePDFWithOpenDataLoader(filename string, data []byte, parser *PDFParser)
 	if payload.JSONDoc != nil {
 		items := openDataLoaderItems(payload.JSONDoc)
 		if len(items) > 0 {
-			return pdfItemsToResult(filename, items, parser.OutputFormat)
+			return pdfItemsToResult(filename, items, parser.OutputFormat, openDataLoaderPageCount(payload.JSONDoc))
 		}
 	}
 	if strings.TrimSpace(payload.MDText) != "" {
-		return parseMinerUMarkdownResult(filename, payload.MDText, parser.OutputFormat)
+		return parseMinerUMarkdownResult(filename, payload.MDText, parser.OutputFormat, 1)
 	}
 	return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader returned no parsed content")}
 }
@@ -177,6 +177,7 @@ func openDataLoaderCellsText(raw any) string {
 		return ""
 	}
 	rows := make(map[int][]string)
+	maxRow := -1
 	for _, cellRaw := range cells {
 		cell, ok := cellRaw.(map[string]any)
 		if !ok {
@@ -187,17 +188,31 @@ func openDataLoaderCellsText(raw any) string {
 			row = int(numberValue(cell["row_index"]))
 		}
 		rows[row] = append(rows[row], stringValue(cell["content"]))
+		if row > maxRow {
+			maxRow = row
+		}
 	}
-	if len(rows) == 0 {
+	if len(rows) == 0 || maxRow < 0 {
 		return ""
 	}
 	parts := make([]string, 0, len(rows))
-	for i := 0; i <= len(rows)+4; i++ {
+	for i := 0; i <= maxRow; i++ {
 		if cols, ok := rows[i]; ok {
 			parts = append(parts, strings.Join(cols, " | "))
 		}
 	}
 	return strings.Join(parts, "\n")
+}
+
+func openDataLoaderPageCount(root any) int {
+	pages := collectPDFPageNumbers(root)
+	if len(pages) > 0 {
+		return len(pages)
+	}
+	if root != nil {
+		return 1
+	}
+	return 0
 }
 
 func stringValue(v any) string {

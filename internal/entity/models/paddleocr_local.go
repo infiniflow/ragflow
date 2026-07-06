@@ -123,6 +123,9 @@ func (p *PaddleOCRLocalModel) OCRFile(modelName *string, content []byte, fileURL
 		"file":     base64Str,
 		"fileType": fileType,
 	}
+	if ocrConfig != nil && strings.TrimSpace(ocrConfig.Algorithm) != "" {
+		reqData["algorithm"] = ocrConfig.Algorithm
+	}
 
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {

@@ -45,12 +45,18 @@ func parsePDFWithPaddleOCR(filename string, data []byte, parser *PDFParser) Pars
 		apiConfig.ApiKey = &apiKey
 	}
 
-	resp, err := driver.OCRFile(&algorithm, data, &filename, apiConfig, &models.OCRConfig{})
+	resp, err := driver.OCRFile(&algorithm, data, &filename, apiConfig, &models.OCRConfig{
+		Algorithm: algorithm,
+	})
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)}
 	}
 	if resp == nil || resp.Text == nil {
 		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR returned empty text")}
 	}
-	return parseMinerUMarkdownResult(filename, *resp.Text, parser.OutputFormat)
+	pageCount := 1
+	if resp.Text != nil && strings.TrimSpace(*resp.Text) == "" {
+		pageCount = 0
+	}
+	return parseMinerUMarkdownResult(filename, *resp.Text, parser.OutputFormat, pageCount)
 }
