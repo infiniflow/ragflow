@@ -34,8 +34,13 @@ When a bucket has versioning enabled, this wrapper:
 - On ``get``, reads the active VersionId from Redis and fetches that
   specific version.  Falls back to the latest version when no tracked
   version exists.
-- On ``rm``, permanently deletes **all versions** of an object in a
-  versioned bucket (not just creating a delete-marker).
+- On ``rm``, creates a **delete-marker** (S3-native behaviour) so that
+  the object remains recoverable and the audit trail is preserved.
+  This is the correct default for compliance / legal-document use-cases
+  where versioning is enabled precisely to retain history.
+- ``purge_all_versions`` permanently deletes every version and
+  delete-marker — it is an explicit, hard-to-hit opt-in that must not
+  be the silent path.
 - Exposes ``list_versions``, ``get_version``, ``set_active_version``,
   ``get_active_version`` and ``delete_version`` for explicit version
   management.
@@ -315,10 +320,27 @@ class VersionedStorageWrapper:
         return data
 
     # ------------------------------------------------------------------
-    # rm — purge all versions
+    # rm — delete-marker (default) vs purge_all_versions (explicit)
     # ------------------------------------------------------------------
+    def _rm_delete_marker(self, bucket: str, fnm: str):
+        """Create a delete-marker for the object (S3-native behaviour).
+
+        In a versioned bucket, ``delete_object`` / ``remove_object``
+        without a ``VersionId`` creates a delete-marker that hides the
+        latest version but preserves all previous versions for recovery
+        and audit.  This is the correct default for compliance use-cases.
+        """
+        self.storage_impl.rm(bucket, fnm)
+        # Clear the active-version pointer since the object is now
+        # logically deleted (the delete-marker hides it from GET-latest).
+        self._del_active_version(bucket, fnm)
+
     def _rm_versioned(self, bucket: str, fnm: str):
-        """Remove an object and all its versions in a versioned bucket."""
+        """Permanently remove an object and **all** its versions.
+
+        This is the *explicit* purge path — callers must go through
+        ``purge_all_versions`` which requires ``confirm=True``.
+        """
         if self.backend == "minio":
             self._rm_minio_all_versions(bucket, fnm)
         else:
@@ -440,9 +462,50 @@ class VersionedStorageWrapper:
         return self._get_versioned(bucket, fnm, tenant_id=tenant_id)
 
     def rm(self, bucket, fnm, tenant_id=None):
-        """Delete an object.  In a versioned bucket this permanently
-        removes **all** versions (not just creating a delete-marker)."""
-        return self._rm_versioned(bucket, fnm)
+        """Delete an object by creating a **delete-marker**.
+
+        In a versioned bucket this does **not** permanently remove any
+        version — it only hides the latest version so the object appears
+        deleted while preserving the full audit trail for recovery.
+
+        Use ``purge_all_versions`` when you need to permanently destroy
+        every version (e.g. for GDPR right-to-be-forgotten).
+        """
+        return self._rm_delete_marker(bucket, fnm)
+
+    def purge_all_versions(self, bucket, fnm, confirm=False,
+                           tenant_id=None):
+        """Permanently delete **all** versions and delete-markers.
+
+        This operation is irreversible and destroys the entire version
+        history of the object.  It is gated behind ``confirm=True`` to
+        prevent accidental data loss.
+
+        Parameters
+        ----------
+        bucket, fnm:
+            Object location.
+        confirm:
+            Must be ``True`` to proceed.  Raises ``ValueError`` otherwise.
+        tenant_id:
+            Optional tenant context forwarded to the underlying impl.
+
+        Returns
+        -------
+        bool
+            ``True`` if the purge was attempted, ``False`` if aborted.
+        """
+        if not confirm:
+            raise ValueError(
+                "purge_all_versions is irreversible — pass confirm=True "
+                "to permanently destroy all version history."
+            )
+        logging.warning(
+            "Purging ALL versions of %s/%s — this is irreversible",
+            bucket, fnm,
+        )
+        self._rm_versioned(bucket, fnm)
+        return True
 
     def obj_exist(self, bucket, fnm, tenant_id=None):
         """Check whether an object exists (at any version)."""
