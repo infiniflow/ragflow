@@ -275,7 +275,7 @@ func stripContentTypeParams(ct string) string {
 	if before, _, found := strings.Cut(ct, ";"); found {
 		return strings.TrimSpace(before)
 	}
-	return ct
+	return strings.TrimSpace(ct)
 }
 
 // ShouldForceAttachment determines if the file should be forced as attachment
@@ -332,7 +332,7 @@ func SanitizeContentDispositionFilename(filename string) string {
 	sanitized = strings.ReplaceAll(sanitized, "%", "")
 
 	// Strip remaining control characters.
-	ctrlRe := regexp.MustCompile(`[\x00-\x1f]`)
+	ctrlRe := regexp.MustCompile(`[\x00-\x1f\x7f]`)
 	sanitized = ctrlRe.ReplaceAllString(sanitized, "")
 
 	sanitized = strings.TrimSpace(sanitized)
@@ -357,13 +357,16 @@ func ResolveAttachmentContentType(ext string, mimeType string) (string, string) 
 	if mimeType != "" {
 		normalizedType := strings.ToLower(stripContentTypeParams(mimeType))
 		contentType = normalizedType
-		// Reverse-lookup extension from CONTENT_TYPE_MAP when mime_type
-		// was provided without an explicit ext. Matches Python's
-		// for-loop over CONTENT_TYPE_MAP.items().
-		for knownExt, knownType := range CONTENT_TYPE_MAP {
-			if knownType == normalizedType {
-				ext = knownExt
-				break
+		// Reverse-lookup extension from CONTENT_TYPE_MAP only when
+		// no explicit ext was provided. Never overwrite a caller-
+		// supplied extension (e.g. ext=svg&mime_type=image/png must
+		// stay ext=svg for the force-attachment check).
+		if ext == "" {
+			for knownExt, knownType := range CONTENT_TYPE_MAP {
+				if knownType == normalizedType {
+					ext = knownExt
+					break
+				}
 			}
 		}
 	} else if ext != "" {
