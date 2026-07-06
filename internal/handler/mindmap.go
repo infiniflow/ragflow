@@ -71,10 +71,14 @@ func runMindMap(config mindMapRunConfig) (mindMapNode, error) {
 	if err != nil {
 		return mindMapNode{}, err
 	}
-	if response == nil || response.Answer == nil {
-		return mindMapNode{ID: "root", Children: []mindMapNode{}}, nil
+	if response == nil || response.Answer == nil || strings.TrimSpace(*response.Answer) == "" {
+		return fallbackMindMapFromSections(sections), nil
 	}
-	return parseMindMapMarkdown(*response.Answer), nil
+	node := parseMindMapMarkdown(*response.Answer)
+	if len(node.Children) == 0 && node.ID == "root" {
+		return fallbackMindMapFromSections(sections), nil
+	}
+	return node, nil
 }
 
 func searchConfigFromDetail(detail map[string]interface{}) map[string]interface{} {
@@ -223,6 +227,21 @@ func mindMapPrompt(inputText string) string {
 
 -TEXT-
 ` + inputText + "\n"
+}
+
+func fallbackMindMapFromSections(sections []string) mindMapNode {
+	root := mindMapNode{ID: "root", Children: []mindMapNode{}}
+	for _, section := range sections {
+		section = cleanMindMapText(section)
+		if section == "" {
+			continue
+		}
+		if len(section) > 80 {
+			section = section[:80] + "..."
+		}
+		root.Children = append(root.Children, mindMapNode{ID: section, Children: []mindMapNode{}})
+	}
+	return root
 }
 
 type mindMapNode struct {

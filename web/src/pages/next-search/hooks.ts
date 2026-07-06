@@ -62,6 +62,23 @@ export const useGetSharedSearchParams = () => {
   };
 };
 
+const buildFallbackMindMap = (question: string, chunks: any[]) => {
+  const root: any = { id: question || 'root', children: [] };
+  const seen = new Set<string>();
+  for (const chunk of chunks) {
+    const content =
+      chunk?.content_with_weight || chunk?.content || chunk?.text || '';
+    const text = String(content).trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    root.children.push({
+      id: text.length > 80 ? text.slice(0, 80) + '...' : text,
+      children: [],
+    });
+  }
+  return root;
+};
+
 export const useSearchFetchMindMap = () => {
   const [searchParams] = useSearchParams();
   const sharedId = searchParams.get('shared_id');
@@ -75,10 +92,18 @@ export const useSearchFetchMindMap = () => {
   } = useMutation({
     mutationKey: ['fetchMindMap'],
     gcTime: 0,
-    mutationFn: async (params: IAskRequestBody) => {
+    mutationFn: async (params: IAskRequestBody & { chunks?: any[] }) => {
       try {
         const ret = await fetchMindMapFunc(params);
-        return ret?.data?.data ?? {};
+        const mindMap = ret?.data?.data ?? {};
+        const isEmptyTree =
+          !mindMap ||
+          (mindMap.id === 'root' &&
+            (!mindMap.children || mindMap.children.length === 0));
+        if (isEmptyTree && params?.question && params?.chunks?.length) {
+          return buildFallbackMindMap(params.question, params.chunks);
+        }
+        return mindMap;
       } catch (error: any) {
         if (has(error, 'message')) {
           message.error(error.message);
@@ -96,6 +121,7 @@ export const useShowMindMapDrawer = (
   kbIds: string[],
   question: string,
   searchId = '',
+  chunks: any[] = [],
 ) => {
   const { visible, showModal, hideModal } = useSetModalState();
   const ref = useRef<any>();
@@ -107,6 +133,10 @@ export const useShowMindMapDrawer = (
   } = useSearchFetchMindMap();
 
   const handleShowModal = useCallback(() => {
+    showModal();
+  }, [showModal]);
+
+  useEffect(() => {
     const searchParams = {
       question: trim(question),
       kb_ids: kbIds,
@@ -117,10 +147,9 @@ export const useShowMindMapDrawer = (
       !isEqual(searchParams, ref.current)
     ) {
       ref.current = searchParams;
-      fetchMindMap(searchParams);
+      fetchMindMap({ ...searchParams, chunks });
     }
-    showModal();
-  }, [fetchMindMap, showModal, question, kbIds, searchId]);
+  }, [fetchMindMap, question, kbIds, searchId, chunks]);
 
   return {
     mindMap,
@@ -514,6 +543,8 @@ export const useSearching = ({
     searchData.search_config.summary,
   ]);
 
+  const { chunks, total } = useSelectTestingResult();
+
   const {
     mindMapVisible,
     hideMindMapModal,
@@ -524,8 +555,8 @@ export const useSearching = ({
     searchData.search_config.kb_ids,
     searchStr,
     searchData.id,
+    chunks,
   );
-  const { chunks, total } = useSelectTestingResult();
 
   const handleSearch = useCallback(
     (value: string) => {
