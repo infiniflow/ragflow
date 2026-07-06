@@ -971,7 +971,11 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 
 	if strings.ToLower(c.DefaultQuery("return_raw_files", "false")) == "true" {
 		if len(errMsgs) > 0 {
-			jsonSuccess(c, gin.H{"documents": data, "errors": errMsgs})
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeServerError,
+				"message": strings.Join(errMsgs, "\n"),
+				"data":    data,
+			})
 			return
 		}
 		jsonSuccess(c, data)
@@ -982,7 +986,11 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		mapped[i] = mapDocKeysWithRunStatus(d)
 	}
 	if len(errMsgs) > 0 {
-		jsonSuccess(c, gin.H{"documents": mapped, "errors": errMsgs})
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": strings.Join(errMsgs, "\n"),
+			"data":    mapped,
+		})
 		return
 	}
 	jsonSuccess(c, mapped)
