@@ -64,6 +64,26 @@ func jsonMarshal(v any) ([]byte, error) {
 	return json.Marshal(v)
 }
 
+// copyEvent creates a shallow copy of an Event with a deep copy of Payload and Metadata.
+func copyEvent(ev *events.Event) *events.Event {
+	cp := *ev
+	if ev.Payload != nil {
+		cp.Payload = make([]byte, len(ev.Payload))
+		copy(cp.Payload, ev.Payload)
+	}
+	if ev.Metadata != nil {
+		cp.Metadata = make(map[string]any, len(ev.Metadata))
+		for k, v := range ev.Metadata {
+			cp.Metadata[k] = v
+		}
+	}
+	if ev.CausedBy != nil {
+		cp.CausedBy = make([]events.EventID, len(ev.CausedBy))
+		copy(cp.CausedBy, ev.CausedBy)
+	}
+	return &cp
+}
+
 // ---- event helpers for test assertions ----
 
 // FindEventsOfType filters events by type.

@@ -172,8 +172,9 @@ func (e *ReplayEngine) Replay(ctx context.Context, cfg *ReplayConfig) (*ReplayRe
 	result.OriginalLen = len(originalEvents)
 
 	// Apply StateOverride to the first EventStateWrite event (initial state).
+	// Work on a copy to preserve the original for diff.
 	if cfg.StateOverride != nil {
-		for _, ev := range originalEvents {
+		for i, ev := range originalEvents {
 			if ev.Type == events.EventStateWrite {
 				var st events.StateTransitionPayload
 				if ev.Payload != nil {
@@ -187,8 +188,10 @@ func (e *ReplayEngine) Replay(ctx context.Context, cfg *ReplayConfig) (*ReplayRe
 				if modified != nil {
 					if val, ok := modified[st.Channel]; ok {
 						st.NewValue = val
-						ev.Payload, _ = jsonMarshal(st)
-						ev.Seal()
+						repl := copyEvent(ev)
+						repl.Payload, _ = jsonMarshal(st)
+						repl.Seal()
+						originalEvents[i] = repl
 					}
 				}
 				break
@@ -197,7 +200,11 @@ func (e *ReplayEngine) Replay(ctx context.Context, cfg *ReplayConfig) (*ReplayRe
 	}
 
 	// Phase 2: replay with overrides.
+	// Copy each event before modifying so the original list is preserved
+	// for accurate diff comparison.
 	for _, original := range originalEvents {
+		replayEv := copyEvent(original)
+
 		switch original.Type {
 		case events.EventLLMCallStart, events.EventLLMCallEnd:
 			// Apply model override.
@@ -208,9 +215,13 @@ func (e *ReplayEngine) Replay(ctx context.Context, cfg *ReplayConfig) (*ReplayRe
 				if err != nil {
 					return nil, err
 				}
-				_ = substituted
+				if substituted != nil {
+					payload.Content = *substituted
+					replayEv.Payload, _ = jsonMarshal(payload)
+					replayEv.Seal()
+				}
 			}
-			replayEvents = append(replayEvents, original)
+			replayEvents = append(replayEvents, replayEv)
 
 		case events.EventToolCallStart, events.EventToolCallResult:
 			// Apply tool override.
@@ -221,12 +232,16 @@ func (e *ReplayEngine) Replay(ctx context.Context, cfg *ReplayConfig) (*ReplayRe
 				if err != nil {
 					return nil, err
 				}
-				_ = substituted
+				if substituted != nil {
+					payload.Result = substituted
+					replayEv.Payload, _ = jsonMarshal(payload)
+					replayEv.Seal()
+				}
 			}
-			replayEvents = append(replayEvents, original)
+			replayEvents = append(replayEvents, replayEv)
 
 		default:
-			replayEvents = append(replayEvents, original)
+			replayEvents = append(replayEvents, replayEv)
 		}
 	}
 
