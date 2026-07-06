@@ -535,8 +535,16 @@ def with_api_key(required: bool = True):
 @app.list_tools()
 @with_api_key(required=True)
 async def list_tools(*, connector: RAGFlowConnector, api_key: str) -> list[types.Tool]:
-    dataset_description = await connector.list_datasets(api_key=api_key)
-    chat_description = await connector.list_chats(api_key=api_key)
+    dataset_description = ""
+    chat_description = ""
+    try:
+        dataset_description = await connector.list_datasets(api_key=api_key)
+    except Exception:
+        logging.warning("list_datasets failed during list_tools; using empty description")
+    try:
+        chat_description = await connector.list_chats(api_key=api_key)
+    except Exception:
+        logging.warning("list_chats failed during list_tools; using empty description")
 
     return [
         types.Tool(
