@@ -789,8 +789,8 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 	similarityThreshold, _ := strconv.ParseFloat(c.DefaultQuery("similarity_threshold", "0.2"), 64)
 	keywordsSimilarityWeight, _ := strconv.ParseFloat(c.DefaultQuery("keywords_similarity_weight", "0.7"), 64)
 	topN, _ := strconv.Atoi(c.DefaultQuery("top_n", "5"))
-	if topN > 100 {
-		jsonError(c, common.CodeArgumentError, "page_size must be less than or equal to 100")
+	if topN <= 0 || topN > 100 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "top_n must be between 1 and 100")
 		return
 	}
 
@@ -860,8 +860,8 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 	agentID := c.DefaultQuery("agent_id", "")
 	sessionID := c.DefaultQuery("session_id", "")
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
-	if limit > 100 {
-		jsonError(c, common.CodeArgumentError, "page_size must be less than or equal to 100")
+	if limit <= 0 || limit > 100 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "limit must be between 1 and 100")
 		return
 	}
 	if len(memoryIDs) == 0 {
