@@ -196,6 +196,7 @@ type TTSConfig struct {
 }
 
 type OCRConfig struct {
+	Algorithm string
 }
 
 type ParseFileConfig struct {

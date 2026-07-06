@@ -182,10 +182,13 @@ class RAGFlowConnector:
         if res_json.get("code") != 0:
             logging.warning("list_chats API error: code=%s message=%s", res_json.get("code"), res_json.get("message"))
             raise Exception([types.TextContent(type="text", text=res_json.get("message", "Cannot list chats."))])
-        chat_count = len(res_json.get("data", []))
+        _chats_data = res_json.get("data", [])
+        if isinstance(_chats_data, dict):
+            _chats_data = _chats_data.get("chats", [])
+        chat_count = len(_chats_data)
         logging.info("list_chats returned %d chat(s)", chat_count)
         result_list = []
-        for data in res_json.get("data", []):
+        for data in _chats_data:
             d = {"id": data.get("id"), "name": data.get("name"), "description": data.get("description", "")}
             result_list.append(json.dumps(d, ensure_ascii=False))
         return "\n".join(result_list)

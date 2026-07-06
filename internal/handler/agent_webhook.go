@@ -104,7 +104,7 @@ type canvasLoader interface {
 func (h *AgentHandler) Webhook(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 
@@ -124,7 +124,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) || errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
-			jsonError(c, common.CodeDataError, "Canvas not found.")
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Canvas not found.")
 			return
 		}
 		jsonInternalError(c, err)
@@ -133,7 +133,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 
 	// 2. Reject DataFlow.
 	if cv.CanvasCategory == "DataFlow" {
-		jsonError(c, common.CodeDataError, "Dataflow can not be triggered by webhook.")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Dataflow can not be triggered by webhook.")
 		return
 	}
 
@@ -148,21 +148,20 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	// 4. Find Begin component with mode=="Webhook".
 	webhookCfg := findWebhookBegin(dsl)
 	if webhookCfg == nil {
-		jsonError(c, common.CodeDataError, "Webhook not configured for this agent.")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Webhook not configured for this agent.")
 		return
 	}
 
 	// 5. Method gate.
 	if !methodAllowed(webhookCfg["methods"], c.Request.Method) {
-		jsonError(c, common.CodeDataError,
-			fmt.Sprintf("HTTP method '%s' not allowed for this webhook.", c.Request.Method))
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("HTTP method '%s' not allowed for this webhook.", c.Request.Method))
 		return
 	}
 
 	// 6. Security gate (strict; surfaces all errors as 102).
 	securityCfg := stringMap(webhookCfg["security"])
 	if err := validateWebhookSecurity(securityCfg, c, canvasID); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -193,17 +192,13 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 			// 501 — multipart/form-data uploads are not yet
 			// supported. Body is short so operators see exactly what
 			// is missing.
-			c.JSON(http.StatusNotImplemented, gin.H{
-				"code":    http.StatusNotImplemented,
-				"data":    false,
-				"message": parseErr.Error(),
-			})
+			common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeNotImplemented, nil, parseErr.Error())
 			return
 		case errors.Is(parseErr, ErrWebhookContentTypeMismatch):
-			jsonError(c, common.CodeDataError, parseErr.Error())
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, parseErr.Error())
 			return
 		default:
-			jsonError(c, common.CodeDataError, parseErr.Error())
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, parseErr.Error())
 			return
 		}
 	}
@@ -212,7 +207,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	schema, _ := webhookCfg["schema"].(map[string]any)
 	clean, schemaErr := applyWebhookSchema(parsed, schema)
 	if schemaErr != nil {
-		jsonError(c, common.CodeDataError, schemaErr.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, schemaErr.Error())
 		return
 	}
 
@@ -224,7 +219,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	if mode == "Immediately" {
 		status, contentType, payload, perr := renderImmediatelyResponse(stringMap(webhookCfg["response"]))
 		if perr != nil {
-			jsonError(c, common.CodeDataError, perr.Error())
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, perr.Error())
 			return
 		}
 		// Detached background run — does NOT inherit c.Request.Context()
