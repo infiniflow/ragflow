@@ -187,85 +187,89 @@ export function ModelsSection(props: ModelsSectionProps) {
         )}
       </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <SearchInput
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('setting.search')}
-            rootClassName="flex-1"
-          />
-          {!hideActions && (
-            <Button
-              variant="outline"
-              size="icon-sm"
-              onClick={handleBatchToggleModels}
-              disabled={batchLoading || filteredModels.length === 0}
-              data-testid="models-batch-toggle"
-              aria-label={
-                allFilteredAdded
-                  ? tSetting('batchRemoveModels')
-                  : tSetting('batchAddModels')
-              }
-              title={
-                allFilteredAdded
-                  ? tSetting('batchRemoveModels')
-                  : tSetting('batchAddModels')
-              }
-            >
-              {batchLoading ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : allFilteredAdded ? (
-                <ListMinus className="size-4" />
-              ) : (
-                <ListPlus className="size-4" />
-              )}
-            </Button>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          <TagFilterButton
-            label={tSetting('allModels')}
-            count={models.length}
-            active={tag === null}
-            onClick={() => setTag(null)}
-          />
-          {allTags.map((tKey) => (
-            <TagFilterButton
-              key={tKey}
-              label={mapModelKey[tKey as keyof typeof mapModelKey] || tKey}
-              count={models.filter((m) => m.model_types?.includes(tKey)).length}
-              active={tag === tKey}
-              onClick={() => setTag(tag === tKey ? null : tKey)}
+      <div className="flex flex-col gap-2 border rounded-sm p-5 border-border-button">
+        <div className="flex flex-col gap-2 ">
+          <div className="flex items-center gap-2">
+            <SearchInput
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('setting.search')}
+              rootClassName="flex-1"
             />
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-bg-card rounded-lg max-h-80 overflow-auto scrollbar-auto border border-border-button">
-        {filteredModels.length === 0 ? (
-          <div className="flex items-center justify-center text-text-secondary text-sm py-6 gap-2">
-            <Search className="size-4" />
-            {t('setting.listModelsEmpty')}
+            {!hideActions && (
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={handleBatchToggleModels}
+                disabled={batchLoading || filteredModels.length === 0}
+                data-testid="models-batch-toggle"
+                aria-label={
+                  allFilteredAdded
+                    ? tSetting('batchRemoveModels')
+                    : tSetting('batchAddModels')
+                }
+                title={
+                  allFilteredAdded
+                    ? tSetting('batchRemoveModels')
+                    : tSetting('batchAddModels')
+                }
+              >
+                {batchLoading ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : allFilteredAdded ? (
+                  <ListMinus className="size-4" />
+                ) : (
+                  <ListPlus className="size-4" />
+                )}
+              </Button>
+            )}
           </div>
-        ) : (
-          <ul>
-            {filteredModels.map((model) => (
-              <ModelRow
-                key={model.name}
-                model={model}
-                isAdded={addedSet.has(model.name)}
-                verifyStatus={verify[model.name] ?? 'idle'}
-                hideActions={hideActions}
-                onVerify={() => handleVerify(model)}
-                onAdd={() => handleAddModel(model)}
-                onRemove={() => handleRemoveModel(model)}
-                onEdit={() => setEditingModel(model)}
-                editLabel={tSetting('editModel')}
+          <div className="flex flex-wrap gap-1.5">
+            <TagFilterButton
+              label={tSetting('allModels')}
+              count={models.length}
+              active={tag === null}
+              onClick={() => setTag(null)}
+            />
+            {allTags.map((tKey) => (
+              <TagFilterButton
+                key={tKey}
+                label={mapModelKey[tKey as keyof typeof mapModelKey] || tKey}
+                count={
+                  models.filter((m) => m.model_types?.includes(tKey)).length
+                }
+                active={tag === tKey}
+                onClick={() => setTag(tag === tKey ? null : tKey)}
               />
             ))}
-          </ul>
-        )}
+          </div>
+        </div>
+
+        <div className="bg-bg-card rounded-lg max-h-80 overflow-auto scrollbar-auto border border-border-button">
+          {filteredModels.length === 0 ? (
+            <div className="flex items-center justify-center text-text-secondary text-sm py-6 gap-2">
+              <Search className="size-4" />
+              {t('setting.listModelsEmpty')}
+            </div>
+          ) : (
+            <ul>
+              {filteredModels.map((model) => (
+                <ModelRow
+                  key={model.name}
+                  model={model}
+                  isAdded={addedSet.has(model.name)}
+                  verifyStatus={verify[model.name] ?? 'idle'}
+                  hideActions={hideActions}
+                  onVerify={() => handleVerify(model)}
+                  onAdd={() => handleAddModel(model)}
+                  onRemove={() => handleRemoveModel(model)}
+                  onEdit={() => setEditingModel(model)}
+                  editLabel={tSetting('editModel')}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
 
       <AddCustomModelDialog
