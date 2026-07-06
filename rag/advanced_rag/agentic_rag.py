@@ -79,6 +79,7 @@ class RAGTools:
 
         tools = [
             self.formalize_question,
+            self.decompose_question,
             self.select_documents,
             self.search_knowledge_bases,
         ]
@@ -90,6 +91,7 @@ class RAGTools:
             tools.append(self.search_structured_data)
         if self.kb_ids:
             tools.append(self.summarize_document)
+            tools.append(self.compare_documents)
         chat_mdl.bind_tools(None, tools)
 
     def sys_prompt(self) -> str:
@@ -288,6 +290,59 @@ class RAGTools:
             )
 
         return ans.strip().strip('"').strip("'")
+
+    @tool(timeout=60)
+    async def decompose_question(self, question: str) -> List[str]:
+        """Break a complex, multi-part question into independent sub-questions.
+
+        Use this ONLY when the (already formalized) question bundles several
+        distinct information needs that would each be answered by a separate
+        retrieval — e.g. "compare the 2023 and 2024 revenue AND explain the
+        drop in Q3", or "what are the onboarding steps and how do they differ
+        from the enterprise flow". Each sub-question should be self-contained
+        and independently searchable.
+
+        Do NOT decompose a question that is already a single information need
+        ("what is the refund policy?") — return it unchanged as a one-element
+        list. Over-decomposing wastes retrieval round-trips.
+
+        :param question: the self-contained question to decompose (run
+            ``formalize_question`` first if the latest user message was a
+            follow-up).
+
+        :returns: a JSON list of sub-questions in the SAME language as the
+            input. A single-need question yields ``[question]`` unchanged.
+        """
+        if not question or not question.strip():
+            return []
+
+        system = (
+            "You split a user's question into the minimal set of independent, "
+            "self-contained sub-questions needed to answer it fully. "
+            "Preserve the original language. If the question is already a "
+            "single information need, return it unchanged as the only element. "
+            "Output ONLY a JSON array of strings — no prose, no code fences."
+        )
+        user = f"Question:\n{question}\n\nSub-questions (JSON array):"
+
+        ans = await self.chat_mdl.async_chat(
+            system=system,
+            history=[{"role": "user", "content": user}],
+            gen_conf={"temperature": 0.1},
+        )
+        if isinstance(ans, tuple):
+            ans = ans[0]
+        cleaned = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+        cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", cleaned).strip()
+        try:
+            parts = json_repair.loads(cleaned)
+        except Exception as e:
+            logging.warning(f"decompose_question could not parse LLM output: {e!r} raw={ans[:200]!r}")
+            return [question]
+        if not isinstance(parts, list):
+            return [question]
+        subs = [p.strip() for p in parts if isinstance(p, str) and p.strip()]
+        return subs or [question]
 
     async def _get_cached_metas(self) -> dict:
         """Lazy-load the flattened metadata map for the bound KBs and cache it
@@ -747,6 +802,100 @@ class RAGTools:
         return self._with_citation_guidelines(
             kb_prompt(self.kbinfos, self.chat_mdl.max_length, start_idx)
         )
+
+    @tool(timeout=120)
+    async def compare_documents(self, doc_ids: List[str], focus: str = "") -> list[str]:
+        """Load two or more documents side by side so their contents can be compared.
+
+        Call this when the user asks to CONTRAST or find DIFFERENCES between
+        specific documents — phrasings like "compare the 2023 and 2024 audit",
+        "what changed between the v1 and v2 spec", "how does doc A differ from
+        doc B". You (the calling LLM) then produce the comparison prose from
+        the returned content, applying the citation rules.
+
+        Each doc is fetched position-ordered (same as ``summarize_document``)
+        and the per-doc blocks are labelled so you can attribute each claim to
+        the right document. The combined content is trimmed to the chat
+        model's context budget, split proportionally across the documents so
+        no single doc starves the others.
+
+        :param doc_ids: 2+ document IDs to compare. Each is a 32-character
+            lowercase hex string. You MUST NOT invent IDs — acceptable values
+            are those returned VERBATIM from ``select_documents`` /
+            ``filter_docs_by_metadata`` IN THIS SAME TURN.
+        :param focus: OPTIONAL free-text hint about which dimension to compare
+            (e.g. "pricing", "security posture"). Passed through to you as
+            context; the tool itself does not filter on it.
+
+        :returns: a list of formatted, per-document labelled chunk blocks that
+            collectively fit the context budget. An empty list is returned
+            when fewer than two of the IDs resolve to bound documents.
+        """
+        if not self.kb_ids:
+            return []
+        ids = [d for d in (doc_ids or []) if isinstance(d, str) and d]
+        # Resolve + dedup while preserving order; drop hallucinated ids.
+        resolved: list[tuple[str, str, str]] = []
+        seen: set[str] = set()
+        for doc_id in ids:
+            if doc_id in seen:
+                continue
+            seen.add(doc_id)
+            pair = await thread_pool_exec(self._resolve_doc_tenant, doc_id)
+            if pair is not None:
+                resolved.append((doc_id, pair[0], pair[1]))
+        if len(resolved) < 2:
+            logging.warning(
+                "compare_documents: fewer than two resolvable doc ids (%s) — "
+                "refusing (likely hallucinated ids or single-doc request)",
+                ids,
+            )
+            return []
+
+        # Split the context budget evenly across the docs so one large doc
+        # can't crowd out the others. Reserve a little headroom for the
+        # per-doc labels + the citation header.
+        per_doc_budget = max(512, int(self.chat_mdl.max_length * 0.9) // len(resolved))
+        start_idx = len(self.kbinfos.get("chunks", []))
+        blocks: list[str] = []
+        if focus.strip():
+            blocks.append(f"# Comparison focus\n{focus.strip()}\n\n----\n")
+        for doc_id, kb_id, tenant_id in resolved:
+            cks = []
+            tokens = 0
+            for offset in range(0, 10000, 128):
+                chunks = await thread_pool_exec(
+                    settings.retriever.chunk_list,
+                    doc_id, tenant_id, [kb_id],
+                    max_count=offset + 128, offset=offset,
+                    fields=["content_with_weight", "docnm_kwd", "doc_id"],
+                    sort_by_position=True, retrieve_all=False,
+                )
+                if not chunks:
+                    break
+                stop = False
+                for ck in chunks:
+                    num = num_tokens_from_string(str(ck["content_with_weight"]))
+                    if tokens + num > per_doc_budget:
+                        stop = True
+                        break
+                    tokens += num
+                    cks.append(ck)
+                if stop or len(chunks) < 128:
+                    break
+            if not cks:
+                continue
+            doc_name = next((c.get("docnm_kwd") or "" for c in cks if c.get("docnm_kwd")), doc_id)
+            self.kbinfos["chunks"].extend(cks)
+            self.kbinfos["doc_aggs"].append(
+                {"doc_name": doc_name, "doc_id": doc_id, "count": len(cks)}
+            )
+            blocks.append(f"## Document: {doc_name} (id={doc_id})")
+        # Render the full accumulated chunk pool once, labelled per-doc above.
+        rendered = kb_prompt(self.kbinfos, self.chat_mdl.max_length, start_idx)
+        if isinstance(rendered, list):
+            return self._with_citation_guidelines(blocks + rendered)
+        return self._with_citation_guidelines(blocks + [rendered])
 
     @tool(timeout=60)
     async def search_structured_data(self, question: str) -> str:

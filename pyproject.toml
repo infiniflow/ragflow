@@ -61,6 +61,8 @@ dependencies = [
     "infinity-emb>=0.0.66,<0.0.67",
     "jira==3.10.5",
     "json-repair==0.35.0",
+    "langgraph>=0.2.0,<1.0.0",
+    "langgraph-checkpoint-redis>=0.0.5",
     "langfuse>=4.0.1",
     "mammoth>=1.11.0",
     "markdown==3.6",

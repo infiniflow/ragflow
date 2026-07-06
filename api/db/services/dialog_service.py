@@ -1820,10 +1820,9 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                          )
 
     llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
-    if llm_type == "image2text":
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
-    else:
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+    if llm_type != "chat":
+        raise ValueError("rag_agent only supports chat LLMs.")
+    llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
 
     #attachments = None
     #if "doc_ids" in kwargs:
@@ -1832,15 +1831,11 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     #    attachments = [doc_id for doc_id in messages[-1]["doc_ids"] if doc_id]
     attachments_ = ""
     image_attachments = []
-    image_files = []
     if "files" in messages[-1]:
-        if llm_type == "chat":
-            text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
-        else:
-            text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
+        text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
         attachments_ = "\n\n".join(text_attachments)
     msg = deepcopy(messages)
-    if llm_type == "chat" and image_attachments:
+    if image_attachments:
         factory = llm_model_config.get("llm_factory", "") if llm_model_config else ""
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
     if attachments_:
@@ -1866,35 +1861,28 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
 
         return {"answer": think + answer, "reference": refs, "prompt": "", "created_at": time.time()}
 
-    gen_conf = dialog.llm_setting
-    if stream:
-        if llm_type == "chat":
-            stream_iter = chat_mdl.async_chat_streamly_delta(rag_tools.sys_prompt(), msg, gen_conf)
-        else:
-            stream_iter = chat_mdl.async_chat_streamly_delta(rag_tools.sys_prompt(), msg, gen_conf, images=image_files)
-        last_state = None
-        async for kind, value, state in _stream_with_think_delta(stream_iter):
-            last_state = state
-            if kind == "marker":
-                flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
-                yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, **flags}
-                continue
-            yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
-        full_answer = last_state.full_text if last_state else ""
-        if full_answer:
-            final = await decorate_answer(_extract_visible_answer(full_answer))
-            final["final"] = True
-            final["audio_binary"] = None
-            yield final
-    else:
-        if llm_type == "chat":
-            answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), msg, gen_conf)
-        else:
-            answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), msg, gen_conf, images=image_files)
-        user_content = msg[-1].get("content", "[content not available]")
-        logging.debug("User: {}|Assistant: {}".format(user_content, answer))
-        res = await decorate_answer(answer)
-        res["audio_binary"] = tts(tts_mdl, answer)
-        yield res
+    from rag.advanced_rag.agentic_rag_graph import run_agentic_rag
 
+    # Per-turn thread id: conversation id + turn ordinal. Distinct turns get
+    # distinct checkpoints; a retry of the same turn resumes.
+    session_id = kwargs.get("session_id") or ""
+    thread_id = f"{session_id}:{len(messages)}"
+    full_answer = ""
+    try:
+        async for frame in run_agentic_rag(rag_tools, msg, thread_id):
+            if "answer" in frame:
+                delta = frame["answer"] or ""
+                full_answer += delta
+                if stream:
+                    yield {"answer": delta, "reference": {}, "audio_binary": tts(tts_mdl, delta), "final": False}
+            elif "error" in frame:
+                logging.warning("rag_agent(langgraph): %s", frame["error"])
+            # status frames are dropped; the frontend answer stream
+            # contract is {answer, reference, final}.
+    except Exception:
+        logging.exception("rag_agent(langgraph): run failed")
+    final = await decorate_answer(_extract_visible_answer(full_answer))
+    final["final"] = True
+    final["audio_binary"] = None
+    yield final
     return

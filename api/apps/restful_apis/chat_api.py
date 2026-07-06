@@ -30,10 +30,11 @@ from api.apps.restful_apis._generation_params import merge_generation_config, po
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_api_key, split_model_name
 from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
-from api.db.services.dialog_service import DialogService, async_chat, gen_mindmap
+from api.db.services.dialog_service import DialogService, async_chat, gen_mindmap, rag_agent
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
+from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import (
     check_duplicate_ids,
@@ -1246,6 +1247,18 @@ async def session_completion(chat_id_in_arg=""):
                 formatted["chat_id"] = chat_id
             return formatted
 
+        # Feature flag: route chat-model turns through the LangGraph agentic
+        # orchestrator (``rag_agent``) instead of the default ``async_chat``.
+        _use_agent = (
+            os.getenv("AGENTIC_RAG_LANGGRAPH", "").lower() in ("1", "true", "yes")
+            and TenantLLMService.llm_id2llm_type(dia.llm_id) == "chat"
+        )
+
+        def _chat_gen(_dia, _msg, _stream):
+            if _use_agent:
+                return rag_agent(_dia, _msg, _stream, session_id=session_id, **req)
+            return async_chat(_dia, _msg, _stream, session_id=session_id, **req)
+
         async def stream():
             """Yield SSE-formatted chunks from the async chat generator."""
             nonlocal dia, msg, req, conv
@@ -1256,7 +1269,7 @@ async def session_completion(chat_id_in_arg=""):
                     # start_to_think/end_to_think events.
                     legacy_answer = ""
                     final_answer = None
-                    async for ans in async_chat(dia, msg, True, **req):#rag_agent(dia, msg, True, session_id=session_id, **req):
+                    async for ans in _chat_gen(dia, msg, True):
                         ans = _format_answer(ans)
                         if ans.get("final"):
                             final_answer = ans
@@ -1293,7 +1306,7 @@ async def session_completion(chat_id_in_arg=""):
                         payload = _sanitize_json_floats({"code": 0, "message": "", "data": final_chunk})
                         yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
                 else:
-                    async for ans in async_chat(dia, msg, True, session_id=session_id, **req):
+                    async for ans in _chat_gen(dia, msg, True):
                         ans = _format_answer(ans)
                         payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
                         yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
@@ -1313,7 +1326,7 @@ async def session_completion(chat_id_in_arg=""):
             return resp
 
         answer = None
-        async for ans in async_chat(dia, msg, False, session_id=session_id, **req):
+        async for ans in _chat_gen(dia, msg, False):
             answer = _format_answer(ans)
             if conv is not None:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
