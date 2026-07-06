@@ -14,23 +14,22 @@
 //  limitations under the License.
 //
 
-// Gap D — `GET /api/v1/agents/attachments/<attachment_id>/download`
-// (Python api/apps/restful_apis/agent_api.py:2368).
+// Attachment download & preview handlers.
 //
-// Mirrors the python download_agent_attachment handler:
-//   - auth via @login_required → GetUser
-//   - reads `attachment_id` from the URL path (NOT a query string)
-//   - default `ext` query parameter is "markdown"
-//   - uses utility.CONTENT_TYPE_MAP to pick the content type, falling
-//     back to "application/<ext>" for unknown extensions
-//   - streams raw bytes back with a sanitized Content-Disposition
+// Mirrors the Python handlers in api/apps/restful_apis/agent_api.py:
+//   - download_attachment (agent_api.py:2368)
+//   - preview_attachment  (agent_api.py:2496)
+//   - _attachment_request_metadata
+//   - _stream_agent_attachment
+//
+// The Python PR #15399 added a dedicated preview endpoint that returns
+// Content-Disposition: inline for safe types (PDF, images, Markdown,
+// etc.) while still forcing attachment on HTML, SVG, and XML.
 
 package handler
 
 import (
-	"fmt"
 	"net/http"
-	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -46,7 +45,67 @@ type agentAttachmentFileService interface {
 	DownloadAgentFile(tenantID, location string) ([]byte, error)
 }
 
+// attachmentRequestMetadata holds the parsed query params used when
+// streaming an attachment. Mirrors Python _attachment_request_metadata().
+type attachmentRequestMetadata struct {
+	ContentType string
+	Ext         string
+	Filename    string
+}
+
+// attachmentRequestMeta parses ext, mime_type, and filename from the
+// request query string and resolves the content type. Mirrors Python
+// _attachment_request_metadata().
+func attachmentRequestMeta(c *gin.Context) attachmentRequestMetadata {
+	ext := strings.TrimSpace(c.Query("ext"))
+	mimeType := strings.TrimSpace(c.Query("mime_type"))
+	filename := strings.TrimSpace(c.Query("filename"))
+
+	contentType, resolvedExt := utility.ResolveAttachmentContentType(ext, mimeType)
+	return attachmentRequestMetadata{
+		ContentType: contentType,
+		Ext:         resolvedExt,
+		Filename:    filename,
+	}
+}
+
+// streamAgentAttachment fetches the blob from storage and writes it to
+// the response with the appropriate Content-Disposition header.
+// When inline=true, uses SetPreviewFileResponseHeaders (inline for
+// safe types, attachment for dangerous ones). When inline=false,
+// always uses attachment disposition. Mirrors Python
+// _stream_agent_attachment().
+func (h *AgentHandler) streamAgentAttachment(c *gin.Context, tenantID, attachmentID string, inline bool) {
+	if h.fileService == nil {
+		jsonError(c, common.CodeServerError, "file service not configured")
+		return
+	}
+
+	blob, err := h.fileService.DownloadAgentFile(tenantID, attachmentID)
+	if err != nil {
+		jsonError(c, common.CodeDataError, "Attachment not found!")
+		return
+	}
+
+	meta := attachmentRequestMeta(c)
+	if inline {
+		utility.SetPreviewFileResponseHeaders(c.Writer.Header(), meta.ContentType, meta.Ext, meta.Filename)
+	} else {
+		utility.SetDownloadFileResponseHeaders(c.Writer.Header(), meta.ContentType, meta.Ext, meta.Filename)
+	}
+
+	// If content type was not resolved, fall back to octet-stream.
+	contentType := meta.ContentType
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	c.Data(http.StatusOK, contentType, blob)
+}
+
 // DownloadAttachment GET /api/v1/agents/attachments/<attachment_id>/download
+//
+// Supports optional ?disposition=inline for browsers that prefer inline
+// rendering. Mirrors Python download_attachment() at agent_api.py:2507.
 func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -74,44 +133,34 @@ func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 		return
 	}
 
-	// Normalize the ext query once. A blank or dotted input like
-	// `?ext=` or `?ext=.pdf` would otherwise produce a malformed
-	// MIME type like `application/` or `application/.pdf`. Trim
-	// whitespace, lowercase, strip any leading dot, then fall back
-	// to markdown when the value is empty.
-	ext := strings.ToLower(strings.TrimSpace(c.DefaultQuery("ext", "markdown")))
-	ext = strings.TrimPrefix(ext, ".")
-	if ext == "" {
-		ext = "markdown"
-	}
+	// Support ?disposition=inline for optional inline viewing.
+	inline := strings.ToLower(strings.TrimSpace(c.Query("disposition"))) == "inline"
+	h.streamAgentAttachment(c, user.ID, attachmentID, inline)
+}
 
-	// IDOR note: the Go User struct collapses user/tenant into one
-	// identifier (same model as the python download_agent_file
-	// endpoint at agent_api.py:523-530). The python attachment
-	// endpoint relies on the storage bucket's tenant scoping for
-	// authorisation. The Go port preserves that shape.
-	if h.fileService == nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, "file service not configured")
+// PreviewAttachment GET /api/v1/agents/attachments/<attachment_id>/preview
+//
+// Returns the attachment with Content-Disposition: inline for safe types
+// (PDF, images, Markdown, etc.) and forces attachment for dangerous types
+// (HTML, SVG, XML). This is the endpoint used by MCP clients and the
+// preview_url generated by DocGenerator. Mirrors Python preview_attachment()
+// at agent_api.py:2496.
+func (h *AgentHandler) PreviewAttachment(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		jsonError(c, code, msg)
 		return
 	}
-	blob, err := h.fileService.DownloadAgentFile(user.ID, attachmentID)
-	if err != nil {
-		// Mirror agent_download.go error mapping — DAO/transport
-		// errors collapse to a generic 102 so we don't leak storage
-		// internals in the response body.
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Attachment not found!")
+	attachmentID := c.Param("attachment_id")
+	if attachmentID == "" {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`attachment_id` is required.")
+		return
+	}
+	safe := filepath.Base(attachmentID)
+	if safe == "" || safe == "." || safe == "/" || strings.ContainsAny(safe, "\r\n\"") {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "invalid attachment id.")
 		return
 	}
 
-	contentType := utility.CONTENT_TYPE_MAP[ext]
-	if contentType == "" {
-		// Fallback for unknown extensions — keep the wire shape
-		// consistent with the python handler.
-		contentType = "application/" + ext
-	}
-	c.Header("Content-Disposition", fmt.Sprintf(
-		`attachment; filename="%s"; filename*=UTF-8''%s`,
-		safe, url.PathEscape(safe),
-	))
-	c.Data(http.StatusOK, contentType, blob)
+	h.streamAgentAttachment(c, user.ID, attachmentID, true)
 }

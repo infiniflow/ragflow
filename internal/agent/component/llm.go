@@ -1009,14 +1009,13 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		p.MaxTokens = &i
 	}
 	if v, ok := stringFrom(inputs, "thinking"); ok {
-		// Only allow "enabled" or "disabled"; arbitrary DSL
-		// strings are dropped. Python PR #15220 removed
-		// thinking from llm.py's gen_conf() — it is no
-		// longer forwarded to the model. The field is still
-		// parsed here to match the Python form parameter
-		// definition, but einoChatInvoker does not consume
-		// it, consistent with Python's behavior.
-		if v == "enabled" || v == "disabled" {
+		// Forward any non-empty, non-"default" value to match the
+		// lenient Python gate: hasattr(self,"thinking") and
+		// self.thinking and self.thinking != "default".
+		// Downstream (einoChatInvoker) only acts on "enabled" /
+		// "disabled" and silently ignores unknown values, so
+		// this is safe.
+		if v != "" && v != "default" {
 			p.Thinking = v
 		}
 	}
