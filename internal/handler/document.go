@@ -307,14 +307,12 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 	}
 
 	ext := utility.GetFileExtension(preview.FileName)
-	if preview.ContentType != "" {
-		c.Header("Content-Type", preview.ContentType)
-	}
-
-	if utility.ShouldForceAttachment(ext, preview.ContentType) {
-		c.Header("X-Content-Type-Options", "nosniff")
-		c.Header("Content-Disposition", "attachment")
-	}
+	// Use the shared preview-headers helper so that safe types get
+	// Content-Disposition: inline with filename, while dangerous
+	// types (HTML, SVG, XML) fall back to forced attachment with
+	// nosniff. Mirrors Python document_api.py:2063 which calls
+	// apply_preview_file_response_headers() with the document name.
+	utility.SetPreviewFileResponseHeaders(c.Writer.Header(), preview.ContentType, ext, preview.FileName)
 
 	c.Data(http.StatusOK, preview.ContentType, preview.Data)
 }
