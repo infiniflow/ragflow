@@ -32,6 +32,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -211,6 +212,11 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	// decorator for the debug endpoint.
 	debugState := canvas.NewCanvasState("debug-"+componentID, "debug-task")
 	debugState.Sys["tenant_id"] = user.ID
+	for key, value := range inputs {
+		if strings.HasPrefix(key, "sys.") && key != "sys.tenant_id" {
+			debugState.Sys[strings.TrimPrefix(key, "sys.")] = value
+		}
+	}
 	invokeCtx := runtime.WithState(c.Request.Context(), debugState)
 
 	outputs, err := comp.Invoke(invokeCtx, inputs)
