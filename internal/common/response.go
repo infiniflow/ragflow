@@ -52,7 +52,7 @@ func SuccessNoMessage(c *gin.Context, data interface{}) {
 }
 
 // SuccessNoData returns success response without data
-func SuccessNoData(c *gin.Context, message string) {
+func SuccessNoData(c *gin.Context, message interface{}) {
 	c.JSON(http.StatusOK, response{
 		Code:    int(CodeSuccess),
 		Message: message,

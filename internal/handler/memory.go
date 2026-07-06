@@ -107,41 +107,25 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 
 	// Validate required field: name
 	if req.Name == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "name is required",
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "name is required")
 		return
 	}
 
 	// Validate required field: memory_type (must be non-empty array)
 	if len(req.MemoryType) == 0 {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "memory_type is required and must be a list",
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "memory type is required and must be a list")
 		return
 	}
 
 	// Validate required field: embd_id
 	if req.EmbdID == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "embd_id is required",
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "embedding model ID is required")
 		return
 	}
 
 	// Validate required field: llm_id
 	if req.LLMID == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "llm_id is required",
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "language model ID is required")
 		return
 	}
 
@@ -162,20 +146,12 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 		errMsg := err.Error()
 		// Determine if it's an argument error and return appropriate error code
 		if isArgumentError(errMsg) {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeArgumentError,
-				"message": errMsg,
-				"data":    nil,
-			})
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, errMsg)
 			return
 		}
 
 		// Other errors return server error
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": errMsg,
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, errMsg)
 		return
 	}
 
@@ -224,11 +200,7 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 	// Get memory_id from URL path
 	memoryID := c.Param("memory_id")
 	if memoryID == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "memory_id is required",
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "memory ID is required")
 		return
 	}
 
@@ -253,30 +225,18 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 		errMsg := err.Error()
 		// Check if it's a "not found" error
 		if strings.Contains(errMsg, "not found") {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeNotFound,
-				"message": errMsg,
-				"data":    nil,
-			})
+			common.ResponseWithCodeData(c, common.CodeNotFound, nil, errMsg)
 			return
 		}
 
 		// Check if it's an argument error
 		if isArgumentError(errMsg) {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeArgumentError,
-				"message": errMsg,
-				"data":    nil,
-			})
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, errMsg)
 			return
 		}
 
 		// Other errors return server error
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": errMsg,
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, errMsg)
 		return
 	}
 
@@ -299,11 +259,7 @@ func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
 	// Get memory_id from URL path
 	memoryID := c.Param("memory_id")
 	if memoryID == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "memory_id is required",
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "memory ID is required")
 		return
 	}
 
@@ -313,20 +269,12 @@ func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
 		errMsg := err.Error()
 		// Check if it's a "not found" error
 		if strings.Contains(errMsg, "not found") {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeNotFound,
-				"message": errMsg,
-				"data":    nil,
-			})
+			common.ResponseWithCodeData(c, common.CodeNotFound, nil, errMsg)
 			return
 		}
 
 		// Other errors return server error
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": errMsg,
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, errMsg)
 		return
 	}
 
@@ -407,11 +355,7 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	// Call service layer to get memory list
 	result, err := h.memoryService.ListMemories(user.ID, tenantIDs, memoryTypes, storageType, keywords, page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
 
@@ -434,11 +378,7 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 	// Get memory_id from URL path
 	memoryID := c.Param("memory_id")
 	if memoryID == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "memory_id is required",
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "memory ID is required")
 		return
 	}
 
@@ -448,20 +388,12 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 		errMsg := err.Error()
 		// Check if it's a "not found" error
 		if strings.Contains(errMsg, "not found") {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeNotFound,
-				"message": errMsg,
-				"data":    nil,
-			})
+			common.ResponseWithCodeData(c, common.CodeNotFound, nil, errMsg)
 			return
 		}
 
 		// Other errors return server error
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": errMsg,
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, errMsg)
 		return
 	}
 
@@ -636,11 +568,7 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 
 	ok, message, err := h.memoryService.AddMessage(c.Request.Context(), currentUserID, []string(reqBody.MemoryIDs), msg)
 	if err != nil || !ok {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Some messages failed to add. Detail:" + message,
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Some messages failed to add. Detail:"+message)
 		return
 	}
 
@@ -649,6 +577,7 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 		"message": message,
 		"data":    nil,
 	})
+	common.SuccessNoData(c, message)
 }
 
 // ForgetMessage handles DELETE request for forgetting messages.
@@ -670,38 +599,22 @@ func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
-	if err := h.memoryService.ForgetMessage(c.Request.Context(), user.ID, memoryID, messageID); err != nil {
+	if err = h.memoryService.ForgetMessage(c.Request.Context(), user.ID, memoryID, messageID); err != nil {
 		errMsg := err.Error()
 		if isMemoryServiceNotFound(err) {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeNotFound,
-				"message": errMsg,
-				"data":    nil,
-			})
+			common.ResponseWithCodeData(c, common.CodeNotFound, nil, errMsg)
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Internal server error",
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Internal server error:"+errMsg)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": true,
-		"data":    nil,
-	})
+	common.SuccessNoData(c, true)
 }
 
 func isMemoryServiceNotFound(err error) bool {
@@ -761,10 +674,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeArgumentError), err.Error())
 		return
 	}
 
@@ -776,37 +686,21 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 
 	status, ok := req["status"].(bool)
 	if !ok {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "Status must be a boolean.",
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Status must be a boolean.")
 		return
 	}
 
 	ok, err = h.memoryService.UpdateMessageStatus(c.Request.Context(), userID, memoryID, messageID, status)
 	if err != nil || !ok {
 		if isMemoryServiceNotFound(err) {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeNotFound,
-				"message": err.Error(),
-				"data":    nil,
-			})
+			common.ResponseWithCodeData(c, common.CodeNotFound, nil, err.Error())
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Internal server error",
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Internal server error:"+err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": true,
-		"data":    nil,
-	})
+	common.SuccessNoData(c, true)
 }
 
 // GetMessageContent handles GET request for getting message content
@@ -836,10 +730,7 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeArgumentError), err.Error())
 		return
 	}
 
@@ -927,11 +818,7 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": true,
-		"data":    res,
-	})
+	common.SuccessWithData(c, res, true)
 }
 
 // GetMessages handles GET request for getting message list
