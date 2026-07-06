@@ -13,23 +13,32 @@ import (
 )
 
 const (
-	defaultNATSPrefix   = "harness_events"
-	natsEventSubject    = "events.event"
-	natsSnapshotSubject = "events.snapshot"
+	defaultNATSPrefix    = "harness_events"
+	natsEventSubject     = "events.event"
+	natsSnapshotSubject  = "events.snapshot"
+	defaultMaxCacheAge   = 10 * time.Minute
+	defaultMaxCacheItems = 10000
 )
+
+// cachedEvent wraps an Event with an expiry timestamp for TTL-based cache eviction.
+type cachedEvent struct {
+	ev        *Event
+	expiresAt time.Time
+}
 
 // NATSEventStore persists events to NATS JetStream.
 // Suitable for production distributed deployments.
 type NATSEventStore struct {
-	conn   *nats.Conn
-	js     jetstream.JetStream
-	stream string // JetStream stream name
-	prefix string // subject prefix
-	mu     sync.RWMutex
-	cache  map[string]*Event // ID → Event for fast Get (bounded)
-	clock  atomic.Uint64
-	subs   map[int64]*nats.Subscription
-	subID  atomic.Int64
+	conn        *nats.Conn
+	js          jetstream.JetStream
+	stream      string // JetStream stream name
+	prefix      string // subject prefix
+	mu          sync.RWMutex
+	cache       map[string]*cachedEvent // ID → timestamped Event for fast Get (bounded)
+	maxCacheAge time.Duration
+	clock       atomic.Uint64
+	subs        map[int64]*nats.Subscription
+	subID       atomic.Int64
 }
 
 // NewNATSEventStore creates a new NATSEventStore.
@@ -60,7 +69,7 @@ func NewNATSEventStore(conn *nats.Conn, stream string) (*NATSEventStore, error) 
 		js:     js,
 		stream: stream,
 		prefix: defaultNATSPrefix,
-		cache:  make(map[string]*Event),
+		cache:  make(map[string]*cachedEvent),
 		subs:   make(map[int64]*nats.Subscription),
 	}, nil
 }
@@ -90,15 +99,16 @@ func (s *NATSEventStore) Append(ctx context.Context, events ...*Event) error {
 			return fmt.Errorf("publish event: %w", err)
 		}
 
-		// Update local cache.
+		// Update local cache with TTL.
 		s.mu.Lock()
-		s.cache[string(ev.ID)] = ev
-		// Limit cache size.
-		if len(s.cache) > 10000 {
-			for k := range s.cache {
-				delete(s.cache, k)
-				break
-			}
+		maxAge := s.maxCacheAge
+		if maxAge == 0 {
+			maxAge = defaultMaxCacheAge
+		}
+		s.cache[string(ev.ID)] = &cachedEvent{ev: ev, expiresAt: time.Now().Add(maxAge)}
+		// Evict expired entries when cache exceeds limit.
+		if len(s.cache) > defaultMaxCacheItems {
+			s.evictExpiredLocked()
 		}
 		s.mu.Unlock()
 	}
@@ -126,10 +136,16 @@ func (s *NATSEventStore) Stream(ctx context.Context, filter EventFilter) EventIt
 // Get implements EventLog.
 func (s *NATSEventStore) Get(ctx context.Context, id EventID) (*Event, error) {
 	s.mu.RLock()
-	ev, ok := s.cache[string(id)]
+	ce, ok := s.cache[string(id)]
 	s.mu.RUnlock()
+	if ok && ce.expiresAt.After(time.Now()) {
+		return ce.ev, nil
+	}
+	// Expired cache entry — remove it.
 	if ok {
-		return ev, nil
+		s.mu.Lock()
+		delete(s.cache, string(id))
+		s.mu.Unlock()
 	}
 
 	// Fall back to stream scan (slow path).
@@ -276,6 +292,17 @@ func (s *NATSEventStore) GC(ctx context.Context, retention time.Duration) error 
 	cfg.MaxAge = retention
 	_, err = s.js.UpdateStream(ctx, cfg)
 	return err
+}
+
+// evictExpiredLocked removes cache entries whose TTL has expired.
+// Must be called with s.mu held (Lock, not RLock).
+func (s *NATSEventStore) evictExpiredLocked() {
+	now := time.Now()
+	for k, ce := range s.cache {
+		if now.After(ce.expiresAt) {
+			delete(s.cache, k)
+		}
+	}
 }
 
 // ---- natsEventIterator ----

@@ -7,6 +7,23 @@ import (
 	"ragflow/internal/harness/graph/pregel"
 )
 
+// ---- Context helpers for passing EventRecorder through context ----
+
+type recorderContextKey struct{}
+
+// ContextWithRecorder stores an EventRecorder in context for use by
+// model wrappers and tool middlewares in the agent core.
+func ContextWithRecorder(ctx context.Context, r *EventRecorder) context.Context {
+	return context.WithValue(ctx, recorderContextKey{}, r)
+}
+
+// RecorderFromContext retrieves an EventRecorder from context.
+// Returns nil when no recorder is present.
+func RecorderFromContext(ctx context.Context) *EventRecorder {
+	r, _ := ctx.Value(recorderContextKey{}).(*EventRecorder)
+	return r
+}
+
 // RecorderOption configures an EventRecorder.
 type RecorderOption func(*recorderOptions)
 
@@ -73,7 +90,7 @@ func (r *EventRecorder) record(ctx context.Context, typ EventType, opts ...func(
 	_ = r.store.Append(ctx, ev)
 }
 
-// ---- Fine-grained event recording ----
+// ---- Context-based recording (used by model/tool wrappers) ----
 
 // RecordModelCall records an LLM model invocation with its result.
 func (r *EventRecorder) RecordModelCall(ctx context.Context, model, provider string, messages []any, content string, tokens TokenUsage, durationMs int64, cost float64) {
@@ -124,6 +141,52 @@ func (r *EventRecorder) RecordToolCall(ctx context.Context, toolName string, arg
 		if errStr != "" {
 			ev.Deterministic = false
 		}
+	})
+}
+
+// RecordSubAgentCall records a sub-agent invocation with its result.
+func (r *EventRecorder) RecordSubAgentCall(ctx context.Context, subAgentName string, input, output any, depth int, durationMs int64, errStr string) {
+	r.record(ctx, EventSubAgentCallStart, func(ev *Event) {
+		pl := SubAgentCallPayload{
+			SubAgentName: subAgentName,
+			Input:        input,
+			Depth:        depth,
+		}
+		ev.Payload, _ = json.Marshal(pl)
+	})
+	r.record(ctx, EventSubAgentCallEnd, func(ev *Event) {
+		pl := SubAgentCallPayload{
+			SubAgentName: subAgentName,
+			Output:       output,
+			Depth:        depth,
+			DurationMs:   durationMs,
+			Error:        errStr,
+		}
+		ev.Payload, _ = json.Marshal(pl)
+		if errStr != "" {
+			ev.Deterministic = false
+		}
+	})
+}
+
+// RecordSessionValue records a session value change.
+func (r *EventRecorder) RecordSessionValue(ctx context.Context, key string, value any) {
+	r.record(ctx, EventSessionValueSet, func(ev *Event) {
+		pl := SessionValuePayload{Key: key, Value: value}
+		ev.Payload, _ = json.Marshal(pl)
+	})
+}
+
+// RecordSessionTransfer records an agent transfer event.
+func (r *EventRecorder) RecordSessionTransfer(ctx context.Context, fromAgent, toAgent, reason string, input any) {
+	r.record(ctx, EventSessionTransfer, func(ev *Event) {
+		pl := SessionTransferPayload{
+			FromAgent: fromAgent,
+			ToAgent:   toAgent,
+			Reason:    reason,
+			Input:     input,
+		}
+		ev.Payload, _ = json.Marshal(pl)
 	})
 }
 

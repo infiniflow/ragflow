@@ -444,6 +444,9 @@ func TestEventRecorder_FineGrained(t *testing.T) {
 	r.RecordApproval(ctx, "req-1", "execute_tool", map[string]any{"tool": "search"}, "granted", 3000)
 	r.RecordError(ctx, "connection refused")
 	r.RecordRetry(ctx, "attempt 2/3")
+	r.RecordSubAgentCall(ctx, "researcher", "query1", "result1", 1, 500, "")
+	r.RecordSessionValue(ctx, "mode", "fast")
+	r.RecordSessionTransfer(ctx, "planner", "executor", "plan ready", nil)
 
 	iter := store.Stream(ctx, EventFilter{TraceID: "fine"})
 	count := 0
@@ -454,8 +457,55 @@ func TestEventRecorder_FineGrained(t *testing.T) {
 		}
 		count++
 	}
-	if count != 6 {
-		t.Fatalf("expected 6 events, got %d", count)
+	expected := 6 + 4 // original 6 + sub-start/sub-end + session-value + session-transfer
+	if count != expected {
+		t.Fatalf("expected %d events, got %d", expected, count)
+	}
+}
+
+func TestEventRecorder_ContextHelpers(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryEventStore()
+	r := NewEventRecorder(store, WithTraceID("ctx-test"))
+
+	// Store recorder in context.
+	ctx = ContextWithRecorder(ctx, r)
+
+	// Retrieve and verify.
+	got := RecorderFromContext(ctx)
+	if got == nil {
+		t.Fatal("expected non-nil recorder from context")
+	}
+
+	// Context without recorder should return nil.
+	ctx2 := context.Background()
+	if RecorderFromContext(ctx2) != nil {
+		t.Fatal("expected nil from context without recorder")
+	}
+}
+
+func TestSubAgentAndSessionEvents(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryEventStore()
+	r := NewEventRecorder(store, WithTraceID("sub-session"))
+
+	r.RecordSubAgentCall(ctx, "researcher", "query1", "result1", 1, 500, "")
+	r.RecordSubAgentCall(ctx, "researcher", "query2", "", 2, 0, "timeout")
+	r.RecordSessionValue(ctx, "mode", "fast")
+	r.RecordSessionValue(ctx, "count", 42)
+	r.RecordSessionTransfer(ctx, "a", "b", "reason", "input")
+
+	iter := store.Stream(ctx, EventFilter{TraceID: "sub-session"})
+	var evts []*Event
+	for {
+		ev, ok := iter.Next(ctx)
+		if !ok {
+			break
+		}
+		evts = append(evts, ev)
+	}
+	if len(evts) != 7 { // 2 sub-agent calls × 2 events + 2 values + 1 transfer
+		t.Fatalf("expected 7 events, got %d", len(evts))
 	}
 }
 

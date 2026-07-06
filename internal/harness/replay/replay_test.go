@@ -438,6 +438,120 @@ func TestIntegration_ForkThenReplay(t *testing.T) {
 	}
 }
 
+// ---- True replay: BuildCheckpoint ----
+
+func TestBuildCheckpoint_StateWrite(t *testing.T) {
+	ctx := context.Background()
+	store := events.NewMemoryEventStore()
+	rec := events.NewEventRecorder(store, events.WithTraceID("cp-test"))
+
+	rec.RecordStateWrite(ctx, "messages", nil, []any{"hello"}, "append")
+	rec.RecordStateWrite(ctx, "counter", nil, 42, "add")
+	rec.OnNodeEnd(ctx, "agent", 0, nil, nil)
+	rec.OnStepEnd(ctx, 0, nil)
+
+	iter := store.Stream(ctx, events.EventFilter{TraceID: "cp-test"})
+	var evts []*events.Event
+	for {
+		ev, ok := iter.Next(ctx)
+		if !ok {
+			break
+		}
+		evts = append(evts, ev)
+	}
+
+	cp, cpID := BuildCheckpoint(evts, "test-thread")
+	if cpID == "" {
+		t.Fatal("expected non-empty checkpoint ID")
+	}
+	if cp["messages"] == nil {
+		t.Fatal("expected messages in checkpoint")
+	}
+	if val, ok := cp["counter"].(int); !ok || val != 42 {
+		if val, ok := cp["counter"].(float64); !ok || val != 42 {
+			t.Fatalf("expected counter=42, got %v (type %T)", cp["counter"], cp["counter"])
+		}
+	}
+	if val, ok := cp["__step__"].(float64); !ok || val != 0 {
+		t.Fatalf("expected step=0, got %v (type %T)", cp["__step__"], cp["__step__"])
+	}
+	if val, ok := cp["__last_completed_node__"].(string); !ok || val != "agent" {
+		t.Fatalf("expected last_completed_node='agent', got %v (type %T)", cp["__last_completed_node__"], cp["__last_completed_node__"])
+	}
+}
+
+func TestBuildCheckpoint_EmptyEvents(t *testing.T) {
+	cp, cpID := BuildCheckpoint(nil, "empty")
+	if cpID == "" {
+		t.Fatal("expected checkpoint ID even with no events")
+	}
+	// last_state is always set for non-nil input
+	_ = cp
+}
+
+// ---- True replay: Fork with Engine ----
+
+func TestFork_WithEngine(t *testing.T) {
+	ctx := context.Background()
+	store := events.NewMemoryEventStore()
+	rec := events.NewEventRecorder(store, events.WithTraceID("fork-eng"))
+
+	// Record two state writes, then a tool call.
+	rec.RecordStateWrite(ctx, "results", nil, []any{"first"}, "append")
+	rec.RecordStateWrite(ctx, "count", nil, 1, "add")
+	rec.RecordToolCall(ctx, "search", map[string]any{"q": "test"}, "result", 100, 0, "")
+
+	// Find the fork point (second event, a state write).
+	iter := store.Stream(ctx, events.EventFilter{TraceID: "fork-eng"})
+	var allEvents []*events.Event
+	for {
+		ev, ok := iter.Next(ctx)
+		if !ok {
+			break
+		}
+		allEvents = append(allEvents, ev)
+	}
+	if len(allEvents) < 2 {
+		t.Fatal("need at least 2 events")
+	}
+
+	// Fork from the second state write (after count=1 is persisted).
+	forkPoint := allEvents[1].ID // EventStateWrite for "count"
+
+	engine := NewReplayEngine(store)
+	result, err := engine.Fork(ctx, &ForkConfig{
+		TraceID: "fork-eng",
+		Point:   forkPoint,
+		Store:   store,
+		// No ForkEngine — should use deterministic replay path.
+		OutputStore: events.NewMemoryEventStore(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FinalState != nil {
+		t.Fatal("expected nil FinalState without ForkEngine")
+	}
+	if result.Duration == 0 {
+		t.Fatal("expected non-zero duration")
+	}
+}
+
+func TestFork_EventNotFound(t *testing.T) {
+	ctx := context.Background()
+	store := events.NewMemoryEventStore()
+	engine := NewReplayEngine(store)
+
+	_, err := engine.Fork(ctx, &ForkConfig{
+		TraceID: "nonexistent",
+		Point:   "no-such-event",
+		Store:   store,
+	})
+	if err == nil {
+		t.Fatal("expected error for nonexistent event")
+	}
+}
+
 // ---- bench ----
 
 func BenchmarkReplay(b *testing.B) {

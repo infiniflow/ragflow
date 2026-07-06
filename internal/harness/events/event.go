@@ -67,6 +67,14 @@ const (
 
 	// Fork — branch from an existing event.
 	EventFork EventType = "fork"
+
+	// Sub-agent execution.
+	EventSubAgentCallStart EventType = "subagent.call.start"
+	EventSubAgentCallEnd   EventType = "subagent.call.end"
+
+	// Session / Transfer.
+	EventSessionValueSet EventType = "session.value.set"
+	EventSessionTransfer EventType = "session.transfer"
 )
 
 // Event is an immutable append-only event.
@@ -192,4 +200,28 @@ type ApprovalPayload struct {
 	Context   any    `json:"context,omitempty"`
 	Decision  string `json:"decision,omitempty"`
 	LatencyMs int64  `json:"latency_ms,omitempty"`
+}
+
+// SubAgentCallPayload is the payload for sub-agent call events.
+type SubAgentCallPayload struct {
+	SubAgentName string `json:"sub_agent_name"`
+	Input        any    `json:"input,omitempty"`
+	Output       any    `json:"output,omitempty"`
+	Depth        int    `json:"depth,omitempty"`
+	DurationMs   int64  `json:"duration_ms,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
+// SessionValuePayload is the payload for session value events.
+type SessionValuePayload struct {
+	Key   string `json:"key"`
+	Value any    `json:"value,omitempty"`
+}
+
+// SessionTransferPayload is the payload for session transfer events.
+type SessionTransferPayload struct {
+	FromAgent string `json:"from_agent"`
+	ToAgent   string `json:"to_agent"`
+	Reason    string `json:"reason,omitempty"`
+	Input     any    `json:"input,omitempty"`
 }
