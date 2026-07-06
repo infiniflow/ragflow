@@ -316,6 +316,13 @@ def get_model_config_by_id(tenant_id: str, model_id: str):
     if not provider_obj:
         raise LookupError(f"Provider id={model_obj.provider_id} not found for model id={model_id}.")
 
+    # Validate that tenant_id owns the provider or is a joined tenant of the provider's owner.
+    if tenant_id != provider_obj.tenant_id:
+        joined_tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+        joined_tenant_ids = [t["tenant_id"] for t in joined_tenants]
+        if provider_obj.tenant_id not in joined_tenant_ids:
+            raise LookupError(f"Tenant {tenant_id} has no access to provider owned by tenant {provider_obj.tenant_id}.")
+
     instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
     if not instance_obj:
         raise LookupError(f"Instance id={model_obj.instance_id} not found for model id={model_id}.")
