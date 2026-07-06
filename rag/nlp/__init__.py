@@ -296,7 +296,7 @@ def random_choices(arr, k):
 
 
 def not_bullet(line):
-    patt = [r"0", r"[0-9]+ +[0-9~个只-]", r"[0-9]+\.{2,}"]
+    patt = [r"0", r"[0-9]+ +[0-9~个只-]", r"[0-9]+\.{2,}", r"[0-9]+(\.[0-9]+){2,}[的中]"]
     return any([re.match(r, line) for r in patt])
 
 
@@ -1029,7 +1029,7 @@ def tree_merge(bull, sections, depth):
         text = re.sub(r"\u3000", " ", text).strip()
 
         for i, title in enumerate(BULLET_PATTERN[bull]):
-            if re.match(title, text.strip()):
+            if re.match(title, text.strip()) and not not_bullet(text):
                 return i + 1, text
         else:
             if re.search(r"(title|head)", layout) and not not_title(text):

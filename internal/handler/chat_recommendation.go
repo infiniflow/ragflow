@@ -17,7 +17,6 @@
 package handler
 
 import (
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -44,17 +43,17 @@ type ChatRecommendationRequest struct {
 func (h *ChatHandler) Recommendation(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	var req ChatRecommendationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "question is required"})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
 		return
 	}
 	if strings.TrimSpace(req.Question) == "" {
-		c.JSON(http.StatusOK, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "question is required"})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
 		return
 	}
 	questions, err := service.GenerateRelatedQuestions(user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
@@ -63,5 +62,5 @@ func (h *ChatHandler) Recommendation(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, questions, "success")
+	common.SuccessWithData(c, questions, "success")
 }
