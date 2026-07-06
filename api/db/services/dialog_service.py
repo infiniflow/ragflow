@@ -721,8 +721,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 prompt_config,
                 partial(
                     retriever.retrieval,
-                    embd_mdl=embd_mdl,
-                    tenant_ids=tenant_ids,
+                    embd_mdl = embd_mdl,
+                    tenant_ids = tenant_ids,
                     kb_ids=dialog.kb_ids,
                     page=1,
                     page_size=dialog.top_n,

@@ -26,7 +26,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/service/kg"
+	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
 	"regexp"
 	"sort"
@@ -48,7 +48,7 @@ import (
 type ChatPipelineService struct {
 	ModelProviderSvc *ModelProviderService
 	MetadataSvc      *MetadataService
-	KbService        *KnowledgebaseService
+	datasetService   *DatasetService
 }
 
 // NewChatPipelineService creates a new ChatPipelineService with all required dependencies.
@@ -56,7 +56,7 @@ func NewChatPipelineService() *ChatPipelineService {
 	return &ChatPipelineService{
 		ModelProviderSvc: NewModelProviderService(),
 		MetadataSvc:      NewMetadataService(),
-		KbService:        NewKnowledgebaseService(),
+		datasetService:   NewDatasetService(),
 	}
 }
 
@@ -151,6 +151,7 @@ type AsyncChatResult struct {
 //   - kwargs: extra parameters (doc_ids, knowledge, quote, etc.).
 func (s *ChatPipelineService) AsyncChat(
 	ctx context.Context,
+	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
@@ -188,7 +189,7 @@ func (s *ChatPipelineService) AsyncChat(
 	}
 
 	if !hasKBs && !useWebSearch {
-		return s.AsyncChatSolo(ctx, chat, messages, stream)
+		return s.AsyncChatSolo(ctx, userID, chat, messages, stream)
 	}
 
 	// Spawn goroutine for the async pipeline. All remaining phases run inside.
@@ -324,9 +325,9 @@ func (s *ChatPipelineService) AsyncChat(
 				}
 			}
 			if modelType == "chat" {
-				textAttachmentsList, imageAttachments = splitFileAttachments(files, false)
+				textAttachmentsList, imageAttachments = splitFileAttachments(userID, files, false)
 			} else {
-				textAttachmentsList, imageFiles = splitFileAttachments(files, true)
+				textAttachmentsList, imageFiles = splitFileAttachments(userID, files, true)
 			}
 			attachments = strings.Join(textAttachmentsList, "\n\n")
 			common.Debug("Resolved attachments",
@@ -339,7 +340,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
 		promptConfig := chat.PromptConfig
-		fieldMap, fmErr := s.KbService.GetFieldMap(kbIDStrings(kbs))
+		fieldMap, fmErr := s.datasetService.GetFieldMap(kbIDStrings(kbs))
 		if fmErr != nil {
 			common.Warn("get_field_map failed; proceeding without field_map", zap.Error(fmErr))
 			fieldMap = nil
@@ -788,7 +789,7 @@ func (s *ChatPipelineService) AsyncChat(
 				if useKG, _ := chat.PromptConfig["use_kg"].(bool); useKG && chatModel != nil && len(kbs) > 0 {
 					kgIDs := kbIDStrings(kbs)
 					if len(kgIDs) > 0 {
-						kgPipeline := kg.NewPipeline(engine.Get(), kgIDs, kbTenantIDStrings(kbs), searchQuestion)
+						kgPipeline := graph.NewPipeline(engine.Get(), kgIDs, kbTenantIDStrings(kbs), searchQuestion)
 						kgPipeline.SetChatModel(chatModel)
 						if embModel != nil {
 							kgPipeline.SetEmbModel(embModel)
@@ -1278,6 +1279,7 @@ func (s *ChatPipelineService) AsyncChat(
 // Equivalent to Python's async_chat_solo() in dialog_service.py:289-337.
 func (s *ChatPipelineService) AsyncChatSolo(
 	ctx context.Context,
+	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
@@ -1321,11 +1323,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		isImage2Text := modelType == "image2text"
 		if len(messages) > 0 {
 			if files, hasFiles := messages[len(messages)-1]["files"]; hasFiles {
-				attachmentsStr = s.processFileAttachments(files)
+				attachmentsStr = s.processFileAttachments(userID, files)
 				if isImage2Text {
 					imageFiles = s.extractRawImageURLs(files)
 				} else {
-					imageFiles = s.extractImageFiles(files)
+					imageFiles = s.extractImageFiles(userID, files)
 				}
 			}
 		}
@@ -1581,12 +1583,12 @@ func (s *ChatPipelineService) AsyncChatSolo(
 
 // extractImageFiles extracts data-URI image attachments from the files list.
 // Mirrors Python split_file_attachments raw mode.
-func (s *ChatPipelineService) extractImageFiles(files interface{}) []string {
+func (s *ChatPipelineService) extractImageFiles(userID string, files interface{}) []string {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		fileSvc := NewFileService()
 		// Use raw=false to get base64 data URIs for images.
-		_, images, err := fileSvc.GetFileContents(fileDicts, false)
+		_, images, err := fileSvc.GetFileContents(userID, fileDicts, false)
 		if err != nil {
 			common.Warn("GetFileContents failed in extractImageFiles",
 				zap.Error(err))
@@ -2045,11 +2047,11 @@ func lastUserQuestion(messages []map[string]interface{}) string {
 //
 // When files are file dicts (Python-compatible format), calls
 // FileService.GetFileContents to fetch actual blobs from storage.
-func (s *ChatPipelineService) processFileAttachments(files interface{}) string {
+func (s *ChatPipelineService) processFileAttachments(userID string, files interface{}) string {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		fileSvc := NewFileService()
-		texts, _, err := fileSvc.GetFileContents(fileDicts, false)
+		texts, _, err := fileSvc.GetFileContents(userID, fileDicts, false)
 		if err != nil {
 			common.Warn("GetFileContents failed in processFileAttachments",
 				zap.Error(err))
@@ -2100,11 +2102,11 @@ func (s *ChatPipelineService) processFileAttachments(files interface{}) string {
 //     URIs → image files.
 //     - raw=true: all items go to textAttachments (Python's FileService.get_files
 //     with raw=True pre-separates images, so non-image content arrives here).
-func splitFileAttachments(files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
+func splitFileAttachments(userID string, files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
 	// ── Mode 1: file dicts (Python-compatible) ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		fileSvc := NewFileService()
-		texts, images, err := fileSvc.GetFileContents(fileDicts, raw)
+		texts, images, err := fileSvc.GetFileContents(userID, fileDicts, raw)
 		if err != nil {
 			common.Warn("GetFileContents failed, falling back to string splitting",
 				zap.Error(err))
@@ -2367,7 +2369,7 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 	usedTokenCount := 0
 	chunksNum := 0
 	for _, cc := range contents {
-		usedTokenCount += kg.NumTokensFromString(cc.content)
+		usedTokenCount += graph.NumTokensFromString(cc.content)
 		chunksNum++
 		if float64(maxTokens)*0.97 < float64(usedTokenCount) {
 			common.Warn("Not all the retrieval into prompt",
@@ -2462,28 +2464,28 @@ func (s *ChatPipelineService) messageFitIn(messages []map[string]interface{}, ma
 	}
 
 	// Step 3: trim content to fit.
-	ll := kg.NumTokensFromString(s.stringContent(result[0]))
-	ll2 := kg.NumTokensFromString(s.stringContent(result[len(result)-1]))
+	ll := graph.NumTokensFromString(s.stringContent(result[0]))
+	ll2 := graph.NumTokensFromString(s.stringContent(result[len(result)-1]))
 	total := ll + ll2
 	if total <= 0 {
 		return 0, result
 	}
 
 	if len(result) == 1 {
-		result[0]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[0]), maxTokens)
+		result[0]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[0]), maxTokens)
 		return s.countAllTokens(result), result
 	}
 
 	if float64(ll)/float64(total) > 0.8 {
 		preservedLast := min(ll2, maxTokens)
-		result[len(result)-1]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), preservedLast)
+		result[len(result)-1]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), preservedLast)
 		remaining := max(0, maxTokens-preservedLast)
-		result[0]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[0]), remaining)
+		result[0]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[0]), remaining)
 	} else {
 		preservedSystem := min(ll, maxTokens)
-		result[0]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[0]), preservedSystem)
+		result[0]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[0]), preservedSystem)
 		remaining := max(0, maxTokens-preservedSystem)
-		result[len(result)-1]["content"] = kg.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), remaining)
+		result[len(result)-1]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), remaining)
 	}
 
 	return s.countAllTokens(result), result
@@ -2493,7 +2495,7 @@ func (s *ChatPipelineService) messageFitIn(messages []map[string]interface{}, ma
 func (s *ChatPipelineService) countAllTokens(messages []map[string]interface{}) int {
 	total := 0
 	for _, m := range messages {
-		total += kg.NumTokensFromString(s.stringContent(m))
+		total += graph.NumTokensFromString(s.stringContent(m))
 	}
 	return total
 }
@@ -2816,7 +2818,7 @@ func (s *ChatPipelineService) decorateAnswer(
 	// token-count / token-speed lines that the existing OpenAI endpoint
 	// already exposes. Total wall-clock is rounded to ms.
 	totalMs := timer.Total().Seconds() * 1000
-	tkNum := kg.NumTokensFromString(think + ans)
+	tkNum := graph.NumTokensFromString(think + ans)
 
 	prompt += fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " "))
 

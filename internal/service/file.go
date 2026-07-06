@@ -31,7 +31,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/ingestion/parser"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"regexp"
@@ -1090,7 +1090,7 @@ func (s *FileService) DownloadAgentFile(tenantID, location string) ([]byte, erro
 // for the given file dicts.
 //   - raw=false: images returned as base64 data URIs in images; non-images parsed and returned as text.
 //   - raw=true:  images returned as raw bytes in images; non-images parsed and returned as text.
-func (s *FileService) GetFileContents(fileDicts []map[string]interface{}, raw bool) (texts []string, images []string, err error) {
+func (s *FileService) GetFileContents(uid string, fileDicts []map[string]interface{}, raw bool) (texts []string, images []string, err error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, nil, fmt.Errorf("storage not initialized")
@@ -1104,6 +1104,9 @@ func (s *FileService) GetFileContents(fileDicts []map[string]interface{}, raw bo
 		file, ferr := s.fileDAO.GetByID(id)
 		if ferr != nil || file == nil || file.Location == nil || *file.Location == "" {
 			continue
+		}
+		if !s.checkFileTeamPermission(file, uid) {
+			return nil, nil, fmt.Errorf("No authorization.")
 		}
 		data, derr := storageImpl.Get(file.ParentID, *file.Location)
 		if derr != nil || len(data) == 0 {
@@ -1138,10 +1141,22 @@ func parseFileContent(filename string, data []byte) string {
 	if err != nil {
 		return string(data)
 	}
-	if err := fp.Parse(filename, data); err != nil {
+	res := fp.ParseWithResult(filename, data)
+	if res.Err != nil {
 		return string(data)
 	}
-	return fp.String()
+	switch res.OutputFormat {
+	case "text":
+		return res.Text
+	case "markdown":
+		return res.Markdown
+	case "html":
+		return res.HTML
+	case "json":
+		return string(data)
+	default:
+		return string(data)
+	}
 }
 
 // toUploadInfoResponse converts a newly-uploaded file record to the shape

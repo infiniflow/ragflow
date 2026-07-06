@@ -305,6 +305,24 @@ export default {
   cancelDataflow: (id: string) => `${restAPIv1}/tasks/${id}/cancel`,
   getAttachmentFileDownload: (docId: string) =>
     `${restAPIv1}/agents/attachments/${docId}/download`,
+  getAttachmentFilePreview: ({
+    docId,
+    ext,
+    mimeType,
+    filename,
+  }: {
+    docId: string;
+    ext?: string;
+    mimeType?: string;
+    filename?: string;
+  }) => {
+    const params = new URLSearchParams();
+    if (ext) params.set('ext', ext);
+    if (mimeType) params.set('mime_type', mimeType);
+    if (filename) params.set('filename', filename);
+    const query = params.toString();
+    return `${restAPIv1}/agents/attachments/${docId}/preview${query ? `?${query}` : ''}`;
+  },
   downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,
