@@ -26,7 +26,9 @@ type mergeConfig struct {
 }
 
 type filterConfig struct {
-	MinLength int `json:"min_length"`
+	MinLength      int  `json:"min_length"`
+	DropEmpty      bool `json:"drop_empty"`      // drop chunks that are empty or whitespace-only
+	DropDuplicates bool `json:"drop_duplicates"` // drop chunks whose content already appeared
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +58,12 @@ func NewPostprocessOperator(config map[string]interface{}) (*PostprocessOperator
 		op.filter = &filterConfig{}
 		if v, ok := f["min_length"].(float64); ok {
 			op.filter.MinLength = int(v)
+		}
+		if v, ok := f["drop_empty"].(bool); ok {
+			op.filter.DropEmpty = v
+		}
+		if v, ok := f["drop_duplicates"].(bool); ok {
+			op.filter.DropDuplicates = v
 		}
 	}
 
@@ -109,6 +117,8 @@ func (o *PostprocessOperator) String() string {
 	if o.filter != nil {
 		fmt.Fprintf(&buf, "  filter:\n")
 		fmt.Fprintf(&buf, "    min_length: %d\n", o.filter.MinLength)
+		fmt.Fprintf(&buf, "    drop_empty: %t\n", o.filter.DropEmpty)
+		fmt.Fprintf(&buf, "    drop_duplicates: %t\n", o.filter.DropDuplicates)
 	}
 
 	return buf.String()
@@ -186,13 +196,30 @@ func (o *PostprocessOperator) mergeChunks(chunks []ChunkData) []ChunkData {
 	return merged
 }
 
-// filterChunks removes chunks outside the length bounds.
+// filterChunks removes chunks outside the length bounds and, when configured,
+// drops empty/whitespace-only chunks and exact-duplicate chunks. Duplicate
+// detection is order-preserving: the first occurrence is kept and later chunks
+// with identical content are dropped.
 func (o *PostprocessOperator) filterChunks(chunks []ChunkData) []ChunkData {
+	var seen map[string]struct{}
+	if o.filter.DropDuplicates {
+		seen = make(map[string]struct{}, len(chunks))
+	}
+
 	filtered := make([]ChunkData, 0, len(chunks))
 	for _, c := range chunks {
+		if o.filter.DropEmpty && strings.TrimSpace(c.Content) == "" {
+			continue
+		}
 		l := len([]rune(c.Content))
 		if o.filter.MinLength > 0 && l < o.filter.MinLength {
 			continue
+		}
+		if o.filter.DropDuplicates {
+			if _, dup := seen[c.Content]; dup {
+				continue
+			}
+			seen[c.Content] = struct{}{}
 		}
 		filtered = append(filtered, c)
 	}
