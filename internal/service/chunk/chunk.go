@@ -1682,7 +1682,11 @@ func (s *ChunkService) UpdateChunk(req *service.UpdateChunkRequest, userID strin
 
 	// Tag features
 	if req.TagFeas != nil {
-		d["tag_feas"] = req.TagFeas
+		tagFeas, err := validateTagFeatures(req.TagFeas)
+		if err != nil {
+			return fmt.Errorf("`tag_feas` %w", err)
+		}
+		d["tag_feas"] = tagFeas
 	}
 
 	// Always include id
@@ -1953,27 +1957,42 @@ func validateTagFeatures(raw interface{}) (map[string]float64, error) {
 		}
 		switch typed := value.(type) {
 		case float64:
-			if math.IsNaN(typed) || math.IsInf(typed, 0) {
-				return nil, fmt.Errorf("values must be finite numbers")
+			if math.IsNaN(typed) || math.IsInf(typed, 0) || typed <= 0 {
+				return nil, fmt.Errorf("values must be finite numbers greater than 0")
 			}
 			cleaned[key] = typed
 		case float32:
-			if math.IsNaN(float64(typed)) || math.IsInf(float64(typed), 0) {
-				return nil, fmt.Errorf("values must be finite numbers")
+			if math.IsNaN(float64(typed)) || math.IsInf(float64(typed), 0) || typed <= 0 {
+				return nil, fmt.Errorf("values must be finite numbers greater than 0")
 			}
 			cleaned[key] = float64(typed)
 		case int:
+			if typed <= 0 {
+				return nil, fmt.Errorf("values must be finite numbers greater than 0")
+			}
 			cleaned[key] = float64(typed)
 		case int8:
+			if typed <= 0 {
+				return nil, fmt.Errorf("values must be finite numbers greater than 0")
+			}
 			cleaned[key] = float64(typed)
 		case int16:
+			if typed <= 0 {
+				return nil, fmt.Errorf("values must be finite numbers greater than 0")
+			}
 			cleaned[key] = float64(typed)
 		case int32:
+			if typed <= 0 {
+				return nil, fmt.Errorf("values must be finite numbers greater than 0")
+			}
 			cleaned[key] = float64(typed)
 		case int64:
+			if typed <= 0 {
+				return nil, fmt.Errorf("values must be finite numbers greater than 0")
+			}
 			cleaned[key] = float64(typed)
 		default:
-			return nil, fmt.Errorf("values must be finite numbers")
+			return nil, fmt.Errorf("values must be finite numbers greater than 0")
 		}
 	}
 	return cleaned, nil

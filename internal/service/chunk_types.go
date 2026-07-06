@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
@@ -636,7 +637,11 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 
 	// Tag features
 	if req.TagFeas != nil {
-		d["tag_feas"] = req.TagFeas
+		tagFeas, err := validateUpdateTagFeatures(req.TagFeas)
+		if err != nil {
+			return fmt.Errorf("`tag_feas` %w", err)
+		}
+		d["tag_feas"] = tagFeas
 	}
 
 	// Always include id
@@ -653,6 +658,44 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 	}
 
 	return nil
+}
+
+func validateUpdateTagFeatures(raw interface{}) (map[string]float64, error) {
+	parsed, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("must be an object mapping string tags to finite numeric scores greater than 0")
+	}
+	cleaned := make(map[string]float64, len(parsed))
+	for key, value := range parsed {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("keys must be non-empty strings")
+		}
+		var numeric float64
+		switch typed := value.(type) {
+		case float64:
+			numeric = typed
+		case float32:
+			numeric = float64(typed)
+		case int:
+			numeric = float64(typed)
+		case int8:
+			numeric = float64(typed)
+		case int16:
+			numeric = float64(typed)
+		case int32:
+			numeric = float64(typed)
+		case int64:
+			numeric = float64(typed)
+		default:
+			return nil, fmt.Errorf("values must be finite numbers greater than 0")
+		}
+		if math.IsNaN(numeric) || math.IsInf(numeric, 0) || numeric <= 0 {
+			return nil, fmt.Errorf("values must be finite numbers greater than 0")
+		}
+		cleaned[key] = numeric
+	}
+	return cleaned, nil
 }
 
 // RemoveChunksRequest request for removing chunks
