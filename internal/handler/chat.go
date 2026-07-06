@@ -19,6 +19,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
@@ -104,7 +105,7 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	// List chats - default to valid status "1" (same as Python StatusEnum.VALID.value)
 	result, err := h.chatService.ListChats(userID, "1", keywords, page, pageSize, orderby, desc)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
@@ -165,11 +166,11 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 
 	var req ChatMindMapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	if strings.TrimSpace(req.Question) == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_ids and question are required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 
@@ -193,7 +194,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 
 	kbIDs := mergeMindMapKbIDs(stringSliceFromConfig(searchConfig, "kb_ids"), req.KbIDs)
 	if len(kbIDs) == 0 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_ids and question are required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 
@@ -225,7 +226,7 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), "chat_id is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
 
@@ -256,7 +257,7 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 
 	var req service.BulkDeleteChatsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -319,7 +320,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	// Get chat_id from path parameter (same as Python <chat_id>)
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), "chat_id is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
 

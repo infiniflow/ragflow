@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -116,7 +117,7 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 	result, code, err := h.mcpService.ListMCPServers(user.ID, mcpIDs, keywords, page, pageSize, orderby, desc)
 	if err != nil {
 		if code == common.CodeServerError {
-			common.ResponseWithCodeData(c, code, nil, err.Error())
+			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, code, nil, err.Error())
 			return
 		}
 		common.ErrorWithCode(c, int(code), err.Error())
@@ -283,13 +284,13 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 	var raw map[string]json.RawMessage
 	if len(body) > 0 {
 		if err = json.Unmarshal(body, &raw); err != nil {
-			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 			return
 		}
 	}
@@ -304,7 +305,7 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 
 	var servers map[string]map[string]interface{}
 	if err = json.Unmarshal(rawServers, &servers); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 	if len(servers) == 0 {
@@ -322,7 +323,7 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 
 	results, err := h.mcpService.ImportServers(user.ID, servers, timeout)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -346,13 +347,13 @@ func (h *MCPHandler) TestMCPServer(c *gin.Context) {
 
 	mcpID := c.Param("mcp_id")
 	if mcpID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "mcp_id is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "mcp_id is required")
 		return
 	}
 
 	var req service.TestServerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 

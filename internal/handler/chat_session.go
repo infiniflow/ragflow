@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"ragflow/internal/common"
 	"strings"
 
@@ -62,7 +63,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	// Get chat_id from query parameter
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.ErrorWithCode(c, 400, "chat_id is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "chat_id is required")
 		return
 	}
 
@@ -71,10 +72,10 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	if err != nil {
 		// Check if it's an authorization error
 		if err.Error() == "Only owner of dialog authorized for this operation" {
-			common.ResponseWithCodeData(c, 403, false, err.Error())
+			common.ResponseWithHttpCodeData(c, http.StatusForbidden, 403, false, err.Error())
 			return
 		}
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
@@ -219,7 +220,8 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 			return true
 		})
 	} else {
-		result, err := h.chatSessionService.ChatCompletions(
+		var result map[string]interface{}
+		result, err = h.chatSessionService.ChatCompletions(
 			c.Request.Context(), userID,
 			req.ChatID, sessionID,
 			req.Messages, req.Question, req.Files,
@@ -228,7 +230,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 			false, nil,
 		)
 		if err != nil {
-			common.ErrorWithCode(c, 500, err.Error())
+			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 			return
 		}
 		common.SuccessWithData(c, result, "")

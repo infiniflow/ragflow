@@ -317,7 +317,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 	if strings.Contains(contentType, "application/json") {
 		var req CreateFolderRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
 			return
 		}
 

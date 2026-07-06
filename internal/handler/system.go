@@ -76,7 +76,7 @@ func (h *SystemHandler) Healthz(c *gin.Context) {
 func (h *SystemHandler) GetConfig(c *gin.Context) {
 	config, err := h.systemService.GetConfig()
 	if err != nil {
-		common.ErrorWithCode(c, 500, "Failed to get system configuration")
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to get system configuration")
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *SystemHandler) GetConfig(c *gin.Context) {
 func (h *SystemHandler) GetConfigs(c *gin.Context) {
 	cfg := server.GetConfig()
 	if cfg == nil {
-		common.ErrorWithCode(c, 500, "Configuration not initialized")
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Configuration not initialized")
 		return
 	}
 
@@ -130,7 +130,7 @@ func (h *SystemHandler) GetStatus(c *gin.Context) {
 func (h *SystemHandler) GetVersion(c *gin.Context) {
 	version, err := h.systemService.GetVersion()
 	if err != nil {
-		common.ErrorWithCode(c, 500, "Failed to get version")
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to get version")
 		return
 	}
 

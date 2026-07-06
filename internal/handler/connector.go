@@ -80,7 +80,7 @@ func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 	// List connectors
 	result, err := h.connectorService.ListConnectors(userID)
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeServerError), err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
@@ -101,7 +101,7 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 	case errors.Is(err, service.ErrConnectorTestUnsupported):
 		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
 	default:
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 	}
 	return true
 }
@@ -244,7 +244,7 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 
 	var req service.CreateConnectorRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -263,7 +263,7 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 
 	connector, err := h.connectorService.CreateConnector(user.ID, &req)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
 
@@ -286,7 +286,7 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 
 	connectorID := c.Param("connector_id")
 	if connectorID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "connector_id is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "connector_id is required")
 		return
 	}
 
@@ -397,7 +397,7 @@ func (h *ConnectorHandler) PollGoogleWebOAuthResult(c *gin.Context) {
 
 	var req service.PollGoogleWebOAuthResultRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 

@@ -24,8 +24,6 @@ import (
 	"strconv"
 	"strings"
 
-	"go.uber.org/zap"
-	"gorm.io/gorm"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
@@ -33,6 +31,9 @@ import (
 	"ragflow/internal/service"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
+
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"github.com/gin-gonic/gin"
 )
@@ -162,14 +163,14 @@ func NewDifyRetrievalHandler(
 func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	user, errCode, errMsg := GetUser(c)
 	if errCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errCode), errMsg)
+		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, errCode, nil, errMsg)
 		return
 	}
 
 	var req difyRetrievalRequest
 	if c.Request.Method == http.MethodGet {
 		if err := c.ShouldBindQuery(&req); err != nil {
-			common.ErrorWithCode(c, int(common.CodeArgumentError), "Invalid query parameters")
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid query parameters")
 			return
 		}
 		// Manually extract top_k and score_threshold from query (flat params, not nested)
@@ -191,28 +192,28 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		}
 	} else {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			common.ErrorWithCode(c, int(common.CodeArgumentError), "Invalid request body")
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid request body")
 			return
 		}
 	}
 
 	if req.KnowledgeID == "" || req.Query == "" {
-		common.ErrorWithCode(c, int(common.CodeArgumentError), "knowledge_id and query are required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "knowledge_id and query are required")
 		return
 	}
 
 	kb, err := h.kbSvc.GetByID(req.KnowledgeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			common.ErrorWithCode(c, int(common.CodeNotFound), "Knowledge base not found!")
+			common.ResponseWithHttpCodeData(c, http.StatusNotFound, common.CodeNotFound, nil, "Knowledge base not found!")
 		} else {
-			common.ErrorWithCode(c, int(common.CodeServerError), "failed to query knowledge base")
+			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "failed to query knowledge base")
 		}
 		return
 	}
 
 	if !h.kbSvc.Accessible(req.KnowledgeID, user.ID) {
-		common.ErrorWithCode(c, int(common.CodeAuthenticationError), "No authorization")
+		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, common.CodeAuthenticationError, nil, "No authorization")
 		return
 	}
 
@@ -233,7 +234,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	// Get embedding model
 	embModel, err := h.modelSvc.GetEmbeddingModel(kb.TenantID, kb.EmbdID)
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeServerError), fmt.Sprintf("failed to get embedding model: %v", err))
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to get embedding model: %v", err))
 		return
 	}
 
@@ -275,10 +276,10 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	result, err := h.retrievalSvc.Retrieval(c.Request.Context(), sr)
 	if err != nil {
 		if strings.Contains(err.Error(), "not_found") {
-			common.ErrorWithCode(c, int(common.CodeNotFound), "No chunk found! Check the chunk status please!")
+			common.ResponseWithHttpCodeData(c, http.StatusNotFound, common.CodeNotFound, nil, "No chunk found! Check the chunk status please!")
 			return
 		}
-		common.ErrorWithCode(c, int(common.CodeServerError), err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
 
@@ -321,9 +322,10 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 	docMap := make(map[string]*entity.Document)
 	if len(allDocIDs) > 0 {
-		docs, err := h.docDAO.GetByIDs(allDocIDs)
+		var docs []*entity.Document
+		docs, err = h.docDAO.GetByIDs(allDocIDs)
 		if err != nil {
-			common.ErrorWithCode(c, int(common.CodeServerError), fmt.Sprintf("failed to load documents: %v", err))
+			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to load documents: %v", err))
 			return
 		}
 		for _, d := range docs {

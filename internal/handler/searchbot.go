@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -169,13 +170,13 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ResponseWithCodeData(c, errorCode, nil, errorMessage)
+		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, errorCode, nil, errorMessage)
 		return
 	}
 
 	var req SearchBotRetrievalTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -189,14 +190,14 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	req.KbIDs = filtered
 
 	if len(req.KbIDs) == 0 || req.Question == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_id and question are required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_id and question are required")
 		return
 	}
 
 	applyRetrievalDefaults(&req)
 
 	if req.TopK != nil && *req.TopK <= 0 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "top_k must be greater than 0")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be greater than 0")
 		return
 	}
 
@@ -205,7 +206,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	result, err := h.chunkSvc.RetrievalTest(svcReq, user.ID)
 	if err != nil {
 		common.Warn("search bot retrieval test failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, "retrieval test failed")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeServerError, nil, "retrieval test failed")
 		return
 	}
 
@@ -230,7 +231,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 
 	var req SearchBotAskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -243,7 +244,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		filtered = append(filtered, id)
 	}
 	if len(filtered) == 0 || strings.TrimSpace(req.Question) == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_ids and question are required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 
@@ -321,7 +322,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 
 	var req SearchBotMindMapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -332,7 +333,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 		}
 	}
 	if len(filtered) == 0 || strings.TrimSpace(req.Question) == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_ids and question are required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 	if h.chunkSvc == nil {

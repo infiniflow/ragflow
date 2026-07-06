@@ -272,7 +272,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	// Same as AuthMiddleware@auth.go
 	token := c.GetHeader("Authorization")
 	if token == "" {
-		common.ErrorWithCode(c, int(common.CodeUnauthorized), "Missing Authorization header")
+		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, 401, nil, "Missing Authorization header")
 		c.Abort()
 		return
 	}
@@ -280,7 +280,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	// Get user by access token
 	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeUnauthorized), "Invalid access token")
+		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 		c.Abort()
 		return
 	}

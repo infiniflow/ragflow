@@ -22,6 +22,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -674,7 +675,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 
 	var req map[string]interface{}
 	if err = json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeArgumentError), err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 

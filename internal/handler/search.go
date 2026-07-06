@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"net/http"
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
@@ -120,7 +121,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	var req service.ListSearchAppsRequest
 	if len(ownerIDs) == 0 && c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			common.ErrorWithCode(c, 400, err.Error())
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
 			return
 		}
 		ownerIDs = req.OwnerIDs
@@ -129,7 +130,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	// List search apps with filtering
 	result, err := h.searchService.ListSearches(userID, keywords, page, pageSize, orderby, desc, ownerIDs)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
@@ -163,7 +164,7 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 	// Parse request body (same as Python get_request_json())
 	var req CreateSearchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -175,7 +176,7 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 	// Create search (same as Python SearchService.save within DB.atomic())
 	result, err := h.searchService.CreateSearch(userID, req.Name, req.Description)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -204,7 +205,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "search_id is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "search_id is required")
 		return
 	}
 
@@ -262,7 +263,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "search_id is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "search_id is required")
 		return
 	}
 
@@ -305,14 +306,14 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "search_id is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "search_id is required")
 		return
 	}
 
 	// Parse request body
 	var req service.UpdateSearchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
