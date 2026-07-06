@@ -72,6 +72,8 @@ To use an external Docling Serve instance (instead of local in-process Docling),
 
 When `DOCLING_SERVER_URL` is set, RAGFlow sends PDF content to Docling Serve (`/v1/convert/source`, with fallback to `/v1alpha/convert/source`) and ingests the returned markdown/text. If the variable is not set, RAGFlow keeps using local Docling (`USE_DOCLING=true` + installed package) behavior.
 
+- `DOCLING_FORMULA_ENRICHMENT`: (local Docling) Set to `1` to convert formulas to LaTeX (accurate but slow). Default `0` — formulas are still extracted as their original text.
+
 :::note
 All MinerU environment variables are optional. When set, these values are used to auto-provision a MinerU OCR model for the tenant on first use. To avoid auto-provisioning, skip the environment variable settings and only configure MinerU from the **Model providers** page in the UI.
 :::

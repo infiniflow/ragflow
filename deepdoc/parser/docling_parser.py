@@ -33,9 +33,14 @@ from PIL import Image
 from common.constants import MAXIMUM_PAGE_NUMBER
 
 try:
-    from docling.document_converter import DocumentConverter
+    from docling.document_converter import DocumentConverter, PdfFormatOption
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
 except Exception:
     DocumentConverter = None
+    PdfFormatOption = None
+    InputFormat = None
+    PdfPipelineOptions = None
 
 try:
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
@@ -217,19 +222,19 @@ class DoclingParser(RAGFlowPdfParser):
 
     def _iter_doc_items(self, doc) -> Iterable[tuple[str, Any, Optional[_BBox]]]:
         for t in getattr(doc, "texts", []):
+            label = getattr(t, "label", "")
+            if label in ("formula",):
+                text = getattr(t, "text", "") or getattr(t, "orig", "")
+                bbox = _extract_bbox_from_prov(t)
+                yield (DoclingContentType.EQUATION.value, text, bbox)
+                continue
+
             parent = getattr(t, "parent", "")
             ref = getattr(parent, "cref", "")
-            label = getattr(t, "label", "")
             if (label in ("section_header", "text") and ref in ("#/body",)) or label in ("list_item",):
                 text = getattr(t, "text", "") or ""
                 bbox = _extract_bbox_from_prov(t)
                 yield (DoclingContentType.TEXT.value, text, bbox)
-
-        for item in getattr(doc, "texts", []):
-            if getattr(item, "label", "") in ("FORMULA",):
-                text = getattr(item, "text", "") or ""
-                bbox = _extract_bbox_from_prov(item)
-                yield (DoclingContentType.EQUATION.value, text, bbox)
 
     def _transfer_to_sections(self, doc, parse_method: str) -> list[tuple[str, ...]]:
         sections: list[tuple[str, ...]] = []
@@ -240,6 +245,8 @@ class DoclingParser(RAGFlowPdfParser):
                     continue
             elif typ == DoclingContentType.EQUATION.value:
                 section = payload.strip()
+                if not section:
+                    continue
             else:
                 continue
 
@@ -556,7 +563,11 @@ class DoclingParser(RAGFlowPdfParser):
         except Exception as e:
             self.logger.warning(f"[Docling] render pages failed: {e}")
 
-        conv = DocumentConverter()
+        do_formula_enrichment = os.environ.get("DOCLING_FORMULA_ENRICHMENT", "0").strip().lower() in ("1", "true", "yes", "on")
+        self.logger.info(f"[Docling] Local conversion (formula_enrichment={do_formula_enrichment}): {src_path}")
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_formula_enrichment = do_formula_enrichment
+        conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
         conv_res = conv.convert(str(src_path))
         doc = conv_res.document
         if callback:
