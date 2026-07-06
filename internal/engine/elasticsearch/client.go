@@ -24,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"time"
@@ -33,7 +32,7 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
-// Engine Elasticsearch engine implementation
+// elasticsearchEngine is the Elasticsearch engine implementation
 type elasticsearchEngine struct {
 	client *elasticsearch.Client
 	config *server.ElasticsearchConfig
@@ -88,11 +87,11 @@ func NewEngine(cfg interface{}) (*elasticsearchEngine, error) {
 
 	// Create two index templates for different index types
 	// Template for chunk indices (ragflow_*) - priority 1
-	if err := engine.CreateIndexTemplate(context.Background(), "ragflow_mapping", "ragflow_*", "mapping.json", 1); err != nil {
+	if err = engine.CreateIndexTemplate(context.Background(), "ragflow_mapping", "ragflow_*", "mapping.json", 1); err != nil {
 		return nil, fmt.Errorf("failed to create chunk index template: %w", err)
 	}
 	// Template for doc_meta indices (ragflow_doc_meta_*) - priority 2 (higher than ragflow_*)
-	if err := engine.CreateIndexTemplate(context.Background(), "ragflow_doc_meta_mapping", "ragflow_doc_meta_*", "doc_meta_es_mapping.json", 2); err != nil {
+	if err = engine.CreateIndexTemplate(context.Background(), "ragflow_doc_meta_mapping", "ragflow_doc_meta_*", "doc_meta_es_mapping.json", 2); err != nil {
 		return nil, fmt.Errorf("failed to create doc_meta index template: %w", err)
 	}
 
@@ -140,16 +139,20 @@ func (e *elasticsearchEngine) CreateIndexTemplate(ctx context.Context, templateN
 		mappingFileName = "mapping.json"
 	}
 
-	// Read mapping from file
-	mappingPath := filepath.Join(utility.GetProjectRoot(), "conf", mappingFileName)
-	data, err := os.ReadFile(mappingPath)
+	mappingPath, err := utility.FindConfFileInProject(mappingFileName)
 	if err != nil {
-		return fmt.Errorf("failed to read mapping file: %w", err)
+		return err
+	}
+
+	// Read mapping from file
+	data, err := os.ReadFile(*mappingPath)
+	if err != nil {
+		return fmt.Errorf("failed to read mapping file %q: %w", *mappingPath, err)
 	}
 
 	var mapping map[string]interface{}
-	if err := json.Unmarshal(data, &mapping); err != nil {
-		return fmt.Errorf("failed to parse mapping file: %w", err)
+	if err = json.Unmarshal(data, &mapping); err != nil {
+		return fmt.Errorf("failed to parse mapping file %q: %w", *mappingPath, err)
 	}
 
 	// Separate settings and mappings from the mapping file
@@ -159,7 +162,7 @@ func (e *elasticsearchEngine) CreateIndexTemplate(ctx context.Context, templateN
 	// Build template body with proper structure
 	templateBody := map[string]interface{}{
 		"index_patterns": []string{indexPattern},
-		"priority": p, // Configurable priority to override existing templates
+		"priority":       p, // Configurable priority to override existing templates
 		"template": map[string]interface{}{
 			"settings": templateSettings,
 			"mappings": templateMappings,
@@ -189,7 +192,7 @@ func (e *elasticsearchEngine) CreateIndexTemplate(ctx context.Context, templateN
 	}
 
 	var result map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+	if err = json.NewDecoder(res.Body).Decode(&result); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
 
@@ -215,7 +218,7 @@ func (e *elasticsearchEngine) GetClusterStats() (map[string]interface{}, error) 
 	}
 
 	var rawStats map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&rawStats); err != nil {
+	if err = json.NewDecoder(res.Body).Decode(&rawStats); err != nil {
 		return nil, fmt.Errorf("failed to decode cluster stats: %w", err)
 	}
 
@@ -278,8 +281,8 @@ func (e *elasticsearchEngine) GetClusterStats() (map[string]interface{}, error) 
 		if versions, ok := nodes["versions"].([]interface{}); ok {
 			result["nodes_version"] = versions
 		}
-		if os, ok := nodes["os"].(map[string]interface{}); ok {
-			if mem, ok := os["mem"].(map[string]interface{}); ok {
+		if operatingSystem, ok := nodes["os"].(map[string]interface{}); ok {
+			if mem, ok := operatingSystem["mem"].(map[string]interface{}); ok {
 				if totalInBytes, ok := mem["total_in_bytes"].(float64); ok {
 					result["os_mem"] = convertBytes(int64(totalInBytes))
 				}
@@ -375,4 +378,39 @@ func extractErrorReason(bodyBytes []byte) string {
 	}
 
 	return ""
+}
+
+// GetIndexStats gets statistics for specified indices using the _cat/indices API
+// Returns index, health, status, docs.count, store.size, dataset.size for each index
+func (e *elasticsearchEngine) GetIndexStats(indices []string) ([]map[string]interface{}, error) {
+	if len(indices) == 0 {
+		return []map[string]interface{}{}, nil
+	}
+
+	req := esapi.CatIndicesRequest{
+		Index:  indices,
+		Format: "json",
+		H:      []string{"index", "health", "status", "docs.count", "store.size", "dataset.size"},
+	}
+
+	res, err := req.Do(context.Background(), e.client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get index stats: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		if res.StatusCode == 404 {
+			return []map[string]interface{}{}, nil
+		}
+		bodyBytes, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("elasticsearch cat indices error: %s, body: %s", res.Status(), string(bodyBytes))
+	}
+
+	var results []map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&results); err != nil {
+		return nil, fmt.Errorf("failed to decode index stats: %w", err)
+	}
+
+	return results, nil
 }

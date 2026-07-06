@@ -18,6 +18,7 @@ const INSTANCE_RESERVED_KEYS = new Set([
   'base_url',
   'region',
   'verify',
+  'model_info',
 ]);
 
 export const MODEL_EXTRA_KEYS = new Set([
@@ -25,6 +26,17 @@ export const MODEL_EXTRA_KEYS = new Set([
   'vision',
   'provider_order',
   'api_version',
+  'somark_image_format',
+  'somark_formula_format',
+  'somark_table_format',
+  'somark_cs_format',
+  'somark_enable_text_cross_page',
+  'somark_enable_table_cross_page',
+  'somark_enable_title_level_recognition',
+  'somark_enable_inline_image',
+  'somark_enable_table_image',
+  'somark_enable_image_understanding',
+  'somark_keep_header_footer',
 ]);
 
 export const MODEL_FIELD_NAMES = new Set<string>([
@@ -85,12 +97,23 @@ const collectModelExtras = (payload: FlatPayload) => {
 };
 
 export const splitProviderPayload = (payload: FlatPayload): SplitResult => {
+  const {
+    instance_name,
+    llm_factory,
+    base_url,
+    api_base,
+    region,
+    model_info,
+    ...other
+  } = payload;
   const instancePayload = {
-    instance_name: payload.instance_name as string,
-    llm_factory: payload.llm_factory as string,
+    instance_name: instance_name as string,
+    llm_factory: llm_factory as string,
     api_key: collectApiKeyExtras(payload),
-    base_url: (payload.base_url ?? payload.api_base) as string | undefined,
-    region: (payload.region as string | undefined) || 'default',
+    base_url: (base_url ?? api_base) as string | undefined,
+    region: (region as string | undefined) || 'default',
+    model_info: model_info,
+    ...other,
   };
 
   const modelExtra = collectModelExtras(payload);

@@ -43,6 +43,25 @@ def markdown_element_extractor(monkeypatch):
     return mod.MarkdownElementExtractor
 
 
+@pytest.fixture
+def markdown_parser_module(monkeypatch):
+    try:
+        import markdown  # noqa: F401
+    except ModuleNotFoundError:
+        markdown_stub = types.ModuleType("markdown")
+        markdown_stub.markdown = lambda text, extensions=None: text
+        monkeypatch.setitem(sys.modules, "markdown", markdown_stub)
+
+    spec = importlib.util.spec_from_file_location(
+        "test_markdown_parser_dynamic_module",
+        _REPO / "deepdoc" / "parser" / "markdown_parser.py",
+    )
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 @pytest.mark.p2
 class TestMarkdownElementExtractorFences:
     def test_custom_delimiter_preserves_backtick_fence(self, markdown_element_extractor):
@@ -106,3 +125,87 @@ class TestMarkdownElementExtractorFences:
             "````markdown\n```python\nprint('inner')\n```\n````",
             "After",
         ]
+
+
+@pytest.mark.p2
+class TestMarkdownElementExtractorTables:
+    def test_custom_delimiter_preserves_pipe_table(self, markdown_element_extractor):
+        text = "# Title\n\n| Name | Value |\n| --- | --- |\n| A | 1 |\n| B | 2 |\n\nAfter"
+
+        sections = markdown_element_extractor(text).extract_elements(delimiter="`\n`", include_meta=True)
+
+        assert [section["content"] for section in sections] == [
+            "# Title",
+            "| Name | Value |\n| --- | --- |\n| A | 1 |\n| B | 2 |",
+            "After",
+        ]
+        assert sections[1]["start_line"] == 2
+        assert sections[1]["end_line"] == 5
+
+    def test_custom_delimiter_preserves_borderless_pipe_table(self, markdown_element_extractor):
+        text = "Before\nName | Value\n--- | ---\nA | 1\nB | 2\nAfter"
+
+        sections = markdown_element_extractor(text).extract_elements(delimiter="`\n`")
+
+        assert sections == [
+            "Before",
+            "Name | Value\n--- | ---\nA | 1\nB | 2",
+            "After",
+        ]
+
+    @pytest.mark.p2
+    def test_custom_delimiter_preserves_gfm_short_separator_table(self, markdown_element_extractor):
+        text = "Before\n| Name | Value |\n| :-- | --: |\n| A | 1 |\nAfter"
+
+        sections = markdown_element_extractor(text).extract_elements(delimiter="`\n`")
+
+        assert sections == [
+            "Before",
+            "| Name | Value |\n| :-- | --: |\n| A | 1 |",
+            "After",
+        ]
+
+    def test_custom_delimiter_preserves_html_table(self, markdown_element_extractor):
+        text = "Before\n<table>\n<tr><td>A</td></tr>\n<tr><td>B</td></tr>\n</table>\nAfter"
+
+        sections = markdown_element_extractor(text).extract_elements(delimiter="`\n`")
+
+        assert sections == [
+            "Before",
+            "<table>\n<tr><td>A</td></tr>\n<tr><td>B</td></tr>\n</table>",
+            "After",
+        ]
+
+
+@pytest.mark.p2
+class TestMarkdownTableDedup:
+    def test_separate_tables_removes_pipe_table_from_text_sections(self, markdown_parser_module):
+        """Ensure separated pipe tables do not leak back into text chunks."""
+        text = "Before\n\n| Name | Value |\n| --- | --- |\n| A | 1 |\n| B | 2 |\n\nAfter"
+
+        parser = markdown_parser_module.RAGFlowMarkdownParser()
+        remainder, tables = parser.extract_tables_and_remainder(f"{text}\n", separate_tables=True)
+        sections = markdown_parser_module.MarkdownElementExtractor(remainder).extract_elements(include_meta=False)
+
+        assert len(tables) == 1
+        assert "| Name | Value |" not in remainder
+        assert len(sections) == 1
+        assert "Before" in sections[0]
+        assert "After" in sections[0]
+        assert "| Name | Value |" not in sections[0]
+
+
+class TestMarkdownElementExtractorDelimiterHeaders:
+    def test_custom_delimiter_merges_consecutive_lone_headers_with_body(self, markdown_element_extractor):
+        text = "# Title\n## Intro\nBody paragraph"
+
+        sections = markdown_element_extractor(text).extract_elements(delimiter="`\n`")
+
+        assert sections == ["# Title\n## Intro\nBody paragraph"]
+
+    def test_custom_delimiter_merges_single_lone_header_with_body(self, markdown_element_extractor):
+        text = "## Section\nBody paragraph"
+
+        sections = markdown_element_extractor(text).extract_elements(delimiter="`\n`")
+
+        assert sections == ["## Section\nBody paragraph"]

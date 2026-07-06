@@ -59,6 +59,7 @@ func TestChatStreamLargeChunkNotTruncated(t *testing.T) {
 		{"lmstudio", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewLmStudioModel(b, s) })},
 		{"gitee", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewGiteeModel(b, s) })},
 		{"tokenhub", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewTokenHubModel(b, s) })},
+		{"jiekouai", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewJieKouAIModel(b, s) })},
 	}
 
 	for _, tc := range cases {

@@ -53,11 +53,7 @@ class _DummyKB:
 
 class _DummyRetriever:
     async def retrieval(self, *_args, **_kwargs):
-        return {
-            "chunks": [
-                {"doc_id": "doc-1", "content_with_weight": "chunk-content", "similarity": 0.8, "docnm_kwd": "doc-title", "vector": [0.1]}
-            ]
-        }
+        return {"chunks": [{"doc_id": "doc-1", "content_with_weight": "chunk-content", "similarity": 0.8, "docnm_kwd": "doc-title", "vector": [0.1]}]}
 
     def retrieval_by_children(self, chunks, _tenant_ids):
         return chunks
@@ -67,12 +63,22 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def set_tenant_info():
+    return None
+
+
 def _load_dify_retrieval_module(monkeypatch):
     repo_root = Path(__file__).resolve().parents[3]
 
     common_pkg = ModuleType("common")
     common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
+
+    api_apps_mod = ModuleType("api.apps")
+    api_apps_mod.current_user = SimpleNamespace(id="tenant-1")
+    api_apps_mod.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
 
     deepdoc_pkg = ModuleType("deepdoc")
     deepdoc_parser_pkg = ModuleType("deepdoc.parser")

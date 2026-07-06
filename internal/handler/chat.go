@@ -17,9 +17,12 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -30,6 +33,10 @@ import (
 type ChatHandler struct {
 	chatService *service.ChatService
 	userService *service.UserService
+	searchSvc   *service.SearchService
+	tenantSvc   *service.TenantService
+	llm         *service.ModelProviderService
+	chunkSvc    service.Retriever
 }
 
 // NewChatHandler create chat handler
@@ -38,6 +45,21 @@ func NewChatHandler(chatService *service.ChatService, userService *service.UserS
 		chatService: chatService,
 		userService: userService,
 	}
+}
+
+// SetMindMapDependencies sets dependencies used by POST /api/v1/chat/mindmap.
+func (h *ChatHandler) SetMindMapDependencies(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm *service.ModelProviderService, chunkSvc service.Retriever) {
+	h.searchSvc = searchSvc
+	h.tenantSvc = tenantSvc
+	h.llm = llm
+	h.chunkSvc = chunkSvc
+}
+
+// ChatMindMapRequest is the request body for POST /api/v1/chat/mindmap.
+type ChatMindMapRequest struct {
+	Question string             `json:"question" binding:"required"`
+	KbIDs    common.StringSlice `json:"kb_ids" binding:"required"`
+	SearchID string             `json:"search_id,omitempty"`
 }
 
 // ListChats list chats
@@ -81,7 +103,7 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	}
 
 	// List chats - default to valid status "1" (same as Python StatusEnum.VALID.value)
-	result, err := h.chatService.ListChats(userID, keywords, "1", page, pageSize, orderby, desc)
+	result, err := h.chatService.ListChats(userID, "1", keywords, page, pageSize, orderby, desc)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -97,149 +119,115 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	})
 }
 
-// ListChatsNext list chats with advanced filtering and pagination
-// @Summary List Chats Next
-// @Description Get list of chats with filtering, pagination and sorting (equivalent to list_dialogs_next)
+// Create creates a chat.
+// @Summary Create Chat
+// @Description Create a chat, aligned with Python POST /api/v1/chats.
 // @Tags chat
 // @Accept json
 // @Produce json
-// @Param keywords query string false "search keywords"
-// @Param page query int false "page number"
-// @Param page_size query int false "items per page"
-// @Param orderby query string false "order by field (default: create_time)"
-// @Param desc query bool false "descending order (default: true)"
-// @Param request body service.ListChatsNextRequest true "filter options including owner_ids"
-// @Success 200 {object} service.ListChatsNextResponse
-// @Router /v1/dialog/next [post]
-func (h *ChatHandler) ListChatsNext(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
-	// Parse query parameters
-	keywords := c.Query("keywords")
-
-	page := 0
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 0
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
-			pageSize = ps
-		}
-	}
-
-	orderby := c.DefaultQuery("orderby", "create_time")
-
-	desc := true
-	if descStr := c.Query("desc"); descStr != "" {
-		desc = descStr != "false"
-	}
-
-	// Parse request body for owner_ids
-	var req service.ListChatsNextRequest
-	if c.Request.ContentLength > 0 {
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": err.Error(),
-			})
-			return
-		}
-	}
-
-	// List chats with advanced filtering
-	result, err := h.chatService.ListChatsNext(userID, keywords, page, pageSize, orderby, desc, req.OwnerIDs)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    result,
-		"message": "success",
-	})
-}
-
-// SetDialog create or update a dialog
-// @Summary Set Dialog
-// @Description Create or update a dialog (chat). If dialog_id is provided, updates existing dialog; otherwise creates new one.
-// @Tags chat
-// @Accept json
-// @Produce json
-// @Param request body service.SetDialogRequest true "dialog configuration"
-// @Success 200 {object} service.SetDialogResponse
-// @Router /v1/dialog/set [post]
-func (h *ChatHandler) SetDialog(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
-	// Parse request body
-	var req service.SetDialogRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	// Validate required field: prompt_config
-	if req.PromptConfig == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "prompt_config is required",
-		})
-		return
-	}
-
-	// Call service to set dialog
-	result, err := h.chatService.SetDialog(userID, &req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    result,
-		"message": "success",
-	})
-}
-
-// RemoveDialogsRequest remove dialogs request
-type RemoveDialogsRequest struct {
-	DialogIDs []string `json:"dialog_ids" binding:"required"`
-}
-
-// RemoveChats remove/delete dialogs (soft delete by setting status to invalid)
-// @Summary Remove Dialogs
-// @Description Remove dialogs by setting their status to invalid. Only the owner of the dialog can perform this operation.
-// @Tags chat
-// @Accept json
-// @Produce json
-// @Param request body RemoveDialogsRequest true "dialog IDs to remove"
+// @Param request body service.CreateChatRequest true "chat configuration"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/dialog/rm [post]
-func (h *ChatHandler) RemoveChats(c *gin.Context) {
+// @Router /api/v1/chats [post]
+func (h *ChatHandler) Create(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req map[string]interface{}
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.UseNumber()
+	if err := decoder.Decode(&req); err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	if req == nil {
+		req = map[string]interface{}{}
+	}
+
+	result, code, err := h.chatService.Create(user.ID, req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    result,
+		"message": "success",
+	})
+}
+
+// MindMap generates a query mind map for chat search results.
+// @Summary Generate Chat Mind Map
+// @Description Retrieves related chunks and asks the configured chat model to summarize them into a mind map.
+// @Tags chat
+// @Accept json
+// @Produce json
+// @Param request body ChatMindMapRequest true "Mind map parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/chat/mindmap [post]
+func (h *ChatHandler) MindMap(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req ChatMindMapRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": err.Error()})
+		return
+	}
+	if strings.TrimSpace(req.Question) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "kb_ids and question are required"})
+		return
+	}
+
+	searchConfig := map[string]interface{}{}
+	modelTenantID := user.ID
+	if req.SearchID != "" {
+		if h.searchSvc == nil {
+			jsonInternalError(c, fmt.Errorf("search service not configured"))
+			return
+		}
+		detail, err := h.searchSvc.GetDetail(req.SearchID)
+		if err != nil {
+			jsonInternalError(c, err)
+			return
+		}
+		searchConfig = searchConfigFromDetail(detail)
+		if tenantID, ok := detail["tenant_id"].(string); ok && tenantID != "" {
+			modelTenantID = tenantID
+		}
+	}
+
+	kbIDs := mergeMindMapKbIDs(stringSliceFromConfig(searchConfig, "kb_ids"), req.KbIDs)
+	if len(kbIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "kb_ids and question are required"})
+		return
+	}
+
+	mindMap, err := runMindMap(mindMapRunConfig{
+		Question:      req.Question,
+		KbIDs:         kbIDs,
+		SearchID:      req.SearchID,
+		SearchConfig:  searchConfig,
+		AuthUserID:    user.ID,
+		ModelTenantID: modelTenantID,
+		ChunkSvc:      h.chunkSvc,
+		LLM:           h.llm,
+		TenantSvc:     h.tenantSvc,
+	})
+	if err != nil {
+		jsonInternalError(c, err)
+		return
+	}
+	jsonResponse(c, common.CodeSuccess, mindMap, "success")
+}
+
+func (h *ChatHandler) DeleteChat(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
@@ -247,38 +235,123 @@ func (h *ChatHandler) RemoveChats(c *gin.Context) {
 	}
 	userID := user.ID
 
-	// Parse request body
-	var req RemoveDialogsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	chatID := c.Param("chat_id")
+	if chatID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": "chat_id is required",
 		})
 		return
 	}
 
-	// Call service to remove dialogs
-	if err := h.chatService.RemoveChats(userID, req.DialogIDs); err != nil {
-		// Check if it's an authorization error
-		if err.Error() == "only owner of chat authorized for this operation" {
-			c.JSON(http.StatusForbidden, gin.H{
-				"code":    403,
+	if err := h.chatService.DeleteChat(userID, chatID); err != nil {
+		if err.Error() == "no authorization" {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeAuthenticationError,
 				"data":    false,
-				"message": err.Error(),
+				"message": "No authorization.",
 			})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
 			"message": err.Error(),
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
+		"code":    common.CodeSuccess,
 		"data":    true,
 		"message": "success",
+	})
+}
+
+// BulkDeleteChats soft deletes multiple chats owned by the current user.
+func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	userID := user.ID
+	if c.Request.Body == nil || c.Request.ContentLength == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeSuccess,
+			"data":    map[string]interface{}{},
+			"message": "success",
+		})
+		return
+	}
+
+	var req service.BulkDeleteChatsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	if len(req.IDs) == 0 && !req.DeleteAll {
+		if req.ChatID != "" {
+			if err := h.chatService.DeleteChat(userID, req.ChatID); err != nil {
+				if err.Error() == "no authorization" {
+					c.JSON(http.StatusOK, gin.H{
+						"code":    common.CodeAuthenticationError,
+						"data":    false,
+						"message": "No authorization.",
+					})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{
+					"code":    common.CodeDataError,
+					"data":    nil,
+					"message": err.Error(),
+				})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeSuccess,
+				"data":    true,
+				"message": "success",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeSuccess,
+			"data":    map[string]interface{}{},
+			"message": "success",
+		})
+		return
+	}
+
+	result, err := h.chatService.BulkDeleteChats(userID, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	message := "success"
+	if errorsList, ok := result["errors"].([]string); ok && len(errorsList) > 0 {
+		if successCount, ok := result["success_count"].(int); ok {
+			message = "Partially deleted " + strconv.Itoa(successCount) + " chats with " + strconv.Itoa(len(errorsList)) + " errors"
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    result,
+		"message": message,
 	})
 }
 
@@ -373,4 +446,58 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"data":    result,
 		"message": "success",
 	})
+}
+
+// UpdateChat updates a chat by ID using REST PUT semantics.
+func (h *ChatHandler) UpdateChat(c *gin.Context) {
+	h.updateChatByMethod(c, false)
+}
+
+// PatchChat updates a chat by ID using REST PATCH semantics.
+func (h *ChatHandler) PatchChat(c *gin.Context) {
+	h.updateChatByMethod(c, true)
+}
+
+func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	chatID := c.Param("chat_id")
+	if chatID == "" {
+		jsonError(c, common.CodeBadRequest, "chat_id is required")
+		return
+	}
+
+	var req map[string]interface{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	var (
+		result map[string]interface{}
+		err    error
+	)
+	if patch {
+		result, err = h.chatService.PatchChat(user.ID, chatID, req)
+	} else {
+		result, err = h.chatService.UpdateChat(user.ID, chatID, req)
+	}
+	if err != nil {
+		if err.Error() == "no authorization" {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeAuthenticationError,
+				"data":    false,
+				"message": "No authorization.",
+			})
+			return
+		}
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
 }

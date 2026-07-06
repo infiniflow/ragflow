@@ -83,6 +83,15 @@ class BrowserParam(LLMParam):
 class Browser(ComponentBase, ABC):
     component_name = "Browser"
 
+    def _prepare_input_values(self):
+        for key, meta in self.get_input_elements().items():
+            val = meta.get("value")
+            if val is None:
+                val = ""
+            elif not isinstance(val, str):
+                val = json.dumps(val, ensure_ascii=False)
+            self.set_input_value(key, val)
+
     def get_input_elements(self) -> dict[str, dict]:
         text_parts = [
             str(self._param.prompts or ""),
@@ -362,9 +371,7 @@ class Browser(ComponentBase, ABC):
                 sort_keys=True,
                 ensure_ascii=False,
             )
-            raw_canvas_id = (
-                f"dsl_{hashlib.sha1(graph_text.encode('utf-8')).hexdigest()[:12]}"
-            )
+            raw_canvas_id = f"dsl_{hashlib.sha1(graph_text.encode('utf-8')).hexdigest()[:12]}"
         canvas_id = self._safe_path_segment(raw_canvas_id)
         node_id = self._safe_path_segment(self._id)
         return os.path.join(root, tenant, canvas_id, node_id)
@@ -416,12 +423,17 @@ class Browser(ComponentBase, ABC):
             llm_kwargs = {k: v for k, v in llm_kwargs.items() if v not in (None, "")}
             return ChatBrowserUse(**llm_kwargs)
 
+        # browser-use Agent defaults to json_schema response_format and may use tool_choice via
+        # ChatDeepSeek. Many providers (e.g. DeepSeek thinking models) reject both. Use ChatOpenAI
+        # with schema-in-prompt and without forced structured output on the first run.
         llm_kwargs = {
             "model": model_name,
             "api_key": cfg.get("api_key"),
             "base_url": base_url,
             "temperature": self._param.temperature,
             "max_retries": self._param.max_retries,
+            "add_schema_to_system_prompt": True,
+            "dont_force_structured_output": True,
         }
         llm_kwargs = {k: v for k, v in llm_kwargs.items() if v not in (None, "")}
         return ChatOpenAI(**llm_kwargs)
@@ -474,10 +486,7 @@ class Browser(ComponentBase, ABC):
                 # Keep browser-use watchdog fallback in sync with our resolved path.
                 os.environ["BROWSER_USE_BROWSER_BINARY_PATH"] = executable_path
             else:
-                logging.warning(
-                    "Browser no local browser executable found. "
-                    "Set BROWSER_USE_EXECUTABLE_PATH or preinstall chromium in image to avoid runtime playwright install."
-                )
+                logging.warning("Browser no local browser executable found. Set BROWSER_USE_EXECUTABLE_PATH or preinstall chromium in image to avoid runtime playwright install.")
             if profile_dir:
                 browser_kwargs["user_data_dir"] = profile_dir
                 # browser-use expects profile_directory to be a profile name
@@ -666,22 +675,15 @@ class Browser(ComponentBase, ABC):
         profile_dir = None
         persist_session = self._should_persist_session()
         try:
+            self._prepare_input_values()
             user_prompt = self._resolve_text(kwargs.get("prompts", self._param.prompts))
-            with tempfile.TemporaryDirectory(prefix="browser_use_upload_") as upload_dir, tempfile.TemporaryDirectory(
-                prefix="browser_use_download_"
-            ) as download_dir:
+            with tempfile.TemporaryDirectory(prefix="browser_use_upload_") as upload_dir, tempfile.TemporaryDirectory(prefix="browser_use_download_") as download_dir:
                 uploaded_files = self._prepare_upload_files(upload_dir)
 
-                upload_lines = [
-                    f"- file_id={item['file_id']}, name={item['name']}, local_path={item['local_path']}"
-                    for item in uploaded_files
-                ]
+                upload_lines = [f"- file_id={item['file_id']}, name={item['name']}, local_path={item['local_path']}" for item in uploaded_files]
                 task_text = user_prompt
                 if upload_lines:
-                    task_text += (
-                        "\n\nYou can upload files from these local paths when operating web pages:\n"
-                        + "\n".join(upload_lines)
-                    )
+                    task_text += "\n\nYou can upload files from these local paths when operating web pages:\n" + "\n".join(upload_lines)
 
                 upload_local_paths = [item.get("local_path", "") for item in uploaded_files if item.get("local_path")]
                 if persist_session:
@@ -692,11 +694,7 @@ class Browser(ComponentBase, ABC):
                         profile_dir = tempfile.mkdtemp(prefix="browser_use_profile_")
                     except OSError:
                         profile_dir = None
-                history = asyncio.run(
-                    self._run_browser_use_async(
-                        task_text, download_dir, upload_local_paths, profile_dir
-                    )
-                )
+                history = asyncio.run(self._run_browser_use_async(task_text, download_dir, upload_local_paths, profile_dir))
                 target_dir_id = FileService.get_root_folder(self._canvas.get_tenant_id())["id"]
                 downloaded_files = self._save_downloads(download_dir, target_dir_id)
 

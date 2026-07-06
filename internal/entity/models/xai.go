@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -32,24 +31,6 @@ import (
 	"time"
 )
 
-// Per-call context deadlines shared by every provider in this package.
-//
-// The shared httpClient sets no Client.Timeout: that field also bounds the time
-// spent reading the response body, which would sever long-lived SSE streams in
-// ChatStreamlyWithSender once a generation outlasts the limit. Each call wraps
-// its request in a context.WithTimeout sized to the operation instead:
-//
-//   - nonStreamCallTimeout for interactive non-streaming calls
-//     (chat, embed, rerank, list models, check connection, balance).
-//   - streamCallTimeout for streaming chat, bounded generously so slow or
-//     reasoning-heavy generations are not truncated mid-stream.
-//   - longOpCallTimeout for heavy synchronous file work (OCR, document
-//     parsing, audio transcription/synthesis) that legitimately runs for
-//     minutes. Kept distinct from streamCallTimeout so the two can be tuned
-//     independently even though they currently share a value.
-//
-// They are vars rather than consts so tests can shrink them to milliseconds
-// and exercise the deadline behaviour without real-time waits.
 var (
 	nonStreamCallTimeout = 120 * time.Second
 	streamCallTimeout    = 10 * time.Minute
@@ -58,78 +39,44 @@ var (
 
 // XAIModel implements ModelDriver for xAI (Grok models)
 type XAIModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewXAIModel creates a new xAI model instance.
-//
-// We clone http.DefaultTransport so we keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the few connection-pool fields we care about.
-//
-// The Client itself has no Timeout. http.Client.Timeout would also
-// cap the time spent reading the response body, which would cut off
-// long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
-// callers wrap each request with context.WithTimeout instead.
 func NewXAIModel(baseURL map[string]string, urlSuffix URLSuffix) *XAIModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-
 	return &XAIModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (x *XAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewXAIModel(baseURL, x.URLSuffix)
+	return NewXAIModel(baseURL, x.baseModel.URLSuffix)
 }
 
 func (x *XAIModel) Name() string {
 	return "xai"
 }
 
-// baseURLForRegion returns the base URL for the given region, or an
-// error if no entry exists. This makes a misconfigured region fail
-// fast with a clear message, instead of silently producing a relative
-// URL that the HTTP transport then rejects.
-func (x *XAIModel) baseURLForRegion(region string) (string, error) {
-	base, ok := x.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("xai: no base URL configured for region %q", region)
-	}
-	return base, nil
-}
-
 // ChatWithMessages sends multiple messages with roles and returns the response
 func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := x.baseURLForRegion(region)
+	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, x.URLSuffix.Chat)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by the API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -148,9 +95,6 @@ func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 		"temperature": 1,
 	}
 
-	// Note: do NOT propagate chatModelConfig.Stream into the request body
-	// here. ChatWithMessages parses a single JSON response, so SSE/stream
-	// must always be off for this code path.
 	if chatModelConfig != nil {
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
@@ -185,7 +129,7 @@ func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -244,27 +188,22 @@ func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 	return chatResponse, nil
 }
 
-// ChatStreamlyWithSender sends messages and streams the response via the
-// sender function. Used for streaming chat responses with no extra channel.
+// ChatStreamlyWithSender sends messages and streams the response
 func (x *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
-	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := x.baseURLForRegion(region)
+	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, x.URLSuffix.Chat)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format (supports multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -283,11 +222,6 @@ func (x *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 	}
 
 	if chatModelConfig != nil {
-		// Refuse to run if the caller explicitly asked for stream=false.
-		// The body of this method only knows how to read SSE, so a non-SSE
-		// JSON response would be parsed as if it were a stream and produce
-		// no chunks. Better to fail clearly. Leave reqBody["stream"] as
-		// the default (true) when Stream is nil or true.
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
@@ -325,7 +259,7 @@ func (x *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -336,53 +270,21 @@ func (x *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: read line by line. The default bufio.Scanner buffer
-	// is 64KB, which can be too small for long SSE chunks. Bump it to
-	// 1MB so we never silently truncate a long data: line.
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	// sawTerminal flips to true when the upstream actually told us the
-	// stream is over (either a "[DONE]" marker or a non-empty
-	// finish_reason). If the body closes before either of those, we
-	// must not emit a synthetic "[DONE]" because that would hide a
-	// truncated response from the caller.
 	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// SSE data line starts with "data:"
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		// Extract JSON after "data:"
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of the stream
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -402,14 +304,13 @@ func (x *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !done && !sawTerminal {
 		return fmt.Errorf("xai: stream ended before [DONE] or finish_reason")
 	}
 
@@ -429,21 +330,17 @@ func (x *XAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig
 }
 
 // ListModels returns the list of model ids visible to the API key.
-func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := x.baseURLForRegion(region)
+	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	modelsSuffix := strings.Trim(strings.TrimSpace(x.URLSuffix.Models), "/")
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	modelsSuffix := strings.Trim(strings.TrimSpace(x.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
 		return nil, fmt.Errorf("xai: models URL suffix is not configured")
 	}
@@ -460,7 +357,7 @@ func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -476,30 +373,16 @@ func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
+	if modelList.Models == nil {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0)
-	for _, model := range data {
-		modelMap, ok := model.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		modelName, ok := modelMap["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, modelName)
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 // Balance is not exposed by the xAI API, so this returns "no such method".
@@ -516,24 +399,26 @@ func (x *XAIModel) CheckConnection(apiConfig *APIConfig) error {
 	return nil
 }
 
-// Rerank calculates similarity scores between query and documents. xAI does not
-// expose a rerank API, so this is left unimplemented.
+// Rerank calculates similarity scores between query and documents
 func (x *XAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", x.Name())
 }
 
 // TranscribeAudio transcribe audio
 func (x *XAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", x.BaseURL[region], x.URLSuffix.ASR)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -590,6 +475,8 @@ func (x *XAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *A
 	}
 
 	// open audio file
+
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
 	audioFile, err := os.Open(*file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
@@ -620,7 +507,7 @@ func (x *XAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *A
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	// send request
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -653,20 +540,19 @@ func (x *XAIModel) TranscribeAudioWithSender(modelName *string, file *string, ap
 
 // AudioSpeech convert text to audio
 func (x *XAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("xai API key is missing")
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("text content is missing")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", x.BaseURL[region], x.URLSuffix.TTS)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"text":     *audioContent,
@@ -697,7 +583,7 @@ func (x *XAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfi
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

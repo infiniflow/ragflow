@@ -29,12 +29,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"ragflow/internal/engine/redis"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -49,6 +49,8 @@ const (
 	webFlowTTL               = 15 * time.Minute
 	googleOAuthAuthorizeURL  = "https://accounts.google.com/o/oauth2/auth"
 	googleOAuthTokenURL      = "https://oauth2.googleapis.com/token"
+	boxOAuthAuthorizeURL     = "https://account.box.com/api/oauth2/authorize"
+	boxOAuthTokenURL         = "https://api.box.com/oauth2/token"
 	googleOAuthHTTPTimeout   = 7 * time.Second
 )
 
@@ -64,6 +66,7 @@ var (
 		"https://www.googleapis.com/auth/admin.directory.user.readonly",
 		"https://www.googleapis.com/auth/admin.directory.group.readonly",
 	}
+	connectorRedisGet = redis.Get
 )
 
 // Sentinel errors so handlers can map to the proper response codes,
@@ -163,6 +166,53 @@ type googleOAuthCredentials struct {
 	ClientSecret string   `json:"client_secret"`
 	Scopes       []string `json:"scopes"`
 	Expiry       string   `json:"expiry,omitempty"`
+}
+
+type boxWebOAuthState struct {
+	UserID       string `json:"user_id"`
+	AuthURL      string `json:"auth_url"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	RedirectURI  string `json:"redirect_uri"`
+	CreatedAt    int64  `json:"created_at"`
+}
+
+type boxWebOAuthCredentials struct {
+	UserID       string `json:"user_id,omitempty"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+type StartBoxWebOAuthRequest struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	RedirectURI  string `json:"redirect_uri,omitempty"`
+}
+
+type StartBoxWebOAuthResponse struct {
+	FlowID           string `json:"flow_id"`
+	AuthorizationURL string `json:"authorization_url"`
+	ExpiresIn        int64  `json:"expires_in"`
+}
+
+type PollBoxWebOAuthResultRequest struct {
+	FlowID string `json:"flow_id"`
+}
+
+type PollBoxWebOAuthResultResponse struct {
+	Credentials boxWebOAuthCredentials `json:"credentials"`
+}
+
+type boxOAuthTokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	TokenType    string `json:"token_type,omitempty"`
+	ExpiresIn    int64  `json:"expires_in,omitempty"`
+	RestrictedTo any    `json:"restricted_to,omitempty"`
+	Error        string `json:"error,omitempty"`
+	ErrorDesc    string `json:"error_description,omitempty"`
 }
 
 // canAccessConnector Test Authentication
@@ -399,7 +449,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(userID, source string, req *Start
 		return nil, common.CodeServerError, fmt.Errorf("Failed to initialize Google OAuth flow. Please verify the uploaded client configuration.")
 	}
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		return nil, common.CodeServerError, fmt.Errorf("Redis is not configured on the server.")
 	}
@@ -425,28 +475,28 @@ func (s *ConnectorService) StartGoogleWebOAuth(userID, source string, req *Start
 func (s *ConnectorService) GoogleWebOAuthCallback(source, stateID, oauthError, errorDescription, code string) string {
 	source = strings.TrimSpace(source)
 	if source != "google-drive" && source != "gmail" {
-		return renderGoogleWebOAuthPopup("", false, "Invalid Google OAuth type.", source)
+		return renderWebOAuthPopup("", false, "Invalid Google OAuth type.", source)
 	}
 
 	stateID = strings.TrimSpace(stateID)
 	if stateID == "" {
-		return renderGoogleWebOAuthPopup("", false, "Missing OAuth state parameter.", source)
+		return renderWebOAuthPopup("", false, "Missing OAuth state parameter.", source)
 	}
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
-		return renderGoogleWebOAuthPopup(stateID, false, "Authorization session expired. Please restart from the main window.", source)
+		return renderWebOAuthPopup(stateID, false, "Authorization session expired. Please restart from the main window.", source)
 	}
 
 	stateKey := webStateCacheKey(stateID, source)
 	var state googleWebOAuthState
 	if ok := redisClient.GetObj(stateKey, &state); !ok {
-		return renderGoogleWebOAuthPopup(stateID, false, "Authorization session expired. Please restart from the main window.", source)
+		return renderWebOAuthPopup(stateID, false, "Authorization session expired. Please restart from the main window.", source)
 	}
 
 	if state.ClientConfig == nil {
 		redisClient.Delete(stateKey)
-		return renderGoogleWebOAuthPopup(stateID, false, "Authorization session was invalid. Please retry.", source)
+		return renderWebOAuthPopup(stateID, false, "Authorization session was invalid. Please retry.", source)
 	}
 
 	if strings.TrimSpace(oauthError) != "" {
@@ -458,18 +508,18 @@ func (s *ConnectorService) GoogleWebOAuthCallback(source, stateID, oauthError, e
 		if message == "" {
 			message = "Authorization was cancelled."
 		}
-		return renderGoogleWebOAuthPopup(stateID, false, message, source)
+		return renderWebOAuthPopup(stateID, false, message, source)
 	}
 
 	code = strings.TrimSpace(code)
 	if code == "" {
-		return renderGoogleWebOAuthPopup(stateID, false, "Missing authorization code from Google.", source)
+		return renderWebOAuthPopup(stateID, false, "Missing authorization code from Google.", source)
 	}
 
 	credentials, err := exchangeGoogleWebOAuthCode(state.ClientConfig, googleOAuthScopesForSource(source), state.RedirectURI, code, state.CodeVerifier)
 	if err != nil {
 		redisClient.Delete(stateKey)
-		return renderGoogleWebOAuthPopup(stateID, false, "Failed to exchange tokens with Google. Please retry.", source)
+		return renderWebOAuthPopup(stateID, false, "Failed to exchange tokens with Google. Please retry.", source)
 	}
 
 	result := googleWebOAuthResult{
@@ -478,11 +528,11 @@ func (s *ConnectorService) GoogleWebOAuthCallback(source, stateID, oauthError, e
 	}
 	if ok := redisClient.SetObj(webResultCacheKey(stateID, source), result, webFlowTTL); !ok {
 		redisClient.Delete(stateKey)
-		return renderGoogleWebOAuthPopup(stateID, false, "Failed to exchange tokens with Google. Please retry.", source)
+		return renderWebOAuthPopup(stateID, false, "Failed to exchange tokens with Google. Please retry.", source)
 	}
 	redisClient.Delete(stateKey)
 
-	return renderGoogleWebOAuthPopup(stateID, true, "Authorization completed successfully.", source)
+	return renderWebOAuthPopup(stateID, true, "Authorization completed successfully.", source)
 }
 
 func (s *ConnectorService) PollGoogleWebOAuthResult(userID, source string, req *PollGoogleWebOAuthResultRequest) (*PollGoogleWebOAuthResultResponse, common.ErrorCode, error) {
@@ -494,7 +544,7 @@ func (s *ConnectorService) PollGoogleWebOAuthResult(userID, source string, req *
 		return nil, common.CodeArgumentError, fmt.Errorf("required argument is missing: flow_id")
 	}
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		return nil, common.CodeRunning, fmt.Errorf("Authorization is still pending.")
 	}
@@ -702,7 +752,7 @@ func exchangeGoogleWebOAuthCode(clientConfig map[string]interface{}, scopes []st
 	return string(data), nil
 }
 
-func renderGoogleWebOAuthPopup(flowID string, success bool, message, source string) string {
+func renderWebOAuthPopup(flowID string, success bool, message, source string) string {
 	status := "error"
 	autoClose := ""
 	if success {
@@ -717,7 +767,7 @@ func renderGoogleWebOAuthPopup(flowID string, success bool, message, source stri
 		"message": message,
 	})
 
-	title := fmt.Sprintf("%s Authorization", googleOAuthSourceDisplayName(source))
+	title := fmt.Sprintf("%s Authorization", webOAuthSourceDisplayName(source))
 	heading := "Authorization failed"
 	if success {
 		heading = "Authorization complete"
@@ -776,14 +826,17 @@ func renderGoogleWebOAuthPopup(flowID string, success bool, message, source stri
 </html>`, html.EscapeString(title), html.EscapeString(heading), html.EscapeString(message), string(payload), autoClose)
 }
 
-func googleOAuthSourceDisplayName(source string) string {
+func webOAuthSourceDisplayName(source string) string {
 	if source == "gmail" {
 		return "Gmail"
 	}
 	if source == "google-drive" {
 		return "Google Drive"
 	}
-	return "Google"
+	if source == "box" {
+		return "Box"
+	}
+	return "OAuth"
 }
 
 func (s *ConnectorService) DeleteConnector(connectorID, userID string) (bool, common.ErrorCode, error) {
@@ -981,4 +1034,200 @@ func (s *ConnectorService) ListLog(connectorID, userID string, page, pageSize in
 		logs = []*entity.ConnectorSyncLog{}
 	}
 	return logs, total, common.CodeSuccess, nil
+}
+
+func (s *ConnectorService) StartBoxWebOAuth(userID string, req *StartBoxWebOAuthRequest) (*StartBoxWebOAuthResponse, common.ErrorCode, error) {
+	var clientID, clientSecret, redirectURI string
+	if req != nil {
+		clientID = strings.TrimSpace(req.ClientID)
+		clientSecret = strings.TrimSpace(req.ClientSecret)
+		redirectURI = strings.TrimSpace(req.RedirectURI)
+	}
+	if clientID == "" || clientSecret == "" {
+		return nil, common.CodeArgumentError, fmt.Errorf("Box client_id and client_secret are required.")
+	}
+	if redirectURI == "" {
+		redirectURI = defaultBoxWebOAuthRedirectURI()
+	}
+
+	flowID := common.GenerateUUID()
+	authorizationURL, err := buildBoxAuthorizationURL(clientID, redirectURI, flowID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	redisClient := connectorRedisGet()
+	if redisClient == nil {
+		return nil, common.CodeServerError, fmt.Errorf("Redis is not configured on the server.")
+	}
+
+	state := boxWebOAuthState{
+		UserID:       userID,
+		AuthURL:      authorizationURL,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		RedirectURI:  redirectURI,
+		CreatedAt:    time.Now().Unix(),
+	}
+	if ok := redisClient.SetObj(webStateCacheKey(flowID, "box"), state, webFlowTTL); !ok {
+		return nil, common.CodeServerError, fmt.Errorf("Failed to initialize Box OAuth flow. Please verify the client configuration.")
+	}
+
+	return &StartBoxWebOAuthResponse{
+		FlowID:           flowID,
+		AuthorizationURL: authorizationURL,
+		ExpiresIn:        int64(webFlowTTL.Seconds()),
+	}, common.CodeSuccess, nil
+}
+
+func (s *ConnectorService) BoxWebOAuthCallback(flowID string, oauthError string, errorDescription string, code string) string {
+	flowID = strings.TrimSpace(flowID)
+	if flowID == "" {
+		return renderWebOAuthPopup("", false, "Missing OAuth parameters.", "box")
+	}
+
+	redisClient := connectorRedisGet()
+	if redisClient == nil {
+		return renderWebOAuthPopup(flowID, false, "Box OAuth session expired or invalid.", "box")
+	}
+
+	stateKey := webStateCacheKey(flowID, "box")
+	var state boxWebOAuthState
+	if ok := redisClient.GetObj(stateKey, &state); !ok {
+		return renderWebOAuthPopup(flowID, false, "Box OAuth session expired or invalid.", "box")
+	}
+
+	if strings.TrimSpace(oauthError) != "" {
+		redisClient.Delete(stateKey)
+		message := strings.TrimSpace(errorDescription)
+		if message == "" {
+			message = strings.TrimSpace(oauthError)
+		}
+		if message == "" {
+			message = "Authorization failed."
+		}
+		return renderWebOAuthPopup(flowID, false, message, "box")
+	}
+
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return renderWebOAuthPopup(flowID, false, "Missing authorization code from Box.", "box")
+	}
+
+	token, err := exchangeBoxAuthorizationCode(state.ClientID, state.ClientSecret, state.RedirectURI, code)
+	if err != nil {
+		redisClient.Delete(stateKey)
+		return renderWebOAuthPopup(flowID, false, "Failed to exchange tokens with Box. Please retry.", "box")
+	}
+
+	result := boxWebOAuthCredentials{
+		UserID:       state.UserID,
+		ClientID:     state.ClientID,
+		ClientSecret: state.ClientSecret,
+		AccessToken:  token.AccessToken,
+		RefreshToken: token.RefreshToken,
+	}
+	if ok := redisClient.SetObj(webResultCacheKey(flowID, "box"), result, webFlowTTL); !ok {
+		redisClient.Delete(stateKey)
+		return renderWebOAuthPopup(flowID, false, "Failed to exchange tokens with Box. Please retry.", "box")
+	}
+	redisClient.Delete(stateKey)
+
+	return renderWebOAuthPopup(flowID, true, "Authorization completed successfully.", "box")
+}
+
+func (s *ConnectorService) PollBoxWebOAuthResult(userID string, req *PollBoxWebOAuthResultRequest) (*PollBoxWebOAuthResultResponse, common.ErrorCode, error) {
+	if req == nil || strings.TrimSpace(req.FlowID) == "" {
+		return nil, common.CodeArgumentError, fmt.Errorf("required argument is missing: flow_id")
+	}
+
+	redisClient := connectorRedisGet()
+	if redisClient == nil {
+		return nil, common.CodeRunning, fmt.Errorf("Authorization is still pending.")
+	}
+
+	resultKey := webResultCacheKey(strings.TrimSpace(req.FlowID), "box")
+	var result boxWebOAuthCredentials
+	if ok := redisClient.GetObj(resultKey, &result); !ok {
+		return nil, common.CodeRunning, fmt.Errorf("Authorization is still pending.")
+	}
+
+	if result.UserID != userID {
+		return nil, common.CodePermissionError, fmt.Errorf("You are not allowed to access this authorization result.")
+	}
+
+	redisClient.Delete(resultKey)
+	result.UserID = ""
+	return &PollBoxWebOAuthResultResponse{Credentials: result}, common.CodeSuccess, nil
+}
+
+func defaultBoxWebOAuthRedirectURI() string {
+	return getenvDefault(
+		"BOX_WEB_OAUTH_REDIRECT_URI",
+		"http://localhost:9384/api/v1/connectors/box/oauth/web/callback",
+	)
+}
+
+func buildBoxAuthorizationURL(clientID string, redirectURI string, state string) (string, error) {
+	parsedURL, err := url.Parse(boxOAuthAuthorizeURL)
+	if err != nil {
+		return "", err
+	}
+
+	query := parsedURL.Query()
+	query.Set("client_id", clientID)
+	query.Set("redirect_uri", redirectURI)
+	query.Set("response_type", "code")
+	query.Set("state", state)
+	parsedURL.RawQuery = query.Encode()
+	return parsedURL.String(), nil
+}
+
+func exchangeBoxAuthorizationCode(clientID string, clientSecret string, redirectURI string, code string) (*boxOAuthTokenResponse, error) {
+	_ = redirectURI
+
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", code)
+	form.Set("client_id", clientID)
+	form.Set("client_secret", clientSecret)
+
+	ctx, cancel := context.WithTimeout(context.Background(), googleOAuthHTTPTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, boxOAuthTokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+
+	var token boxOAuthTokenResponse
+	if err := json.Unmarshal(body, &token); err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= http.StatusBadRequest || token.Error != "" {
+		if token.ErrorDesc != "" {
+			return nil, errors.New(token.ErrorDesc)
+		}
+		if token.Error != "" {
+			return nil, errors.New(token.Error)
+		}
+		return nil, fmt.Errorf("box token exchange failed: HTTP %d", resp.StatusCode)
+	}
+	if token.AccessToken == "" {
+		return nil, fmt.Errorf("box token exchange failed: empty access_token")
+	}
+	return &token, nil
 }

@@ -438,8 +438,8 @@ func TestBedrockListModelsParsesCatalog(t *testing.T) {
 		t.Fatalf("len(got)=%d want %d (%v)", len(got), len(want), got)
 	}
 	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("got[%d]=%q want %q", i, got[i], want[i])
+		if got[i].Name != want[i] {
+			t.Errorf("got[%d]=%s want %q", i, got[i].Name, want[i])
 		}
 	}
 }
@@ -646,11 +646,180 @@ func TestLookupBedrockEventHeader(t *testing.T) {
 	}
 }
 
-func TestBedrockEmbedReturnsNoSuchMethod(t *testing.T) {
+func TestBedrockTitanEmbedHappyPath(t *testing.T) {
+	var seenInputs []string
+	srv := newBedrockServer(t, http.MethodPost,
+		"/model/amazon.titan-embed-text-v2:0/invoke",
+		func(w http.ResponseWriter, r *http.Request) {
+			raw, _ := io.ReadAll(r.Body)
+			var body bedrockTitanEmbeddingRequest
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Errorf("unmarshal body: %v", err)
+				return
+			}
+			seenInputs = append(seenInputs, body.InputText)
+			if body.Dimensions == nil || *body.Dimensions != 256 {
+				t.Errorf("dimensions=%v, want 256", body.Dimensions)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if body.InputText == "alpha" {
+				_, _ = w.Write([]byte(`{"embedding":[0.1,0.2]}`))
+			} else {
+				_, _ = w.Write([]byte(`{"embedding":[0.3,0.4]}`))
+			}
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	model := "amazon.titan-embed-text-v2:0"
+	got, err := m.Embed(&model, []string{"alpha", "beta"}, &APIConfig{ApiKey: &key}, &EmbeddingConfig{Dimension: 256})
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(seenInputs) != 2 || seenInputs[0] != "alpha" || seenInputs[1] != "beta" {
+		t.Fatalf("seen inputs=%v", seenInputs)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got)=%d want 2", len(got))
+	}
+	if got[0].Index != 0 || got[0].Embedding[0] != 0.1 || got[1].Index != 1 || got[1].Embedding[0] != 0.3 {
+		t.Errorf("embeddings=%+v", got)
+	}
+}
+
+func TestBedrockTitanV1OmitsDimension(t *testing.T) {
+	srv := newBedrockServer(t, http.MethodPost,
+		"/model/amazon.titan-embed-text-v1/invoke",
+		func(w http.ResponseWriter, r *http.Request) {
+			raw, _ := io.ReadAll(r.Body)
+			if strings.Contains(string(raw), "dimensions") {
+				t.Errorf("Titan v1 body must not include dimensions: %s", string(raw))
+			}
+			_, _ = w.Write([]byte(`{"embedding":[0.1,0.2]}`))
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	model := "amazon.titan-embed-text-v1"
+	if _, err := m.Embed(&model, []string{"alpha"}, &APIConfig{ApiKey: &key}, &EmbeddingConfig{Dimension: 256}); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+}
+
+func TestBedrockCohereEmbedHappyPath(t *testing.T) {
+	srv := newBedrockServer(t, http.MethodPost,
+		"/model/cohere.embed-english-v3/invoke",
+		func(w http.ResponseWriter, r *http.Request) {
+			raw, _ := io.ReadAll(r.Body)
+			var body bedrockCohereEmbeddingRequest
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Errorf("unmarshal body: %v", err)
+				return
+			}
+			if len(body.Texts) != 2 || body.Texts[0] != "first" || body.Texts[1] != "second" {
+				t.Errorf("texts=%v", body.Texts)
+			}
+			if body.InputType != "search_document" {
+				t.Errorf("input_type=%q want search_document", body.InputType)
+			}
+			if body.OutputDimension != nil {
+				t.Errorf("v3 output_dimension=%v, want omitted", *body.OutputDimension)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"embeddings":[[1,2],[3,4]]}`))
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	model := "cohere.embed-english-v3"
+	got, err := m.Embed(&model, []string{"first", "second"}, &APIConfig{ApiKey: &key}, &EmbeddingConfig{Dimension: 128})
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(got) != 2 || got[0].Index != 0 || got[0].Embedding[0] != 1 || got[1].Index != 1 || got[1].Embedding[0] != 3 {
+		t.Errorf("embeddings=%+v", got)
+	}
+}
+
+func TestBedrockCohereV4ForwardsDimensionAndParsesTypedResponse(t *testing.T) {
+	srv := newBedrockServer(t, http.MethodPost,
+		"/model/cohere.embed-v4:0/invoke",
+		func(w http.ResponseWriter, r *http.Request) {
+			raw, _ := io.ReadAll(r.Body)
+			var body bedrockCohereEmbeddingRequest
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Errorf("unmarshal body: %v", err)
+				return
+			}
+			if body.OutputDimension == nil || *body.OutputDimension != 512 {
+				t.Errorf("output_dimension=%v, want 512", body.OutputDimension)
+			}
+			_, _ = w.Write([]byte(`{"embeddings":{"float":[[0.5,0.6]]}}`))
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	model := "cohere.embed-v4:0"
+	got, err := m.Embed(&model, []string{"first"}, &APIConfig{ApiKey: &key}, &EmbeddingConfig{Dimension: 512})
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(got) != 1 || got[0].Index != 0 || got[0].Embedding[0] != 0.5 {
+		t.Errorf("embeddings=%+v", got)
+	}
+}
+
+func TestBedrockEmbedShortCircuitsEmptyInput(t *testing.T) {
+	m := newBedrockForTest("http://unused")
+	got, err := m.Embed(nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Embed empty: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("len(got)=%d want 0", len(got))
+	}
+}
+
+func TestBedrockEmbedRequiresAPIKeyAndModel(t *testing.T) {
 	m := newBedrockForTest("http://unused")
 	model := "x"
-	if _, err := m.Embed(&model, []string{"a"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Embed: want no-such-method, got %v", err)
+	if _, err := m.Embed(&model, []string{"a"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("Embed: want api-key error, got %v", err)
+	}
+	key := validBedrockKey()
+	blank := " "
+	if _, err := m.Embed(&blank, []string{"a"}, &APIConfig{ApiKey: &key}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+		t.Errorf("Embed: want model-required error, got %v", err)
+	}
+}
+
+func TestBedrockEmbedRejectsUnsupportedModel(t *testing.T) {
+	m := newBedrockForTest("http://unused")
+	key := validBedrockKey()
+	model := "anthropic.claude-3-haiku-20240307-v1:0"
+	if _, err := m.Embed(&model, []string{"a"}, &APIConfig{ApiKey: &key}, nil); err == nil || !strings.Contains(err.Error(), "unsupported embedding model") {
+		t.Errorf("Embed: want unsupported-model error, got %v", err)
+	}
+}
+
+func TestBedrockEmbedPropagatesHTTPError(t *testing.T) {
+	srv := newBedrockServer(t, http.MethodPost,
+		"/model/amazon.titan-embed-text-v2:0/invoke",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"message":"bad input"}`))
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	model := "amazon.titan-embed-text-v2:0"
+	if _, err := m.Embed(&model, []string{"a"}, &APIConfig{ApiKey: &key}, nil); err == nil || !strings.Contains(err.Error(), "400") || !strings.Contains(err.Error(), "bad input") {
+		t.Errorf("Embed: want HTTP error with body, got %v", err)
 	}
 }
 

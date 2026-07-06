@@ -190,14 +190,14 @@ func TestGPUStackChatForwardsDocumentedFields(t *testing.T) {
 	}
 }
 
-func TestGPUStackChatRequiresAPIKey(t *testing.T) {
+func TestGPUStackChatAllowsEmptyAPIKey(t *testing.T) {
 	_, err := newGPUStackForTest("http://unused").ChatWithMessages(
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil,
 	)
-	if err == nil || !strings.Contains(err.Error(), "api key is required") {
-		t.Errorf("expected api-key error, got %v", err)
+	if err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("self-hosted model should not require api key, got %v", err)
 	}
 }
 
@@ -438,7 +438,7 @@ func TestGPUStackListModelsHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "qwen3-8b,qwen3-32b" {
+	if joinModelNames(models, ",") != "qwen3-8b,qwen3-32b" {
 		t.Errorf("models=%v", models)
 	}
 	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
@@ -446,10 +446,10 @@ func TestGPUStackListModelsHappyPath(t *testing.T) {
 	}
 }
 
-func TestGPUStackListModelsRequiresAPIKey(t *testing.T) {
+func TestGPUStackListModelsAllowsEmptyAPIKey(t *testing.T) {
 	_, err := newGPUStackForTest("http://unused").ListModels(&APIConfig{})
-	if err == nil || !strings.Contains(err.Error(), "api key is required") {
-		t.Errorf("expected api-key error, got %v", err)
+	if err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("self-hosted model should not require api key, got %v", err)
 	}
 }
 
@@ -537,11 +537,11 @@ func TestGPUStackEmbedEmptyInputShortCircuits(t *testing.T) {
 }
 
 // TestGPUStackEmbedRequiresAPIKey rejects requests without an API key.
-func TestGPUStackEmbedRequiresAPIKey(t *testing.T) {
+func TestGPUStackEmbedAllowsEmptyAPIKey(t *testing.T) {
 	model := "bge-m3"
 	_, err := newGPUStackForTest("http://unused").Embed(&model, []string{"a"}, &APIConfig{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "api key is required") {
-		t.Errorf("expected api-key error, got %v", err)
+	if err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("self-hosted model should not require api key, got %v", err)
 	}
 }
 

@@ -192,6 +192,29 @@ export const initialSearXNGValues = {
   },
 };
 
+export enum KeenableMode {
+  Pro = 'pro',
+  Realtime = 'realtime',
+}
+
+export const initialKeenableValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  mode: KeenableMode.Pro,
+  site: '',
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
 export const initialWikipediaValues = {
   top_n: 10,
   language: 'en',
@@ -212,6 +235,23 @@ export const initialPubMedValues = {
     formalized_content: {
       value: '',
       type: 'string',
+    },
+  },
+};
+
+export const initialBGPTValues = {
+  top_n: 10,
+  api_key: '',
+  days_back: '',
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
     },
   },
 };
@@ -659,12 +699,14 @@ export const RestrictedUpstreamMap = {
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
   [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
+  [Operator.BGPT]: [Operator.Begin, Operator.Retrieval],
   [Operator.ArXiv]: [Operator.Begin, Operator.Retrieval],
   [Operator.Google]: [Operator.Begin, Operator.Retrieval],
   [Operator.Bing]: [Operator.Begin, Operator.Retrieval],
   [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
   [Operator.SearXNG]: [Operator.Begin, Operator.Retrieval],
+  [Operator.KeenableSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
@@ -710,12 +752,14 @@ export const NodeMap = {
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
   [Operator.PubMed]: 'ragNode',
+  [Operator.BGPT]: 'ragNode',
   [Operator.ArXiv]: 'ragNode',
   [Operator.Google]: 'ragNode',
   [Operator.Bing]: 'ragNode',
   [Operator.GoogleScholar]: 'ragNode',
   [Operator.GitHub]: 'ragNode',
   [Operator.SearXNG]: 'ragNode',
+  [Operator.KeenableSearch]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',
@@ -724,7 +768,7 @@ export const NodeMap = {
   [Operator.Crawler]: 'ragNode',
   [Operator.Invoke]: 'ragNode',
   [Operator.Email]: 'ragNode',
-  [Operator.Iteration]: 'group',
+  [Operator.Iteration]: 'iterationNode',
   [Operator.IterationStart]: 'iterationStartNode',
   [Operator.Code]: 'ragNode',
   [Operator.WaitingDialogue]: 'ragNode',
@@ -786,6 +830,7 @@ export const NoDebugOperatorsList = [
   Operator.TitleChunker,
   Operator.Extractor,
   Operator.Tool,
+  Operator.Loop,
 ];
 
 export const NoCopyOperatorsList = [

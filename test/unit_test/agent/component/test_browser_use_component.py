@@ -25,6 +25,7 @@ from api.db import FileType
 def _install_cv2_stub_if_unavailable():
     try:
         import cv2  # noqa: F401
+
         return
     except Exception:
         pass
@@ -53,9 +54,13 @@ class _FakeCanvas:
         self._refs = refs or {}
 
     def is_reff(self, token):
-        return token in self._refs
+        key = token.strip("{} ")
+        return key in self._refs or token in self._refs
 
     def get_variable_value(self, token):
+        key = token.strip("{} ")
+        if key in self._refs:
+            return self._refs[key]
         return self._refs[token]
 
     def get_tenant_id(self):
@@ -67,6 +72,19 @@ def _build_component():
     component._canvas = _FakeCanvas()
     component._param = SimpleNamespace(upload_sources="")
     return component
+
+
+def test_prepare_input_values_records_variable_inputs():
+    component = browser_use_module.Browser.__new__(browser_use_module.Browser)
+    component._canvas = _FakeCanvas(refs={"sys.query": "open example.com"})
+    component._param = browser_use_module.BrowserParam()
+    component._param.prompts = "{sys.query}"
+    component._param.inputs = {}
+
+    component._prepare_input_values()
+
+    assert component.get_input_value("sys.query") == "open example.com"
+    assert component.get_input_values()["sys.query"] == "open example.com"
 
 
 def test_extract_ids_supports_mixed_literals_and_variables():

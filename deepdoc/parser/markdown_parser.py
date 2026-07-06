@@ -177,6 +177,76 @@ class MarkdownElementExtractor:
 
         return ranges
 
+    def _table_cells(self, line):
+        stripped = line.strip()
+        if "|" not in stripped:
+            return []
+        if stripped.startswith("|"):
+            stripped = stripped[1:]
+        if stripped.endswith("|"):
+            stripped = stripped[:-1]
+        return [cell.strip() for cell in stripped.split("|")]
+
+    def _is_table_row(self, line):
+        cells = self._table_cells(line)
+        return len(cells) >= 2 and any(cell for cell in cells)
+
+    def _is_table_separator_row(self, line):
+        cells = self._table_cells(line)
+        return len(cells) >= 2 and all(re.match(r"^:?-+:?$", cell.replace(" ", "")) for cell in cells)
+
+    def _markdown_table_ranges(self, text):
+        ranges = []
+        line_offsets = self._line_start_offsets(text)
+
+        i = 0
+        while i < len(self.lines) - 1:
+            if not self._is_table_row(self.lines[i]) or not self._is_table_separator_row(self.lines[i + 1]):
+                i += 1
+                continue
+
+            end_line = i + 1
+            j = i + 2
+            while j < len(self.lines) and self._is_table_row(self.lines[j]):
+                end_line = j
+                j += 1
+
+            end_pos = min(len(text), line_offsets[end_line] + len(self.lines[end_line]))
+            ranges.append((line_offsets[i], end_pos))
+            i = end_line + 1
+
+        return ranges
+
+    def _html_table_ranges(self, text):
+        table_pattern = re.compile(
+            r"""
+            (?:
+                (?:<html[^>]*>\s*<body[^>]*>\s*<table[^>]*>.*?</table>\s*</body>\s*</html>)
+                |
+                (?:<body[^>]*>\s*<table[^>]*>.*?</table>\s*</body>)
+                |
+                (?:<table[^>]*>.*?</table>)
+            )
+            """,
+            re.VERBOSE | re.DOTALL | re.IGNORECASE,
+        )
+        return [(match.start(), match.end()) for match in table_pattern.finditer(text)]
+
+    def _merge_ranges(self, ranges):
+        if not ranges:
+            return []
+
+        merged = []
+        for start, end in sorted(ranges):
+            if not merged or start > merged[-1][1]:
+                merged.append((start, end))
+            else:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        return merged
+
+    def _protected_ranges(self, text):
+        return self._merge_ranges(self._fenced_code_ranges(text) + self._markdown_table_ranges(text) + self._html_table_ranges(text))
+
     def _append_delimited_section(self, sections, text, start, end, include_meta):
         part = text[start:end]
         if not part or not part.strip():
@@ -195,9 +265,9 @@ class MarkdownElementExtractor:
     def _extract_delimited_elements(self, text, delimiters, include_meta=False):
         sections = []
         pattern = re.compile(delimiters)
-        protected_ranges = self._fenced_code_ranges(text)
+        protected_ranges = self._protected_ranges(text)
         if protected_ranges:
-            logging.debug("markdown_parser: detected %d fenced ranges for delimiter extraction", len(protected_ranges))
+            logging.debug("markdown_parser: detected %d protected ranges for delimiter extraction", len(protected_ranges))
         protected_idx = 0
         last_end = 0
 
@@ -232,7 +302,79 @@ class MarkdownElementExtractor:
             dels = self.get_delimiters(delimiter)
         if len(dels) > 0:
             text = "\n".join(self.lines)
-            return self._extract_delimited_elements(text, dels, include_meta)
+            sections = self._extract_delimited_elements(text, dels, include_meta)
+
+            # Attach lone header lines to the section that follows them so that
+            # "## Title\n" never becomes an isolated chunk when the delimiter
+            # splits at every newline.  A header is "lone" when it occupies a
+            # single line (no embedded newline after stripping).
+            def _is_lone_header(section_content):
+                stripped = section_content.strip()
+                return bool(re.match(r"^#{1,6}\s+\S", stripped)) and "\n" not in stripped
+
+            def _is_attachable_body(section_content):
+                """True when the following chunk is prose body, not code/table/list/etc."""
+                stripped = section_content.strip()
+                if not stripped:
+                    return False
+                first_line = stripped.split("\n", 1)[0]
+                if self._get_fence_marker(first_line):
+                    return False
+                if first_line.lstrip().startswith("|"):
+                    return False
+                if re.match(r"^\S+\s*\|", first_line):
+                    return False
+                if first_line.lstrip().startswith("<"):
+                    return False
+                if re.match(r"^\s*[-*+]\s+", first_line) or re.match(r"^\s*\d+\.\s+", first_line):
+                    return False
+                if first_line.lstrip().startswith(">"):
+                    return False
+                return True
+
+            merged = []
+            merged_header_count = 0
+            i = 0
+            while i < len(sections):
+                content = sections[i]["content"] if include_meta else sections[i]
+                if _is_lone_header(content):
+                    header_parts = [content.strip()]
+                    j = i + 1
+                    while j < len(sections):
+                        next_content = sections[j]["content"] if include_meta else sections[j]
+                        if not _is_lone_header(next_content):
+                            break
+                        header_parts.append(next_content.strip())
+                        j += 1
+                    if j < len(sections):
+                        body_content = sections[j]["content"] if include_meta else sections[j]
+                        if _is_attachable_body(body_content):
+                            combined = "\n".join(header_parts) + "\n" + body_content
+                            if include_meta:
+                                merged.append(
+                                    {
+                                        **sections[i],
+                                        "content": combined,
+                                        "end_line": sections[j]["end_line"],
+                                    }
+                                )
+                            else:
+                                merged.append(combined)
+                            merged_header_count += len(header_parts)
+                            i = j + 1
+                            continue
+                    for k in range(i, j):
+                        merged.append(sections[k])
+                    i = j
+                    continue
+                merged.append(sections[i])
+                i += 1
+            if merged_header_count:
+                logging.debug(
+                    "markdown_parser: merged %d lone header line(s) into following sections",
+                    merged_header_count,
+                )
+            return merged
         while i < len(self.lines):
             line = self.lines[i]
 

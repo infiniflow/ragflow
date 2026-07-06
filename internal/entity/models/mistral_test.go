@@ -339,7 +339,7 @@ func TestMistralListModelsHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if len(ids) != 3 || ids[0] != "mistral-large-latest" || ids[2] != "mistral-embed" {
+	if len(ids) != 3 || ids[0].Name != "mistral-large-latest" || ids[2].Name != "mistral-embed" {
 		t.Errorf("ids=%v, want [mistral-large-latest mistral-small-latest mistral-embed]", ids)
 	}
 }

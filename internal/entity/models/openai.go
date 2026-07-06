@@ -30,111 +30,72 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // OpenAIModel implements ModelDriver for OpenAI (GPT models).
-// The non-streaming call timeout is the shared nonStreamCallTimeout
-// constant defined alongside the xAI driver in this package.
 type OpenAIModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewOpenAIModel creates a new OpenAI model instance.
-//
-// We clone http.DefaultTransport so we keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the few connection-pool fields we care about.
-//
-// The Client itself has no Timeout. http.Client.Timeout would also
-// cap the time spent reading the response body, which would cut off
-// long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
-// callers wrap each request with context.WithTimeout instead.
 func NewOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenAIModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	// Cap how long the client waits for the first response header.
-	// This protects ChatStreamlyWithSender, which has no client-wide
-	// timeout, against a server that opens the TCP connection and
-	// then never sends a response.
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &OpenAIModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (o *OpenAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewOpenAIModel(baseURL, o.URLSuffix)
+	return NewOpenAIModel(baseURL, o.baseModel.URLSuffix)
 }
 
 func (o *OpenAIModel) Name() string {
 	return "openai"
 }
 
-// baseURLForRegion returns the base URL for the given region, or an
-// error if no entry exists. This makes a misconfigured region fail
-// fast with a clear message, instead of silently producing a relative
-// URL that the HTTP transport then rejects.
-func (o *OpenAIModel) baseURLForRegion(region string) (string, error) {
-	base, ok := o.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("openai: no base URL configured for region %q", region)
-	}
-	return base, nil
-}
-
 // ChatWithMessages sends multiple messages with roles and returns the response
 func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := o.baseURLForRegion(region)
+	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Chat)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Chat)
 
-	// Convert messages to the format expected by the API
+	// Convert messages to API format (supports multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
+		apiMsg := map[string]interface{}{
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMsg["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMsg["tool_calls"] = msg.ToolCalls
+		}
+		apiMessages[i] = apiMsg
 	}
 
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   false,
 	}
 
-	// Note: do NOT propagate chatModelConfig.Stream into the request body
-	// here. ChatWithMessages parses a single JSON response, so SSE/stream
-	// must always be off for this code path.
 	if chatModelConfig != nil {
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
@@ -151,6 +112,21 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+			tc := "auto"
+			if chatModelConfig.ToolChoice != nil {
+				tc = *chatModelConfig.ToolChoice
+			}
+			reqBody["tool_choice"] = tc
+		}
+	}
+
+	// Qwen3 family: disable thinking by default (matches Python's
+	// _apply_model_family_policies in rag/llm/chat_model.py:119-121).
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -169,7 +145,7 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -205,9 +181,9 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
+	var content string
+	if c, ok := messageMap["content"].(string); ok {
+		content = c
 	}
 
 	// OpenAI reasoning models (o-series and similar) return reasoning text in
@@ -220,58 +196,81 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		}
 	}
 
+	var toolCalls []map[string]interface{}
+	if tcs, ok := messageMap["tool_calls"].([]interface{}); ok {
+		for _, tc := range tcs {
+			if tcMap, ok := tc.(map[string]interface{}); ok {
+				toolCalls = append(toolCalls, tcMap)
+			}
+		}
+	}
+
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
+	}
+
+	// Extract usage split (prompt/completion/total) from the raw API
+	// response for accurate per-call token accounting. Non-OpenAI
+	// providers that implement the OpenAI-compat API surface (DeepSeek,
+	// Moonshot, etc.) also return a "usage" key with the same shape.
+	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
+		chatResponse.Usage = &ChatUsage{
+			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
+		}
 	}
 
 	return chatResponse, nil
 }
 
-// ChatStreamlyWithSender sends messages and streams the response via the
-// sender function. Used for streaming chat responses with no extra channel.
+// ChatStreamlyWithSender sends messages and streams the response
 func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
-	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := o.baseURLForRegion(region)
+	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Chat)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format (supports multimodal content)
+	// Convert messages to API format (supports multimodal content and tool messages)
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
+		apiMsg := map[string]interface{}{
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMsg["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMsg["tool_calls"] = msg.ToolCalls
+		}
+		apiMessages[i] = apiMsg
 	}
 
-	// Build request body with streaming on by default
+	// Build request body with streaming on by default.
+	// stream_options.include_usage asks the provider to attach a
+	// usage block to the final streaming chunk (mirrors Python's
+	// chat_model.py _stream_options / stream_options.include_usage).
 	reqBody := map[string]interface{}{
 		"model":    modelName,
 		"messages": apiMessages,
 		"stream":   true,
+		"stream_options": map[string]interface{}{
+			"include_usage": true,
+		},
 	}
 
 	if chatModelConfig != nil {
-		// Refuse to run if the caller explicitly asked for stream=false.
-		// The body of this method only knows how to read SSE, so a non-SSE
-		// JSON response would be parsed as if it were a stream and produce
-		// no chunks. Better to fail clearly. Leave reqBody["stream"] as
-		// the default (true) when Stream is nil or true.
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
@@ -291,6 +290,20 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+			tc := "auto"
+			if chatModelConfig.ToolChoice != nil {
+				tc = *chatModelConfig.ToolChoice
+			}
+			reqBody["tool_choice"] = tc
+		}
+	}
+
+	// Qwen3 family: disable thinking by default.
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -298,11 +311,6 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Use an explicit background context here so the request is at least
-	// cancellable in principle. We do not attach a hard deadline because
-	// SSE streams are long-lived. The transport's ResponseHeaderTimeout
-	// caps the connection-establishment phase. Threading a real ctx
-	// through the ModelDriver interface is a wider change for a follow-up.
 	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -311,7 +319,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -322,17 +330,15 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: read line by line. The default bufio.Scanner buffer
-	// is 64KB, which can be too small for long SSE chunks. Bump it to
-	// 1MB so we never silently truncate a long data: line.
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	// sawTerminal flips to true when the upstream actually told us the
-	// stream is over (either a "[DONE]" marker or a non-empty
-	// finish_reason). If the body closes before either of those, we
-	// must not emit a synthetic "[DONE]" because that would hide a
-	// truncated response from the caller.
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]interface{})
+	// Capture the authoritative usage block from the final streaming
+	// chunk (when provider honours stream_options.include_usage=true).
+	// The last chunk in the stream carries the "usage" key alongside
+	// empty choices; we overwrite on every chunk so the final frame
+	// wins, matching Python's chat_model.py usage_from_response loop.
+	var streamUsage *ChatUsage
+	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -356,6 +362,13 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 			continue
 		}
 
+		// Extract usage from this chunk. When stream_options.include_usage
+		// is true, the final chunk carries the full usage breakdown at the
+		// top level of the event alongside (possibly empty) choices.
+		if pt, ct, tt := extractUsageFromMap(event); tt > 0 {
+			streamUsage = &ChatUsage{PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt}
+		}
+
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
 			continue
@@ -369,6 +382,37 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
 			continue
+		}
+
+		// Accumulate streaming tool_call deltas (mirrors Python's
+		// async_chat_streamly_with_tools in rag/llm/chat_model.py:500-509).
+		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
+			for _, tc := range tcs {
+				if tcMap, ok := tc.(map[string]interface{}); ok {
+					idxF, ok := tcMap["index"].(float64)
+					if !ok {
+						continue
+					}
+					idx := int(idxF)
+					existing, hasExisting := accumulatedToolCalls[idx]
+					if hasExisting {
+						if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+							if args, ok := fn["arguments"].(string); ok {
+								if ef, ok := existing["function"].(map[string]interface{}); ok {
+									if ea, ok := ef["arguments"].(string); ok {
+										ef["arguments"] = ea + args
+									} else {
+										ef["arguments"] = args
+									}
+								}
+							}
+						}
+					} else {
+						accumulatedToolCalls[idx] = cloneMap(tcMap)
+					}
+				}
+			}
+			continue // tool_call deltas don't carry content
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -388,15 +432,27 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
 			sawTerminal = true
-			break
 		}
 	}
-
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 	if !sawTerminal {
 		return fmt.Errorf("openai: stream ended before [DONE] or finish_reason")
+	}
+
+	// Populate ToolCallsResult with accumulated streaming tool_calls.
+	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
+		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
+		for _, tc := range accumulatedToolCalls {
+			tcs = append(tcs, tc)
+		}
+		chatModelConfig.ToolCallsResult = &tcs
+	}
+
+	// Populate UsageResult with the authoritative usage from the stream.
+	if streamUsage != nil && chatModelConfig != nil {
+		chatModelConfig.UsageResult = streamUsage
 	}
 
 	// Send the [DONE] marker for OpenAI compatibility
@@ -426,33 +482,25 @@ type openaiUsage struct {
 	TotalTokens  int `json:"total_tokens"`
 }
 
-// Embed turns a list of texts into embedding vectors using the
-// OpenAI /v1/embeddings endpoint (e.g. text-embedding-3-small,
-// text-embedding-3-large, text-embedding-ada-002). The output has
-// one vector per input, in the same order the inputs were given.
 func (o *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := o.baseURLForRegion(region)
+	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Embedding)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -478,7 +526,7 @@ func (o *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -510,21 +558,17 @@ func (o *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APICon
 }
 
 // ListModels returns the list of model ids visible to the API key.
-func (o *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (o *OpenAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := o.baseURLForRegion(region)
+	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Models)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -537,7 +581,7 @@ func (o *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	// GET has no body, so Content-Type is not needed.
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -553,30 +597,15 @@ func (o *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
+	if modelList.Models == nil {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0)
-	for _, model := range data {
-		modelMap, ok := model.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		modelName, ok := modelMap["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, modelName)
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 // Balance is not exposed by the OpenAI API, so this returns "no such method".
@@ -611,7 +640,7 @@ func (o *OpenAIModel) TranscribeAudio(modelName *string, file *string, apiConfig
 
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -640,7 +669,7 @@ func (o *OpenAIModel) TranscribeAudioWithSender(modelName *string, file *string,
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -670,31 +699,15 @@ func (o *OpenAIModel) TranscribeAudioWithSender(modelName *string, file *string,
 	}
 
 	sentDelta := false
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		dataStr := strings.TrimSpace(line[6:])
-		if dataStr == "" {
-			continue
-		}
-		if dataStr == "[DONE]" {
-			break
-		}
-
-		var event struct {
-			Type  string `json:"type"`
-			Delta string `json:"delta"`
-			Text  string `json:"text"`
-		}
-		if err = json.Unmarshal([]byte(dataStr), &event); err != nil {
-			continue
-		}
-
+	if _, err = ParseSSEStream[struct {
+		Type  string `json:"type"`
+		Delta string `json:"delta"`
+		Text  string `json:"text"`
+	}](resp.Body, func(event struct {
+		Type  string `json:"type"`
+		Delta string `json:"delta"`
+		Text  string `json:"text"`
+	}) error {
 		switch {
 		case event.Delta != "":
 			if err = sender(&event.Delta, nil); err != nil {
@@ -711,8 +724,8 @@ func (o *OpenAIModel) TranscribeAudioWithSender(modelName *string, file *string,
 				return err
 			}
 		}
-	}
-	if err = scanner.Err(); err != nil {
+		return nil
+	}); err != nil {
 		return fmt.Errorf("error reading OpenAI ASR stream: %w", err)
 	}
 
@@ -746,7 +759,7 @@ func (o *OpenAIModel) AudioSpeech(modelName *string, audioContent *string, apiCo
 		return nil, err
 	}
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -777,7 +790,7 @@ func (o *OpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *str
 		req.Header.Set("Accept", "text/event-stream")
 	}
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -795,8 +808,8 @@ func (o *OpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *str
 }
 
 func (o *OpenAIModel) newOpenAIASRRequest(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, stream bool) (*http.Request, string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, "", fmt.Errorf("api key is required")
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, "", err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, "", fmt.Errorf("model name is required")
@@ -804,24 +817,21 @@ func (o *OpenAIModel) newOpenAIASRRequest(ctx context.Context, modelName *string
 	if file == nil || *file == "" {
 		return nil, "", fmt.Errorf("file is missing")
 	}
-	if strings.TrimSpace(o.URLSuffix.ASR) == "" {
+	if strings.TrimSpace(o.baseModel.URLSuffix.ASR) == "" {
 		return nil, "", fmt.Errorf("openai ASR URL suffix is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := o.baseURLForRegion(region)
+	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, "", err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(o.URLSuffix.ASR, "/"))
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(o.baseModel.URLSuffix.ASR, "/"))
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
 	audioFile, err := os.Open(*file)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to open audio file: %w", err)
@@ -874,8 +884,8 @@ func (o *OpenAIModel) newOpenAIASRRequest(ctx context.Context, modelName *string
 }
 
 func (o *OpenAIModel) newOpenAITTSRequest(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, stream bool) (*http.Request, string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, "", fmt.Errorf("api key is required")
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, "", err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, "", fmt.Errorf("model name is required")
@@ -883,20 +893,16 @@ func (o *OpenAIModel) newOpenAITTSRequest(ctx context.Context, modelName *string
 	if audioContent == nil || *audioContent == "" {
 		return nil, "", fmt.Errorf("audio content is empty")
 	}
-	if strings.TrimSpace(o.URLSuffix.TTS) == "" {
+	if strings.TrimSpace(o.baseModel.URLSuffix.TTS) == "" {
 		return nil, "", fmt.Errorf("openai TTS URL suffix is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := o.baseURLForRegion(region)
+	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, "", err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(o.URLSuffix.TTS, "/"))
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(o.baseModel.URLSuffix.TTS, "/"))
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -1050,4 +1056,56 @@ func (o *OpenAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) 
 
 func (o *OpenAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+// extractUsageFromMap reads the "usage" key from an OpenAI-style API
+// response and returns (prompt_tokens, completion_tokens, total_tokens).
+// All return values are zero when the response carries no usage block.
+func extractUsageFromMap(raw map[string]interface{}) (int, int, int) {
+	if raw == nil {
+		return 0, 0, 0
+	}
+	ru, ok := raw["usage"]
+	if !ok {
+		return 0, 0, 0
+	}
+	usage, ok := ru.(map[string]interface{})
+	if !ok {
+		return 0, 0, 0
+	}
+	get := func(keys ...string) int {
+		for _, k := range keys {
+			v, ok := usage[k]
+			if !ok {
+				continue
+			}
+			switch val := v.(type) {
+			case float64:
+				return int(val)
+			case int:
+				return val
+			case json.Number:
+				n, err := val.Int64()
+				if err == nil {
+					return int(n)
+				}
+			}
+		}
+		return 0
+	}
+	pt := get("prompt_tokens", "input_tokens")
+	ct := get("completion_tokens", "output_tokens")
+	tt := get("total_tokens")
+	if tt == 0 {
+		tt = pt + ct
+	}
+	return pt, ct, tt
+}
+
+func cloneMap(m map[string]interface{}) map[string]interface{} {
+	cp := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
 }

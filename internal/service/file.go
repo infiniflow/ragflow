@@ -18,17 +18,23 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"html"
 	"io"
 	"mime/multipart"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
+	"regexp"
 	"strings"
 	"time"
 
@@ -39,6 +45,7 @@ import (
 type FileService struct {
 	fileDAO          *dao.FileDAO
 	file2DocumentDAO *dao.File2DocumentDAO
+	documentService  *DocumentService
 }
 
 // NewFileService create file service
@@ -46,6 +53,7 @@ func NewFileService() *FileService {
 	return &FileService{
 		fileDAO:          dao.NewFileDAO(),
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
+		documentService:  NewDocumentService(),
 	}
 }
 
@@ -88,6 +96,11 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 		if err := s.initDatasetDocs(pfID, tenantID); err != nil {
 			return nil, fmt.Errorf("failed to initialize dataset docs: %w", err)
 		}
+
+		// Initialize skills folder (matching Python init_skills_folder logic)
+		if err := s.initSkillsFolder(pfID, tenantID); err != nil {
+			return nil, fmt.Errorf("failed to initialize skills folder: %w", err)
+		}
 	}
 
 	// Check if parent folder exists
@@ -107,9 +120,15 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 		return nil, fmt.Errorf("File not found!")
 	}
 
-	// Process files to add additional info
+	// Process files to add additional info, deduplicating by ID as a safety net
+	// against any leftover duplicate rows (e.g. duplicate 'skills' or '.knowledgebase' folders).
 	fileResponses := make([]map[string]interface{}, 0, len(files))
+	seenIDs := make(map[string]struct{})
 	for _, file := range files {
+		if _, ok := seenIDs[file.ID]; ok {
+			continue
+		}
+		seenIDs[file.ID] = struct{}{}
 		fileInfo := s.toFileInfo(file)
 
 		// If folder, calculate size and check for child folders
@@ -151,8 +170,54 @@ func (s *FileService) initDatasetDocs(rootID, tenantID string) error {
 // DatasetFolderName is the folder name for dataset
 const DatasetFolderName = ".knowledgebase"
 
+// SkillsFolderName is the folder name for skills
+const SkillsFolderName = "skills"
+
+// initSkillsFolder initializes the skills folder under the root folder.
+// Deduplicates duplicate entries that may have been created by
+// concurrent race conditions (TOCTOU).
+func (s *FileService) initSkillsFolder(rootID, tenantID string) error {
+	existing := s.fileDAO.Query(SkillsFolderName, rootID, tenantID)
+	if len(existing) > 0 {
+		if len(existing) > 1 {
+			common.Logger.Warn(fmt.Sprintf(
+				"Found %d duplicate '%s' folders under root %s, keeping only the first",
+				len(existing), SkillsFolderName, rootID,
+			))
+			keepID := existing[0].ID
+			for _, dup := range existing[1:] {
+				children, _ := s.fileDAO.ListAllFilesByParentID(dup.ID)
+				for _, child := range children {
+					s.fileDAO.UpdateByID(child.ID, map[string]interface{}{"parent_id": keepID})
+				}
+				if delErr := s.fileDAO.Delete(dup.ID); delErr != nil {
+					common.Logger.Warn(fmt.Sprintf("Failed to delete duplicate skills folder %s: %v", dup.ID, delErr))
+				}
+			}
+		}
+		return nil
+	}
+
+	folder := &entity.File{
+		ID:         s.generateUUID(),
+		ParentID:   rootID,
+		TenantID:   tenantID,
+		CreatedBy:  tenantID,
+		Name:       SkillsFolderName,
+		Type:       FileTypeFolder,
+		Size:       0,
+		SourceType: "",
+	}
+	return s.fileDAO.Insert(folder)
+}
+
 // FileSourceDataset represents dataset as file source
 const FileSourceDataset = "knowledgebase"
+
+var (
+	assertURLSafe    = utility.AssertURLSafe
+	pinnedHTTPClient = utility.PinnedHTTPClient
+)
 
 // toFileResponse converts file model to response format
 func (s *FileService) toFileResponse(file *entity.File) map[string]interface{} {
@@ -365,7 +430,7 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 			return nil, fmt.Errorf("failed to store file: %w", err)
 		}
 
-		uniqueName := s.getUniqueFilename(fileObjNames[len(fileObjNames)-1], lastFolder.ID)
+		uniqueName := s.getUniqueFilename(fileObjNames[len(fileObjNames)-1], lastFolder.ID, tenantID)
 
 		fileRecord := &entity.File{
 			ID:         s.generateUUID(),
@@ -375,7 +440,7 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 			Name:       uniqueName,
 			Location:   &location,
 			Size:       int64(len(data)),
-			Type:       fileType,
+			Type:       string(fileType),
 			SourceType: "",
 		}
 
@@ -387,6 +452,57 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 	}
 
 	return result, nil
+}
+
+// UploadInfos mirrors Python's upload_info file branch: store raw bytes in the
+// per-user downloads bucket and return lightweight upload descriptors instead
+// of creating full File rows in the file-management tree.
+func (s *FileService) UploadInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	results := make([]map[string]interface{}, 0, len(files))
+	for _, fileHeader := range files {
+		filename := fileHeader.Filename
+		if err := s.checkUploadInfoHealth(userID, filename); err != nil {
+			return nil, err
+		}
+		src, err := fileHeader.Open()
+		if err != nil {
+			return nil, fmt.Errorf("failed to open uploaded file: %w", err)
+		}
+		data, readErr := readUploadInfoData(src)
+		src.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read file data: %w", readErr)
+		}
+
+		contentType := fileHeader.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = http.DetectContentType(data)
+		}
+		filename, contentType, data = normalizeUploadInfoContent(filename, contentType, data)
+		resp, err := s.storeUploadInfoBlob(storageImpl, userID, filename, contentType, data)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, resp)
+	}
+	return results, nil
+}
+
+func readUploadInfoData(r io.Reader) ([]byte, error) {
+	limited := &io.LimitedReader{R: r, N: maxRemoteFileSize + 1}
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxRemoteFileSize {
+		return nil, fmt.Errorf("file size exceeds %d bytes", maxRemoteFileSize)
+	}
+	return data, nil
 }
 
 func (s *FileService) parseFilePath(filename string) []string {
@@ -414,8 +530,8 @@ func (s *FileService) createFolderRecursive(parentFolder *entity.File, names []s
 	return s.createFolderRecursive(newFolder, names, count+1, tenantID)
 }
 
-func (s *FileService) getUniqueFilename(name, parentID string) string {
-	existingFiles := s.fileDAO.Query(name, parentID)
+func (s *FileService) getUniqueFilename(name, parentID, tenantID string) string {
+	existingFiles := s.fileDAO.Query(name, parentID, tenantID)
 	if len(existingFiles) == 0 {
 		return name
 	}
@@ -427,7 +543,7 @@ func (s *FileService) getUniqueFilename(name, parentID string) string {
 	counter := 1
 	for {
 		newName := fmt.Sprintf("%s_%d%s", nameWithoutExt, counter, ext)
-		existingFiles = s.fileDAO.Query(newName, parentID)
+		existingFiles = s.fileDAO.Query(newName, parentID, tenantID)
 		if len(existingFiles) == 0 {
 			return newName
 		}
@@ -454,7 +570,7 @@ func (s *FileService) CreateFolder(tenantID, name, parentID, fileType string) (m
 		return nil, fmt.Errorf("Parent Folder Doesn't Exist!")
 	}
 
-	existingFiles := s.fileDAO.Query(name, parentID)
+	existingFiles := s.fileDAO.Query(name, parentID, tenantID)
 	if len(existingFiles) > 0 {
 		return nil, fmt.Errorf("Duplicated folder name in the same folder.")
 	}
@@ -537,8 +653,6 @@ func (s *FileService) checkFileTeamPermission(file *entity.File, uid string) boo
 	}
 
 	kbDAO := dao.NewKnowledgebaseDAO()
-	userTenantDAO := dao.NewUserTenantDAO()
-
 	for _, datasetID := range datasetIDs {
 		ds, err := kbDAO.GetByID(datasetID)
 		if err != nil || ds == nil {
@@ -546,7 +660,7 @@ func (s *FileService) checkFileTeamPermission(file *entity.File, uid string) boo
 		}
 
 		// Check KB tenant permission
-		if s.checkDatasetTeamPermission(ds, uid, userTenantDAO) {
+		if s.checkDatasetTeamPermission(ds, uid) {
 			return true
 		}
 	}
@@ -556,31 +670,8 @@ func (s *FileService) checkFileTeamPermission(file *entity.File, uid string) boo
 
 // checkDatasetTeamPermission checks if user has permission to access the dataset
 // Matches Python's check_kb_team_permission function
-func (s *FileService) checkDatasetTeamPermission(ds *entity.Knowledgebase, uid string, userTenantDAO *dao.UserTenantDAO) bool {
-	// KB's tenant directly authorized
-	if ds.TenantID == uid {
-		return true
-	}
-
-	// Check permission type
-	permission := ds.Permission
-	if permission != string(entity.TenantPermissionTeam) {
-		return false
-	}
-
-	// Check if user joined the tenant
-	joinedTenantIDs, err := userTenantDAO.GetTenantIDsByUserID(uid)
-	if err != nil || len(joinedTenantIDs) == 0 {
-		return false
-	}
-
-	for _, tenantID := range joinedTenantIDs {
-		if tenantID == ds.TenantID {
-			return true
-		}
-	}
-
-	return false
+func (s *FileService) checkDatasetTeamPermission(ds *entity.Knowledgebase, uid string) bool {
+	return hasKBTeamPermission(ds, uid, dao.NewTenantDAO())
 }
 
 // deleteSingleFile deletes a single file (not folder)
@@ -602,35 +693,14 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 		return fmt.Errorf("failed to get file2document mappings: %w", err)
 	}
 	if len(informs) > 0 {
-		documentDAO := dao.NewDocumentDAO()
-		datasetDAO := dao.NewKnowledgebaseDAO()
-
 		for _, inform := range informs {
 			if inform.DocumentID == nil {
 				continue
 			}
 			docID := *inform.DocumentID
-
-			doc, err := documentDAO.GetByID(docID)
-			if err == nil && doc != nil {
-				// Get tenant ID from KB
-				ds, err := datasetDAO.GetByID(doc.KbID)
-				if err == nil && ds != nil {
-					tenantID := ds.TenantID
-					if tenantID != "" {
-						// Delete from document engine
-						if err := s.deleteDocumentFromEngine(ctx, doc, tenantID); err != nil {
-							common.Logger.Error(fmt.Sprintf("Fail to delete document from engine: %s, error: %v", doc.ID, err))
-						}
-					}
-				}
-
-				// Delete document record
-				if _, err := documentDAO.Delete(docID); err != nil {
-					common.Logger.Error(fmt.Sprintf("Fail to delete document: %s, error: %v", docID, err))
-				}
+			if err := s.documentService.RemoveDocumentKeepFile(docID); err != nil {
+				common.Logger.Error(fmt.Sprintf("Fail to remove document: %s, error: %v", docID, err))
 			}
-
 		}
 
 		// Delete file2document mapping (outside the loop, called once - matching Python behavior)
@@ -644,27 +714,6 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 		return err
 	}
 
-	return nil
-}
-
-// deleteDocumentFromEngine deletes a document from the document engine
-func (s *FileService) deleteDocumentFromEngine(ctx context.Context, doc *entity.Document, tenantID string) error {
-	// Get document engine
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return nil
-	}
-
-	// Build index name: ragflow_<tenant_id>_<kb_id>
-	indexName := fmt.Sprintf("ragflow_%s_%s", tenantID, doc.KbID)
-
-	// Delete document from engine with timeout
-	reqCtx, cancel := context.WithTimeout(ctx, 300*time.Second)
-	defer cancel()
-	condition := map[string]interface{}{"doc_id": doc.ID}
-	if _, err := docEngine.DeleteChunks(reqCtx, condition, indexName, doc.KbID); err != nil {
-		return fmt.Errorf("delete document from engine: %w", err)
-	}
 	return nil
 }
 
@@ -750,6 +799,34 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 		if !s.checkFileTeamPermission(destFolder, uid) {
 			return false, "No authorization to write to destination folder."
 		}
+
+		if destFolder.Type != FileTypeFolder {
+			return false, "Destination is not a folder."
+		}
+
+		destAncestors, err := s.fileDAO.GetAllParentFolders(destFolder.ID)
+		if err != nil {
+			return false, "Parent folder not found!"
+		}
+
+		destAncestorIDs := make(map[string]struct{}, len(destAncestors))
+		for _, folder := range destAncestors {
+			destAncestorIDs[folder.ID] = struct{}{}
+		}
+
+		for _, file := range files {
+			if file.Type != FileTypeFolder {
+				continue
+			}
+
+			if file.ID == destFolder.ID {
+				return false, "Cannot move a folder to itself."
+			}
+
+			if _, ok := destAncestorIDs[file.ID]; ok {
+				return false, "Cannot move a folder into its own subfolder."
+			}
+		}
 	}
 
 	// 5. Validate new_name if provided
@@ -773,7 +850,7 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 		if destFolder != nil {
 			targetParentID = destFolder.ID
 		}
-		existingFiles := s.fileDAO.Query(newName, targetParentID)
+		existingFiles := s.fileDAO.Query(newName, targetParentID, file.TenantID)
 		for _, f := range existingFiles {
 			if f.Name == newName {
 				return false, "Duplicated file name in the same folder."
@@ -782,7 +859,7 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 	} else if destFolder != nil {
 		// Plain move (no rename): check for duplicate names in destination folder
 		for _, file := range files {
-			existingFiles := s.fileDAO.Query(file.Name, destFolder.ID)
+			existingFiles := s.fileDAO.Query(file.Name, destFolder.ID, file.TenantID)
 			for _, f := range existingFiles {
 				// Ignore the source file itself
 				if f.ID != file.ID {
@@ -836,7 +913,7 @@ func (s *FileService) moveEntryRecursive(sourceFile *entity.File, destFolder *en
 
 	if sourceFile.Type == FileTypeFolder {
 		// Handle folder move
-		existingFolders := s.fileDAO.Query(effectiveName, destFolder.ID)
+		existingFolders := s.fileDAO.Query(effectiveName, destFolder.ID, sourceFile.TenantID)
 		var newFolder *entity.File
 		if len(existingFolders) > 0 {
 			// Prevent moving a folder into itself (self-target merge)
@@ -990,4 +1067,396 @@ func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) 
 		Bucket: doc.KbID,
 		Name:   *doc.Location,
 	}, nil
+}
+
+// DownloadAgentFile downloads an agent-generated file directly from MinIO without querying the database.
+func (s *FileService) DownloadAgentFile(tenantID, location string) ([]byte, error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	bucketName := fmt.Sprintf("%s-downloads", tenantID)
+
+	blob, err := storageImpl.Get(bucketName, location)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file from storage: %w", err)
+	}
+
+	return blob, nil
+}
+
+// GetFileContents fetches file contents (text + image) from storage
+// for the given file dicts.
+//   - raw=false: images returned as base64 data URIs in images; non-images parsed and returned as text.
+//   - raw=true:  images returned as raw bytes in images; non-images parsed and returned as text.
+func (s *FileService) GetFileContents(fileDicts []map[string]interface{}, raw bool) (texts []string, images []string, err error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, nil, fmt.Errorf("storage not initialized")
+	}
+
+	for _, fd := range fileDicts {
+		id, _ := fd["id"].(string)
+		if id == "" {
+			continue
+		}
+		file, ferr := s.fileDAO.GetByID(id)
+		if ferr != nil || file == nil || file.Location == nil || *file.Location == "" {
+			continue
+		}
+		data, derr := storageImpl.Get(file.ParentID, *file.Location)
+		if derr != nil || len(data) == 0 {
+			continue
+		}
+		ft := utility.FilenameType(file.Name)
+		if ft == utility.FileTypeVISUAL {
+			if raw {
+				images = append(images, string(data))
+			} else {
+				ext := utility.GetFileExtension(file.Name)
+				mime := utility.GetContentType(ext, string(ft))
+				images = append(images, "data:"+mime+";base64,"+base64.StdEncoding.EncodeToString(data))
+			}
+		} else {
+			texts = append(texts, parseFileContent(file.Name, data))
+		}
+	}
+	return texts, images, nil
+}
+
+// parseFileContent tries to parse a file's contents using the appropriate parser.
+// Falls back to returning raw text if no parser is available.
+func parseFileContent(filename string, data []byte) string {
+	fileType := utility.GetFileType(filename)
+	if fileType == utility.FileTypeOTHER {
+		return string(data)
+	}
+	// Parser config — office_oxide for MS Office formats; other parsers ignore it.
+	parserCfg := map[string]string{"lib_type": "office_oxide"}
+	fp, err := parser.GetParser(fileType, parserCfg)
+	if err != nil {
+		return string(data)
+	}
+	res := fp.ParseWithResult(filename, data)
+	if res.Err != nil {
+		return string(data)
+	}
+	switch res.OutputFormat {
+	case "text":
+		return res.Text
+	case "markdown":
+		return res.Markdown
+	case "html":
+		return res.HTML
+	case "json":
+		return string(data)
+	default:
+		return string(data)
+	}
+}
+
+// toUploadInfoResponse converts a newly-uploaded file record to the shape
+// Python's upload_info endpoint returns.
+func (s *FileService) toUploadInfoResponse(file *entity.File, mimeType string) map[string]interface{} {
+	ext := ""
+	if idx := strings.LastIndex(file.Name, "."); idx >= 0 {
+		ext = strings.ToLower(file.Name[idx+1:])
+	}
+	return map[string]interface{}{
+		"id":          file.ID,
+		"name":        file.Name,
+		"size":        file.Size,
+		"extension":   ext,
+		"mime_type":   mimeType,
+		"created_by":  file.CreatedBy,
+		"created_at":  float64(time.Now().UnixMilli()) / 1000.0,
+		"preview_url": nil,
+	}
+}
+
+// maxRemoteFileSize bounds the body of a ?url= upload (100 MB).
+const maxRemoteFileSize = 100 << 20
+
+// UploadFromURL fetches a remote URL, saves the content to the tenant's root
+// folder, and returns the file metadata map — mirroring Python
+// FileService.upload_info(tenant_id, None, url).
+//
+// The remote fetch is SSRF-guarded (mirrors Python's assert_url_is_safe): the
+// scheme must be http/https and every address the host resolves to must be
+// globally routable; the validated IP is pinned for the actual connection — and
+// re-validated on each redirect hop — to defeat DNS-rebinding. The HTTP client
+// carries connect and overall timeouts, and the response body is bounded with
+// truncation detection so an oversized file is rejected rather than silently
+// clipped.
+func (s *FileService) UploadFromURL(tenantID, rawURL string) (map[string]interface{}, error) {
+	if rawURL == "" {
+		return nil, fmt.Errorf("url is required")
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
+		return nil, fmt.Errorf("invalid or unsafe URL")
+	}
+
+	data, headers, finalURL, err := fetchRemoteFileSafely(rawURL, maxRemoteFileSize)
+	if err != nil {
+		return nil, err
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	contentType := headers.Get("Content-Type")
+	filename := normalizeRemoteUploadFilename(finalURL, contentType, data)
+	if err := s.checkUploadInfoHealth(tenantID, filename); err != nil {
+		return nil, err
+	}
+	filename, contentType, data = normalizeUploadInfoContent(filename, contentType, data)
+	return s.storeUploadInfoBlob(storageImpl, tenantID, filename, contentType, data)
+}
+
+// fetchRemoteFileSafely downloads rawURL with SSRF protection, connect/overall
+// timeouts, and a hard size cap that rejects (rather than truncates) oversized
+// bodies.
+func fetchRemoteFileSafely(rawURL string, maxSize int64) ([]byte, http.Header, string, error) {
+	currentURL := rawURL
+	for redirects := 0; redirects < 10; redirects++ {
+		hostname, resolvedIP, err := assertURLSafe(currentURL)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		client := pinnedHTTPClient(hostname, resolvedIP, 10*time.Second)
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+
+		// runs assertURLSafe(currentURL) on every iteration (including
+		// redirects), which rejects private/loopback IPs and other
+		// SSRF targets. The "nosec G107" comment is for gosec;
+		// CodeQL needs an explicit suppression.
+		// codeql[go/request-forgery] False positive: the loop above
+		resp, err := client.Get(currentURL) // #nosec G107
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("failed to fetch URL: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusMovedPermanently ||
+			resp.StatusCode == http.StatusFound ||
+			resp.StatusCode == http.StatusSeeOther ||
+			resp.StatusCode == http.StatusTemporaryRedirect ||
+			resp.StatusCode == http.StatusPermanentRedirect {
+			location := resp.Header.Get("Location")
+			resp.Body.Close()
+			if location == "" {
+				return nil, nil, "", fmt.Errorf("redirect response missing Location header")
+			}
+			baseURL, parseErr := url.Parse(currentURL)
+			if parseErr != nil {
+				return nil, nil, "", parseErr
+			}
+			nextURL, resolveErr := baseURL.Parse(location)
+			if resolveErr != nil {
+				return nil, nil, "", resolveErr
+			}
+			currentURL = nextURL.String()
+			continue
+		}
+
+		if resp.StatusCode >= 400 {
+			resp.Body.Close()
+			return nil, nil, "", fmt.Errorf("remote URL returned HTTP %d", resp.StatusCode)
+		}
+
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxSize+1))
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, nil, "", fmt.Errorf("failed to read remote content: %w", readErr)
+		}
+		if int64(len(data)) > maxSize {
+			return nil, nil, "", fmt.Errorf("remote file exceeds the maximum allowed size of %d bytes", maxSize)
+		}
+		return data, resp.Header.Clone(), currentURL, nil
+	}
+	return nil, nil, "", fmt.Errorf("stopped after too many redirects")
+}
+
+// isPublicIP reports whether ip is a globally routable address. It mirrors the
+// allowlist intent of Python's assert_url_is_safe (which requires ip.is_global)
+// by rejecting loopback, private, link-local, multicast, unspecified, and
+// carrier-grade NAT ranges. IPv4-mapped IPv6 addresses are handled by the
+// stdlib predicates.
+func isPublicIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsInterfaceLocalMulticast() {
+		return false
+	}
+	// Carrier-grade NAT 100.64.0.0/10 (RFC 6598) — not covered by IsPrivate.
+	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 100 && ip4[1]&0xc0 == 0x40 {
+		return false
+	}
+	return true
+}
+
+func (s *FileService) checkUploadInfoHealth(userID, filename string) error {
+	if filename == "" {
+		return fmt.Errorf("No file selected!")
+	}
+	maxFileNumPerUser := os.Getenv("MAX_FILE_NUM_PER_USER")
+	if maxFileNumPerUser != "" {
+		var maxNum int64
+		if _, err := fmt.Sscanf(maxFileNumPerUser, "%d", &maxNum); err == nil && maxNum > 0 {
+			docCount, err := s.GetDocCount(userID)
+			if err != nil {
+				return fmt.Errorf("failed to get document count: %w", err)
+			}
+			if docCount >= maxNum {
+				return fmt.Errorf("Exceed the maximum file number of a free user!")
+			}
+		}
+	}
+	if len([]byte(filename)) > 255 {
+		return fmt.Errorf("Exceed the maximum length of file name!")
+	}
+	return nil
+}
+
+func (s *FileService) storeUploadInfoBlob(storageImpl storage.Storage, userID, filename, contentType string, data []byte) (map[string]interface{}, error) {
+	location := common.GenerateUUID()
+	bucket := fmt.Sprintf("%s-downloads", userID)
+	if err := storageImpl.Put(bucket, location, data); err != nil {
+		return nil, fmt.Errorf("failed to store file: %w", err)
+	}
+	ext := ""
+	if idx := strings.LastIndex(filename, "."); idx >= 0 {
+		ext = strings.ToLower(filename[idx+1:])
+	}
+	return map[string]interface{}{
+		"id":          location,
+		"name":        filename,
+		"size":        int64(len(data)),
+		"extension":   ext,
+		"mime_type":   contentType,
+		"created_by":  userID,
+		"created_at":  float64(time.Now().UnixMilli()) / 1000.0,
+		"preview_url": nil,
+	}, nil
+}
+
+func normalizeRemoteUploadFilename(rawURL, contentType string, data []byte) string {
+	parsed, err := url.Parse(rawURL)
+	filename := "download"
+	if err == nil {
+		filename = sanitizeFilename(filepath.Base(parsed.Path))
+	}
+	ct := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	if ct == "application/pdf" || bytesLooksLikePDF(data) {
+		if !strings.HasSuffix(strings.ToLower(filename), ".pdf") {
+			filename += ".pdf"
+		}
+	}
+	return filename
+}
+
+func normalizeUploadInfoContent(filename, contentType string, data []byte) (string, string, []byte) {
+	lowerCT := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	if lowerCT == "" {
+		lowerCT = http.DetectContentType(data)
+	}
+
+	if lowerCT == "application/pdf" || bytesLooksLikePDF(data) {
+		if !strings.HasSuffix(strings.ToLower(filename), ".pdf") {
+			filename += ".pdf"
+		}
+		lowerCT = "application/pdf"
+	}
+	if lowerCT == "text/html" || lowerCT == "application/xhtml+xml" || looksLikeHTML(data) {
+		data = htmlToReadableMarkdown(data)
+		if lowerCT == "" {
+			lowerCT = "text/html"
+		}
+	}
+	return filename, lowerCT, data
+}
+
+func bytesLooksLikePDF(data []byte) bool {
+	return len(data) >= 4 && string(data[:4]) == "%PDF"
+}
+
+func looksLikeHTML(data []byte) bool {
+	snippet := strings.ToLower(string(data))
+	return strings.Contains(snippet, "<html") || strings.Contains(snippet, "<body") || strings.Contains(snippet, "<div")
+}
+
+var (
+	htmlScriptStyleRE = regexp.MustCompile(`(?is)<(script|style)[^>]*>.*?</(script|style)>`)
+	htmlTagRE         = regexp.MustCompile(`(?s)<[^>]+>`)
+	multiSpaceRE      = regexp.MustCompile(`[ \t]+`)
+	multiNewlineRE    = regexp.MustCompile(`\n{3,}`)
+)
+
+func htmlToReadableMarkdown(data []byte) []byte {
+	text := string(data)
+	text = htmlScriptStyleRE.ReplaceAllString(text, " ")
+	text = strings.ReplaceAll(text, "<br>", "\n")
+	text = strings.ReplaceAll(text, "<br/>", "\n")
+	text = strings.ReplaceAll(text, "<br />", "\n")
+	text = strings.ReplaceAll(text, "</p>", "\n\n")
+	text = strings.ReplaceAll(text, "</div>", "\n")
+	text = strings.ReplaceAll(text, "</li>", "\n")
+	text = htmlTagRE.ReplaceAllString(text, " ")
+	text = html.UnescapeString(text)
+	text = strings.ReplaceAll(text, "\r", "\n")
+	text = multiSpaceRE.ReplaceAllString(text, " ")
+	text = multiNewlineRE.ReplaceAllString(text, "\n\n")
+	text = strings.TrimSpace(text)
+	return []byte(text)
+}
+
+// reservedDeviceNames are Windows reserved filenames that must never be used.
+var reservedDeviceNames = map[string]bool{
+	"CON": true, "PRN": true, "AUX": true, "NUL": true,
+	"COM1": true, "COM2": true, "COM3": true, "COM4": true, "COM5": true,
+	"COM6": true, "COM7": true, "COM8": true, "COM9": true,
+	"LPT1": true, "LPT2": true, "LPT3": true, "LPT4": true, "LPT5": true,
+	"LPT6": true, "LPT7": true, "LPT8": true, "LPT9": true,
+}
+
+// sanitizeFilename produces a safe, filesystem-friendly filename from an
+// arbitrary URL path segment: it strips directory components, replaces unsafe /
+// control characters, rejects reserved names, bounds the length, and falls back
+// to "download".
+func sanitizeFilename(name string) string {
+	name = filepath.Base(name)
+	name = strings.TrimSpace(name)
+
+	name = strings.Map(func(r rune) rune {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|', 0:
+			return '_'
+		}
+		if r < 0x20 { // control characters
+			return '_'
+		}
+		return r
+	}, name)
+
+	// Strip leading/trailing dots and spaces to avoid hidden or reserved forms.
+	name = strings.Trim(name, ". ")
+
+	if name == "" || name == "." || name == ".." {
+		return "download"
+	}
+	if stem := strings.SplitN(strings.ToUpper(name), ".", 2)[0]; reservedDeviceNames[stem] {
+		return "download"
+	}
+	if len(name) > 255 {
+		name = name[:255]
+	}
+	return name
 }

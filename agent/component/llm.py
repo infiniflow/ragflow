@@ -23,6 +23,7 @@ from typing import Any, AsyncGenerator
 import json_repair
 from functools import partial
 from common.constants import LLMType
+from api.db.services.dialog_service import _stream_with_think_delta
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
 from agent.component.base import ComponentBase, ComponentParamBase
@@ -60,6 +61,7 @@ class LLMParam(ComponentParamBase):
 
     def gen_conf(self):
         conf = {}
+
         def get_attr(nm):
             try:
                 return getattr(self, nm)
@@ -87,18 +89,13 @@ class LLM(ComponentBase):
         model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
         model_type = "chat" if "chat" in model_types else model_types[0]
         chat_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
-        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config,
-                                  max_retries=self._param.max_retries,
-                                  retry_interval=self._param.delay_after_error)
+        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config, max_retries=self._param.max_retries, retry_interval=self._param.delay_after_error)
         self.imgs = []
 
     def get_input_form(self) -> dict[str, dict]:
         res = {}
         for k, v in self.get_input_elements().items():
-            res[k] = {
-                "type": "line",
-                "name": v["name"]
-            }
+            res[k] = {"type": "line", "name": v["name"]}
         return res
 
     def get_input_elements(self) -> dict[str, Any]:
@@ -119,13 +116,40 @@ class LLM(ComponentBase):
     def _sys_prompt_and_msg(self, msg, args):
         if isinstance(self._param.prompts, str):
             self._param.prompts = [{"role": "user", "content": self._param.prompts}]
+        history_size = len(msg)
         for p in self._param.prompts:
-            if msg and msg[-1]["role"] == p["role"]:
-                continue
-            p = deepcopy(p)
-            p["content"] = self.string_format(p["content"], args)
-            msg.append(p)
+            formatted = deepcopy(p)
+            formatted["content"] = self.string_format(formatted["content"], args)
+            if len(msg) == history_size and msg and msg[-1]["role"] == formatted["role"]:
+                msg[-1] = formatted
+            else:
+                msg.append(formatted)
         return msg, self.string_format(self._param.sys_prompt, args)
+
+    @staticmethod
+    def effective_context_length(max_length) -> int:
+        return max_length or 8192
+
+    @classmethod
+    def context_fit_budget(cls, max_length) -> int:
+        return int(cls.effective_context_length(max_length) * 0.97)
+
+    @staticmethod
+    def validate_fitted_messages(msg_fit: list[dict]) -> str | None:
+        if len(msg_fit) < 2:
+            return "**ERROR**: message_fit_in produced insufficient messages for LLM"
+        last = msg_fit[-1]
+        if last.get("role") != "user" or not str(last.get("content") or "").strip():
+            return "**ERROR**: LLM user message is empty after prompt fitting; check model max_tokens context setting"
+        return None
+
+    @classmethod
+    def fit_messages(cls, system_prompt: str, msg: list[dict], max_length) -> tuple[list[dict], str | None]:
+        _, msg_fit = message_fit_in(
+            [{"role": "system", "content": system_prompt}, *deepcopy(msg)],
+            cls.context_fit_budget(max_length),
+        )
+        return msg_fit, cls.validate_fitted_messages(msg_fit)
 
     @staticmethod
     def _extract_data_images(value) -> list[str]:
@@ -225,6 +249,42 @@ class LLM(ComponentBase):
 
         return value
 
+    def _collect_sys_files(self) -> tuple[list[str], list[str]]:
+        files = self._canvas.globals.get("sys.files") or []
+        if not files:
+            logging.debug("[LLM] sys.files empty; skipping attachment injection")
+            return [], []
+
+        logging.info("[LLM] sys.files present: count=%d", len(files))
+
+        explicit = "{sys.files}" in (self._param.sys_prompt or "")
+        if not explicit and isinstance(self._param.prompts, list):
+            for p in self._param.prompts:
+                if isinstance(p, dict) and "{sys.files}" in (p.get("content") or ""):
+                    explicit = True
+                    break
+        if explicit:
+            logging.info("[LLM] prompt template references {sys.files}; skipping auto-injection (explicit=%s)", explicit)
+            return [], []
+
+        text_parts: list[str] = []
+        image_data_uris: list[str] = []
+        for f in files:
+            if not isinstance(f, str):
+                logging.debug("[LLM] skipping non-str sys.files entry: type=%s", type(f).__name__)
+                continue
+            if f.startswith("data:image/"):
+                image_data_uris.append(f)
+            else:
+                text_parts.append(f)
+        logging.info(
+            "[LLM] sys.files split: text_parts=%d image_data_uris=%d (explicit=%s)",
+            len(text_parts),
+            len(image_data_uris),
+            explicit,
+        )
+        return text_parts, image_data_uris
+
     def _prepare_prompt_variables(self):
         self.imgs = []
         if self._param.visual_files_var:
@@ -247,16 +307,47 @@ class LLM(ComponentBase):
                     args[k] = str(args[k])
             self.set_input_value(k, args[k])
 
-        self.imgs = self._uniq_images(self.imgs + extracted_imgs)
+        sys_file_texts, sys_file_imgs = self._collect_sys_files()
+        prev_img_count = len(self.imgs) + len(extracted_imgs)
+        self.imgs = self._uniq_images(self.imgs + extracted_imgs + sys_file_imgs)
+        logging.debug(
+            "[LLM] imgs rebuilt: total=%d sys_files_added=%d unique_dropped=%d",
+            len(self.imgs),
+            len(sys_file_imgs),
+            max(0, prev_img_count + len(sys_file_imgs) - len(self.imgs)),
+        )
         model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
-        model_type = LLMType.CHAT.value if LLMType.CHAT.value in model_types else model_types[0]
+        if self.imgs and LLMType.IMAGE2TEXT.value in model_types:
+            model_type = LLMType.IMAGE2TEXT.value
+        elif LLMType.CHAT.value in model_types:
+            model_type = LLMType.CHAT.value
+        else:
+            model_type = model_types[0]
         model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
         if self.imgs:
-            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), model_config, max_retries=self._param.max_retries,
-                                      retry_interval=self._param.delay_after_error
-                                      )
+            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), model_config, max_retries=self._param.max_retries, retry_interval=self._param.delay_after_error)
 
         msg, sys_prompt = self._sys_prompt_and_msg(self._canvas.get_history(self._param.message_history_window_size)[:-1], args)
+
+        if sys_file_texts:
+            joined = "\n\n".join(sys_file_texts)
+            merged_idx = -1
+            for i in range(len(msg) - 1, -1, -1):
+                if msg[i].get("role") == "user":
+                    msg[i]["content"] = (msg[i].get("content") or "") + "\n\n" + joined
+                    merged_idx = i
+                    break
+            else:
+                msg.append({"role": "user", "content": joined})
+                merged_idx = len(msg) - 1
+            logging.info(
+                "[LLM] sys.files text merged into msg: parts=%d total_chars=%d msg_index=%d action=%s",
+                len(sys_file_texts),
+                len(joined),
+                merged_idx,
+                "merged_into_existing_user" if merged_idx < len(msg) - 1 or msg[merged_idx].get("content", "") != joined else "appended_new_user",
+            )
+
         user_defined_prompt, sys_prompt = self._extract_prompts(sys_prompt)
         if self._param.cite and self._canvas.get_reference()["chunks"]:
             sys_prompt += citation_prompt(user_defined_prompt)
@@ -266,11 +357,11 @@ class LLM(ComponentBase):
     def _extract_prompts(self, sys_prompt):
         pts = {}
         for tag in ["TASK_ANALYSIS", "PLAN_GENERATION", "REFLECTION", "CONTEXT_SUMMARY", "CONTEXT_RANKING", "CITATION_GUIDELINES"]:
-            r = re.search(rf"<{tag}>(.*?)</{tag}>", sys_prompt, flags=re.DOTALL|re.IGNORECASE)
+            r = re.search(rf"<{tag}>(.*?)</{tag}>", sys_prompt, flags=re.DOTALL | re.IGNORECASE)
             if not r:
                 continue
             pts[tag.lower()] = r.group(1)
-            sys_prompt = re.sub(rf"<{tag}>(.*?)</{tag}>", "", sys_prompt, flags=re.DOTALL|re.IGNORECASE)
+            sys_prompt = re.sub(rf"<{tag}>(.*?)</{tag}>", "", sys_prompt, flags=re.DOTALL | re.IGNORECASE)
         return pts, sys_prompt
 
     async def _generate_async(self, msg: list[dict], **kwargs) -> str:
@@ -279,83 +370,32 @@ class LLM(ComponentBase):
         return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
 
     async def _generate_streamly(self, msg: list[dict], **kwargs) -> AsyncGenerator[str, None]:
-        async def delta_wrapper(txt_iter):
-            ans = ""
-            last_idx = 0
-            endswith_think = False
-
-            def delta(txt):
-                nonlocal ans, last_idx, endswith_think
-                delta_ans = txt[last_idx:]
-                ans = txt
-
-                if delta_ans.find("<think>") == 0:
-                    last_idx += len("<think>")
-                    return "<think>"
-                elif delta_ans.find("<think>") > 0:
-                    delta_ans = txt[last_idx:last_idx + delta_ans.find("<think>")]
-                    last_idx += delta_ans.find("<think>")
-                    return delta_ans
-                elif delta_ans.endswith("</think>"):
-                    endswith_think = True
-                elif endswith_think:
-                    endswith_think = False
-                    return "</think>"
-
-                last_idx = len(ans)
-                if ans.endswith("</think>"):
-                    last_idx -= len("</think>")
-                return re.sub(r"(<think>|</think>)", "", delta_ans)
-
-            async for t in txt_iter:
-                yield delta(t)
-
-        if not self.imgs:
-            async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)):
-                yield t
-            return
-
-        async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)):
-            yield t
+        stream_kwargs = {"images": self.imgs} if self.imgs else {}
+        stream_kwargs.update(kwargs)
+        stream = self.chat_mdl.async_chat_streamly_delta(msg[0]["content"], msg[1:], self._param.gen_conf(), **stream_kwargs)
+        async for _, value, _ in _stream_with_think_delta(stream, min_tokens=0):
+            yield value
 
     async def _stream_output_async(self, prompt, msg):
-        _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
+        msg_fit, fit_error = self.fit_messages(prompt, msg, self.chat_mdl.max_length)
+        if fit_error:
+            logging.error("LLM streaming prompt fit error: %s", fit_error)
+            if self.get_exception_default_value():
+                fallback = self.get_exception_default_value()
+                self.set_output("content", fallback)
+                yield fallback
+            else:
+                self.set_output("_ERROR", fit_error)
+            return
+
         answer = ""
-        last_idx = 0
-        endswith_think = False
-
-        def delta(txt):
-            nonlocal answer, last_idx, endswith_think
-            delta_ans = txt[last_idx:]
-            answer = txt
-
-            if delta_ans.find("<think>") == 0:
-                last_idx += len("<think>")
-                return "<think>"
-            elif delta_ans.find("<think>") > 0:
-                delta_ans = txt[last_idx:last_idx + delta_ans.find("<think>")]
-                last_idx += delta_ans.find("<think>")
-                return delta_ans
-            elif delta_ans.endswith("</think>"):
-                endswith_think = True
-            elif endswith_think:
-                endswith_think = False
-                return "</think>"
-
-            last_idx = len(answer)
-            if answer.endswith("</think>"):
-                last_idx -= len("</think>")
-            return re.sub(r"(<think>|</think>)", "", delta_ans)
-
         stream_kwargs = {"images": self.imgs} if self.imgs else {}
         extra_chat_kwargs = self._get_chat_template_kwargs()
         stream_kwargs.update(extra_chat_kwargs)
-        async for ans in self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **stream_kwargs):
+        stream = self.chat_mdl.async_chat_streamly_delta(msg_fit[0]["content"], msg_fit[1:], self._param.gen_conf(), **stream_kwargs)
+        async for _, ans, _ in _stream_with_think_delta(stream, min_tokens=0):
             if self.check_if_canceled("LLM streaming"):
                 return
-
-            if isinstance(ans, int):
-                continue
 
             if ans.find("**ERROR**") >= 0:
                 if self.get_exception_default_value():
@@ -365,11 +405,12 @@ class LLM(ComponentBase):
                     self.set_output("_ERROR", ans)
                 return
 
-            yield delta(ans)
+            answer += ans
+            yield ans
 
         self.set_output("content", answer)
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     async def _invoke_async(self, **kwargs):
         if self.check_if_canceled("LLM processing"):
             return
@@ -394,10 +435,11 @@ class LLM(ComponentBase):
                 if self.check_if_canceled("LLM processing"):
                     return
 
-                _, msg_fit = message_fit_in(
-                    [{"role": "system", "content": prompt_with_schema}, *deepcopy(msg)],
-                    int(self.chat_mdl.max_length * 0.97),
-                )
+                msg_fit, fit_error = self.fit_messages(prompt_with_schema, msg, self.chat_mdl.max_length)
+                if fit_error:
+                    logging.error("LLM structured prompt fit error: %s", fit_error)
+                    self.set_output("_ERROR", fit_error)
+                    return
                 error = ""
                 ans = await self._generate_async(msg_fit, **extra_chat_kwargs)
                 msg_fit.pop(0)
@@ -417,9 +459,7 @@ class LLM(ComponentBase):
 
         downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
         ex = self.exception_handler()
-        if any([self._canvas.get_component_obj(cid).component_name.lower() == "message" for cid in downstreams]) and not (
-            ex and ex["goto"]
-        ):
+        if any([self._canvas.get_component_obj(cid).component_name.lower() == "message" for cid in downstreams]) and not (ex and ex["goto"]):
             self.set_output("content", partial(self._stream_output_async, prompt, deepcopy(msg)))
             return
 
@@ -428,9 +468,11 @@ class LLM(ComponentBase):
             if self.check_if_canceled("LLM processing"):
                 return
 
-            _, msg_fit = message_fit_in(
-                [{"role": "system", "content": prompt}, *deepcopy(msg)], int(self.chat_mdl.max_length * 0.97)
-            )
+            msg_fit, fit_error = self.fit_messages(prompt, msg, self.chat_mdl.max_length)
+            if fit_error:
+                logging.error("LLM prompt fit error: %s", fit_error)
+                error = fit_error
+                break
             error = ""
             ans = await self._generate_async(msg_fit, **extra_chat_kwargs)
             msg_fit.pop(0)
@@ -447,7 +489,7 @@ class LLM(ComponentBase):
             else:
                 self.set_output("_ERROR", error)
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         return asyncio.run(self._invoke_async(**kwargs))
 
@@ -469,11 +511,11 @@ class LLM(ComponentBase):
             return {}
         return {"chat_template_kwargs": chat_template_kwargs}
 
-    async def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str, user_defined_prompt:dict={}):
+    async def add_memory(self, user: str, assist: str, func_name: str, params: dict, results: str, user_defined_prompt: dict = {}):
         summ = await tool_call_summary(self.chat_mdl, func_name, params, results, user_defined_prompt)
         logging.info(f"[MEMORY]: {summ}")
         self._canvas.add_memory(user, assist, summ)
 
     def thoughts(self) -> str:
-        _, msg,_ = self._prepare_prompt_variables()
-        return "⌛Give me a moment—starting from: \n\n" + re.sub(r"(User's query:|[\\]+)", '', msg[-1]['content'], flags=re.DOTALL) + "\n\nI’ll figure out our best next move."
+        _, msg, _ = self._prepare_prompt_variables()
+        return "⌛Give me a moment—starting from: \n\n" + re.sub(r"(User's query:|[\\]+)", "", msg[-1]["content"], flags=re.DOTALL) + "\n\nI’ll figure out our best next move."

@@ -24,6 +24,13 @@ from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
 from common.connection_utils import timeout
 from rag.graphrag.entity_resolution import EntityResolution
+from rag.graphrag.checkpoints import (
+    COMMUNITY_CHECKPOINT,
+    RESOLUTION_CHECKPOINT,
+    cleanup_checkpoints,
+    load_checkpoints,
+    save_checkpoint,
+)
 from rag.graphrag.general.community_reports_extractor import CommunityReportsExtractor
 from rag.graphrag.general.extractor import Extractor
 from rag.graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
@@ -214,11 +221,7 @@ async def load_subgraph_from_store(tenant_id: str, kb_id: str, doc_id: str):
         "source_id": [doc_id],
     }
     try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields, [], condition, [], OrderByExpr(),
-            0, 1, search.index_name(tenant_id), [kb_id]
-        )
+        res = await thread_pool_exec(settings.docStoreConn.search, fields, [], condition, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [kb_id])
         field_map = settings.docStoreConn.get_fields(res, fields)
         for cid, row in field_map.items():
             content = row.get("content_with_weight", "")
@@ -230,19 +233,22 @@ async def load_subgraph_from_store(tenant_id: str, kb_id: str, doc_id: str):
                 sg.graph["source_id"] = [doc_id]
                 logging.info(
                     "Checkpoint hit: subgraph for doc %s (tenant=%s kb=%s) found at chunk %s",
-                    doc_id, tenant_id, kb_id, cid,
+                    doc_id,
+                    tenant_id,
+                    kb_id,
+                    cid,
                 )
                 return sg
             except Exception:
-                logging.exception(
-                    "Failed to parse subgraph JSON for doc %s chunk %s", doc_id, cid
-                )
+                logging.exception("Failed to parse subgraph JSON for doc %s chunk %s", doc_id, cid)
     except Exception:
         logging.exception("Failed to load subgraph from store for doc %s", doc_id)
         return None
     logging.info(
         "Checkpoint miss: no subgraph for doc %s (tenant=%s kb=%s)",
-        doc_id, tenant_id, kb_id,
+        doc_id,
+        tenant_id,
+        kb_id,
     )
     return None
 
@@ -320,19 +326,11 @@ async def run_graphrag_for_kb(
         chunks = []
         current_chunk = ""
 
-        raw_chunks = list(settings.retriever.chunk_list(
-            doc_id,
-            tenant_id,
-            [kb_id],
-            fields=fields_for_chunks,
-            sort_by_position=True,
-            retrieve_all=True
-        ))
+        raw_chunks = list(settings.retriever.chunk_list(doc_id, tenant_id, [kb_id], fields=fields_for_chunks, sort_by_position=True, retrieve_all=True))
 
         callback(msg=f"[GraphRAG] chunk_list returned {len(raw_chunks)} raw chunks for doc:{doc_id}")
 
-        contents = [content for chunk in raw_chunks if (content := chunk.get("content_with_weight", ""))
-]
+        contents = [content for chunk in raw_chunks if (content := chunk.get("content_with_weight", ""))]
         # For NER-based extractionm, no need to batch extract entity and relation
         if _select_extractor_type(graphrag_config) == "ner":
             return contents
@@ -391,6 +389,7 @@ async def run_graphrag_for_kb(
 
                 _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before subgraph generation for doc {doc_id}.", callback)
                 try:
+
                     async def build_subgraph_attempt():
                         checkpoint_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
                         if checkpoint_sg:
@@ -485,6 +484,7 @@ async def run_graphrag_for_kb(
             union_nodes.update(set(sg.nodes()))
 
             try:
+
                 async def merge_subgraph_attempt():
                     current_graph = await get_graph(tenant_id, kb_id)
                     if current_graph and doc_id in current_graph.graph.get("source_id", []):
@@ -710,8 +710,18 @@ async def generate_subgraph(
     }
     cid = chunk_id(chunk)
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before saving subgraph for doc {doc_id}.", callback)
-    await thread_pool_exec(settings.docStoreConn.delete,{"knowledge_graph_kwd": "subgraph", "source_id": doc_id},search.index_name(tenant_id),kb_id,)
-    await thread_pool_exec(settings.docStoreConn.insert,[{"id": cid, **chunk}],search.index_name(tenant_id),kb_id,)
+    await thread_pool_exec(
+        settings.docStoreConn.delete,
+        {"knowledge_graph_kwd": "subgraph", "source_id": doc_id},
+        search.index_name(tenant_id),
+        kb_id,
+    )
+    await thread_pool_exec(
+        settings.docStoreConn.insert,
+        [{"id": cid, **chunk}],
+        search.index_name(tenant_id),
+        kb_id,
+    )
     now = asyncio.get_running_loop().time()
     callback(msg=f"generated subgraph for doc {doc_id} in {now - start:.2f} seconds.")
     return subgraph
@@ -763,10 +773,22 @@ async def resolve_entities(
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled during entity resolution.", callback)
 
     start = asyncio.get_running_loop().time()
+    checkpoints = await load_checkpoints(tenant_id, kb_id, RESOLUTION_CHECKPOINT)
+
+    async def save_resolution_checkpoint(checkpoint_key: str, payload):
+        return await save_checkpoint(tenant_id, kb_id, RESOLUTION_CHECKPOINT, checkpoint_key, payload)
+
     er = EntityResolution(
         llm_bdl,
     )
-    reso = await er(graph, subgraph_nodes, callback=callback, task_id=task_id)
+    reso = await er(
+        graph,
+        subgraph_nodes,
+        callback=callback,
+        task_id=task_id,
+        checkpoints=checkpoints,
+        save_checkpoint=save_resolution_checkpoint,
+    )
     graph = reso.graph
     change = reso.change
     callback(msg=f"Graph resolution removed {len(change.removed_nodes)} nodes and {len(change.removed_edges)} edges.")
@@ -776,6 +798,7 @@ async def resolve_entities(
 
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before saving resolved graph.", callback)
     await set_graph(tenant_id, kb_id, embed_bdl, graph, change, callback)
+    await cleanup_checkpoints(tenant_id, kb_id, RESOLUTION_CHECKPOINT)
     now = asyncio.get_running_loop().time()
     callback(msg=f"Graph resolution done in {now - start:.2f}s.")
 
@@ -794,10 +817,21 @@ async def extract_community(
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before community extraction.", callback)
 
     start = asyncio.get_running_loop().time()
+    checkpoints = await load_checkpoints(tenant_id, kb_id, COMMUNITY_CHECKPOINT)
+
+    async def save_community_checkpoint(checkpoint_key: str, payload):
+        return await save_checkpoint(tenant_id, kb_id, COMMUNITY_CHECKPOINT, checkpoint_key, payload)
+
     ext = CommunityReportsExtractor(
         llm_bdl,
     )
-    cr = await ext(graph, callback=callback, task_id=task_id)
+    cr = await ext(
+        graph,
+        callback=callback,
+        task_id=task_id,
+        checkpoints=checkpoints,
+        save_checkpoint=save_community_checkpoint,
+    )
 
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled during community extraction.", callback)
 
@@ -852,8 +886,15 @@ async def extract_community(
     try:
         existing_res = await thread_pool_exec(
             settings.docStoreConn.search,
-            ["id"], [], {"knowledge_graph_kwd": ["community_report"]}, [], OrderByExpr(),
-            0, 10000, search.index_name(tenant_id), [kb_id],
+            ["id"],
+            [],
+            {"knowledge_graph_kwd": ["community_report"]},
+            [],
+            OrderByExpr(),
+            0,
+            10000,
+            search.index_name(tenant_id),
+            [kb_id],
         )
         existing_fields = settings.docStoreConn.get_fields(existing_res, ["id"])
         old_ids = list(existing_fields.keys())
@@ -881,6 +922,7 @@ async def extract_community(
             logging.exception("Failed to prune %d stale community reports for kb %s", len(stale_ids), kb_id)
 
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled after community indexing.", callback)
+    await cleanup_checkpoints(tenant_id, kb_id, COMMUNITY_CHECKPOINT)
 
     now = asyncio.get_running_loop().time()
     callback(msg=f"Graph indexed {len(cr.structured_output)} communities in {now - start:.2f}s.")

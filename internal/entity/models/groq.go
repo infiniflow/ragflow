@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -29,76 +28,37 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // GroqModel implements ModelDriver for Groq.
-//
-// Groq exposes an OpenAI-compatible chat-completions endpoint at
-// https://api.groq.com/openai/v1/chat/completions and lists models at
-// https://api.groq.com/openai/v1/models.
 type GroqModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewGroqModel(baseURL map[string]string, urlSuffix URLSuffix) *GroqModel {
-	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
-	var transport *http.Transport
-	if ok {
-		transport = defaultTransport.Clone()
-	} else {
-		transport = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		}
-	}
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &GroqModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (g *GroqModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewGroqModel(baseURL, g.URLSuffix)
+	return NewGroqModel(baseURL, g.baseModel.URLSuffix)
 }
 
 func (g *GroqModel) Name() string {
 	return "groq"
 }
 
-func (g *GroqModel) baseURLForRegion(region string) (string, error) {
-	base, ok := g.BaseURL[region]
-	if ok && base != "" {
-		return strings.TrimSuffix(base, "/"), nil
-	}
-	if region == "" {
-		if base, ok := g.BaseURL["default"]; ok && base != "" {
-			return strings.TrimSuffix(base, "/"), nil
-		}
-	}
-	return "", fmt.Errorf("groq: no base URL configured for region %q", region)
-}
-
 func (g *GroqModel) endpoint(apiConfig *APIConfig, suffix string) (string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := g.baseURLForRegion(region)
+	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return "", err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	return fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(suffix, "/")), nil
 }
 
@@ -165,8 +125,8 @@ type groqChatResponse struct {
 }
 
 func (g *GroqModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -175,7 +135,7 @@ func (g *GroqModel) ChatWithMessages(modelName string, messages []Message, apiCo
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	url, err := g.endpoint(apiConfig, g.URLSuffix.Chat)
+	url, err := g.endpoint(apiConfig, g.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +155,7 @@ func (g *GroqModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -233,11 +193,12 @@ func (g *GroqModel) ChatWithMessages(modelName string, messages []Message, apiCo
 }
 
 func (g *GroqModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
-	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -249,7 +210,7 @@ func (g *GroqModel) ChatStreamlyWithSender(modelName string, messages []Message,
 		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 	}
 
-	url, err := g.endpoint(apiConfig, g.URLSuffix.Chat)
+	url, err := g.endpoint(apiConfig, g.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
@@ -270,7 +231,7 @@ func (g *GroqModel) ChatStreamlyWithSender(modelName string, messages []Message,
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -281,30 +242,13 @@ func (g *GroqModel) ChatStreamlyWithSender(modelName string, messages []Message,
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		data := strings.TrimSpace(line[5:])
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event groqChatResponse
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			return fmt.Errorf("groq: invalid SSE event: %w", err)
-		}
+	done, err := ParseSSEStream[groqChatResponse](resp.Body, func(event groqChatResponse) error {
 		if event.Error != nil {
 			return fmt.Errorf("groq: upstream stream error: %v", event.Error)
 		}
 		if len(event.Choices) == 0 {
-			continue
+			return nil
 		}
 
 		choice := event.Choices[0]
@@ -324,13 +268,13 @@ func (g *GroqModel) ChatStreamlyWithSender(modelName string, messages []Message,
 		}
 		if choice.FinishReason != "" || event.FinishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !done && !sawTerminal {
 		return fmt.Errorf("groq: stream ended before [DONE] or finish_reason")
 	}
 
@@ -343,16 +287,16 @@ type groqModelInfo struct {
 }
 
 type groqListModelsResponse struct {
-	Data  []groqModelInfo `json:"data"`
-	Error interface{}     `json:"error"`
+	Data  []DSModel   `json:"data"`
+	Error interface{} `json:"error"`
 }
 
-func (g *GroqModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (g *GroqModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url, err := g.endpoint(apiConfig, g.URLSuffix.Models)
+	url, err := g.endpoint(apiConfig, g.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +311,7 @@ func (g *GroqModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -389,13 +333,7 @@ func (g *GroqModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("groq: upstream error: %v", result.Error)
 	}
 
-	models := make([]string, 0, len(result.Data))
-	for _, model := range result.Data {
-		if model.ID != "" {
-			models = append(models, model.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
 func (g *GroqModel) CheckConnection(apiConfig *APIConfig) error {
@@ -416,22 +354,27 @@ func (g *GroqModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error
 }
 
 func (g *GroqModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", g.BaseURL[region], g.URLSuffix.ASR)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
 	// open audio file
+
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
 	audioFile, err := os.Open(*file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
@@ -500,7 +443,7 @@ func (g *GroqModel) TranscribeAudio(modelName *string, file *string, apiConfig *
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	// send request
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -532,16 +475,19 @@ func (g *GroqModel) TranscribeAudioWithSender(modelName *string, file *string, a
 }
 
 func (g *GroqModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("audio content is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", g.BaseURL[region], g.URLSuffix.TTS)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -570,7 +516,7 @@ func (g *GroqModel) AudioSpeech(modelName *string, audioContent *string, apiConf
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

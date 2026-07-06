@@ -224,11 +224,13 @@ def wrap_request_to_handle_ratelimiting(request_fn: R, default_wait_time_sec: in
 
 _rate_limited_get = wrap_request_to_handle_ratelimiting(requests.get)
 _rate_limited_post = wrap_request_to_handle_ratelimiting(requests.post)
+_rate_limited_request = wrap_request_to_handle_ratelimiting(requests.request)
 
 
 class _RateLimitedRequest:
     get = _rate_limited_get
     post = _rate_limited_post
+    request = _rate_limited_request
 
 
 rl_requests = _RateLimitedRequest
@@ -315,13 +317,12 @@ def create_s3_client(bucket_type: BlobType, credentials: dict[str, Any], europea
             region_name=credentials["region"],
         )
     elif bucket_type == BlobType.S3_COMPATIBLE:
-
         return boto3.client(
             "s3",
             endpoint_url=credentials["endpoint_url"],
             aws_access_key_id=credentials["aws_access_key_id"],
             aws_secret_access_key=credentials["aws_secret_access_key"],
-            config=Config(s3={'addressing_style': credentials["addressing_style"]}),
+            config=Config(s3={"addressing_style": credentials["addressing_style"]}),
         )
 
     else:
@@ -1185,7 +1186,10 @@ def sanitize_filename(name: str, extension: str = "txt") -> str:
         name += f".{extension}"
 
     return name
+
+
 F = TypeVar("F", bound=Callable[..., Any])
+
 
 class _RateLimitDecorator:
     """Builds a generic wrapper/decorator for calls to external APIs that
@@ -1224,16 +1228,11 @@ class _RateLimitDecorator:
             sleep_cnt = 0
             while len(self.call_history) == self.max_calls:
                 sleep_time = self.sleep_time * (self.sleep_backoff**sleep_cnt)
-                logging.warning(
-                    f"Rate limit exceeded for function {func.__name__}. "
-                    f"Waiting {sleep_time} seconds before retrying."
-                )
+                logging.warning(f"Rate limit exceeded for function {func.__name__}. Waiting {sleep_time} seconds before retrying.")
                 time.sleep(sleep_time)
                 sleep_cnt += 1
                 if self.max_num_sleep != 0 and sleep_cnt >= self.max_num_sleep:
-                    raise RateLimitTriedTooManyTimesError(
-                        f"Exceeded '{self.max_num_sleep}' retries for function '{func.__name__}'"
-                    )
+                    raise RateLimitTriedTooManyTimesError(f"Exceeded '{self.max_num_sleep}' retries for function '{func.__name__}'")
 
                 self._cleanup()
 
@@ -1246,13 +1245,11 @@ class _RateLimitDecorator:
     def _cleanup(self) -> None:
         curr_time = time.monotonic()
         time_to_expire_before = curr_time - self.period
-        self.call_history = [
-            call_time
-            for call_time in self.call_history
-            if call_time > time_to_expire_before
-        ]
+        self.call_history = [call_time for call_time in self.call_history if call_time > time_to_expire_before]
+
 
 rate_limit_builder = _RateLimitDecorator
+
 
 def retry_builder(
     tries: int = 20,

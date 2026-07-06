@@ -24,6 +24,7 @@ Design principles:
 - Use real TaskContext, TaskHandler, and service instances
 - Verify RecordingContext for data flow assertions
 """
+
 # =============================================================================
 # TensorFlow/UMAP Import Workaround
 # =============================================================================
@@ -57,6 +58,7 @@ from rag.svr.task_executor_refactor.recording_context import (
 # Async Limiter Fixtures
 # =============================================================================
 
+
 class AsyncMockLimiter:
     """Mock asyncio semaphore that does not actually limit."""
 
@@ -76,6 +78,7 @@ def mock_limiter():
 # =============================================================================
 # Task Dictionary Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def standard_task_dict() -> Dict[str, Any]:
@@ -148,6 +151,7 @@ def memory_task_dict() -> Dict[str, Any]:
 # TaskContext Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def task_context(standard_task_dict, mock_limiter, recording_context):
     """Provide a real TaskContext instance with mocked limiters."""
@@ -193,6 +197,7 @@ def canceled_task_context(standard_task_dict, mock_limiter, recording_context):
 # =============================================================================
 # RecordingContext Fixtures
 # =============================================================================
+
 
 @pytest.fixture(autouse=True)
 def recording_context():
@@ -246,6 +251,7 @@ def cleanup_resources(request):
 # External System Mocks (Boundary Mocks)
 # =============================================================================
 
+
 class MockEmbeddingModel:
     """Mock embedding model that returns deterministic vectors."""
 
@@ -280,6 +286,9 @@ class MockChatModel:
     def __exit__(self, *args):
         pass
 
+    async def async_chat(self, system_prompt, messages, **kwargs):
+        return '{"key": "value"}'
+
 
 @pytest.fixture
 def mock_embedding_model():
@@ -297,6 +306,7 @@ def mock_chat_model():
 # Patching Helpers
 # =============================================================================
 
+
 def create_patch_embedding_model(vectors=None, vector_size=128):
     """Create a patcher for the embedding model binding.
 
@@ -312,15 +322,19 @@ def create_patch_embedding_model(vectors=None, vector_size=128):
     mock_model.__enter__ = MagicMock(return_value=mock_model)
     mock_model.__exit__ = MagicMock(return_value=False)
 
-    return patch(
-        "rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance",
-        return_value=MagicMock(),
-    ), patch(
-        "rag.svr.task_executor_refactor.task_handler.LLMBundle",
-        return_value=mock_model,
-    ), patch(
-        "rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type",
-        return_value=MagicMock(),
+    return (
+        patch(
+            "rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "rag.svr.task_executor_refactor.task_handler.LLMBundle",
+            return_value=mock_model,
+        ),
+        patch(
+            "rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type",
+            return_value=MagicMock(),
+        ),
     )
 
 
@@ -353,12 +367,14 @@ def create_patch_parser_chunking(chunks=None):
                 If None, returns a default single chunk.
     """
     if chunks is None:
-        chunks = [{
-            "content_with_weight": "This is a test chunk content.",
-            "page_num_int": [0],
-            "top_int": [0],
-            "position_int": [0, 0, 0, 0],
-        }]
+        chunks = [
+            {
+                "content_with_weight": "This is a test chunk content.",
+                "page_num_int": [0],
+                "top_int": [0],
+                "position_int": [0, 0, 0, 0],
+            }
+        ]
 
     mock_async = AsyncMock(return_value=chunks)
     return patch(
@@ -422,16 +438,18 @@ def create_default_chunks(count: int = 2) -> List[Dict[str, Any]]:
     """Create default chunk dictionaries for testing."""
     chunks = []
     for i in range(count):
-        chunks.append({
-            "id": f"chunk_{i}_{uuid.uuid4().hex[:6]}",
-            "content_with_weight": f"This is test chunk content number {i}.",
-            "page_num_int": [i],
-            "top_int": [i * 100],
-            "position_int": [i, 0, i + 1, 0],
-            "doc_id": "doc_test",
-            "kb_id": "kb_test",
-            "docnm_kwd": "test_document.pdf",
-        })
+        chunks.append(
+            {
+                "id": f"chunk_{i}_{uuid.uuid4().hex[:6]}",
+                "content_with_weight": f"This is test chunk content number {i}.",
+                "page_num_int": [i],
+                "top_int": [i * 100],
+                "position_int": [i, 0, i + 1, 0],
+                "doc_id": "doc_test",
+                "kb_id": "kb_test",
+                "docnm_kwd": "test_document.pdf",
+            }
+        )
     return chunks
 
 
@@ -472,6 +490,7 @@ def mock_chunk_service_factory():
 # =============================================================================
 # Unified Mock TaskContext Factory
 # =============================================================================
+
 
 def make_task_context(**overrides):
     """Build a MagicMock TaskContext with sensible defaults for all services.
@@ -540,6 +559,7 @@ def make_task_context(**overrides):
 # RaptorService Fixtures (kept for backward compatibility)
 # =============================================================================
 
+
 def create_mock_raptor_context():
     """Create a mock TaskContext suitable for RaptorService tests."""
     return make_task_context()
@@ -554,6 +574,7 @@ def mock_raptor_context():
 # =============================================================================
 # Embedding Binding Patch Helper
 # =============================================================================
+
 
 class patch_embedding_binding:
     """Context manager that patches embedding model binding at the external boundary.
@@ -613,6 +634,7 @@ class patch_embedding_binding:
 # Common mock callbacks
 # =============================================================================
 
+
 async def mock_thread_return_binary(func, *args, **kwargs):
     """Reusable mock for thread_pool_exec — returns fake binary."""
     return b"fake pdf binary"
@@ -627,10 +649,10 @@ async def mock_thread_return_none(func, *args, **kwargs):
 # Patch helpers for integration tests
 # =============================================================================
 
+
 def patch_get_storage_binary():
     """Patch TaskHandler._get_storage_binary to return fake binary."""
-    return patch("rag.svr.task_executor_refactor.task_handler.TaskHandler._get_storage_binary",
-                 new_callable=AsyncMock, return_value=b"fake pdf binary")
+    return patch("rag.svr.task_executor_refactor.task_handler.TaskHandler._get_storage_binary", new_callable=AsyncMock, return_value=b"fake pdf binary")
 
 
 def patch_task_handler_settings(mock_settings):
@@ -641,6 +663,7 @@ def patch_task_handler_settings(mock_settings):
 # =============================================================================
 # Shared Task Dictionary Factory
 # =============================================================================
+
 
 def make_task_dict(**overrides):
     """Build a task dict with sensible defaults for integration tests.
@@ -677,6 +700,7 @@ def make_task_dict(**overrides):
 # =============================================================================
 # Shared Pipeline Mock Block for Integration Tests
 # =============================================================================
+
 
 class patch_pipeline_mocks:
     """Context manager bundling common integration-test mock blocks.

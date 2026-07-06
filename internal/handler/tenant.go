@@ -30,61 +30,37 @@ import (
 
 // TenantHandler tenant handler
 type TenantHandler struct {
-	tenantService *service.TenantService
-	userService   *service.UserService
-	kbService     *service.KnowledgebaseService
+	tenantService  *service.TenantService
+	userService    *service.UserService
+	datasetService *service.DatasetService
 }
 
 // NewTenantHandler create tenant handler
-func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService, kbService *service.KnowledgebaseService) *TenantHandler {
+func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService, datasetService *service.DatasetService) *TenantHandler {
 	return &TenantHandler{
-		tenantService: tenantService,
-		userService:   userService,
-		kbService:     kbService,
+		tenantService:  tenantService,
+		userService:    userService,
+		datasetService: datasetService,
 	}
 }
 
-func (h *TenantHandler) GetModels(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
+func (h *TenantHandler) SetModels(c *gin.Context) {
+	h.setDefaultModels(c, false)
+}
 
-	defaultModels, err := h.tenantService.ListTenantDefaultModels(user.ID)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
-		return
-	}
-
-	if defaultModels == nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": "No default models",
-			"data":    nil,
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    defaultModels,
-	})
+func (h *TenantHandler) SetDefaultModels(c *gin.Context) {
+	h.setDefaultModels(c, true)
 }
 
 type SetModelRequest struct {
 	ModelProvider string `json:"model_provider"`
 	ModelInstance string `json:"model_instance"`
 	ModelName     string `json:"model_name"`
+	ModelID       string `json:"model_id"`
 	ModelType     string `json:"model_type" binding:"required"`
 }
 
-func (h *TenantHandler) SetModels(c *gin.Context) {
+func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
@@ -102,7 +78,7 @@ func (h *TenantHandler) SetModels(c *gin.Context) {
 		return
 	}
 
-	err := h.tenantService.SetTenantDefaultModels(user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType)
+	err := h.tenantService.SetTenantDefaultModels(user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType, req.ModelID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeExceptionError,
@@ -112,10 +88,55 @@ func (h *TenantHandler) SetModels(c *gin.Context) {
 		return
 	}
 
+	if wrapModels {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeSuccess,
+			"message": "success",
+			"data":    map[string]interface{}{"models": []service.ModelItem{}},
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"message": "success",
 		"data":    nil,
+	})
+}
+
+// GetDefaultModels returns the tenant's default model selections. The
+// response wraps the model list under `data.models` to mirror the
+// Python `list_tenant_default_models` contract (api/apps/restful_apis/
+// models_api.py:84). The frontend hook `useFetchDefaultModels`
+// (web/src/hooks/use-llm-request.tsx:423) reads `data.data.models`.
+func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	defaultModels, err := h.tenantService.ListTenantDefaultModels(user.ID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeExceptionError,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+
+	// Empty selection is a normal state for a freshly created tenant, not a
+	// data error. Match Python's `list_tenant_default_models` (which returns
+	// get_result(data=[])) and the frontend's expectation that `data.data.models`
+	// is always an array.
+	if defaultModels == nil {
+		defaultModels = []service.ModelItem{}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    map[string]interface{}{"models": defaultModels},
 	})
 }
 
@@ -288,7 +309,7 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 	}
 
 	// Check authorization - user must have access to this kb
-	if !h.kbService.Accessible(req.KBID, user.ID) {
+	if !h.datasetService.Accessible(req.KBID, user.ID) {
 		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
@@ -339,7 +360,7 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	}
 
 	// Check authorization
-	if !h.kbService.Accessible(req.KBID, user.ID) {
+	if !h.datasetService.Accessible(req.KBID, user.ID) {
 		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
@@ -396,6 +417,10 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 	}
 
 	// Read the JSON file
+	// codeql[go/path-injection] False positive: req.FilePath is the
+	// JSON file path the operator configured (tenant import flow). The
+	// OS access check enforces permissions, and the handler is gated
+	// to admin/owner roles upstream.
 	data, err := os.ReadFile(req.FilePath)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -407,9 +432,9 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 
 	// Parse JSON - format: {"index_name"/"table_name": ..., "knowledgebase_id": ..., "chunks": [...]}
 	var debugFormat struct {
-		IndexName       string `json:"index_name"`
-		TableName       string `json:"table_name"`
-		KnowledgebaseID string `json:"knowledgebase_id"`
+		IndexName       string                   `json:"index_name"`
+		TableName       string                   `json:"table_name"`
+		KnowledgebaseID string                   `json:"knowledgebase_id"`
 		Chunks          []map[string]interface{} `json:"chunks"`
 	}
 
@@ -492,6 +517,10 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 	}
 
 	// Read the JSON file
+	// JSON file path the operator configured (tenant import flow). The
+	// OS access check enforces permissions, and the handler is gated
+	// to admin/owner roles upstream.
+	// codeql[go/path-injection] False positive: req.FilePath is the
 	data, err := os.ReadFile(req.FilePath)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{

@@ -9,10 +9,8 @@ import { FC, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export const mapModelKey = {
-  IMAGE2TEXT: 'VLM',
-  'TEXT EMBEDDING': 'Embedding',
-  SPEECH2TEXT: 'ASR',
-  'TEXT RE-RANK': 'Rerank',
+  image2text: 'VLM',
+  speech2text: 'ASR',
   chat: 'LLM',
   vision: 'VLM',
   embedding: 'Embedding',
@@ -28,6 +26,8 @@ const orderMap: Record<ModelType, number> = {
   rerank: 3,
   tts: 4,
   asr: 5,
+  speech2text: 5,
+  image2text: 6,
   vision: 6,
   ocr: 7,
 };
@@ -38,6 +38,8 @@ type ModelType =
   | 'rerank'
   | 'tts'
   | 'asr'
+  | 'speech2text'
+  | 'image2text'
   | 'vision'
   | 'ocr';
 
@@ -57,28 +59,40 @@ export const AvailableModels: FC<{
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
+  const searchedModels = useMemo(() => {
+    return factoryList.filter((model) =>
+      model.name.toLowerCase().includes(searchTerm.toLowerCase()),
+    );
+  }, [factoryList, searchTerm]);
+
   const filteredModels = useMemo(() => {
-    const models = factoryList.filter((model) => {
-      const matchesSearch = model.name
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase());
-      const matchesTag =
-        selectedTag === null ||
-        model.model_types.some((type) => type === selectedTag);
-      return matchesSearch && matchesTag;
-    });
-    return models;
-  }, [factoryList, searchTerm, selectedTag]);
+    if (selectedTag === null) {
+      return searchedModels;
+    }
+    return searchedModels.filter((model) =>
+      model.model_types.some((type) => type === selectedTag),
+    );
+  }, [searchedModels, selectedTag]);
+
+  // Number of providers matching each tag, respecting the current search term so
+  // the badge always reflects how many cards are shown when the tag is selected.
+  const tagCounts = useMemo(() => {
+    return searchedModels.reduce<Record<string, number>>((acc, model) => {
+      // Count each provider once per model type, even if listed more than once.
+      new Set(model.model_types).forEach((type) => {
+        acc[type] = (acc[type] || 0) + 1;
+      });
+      return acc;
+    }, {});
+  }, [searchedModels]);
 
   const allTags = useMemo(() => {
     const tagsSet = new Set<string>();
     factoryList.forEach((model) => {
       model.model_types.forEach((type) => tagsSet.add(type));
     });
-    return Array.from(tagsSet).sort(
-      (a, b) =>
-        (orderMap[a as ModelType] || 999) - (orderMap[b as ModelType] || 999),
-    );
+    const res = sortModelTypes(Array.from(tagsSet));
+    return res;
   }, [factoryList]);
 
   const handleTagClick = (tag: string) => {
@@ -118,6 +132,9 @@ export const AvailableModels: FC<{
             onClick={() => setSelectedTag(null)}
           >
             All
+            <span className="ml-1 tabular-nums opacity-60">
+              {searchedModels.length}
+            </span>
           </Button>
 
           {allTags.map((tag) => (
@@ -130,6 +147,9 @@ export const AvailableModels: FC<{
             >
               {mapModelKey[tag.trim() as keyof typeof mapModelKey] ||
                 tag.trim()}
+              <span className="ml-1 tabular-nums opacity-60">
+                {tagCounts[tag] ?? 0}
+              </span>
             </Button>
           ))}
         </div>
