@@ -56,7 +56,7 @@ type userTenantStore interface {
 }
 
 type chatPipelineRunner interface {
-	AsyncChat(ctx context.Context, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error)
+	AsyncChat(ctx context.Context, userID string, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error)
 }
 
 // chunkFeedbackApplier is the dispatch seam for chunk-level feedback
@@ -1297,7 +1297,7 @@ func (s *ChatSessionService) Completion(userID string, conversationID string, me
 	if kwargs == nil {
 		kwargs = map[string]interface{}{}
 	}
-	resultChan, err := s.pipeline.AsyncChat(context.Background(), dialog, messages, false, kwargs)
+	resultChan, err := s.pipeline.AsyncChat(context.Background(), userID, dialog, messages, false, kwargs)
 	if err != nil {
 		return nil, err
 	}
@@ -1383,7 +1383,7 @@ func (s *ChatSessionService) CompletionStream(ctx context.Context, userID string
 	if kwargs == nil {
 		kwargs = map[string]interface{}{}
 	}
-	resultChan, err := s.pipeline.AsyncChat(ctx, dialog, messages, true, kwargs)
+	resultChan, err := s.pipeline.AsyncChat(ctx, userID, dialog, messages, true, kwargs)
 	if err != nil {
 		streamChan <- fmt.Sprintf("data: %s\n\n", fmt.Sprintf(`{"code": 500, "message": "%s", "data": {"answer": "**ERROR**: %s", "reference": []}}`, err.Error(), err.Error()))
 		return err
@@ -1556,7 +1556,7 @@ func (s *ChatSessionService) ChatCompletions(
 	}
 
 	// --- 6. Run pipeline ---
-	resultChan, err := s.pipeline.AsyncChat(ctx, dialog, requestMsg, stream, kwargs)
+	resultChan, err := s.pipeline.AsyncChat(ctx, userID, dialog, requestMsg, stream, kwargs)
 	if err != nil {
 		return fail(err)
 	}

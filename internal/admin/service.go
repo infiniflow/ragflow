@@ -130,14 +130,19 @@ func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
 			"document_id": task.DocumentID,
 			"status":      task.Status,
 		}
-		if err == nil {
+		if err == nil && latestLog != nil && latestLog.Checkpoint != nil {
+			step, ok := latestLog.Checkpoint["current_step"].(float64)
+			if !ok {
+				showTasks = append(showTasks, showTask)
+				continue
+			}
 			showTask = map[string]interface{}{
 				"id":          task.ID,
 				"user_id":     task.UserID,
 				"user":        user.Email,
 				"document_id": task.DocumentID,
 				"status":      task.Status,
-				"step":        int(latestLog.Checkpoint["current_step"].(float64)),
+				"step":        int(step),
 			}
 		}
 

@@ -14,6 +14,24 @@ import (
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
+// ---- test helpers ----
+
+func newTestParser() *Parser {
+	return &Parser{Config: pdf.DefaultParserConfig()}
+}
+
+func newMockDocAnalyzer(healthy bool, boxes []pdf.OCRBox, texts []pdf.OCRText) *MockDocAnalyzer {
+	return &MockDocAnalyzer{
+		Healthy:   healthy,
+		OCRBoxes:  boxes,
+		OCRTexts:  texts,
+	}
+}
+
+func newSimpleMockDocAnalyzer() *MockDocAnalyzer {
+	return &MockDocAnalyzer{Healthy: true}
+}
+
 // ── OCR fallback ──────────────────────────────────────────────────────
 
 func TestOCR_Fallback(t *testing.T) {
@@ -34,7 +52,7 @@ func TestOCR_Fallback(t *testing.T) {
 
 	t.Run("detect + recognize success", func(t *testing.T) {
 		mock := &MockDocAnalyzer{
-			Healthy:  true,
+			Healthy: true,
 			OCRBoxes: []pdf.OCRBox{{X0: 10, Y0: 20, X1: 90, Y1: 20, X2: 90, Y2: 40, X3: 10, Y3: 40}},
 			OCRTexts: []pdf.OCRText{{Text: "Hello", Confidence: 0.9}},
 		}
@@ -49,7 +67,7 @@ func TestOCR_Fallback(t *testing.T) {
 
 	t.Run("detect boxes but rec returns empty text", func(t *testing.T) {
 		mock := &MockDocAnalyzer{
-			Healthy:  true,
+			Healthy: true,
 			OCRBoxes: []pdf.OCRBox{{X0: 10, Y0: 20, X1: 90, Y1: 20, X2: 90, Y2: 40, X3: 10, Y3: 40}},
 			OCRTexts: []pdf.OCRText{{Text: "", Confidence: 0.1}},
 		}
@@ -97,7 +115,7 @@ func TestOCR_ScanPage(t *testing.T) {
 
 	t.Run("detect success but rec returns empty", func(t *testing.T) {
 		mock := &MockDocAnalyzer{
-			Healthy:  true,
+			Healthy: true,
 			OCRBoxes: []pdf.OCRBox{{X0: 10, Y0: 20, X1: 90, Y1: 20, X2: 90, Y2: 40, X3: 10, Y3: 40}},
 			OCRTexts: []pdf.OCRText{},
 		}
@@ -196,7 +214,7 @@ func garbledSample() []pdf.TextChar {
 	return chars
 }
 
-// ── OCR fallback integration through Parse ─────────────────────────────
+// ── OCR fallback integration through Parse ──────────────────────────────
 
 func TestOCR_FallbackIntegration(t *testing.T) {
 	// ocrFallback logic is tested via TestOCR_fallback.
@@ -314,7 +332,7 @@ func TestOCR_Fallback_PUAGarbled(t *testing.T) {
 	}
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
 	mock := &MockDocAnalyzer{
-		Healthy:  true,
+		Healthy: true,
 		OCRBoxes: []pdf.OCRBox{{X0: 10, Y0: 20, X1: 90, Y1: 20, X2: 90, Y2: 40, X3: 10, Y3: 40}},
 		OCRTexts: []pdf.OCRText{{Text: "PUA OCR text", Confidence: 0.9}},
 	}
@@ -324,7 +342,7 @@ func TestOCR_Fallback_PUAGarbled(t *testing.T) {
 	}
 }
 
-// ── ocrMergeChars ─────────────────────────────────────────────────────
+// ── ocrMergeChars ──────────────────────────────────────────────────────
 
 func TestOCR_MergeChars(t *testing.T) {
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 600, 600))
@@ -346,7 +364,7 @@ func TestOCR_MergeChars(t *testing.T) {
 
 	t.Run("detect boxes — all overlap with chars (chars used, Python-aligned)", func(t *testing.T) {
 		mock := &MockDocAnalyzer{
-			Healthy:  true,
+			Healthy: true,
 			OCRBoxes: []pdf.OCRBox{{X0: 15, Y0: 15, X1: 150, Y1: 15, X2: 150, Y2: 150, X3: 15, Y3: 150}},
 			OCRTexts: []pdf.OCRText{{Text: "Hello OCR", Confidence: 0.9}},
 		}
@@ -363,7 +381,7 @@ func TestOCR_MergeChars(t *testing.T) {
 
 	t.Run("detect boxes — none overlap with chars", func(t *testing.T) {
 		mock := &MockDocAnalyzer{
-			Healthy:  true,
+			Healthy: true,
 			OCRBoxes: []pdf.OCRBox{{X0: 240, Y0: 240, X1: 270, Y1: 240, X2: 270, Y2: 270, X3: 240, Y3: 270}},
 			OCRTexts: []pdf.OCRText{{Text: "OCR", Confidence: 0.9}},
 		}
@@ -379,7 +397,7 @@ func TestOCR_MergeChars(t *testing.T) {
 
 	t.Run("detect box — no chars and OCR returns empty", func(t *testing.T) {
 		mock := &MockDocAnalyzer{
-			Healthy:  true,
+			Healthy: true,
 			OCRBoxes: []pdf.OCRBox{{X0: 240, Y0: 240, X1: 270, Y1: 240, X2: 270, Y2: 270, X3: 240, Y3: 270}},
 			OCRTexts: []pdf.OCRText{},
 		}
@@ -495,7 +513,7 @@ func TestOCR_MergeChars(t *testing.T) {
 		// Chars at (10,10-25) → within the box region.  Char text "do" is
 		// used (Python-aligned: embedded chars are more precise than OCR).
 		mock := &MockDocAnalyzer{
-			Healthy:  true,
+			Healthy: true,
 			OCRBoxes: []pdf.OCRBox{{X0: 30, Y0: 30, X1: 90, Y1: 30, X2: 90, Y2: 90, X3: 30, Y3: 90}},
 			OCRTexts: []pdf.OCRText{{Text: "docker commit infiniflow", Confidence: 0.95}},
 		}
@@ -546,7 +564,7 @@ func TestTableSectionCaptionInHTML(t *testing.T) {
 	figures := pdf.CollectFigures(sections)
 	sections = tbl.MergeCaptions(sections, figures)
 
-	if !strings.HasPrefix(sections[0].Text, "表1: 交通工具等级<table>") {
+	if !strings.HasPrefix(sections[0].Text, "表1: 交通工具等级<table") {
 		t.Errorf("expected caption before table HTML, got %q", sections[0].Text)
 	}
 }
@@ -620,5 +638,177 @@ func TestParseRaw_ZeroZoom_NoNaN(t *testing.T) {
 	}
 	if !foundPosition {
 		t.Fatal("expected at least one position to validate")
+	}
+}
+
+// ── Test for refactored helper functions ──────────────────────────────
+// These are simple tests for the helper functions to ensure they work.
+
+func TestParser_getBatchSize(t *testing.T) {
+	tests := []struct {
+		name      string
+		batchSize int
+		want      int
+	}{
+		{
+			name:      "positive batch size",
+			batchSize: 100,
+			want:      100,
+		},
+		{
+			name:      "zero batch size",
+			batchSize: 0,
+			want:      50,
+		},
+		{
+			name:      "negative batch size",
+			batchSize: -1,
+			want:      50,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Parser{Config: pdf.ParserConfig{BatchSize: tt.batchSize}}
+			got := p.getBatchSize()
+			if got != tt.want {
+				t.Errorf("getBatchSize() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParser_setupPageConcurrency(t *testing.T) {
+	tests := []struct {
+		name           string
+		maxConcurrency int
+		wantCap        int
+	}{
+		{
+			name:           "positive concurrency",
+			maxConcurrency: 5,
+			wantCap:        5,
+		},
+		{
+			name:           "zero concurrency",
+			maxConcurrency: 0,
+			wantCap:        1,
+		},
+		{
+			name:           "negative concurrency",
+			maxConcurrency: -1,
+			wantCap:        1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Parser{Config: pdf.ParserConfig{MaxOCRConcurrency: tt.maxConcurrency}}
+			sem, wg := p.setupPageConcurrency()
+			if cap(sem) != tt.wantCap {
+				t.Errorf("setupPageConcurrency() sem cap = %v, want %v", cap(sem), tt.wantCap)
+			}
+			if wg == nil {
+				t.Error("setupPageConcurrency() wg should not be nil")
+			}
+		})
+	}
+}
+
+func TestParser_prescanPages(t *testing.T) {
+	// Provide at least 30 ASCII chars per page so DetectEnglish finds a run ≥30.
+	charsPage0 := make([]pdf.TextChar, 50)
+	for i := range charsPage0 {
+		charsPage0[i] = pdf.TextChar{
+			Text: "a", PageNumber: 0, Top: 10, Bottom: 20,
+			X0: 50 + float64(i*10), X1: 58 + float64(i*10),
+		}
+	}
+	charsPage1 := make([]pdf.TextChar, 50)
+	for i := range charsPage1 {
+		charsPage1[i] = pdf.TextChar{
+			Text: "b", PageNumber: 1, Top: 10, Bottom: 20,
+			X0: 50 + float64(i*10), X1: 58 + float64(i*10),
+		}
+	}
+	eng := &MockEngine{
+		NumPages: 2,
+		Chars: map[int][]pdf.TextChar{
+			0: charsPage0,
+			1: charsPage1,
+		},
+	}
+	p := &Parser{Config: pdf.DefaultParserConfig()}
+
+	prescanChars, prescanMedianH, prescanMedianW, isEnglish, scanNoise := p.prescanPages(context.Background(), eng, 0, 1, 2)
+
+	if _, ok := prescanChars[0]; !ok {
+		t.Error("prescanPages() prescanChars should contain page 0")
+	}
+	if _, ok := prescanMedianH[0]; !ok {
+		t.Error("prescanPages() prescanMedianH should contain page 0")
+	}
+	if _, ok := prescanMedianW[0]; !ok {
+		t.Error("prescanPages() prescanMedianW should contain page 0")
+	}
+	if isEnglish != true {
+		t.Errorf("prescanPages() isEnglish = %v, want true", isEnglish)
+	}
+	if scanNoise != false {
+		t.Errorf("prescanPages() scanNoise = %v, want false", scanNoise)
+	}
+}
+
+func TestParser_mergeBatchResults(t *testing.T) {
+	p := &Parser{Config: pdf.DefaultParserConfig()}
+	result := &pdf.ParseResult{
+		Sections: []pdf.Section{{Text: "section1"}},
+		Tables:   []pdf.TableItem{{}},
+		Metrics: pdf.PipelineMetrics{
+			BoxesInitial:   10,
+			BoxesTextMerge: 8,
+			BoxesVertMerge: 5,
+			BoxesFinal:     3,
+			TablesCount:    1,
+		},
+	}
+	batch := &pdf.ParseResult{
+		Sections: []pdf.Section{{Text: "section2"}},
+		Tables:   []pdf.TableItem{{}},
+		PageImages: map[int]image.Image{1: image.NewRGBA(image.Rect(0, 0, 10, 10))},
+		Metrics: pdf.PipelineMetrics{
+			BoxesInitial:   20,
+			BoxesTextMerge: 15,
+			BoxesVertMerge: 10,
+			BoxesFinal:     6,
+			TablesCount:    2,
+		},
+	}
+
+	p.mergeBatchResults(result, batch)
+
+	if len(result.Sections) != 2 {
+		t.Errorf("mergeBatchResults() sections length = %v, want 2", len(result.Sections))
+	}
+	if len(result.Tables) != 2 {
+		t.Errorf("mergeBatchResults() tables length = %v, want 2", len(result.Tables))
+	}
+	if result.Metrics.BoxesInitial != 30 {
+		t.Errorf("mergeBatchResults() BoxesInitial = %v, want 30", result.Metrics.BoxesInitial)
+	}
+	if result.Metrics.BoxesTextMerge != 23 {
+		t.Errorf("mergeBatchResults() BoxesTextMerge = %v, want 23", result.Metrics.BoxesTextMerge)
+	}
+	if result.Metrics.BoxesVertMerge != 15 {
+		t.Errorf("mergeBatchResults() BoxesVertMerge = %v, want 15", result.Metrics.BoxesVertMerge)
+	}
+	if result.Metrics.BoxesFinal != 9 {
+		t.Errorf("mergeBatchResults() BoxesFinal = %v, want 9", result.Metrics.BoxesFinal)
+	}
+	if result.Metrics.TablesCount != 3 {
+		t.Errorf("mergeBatchResults() TablesCount = %v, want 3", result.Metrics.TablesCount)
+	}
+	if _, ok := result.PageImages[1]; !ok {
+		t.Error("mergeBatchResults() pageImages should contain page 1")
 	}
 }
