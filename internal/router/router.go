@@ -53,6 +53,7 @@ type Router struct {
 	fileCommitHandler    *handler.FileCommitHandler
 	adminRuntimeHandler  *handler.AdminRuntimeHandler
 	botHandler           *handler.BotHandler
+	componentsHandler    *handler.ComponentsHandler
 }
 
 // NewRouter create router
@@ -86,6 +87,7 @@ func NewRouter(
 	adminRuntimeHandler *handler.AdminRuntimeHandler,
 	openaiChatHandler *handler.OpenAIChatHandler,
 	botHandler *handler.BotHandler,
+	componentsHandler *handler.ComponentsHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -117,6 +119,7 @@ func NewRouter(
 		fileCommitHandler:    fileCommitHandler,
 		adminRuntimeHandler:  adminRuntimeHandler,
 		botHandler:           botHandler,
+		componentsHandler:    componentsHandler,
 	}
 }
 
@@ -556,6 +559,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			plugin := v1.Group("/plugin")
 			{
 				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
+			}
+
+			// Component catalog — Phase 4 of
+			// port-rag-flow-pipeline-to-go.md. Optional
+			// ?category=ingestion,agent,shared filter; defaults to
+			// all categories. The data source is
+			// runtime.DefaultRegistry.
+			if r.componentsHandler != nil {
+				v1.GET("/components", r.componentsHandler.Get)
 			}
 
 			// Admin routes — Phase 6 per-tenant canvas runtime override.

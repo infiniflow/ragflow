@@ -569,7 +569,7 @@ func (s *DocumentService) CreateDocument(req *CreateDocumentRequest) (*entity.Do
 		Type:         req.Type,
 		SourceType:   req.Source,
 		Suffix:       ".doc",
-		Status:       func() *string { s := "0"; return &s }(),
+		Status:       func() *string { s := "1"; return &s }(),
 	}
 
 	if err := s.InsertDocument(document); err != nil {
@@ -3466,7 +3466,8 @@ func normalizeWebDocumentName(name, contentType string, blob []byte) string {
 // suffix and content hash. blob may be nil for the empty/virtual document.
 func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID, filename, location, filetype string, parserConfig entity.JSONMap, src string, size int64, blob []byte) *entity.Document {
 	docID := strings.ReplaceAll(uuid.New().String(), "-", "")
-	zero := "0"
+	run := "0"
+	status := "1"
 	suffix := ""
 	if i := strings.LastIndex(filename, "."); i >= 0 {
 		suffix = filename[i+1:]
@@ -3485,8 +3486,8 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 		Location:     &loc,
 		Size:         size,
 		Suffix:       suffix,
-		Run:          &zero,
-		Status:       &zero,
+		Run:          &run,
+		Status:       &status,
 	}
 	if blob != nil {
 		hash := contentHashHex(blob)
