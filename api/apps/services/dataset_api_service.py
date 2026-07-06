@@ -1152,7 +1152,6 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
         base_fields=("docnm_kwd", "doc_id", "content_with_weight", "page_num_int", "position_int", "top_int"),
     ):
         index_nm = search.index_name(tenant_id)
-
         try:
             res0 = docStoreConn.search(
                 select_fields=[],
@@ -1166,15 +1165,12 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
                 knowledgebase_ids=[kb_id],
             )
         except Exception as e:
-            # The tenant's chunk index doesn't exist yet (no documents have
-            # been parsed/indexed for this tenant). Treat it as "no samples
-            # available" rather than a fatal error so that configuration
-            # endpoints like check_embedding can still report success with
-            # an empty sample set.
             if "not_found_exception" in repr(e) or "index_not_found_exception" in repr(e):
                 logging.info(
-                    "sample_random_chunks_with_vectors: index %s does not exist; returning empty sample set",
+                    "sample_random_chunks_with_vectors: index %s not yet created for tenant %s; "
+                    "returning empty sample set",
                     index_nm,
+                    tenant_id,
                 )
                 return []
             raise

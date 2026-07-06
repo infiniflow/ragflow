@@ -125,7 +125,6 @@ class CompilationTemplateService(CommonService):
     def list_saved(cls, tenant_id: str, keywords: str = "", kind: str = "", orderby: str = "create_time", desc: bool = True) -> list[dict]:
         query = cls.model.select().where(
             cls.model.tenant_id == tenant_id,
-            not cls.model.is_builtin,
             cls.model.status == StatusEnum.VALID.value,
         )
         if keywords:
@@ -151,7 +150,6 @@ class CompilationTemplateService(CommonService):
         template = cls.model.get_or_none(
             cls.model.id == template_id,
             cls.model.tenant_id == tenant_id,
-            not cls.model.is_builtin,
             cls.model.status == StatusEnum.VALID.value,
         )
         return cls._to_saved_dict(template) if template else None
@@ -162,7 +160,6 @@ class CompilationTemplateService(CommonService):
         query = cls.model.select(fn.COUNT(cls.model.id)).where(
             cls.model.tenant_id == tenant_id,
             cls.model.name == name,
-            not cls.model.is_builtin,
             cls.model.status == StatusEnum.VALID.value,
         )
         if exclude_id:

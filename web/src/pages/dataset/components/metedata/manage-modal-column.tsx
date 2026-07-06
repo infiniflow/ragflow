@@ -13,7 +13,7 @@ import {
   MetadataType,
   metadataValueTypeEnum,
 } from './constant';
-import { IMetaDataTableData } from './interface';
+import { IMetaDataTableData, MetadataValueType } from './interface';
 
 interface IUseMetadataColumns {
   isDeleteSingleValue: boolean;
@@ -25,6 +25,12 @@ interface IUseMetadataColumns {
   isShowDescription: boolean;
   setTableData: React.Dispatch<React.SetStateAction<IMetaDataTableData[]>>;
   setShouldSave: React.Dispatch<React.SetStateAction<boolean>>;
+  addUpdateValue: (
+    key: string,
+    originalValue: string,
+    newValue: string | string[],
+    type?: MetadataValueType,
+  ) => void;
 }
 
 export const useMetadataColumns = ({
@@ -36,6 +42,7 @@ export const useMetadataColumns = ({
   isShowDescription,
   setTableData,
   setShouldSave,
+  addUpdateValue,
 }: IUseMetadataColumns) => {
   const { t } = useTranslation();
   const [deleteDialogContent, setDeleteDialogContent] = useState({
@@ -51,17 +58,29 @@ export const useMetadataColumns = ({
     field: string;
     value: string;
     newValue: string;
+    valueType: MetadataValueType;
   } | null>(null);
   const [rowExpandedStates, setRowExpandedStates] = useState<
     Record<string, boolean>
   >({});
 
-  const handleEditValue = (field: string, value: string) => {
-    setEditingValue({ field, value, newValue: value });
+  const handleEditValue = (
+    field: string,
+    value: string,
+    valueType: MetadataValueType,
+  ) => {
+    setEditingValue({ field, value, newValue: value, valueType });
   };
 
   const saveEditedValue = useCallback(
-    (newValue?: { field: string; value: string; newValue: string }) => {
+    (
+      newValue?: {
+        field: string;
+        value: string;
+        newValue: string;
+        valueType: MetadataValueType;
+      },
+    ) => {
       const realValue = newValue || editingValue;
       if (realValue) {
         setTableData((prev) => {
@@ -75,11 +94,19 @@ export const useMetadataColumns = ({
             return row;
           });
         });
+        if (realValue.value !== realValue.newValue) {
+          addUpdateValue(
+            realValue.field,
+            realValue.value,
+            realValue.newValue,
+            realValue.valueType,
+          );
+        }
         setEditingValue(null);
         setShouldSave(true);
       }
     },
-    [editingValue, setTableData, setShouldSave],
+    [editingValue, setTableData, setShouldSave, addUpdateValue],
   );
 
   const cancelEditValue = () => {
@@ -278,7 +305,11 @@ export const useMetadataColumns = ({
                       variant={'ghost'}
                       className="border border-border-button"
                       onClick={() =>
-                        handleEditValue(row.getValue('field'), value)
+                        handleEditValue(
+                          row.getValue('field'),
+                          value,
+                          row.original.valueType || metadataValueTypeEnum.string,
+                        )
                       }
                       aria-label="Edit"
                     >
