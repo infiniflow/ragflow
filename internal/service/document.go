@@ -3499,6 +3499,10 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 // docToRawMap serialises a freshly created Document into the raw key shape the
 // handler remaps (chunk_num→chunk_count, kb_id→dataset_id, parser_id→chunk_method).
 func docToRawMap(doc *entity.Document) map[string]interface{} {
+	status := "0"
+	if doc.Status != nil {
+		status = *doc.Status
+	}
 	m := map[string]interface{}{
 		"id":            doc.ID,
 		"kb_id":         doc.KbID,
@@ -3512,6 +3516,7 @@ func docToRawMap(doc *entity.Document) map[string]interface{} {
 		"token_num":     doc.TokenNum,
 		"suffix":        doc.Suffix,
 		"run":           "0",
+		"status":        status,
 	}
 	if doc.Name != nil {
 		m["name"] = *doc.Name
