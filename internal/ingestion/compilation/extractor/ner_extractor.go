@@ -27,4 +27,6 @@
 //	result, err := ext.Extract("Apple Inc. was founded by Steve Jobs.", true)
 //	for _, e := range result.Entities { ... }
 //	for _, r := range result.Relations { ... }
+//go:build cgo_thincner
+
 package extractor
