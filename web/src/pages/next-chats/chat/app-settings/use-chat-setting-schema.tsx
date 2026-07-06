@@ -24,23 +24,31 @@ export function useChatSettingSchema() {
     system: z.string().min(1, { message: t('systemMessage') }),
     refine_multiturn: z.boolean(),
     use_kg: z.boolean(),
-    parameters: z.array(
-      z.object({
-        key: z.string(),
-        optional: z.boolean(),
-      }),
-    ),
+    parameters: z
+      .array(
+        z.object({
+          key: z.string(),
+          optional: z.boolean(),
+        }),
+      )
+      .optional(),
     tavily_api_key: z.string().optional(),
     reasoning: z.boolean().optional(),
     cross_languages: z.array(z.string()).optional(),
     toc_enhance: z.boolean().optional(),
+    reference_metadata: z
+      .object({
+        include: z.boolean().optional(),
+        fields: z.array(z.string()).optional(),
+      })
+      .optional(),
   });
 
   const formSchema = z.object({
     name: z.string().min(1, { message: t('assistantNameMessage') }),
     icon: z.string(),
     description: z.string().optional(),
-    kb_ids: z.array(z.string()).min(0, {
+    dataset_ids: z.array(z.string()).min(0, {
       message: t('knowledgeBasesMessage'),
     }),
     prompt_config: promptConfigSchema,

@@ -1,5 +1,5 @@
 import type { IAgentForm } from '@/interfaces/database/agent';
-import { IAgentNode, RAGFlowNodeType } from '@/interfaces/database/flow';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import type {} from '@redux-devtools/extension';
 import {
   Connection,
@@ -40,6 +40,91 @@ import {
 import { deleteAllDownstreamAgentsAndTool } from './utils/delete-node';
 
 type IAgentTool = IAgentForm['tools'][number];
+
+const collectDescendantNodeIds = (
+  nodes: RAGFlowNodeType[],
+  rootId: string,
+): string[] => {
+  const descendantNodeIds: string[] = [];
+  const queue = [rootId];
+
+  while (queue.length > 0) {
+    const currentNodeId = queue.shift();
+    if (!currentNodeId) {
+      continue;
+    }
+
+    const childNodeIds = nodes
+      .filter((node) => node.parentId === currentNodeId)
+      .map((node) => node.id);
+
+    childNodeIds.forEach((nodeId) => {
+      if (!descendantNodeIds.includes(nodeId)) {
+        descendantNodeIds.push(nodeId);
+        queue.push(nodeId);
+      }
+    });
+  }
+
+  return descendantNodeIds;
+};
+
+const collectAgentAttachmentNodeIds = (
+  nodes: RAGFlowNodeType[],
+  edges: Edge[],
+  rootNodeIds: string[],
+) => {
+  const attachedNodeIds: string[] = [];
+
+  rootNodeIds.forEach((nodeId) => {
+    const node = nodes.find((item) => item.id === nodeId);
+    if (node?.data?.label !== Operator.Agent) {
+      return;
+    }
+
+    const { downstreamAgentAndToolNodeIds } = deleteAllDownstreamAgentsAndTool(
+      nodeId,
+      edges,
+    );
+
+    downstreamAgentAndToolNodeIds.forEach((attachedNodeId) => {
+      if (!attachedNodeIds.includes(attachedNodeId)) {
+        attachedNodeIds.push(attachedNodeId);
+      }
+    });
+  });
+
+  return attachedNodeIds;
+};
+
+export const collectDeletionNodeIds = (
+  nodes: RAGFlowNodeType[],
+  edges: Edge[],
+  rootId: string,
+): string[] => {
+  const deletedNodeIds = [rootId, ...collectDescendantNodeIds(nodes, rootId)];
+  const attachedNodeIds = collectAgentAttachmentNodeIds(
+    nodes,
+    edges,
+    deletedNodeIds,
+  );
+
+  attachedNodeIds.forEach((nodeId) => {
+    if (!deletedNodeIds.includes(nodeId)) {
+      deletedNodeIds.push(nodeId);
+    }
+  });
+
+  return deletedNodeIds;
+};
+
+export const removeEdgesForNodeIds = (edges: Edge[], nodeIds: string[]) => {
+  const nodeIdSet = new Set(nodeIds);
+
+  return edges.filter(
+    (edge) => !nodeIdSet.has(edge.source) && !nodeIdSet.has(edge.target),
+  );
+};
 
 interface GetAgentToolByIdFunc {
   (id: string): IAgentTool | undefined;
@@ -115,7 +200,8 @@ export type RFState = {
   ) => void; // Deleting a condition of a classification operator will delete the related edge
   findAgentToolNodeById: (id: string | null) => string | undefined;
   selectNodeIds: (nodeIds: string[]) => void;
-  hasChildNode: (nodeId: string) => boolean;
+  hasDownstreamNode: (nodeId: string) => boolean;
+  hasUpstreamNode: (nodeId: string) => boolean;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
@@ -405,18 +491,32 @@ const useGraphStore = create<RFState>()(
         }
       },
       deleteIterationNodeById: (id: string) => {
-        const { nodes, edges } = get();
-        const children = nodes.filter((node) => node.parentId === id);
+        const {
+          nodes,
+          edges,
+          selectedNodeIds,
+          selectedEdgeIds,
+          clickedNodeId,
+        } = get();
+        const deletedNodeIds = collectDeletionNodeIds(nodes, edges, id);
+        const deletedNodeIdSet = new Set(deletedNodeIds);
+        const remainingEdges = removeEdgesForNodeIds(edges, deletedNodeIds);
+        const remainingEdgeIdSet = new Set(
+          remainingEdges.map((edge) => edge.id),
+        );
+
         set({
-          nodes: nodes.filter((node) => node.id !== id && node.parentId !== id),
-          edges: edges.filter(
-            (edge) =>
-              edge.source !== id &&
-              edge.target !== id &&
-              !children.some(
-                (child) => edge.source === child.id && edge.target === child.id,
-              ),
+          nodes: nodes.filter((node) => !deletedNodeIdSet.has(node.id)),
+          edges: remainingEdges,
+          selectedNodeIds: selectedNodeIds.filter(
+            (nodeId) => !deletedNodeIdSet.has(nodeId),
           ),
+          selectedEdgeIds: selectedEdgeIds.filter((edgeId) =>
+            remainingEdgeIdSet.has(edgeId),
+          ),
+          clickedNodeId: deletedNodeIdSet.has(clickedNodeId)
+            ? ''
+            : clickedNodeId,
         });
       },
       findNodeByName: (name: Operator) => {
@@ -469,7 +569,7 @@ const useGraphStore = create<RFState>()(
         const { updateNodeForm, edges, getOperatorTypeFromId } = get();
         if (sourceHandle) {
           // A handle will connect to multiple downstream nodes
-          let currentHandleTargets = edges
+          const currentHandleTargets = edges
             .filter(
               (x) =>
                 x.source === source &&
@@ -528,9 +628,7 @@ const useGraphStore = create<RFState>()(
         return generateNodeNamesWithIncreasingIndex(name, nodes);
       },
       generateAgentToolName: (id: string, name: string) => {
-        const node = get().nodes.find(
-          (x) => x.id === id,
-        ) as IAgentNode<IAgentForm>;
+        const node = get().nodes.find((x) => x.id === id) as RAGFlowNodeType;
 
         if (!node) {
           return '';
@@ -649,9 +747,13 @@ const useGraphStore = create<RFState>()(
           })),
         );
       },
-      hasChildNode: (nodeId) => {
+      hasDownstreamNode: (nodeId) => {
         const { edges } = get();
         return edges.some((edge) => edge.source === nodeId);
+      },
+      hasUpstreamNode: (nodeId) => {
+        const { edges } = get();
+        return edges.some((edge) => edge.target === nodeId);
       },
     })),
     { name: 'graph', trace: true },

@@ -1,7 +1,8 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { useFetchKnowledgeGraph } from '@/hooks/use-knowledge-request';
-import { Trash2 } from 'lucide-react';
+import { LucideTrash2 } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import ForceGraph from './force-graph';
@@ -13,18 +14,23 @@ const KnowledgeGraph: React.FC = () => {
   const { handleDeleteKnowledgeGraph } = useDeleteKnowledgeGraph();
 
   return (
-    <section className={'w-full h-[90dvh] relative p-6'}>
+    <Card
+      as="article"
+      className="relative me-5 mb-5 p-0 bg-transparent shadow-none overflow-hidden"
+    >
       <ConfirmDeleteDialog onOk={handleDeleteKnowledgeGraph}>
         <Button
           variant="outline"
-          size={'sm'}
-          className="absolute right-0 top-0 z-50"
+          size="sm"
+          className="absolute right-5 top-5 z-50"
         >
-          <Trash2 /> {t('common.delete')}
+          <LucideTrash2 />
+          {t('common.delete')}
         </Button>
       </ConfirmDeleteDialog>
-      <ForceGraph data={data?.graph} show></ForceGraph>
-    </section>
+
+      <ForceGraph data={data?.graph} show />
+    </Card>
   );
 };
 

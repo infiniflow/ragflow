@@ -18,6 +18,8 @@ export default {
       portugueseBr: '葡萄牙語 (巴西)',
       chinese: '簡體中文',
       traditionalChinese: '繁體中文',
+      bulgarian: '保加利亞語',
+      arabic: '阿拉伯語',
       language: '語言',
       languageMessage: '請輸入語言',
       languagePlaceholder: '請選擇語言',
@@ -35,9 +37,12 @@ export default {
       pleaseInput: '請輸入',
       submit: '提交',
       embedIntoSite: '嵌入網站',
+      openInNewTab: '在新標籤頁中聊天',
       previousPage: '上一頁',
       nextPage: '下一頁',
       add: '添加',
+      owner: '擁有者',
+      running: '執行中...',
     },
     login: {
       login: '登入',
@@ -154,7 +159,7 @@ export default {
       changeSpecificCategory: '更改特定類別',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
       uploadDescription:
-        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 demo.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
+        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 cloud.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
       chunk: '解析塊',
       bulk: '批量',
       cancel: '取消',
@@ -202,6 +207,9 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文檔不能被刪除',
     },
     knowledgeConfiguration: {
+      settings: '設置',
+      autoMetadataTip:
+        '自動生成元數據。適用於解析新文件。現有文件需要重新解析才能更新（ chunk 將保留）。請注意，配置中指定的索引模型將消耗額外的 Token。',
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
       imageTableContextWindow: '影像與表格上下文視窗',
       imageTableContextWindowTip:
@@ -218,7 +226,7 @@ export default {
       chunkTokenNumber: '建議文本塊大小',
       chunkTokenNumberMessage: '塊Token數是必填項',
       embeddingModelTip:
-        '知識庫的預設嵌入模型。一旦知識庫已有資料區塊，則無法更改。若要切換到不同的預設嵌入模型，必須刪除知識庫中所有現有的資料區塊。',
+        '知識庫採用的默認嵌入模型。一旦知識庫內已經產生了文本塊，更換嵌入模型時，系統將隨機抽取若干 chunk 進行兼容性校驗，使用新嵌入模型重新編碼並計算新舊向量的餘弦相似度，樣本平均相似度需 ≥ 0.9 方可切換。否則，必須刪除知識庫內的所有文本塊後才能更改。',
       permissionsTip: '如果權限是“團隊”，則所有團隊成員都可以操作知識庫。',
       chunkTokenNumberTip:
         '建議的生成文本塊的 token 數閾值。如果切分得到的小文本段 token 數達不到這一閾值，系統就會不斷與之後的文本段合併，直至再合併下一個文本段會超過這一閾值為止，此時產生一個最終文本塊。如果系統在切分文本段時始終沒有遇到文本分段標識符，即便文本段 token 數已經超過這一閾值，系統也不會生成新文本塊。',
@@ -367,12 +375,25 @@ export default {
  `,
       tags: '標籤',
       addTag: '增加標籤',
+      paddleocrOptions: 'PaddleOCR 選項',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlTip: 'PaddleOCR 服務的 API 端點 URL',
+      paddleocrApiUrlPlaceholder:
+        '例如：https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio 訪問令牌',
+      paddleocrAccessTokenTip: 'PaddleOCR API 的訪問令牌（可選）',
+      paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可選）',
+      paddleocrAlgorithm: 'PaddleOCR 算法',
+      paddleocrAlgorithmTip: '用於 PaddleOCR 解析的算法',
+      paddleocrSelectAlgorithm: '選擇算法',
+      paddleocrModelNamePlaceholder: '例如：paddleocr-環境-1',
       useGraphRag: '提取知識圖譜',
       useGraphRagTip:
         '基於知識庫內所有切好的文本塊構建知識圖譜，用以提升多跳和複雜問題回答的正確率。請注意：構建知識圖譜將消耗大量 token 和時間。詳見 https://ragflow.io/docs/dev/construct_knowledge_graph。',
       graphRagMethod: '方法',
       graphRagMethodTip: `Light：實體和關係提取提示來自 GitHub - HKUDS/LightRAG：“LightRAG：簡單快速的檢索增強生成”<br>
- 一般：實體和關係擷取提示來自 GitHub - microsoft/graphrag：基於模組化圖形的檢索增強生成 (RAG) 系統，`,
+ 一般：實體和關係擷取提示來自 GitHub - microsoft/graphrag：基於模組化圖形的檢索增強生成 (RAG) 系統，<br>
+ NER：使用 spaCy NER 和基於規則的關鍵詞提取來抽取實體和關係，無需 LLM 參與提取過程，速度快且資源消耗低`,
       resolution: '實體歸一化',
       resolutionTip: `解析過程會將具有相同意義的實體合併在一起，使知識圖譜更簡潔、更準確。應合併以下實體：川普總統、唐納德·川普、唐納德·J·川普、唐納德·約翰·川普`,
       community: '社群報告生成',
@@ -381,6 +402,8 @@ export default {
     },
     chunk: {
       chunk: '解析塊',
+      createChunk: '建立解析塊',
+      editChunk: '編輯解析塊',
       bulk: '批量',
       selectAll: '選擇所有',
       enabledSelected: '啟用選定的',
@@ -406,6 +429,9 @@ export default {
       delete: '删除',
     },
     chat: {
+      chatSupport: '聊天支援',
+      replyInstantly: '我們通常會即時回覆',
+      typeYourMessage: '輸入您的訊息...',
       newConversation: '新會話',
       createAssistant: '新建助理',
       assistantSetting: '助理設置',
@@ -477,10 +503,15 @@ export default {
         '與存在懲罰類似，這減少了模型頻繁重複相同單詞的傾向。',
       maxTokens: '最大token數',
       maxTokensMessage: '最大token數是必填項',
-      maxTokensTip:
-        '這設置了模型輸出的最大長度，以標記（單詞或單詞片段）的數量來衡量。',
+      maxTokensTip: `模型的最大上下文大小；無效或不正確的值會導致錯誤。預設為 512。`,
       maxTokensInvalidMessage: '請輸入有效的最大標記數。',
       maxTokensMinMessage: '最大標記數不能小於 0。',
+      thinking: '思考',
+      thinkingDefault: '系統預設',
+      thinkingEnabled: '開啟',
+      thinkingDisabled: '關閉',
+      thinkingTip:
+        '僅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系統預設會關閉 Qwen 思考，以避免任務長時間執行。',
       quote: '顯示引文',
       quoteTip: '是否應該顯示原文出處？',
       selfRag: 'Self-RAG',
@@ -541,12 +572,18 @@ export default {
       tavilyApiKeyHelp: '如何獲取？',
       crossLanguage: '跨語言搜尋',
       crossLanguageTip: `選擇一種或多種語言進行跨語言搜尋。如果沒有選擇語言，系統將使用原始查詢進行搜尋。 `,
+      showChunkMetadata: '顯示區塊中繼資料',
+      showChunkMetadataTip:
+        '在擷取的文字區塊旁顯示文件中繼資料（如標題、頁碼、上傳日期）',
+      metadataFields: '中繼資料欄位',
+      metadataFieldsTip: '選擇要與每個區塊一起顯示的中繼資料欄位',
     },
     setting: {
       profile: '概述',
       avatar: '头像',
       avatarTip: '這會在你的個人主頁展示',
       profileDescription: '在此更新您的照片和個人詳細信息。',
+      dingtalkAITableDescription: '連接釘釘AI表格，同步指定表格中的記錄。',
       gitlabDescription:
         '連接 GitLab，同步儲存庫、Issue、合併請求（MR）及相關文件內容。',
       bedrockCredentialsHint:
@@ -562,8 +599,7 @@ export default {
         '選擇此模式後，EC2 執行個體將使用其既有的 IAM Role 存取 AWS 服務，無需額外憑證。',
       maxTokens: '最大token數',
       maxTokensMessage: '最大token數是必填項',
-      maxTokensTip:
-        '這設置了模型輸出的最大長度，以標記（單詞或單詞片段）的數量來衡量。',
+      maxTokensTip: `模型的最大上下文大小；無效或不正確的值會導致錯誤。預設為 512。`,
       maxTokensInvalidMessage: '請輸入有效的最大標記數。',
       maxTokensMinMessage: '最大標記數不能小於 0。',
       password: '密碼',
@@ -611,6 +647,8 @@ export default {
         '如果您的 API 密鑰來自 OpenAI，請忽略它。任何其他中間提供商都會提供帶有 API 密鑰的基本 URL。',
       tongyiBaseUrlTip:
         '中國用戶無需填寫或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。國際用戶請使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        '中國用戶無需填寫或使用 https://api.siliconflow.cn/v1。國際用戶請使用 https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder: '（僅國際用戶，請參閱提示）',
       minimaxBaseUrlTip: '僅國際用戶：使用 https://api.minimax.io/v1。',
       minimaxBaseUrlPlaceholder: '（僅國際用戶填寫 https://api.minimax.io/v1）',
@@ -644,12 +682,23 @@ export default {
       modelNameMessage: '請輸入模型名稱！',
       modelTypeMessage: '請輸入模型類型！',
       baseUrlNameMessage: '請輸入基礎 Url！',
+      paddleocr: {
+        apiUrl: 'PaddleOCR API URL',
+        apiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
+        accessToken: 'AI Studio 存取權杖',
+        accessTokenPlaceholder: '您的 AI Studio 權杖（選填）',
+        algorithm: 'PaddleOCR 演算法',
+        selectAlgorithm: '選擇演算法',
+        modelNamePlaceholder: '例如：paddleocr-from-env-1',
+        modelNameRequired: '模型名稱為必填項目',
+        apiUrlRequired: 'PaddleOCR API URL 為必填項目',
+      },
       ollamaLink: '如何集成 {{name}}',
       FishAudioLink: '如何使用Fish Audio',
       TencentCloudLink: '如何使用騰訊雲語音識別',
       volcModelNameMessage: '請輸入模型名稱！',
-      addEndpointID: '模型 EndpointID',
-      endpointIDMessage: '請輸入模型對應的EndpointID',
+      addEndpointID: '模型 ID',
+      endpointIDMessage: '請輸入模型 ID',
       addArkApiKey: '火山 ARK_API_KEY',
       ArkApiKeyMessage: '請輸入火山創建的ARK_API_KEY',
       bedrockModelNameMessage: '請輸入名稱！',
@@ -666,10 +715,6 @@ export default {
       'eu-central-1': '歐洲 (法蘭克福)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       'ap-southeast-2': '亞太地區 (雪梨)',
-      addHunyuanSID: '混元 Secret ID',
-      HunyuanSIDMessage: '請輸入 Secret ID',
-      addHunyuanSK: '混元 Secret Key',
-      HunyuanSKMessage: '請輸入 Secret Key',
       addTencentCloudSID: '騰訊雲 Secret ID',
       TencentCloudSIDMessage: '請輸入 Secret ID',
       addTencentCloudSK: '騰訊雲 Secret Key',
@@ -691,7 +736,7 @@ export default {
       FishAudioModelNameMessage: '請為你的TTS模型起名',
       addFishAudioAK: 'Fish Audio API KEY',
       addFishAudioAKMessage: '請輸入 API KEY',
-      addFishAudioRefID: 'FishAudio Refrence ID',
+      addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage: '請輸入引用模型的ID（留空表示使用默認模型）',
       GoogleModelIDMessage: '請輸入 model ID!',
       addGoogleProjectID: 'Project ID',
@@ -736,6 +781,7 @@ export default {
         '以英文逗號分隔的倉庫 slug，例如：repo-one,repo-two',
       bitbucketProjectsTip: '以英文逗號分隔的項目鍵，例如：PROJ1,PROJ2',
       connectorNameTip: '為連接器填寫一個有意義的名稱',
+      syncDeletedFiles: '同步刪除文件',
     },
     message: {
       registered: '註冊成功',
@@ -783,7 +829,7 @@ export default {
       parseOnCreation: '創建時解析',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
       uploadDescription:
-        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 demo.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
+        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 cloud.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
       file: '文件',
       directory: '文件夾',
       local: '本地上傳',
@@ -879,10 +925,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         '此組件透過您提供的 SearXNG 實例 URL 進行搜尋。請設定 Top N 和實例 URL。',
-      pdfGenerator: '文檔生成器',
-      pPDFGenerator: '文檔生成器',
-      pdfGeneratorDescription: `該組件從 markdown 格式的內容生成文檔（PDF、DOCX、TXT），支援自定義樣式、圖片和表格。支援：**粗體**、*斜體*、# 標題、- 列表、使用 | 語法的表格。`,
-      pPDFGeneratorDescription: `該組件從 markdown 格式的內容生成文檔（PDF、DOCX、TXT），支援自定義樣式、圖片和表格。支援：**粗體**、*斜體*、# 標題、- 列表、使用 | 語法的表格。`,
+      docGenerator: '文檔生成器',
+      docGeneratorDescription: `從 Markdown 內容產生檔案。`,
       subtitle: '副標題',
       logoImage: '標誌圖片',
       logoPosition: '標誌位置',
@@ -1236,6 +1280,9 @@ export default {
       categoryName: '分類名稱',
       nextStep: '下一步',
       insertVariableTip: `輸入 / 插入變數`,
+      mergePath: '合併路徑',
+      mergePathTip:
+        '開啟後，緊跟在變數後面的點號後綴會合併為路徑查詢，例如 {node@result.name}。',
       promptMessage: '提示詞是必填項',
       promptTip:
         '系統提示為大型模型提供任務描述、規定回覆方式，以及設定其他各種要求。系統提示通常與 key（變數）合用，透過變數設定大型模型的輸入資料。你可以透過斜線或 (x) 按鈕顯示可用的 key。',
@@ -1246,6 +1293,11 @@ export default {
       openingSwitchTip: '您的用戶將在開始時看到此歡迎訊息。',
       modeTip: '模式定義工作流程如何啟動。 ',
       beginInputTip: `透過定義輸入參數，這些內容可以在後續流程中被其他元件存取。`,
+      canvasCategory: '畫布分類',
+      tags: '標籤',
+      created: '建立於',
+      id: 'ID',
+      logTitle: '標題',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
@@ -1254,6 +1306,15 @@ export default {
       file: '文件',
       knowledge: '知識',
       chat: '聊天',
+    },
+    language: {
+      english: '英語',
+      chinese: '簡體中文',
+      russian: '俄語',
+      bulgarian: '保加利亞語',
+      arabic: '阿拉伯語',
+      turkish: '土耳其語',
+      korean: '韓語',
     },
     modal: {
       okText: '確認',
@@ -1268,6 +1329,7 @@ export default {
       id: 'ID',
       copySuccess: '複製成功',
       welcomeBack: '歡迎回來',
+      selectLocalePlaceholder: '選擇語言',
     },
   },
 };

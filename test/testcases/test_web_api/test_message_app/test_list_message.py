@@ -17,13 +17,13 @@ import os
 import random
 
 import pytest
-from test_web_api.common import list_memory_message
+from test_common import list_memory_message
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
@@ -39,15 +39,14 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_5_raw_message_func")
 class TestMessageList:
-
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_params_unset(self, WebApiAuth):
         memory_id = self.memory_id
         res = list_memory_message(WebApiAuth, memory_id, params=None)
         assert res["code"] == 0, res
         assert len(res["data"]["messages"]["message_list"]) == 5, res
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_params_empty(self, WebApiAuth):
         memory_id = self.memory_id
         res = list_memory_message(WebApiAuth, memory_id, params={})
@@ -64,8 +63,7 @@ class TestMessageList:
             ({"page": 3, "page_size": 2}, 1),
             ({"page": 5, "page_size": 10}, 0),
         ],
-        ids=["normal_first_page", "beyond_max_page", "normal_last_partial_page", "normal_middle_page",
-             "full_data_single_page"],
+        ids=["normal_first_page", "beyond_max_page", "normal_last_partial_page", "normal_middle_page", "full_data_single_page"],
     )
     def test_page_size(self, WebApiAuth, params, expected_page_size):
         # have added 5 messages in fixture

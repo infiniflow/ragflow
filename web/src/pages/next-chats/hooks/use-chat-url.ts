@@ -1,7 +1,6 @@
 import { ChatSearchParams } from '@/constants/chat';
 import { useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { IMessage } from '@/interfaces/database/chat';
-import { generateConversationId } from '@/utils/chat';
 import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
 import { useSetConversation } from './use-set-conversation';
@@ -57,41 +56,43 @@ export const useChatUrlParams = () => {
 export function useCreateConversationBeforeSendMessage() {
   const { conversationId, isNew } = useGetChatSearchParams();
   const { setConversation } = useSetConversation();
-  const { setIsNew, setConversationBoth } = useChatUrlParams();
+  const { setConversationBoth } = useChatUrlParams();
 
   // Create conversation if it doesn't exist
   const createConversationBeforeSendMessage = useCallback(
     async (value: string) => {
       let currentMessages: Array<IMessage> = [];
-      const currentConversationId = generateConversationId();
       if (conversationId === '' || isNew === 'true') {
-        if (conversationId === '') {
-          setConversationBoth(currentConversationId, 'true');
-        }
-        const data = await setConversation(
-          value,
-          true,
-          conversationId || currentConversationId,
-        );
-        if (data.code !== 0) {
+        const data = await setConversation(value);
+        if (!data || data.code !== 0) {
           return;
-        } else {
-          setIsNew('');
-          currentMessages = data.data.message;
         }
+        const backendConvId = data.data.id;
+        setConversationBoth(backendConvId, '');
+        currentMessages = data.data.messages;
+        return {
+          targetConversationId: backendConvId,
+          currentMessages,
+        };
       }
 
-      const targetConversationId = conversationId || currentConversationId;
-
       return {
-        targetConversationId,
+        targetConversationId: conversationId,
         currentMessages,
       };
     },
-    [conversationId, isNew, setConversation, setConversationBoth, setIsNew],
+    [conversationId, isNew, setConversation, setConversationBoth],
   );
 
   return {
     createConversationBeforeSendMessage,
   };
 }
+
+export type CreateConversationBeforeSendMessageType = ReturnType<
+  typeof useCreateConversationBeforeSendMessage
+>['createConversationBeforeSendMessage'];
+
+export type CreateConversationBeforeSendMessageReturnType = Awaited<
+  ReturnType<CreateConversationBeforeSendMessageType>
+>;

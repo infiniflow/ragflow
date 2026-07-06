@@ -130,8 +130,8 @@ const ParserContainer = (props: IProps) => {
   );
 
   const isChunck =
-    step?.type === TimelineNodeType.characterSplitter ||
-    step?.type === TimelineNodeType.titleSplitter;
+    step?.type === TimelineNodeType.tokenChunker ||
+    step?.type === TimelineNodeType.titleChunker;
 
   const handleCreateChunk = useCallback(
     (text: string) => {
@@ -214,8 +214,8 @@ const ParserContainer = (props: IProps) => {
               isChunck={isChunck}
               textMode={textMode}
               isDelete={
-                step?.type === TimelineNodeType.characterSplitter ||
-                step?.type === TimelineNodeType.titleSplitter
+                step?.type === TimelineNodeType.tokenChunker ||
+                step?.type === TimelineNodeType.titleChunker
               }
               clickChunk={clickChunk}
               handleCheckboxClick={handleCheckboxClick}

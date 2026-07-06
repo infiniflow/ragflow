@@ -20,6 +20,7 @@ import os
 import re
 from abc import ABC
 import tempfile
+import logging
 
 import requests
 from openai import OpenAI
@@ -37,8 +38,8 @@ class Base(ABC):
         pass
 
     def transcription(self, audio_path, **kwargs):
-        audio_file = open(audio_path, "rb")
-        transcription = self.client.audio.transcriptions.create(model=self.model_name, file=audio_file)
+        with open(audio_path, "rb") as audio_file:
+            transcription = self.client.audio.transcriptions.create(model=self.model_name, file=audio_file)
         return transcription.text.strip(), num_tokens_from_string(transcription.text.strip())
 
     def audio2base64(self, audio):
@@ -59,6 +60,25 @@ class GPTSeq2txt(Base):
         self.model_name = model_name
 
 
+class StepFunSeq2txt(GPTSeq2txt):
+    _FACTORY_NAME = "StepFun"
+
+    def __init__(self, key, model_name="step-asr", lang="Chinese", base_url="https://api.stepfun.com/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.stepfun.com/v1"
+        super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
+
+
+class FuturMixSeq2txt(GPTSeq2txt):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name="whisper-1", base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
+        logging.info("[FuturMix] Speech2Text initialized with model %s", model_name)
+
+
 class QWenSeq2txt(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
@@ -76,26 +96,9 @@ class QWenSeq2txt(Base):
         else:
             audio_input = f"file://{audio_path}"
 
-        messages = [
-            {
-                "role": "system",
-                "content": [{"text": ""}]
-            },
-            {
-                "role": "user",
-                "content": [{"audio": audio_input}]
-            }
-        ]
+        messages = [{"role": "system", "content": [{"text": ""}]}, {"role": "user", "content": [{"audio": audio_input}]}]
 
-        resp = dashscope.MultiModalConversation.call(
-            model=self.model_name,
-            messages=messages,
-            result_format="message",
-            asr_options={
-                "enable_lid": True,
-                "enable_itn": False
-            }
-        )
+        resp = dashscope.MultiModalConversation.call(model=self.model_name, messages=messages, result_format="message", asr_options={"enable_lid": True, "enable_itn": False})
 
         try:
             text = resp["output"]["choices"][0]["message"].content[0]["text"]
@@ -111,27 +114,9 @@ class QWenSeq2txt(Base):
         else:
             audio_input = f"file://{audio_path}"
 
-        messages = [
-            {
-                "role": "system",
-                "content": [{"text": ""}]
-            },
-            {
-                "role": "user",
-                "content": [{"audio": audio_input}]
-            }
-        ]
+        messages = [{"role": "system", "content": [{"text": ""}]}, {"role": "user", "content": [{"audio": audio_input}]}]
 
-        stream = dashscope.MultiModalConversation.call(
-            model=self.model_name,
-            messages=messages,
-            result_format="message",
-            stream=True,
-            asr_options={
-                "enable_lid": True,
-                "enable_itn": False
-            }
-        )
+        stream = dashscope.MultiModalConversation.call(model=self.model_name, messages=messages, result_format="message", stream=True, asr_options={"enable_lid": True, "enable_itn": False})
 
         full = ""
         for chunk in stream:
@@ -143,6 +128,7 @@ class QWenSeq2txt(Base):
                 yield {"event": "error", "text": str(e)}
 
         yield {"event": "final", "text": full}
+
 
 class AzureSeq2txt(Base):
     _FACTORY_NAME = "Azure-OpenAI"
@@ -163,8 +149,8 @@ class XinferenceSeq2txt(Base):
 
     def transcription(self, audio, language="zh", prompt=None, response_format="json", temperature=0.7):
         if isinstance(audio, str):
-            audio_file = open(audio, "rb")
-            audio_data = audio_file.read()
+            with open(audio, "rb") as audio_file:
+                audio_data = audio_file.read()
             audio_file_name = audio.split("/")[-1]
         else:
             audio_data = audio
@@ -175,7 +161,7 @@ class XinferenceSeq2txt(Base):
         files = {"file": (audio_file_name, audio_data, "audio/wav")}
 
         try:
-            response = requests.post(f"{self.base_url}/v1/audio/transcriptions", files=files, data=payload)
+            response = requests.post(f"{self.base_url}/v1/audio/transcriptions", files=files, data=payload, timeout=60)
             response.raise_for_status()
             result = response.json()
 
@@ -326,14 +312,9 @@ class ZhipuSeq2txt(Base):
         try:
             import ffmpeg
             import imageio_ffmpeg as ffmpeg_exe
+
             ffmpeg_path = ffmpeg_exe.get_ffmpeg_exe()
-            (
-                ffmpeg
-                .input(input_path)
-                .output(out_path, ar=16000, ac=1)
-                .overwrite_output()
-                .run(cmd=ffmpeg_path,quiet=True)
-            )
+            (ffmpeg.input(input_path).output(out_path, ar=16000, ac=1).overwrite_output().run(cmd=ffmpeg_path, quiet=True))
             return out_path
         except Exception as e:
             raise RuntimeError(f"audio convert failed: {e}")
@@ -357,6 +338,7 @@ class ZhipuSeq2txt(Base):
                     data=payload,
                     files=files,
                     headers=headers,
+                    timeout=60,
                 )
                 body = response.json()
                 if response.status_code == 200:
@@ -367,3 +349,56 @@ class ZhipuSeq2txt(Base):
                     return f"**ERROR**: code: {error['code']}, message: {error['message']}", 0
             except Exception as e:
                 return "**ERROR**: " + str(e), 0
+
+
+class RAGconSeq2txt(Base):
+    """
+    RAGcon Sequence2Text Provider - routes through LiteLLM proxy
+
+    Speech-to-text models routed through LiteLLM.
+    Default Base URL: https://connect.ragcon.com/v1
+    """
+
+    _FACTORY_NAME = "RAGcon"
+
+    def __init__(self, key, model_name, base_url=None, lang="English", **kwargs):
+        # Use provided base_url or fallback to default
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+
+        self.base_url = base_url
+        self.model_name = model_name
+        self.key = key
+        self.lang = lang
+
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
+
+    def transcription(self, audio_path, **kwargs):
+        """
+        Transcribe audio file using RAGcon's OpenAI-compatible API.
+        Uses Whisper's automatic language detection for German and English audio.
+
+        Args:
+            audio_path: Path to the audio file
+            **kwargs: Additional parameters (currently unused but maintained for compatibility)
+
+        Returns:
+            tuple: (transcribed_text, token_count)
+        """
+        with open(audio_path, "rb") as audio_file:
+            # Call RAGcon API - Whisper will auto-detect language
+            transcription = self.client.audio.transcriptions.create(model=self.model_name, file=audio_file)
+
+        # Return text and token count
+        text = transcription.text.strip()
+        return text, num_tokens_from_string(text)
+
+
+class NewAPISeq2txt(GPTSeq2txt):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name="whisper-1", base_url="", **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        model_name = model_name.split("___")[0]
+        super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)

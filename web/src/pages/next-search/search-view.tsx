@@ -5,27 +5,35 @@ import { FileIcon } from '@/components/icon-font';
 import { ImageWithPopover } from '@/components/image';
 import { Input } from '@/components/originui/input';
 import { SkeletonCard } from '@/components/skeleton-card';
+import { TopSelect } from '@/components/top-select';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { IReference } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
-import DOMPurify from 'dompurify';
 import { isEmpty } from 'lodash';
-import { BrainCircuit, Search, X } from 'lucide-react';
+import { ListTree, Search, X } from 'lucide-react';
 import { Dispatch, SetStateAction, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ISearchAppDetailProps } from '../next-searches/hooks';
 import PdfDrawer from './document-preview-modal';
+import ExpandableContent from './expandable-content';
 import { ISearchReturnProps } from './hooks';
 import './index.less';
 import MarkdownContent from './markdown-content';
-import MindMapDrawer from './mindmap-drawer';
+import MindMapSheet from './mindmap-sheet';
+import { RAGFlowLogo } from './ragflow-logo';
 import RetrievalDocuments from './retrieval-documents';
+
+const formatMetadataValue = (value: unknown) => {
+  if (Array.isArray(value)) return value.join(', ');
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
 export default function SearchingView({
   setIsSearching,
   searchData,
@@ -53,50 +61,44 @@ export default function SearchingView({
   chunks,
   total,
   handleSearch,
-  pagination,
-  onChange,
+  pageSize,
+  handleTopChange,
+  showEmbedLogo,
 }: ISearchReturnProps & {
   setIsSearching?: Dispatch<SetStateAction<boolean>>;
   searchData: ISearchAppDetailProps;
+  showEmbedLogo?: boolean;
 }) {
   const { t } = useTranslation();
-  // useEffect(() => {
-  //   const changeLanguage = async () => {
-  //     await i18n.changeLanguage('zh');
-  //   };
-  //   changeLanguage();
-  // }, [i18n]);
-  const [searchtext, setSearchtext] = useState<string>('');
+
+  const [searchText, setSearchText] = useState<string>('');
   const [retrievalLoading, setRetrievalLoading] = useState(false);
 
   useEffect(() => {
-    setSearchtext(searchStr);
-  }, [searchStr, setSearchtext]);
+    setSearchText(searchStr);
+  }, [searchStr, setSearchText]);
+
   return (
     <section
       className={cn(
-        'relative w-full flex transition-all justify-start items-center',
+        'relative w-full flex transition-all justify-start items-center h-full',
       )}
     >
       {/* search header */}
       <div
         className={cn(
-          'relative z-10 px-8 pt-8 flex  text-transparent justify-start items-start w-full',
+          'relative z-10 px-8 pt-8 flex  text-transparent justify-start items-start w-full h-full',
         )}
       >
-        <h1
-          className={cn(
-            'text-4xl font-bold bg-gradient-to-l from-[#40EBE3] to-[#4A51FF] bg-clip-text cursor-pointer',
-          )}
+        <RAGFlowLogo
           onClick={() => {
             setIsSearching?.(false);
           }}
-        >
-          RAGFlow
-        </h1>
+          showEmbedIcon={showEmbedLogo}
+        ></RAGFlowLogo>
         <div
           className={cn(
-            ' rounded-lg text-primary text-xl sticky flex flex-col justify-center w-2/3 max-w-[780px] transform scale-100 ml-16 ',
+            ' rounded-lg text-primary text-xl sticky flex flex-col justify-center  transform scale-100 ml-16 h-full flex-1 3xl:w-2/3 3xl:flex-none',
           )}
         >
           <div className={cn('flex flex-col justify-start items-start w-full')}>
@@ -106,14 +108,14 @@ export default function SearchingView({
                 className={cn(
                   'w-full rounded-full py-6 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base',
                 )}
-                value={searchtext}
+                value={searchText}
                 onChange={(e) => {
-                  setSearchtext(e.target.value);
+                  setSearchText(e.target.value);
                 }}
                 disabled={sendingLoading}
                 onKeyUp={(e) => {
                   if (e.key === 'Enter') {
-                    handleSearch(searchtext);
+                    handleSearch(searchText);
                   }
                 }}
               />
@@ -122,7 +124,7 @@ export default function SearchingView({
                   className="text-text-secondary cursor-pointer opacity-80"
                   size={14}
                   onClick={() => {
-                    setSearchtext('');
+                    setSearchText('');
                     handleClickRelatedQuestion('');
                   }}
                 />
@@ -134,7 +136,7 @@ export default function SearchingView({
                     if (sendingLoading) {
                       stopOutputMessage();
                     } else {
-                      handleSearch(searchtext);
+                      handleSearch(searchText);
                     }
                   }}
                 >
@@ -150,7 +152,7 @@ export default function SearchingView({
           </div>
           {/* search body */}
           <div
-            className="w-full mt-5 overflow-auto scrollbar-none "
+            className="w-full mt-5 overflow-auto scrollbar-thin "
             style={{ height: 'calc(100vh - 250px)' }}
           >
             {searchData.search_config.summary && !isSearchStrEmpty && (
@@ -162,13 +164,15 @@ export default function SearchingView({
                   <SkeletonCard className=" mt-2" />
                 ) : (
                   answer.answer && (
-                    <div className="border rounded-lg p-4 mt-3 max-h-52 overflow-auto scrollbar-none">
-                      <MarkdownContent
-                        loading={sendingLoading}
-                        content={answer.answer}
-                        reference={answer.reference ?? ({} as IReference)}
-                        clickDocumentButton={clickDocumentButton}
-                      ></MarkdownContent>
+                    <div className="border rounded-lg p-4 mt-3">
+                      <ExpandableContent maxHeight={208}>
+                        <MarkdownContent
+                          loading={sendingLoading}
+                          content={answer.answer}
+                          reference={answer.reference ?? ({} as IReference)}
+                          clickDocumentButton={clickDocumentButton}
+                        />
+                      </ExpandableContent>
                     </div>
                   )
                 )}
@@ -179,8 +183,8 @@ export default function SearchingView({
             )}
             {/* retrieval documents */}
             {!isSearchStrEmpty && !sendingLoading && (
-              <>
-                <div className=" mt-3 w-44 ">
+              <section className="flex justify-start items-center gap-4">
+                <div className="w-44 ">
                   <RetrievalDocuments
                     selectedDocumentIds={selectedDocumentIds}
                     setSelectedDocumentIds={setSelectedDocumentIds}
@@ -190,8 +194,16 @@ export default function SearchingView({
                     }}
                   ></RetrievalDocuments>
                 </div>
-                {/* <div className="w-full border-b border-border-default/80 my-6"></div> */}
-              </>
+                <div className="w-44">
+                  <TopSelect
+                    value={pageSize}
+                    onChange={handleTopChange}
+                  ></TopSelect>
+                </div>
+                <span className="ml-auto text-sm text-text-secondary pr-2">
+                  {t('common.total')}: {total}
+                </span>
+              </section>
             )}
             <div className="mt-3 ">
               {chunks?.length > 0 && (
@@ -200,34 +212,36 @@ export default function SearchingView({
                     return (
                       <div key={index}>
                         <div className="w-full flex flex-col">
-                          <div className="w-full highlightContent">
-                            <ImageWithPopover
-                              id={chunk.image_id || chunk.img_id}
-                            ></ImageWithPopover>
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <div
-                                  dangerouslySetInnerHTML={{
-                                    __html: DOMPurify.sanitize(
-                                      `${
-                                        chunk.highlight ??
-                                        chunk.content_with_weight ??
-                                        ''
-                                      }...`,
-                                    ),
-                                  }}
-                                  className="text-sm text-text-primary mb-1"
-                                ></div>
-                              </PopoverTrigger>
-                              <PopoverContent className="text-text-primary !w-full max-w-lg ">
-                                <div className="max-h-96 overflow-auto scrollbar-thin">
-                                  <HighLightMarkdown>
-                                    {chunk.content_with_weight}
-                                  </HighLightMarkdown>
-                                </div>
-                              </PopoverContent>
-                            </Popover>
+                          <div className="w-full">
+                            {(chunk.image_id || chunk.img_id) && (
+                              <ImageWithPopover
+                                id={chunk.image_id || chunk.img_id}
+                              ></ImageWithPopover>
+                            )}
+                            <HighLightMarkdown>
+                              {chunk.content_with_weight}
+                            </HighLightMarkdown>
                           </div>
+                          {chunk.document_metadata &&
+                            Object.keys(chunk.document_metadata).length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {Object.entries(chunk.document_metadata).map(
+                                  ([key, value]) => (
+                                    <div
+                                      key={key}
+                                      className="text-xs border border-border-default rounded px-2 py-1"
+                                    >
+                                      <span className="text-text-secondary">
+                                        {key}:
+                                      </span>{' '}
+                                      <span className="text-text-primary">
+                                        {formatMetadataValue(value)}
+                                      </span>
+                                    </div>
+                                  ),
+                                )}
+                              </div>
+                            )}
                           <div
                             className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit mt-3"
                             onClick={() =>
@@ -239,7 +253,7 @@ export default function SearchingView({
                           </div>
                         </div>
                         {index < chunks.length - 1 && (
-                          <div className="w-full border-b border-border-default/80 mt-6"></div>
+                          <div className="w-full border-b border-border-default/80 mt-6 mb-2"></div>
                         )}
                       </div>
                     );
@@ -287,46 +301,39 @@ export default function SearchingView({
               )}
           </div>
 
-          {total > 0 && (
-            <div className="mt-8 px-8 pb-8 text-base">
-              <RAGFlowPagination
-                current={pagination.current}
-                pageSize={pagination.pageSize}
-                total={total}
-                onChange={onChange}
-              ></RAGFlowPagination>
-            </div>
-          )}
+          {!mindMapVisible &&
+            !isFirstRender &&
+            !isSearchStrEmpty &&
+            !isEmpty(searchData.search_config.kb_ids) &&
+            searchData.search_config.query_mindmap && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    onClick={showMindMapModal}
+                    variant={'outline'}
+                    className="absolute top-16 translate-y-2 right-10 z-30 rounded-full size-6"
+                  >
+                    <ListTree />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-fit">
+                  {t('chunk.mind')}
+                </PopoverContent>
+              </Popover>
+            )}
         </div>
         {mindMapVisible && (
           <div className="flex-1 h-[88dvh] z-30 ml-32 mt-5">
-            <MindMapDrawer
+            <MindMapSheet
               visible={mindMapVisible}
               hideModal={hideMindMapModal}
               data={mindMap}
               loading={mindMapLoading}
-            ></MindMapDrawer>
+            ></MindMapSheet>
           </div>
         )}
       </div>
-      {!mindMapVisible &&
-        !isFirstRender &&
-        !isSearchStrEmpty &&
-        !isEmpty(searchData.search_config.kb_ids) &&
-        searchData.search_config.query_mindmap && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <div
-                className="rounded-lg h-16 w-16 p-0 absolute top-28 right-3 z-30 border cursor-pointer flex justify-center items-center bg-bg-card"
-                onClick={showMindMapModal}
-              >
-                {/* <SvgIcon name="paper-clip" width={24} height={30}></SvgIcon> */}
-                <BrainCircuit size={36} />
-              </div>
-            </PopoverTrigger>
-            <PopoverContent className="w-fit">{t('chunk.mind')}</PopoverContent>
-          </Popover>
-        )}
+
       {visible && (
         <PdfDrawer
           visible={visible}

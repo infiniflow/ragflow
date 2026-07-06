@@ -18,7 +18,9 @@ import re
 from abc import ABC
 from typing import Any
 
-from jinja2 import Template as Jinja2Template
+from jinja2.sandbox import SandboxedEnvironment
+
+_jinja2_sandbox = SandboxedEnvironment()
 from agent.component.base import ComponentParamBase
 from common.connection_utils import timeout
 from .message import Message
@@ -50,18 +52,10 @@ class StringTransform(Message, ABC):
 
     def get_input_form(self) -> dict[str, dict]:
         if self._param.method == "split":
-            return {
-                "line": {
-                    "name": "String",
-                    "type": "line"
-                }
-            }
-        return {k: {
-            "name": o["name"],
-            "type": "line"
-        } for k, o in self.get_input_elements_from_text(self._param.script).items()}
+            return {"line": {"name": "String", "type": "line"}}
+        return {k: {"name": o["name"], "type": "line"} for k, o in self.get_input_elements_from_text(self._param.script).items()}
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("StringTransform processing"):
             return
@@ -71,7 +65,7 @@ class StringTransform(Message, ABC):
         else:
             self._merge(kwargs)
 
-    def _split(self, line:str|None = None):
+    def _split(self, line: str | None = None):
         if self.check_if_canceled("StringTransform split processing"):
             return
 
@@ -82,13 +76,13 @@ class StringTransform(Message, ABC):
         self.set_input_value(self._param.split_ref, var)
 
         res = []
-        for i,s in enumerate(re.split(r"(%s)"%("|".join([re.escape(d) for d in self._param.delimiters])), var, flags=re.DOTALL)):
+        for i, s in enumerate(re.split(r"(%s)" % ("|".join([re.escape(d) for d in self._param.delimiters])), var, flags=re.DOTALL)):
             if i % 2 == 1:
                 continue
             res.append(s)
         self.set_output("result", res)
 
-    def _merge(self, kwargs:dict[str, str] = {}):
+    def _merge(self, kwargs: dict[str, str] = {}):
         if self.check_if_canceled("StringTransform merge processing"):
             return
 
@@ -96,14 +90,14 @@ class StringTransform(Message, ABC):
         script, kwargs = self.get_kwargs(script, kwargs, self._param.delimiters[0])
 
         if self._is_jinjia2(script):
-            template = Jinja2Template(script)
+            template = _jinja2_sandbox.from_string(script)
             try:
                 script = template.render(kwargs)
             except Exception:
                 pass
 
-        for k,v in kwargs.items():
-            if not v:
+        for k, v in kwargs.items():
+            if v is None:
                 v = ""
             script = re.sub(k, lambda match: v, script)
 
@@ -111,5 +105,3 @@ class StringTransform(Message, ABC):
 
     def thoughts(self) -> str:
         return f"It's {self._param.method}ing."
-
-

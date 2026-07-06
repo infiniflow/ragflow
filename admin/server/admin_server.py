@@ -14,12 +14,14 @@
 #  limitations under the License.
 #
 
+import time
+
+start_ts = time.time()
+
 import os
 import signal
 import logging
-import time
 import threading
-import traceback
 import faulthandler
 
 from flask import Flask
@@ -37,26 +39,24 @@ from common.versions import get_ragflow_version
 
 stop_event = threading.Event()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     faulthandler.enable()
     init_root_logger("admin_service")
     logging.info(r"""
-        ____  ___   ______________                 ___       __          _     
-       / __ \/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___ 
+        ____  ___   ______________                 ___       __          _
+       / __ \/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___
       / /_/ / /| |/ / __/ /_  / / __ \ | /| / /  / /| |/ __  / __ `__ \/ / __ \
      / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / /
-    /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/  /_/  |_\__,_/_/ /_/ /_/_/_/ /_/ 
+    /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/  /_/  |_\__,_/_/ /_/ /_/_/_/ /_/
     """)
 
     app = Flask(__name__)
     app.register_blueprint(admin_bp)
     app.config["SESSION_PERMANENT"] = False
     app.config["SESSION_TYPE"] = "filesystem"
-    app.config["MAX_CONTENT_LENGTH"] = int(
-        os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024)
-    )
+    app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024))
     Session(app)
-    logging.info(f'RAGFlow version: {get_ragflow_version()}')
+    logging.info(f"RAGFlow admin version: {get_ragflow_version()}")
     show_configs()
     login_manager = LoginManager()
     login_manager.init_app(app)
@@ -66,17 +66,17 @@ if __name__ == '__main__':
     SERVICE_CONFIGS.configs = load_configurations(SERVICE_CONF)
 
     try:
-        logging.info("RAGFlow Admin service start...")
+        logging.info(f"RAGFlow admin is ready after {time.time() - start_ts}s initialization.")
         run_simple(
             hostname="0.0.0.0",
             port=9381,
             application=app,
             threaded=True,
             use_reloader=False,
-            use_debugger=True,
+            use_debugger=False,
         )
-    except Exception:
-        traceback.print_exc()
+    except Exception as e:
+        logging.exception(f"Unhandled exception: {e}")
         stop_event.set()
         time.sleep(1)
         os.kill(os.getpid(), signal.SIGKILL)

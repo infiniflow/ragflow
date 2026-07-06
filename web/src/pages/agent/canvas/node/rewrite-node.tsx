@@ -1,5 +1,5 @@
 import { useTheme } from '@/components/theme-provider';
-import { IRewriteNode } from '@/interfaces/database/flow';
+import { IRewriteNode } from '@/interfaces/database/agent';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
 import { get } from 'lodash';

@@ -1,8 +1,10 @@
 ---
 sidebar_position: 13
 slug: /code_component
+sidebar_custom_props: {
+  categoryIcon: LucideCodeXml
+}
 ---
-
 # Code component
 
 A component that enables users to integrate Python or JavaScript codes into their Agent for dynamic data processing.
@@ -21,7 +23,7 @@ We use gVisor to isolate code execution from the host system. Please follow [the
 
 ### 2. Ensure Sandbox is properly installed
 
-RAGFlow Sandbox is a secure, pluggable code execution backend. It serves as the code executor for the **Code** component. Please follow the [instructions here](https://github.com/infiniflow/ragflow/tree/main/sandbox) to install RAGFlow Sandbox.
+RAGFlow Sandbox is a secure, pluggable code execution backend. It serves as the code executor for the **Code** component. Please follow the [instructions here](https://github.com/infiniflow/ragflow/tree/main/agent/sandbox) to install RAGFlow Sandbox.
 
 :::note Docker client version
 The executor manager image now bundles Docker CLI `29.1.0` (API 1.44+). Older images shipped Docker 24.x and will fail against newer Docker daemons with `client version 1.43 is too old`. Pull the latest `infiniflow/sandbox-executor-manager:latest` or rebuild it in `./sandbox/executor_manager` if you encounter this error.
@@ -96,7 +98,49 @@ If you define output variables here, ensure they are also defined in your code i
 
 ### Output
 
-The defined output variable(s) will be auto-populated here.
+The output is split into two parts:
+
+- **Business**: the business output defined in **Return Value**
+- **System**: runtime fields that are populated automatically, such as `content`, `actual_type`, and `attachments`
+
+For example, the following code generates a simple line chart:
+
+```Python
+def main() -> dict:
+    from pathlib import Path
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    artifacts_dir = Path("artifacts")
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    x = [1, 2, 3, 4, 5]
+    y = [2, 4, 6, 8, 10]
+
+    output_path = artifacts_dir / "simple_plot.png"
+
+    plt.figure(figsize=(6, 4))
+    plt.plot(x, y, marker="o")
+    plt.title("Simple Line Chart")
+    plt.xlabel("X")
+    plt.ylabel("Y")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
+
+    return {
+        "result": "plot generated successfully",
+        "file_path": str(output_path),
+    }
+```
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/codeexec_output1.jpg)
+
+Business Output shows the return value you defined, while System Output shows the generated `content`, the inferred `actual_type`, and the collected `attachments`.
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/codeexec_output2.jpg)
 
 ## Troubleshooting
 

@@ -1,8 +1,10 @@
 ---
 sidebar_position: -7
 slug: /set_metadata
+sidebar_custom_props: {
+  categoryIcon: LucideCode
+}
 ---
-
 # Set metadata
 
 Manually add metadata to an uploaded file
@@ -29,4 +31,4 @@ Ensure that your metadata is in JSON format; otherwise, your updates will not be
 
 ### Can I set metadata for multiple documents at once?
 
-From v0.23.0 onwards, you can set metadata for each document individually or have the LLM auto-generate metadata for multiple files. See [Extract metadata](./auto_metadata.md) for details.
+From v0.23.0 onwards, you can set metadata for each document individually or have the LLM auto-generate metadata for multiple files. See [Extract metadata](./advanced/auto_metadata.md) for details.

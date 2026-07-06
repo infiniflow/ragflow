@@ -7,7 +7,8 @@ import {
 } from '@/hooks/use-document-request';
 import { IModalProps } from '@/interfaces/common';
 import { IReferenceChunk } from '@/interfaces/database/chat';
-import { IChunk } from '@/interfaces/database/knowledge';
+import { IChunk } from '@/interfaces/database/dataset';
+import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 
 interface IProps extends IModalProps<any> {
@@ -54,7 +55,9 @@ const PdfDrawer = ({
       showfooter={false}
     >
       <DocumentPreview
-        className={'!h-[calc(100dvh-300px)] overflow-auto'}
+        className={cn(
+          '!h-[calc(100dvh-300px)] overflow-auto border-none padding-0 max-h-full',
+        )}
         fileType={fileType}
         highlights={highlights}
         setWidthAndHeight={setWidthAndHeight}

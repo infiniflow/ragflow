@@ -1,9 +1,11 @@
 ---
 sidebar_position: 1
 slug: /agent_introduction
+sidebar_custom_props: {
+  categoryIcon: LucideBookOpenText
+}
 ---
-
-# Introduction to agents
+# Introduction
 
 Key concepts, basic operations, a quick view of the agent editor.
 
@@ -41,7 +43,7 @@ We also provide templates catered to different business scenarios. You can eithe
 
    ![agent_template](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_template_list.jpg)
 
-2. To create an agent from scratch, click **Create Agent**. Alternatively, to create an agent from one of our templates, click the desired card, such as **Deep Research**, name your agent in the pop-up dialogue, and click **OK** to confirm.  
+2. To create an agent from scratch, click **Create Agent**. Alternatively, to create an agent from one of our templates, click the desired card, such as **Deep research**, name your agent in the pop-up dialogue, and click **OK** to confirm.  
 
    *You are now taken to the **no-code workflow editor** page.*
 

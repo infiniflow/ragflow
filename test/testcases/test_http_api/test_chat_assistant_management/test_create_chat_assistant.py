@@ -27,12 +27,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -76,7 +72,7 @@ class TestChatAssistantCreate:
             ([], 0, ""),
             (lambda r: [r], 0, ""),
             (["invalid_dataset_id"], 102, "You don't own the dataset invalid_dataset_id"),
-            ("invalid_dataset_id", 102, "You don't own the dataset i"),
+            ("invalid_dataset_id", 102, "`dataset_ids` should be a list."),
         ],
     )
     def test_dataset_ids(self, HttpApiAuth, add_chunks, dataset_ids, expected_code, expected_message):
@@ -97,7 +93,7 @@ class TestChatAssistantCreate:
     @pytest.mark.p3
     def test_avatar(self, HttpApiAuth, tmp_path):
         fn = create_image_file(tmp_path / "ragflow_test.png")
-        payload = {"name": "avatar_test", "avatar": encode_avatar(fn), "dataset_ids": []}
+        payload = {"name": "avatar_test", "icon": encode_avatar(fn), "dataset_ids": []}
         res = create_chat_assistant(HttpApiAuth, payload)
         assert res["code"] == 0
 
@@ -107,7 +103,7 @@ class TestChatAssistantCreate:
         [
             ({}, 0, ""),
             ({"model_name": "glm-4"}, 0, ""),
-            ({"model_name": "unknown"}, 102, "`model_name` unknown doesn't exist"),
+            ({"model_name": "unknown"}, 102, "`llm_id` unknown doesn't exist"),
             ({"temperature": 0}, 0, ""),
             ({"temperature": 1}, 0, ""),
             pytest.param({"temperature": -1}, 0, "", marks=pytest.mark.skip),
@@ -138,20 +134,23 @@ class TestChatAssistantCreate:
     )
     def test_llm(self, HttpApiAuth, add_chunks, llm, expected_code, expected_message):
         dataset_id, _, _ = add_chunks
-        payload = {"name": "llm_test", "dataset_ids": [dataset_id], "llm": llm}
+        payload = {"name": "llm_test", "dataset_ids": [dataset_id]}
+        if "model_name" in llm:
+            payload["llm_id"] = llm["model_name"]
+        if any(k != "model_name" for k in llm):
+            payload["llm_setting"] = {k: v for k, v in llm.items() if k != "model_name"}
         res = create_chat_assistant(HttpApiAuth, payload)
         assert res["code"] == expected_code
         if expected_code == 0:
             if llm:
                 for k, v in llm.items():
-                    assert res["data"]["llm"][k] == v
+                    if k == "model_name":
+                        assert res["data"]["llm_id"] == v
+                    else:
+                        assert res["data"]["llm_setting"][k] == v
             else:
-                assert res["data"]["llm"]["model_name"] == "glm-4-flash@ZHIPU-AI"
-                assert res["data"]["llm"]["temperature"] == 0.1
-                assert res["data"]["llm"]["top_p"] == 0.3
-                assert res["data"]["llm"]["presence_penalty"] == 0.4
-                assert res["data"]["llm"]["frequency_penalty"] == 0.7
-                assert res["data"]["llm"]["max_tokens"] == 512
+                assert res["data"]["llm_id"] == "glm-4-flash@ZHIPU-AI"
+                assert res["data"]["llm_setting"] == {}
         else:
             assert res["message"] == expected_message
 
@@ -196,7 +195,7 @@ class TestChatAssistantCreate:
             ({"prompt": "{knowledge}"}, 0, ""),
             ({"prompt": "!@#$%^&*() {knowledge}"}, 0, ""),
             ({"prompt": "中文测试 {knowledge}"}, 0, ""),
-            ({"prompt": "Hello World"}, 102, "Parameter 'knowledge' is not used"),
+            ({"prompt": "Hello World"}, 0, ""),
             ({"prompt": "Hello World", "variables": []}, 0, ""),
             pytest.param({"prompt": 123}, 100, """AttributeError("\'int\' object has no attribute \'find\'")""", marks=pytest.mark.skip),
             pytest.param({"prompt": True}, 100, """AttributeError("\'int\' object has no attribute \'find\'")""", marks=pytest.mark.skip),
@@ -205,31 +204,82 @@ class TestChatAssistantCreate:
     )
     def test_prompt(self, HttpApiAuth, add_chunks, prompt, expected_code, expected_message):
         dataset_id, _, _ = add_chunks
-        payload = {"name": "prompt_test", "dataset_ids": [dataset_id], "prompt": prompt}
+        payload = {"name": "prompt_test", "dataset_ids": [dataset_id]}
+        prompt_config = {}
+        for k, v in prompt.items():
+            if k == "keywords_similarity_weight":
+                payload["vector_similarity_weight"] = 1 - v
+            elif k == "variables":
+                prompt_config["parameters"] = v
+            elif k == "opener":
+                prompt_config["prologue"] = v
+            elif k == "show_quote":
+                prompt_config["quote"] = v
+            elif k == "prompt":
+                prompt_config["system"] = v
+            elif k == "rerank_model":
+                payload["rerank_id"] = v
+            elif k in {"empty_response"}:
+                prompt_config[k] = v
+            else:
+                payload[k] = v
+        if prompt_config:
+            payload["prompt_config"] = prompt_config
         res = create_chat_assistant(HttpApiAuth, payload)
         assert res["code"] == expected_code
         if expected_code == 0:
             if prompt:
                 for k, v in prompt.items():
                     if k == "keywords_similarity_weight":
-                        assert res["data"]["prompt"][k] == 1 - v
+                        assert res["data"]["vector_similarity_weight"] == 1 - v
+                    elif k == "variables":
+                        expected_parameters = v
+                        if not v and "{knowledge}" in res["data"]["prompt_config"]["system"]:
+                            expected_parameters = [{"key": "knowledge", "optional": False}]
+                        assert res["data"]["prompt_config"]["parameters"] == expected_parameters
+                    elif k == "opener":
+                        assert res["data"]["prompt_config"]["prologue"] == v
+                    elif k == "show_quote":
+                        assert res["data"]["prompt_config"]["quote"] == v
+                    elif k == "prompt":
+                        assert res["data"]["prompt_config"]["system"] == v
+                    elif k == "rerank_model":
+                        assert res["data"]["rerank_id"] == v
+                    elif k == "empty_response":
+                        assert res["data"]["prompt_config"]["empty_response"] == v
                     else:
-                        assert res["data"]["prompt"][k] == v
+                        assert res["data"][k] == v
             else:
-                assert res["data"]["prompt"]["similarity_threshold"] == 0.2
-                assert res["data"]["prompt"]["keywords_similarity_weight"] == 0.7
-                assert res["data"]["prompt"]["top_n"] == 6
-                assert res["data"]["prompt"]["variables"] == [{"key": "knowledge", "optional": False}]
-                assert res["data"]["prompt"]["rerank_model"] == ""
-                assert res["data"]["prompt"]["empty_response"] == "Sorry! No relevant content was found in the knowledge base!"
-                assert res["data"]["prompt"]["opener"] == "Hi! I'm your assistant. What can I do for you?"
-                assert res["data"]["prompt"]["show_quote"] is True
+                assert res["data"]["similarity_threshold"] == 0.1
+                assert res["data"]["vector_similarity_weight"] == 0.3
+                assert res["data"]["top_n"] == 6
+                assert res["data"]["rerank_id"] == ""
+                assert res["data"]["prompt_config"]["parameters"] == [{"key": "knowledge", "optional": False}]
+                assert res["data"]["prompt_config"]["empty_response"] == "Sorry! No relevant content was found in the knowledge base!"
+                assert res["data"]["prompt_config"]["prologue"] == "Hi! I'm your assistant. What can I do for you?"
+                assert res["data"]["prompt_config"]["quote"] is True
                 assert (
-                    res["data"]["prompt"]["prompt"]
+                    res["data"]["prompt_config"]["system"]
                     == 'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.'
                 )
         else:
             assert res["message"] == expected_message
+
+    @pytest.mark.p2
+    def test_create_additional_guards_p2(self, HttpApiAuth):
+        tenant_payload = {"name": "guard-tenant-id", "dataset_ids": [], "tenant_id": "tenant-should-not-pass"}
+        res = create_chat_assistant(HttpApiAuth, tenant_payload)
+        assert res["code"] == 102
+        assert res["message"] == "`tenant_id` must not be provided."
+
+        rerank_payload = {
+            "name": "guard-rerank-id",
+            "dataset_ids": [],
+            "rerank_id": "unknown-rerank-model",
+        }
+        res = create_chat_assistant(HttpApiAuth, rerank_payload)
+        assert res["code"] == 102
+        assert "`rerank_id` unknown-rerank-model doesn't exist" in res["message"]
 
 
 class TestChatAssistantCreate2:

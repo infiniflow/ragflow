@@ -5,6 +5,10 @@ services:
     image: elasticsearch:${STACK_VERSION}
     volumes:
       - esdata01:/usr/share/elasticsearch/data
+    # Official ES image ACL on /tmp denies writes for user elasticsearch (r-x only).
+    # entrypoint.sh needs a writable temp dir for bash here-documents.
+    tmpfs:
+      - /tmp:mode=1777,size=512m
     ports:
       - ${ES_PORT}:9200
     env_file: .env
@@ -36,7 +40,7 @@ services:
   opensearch01:
     profiles:
       - opensearch
-    image: hub.icert.top/opensearchproject/opensearch:2.19.1
+    image: opensearchproject/opensearch:2.19.1
     volumes:
       - osdata01:/usr/share/opensearch/data
     ports:
@@ -72,7 +76,7 @@ services:
   infinity:
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.6.15
+    image: infiniflow/infinity:v0.7.0
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -100,10 +104,16 @@ services:
     profiles:
       - oceanbase
     image: oceanbase/oceanbase-ce:4.4.1.0-100000032025101610
+    entrypoint: ["bash", "/root/boot/ragflow-oceanbase-entrypoint.sh"]
+    ulimits:
+      nofile:
+        soft: 655350
+        hard: 655350
     volumes:
       - ./oceanbase/data:/root/ob
       - ./oceanbase/conf:/root/.obd/cluster
       - ./oceanbase/init.d:/root/boot/init.d
+      - ./oceanbase-entrypoint.sh:/root/boot/ragflow-oceanbase-entrypoint.sh:ro
     ports:
       - ${OCEANBASE_PORT:-2881}:2881
     env_file: .env
@@ -117,6 +127,30 @@ services:
       retries: 30
       start_period: 30s
       timeout: 10s
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+  seekdb:
+    profiles:
+      - seekdb
+    image: oceanbase/seekdb:latest
+    container_name: seekdb
+    volumes:
+      - ./seekdb:/var/lib/oceanbase
+    ports:
+      - ${SEEKDB_PORT:-2881}:2881
+    env_file: .env
+    environment:
+      - ROOT_PASSWORD=${SEEKDB_PASSWORD:-infini_rag_flow}
+      - MEMORY_LIMIT=${SEEKDB_MEMORY_LIMIT:-2G}
+      - REPORTER=ragflow-seekdb
+    mem_limit: ${MEM_LIMIT}
+    healthcheck:
+      test: ['CMD-SHELL', 'mysql -h127.0.0.1 -P2881 -uroot -p${SEEKDB_PASSWORD:-infini_rag_flow} -e "CREATE DATABASE IF NOT EXISTS ${SEEKDB_DOC_DBNAME:-ragflow_doc};"']
+      interval: 5s
+      retries: 60
+      timeout: 5s
     networks:
       - ragflow
     restart: unless-stopped
@@ -164,7 +198,7 @@ services:
       --init-file /data/application/init.sql
       --binlog_expire_logs_seconds=604800
     ports:
-      - ${MYSQL_PORT}:3306
+      - ${EXPOSE_MYSQL_PORT}:3306
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/data/application/init.sql
@@ -178,7 +212,7 @@ services:
     restart: unless-stopped
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
+    image: pgsty/minio:RELEASE.2026-03-25T00-00-00Z
     command: ["server", "--console-address", ":9001", "/data"]
     ports:
       - ${MINIO_PORT}:9000
@@ -216,6 +250,25 @@ services:
       timeout: 10s
       retries: 120
 
+  nats:
+    profiles:
+      - ragflow-go
+    image: nats:2.14.2
+    ports:
+      - ${NATS_PORT}:4222
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    command: -js -sd /data
+    env_file: .env
+    networks:
+      - ragflow
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "${NATS_PORT}"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
 
   tei-cpu:
     profiles:
@@ -283,6 +336,8 @@ volumes:
     driver: local
   ob_data:
     driver: local
+  seekdb_data:
+    driver: local
   mysql_data:
     driver: local
   minio_data:
@@ -292,6 +347,8 @@ volumes:
   tei_data:
     driver: local
   kibana_data:
+    driver: local
+  nats_data:
     driver: local
 
 networks:

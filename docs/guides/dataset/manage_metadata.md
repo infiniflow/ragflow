@@ -1,8 +1,10 @@
 ---
 sidebar_position: -5
 slug: /manage_metadata
+sidebar_custom_props: {
+  categoryIcon: LucideCode
+}
 ---
-
 # Manage metadata
 
 Manage metadata for your dataset and for your individual documents.

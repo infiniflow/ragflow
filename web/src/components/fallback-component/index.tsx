@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { isRouteErrorResponse, useRouteError } from 'react-router';
 
 interface FallbackComponentProps {
   error?: Error;
@@ -7,10 +8,32 @@ interface FallbackComponentProps {
 }
 
 const FallbackComponent: React.FC<FallbackComponentProps> = ({
-  error,
+  error: errorProp,
   reset,
 }) => {
   const { t } = useTranslation();
+  const routeError = useRouteError();
+  const error =
+    errorProp ?? (routeError instanceof Error ? routeError : undefined);
+
+  let routeErrorDataStr = '';
+  if (isRouteErrorResponse(routeError)) {
+    if (typeof routeError.data === 'string') {
+      routeErrorDataStr = routeError.data;
+    } else if (routeError.data == null) {
+      routeErrorDataStr = 'no body';
+    } else {
+      try {
+        routeErrorDataStr = JSON.stringify(routeError.data);
+      } catch {
+        routeErrorDataStr = String(routeError.data);
+      }
+    }
+  }
+
+  const errorMessage = isRouteErrorResponse(routeError)
+    ? `${routeError.status} ${routeError.statusText}${routeErrorDataStr ? `: ${routeErrorDataStr}` : ''}`
+    : (error?.toString() ?? (routeError ? String(routeError) : undefined));
 
   return (
     <div style={{ padding: '20px', textAlign: 'center' }}>
@@ -21,10 +44,10 @@ const FallbackComponent: React.FC<FallbackComponentProps> = ({
           'Sorry, an error occurred while loading the page.',
         )}
       </p>
-      {error && (
-        <details style={{ whiteSpace: 'pre-wrap', marginTop: '16px' }}>
+      {errorMessage && (
+        <details open className="mt-4 whitespace-pre-wrap">
           <summary>{t('error_boundary.details', 'Error details')}</summary>
-          {error.toString()}
+          {errorMessage}
         </details>
       )}
       <div style={{ marginTop: '16px' }}>

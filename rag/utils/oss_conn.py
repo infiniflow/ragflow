@@ -28,12 +28,14 @@ class RAGFlowOSS:
     def __init__(self):
         self.conn = None
         self.oss_config = settings.OSS
-        self.access_key = self.oss_config.get('access_key', None)
-        self.secret_key = self.oss_config.get('secret_key', None)
-        self.endpoint_url = self.oss_config.get('endpoint_url', None)
-        self.region = self.oss_config.get('region', None)
-        self.bucket = self.oss_config.get('bucket', None)
-        self.prefix_path = self.oss_config.get('prefix_path', None)
+        self.access_key = self.oss_config.get("access_key", None)
+        self.secret_key = self.oss_config.get("secret_key", None)
+        self.endpoint_url = self.oss_config.get("endpoint_url", None)
+        self.region = self.oss_config.get("region", None)
+        self.bucket = self.oss_config.get("bucket", None)
+        self.prefix_path = self.oss_config.get("prefix_path", None)
+        self.signature_version = self.oss_config.get("signature_version", None)
+        self.addressing_style = self.oss_config.get("addressing_style", None)
         self.__open__()
 
     @staticmethod
@@ -62,15 +64,17 @@ class RAGFlowOSS:
             pass
 
         try:
+            config_kwargs = {}
+
+            if self.signature_version:
+                config_kwargs["signature_version"] = self.signature_version
+            if self.addressing_style:
+                config_kwargs["s3"] = {"addressing_style": self.addressing_style}
+
+            config = Config(**config_kwargs) if config_kwargs else None
+
             # Reference：https://help.aliyun.com/zh/oss/developer-reference/use-amazon-s3-sdks-to-access-oss
-            self.conn = boto3.client(
-                's3',
-                region_name=self.region,
-                aws_access_key_id=self.access_key,
-                aws_secret_access_key=self.secret_key,
-                endpoint_url=self.endpoint_url,
-                config=Config(s3={"addressing_style": "virtual"}, signature_version='v4')
-            )
+            self.conn = boto3.client("s3", region_name=self.region, aws_access_key_id=self.access_key, aws_secret_access_key=self.secret_key, endpoint_url=self.endpoint_url, config=config)
         except Exception:
             logging.exception(f"Fail to connect at region {self.region}")
 
@@ -137,7 +141,7 @@ class RAGFlowOSS:
         for _ in range(1):
             try:
                 r = self.conn.get_object(Bucket=bucket, Key=fnm)
-                object_data = r['Body'].read()
+                object_data = r["Body"].read()
                 return object_data
             except Exception:
                 logging.exception(f"fail get {bucket}/{fnm}")
@@ -152,7 +156,7 @@ class RAGFlowOSS:
             if self.conn.head_object(Bucket=bucket, Key=fnm):
                 return True
         except ClientError as e:
-            if e.response['Error']['Code'] == '404':
+            if e.response["Error"]["Code"] == "404":
                 return False
             else:
                 raise
@@ -162,10 +166,7 @@ class RAGFlowOSS:
     def get_presigned_url(self, bucket, fnm, expires, tenant_id=None):
         for _ in range(10):
             try:
-                r = self.conn.generate_presigned_url('get_object',
-                                                     Params={'Bucket': bucket,
-                                                             'Key': fnm},
-                                                     ExpiresIn=expires)
+                r = self.conn.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm}, ExpiresIn=expires)
 
                 return r
             except Exception:

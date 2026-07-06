@@ -1,12 +1,12 @@
-import { currentReg } from '@/utils/chat';
+import { currentReg, parseCitationIndex } from '@/utils/chat';
 
 export const extractNumbersFromMessageContent = (content: string) => {
   const matches = content.match(currentReg);
   if (matches) {
     const list = matches
       .map((match) => {
-        const numMatch = match.match(/\[ID:(\d+)\]/);
-        return numMatch ? parseInt(numMatch[1], 10) : null;
+        const parsed = parseCitationIndex(match);
+        return Number.isNaN(parsed) ? null : parsed;
       })
       .filter((num) => num !== null) as number[];
 

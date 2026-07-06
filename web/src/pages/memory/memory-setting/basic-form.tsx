@@ -41,11 +41,17 @@ export const BasicInfo = () => {
         label={t('memory.config.description')}
         required={false}
         horizontal={true}
+        className="!items-start"
         // tooltip={field.tooltip}
         // labelClassName={labelClassName || field.labelClassName}
       >
         {(field) => {
-          return <Input {...field}></Input>;
+          return (
+            <Input
+              {...field}
+              placeholder={t('memory.config.descriptionPlaceholder')}
+            ></Input>
+          );
         }}
       </RAGFlowFormItem>
     </>

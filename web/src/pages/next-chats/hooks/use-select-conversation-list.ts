@@ -1,8 +1,8 @@
 import { MessageType } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
-  useFetchConversationList,
-  useFetchDialogList,
+  useFetchChatList,
+  useFetchSessionList,
 } from '@/hooks/use-chat-request';
 import { IConversation } from '@/interfaces/database/chat';
 import { generateConversationId } from '@/utils/chat';
@@ -12,10 +12,10 @@ import { useChatUrlParams } from './use-chat-url';
 
 export const useFindPrologueFromDialogList = () => {
   const { id: dialogId } = useParams();
-  const { data } = useFetchDialogList();
+  const { data } = useFetchChatList();
 
   const prologue = useMemo(() => {
-    return data.dialogs.find((x) => x.id === dialogId)?.prompt_config.prologue;
+    return data.chats.find((x) => x.id === dialogId)?.prompt_config?.prologue;
   }, [dialogId, data]);
 
   return prologue;
@@ -30,7 +30,7 @@ export const useSelectDerivedConversationList = () => {
     loading,
     handleInputChange,
     searchString,
-  } = useFetchConversationList();
+  } = useFetchSessionList();
 
   const { id: dialogId } = useParams();
   const prologue = useFindPrologueFromDialogList();
@@ -45,9 +45,9 @@ export const useSelectDerivedConversationList = () => {
           {
             id: conversationId,
             name: t('newConversation'),
-            dialog_id: dialogId,
+            chat_id: dialogId,
             is_new: true,
-            message: [
+            messages: [
               {
                 content: prologue,
                 role: MessageType.Assistant,

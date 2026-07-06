@@ -26,7 +26,6 @@ from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
 from configs import DEFAULT_PARSER_CONFIG
-# TODO: Missing scenario for updating embedding_model with chunk_count != 0
 
 
 class TestAuthorization:
@@ -34,11 +33,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
         ids=["empty_auth", "invalid_api_token"],
@@ -77,7 +76,7 @@ class TestRquest:
     def test_payload_empty(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         res = update_dataset(HttpApiAuth, dataset_id, {})
-        assert res["code"] == 101, res
+        assert res["code"] == 102, res
         assert res["message"] == "No properties were modified", res
 
     @pytest.mark.p3
@@ -106,26 +105,27 @@ class TestDatasetUpdate:
         payload = {"name": "not uuid"}
         res = update_dataset(HttpApiAuth, "not_uuid", payload)
         assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert "Invalid UUID format" in res["message"], res
 
     @pytest.mark.p3
     def test_dataset_id_not_uuid1(self, HttpApiAuth):
         payload = {"name": "not uuid1"}
         res = update_dataset(HttpApiAuth, uuid.uuid4().hex, payload)
-        assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert res["code"] == 102, res
+        assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p3
     def test_dataset_id_wrong_uuid(self, HttpApiAuth):
         payload = {"name": "wrong uuid"}
         res = update_dataset(HttpApiAuth, "d94a8dc02c9711f0930f7fbc369eab6d", payload)
-        assert res["code"] == 108, res
+        assert res["code"] == 102, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p1
     @given(name=valid_names())
     @example("a" * 128)
-    @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    # Network-bound API call; disable Hypothesis deadline to avoid flaky timeouts.
+    @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
     def test_name(self, HttpApiAuth, add_dataset_func, name):
         dataset_id = add_dataset_func
         payload = {"name": name}
@@ -174,6 +174,21 @@ class TestDatasetUpdate:
         assert res["message"] == f"Dataset name '{name}' already exists", res
 
     @pytest.mark.p2
+    def test_language_and_connectors_supported(self, HttpApiAuth, add_dataset_func):
+        dataset_id = add_dataset_func
+        payload = {
+            "name": "language_connectors_supported",
+            "description": "",
+            "chunk_method": "naive",
+            "language": "English",
+            "connectors": [],
+        }
+        res = update_dataset(HttpApiAuth, dataset_id, payload)
+        assert res["code"] == 0, res
+        assert res["data"]["language"] == "English", res
+        assert res["data"]["connectors"] == [], res
+
+    @pytest.mark.p2
     def test_avatar(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         fn = create_image_file(tmp_path / "ragflow_test.png")
@@ -187,7 +202,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["avatar"] == f"data:image/png;base64,{encode_avatar(fn)}", res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_avatar_exceeds_limit_length(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         payload = {"avatar": "a" * 65536}
@@ -236,7 +251,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["description"] == "description"
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_description_exceeds_limit_length(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         payload = {"description": "a" * 65536}
@@ -274,6 +289,25 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["embedding_model"] == embedding_model, res
 
+    @pytest.mark.p1
+    def test_embedding_model_with_existing_chunks(self, HttpApiAuth, add_chunks):
+        """Embedding model can be changed even when dataset has chunks (chunk_count > 0)."""
+        dataset_id, _, _ = add_chunks
+
+        res = list_datasets(HttpApiAuth, {"id": dataset_id})
+        assert res["code"] == 0, res
+        assert res["data"], res
+        dataset = res["data"][0]
+        assert dataset.get("chunk_count", 0) > 0, res
+
+        current_embedding = dataset["embedding_model"]
+        candidates = ["BAAI/bge-small-en-v1.5@Builtin", "embedding-3@ZHIPU-AI"]
+        new_embedding = candidates[0] if current_embedding != candidates[0] else candidates[1]
+
+        payload = {"embedding_model": new_embedding}
+        res = update_dataset(HttpApiAuth, dataset_id, payload)
+        assert res["code"] == 0, res
+
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "name, embedding_model",
@@ -289,7 +323,7 @@ class TestDatasetUpdate:
         dataset_id = add_dataset_func
         payload = {"name": name, "embedding_model": embedding_model}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
-        assert res["code"] == 101, res
+        assert res["code"] == 102, res
         if "tenant_no_auth" in name:
             assert res["message"] == f"Unauthorized model: <{embedding_model}>", res
         else:
@@ -330,7 +364,7 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", res
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "permission",
         [
@@ -421,7 +455,7 @@ class TestDatasetUpdate:
         payload = {"chunk_method": chunk_method}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
 
     @pytest.mark.p3
     def test_chunk_method_none(self, HttpApiAuth, add_dataset_func):
@@ -429,7 +463,7 @@ class TestDatasetUpdate:
         payload = {"chunk_method": None}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
 
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
     @pytest.mark.p2
@@ -470,7 +504,7 @@ class TestDatasetUpdate:
         dataset_id = add_dataset_func
         payload = {"pagerank": 50}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
-        assert res["code"] == 101, res
+        assert res["code"] == 102, res
         assert res["message"] == "'pagerank' can only be set when doc_engine is elasticsearch", res
 
     @pytest.mark.p2
@@ -549,6 +583,10 @@ class TestDatasetUpdate:
             {"raptor": {"max_cluster": 512}},
             {"raptor": {"max_cluster": 1024}},
             {"raptor": {"random_seed": 0}},
+            {"raptor": {"clustering_method": "gmm"}},
+            {"raptor": {"clustering_method": "ahc"}},
+            {"raptor": {"tree_builder": "raptor"}},
+            {"raptor": {"tree_builder": "psi"}},
         ],
         ids=[
             "auto_keywords_min",
@@ -599,6 +637,10 @@ class TestDatasetUpdate:
             "raptor_max_cluster_mid",
             "raptor_max_cluster_max",
             "raptor_random_seed_min",
+            "raptor_clustering_method_gmm",
+            "raptor_clustering_method_ahc",
+            "raptor_tree_builder_raptor",
+            "raptor_tree_builder_psi",
         ],
     )
     def test_parser_config(self, HttpApiAuth, add_dataset_func, parser_config):
@@ -652,8 +694,8 @@ class TestDatasetUpdate:
             ({"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean"),
             ({"graphrag": {"entity_types": "1,2"}}, "Input should be a valid list"),
             ({"graphrag": {"entity_types": [1, 2]}}, "nput should be a valid string"),
-            ({"graphrag": {"method": "unknown"}}, "Input should be 'light' or 'general'"),
-            ({"graphrag": {"method": None}}, "Input should be 'light' or 'general'"),
+            ({"graphrag": {"method": "unknown"}}, "Input should be 'light', 'general' or 'ner'"),
+            ({"graphrag": {"method": None}}, "Input should be 'light', 'general' or 'ner'"),
             ({"graphrag": {"community": "string"}}, "Input should be a valid boolean"),
             ({"graphrag": {"resolution": "string"}}, "Input should be a valid boolean"),
             ({"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
@@ -673,6 +715,10 @@ class TestDatasetUpdate:
             ({"raptor": {"random_seed": -1}}, "Input should be greater than or equal to 0"),
             ({"raptor": {"random_seed": 3.14}}, "Input should be a valid integer"),
             ({"raptor": {"random_seed": "string"}}, "Input should be a valid integer"),
+            ({"raptor": {"clustering_method": "unknown"}}, "Input should be 'gmm' or 'ahc'"),
+            ({"raptor": {"clustering_method": None}}, "Input should be 'gmm' or 'ahc'"),
+            ({"raptor": {"tree_builder": "ahc"}}, "Input should be 'raptor' or 'psi'"),
+            ({"raptor": {"tree_builder": None}}, "Input should be 'raptor' or 'psi'"),
             ({"delimiter": "a" * 65536}, "Parser config exceeds size limit (max 65,535 characters)"),
         ],
         ids=[
@@ -729,6 +775,10 @@ class TestDatasetUpdate:
             "raptor_random_seed_min_limit",
             "raptor_random_seed_float_not_allowed",
             "raptor_random_seed_type_invalid",
+            "raptor_clustering_method_invalid",
+            "raptor_clustering_method_none_invalid",
+            "raptor_tree_builder_invalid",
+            "raptor_tree_builder_none_invalid",
             "parser_config_type_invalid",
         ],
     )
@@ -770,7 +820,12 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
+        assert res["data"][0]["parser_config"] == {
+            "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
+            "image_context_size": 0,
+            "table_context_size": 0,
+        }, res
 
     @pytest.mark.p3
     def test_parser_config_unset_with_chunk_method_change(self, HttpApiAuth, add_dataset_func):
@@ -781,7 +836,12 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
+        assert res["data"][0]["parser_config"] == {
+            "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
+            "image_context_size": 0,
+            "table_context_size": 0,
+        }, res
 
     @pytest.mark.p3
     def test_parser_config_none_with_chunk_method_change(self, HttpApiAuth, add_dataset_func):
@@ -792,7 +852,12 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth, {"id": dataset_id})
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
+        assert res["data"][0]["parser_config"] == {
+            "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
+            "image_context_size": 0,
+            "table_context_size": 0,
+        }, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

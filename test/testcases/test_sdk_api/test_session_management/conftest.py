@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import batch_add_sessions_with_chat_assistant
+from common import batch_add_sessions_with_chat_assistant, delete_all_sessions
 from pytest import FixtureRequest
 from ragflow_sdk import Chat, DataSet, Document, Session
 
@@ -24,9 +24,8 @@ def add_sessions_with_chat_assistant(request: FixtureRequest, add_chat_assistant
     def cleanup():
         for chat_assistant in chat_assistants:
             try:
-                chat_assistant.delete_sessions(ids=None)
-            except Exception as e:
-                print(f"Exception: {e}")
+                delete_all_sessions(chat_assistant)
+            except Exception:
                 pass
 
     request.addfinalizer(cleanup)
@@ -40,9 +39,9 @@ def add_sessions_with_chat_assistant_func(request: FixtureRequest, add_chat_assi
     def cleanup():
         for chat_assistant in chat_assistants:
             try:
-                chat_assistant.delete_sessions(ids=None)
-            except Exception as e:
-                print(f"Exception: {e}")
+                delete_all_sessions(chat_assistant)
+            except Exception:
+                pass
 
     request.addfinalizer(cleanup)
 

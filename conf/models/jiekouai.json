@@ -1,0 +1,106 @@
+{
+  "name": "JieKouAI",
+  "url": {
+    "default": "https://api.jiekou.ai"
+  },
+  "url_suffix": {
+    "chat": "openai/v1/chat/completions",
+    "embedding": "openai/v1/embeddings",
+    "rerank": "openai/v1/rerank",
+    "models": "openai/v1/models"
+  },
+  "class": "jiekouai",
+  "models": [
+    {
+      "name": "deepseek-v4-flash",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.5",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.5v",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.7",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.7-flash",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-5",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "baai/bge-reranker-v2-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "text-embedding-3-large",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    }
+  ]
+}

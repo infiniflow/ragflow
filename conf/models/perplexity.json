@@ -1,0 +1,60 @@
+{
+  "name": "Perplexity",
+  "url": {
+    "default": "https://api.perplexity.ai"
+  },
+  "url_suffix": {
+    "chat": "v1/sonar",
+    "embedding": "v1/embeddings",
+    "models": "v1/models"
+  },
+  "class": "perplexity",
+  "models": [
+    {
+      "name": "sonar",
+      "max_tokens": 127072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "sonar-pro",
+      "max_tokens": 200000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "sonar-reasoning-pro",
+      "max_tokens": 127072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "sonar-deep-research",
+      "max_tokens": 127072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "pplx-embed-v1-0.6b",
+      "max_tokens": 32000,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "pplx-embed-v1-4b",
+      "max_tokens": 32000,
+      "model_types": [
+        "embedding"
+      ]
+    }
+  ]
+}

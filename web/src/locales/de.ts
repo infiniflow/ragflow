@@ -28,6 +28,8 @@ export default {
       chinese: 'Vereinfachtes Chinesisch',
       traditionalChinese: 'Traditionelles Chinesisch',
       russian: 'Russisch',
+      bulgarian: 'Bulgarisch',
+      arabic: 'Arabisch',
       german: 'Deutsch',
       language: 'Sprache',
       languageMessage: 'Bitte geben Sie Ihre Sprache ein!',
@@ -47,6 +49,7 @@ export default {
       submit: 'Absenden',
       clear: 'Leeren',
       embedIntoSite: 'In Webseite einbetten',
+      openInNewTab: 'Chat in neuem Tab',
       previousPage: 'Zurück',
       nextPage: 'Weiter',
       add: 'Hinzufügen',
@@ -64,6 +67,8 @@ export default {
         tokenPlaceholder: 'z.B. eyJhbGciOiJIUzI1Ni...',
       },
       selected: 'Ausgewählt',
+      seeAll: 'Alle anzeigen',
+      owner: 'Eigentümer',
     },
     login: {
       loginTitle: 'Melden Sie sich bei Ihrem Konto an',
@@ -102,6 +107,7 @@ export default {
       search: 'Suche',
       welcome: 'Willkommen bei',
       dataset: 'Datensatz',
+      memories: 'Gedächtnis',
       Memories: 'Gedächtnis',
     },
     memories: {
@@ -115,6 +121,10 @@ export default {
 Semantisches Gedächtnis: Allgemeines Wissen und Fakten über den Benutzer und die Welt.
 Episodisches Gedächtnis: Zeitgestempelte Aufzeichnungen spezifischer Ereignisse und Erfahrungen.
 Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte Abläufe.`,
+      raw: 'raw',
+      semantic: 'semantisch',
+      episodic: 'episodisch',
+      procedural: 'prozedural',
       editName: 'Namen bearbeiten',
       memory: 'Gedächtnis',
       createMemory: 'Gedächtnis erstellen',
@@ -129,6 +139,8 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
     },
     memory: {
       messages: {
+        forget: 'Vergessen',
+        forgetMessageTip: 'Sind Sie sicher, dass Sie vergessen möchten?',
         messageDescription:
           'Der Gedächtnisabruf wird mit Ähnlichkeitsschwellenwert, Schlüsselwortähnlichkeitsgewicht und Top N aus den erweiterten Einstellungen konfiguriert.',
         copied: 'Kopiert!',
@@ -147,6 +159,8 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
         action: 'Aktion',
       },
       config: {
+        memorySizeTooltip: `Berücksichtigt den Inhalt jeder Nachricht + deren Einbettungsvektor (≈ Inhalt + Dimensionen × 8 Bytes).
+Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Standardlimit von 5 MB fasst ~500 solcher Nachrichten.`,
         avatar: 'Avatar',
         description: 'Beschreibung',
         memorySize: 'Gedächtnisgröße',
@@ -181,6 +195,38 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
     },
     knowledgeDetails: {
       metadata: {
+        fieldNameInvalid:
+          'Feldname darf nur Buchstaben oder Unterstriche enthalten.',
+        builtIn: 'Eingebaut',
+        generation: 'Generierung',
+        toMetadataSetting: 'Generierungseinstellungen',
+        toMetadataSettingTip: 'Auto-Metadaten in der Konfiguration festlegen.',
+        descriptionTip:
+          'Geben Sie Beschreibungen oder Beispiele an, um das LLM beim Extrahieren von Werten für dieses Feld zu unterstützen. Wenn leer gelassen, wird der Feldname verwendet.',
+        restrictDefinedValuesTip:
+          'Enum-Modus: Beschränkt die LLM-Extraktion darauf, nur voreingestellte Werte abzugleichen. Definieren Sie Werte unten.',
+        valueExists:
+          'Wert existiert bereits. Bestätigen Sie, um Duplikate zusammenzuführen und alle zugehörigen Dateien zu kombinieren.',
+        fieldNameExists:
+          'Feld existiert bereits. Bestätigen Sie, um Duplikate zusammenzuführen und alle zugehörigen Dateien zu kombinieren.',
+        valueSingleExists:
+          'Wert existiert bereits. Bestätigen Sie, um Duplikate zusammenzuführen.',
+        fieldSingleNameExists:
+          'Feldname existiert bereits. Bestätigen Sie, um Duplikate zusammenzuführen.',
+        fieldExists: 'Feld existiert bereits.',
+        fieldSetting: 'Feldeinstellungen',
+        deleteWarn:
+          'Dieses {{field}} wird aus allen zugehörigen Dateien entfernt',
+        deleteManageFieldAllWarn:
+          'Dieses Feld und alle zugehörigen Werte werden aus allen zugehörigen Dateien gelöscht.',
+        deleteManageValueAllWarn:
+          'Dieser Wert wird aus allen zugehörigen Dateien gelöscht.',
+        deleteManageFieldSingleWarn:
+          'Dieses Feld und alle zugehörigen Werte werden aus diesen Dateien gelöscht.',
+        deleteManageValueSingleWarn:
+          'Dieser Wert wird aus diesen Dateien gelöscht.',
+        deleteSettingFieldWarn: `Dieses Feld wird gelöscht; vorhandene Metadaten sind davon nicht betroffen.`,
+        deleteSettingValueWarn: `Dieser Wert wird gelöscht; vorhandene Metadaten sind davon nicht betroffen.`,
         changesAffectNewParses: 'Änderungen betreffen nur neue Analysen.',
         editMetadataForDataset: 'Metadaten anzeigen und bearbeiten für ',
         restrictDefinedValues: 'Auf definierte Werte beschränken',
@@ -189,12 +235,22 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
         manageMetadata: 'Metadaten verwalten',
         metadata: 'Metadaten',
         values: 'Werte',
+        value: 'Wert',
         action: 'Aktion',
         field: 'Feld',
+        type: 'Typ',
         description: 'Beschreibung',
         fieldName: 'Feldname',
         editMetadata: 'Metadaten bearbeiten',
       },
+      redoAll: 'Vorhandene Chunks löschen',
+      applyAutoMetadataSettings:
+        'Globale Auto-Metadaten-Einstellungen anwenden',
+      parseFileTip: 'Sind Sie sicher, dass Sie die Datei analysieren möchten?',
+      parseFile: 'Datei analysieren',
+      emptyMetadata: 'Keine Metadaten',
+      metadataField: 'Metadatenfeld',
+      systemAttribute: 'Systemattribut',
       localUpload: 'Lokaler Upload',
       fileSize: 'Dateigröße',
       fileType: 'Dateityp',
@@ -209,7 +265,7 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       generate: 'Generieren',
       raptor: 'RAPTOR',
       processingType: 'Verarbeitungstyp',
-      dataPipeline: 'Ingestion-Pipeline',
+      dataPipeline: 'Wechseln oder konfigurieren Sie die Ingestion-Pipeline.',
       operations: 'Operationen',
       taskId: 'Aufgaben-ID',
       duration: 'Dauer',
@@ -271,13 +327,13 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
         'Führen Sie einen Abruftest durch, um zu prüfen, ob RAGFlow die beabsichtigten Inhalte für das LLM wiederherstellen kann.',
       similarityThreshold: 'Ähnlichkeitsschwelle',
       similarityThresholdTip:
-        'RAGFlow verwendet entweder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit oder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Neuordnungsbewertung während des Abrufs. Dieser Parameter legt den Schwellenwert für Ähnlichkeiten zwischen der Benutzeranfrage und den Chunks fest. Jeder Chunk mit einer Ähnlichkeitsbewertung unter diesem Schwellenwert wird von den Ergebnissen ausgeschlossen. Standardmäßig ist der Schwellenwert auf 0,2 festgelegt. Das bedeutet, dass nur Textblöcke mit einer hybriden Ähnlichkeitsbewertung von 20 oder höher abgerufen werden.',
+        'RAGFlow verwendet entweder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit oder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Rerank-bewertung während des Abrufs. Dieser Parameter legt den Schwellenwert für Ähnlichkeiten zwischen der Benutzeranfrage und den Chunks fest. Jeder Chunk mit einer Ähnlichkeitsbewertung unter diesem Schwellenwert wird von den Ergebnissen ausgeschlossen. Standardmäßig ist der Schwellenwert auf 0,2 festgelegt. Das bedeutet, dass nur Textblöcke mit einer hybriden Ähnlichkeitsbewertung von 20 oder höher abgerufen werden.',
       vectorSimilarityWeight: 'Schlüsselwortähnlichkeitsgewicht',
       vectorSimilarityWeightTip:
-        'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Neuordnungsbewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
+        'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Rerank-bewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
       keywordSimilarityWeight: 'Schlüsselwortähnlichkeitsgewicht',
       keywordSimilarityWeightTip:
-        'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Neuordnungsbewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
+        'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Rerank-bewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
       testText: 'Testtext',
       testTextPlaceholder: 'Geben Sie hier Ihre Frage ein!',
       testingLabel: 'Testen',
@@ -316,15 +372,15 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       changeSpecificCategory: 'Spezifische Kategorie ändern',
       uploadTitle: 'Ziehen Sie Ihre Datei hierher, um sie hochzuladen',
       uploadDescription:
-        'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Für lokal bereitgestelltes RAGFlow: Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto. Für demo.ragflow.io: Die maximale Dateigröße pro Upload beträgt 10 MB, wobei jede Datei nicht größer als 10 MB sein darf und maximal 128 Dateien pro Konto erlaubt sind.',
+        'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Für lokal bereitgestelltes RAGFlow: Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto. Für cloud.ragflow.io: Die maximale Dateigröße pro Upload beträgt 10 MB, wobei jede Datei nicht größer als 10 MB sein darf und maximal 128 Dateien pro Konto erlaubt sind.',
       chunk: 'Chunk',
       bulk: 'Masse',
       cancel: 'Abbrechen',
       close: 'Schließen',
-      rerankModel: 'Neuordnungsmodell',
+      rerankModel: 'Rerank-modell',
       rerankPlaceholder: 'Bitte auswählen',
       rerankTip:
-        'Wenn leer gelassen, verwendet RAGFlow eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit; wenn ein Neuordnungsmodell ausgewählt wird, ersetzt eine gewichtete Neuordnungsbewertung die gewichtete Vektorkosinus-Ähnlichkeit. Bitte beachten Sie, dass die Verwendung eines Neuordnungsmodells die Antwortzeit des Systems erheblich erhöht.',
+        'Wenn leer gelassen, verwendet RAGFlow eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit; wenn ein Rerank-modell ausgewählt wird, ersetzt eine gewichtete Rerank-bewertung die gewichtete Vektorkosinus-Ähnlichkeit. Bitte beachten Sie, dass die Verwendung eines Rerank-modells die Antwortzeit des Systems erheblich erhöht.',
       topK: 'Top-K',
       topKTip:
         'In Verbindung mit dem Rerank model wird mit dieser Einstellung die Anzahl der Textblöcke festgelegt, die an das angegebene reranking model gesendet werden.',
@@ -374,7 +430,12 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       reRankModelWaring: 'Das Rerank-Modell ist sehr zeitaufwendig.',
     },
     knowledgeConfiguration: {
+      globalIndexModelTip:
+        'Wird verwendet, um Wissensgraphen, RAPTOR, Auto-Metadaten, Auto-Schlüsselwörter und Auto-Fragen zu generieren. Die Modellleistung beeinflusst die Generierungsqualität.',
+      globalIndexModel: 'Indizierungsmodell',
       settings: 'Einstellungen',
+      autoMetadataTip:
+        'Automatische Generierung von Metadaten. Gilt für neue Dateien während der Analyse. Vorhandene Dateien müssen neu analysiert werden, um aktualisiert zu werden (Chunks bleiben erhalten). Beachten Sie, dass zusätzliche Tokens vom in der "Konfiguration" angegebenen Indizierungsmodell verbraucht werden.',
       autoMetadata: 'Auto-Metadaten',
       mineruOptions: 'MinerU Optionen',
       mineruParseMethod: 'Analysemethode',
@@ -385,7 +446,20 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
         'Formelerkennung aktivieren. Hinweis: Dies funktioniert möglicherweise nicht korrekt bei kyrillischen Dokumenten.',
       mineruTableEnable: 'Tabellenerkennung',
       mineruTableEnableTip: 'Tabellenerkennung und -extraktion aktivieren.',
-      overlappedPercent: 'Überlappungsprozent(%)',
+      paddleocrOptions: 'PaddleOCR-Optionen',
+      paddleocrApiUrl: 'PaddleOCR API-URL',
+      paddleocrApiUrlTip: 'API-Endpunkt-URL des PaddleOCR-Dienstes',
+      paddleocrApiUrlPlaceholder:
+        'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio-Zugriffstoken',
+      paddleocrAccessTokenTip: 'Zugriffstoken für die PaddleOCR-API (optional)',
+      paddleocrAccessTokenPlaceholder: 'Ihr AI Studio-Token (optional)',
+      paddleocrAlgorithm: 'PaddleOCR-Algorithmus',
+      paddleocrAlgorithmTip:
+        'Algorithmus, der für die PaddleOCR-Verarbeitung verwendet wird',
+      paddleocrSelectAlgorithm: 'Algorithmus auswählen',
+      paddleocrModelNamePlaceholder: 'Zum Beispiel: paddleocr-umgebung-1',
+      overlappedPercent: 'Chunk-Überlappung (%)',
       generationScopeTip:
         'Bestimmt, ob RAPTOR für den gesamten Datensatz oder für eine einzelne Datei generiert wird.',
       scopeDataset: 'Datensatz',
@@ -417,20 +491,20 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       fileFilter: 'Dateifilter',
       setDefaultTip: '',
       setDefault: 'Als Standard festlegen',
-      editLinkDataPipeline: 'Ingestion-Pipeline bearbeiten',
+      editLinkDataPipeline: 'Dateneingabe-Pipeline bearbeiten',
       linkPipelineSetTip:
-        'Verknüpfung der Ingestion-Pipeline mit diesem Datensatz verwalten',
+        'Verknüpfung der Dateneingabe-Pipeline mit diesem Datensatz verwalten',
       default: 'Standard',
-      dataPipeline: 'Ingestion-Pipeline',
-      linkDataPipeline: 'Ingestion-Pipeline verknüpfen',
+      dataPipeline: 'Wechseln oder konfigurieren Sie die Ingestion-Pipeline.',
+      linkDataPipeline: 'Dateneingabe-Pipeline verknüpfen',
       enableAutoGenerate: 'Automatische Generierung aktivieren',
       teamPlaceholder: 'Bitte wählen Sie ein Team.',
       dataFlowPlaceholder: 'Bitte wählen Sie eine Pipeline.',
       buildItFromScratch: 'Von Grund auf neu erstellen',
       dataFlow: 'Pipeline',
-      parseType: 'Analysetyp',
+      parseType: 'Art der Dateneingabe',
       manualSetup: 'Pipeline wählen',
-      builtIn: 'Eingebaut',
+      builtIn: 'eingebaute Dateneingabe',
       imageTableContextWindow: 'Kontextfenster für Bild und Tabelle',
       imageTableContextWindowTip:
         'Erfasst N Token Text ober- und unterhalb von Bild und Tabelle, um reicheren Kontext bereitzustellen.',
@@ -438,7 +512,7 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
         'Aktualisieren Sie hier Ihre Wissensdatenbank-Konfiguration, insbesondere die Chunk-Methode.',
       name: 'Name der Wissensdatenbank',
       photo: 'Bild der Wissensdatenbank',
-      photoTip: 'Sie können eine Datei mit 4 MB hochladen',
+      photoTip: 'Sie können ein Bild bis zu 4 MB hochladen.',
       description: 'Beschreibung',
       language: 'Dokumentensprache',
       languageMessage: 'Bitte geben Sie Ihre Sprache ein!',
@@ -448,7 +522,7 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       chunkTokenNumber: 'Empfohlene Chunk-Größe',
       chunkTokenNumberMessage: 'Chunk-Token-Anzahl ist erforderlich',
       embeddingModelTip:
-        'Das Standard-Embedding-Modell der Wissensdatenbank. Es kann nicht geändert werden, sobald die Wissensdatenbank Chunks enthält. Um zu einem anderen Standard-Embedding-Modell zu wechseln, müssen alle vorhandenen Chunks in der Wissensdatenbank gelöscht werden.',
+        'Das Standard-Embedding-Modell der Wissensdatenbank. Sobald die Wissensdatenbank Chunks enthält, führt das System beim Wechsel des Embedding-Modells eine Kompatibilitätsprüfung durch: Es zieht zufällig einige Chunks als Stichprobe, kodiert sie mit dem neuen Embedding-Modell neu und berechnet die Kosinusähnlichkeit zwischen neuen und alten Vektoren. Ein Wechsel ist nur möglich, wenn die durchschnittliche Ähnlichkeit der Stichprobe ≥ 0.9 ist. Andernfalls müssen Sie alle Chunks in der Wissensdatenbank löschen, bevor Sie das Modell ändern können.',
       permissionsTip:
         'Wenn auf "Team" gesetzt, können alle Teammitglieder die Wissensdatenbank verwalten.',
       chunkTokenNumberTip:
@@ -475,7 +549,7 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       book: `<p>Unterstützte Dateiformate sind <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       Für jedes Buch im PDF-Format stellen Sie bitte die <i>Seitenbereiche</i> ein, um unerwünschte Informationen zu entfernen und die Analysezeit zu reduzieren.</p>`,
       laws: `<p>Unterstützte Dateiformate sind <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
-      Rechtliche Dokumente folgen in der Regel einem strengen Schreibformat. Wir verwenden Textmerkmale, um Teilungspunkte zu identifizieren. 
+      Rechtliche Dokumente folgen in der Regel einem strengen Schreibformat. Wir verwenden Textmerkmale, um Teilungspunkte zu identifizieren.
       </p><p>
       Der Chunk hat eine Granularität, die mit 'ARTIKEL' übereinstimmt, wobei sichergestellt wird, dass der gesamte übergeordnete Text im Chunk enthalten ist.
       </p>`,
@@ -489,7 +563,7 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       <li>Dann werden benachbarte Segmente kombiniert, bis die Token-Anzahl den durch 'Chunk-Token-Anzahl' festgelegten Schwellenwert überschreitet, woraufhin ein Chunk erstellt wird.</li></p>`,
       paper: `<p>Nur <b>PDF</b>-Dateien werden unterstützt.</p><p>
       Papers werden nach Abschnitten wie <i>abstract, 1.1, 1.2</i> aufgeteilt. </p><p>
-      Dieser Ansatz ermöglicht es dem LLM, das Paper effektiver zusammenzufassen und umfassendere, verständlichere Antworten zu liefern. 
+      Dieser Ansatz ermöglicht es dem LLM, das Paper effektiver zusammenzufassen und umfassendere, verständlichere Antworten zu liefern.
       Es erhöht jedoch auch den Kontext für KI-Gespräche und die Rechenkosten für das LLM. Daher sollten Sie während eines Gesprächs erwägen, den Wert von '<b>topN</b>' zu reduzieren.</p>`,
       presentation: `<p>Unterstützte Dateiformate sind <b>PDF</b>, <b>PPTX</b>.</p><p>
       Jede Seite in den Folien wird als Chunk behandelt, wobei ihr Vorschaubild gespeichert wird.</p><p>
@@ -614,8 +688,9 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'Erstellen Sie einen Wissensgraph über Dateiabschnitte der aktuellen Wissensbasis, um die Beantwortung von Fragen mit mehreren Schritten und verschachtelter Logik zu verbessern. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/construct_knowledge_graph.',
       graphRagMethod: 'Methode',
       graphRagMethodTip: `
-      Light: (Standard) Verwendet von github.com/HKUDS/LightRAG bereitgestellte Prompts, um Entitäten und Beziehungen zu extrahieren. Diese Option verbraucht weniger Tokens, weniger Speicher und weniger Rechenressourcen.</br>
-      General: Verwendet von github.com/microsoft/graphrag bereitgestellte Prompts, um Entitäten und Beziehungen zu extrahieren`,
+      Light: (Standard) Verwendet von github.com/HKUDS/LightRAG bereitgestellte Prompts, um Entitäten und Beziehierungen zu extrahieren. Diese Option verbraucht weniger Tokens, weniger Speicher und weniger Rechenressourcen.</br>
+      General: Verwendet von github.com/microsoft/graphrag bereitgestellte Prompts, um Entitäten und Beziehierungen zu extrahieren.</br>
+      NER: Verwendet spaCy NER und regelbasierte Schlüsselwortextraktion, um Entitäten und Beziehungen zu extrahieren. Für die Extraktion selbst ist kein LLM erforderlich, was es schnell und ressourceneffizient macht.`,
       resolution: 'Entitätsauflösung',
       resolutionTip: `Ein Entitäts-Deduplizierungsschalter. Wenn aktiviert, wird das LLM ähnliche Entitäten kombinieren - z.B. '2025' und 'das Jahr 2025' oder 'IT' und 'Informationstechnologie' - um einen genaueren Graphen zu konstruieren`,
       community: 'Generierung von Gemeinschaftsberichten',
@@ -623,30 +698,7 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'In einem Wissensgraphen ist eine Gemeinschaft ein Cluster von Entitäten, die durch Beziehungen verbunden sind. Sie können das LLM eine Zusammenfassung für jede Gemeinschaft erstellen lassen, bekannt als Gemeinschaftsbericht. Weitere Informationen finden Sie hier: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
       theDocumentBeingParsedCannotBeDeleted:
         'Das Dokument, das gerade analysiert wird, kann nicht gelöscht werden',
-      mcp: 'MCP',
-      mineru: {
-        modelNameRequired: 'Modellname ist erforderlich',
-        apiServerRequired: 'MinerU API-Server-Konfiguration ist erforderlich',
-        serverUrlBackendLimit:
-          'MinerU Server-URL-Adresse ist nur für das HTTP-Client-Backend verfügbar',
-        apiserver: 'MinerU API-Server-Konfiguration',
-        outputDir: 'MinerU Ausgabeverzeichnispfad',
-        backend: 'MinerU Verarbeitungs-Backend-Typ',
-        serverUrl: 'MinerU Server-URL-Adresse',
-        deleteOutput: 'Ausgabedateien nach Verarbeitung löschen',
-        selectBackend: 'Verarbeitungs-Backend auswählen',
-        backendOptions: {
-          pipeline: 'Standard-Pipeline-Verarbeitung',
-          vlmTransformers: 'Vision Language Model mit Transformers',
-          vlmVllmEngine: 'Vision Language Model mit vLLM Engine',
-          vlmHttpClient: 'Vision Language Model über HTTP-Client',
-          vlmMlxEngine: 'Vision Language Model mit MLX Engine',
-          vlmVllmAsyncEngine:
-            'Vision Language Model mit vLLM Async Engine (Experimentell)',
-          vlmLmdeployEngine:
-            'Vision Language Model mit LMDeploy Engine (Experimentell)',
-        },
-      },
+      lastWeek: 'von letzter Woche',
     },
     chunk: {
       type: 'Typ',
@@ -656,6 +708,8 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         text: 'Text',
       },
       chunk: 'Chunk',
+      createChunk: 'Chunk erstellen',
+      editChunk: 'Chunk bearbeiten',
       bulk: 'Masse',
       selectAll: 'Alle auswählen',
       enabledSelected: 'Ausgewählte aktivieren',
@@ -686,6 +740,9 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       delete: 'Löschen',
     },
     chat: {
+      chatSupport: 'Chat-Support',
+      replyInstantly: 'Wir antworten in der Regel sofort',
+      typeYourMessage: 'Nachricht eingeben...',
       messagePlaceholder: 'Geben Sie hier Ihre Nachricht ein...',
       exit: 'Verlassen',
       multipleModels: 'Mehrere Modelle',
@@ -769,8 +826,7 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'Ähnlich wie die Präsenzstrafe reduziert dies die Tendenz des Modells, dieselben Wörter häufig zu wiederholen.',
       maxTokens: 'Maximale Tokens',
       maxTokensMessage: 'Maximale Tokens sind erforderlich',
-      maxTokensTip:
-        'Dies legt die maximale Länge der Ausgabe des Modells fest, gemessen an der Anzahl der Tokens (Wörter oder Wortteile). Standardmäßig 512. Wenn deaktiviert, heben Sie die maximale Token-Begrenzung auf und erlauben dem Modell, die Anzahl der Tokens in seinen Antworten selbst zu bestimmen.',
+      maxTokensTip: `Die maximale Kontextgröße des Modell; ein ungültiger oder falscher Wert führt zu einem Fehler. Standardmäßig 512.`,
       maxTokensInvalidMessage:
         'Bitte geben Sie eine gültige Zahl für Maximale Tokens ein.',
       maxTokensMinMessage: 'Maximale Tokens können nicht weniger als 0 sein.',
@@ -862,6 +918,14 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       tocEnhance: 'Inhaltsverzeichnis verbessern',
       tocEnhanceTip:
         'Während der Analyse des Dokuments wurden Inhaltsverzeichnisinformationen generiert (siehe Option "Inhaltsverzeichnis-Extraktion aktivieren" in der allgemeinen Methode). Dies ermöglicht es dem großen Modell, Inhaltsverzeichniselemente zurückzugeben, die für die Abfrage des Benutzers relevant sind, und diese Elemente zu verwenden, um verwandte Chunks abzurufen und diese Chunks während des Sortiervorgangs zu gewichten. Dieser Ansatz leitet sich von der Nachahmung der Verhaltenslogik ab, wie Menschen in Büchern nach Wissen suchen.',
+      batchDeleteSessions: 'Stapel löschen',
+      deleteSelectedConfirm: 'Die ausgewählten {count} Sitzung(en) löschen?',
+      showChunkMetadata: 'Chunk-Metadaten anzeigen',
+      showChunkMetadataTip:
+        'Dokumentmetadaten (z. B. Titel, Seitenzahl, Uploaddatum) neben den abgerufenen Textabschnitten anzeigen',
+      metadataFields: 'Metadatenfelder',
+      metadataFieldsTip:
+        'Wählen Sie aus, welche Metadatenfelder für jeden Abschnitt angezeigt werden sollen',
     },
     setting: {
       deleteModel: 'Modell löschen',
@@ -960,10 +1024,19 @@ Beispiel: Virtual Hosted Style`,
         'Kommagetrennte Repository-Slugs, z. B.: repo-one,repo-two',
       connectorNameTip:
         'Geben Sie einen aussagekräftigen Namen für den Connector an',
+      syncDeletedFiles: 'Gelöschte Dateien synchronisieren',
       boxDescription:
         'Verbinden Sie Ihr Box-Laufwerk, um Dateien und Ordner zu synchronisieren.',
       githubDescription:
         'Verbinden Sie GitHub, um Pull Requests und Issues zur Recherche zu synchronisieren.',
+      airtableDescription:
+        'Verbinden Sie sich mit Airtable und synchronisieren Sie Dateien aus einer bestimmten Tabelle in einem vorgesehenen Arbeitsbereich.',
+      dingtalkAITableDescription:
+        'Verbinden Sie sich mit Dingtalk AI Table und synchronisieren Sie Datensätze aus einer bestimmten Tabelle.',
+      asanaDescription:
+        'Verbinden Sie sich mit Asana und synchronisieren Sie Dateien aus einem bestimmten Arbeitsbereich.',
+      imapDescription:
+        'Verbinden Sie sich mit Ihrem IMAP-Postfach, um E-Mails für den Wissensabruf zu synchronisieren.',
       dropboxAccessTokenTip:
         'Generieren Sie ein langlebiges Zugriffstoken in der Dropbox App Console mit den Bereichen files.metadata.read, files.content.read und sharing.read.',
       moodleDescription:
@@ -972,6 +1045,59 @@ Beispiel: Virtual Hosted Style`,
         'Die Basis-URL Ihrer Moodle-Instanz (z.B. https://moodle.university.edu). Fügen Sie nicht /webservice oder /login hinzu.',
       moodleTokenTip:
         'Generieren Sie ein Web-Service-Token in Moodle: Gehen Sie zu Website-Administration → Server → Web-Services → Token verwalten. Der Benutzer muss in den Kursen eingeschrieben sein, die Sie synchronisieren möchten.',
+      seafileDescription:
+        'Verbinden Sie sich mit Ihrem SeaFile-Server, um Dateien und Dokumente aus Ihren Bibliotheken zu synchronisieren.',
+      seafileUrlTip:
+        'Die vollstaendige URL Ihres SeaFile-Servers inklusive Protokoll. Beispiel: https://seafile.example.com - Kein abschliessender Schraegstrich und kein Pfad nach der Domain.',
+      seafileAccountScopeTip:
+        'Synchronisiert alle Bibliotheken, die für den unten angegebenen Konto-API-Token sichtbar sind.',
+      seafileTokenPanelHeading:
+        'Wählen Sie eine der folgenden Authentifizierungsmethoden:',
+      seafileTokenPanelAccountBullet:
+        '- gewährt Zugriff auf alle Ihre Bibliotheken.',
+      seafileTokenPanelLibraryBullet:
+        '- auf eine einzelne Bibliothek beschränkt (sicherer).',
+      seafileValidationAccountTokenRequired:
+        'Konto-API-Token ist erforderlich für den Umfang „Gesamtes Konto"',
+      seafileValidationTokenRequired:
+        'Geben Sie entweder einen Konto-API-Token oder einen Bibliotheks-Token an',
+      seafileValidationLibraryIdRequired: 'Bibliotheks-ID ist erforderlich',
+      seafileValidationDirectoryPathRequired:
+        'Verzeichnispfad ist erforderlich',
+      seafileSyncScopeTip:
+        'Legt fest, was synchronisiert wird: ' +
+        '(1) Gesamtes Konto - Synchronisiert alle Bibliotheken, auf die Ihr Token Zugriff hat. Erfordert einen Konto-API-Token. ' +
+        '(2) Einzelne Bibliothek - Synchronisiert alle Dateien innerhalb einer bestimmten Bibliothek. Erfordert die Bibliotheks-ID und entweder einen Konto-API-Token oder einen Bibliotheks-API-Token. ' +
+        '(3) Bestimmtes Verzeichnis - Synchronisiert nur Dateien in einem bestimmten Ordner innerhalb einer Bibliothek. Erfordert die Bibliotheks-ID, den Ordnerpfad innerhalb dieser Bibliothek und entweder einen Konto-API-Token oder einen Bibliotheks-API-Token.',
+      seafileTokenTip:
+        'Ihr kontoweiter SeaFile-API-Token. ' +
+        'Gewährt Zugriff auf alle fuer Ihr Konto sichtbaren Bibliotheken. ' +
+        'Erforderlich bei Synchronisierungsumfang "Gesamtes Konto". ' +
+        'Für "Einzelne Bibliothek" oder "Bestimmtes Verzeichnis" können Sie alternativ einen Bibliotheks-API-Token verwenden.',
+      seafileRepoTokenTip:
+        'Ein bibliotheksbezogener API-Token, der nur Zugriff auf eine bestimmte Bibliothek gewährt. ' +
+        'Kann anstelle des Konto-API-Tokens für "Einzelne Bibliothek" und "Bestimmtes Verzeichnis" verwendet werden.',
+      seafileRepoIdTip:
+        'Die eindeutige Kennung (UUID) der SeaFile-Bibliothek. ' +
+        'Sie finden diese in der Adressleiste Ihres Browsers, wenn Sie die Bibliothek in der SeaFile-Weboberflaeche öffnen. ' +
+        'Beispiel: 7a9e1b3c-4d5f-6a7b-8c9d-0e1f2a3b4c5d. ' +
+        'Erforderlich bei Synchronisierungsumfang "Einzelne Bibliothek" oder "Bestimmtes Verzeichnis".',
+      seafileSyncPathTip:
+        'Der absolute Pfad des zu synchronisierenden Ordners innerhalb der oben angegebenen Bibliothek. ' +
+        'Muss mit einem Schraegstrich beginnen. ' +
+        'Alle Dateien und Unterordner unter diesem Pfad werden rekursiv einbezogen. ' +
+        'Beispiel: /Dokumente/Berichte. ' +
+        'Wichtig: Der Ordner muss innerhalb der angegebenen Bibliothek existieren. ' +
+        'Pfade ausserhalb der Bibliothek werden nicht unterstuetzt. ' +
+        'Wird nur verwendet bei Synchronisierungsumfang "Bestimmtes Verzeichnis".',
+      seafileIncludeSharedTip:
+        'Wenn aktiviert, werden auch Bibliotheken synchronisiert, die andere Benutzer mit Ihnen geteilt haben. ' +
+        'Wenn deaktiviert, werden nur Bibliotheken synchronisiert, die Ihrem Konto gehoeren. ' +
+        'Gilt nur bei Synchronisierungsumfang "Gesamtes Konto".',
+      seafileBatchSizeTip:
+        'Anzahl der Dokumente, die pro Durchlauf verarbeitet und zurueckgegeben werden. ' +
+        'Ein kleinerer Wert verbraucht weniger Arbeitsspeicher, kann aber insgesamt langsamer sein. ' +
+        'Standardwert: 100.',
       jiraDescription:
         'Verbinden Sie Ihren Jira-Arbeitsbereich, um Vorgänge, Kommentare und Anhänge zu synchronisieren.',
       jiraBaseUrlTip:
@@ -1012,8 +1138,7 @@ Beispiel: Virtual Hosted Style`,
         'Aktualisieren Sie hier Ihr Foto und Ihre persönlichen Daten.',
       maxTokens: 'Maximale Tokens',
       maxTokensMessage: 'Maximale Tokens sind erforderlich',
-      maxTokensTip:
-        'Dies legt die maximale Länge der Ausgabe des Modells fest, gemessen an der Anzahl der Tokens (Wörter oder Wortteile). Standardmäßig 512. Wenn deaktiviert, heben Sie die maximale Token-Begrenzung auf und erlauben dem Modell, die Anzahl der Tokens in seinen Antworten selbst zu bestimmen.',
+      maxTokensTip: `Die maximale Kontextgröße des Modell; ein ungültiger oder falscher Wert führt zu einem Fehler. Standardmäßig 512.`,
       maxTokensInvalidMessage:
         'Bitte geben Sie eine gültige Zahl für Maximale Tokens ein.',
       maxTokensMinMessage: 'Maximale Tokens können nicht weniger als 0 sein.',
@@ -1069,6 +1194,8 @@ Beispiel: Virtual Hosted Style`,
         'Wenn Ihr API-Schlüssel von OpenAI stammt, ignorieren Sie dies. Andere Zwischenanbieter geben diese Basis-URL mit dem API-Schlüssel an.',
       tongyiBaseUrlTip:
         'Für chinesische Benutzer ist keine Eingabe erforderlich oder verwenden Sie https://dashscope.aliyuncs.com/compatible-mode/v1. Für internationale Benutzer verwenden Sie https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Für chinesische Benutzer ist keine Eingabe erforderlich oder verwenden Sie https://api.siliconflow.cn/v1. Für internationale Benutzer verwenden Sie https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Nur für internationale Benutzer, bitte Hinweis beachten)',
       minimaxBaseUrlTip:
@@ -1108,13 +1235,25 @@ Beispiel: Virtual Hosted Style`,
       modelTypeMessage: 'Bitte geben Sie Ihren Modelltyp ein!',
       addLlmBaseUrl: 'Basis-URL',
       baseUrlNameMessage: 'Bitte geben Sie Ihre Basis-URL ein!',
+      paddleocr: {
+        apiUrl: 'PaddleOCR API-URL',
+        apiUrlPlaceholder:
+          'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
+        accessToken: 'AI Studio-Zugriffstoken',
+        accessTokenPlaceholder: 'Ihr AI Studio-Token (optional)',
+        algorithm: 'PaddleOCR-Algorithmus',
+        selectAlgorithm: 'Algorithmus auswählen',
+        modelNamePlaceholder: 'Zum Beispiel: paddleocr-from-env-1',
+        modelNameRequired: 'Der Modellname ist ein Pflichtfeld',
+        apiUrlRequired: 'Die PaddleOCR API-URL ist ein Pflichtfeld',
+      },
       vision: 'Unterstützt es Vision?',
       ollamaLink: 'Wie integriere ich {{name}}',
       FishAudioLink: 'Wie verwende ich FishAudio',
       TencentCloudLink: 'Wie verwende ich TencentCloud ASR',
       volcModelNameMessage: 'Bitte geben Sie Ihren Modellnamen ein!',
-      addEndpointID: 'EndpointID des Modells',
-      endpointIDMessage: 'Bitte geben Sie Ihre EndpointID des Modells ein',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Bitte geben Sie Ihre Model ID ein',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Bitte geben Sie Ihren ARK_API_KEY ein',
       bedrockModelNameMessage: 'Bitte geben Sie Ihren Modellnamen ein!',
@@ -1159,10 +1298,6 @@ Beispiel: Virtual Hosted Style`,
       'sa-east-1': 'Südamerika (São Paulo)',
       'us-gov-east-1': 'AWS GovCloud (US-Ost)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
-      addHunyuanSID: 'Hunyuan Secret ID',
-      HunyuanSIDMessage: 'Bitte geben Sie Ihre Secret ID ein',
-      addHunyuanSK: 'Hunyuan Secret Key',
-      HunyuanSKMessage: 'Bitte geben Sie Ihren Secret Key ein',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Bitte geben Sie Ihre Secret ID ein',
       addTencentCloudSK: 'TencentCloud Secret Key',
@@ -1250,6 +1385,15 @@ Beispiel: Virtual Hosted Style`,
             'Vision Language Model mit LMDeploy Engine (Experimentell)',
         },
       },
+      modelTypes: {
+        chat: 'Chat',
+        embedding: 'Embedding',
+        rerank: 'Rerank',
+        sequence2text: 'sequence2text',
+        tts: 'TTS',
+        image2text: 'Img2txt',
+        speech2text: 'ASR',
+      },
     },
     message: {
       registered: 'Registriert!',
@@ -1302,7 +1446,7 @@ Beispiel: Virtual Hosted Style`,
       directory: 'Verzeichnis',
       uploadTitle: 'Ziehen Sie Ihre Datei hierher, um sie hochzuladen',
       uploadDescription:
-        'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Für lokal bereitgestelltes RAGFlow: Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto. Für demo.ragflow.io: Die maximale Dateigröße pro Upload beträgt 10 MB, wobei jede Datei nicht größer als 10 MB sein darf und maximal 128 Dateien pro Konto erlaubt sind.',
+        'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Für lokal bereitgestelltes RAGFlow: Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto. Für cloud.ragflow.io: Die maximale Dateigröße pro Upload beträgt 10 MB, wobei jede Datei nicht größer als 10 MB sein darf und maximal 128 Dateien pro Konto erlaubt sind.',
       local: 'Lokale Uploads',
       s3: 'S3-Uploads',
       preview: 'Vorschau',
@@ -1327,7 +1471,7 @@ Beispiel: Virtual Hosted Style`,
       marketing: 'Marketing',
       consumerApp: 'Verbraucher-App',
       other: 'Andere',
-      ingestionPipeline: 'Ingestion-Pipeline',
+      ingestionPipeline: 'Dateneingabe-Pipeline',
       agents: 'Agenten',
       days: 'Tage',
       beginInput: 'Eingabe beginnen',
@@ -1493,10 +1637,8 @@ Beispiel: Virtual Hosted Style`,
       searXNG: 'SearXNG',
       searXNGDescription:
         'Eine Komponente, die auf https://searxng.org/ sucht und Ihnen ermöglicht, die Anzahl der Suchergebnisse mit TopN anzugeben. Sie ergänzt die vorhandenen Wissensdatenbanken.',
-      pdfGenerator: 'Dokumentengenerator',
-      pDFGenerator: 'Dokumentengenerator',
-      pdfGeneratorDescription: `Eine Komponente, die Dokumente (PDF, DOCX, TXT) aus markdown-formatierten Inhalten mit anpassbarem Stil, Bildern und Tabellen generiert. Unterstützt: **fett**, *kursiv*, # Überschriften, - Listen, Tabellen mit | Syntax.`,
-      pDFGeneratorDescription: `Eine Komponente, die Dokumente (PDF, DOCX, TXT) aus markdown-formatierten Inhalten mit anpassbarem Stil, Bildern und Tabellen generiert. Unterstützt: **fett**, *kursiv*, # Überschriften, - Listen, Tabellen mit | Syntax.`,
+      docGenerator: 'Dokumentengenerator',
+      docGeneratorDescription: `Erzeugt eine Datei aus Markdown-Inhalten.`,
       subtitle: 'Untertitel',
       logoImage: 'Logo-Bild',
       logoPosition: 'Logo-Position',
@@ -1701,6 +1843,8 @@ Beispiel: Virtual Hosted Style`,
         notEmpty: 'Nicht leer',
         in: 'In',
         notIn: 'Nicht in',
+        is: 'Ist',
+        isNot: 'Ist nicht',
       },
       switchLogicOperatorOptions: {
         and: 'UND',
@@ -1842,11 +1986,12 @@ Beispiel: Virtual Hosted Style`,
         'Eine Komponente, die die Ausgabe anderer Komponenten formatiert. 1. Unterstützt Jinja2-Vorlagen, konvertiert zuerst die Eingabe in ein Objekt und rendert dann die Vorlage, 2. Behält gleichzeitig die ursprüngliche Methode der Verwendung von {parameter} Zeichenkettenersetzung bei',
       emailComponent: 'E-Mail',
       emailDescription: 'Sendet eine E-Mail an eine angegebene Adresse.',
-      smtpServer: 'SMTP-Server',
+      smtpServer: 'SMTP-Host',
       smtpPort: 'SMTP-Port',
-      senderEmail: 'Absender-E-Mail',
-      authCode: 'Autorisierungscode',
-      senderName: 'Absendername',
+      senderEmail: 'Absenderadresse (From)',
+      smtpUsername: 'SMTP-Anmeldebenutzername',
+      authCode: 'SMTP-Passwort/App-Passwort',
+      senderName: 'Anzeigename des Absenders',
       toEmail: 'Empfänger-E-Mail',
       ccEmail: 'CC-E-Mail',
       emailSubject: 'Betreff',
@@ -1964,8 +2109,10 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       conversational: 'Konversationell',
       task: 'Aufgabe',
       beginInputTip:
-        'Durch Definieren von Eingabeparametern kann auf diesen Inhalt von anderen Komponenten in nachfolgenden Prozessen zugegriffen werden.',
+        'Hier definierte Eingabeparameter können von Komponenten im nachgelagerten Workflow abgerufen werden.',
       query: 'Abfragevariablen',
+      switchPromptMessage:
+        'Die Prompt-Wörter werden geändert. Bitte bestätigen Sie, ob Sie die vorhandenen Prompt-Wörter verwerfen möchten?',
       queryRequired: 'Abfrage ist erforderlich',
       queryTip: 'Wählen Sie die Variable, die Sie verwenden möchten',
       agent: 'Agent',
@@ -2032,7 +2179,7 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       createFromTemplate: 'Aus Vorlage erstellen',
       importJsonFile: 'JSON-Datei importieren',
       ceateAgent: 'Agenten-Flow',
-      createPipeline: 'Ingestion-Pipeline',
+      createPipeline: ' Dateneingabe-Pipeline',
       chooseAgentType: 'Agententyp wählen',
       parser: 'Parser',
       parserDescription:
@@ -2041,12 +2188,10 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       tokenizerRequired: 'Bitte fügen Sie zuerst den Indexer-Knoten hinzu',
       tokenizerDescription:
         'Transformiert Text in die erforderliche Datenstruktur (z.B. Vektoreinbettungen für die Embedding-Suche) abhängig von der gewählten Suchmethode.',
-      splitter: 'Token',
-      splitterDescription:
+      tokenChunkerDescription:
         'Teilt Text in Chunks nach Token-Länge mit optionalen Trennzeichen und Überlappung.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'Teilt Dokumente in Abschnitte nach Titelhierarchie mit Regex-Regeln für feinere Kontrolle.',
-      hierarchicalMerger: 'Titel',
       extractor: 'Transformer',
       extractorDescription:
         'Verwendet ein LLM, um strukturierte Erkenntnisse aus Dokument-Chunks zu extrahieren – wie Zusammenfassungen, Klassifizierungen usw.',
@@ -2058,6 +2203,8 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
         image: 'Bild',
         email: 'E-Mail',
         'text&markdown': 'Text & Markup',
+        code: 'Code',
+        html: 'HTML',
         word: 'Word',
         slides: 'PPTX',
         audio: 'Audio',
@@ -2067,7 +2214,7 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       addParser: 'Parser hinzufügen',
       hierarchy: 'Hierarchie',
       regularExpressions: 'Reguläre Ausdrücke',
-      overlappedPercent: 'Überlappungsprozent (%)',
+      overlappedPercent: 'Chunk-Überlappung (%)',
       searchMethod: 'Suchmethode',
       searchMethodTip: `Definiert, wie der Inhalt durchsucht werden kann — durch Volltext, Embedding oder beides.
 Der Indexer speichert den Inhalt in den entsprechenden Datenstrukturen für die ausgewählten Methoden.`,
@@ -2121,6 +2268,7 @@ Wichtige Anweisungen:
           metadata: `Extrahiere wichtige strukturierte Informationen aus dem gegebenen Inhalt. Gib NUR einen gültigen JSON-String ohne zusätzlichen Text aus. Wenn keine wichtigen strukturierten Informationen gefunden werden, gib ein leeres JSON-Objekt aus: {}.
 
 Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereignisse, wichtige Fakten, numerische Daten oder andere extrahierbare Entitäten.`,
+          toc: '',
         },
         user: {
           keywords: `Textinhalt
@@ -2130,6 +2278,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
           summary: `Text zum Zusammenfassen:
 [Text hier einfügen]`,
           metadata: `Inhalt: [INHALT HIER EINFÜGEN]`,
+          toc: '[Text hier einfügen]',
         },
       },
       cancel: 'Abbrechen',
@@ -2226,7 +2375,17 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
         requestBodyParameters: 'Anfrage-Body-Parameter',
         streaming: 'Akzeptierte Antwort',
         immediately: 'Endgültige Antwort',
+        overview: 'Übersicht',
+        logs: 'Logs',
+        agentStatus: 'Agentenstatus:',
       },
+      saveToMemory: 'Im Gedächtnis speichern',
+      retrievalFrom: 'Abruf von',
+      tocDataSource: 'Datenquelle',
+      tags: 'Tags',
+      canvasCategory: 'Canvas-Kategorie',
+      id: 'ID',
+      logTitle: 'Titel',
     },
     llmTools: {
       bad_calculator: {
@@ -2285,6 +2444,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       okText: 'Speichern',
       cancelText: 'Abbrechen',
       chooseDataset: 'Bitte wählen Sie zuerst einen Datensatz aus',
+      selectLocalePlaceholder: 'Sprache auswählen',
     },
     language: {
       english: 'Englisch',
@@ -2296,15 +2456,18 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       korean: 'Koreanisch',
       vietnamese: 'Vietnamesisch',
       russian: 'Russisch',
+      bulgarian: 'Bulgarisch',
+      arabic: 'Arabisch',
+      turkish: 'Türkisch',
     },
     pagination: {
       total: 'Gesamt {{total}}',
-      page: '{{page}} /Seite',
+      page: '{{page}} / Seite',
     },
     dataflowParser: {
       result: 'Ergebnis',
       parseSummary: 'Analyse-Zusammenfassung',
-      parseSummaryTip: 'Parser：deepdoc',
+      parseSummaryTip: 'Parser：DeepDoc',
       parserMethod: 'Parser-Methode',
       outputFormat: 'Ausgabeformat',
       rerunFromCurrentStep: 'Vom aktuellen Schritt erneut ausführen',
@@ -2328,10 +2491,10 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       <p>Um sie zu behalten, klicken Sie bitte auf Erneut ausführen, um die aktuelle Stufe erneut auszuführen.</p> `,
       changeStepModalConfirmText: 'Trotzdem wechseln',
       changeStepModalCancelText: 'Abbrechen',
-      unlinkPipelineModalTitle: 'Ingestion-Pipeline trennen',
+      unlinkPipelineModalTitle: 'Dateneingabe-Pipeline trennen',
       unlinkPipelineModalConfirmText: 'Trennen',
       unlinkPipelineModalContent: `
-      <p>Nach dem Trennen ist dieser Datensatz nicht mehr mit der aktuellen Ingestion-Pipeline verbunden.</p>
+      <p>Nach dem Trennen ist dieser Datensatz nicht mehr mit der aktuellen Dateneingabe-Pipeline verbunden.</p>
       <p>Dateien, die bereits analysiert werden, werden bis zum Abschluss fortgesetzt</p>
       <p>Dateien, die noch nicht analysiert wurden, werden nicht mehr verarbeitet</p> <br/>
       <p>Sind Sie sicher, dass Sie fortfahren möchten?</p> `,
@@ -2342,7 +2505,8 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
     },
     datasetOverview: {
       downloadTip: 'Dateien werden von Datenquellen heruntergeladen. ',
-      processingTip: 'Dateien werden von der Ingestion-Pipeline verarbeitet.',
+      processingTip:
+        'Dateien werden von der Dateneingabe-Pipeline verarbeitet.',
       totalFiles: 'Gesamtdateien',
       downloading: 'Wird heruntergeladen',
       downloadSuccessTip: 'Gesamte erfolgreiche Downloads',

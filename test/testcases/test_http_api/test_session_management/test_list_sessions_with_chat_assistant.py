@@ -27,12 +27,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -90,10 +86,10 @@ class TestSessionsWithChatAssistantList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            ({"orderby": None}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"orderby": "create_time"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"], "update_time", True)), ""),
-            ({"orderby": "name", "desc": "False"}, 0, lambda r: (is_sorted(r["data"], "name", False)), ""),
+            ({"orderby": None}, 0, lambda r: is_sorted(r["data"], "create_time", True), ""),
+            ({"orderby": "create_time"}, 0, lambda r: is_sorted(r["data"], "create_time", True), ""),
+            ({"orderby": "update_time"}, 0, lambda r: is_sorted(r["data"], "update_time", True), ""),
+            ({"orderby": "name", "desc": "False"}, 0, lambda r: is_sorted(r["data"], "name", False), ""),
             pytest.param({"orderby": "unknown"}, 102, 0, "orderby should be create_time or update_time", marks=pytest.mark.skip(reason="issues/")),
         ],
     )
@@ -119,14 +115,14 @@ class TestSessionsWithChatAssistantList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            ({"desc": None}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"desc": "true"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"desc": "True"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"desc": True}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"desc": "false"}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
-            ({"desc": "False"}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
-            ({"desc": False}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
-            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"], "update_time", False)), ""),
+            ({"desc": None}, 0, lambda r: is_sorted(r["data"], "create_time", True), ""),
+            ({"desc": "true"}, 0, lambda r: is_sorted(r["data"], "create_time", True), ""),
+            ({"desc": "True"}, 0, lambda r: is_sorted(r["data"], "create_time", True), ""),
+            ({"desc": True}, 0, lambda r: is_sorted(r["data"], "create_time", True), ""),
+            ({"desc": "false"}, 0, lambda r: is_sorted(r["data"], "create_time", False), ""),
+            ({"desc": "False"}, 0, lambda r: is_sorted(r["data"], "create_time", False), ""),
+            ({"desc": False}, 0, lambda r: is_sorted(r["data"], "create_time", False), ""),
+            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: is_sorted(r["data"], "update_time", False), ""),
             pytest.param({"desc": "unknown"}, 102, 0, "desc should be true or false", marks=pytest.mark.skip(reason="issues/")),
         ],
     )
@@ -246,5 +242,5 @@ class TestSessionsWithChatAssistantList:
         assert res["code"] == 0
 
         res = list_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
-        assert res["code"] == 102
-        assert "You don't own the assistant" in res["message"]
+        assert res["code"] == 109
+        assert res["message"] == "No authorization."

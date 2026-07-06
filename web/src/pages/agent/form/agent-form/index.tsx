@@ -159,11 +159,13 @@ function AgentForm({ node }: INextOperatorForm) {
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
-          {findLlmByUuid(llmId)?.model_type === LlmModelType.Image2text && (
+          {findLlmByUuid(llmId)?.model_type?.includes(
+            LlmModelType.Image2text,
+          ) && (
             <QueryVariable
               name="visual_files_var"
-              label="Visual Input File"
-              type={VariableType.File}
+              label={t('flow.visualInputFile')}
+              types={[VariableType.File]}
             ></QueryVariable>
           )}
           <FormField
@@ -205,7 +207,7 @@ function AgentForm({ node }: INextOperatorForm) {
           <Separator></Separator>
           <AgentTools></AgentTools>
           <Agents node={node}></Agents>
-          <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
+          <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
             <section className="space-y-5">
               <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
               <FormField
@@ -213,7 +215,7 @@ function AgentForm({ node }: INextOperatorForm) {
                 name={`cite`}
                 render={({ field }) => (
                   <FormItem className="flex-1">
-                    <FormLabel tooltip={t('flow.citeTip')}>
+                    <FormLabel tooltip={t('chat.quoteTip')}>
                       {t('flow.cite')}
                     </FormLabel>
                     <FormControl>

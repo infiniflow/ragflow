@@ -1,3 +1,8 @@
+export enum ModelStatus {
+  Active = 'active',
+  Inactive = 'inactive',
+}
+
 export enum LLMFactory {
   TongYiQianWen = 'Tongyi-Qianwen',
   Moonshot = 'Moonshot',
@@ -61,6 +66,14 @@ export enum LLMFactory {
   JiekouAI = 'Jiekou.AI',
   Builtin = 'Builtin',
   MinerU = 'MinerU',
+  PaddleOCR = 'PaddleOCR',
+  OpenDataLoader = 'OpenDataLoader',
+  SoMark = 'SoMark',
+  N1n = 'n1n',
+  Avian = 'Avian',
+  RAGcon = 'RAGcon',
+  Perplexity = 'Perplexity',
+  NewAPI = 'New API',
 }
 
 // Please lowercase the file name
@@ -127,6 +140,31 @@ export const IconMap = {
   [LLMFactory.JiekouAI]: 'jiekouai',
   [LLMFactory.Builtin]: 'builtin',
   [LLMFactory.MinerU]: 'mineru',
+  [LLMFactory.PaddleOCR]: 'paddleocr',
+  [LLMFactory.N1n]: 'n1n',
+  [LLMFactory.Avian]: 'avian',
+  [LLMFactory.RAGcon]: 'ragcon',
+  [LLMFactory.Perplexity]: 'perplexity',
+  [LLMFactory.SoMark]: 'somark',
+  [LLMFactory.NewAPI]: 'new-api',
+};
+
+export const ModelTypeToField: Record<string, string> = {
+  chat: 'llm_id',
+  embedding: 'embd_id',
+  image2text: 'img2txt_id',
+  speech2text: 'asr_id',
+  rerank: 'rerank_id',
+  tts: 'tts_id',
+};
+
+export const FieldToModelType: Record<string, string> = {
+  llm_id: 'chat',
+  embd_id: 'embedding',
+  img2txt_id: 'vision',
+  asr_id: 'asr',
+  rerank_id: 'rerank',
+  tts_id: 'tts',
 };
 
 export const APIMapUrl = {
@@ -141,7 +179,8 @@ export const APIMapUrl = {
   [LLMFactory.HuggingFace]: 'https://huggingface.co/settings/tokens',
   [LLMFactory.Mistral]: 'https://console.mistral.ai/api-keys/',
   [LLMFactory.Cohere]: 'https://dashboard.cohere.com/api-keys',
-  [LLMFactory.BaiduYiYan]: 'https://wenxin.baidu.com/user/key',
+  [LLMFactory.BaiduYiYan]:
+    'https://console.bce.baidu.com/qianfan/ais/console/apiKey',
   [LLMFactory.Meituan]: 'https://longcat.chat/platform/api_keys',
   [LLMFactory.Bedrock]:
     'https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-2#/users',
@@ -163,8 +202,7 @@ export const APIMapUrl = {
   [LLMFactory.ModelScope]: 'https://modelscope.cn/my/myaccesstoken',
   [LLMFactory.GoogleCloud]: 'https://console.cloud.google.com/apis/credentials',
   [LLMFactory.FishAudio]: 'https://fish.audio/app/api-keys/',
-  [LLMFactory.GiteeAI]:
-    'https://ai.gitee.com/hhxzgrjn/dashboard/settings/tokens',
+  [LLMFactory.GiteeAI]: 'https://ai.gitee.com/dashboard/settings/tokens',
   [LLMFactory.StepFun]: 'https://platform.stepfun.com/interface-key',
   [LLMFactory.BaiChuan]: 'https://platform.baichuan-ai.com/console/apikey',
   [LLMFactory.PPIO]: 'https://ppio.com/settings/key-management',
@@ -177,4 +215,10 @@ export const APIMapUrl = {
   [LLMFactory.DeerAPI]: 'https://api.deerapi.com/token',
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
+  [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.SoMark]: 'https://somark.tech/workbench/apikey',
+  [LLMFactory.N1n]: 'https://docs.n1n.ai',
+  [LLMFactory.Avian]: 'https://avian.io',
+  [LLMFactory.Perplexity]:
+    'https://docs.perplexity.ai/docs/embeddings/quickstart',
 };

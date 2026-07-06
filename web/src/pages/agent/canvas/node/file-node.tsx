@@ -1,4 +1,4 @@
-import { IBeginNode } from '@/interfaces/database/flow';
+import { IBeginNode } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { NodeProps, Position } from '@xyflow/react';
 import get from 'lodash/get';

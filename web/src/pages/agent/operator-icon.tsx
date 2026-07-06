@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import {
   FileCode,
   FileText,
+  Globe,
   HousePlus,
   Infinity as InfinityIcon,
   LogOut,
@@ -44,7 +45,9 @@ export const SVGIconMap = {
   [Operator.Google]: 'google',
   [Operator.GoogleScholar]: 'google-scholar',
   [Operator.PubMed]: 'pubmed',
+  [Operator.BGPT]: 'bgpt',
   [Operator.SearXNG]: 'searxng',
+  [Operator.KeenableSearch]: 'keenable',
   [Operator.TavilyExtract]: 'tavily',
   [Operator.TavilySearch]: 'tavily',
   [Operator.Wikipedia]: 'wikipedia',
@@ -56,7 +59,8 @@ export const LucideIconMap = {
   [Operator.DataOperations]: FileCode,
   [Operator.Loop]: InfinityIcon,
   [Operator.ExitLoop]: LogOut,
-  [Operator.PDFGenerator]: FileText,
+  [Operator.DocGenerator]: FileText,
+  [Operator.Browser]: Globe,
 };
 
 const Empty = () => {

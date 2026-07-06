@@ -15,11 +15,8 @@
 #
 
 import base64
-import ipaddress
 import json
 import re
-import socket
-from urllib.parse import urlparse
 import aiosmtplib
 from email.mime.text import MIMEText
 from email.header import Header
@@ -37,56 +34,33 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 
 OTP_LENGTH = 4
-OTP_TTL_SECONDS = 5 * 60 # valid for 5 minutes
-ATTEMPT_LIMIT = 5 # maximum attempts
-ATTEMPT_LOCK_SECONDS = 30 * 60 # lock for 30 minutes
-RESEND_COOLDOWN_SECONDS = 60 # cooldown for 1 minute
+OTP_TTL_SECONDS = 5 * 60  # valid for 5 minutes
+ATTEMPT_LIMIT = 5  # maximum attempts
+ATTEMPT_LOCK_SECONDS = 30 * 60  # lock for 30 minutes
+RESEND_COOLDOWN_SECONDS = 60  # cooldown for 1 minute
 
 
-CONTENT_TYPE_MAP = {
-    # Office
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "doc": "application/msword",
-    "pdf": "application/pdf",
-    "csv": "text/csv",
-    "xls": "application/vnd.ms-excel",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    # Text/code
-    "txt": "text/plain",
-    "py": "text/plain",
-    "js": "text/plain",
-    "java": "text/plain",
-    "c": "text/plain",
-    "cpp": "text/plain",
-    "h": "text/plain",
-    "php": "text/plain",
-    "go": "text/plain",
-    "ts": "text/plain",
-    "sh": "text/plain",
-    "cs": "text/plain",
-    "kt": "text/plain",
-    "sql": "text/plain",
-    # Web
-    "md": "text/markdown",
-    "markdown": "text/markdown",
-    "mdx": "text/markdown",
-    "htm": "text/html",
-    "html": "text/html",
-    "json": "application/json",
-    # Image formats
-    "png": "image/png",
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "gif": "image/gif",
-    "bmp": "image/bmp",
-    "tiff": "image/tiff",
-    "tif": "image/tiff",
-    "webp": "image/webp",
-    "svg": "image/svg+xml",
-    "ico": "image/x-icon",
-    "avif": "image/avif",
-    "heic": "image/heic",
-}
+from api.utils.file_response import (  # noqa: F401
+    CONTENT_TYPE_MAP,
+    FORCE_ATTACHMENT_CONTENT_TYPES,
+    FORCE_ATTACHMENT_EXTENSIONS,
+    agent_attachment_preview_path,
+    apply_download_file_response_headers,
+    apply_preview_file_response_headers,
+    resolve_attachment_content_type,
+    sanitize_content_disposition_filename,
+    should_force_attachment,
+)
+
+
+def apply_safe_file_response_headers(response, content_type: str | None, ext: str | None = None):
+    if content_type:
+        response.headers.set("Content-Type", content_type)
+    force_attachment = should_force_attachment(ext, content_type)
+    if force_attachment:
+        response.headers.set("X-Content-Type-Options", "nosniff")
+        response.headers.set("Content-Disposition", "attachment")
+    return response
 
 
 def html2pdf(
@@ -133,6 +107,9 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
     try:
         WebDriverWait(driver, timeout).until(staleness_of(driver.find_element(by=By.TAG_NAME, value="html")))
     except TimeoutException:
+        pass
+
+    try:
         calculated_print_options = {
             "landscape": False,
             "displayHeaderFooter": False,
@@ -141,33 +118,21 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
         }
         calculated_print_options.update(print_options)
         result = __send_devtools(driver, "Page.printToPDF", calculated_print_options)
-        driver.quit()
         return base64.b64decode(result["data"])
-
-
-def is_private_ip(ip: str) -> bool:
-    try:
-        ip_obj = ipaddress.ip_address(ip)
-        return ip_obj.is_private
-    except ValueError:
-        return False
+    finally:
+        driver.quit()
 
 
 def is_valid_url(url: str) -> bool:
     if not re.match(r"(https?)://[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]", url):
         return False
-    parsed_url = urlparse(url)
-    hostname = parsed_url.hostname
+    from common.ssrf_guard import assert_url_is_safe
 
-    if not hostname:
-        return False
     try:
-        ip = socket.gethostbyname(hostname)
-        if is_private_ip(ip):
-            return False
-    except socket.gaierror:
+        assert_url_is_safe(url)
+        return True
+    except ValueError:
         return False
-    return True
 
 
 def safe_json_parse(data: str | dict) -> dict:
@@ -185,10 +150,9 @@ def get_float(req: dict, key: str, default: float | int = 10.0) -> float:
         return parsed if parsed > 0 else default
     except (TypeError, ValueError):
         return default
-    
+
 
 async def send_email_html(to_email: str, subject: str, template_key: str, **context):
-
     body = await render_template_string(EMAIL_TEMPLATES.get(template_key), **context)
     msg = MIMEText(body, "plain", "utf-8")
     msg["Subject"] = Header(subject, "utf-8")
@@ -233,10 +197,10 @@ def otp_keys(email: str):
 
 def hash_code(code: str, salt: bytes) -> str:
     import hashlib
-    import hmac 
+    import hmac
+
     return hmac.new(salt, (code or "").encode("utf-8"), hashlib.sha256).hexdigest()
-    
+
 
 def captcha_key(email: str) -> str:
     return f"captcha:{email}"
-    

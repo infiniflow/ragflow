@@ -1,8 +1,10 @@
 ---
 sidebar_position: -4
 slug: /configure_child_chunking_strategy
+sidebar_custom_props: {
+  categoryIcon: LucideGroup
+}
 ---
-
 # Configure child chunking strategy
 
 Set parent-child chunking strategy to improve retrieval.

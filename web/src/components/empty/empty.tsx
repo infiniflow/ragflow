@@ -4,19 +4,13 @@ import { useIsDarkTheme } from '../theme-provider';
 
 import { Plus } from 'lucide-react';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import SvgIcon from '../svg-icon';
 import { EmptyCardData, EmptyCardType, EmptyType } from './constant';
 import { EmptyCardProps, EmptyProps } from './interface';
 
 const EmptyIcon = ({ name, width }: { name: string; width?: number }) => {
-  return (
-    // <img
-    //   className="h-20"
-    //   src={isDarkTheme ? noDataIconDark : noDataIcon}
-    //   alt={t('common.noData')}
-    // />
-    <SvgIcon name={name || 'empty/no-data-dark'} width={width || 42} />
-  );
+  return <SvgIcon name={name || 'empty/no-data-dark'} width={width || 42} />;
 };
 
 const Empty = (props: EmptyProps) => {
@@ -52,22 +46,26 @@ const Empty = (props: EmptyProps) => {
 export default Empty;
 
 export const EmptyCard = (props: EmptyCardProps) => {
-  const { icon, className, children, title, description, style } = props;
+  const { icon, className, children, title, description, style, ...restProps } =
+    props;
   return (
-    <div
+    <article
       className={cn(
-        'flex flex-col gap-3 items-start justify-start border border-dashed border-border-button rounded-md p-5 w-fit',
+        'flex flex-col gap-3 rounded-md border border-dashed border-border-button p-5',
+        'w-full items-center justify-center text-center',
+        'md:w-fit md:items-start md:justify-start md:text-left',
         className,
       )}
       style={style}
+      {...restProps}
     >
       {icon}
-      {title && <div className="text-text-primary text-base">{title}</div>}
+      {title && <div className="text-sm text-text-primary">{title}</div>}
       {description && (
-        <div className="text-text-secondary text-sm">{description}</div>
+        <p className="text-sm text-text-secondary">{description}</p>
       )}
       {children}
-    </div>
+    </article>
   );
 };
 
@@ -78,47 +76,61 @@ export const EmptyAppCard = (props: {
   className?: string;
   isSearch?: boolean;
   size?: 'small' | 'large';
+  children?: React.ReactNode;
+  testId?: string;
+  tabIndex?: number;
 }) => {
-  const { type, showIcon, className, isSearch } = props;
+  const { type, showIcon, className, isSearch, children, testId, tabIndex } =
+    props;
+  const { t } = useTranslation();
   let defaultClass = '';
-  let style = {};
+  let style: React.CSSProperties | undefined;
+  const cardData = EmptyCardData[type];
+  const title = t(cardData.titleKey);
+  const notFound = t(cardData.notFoundKey);
+
   switch (props.size) {
     case 'small':
       style = { width: '256px' };
       defaultClass = 'mt-1';
       break;
     case 'large':
-      style = { width: '480px' };
       defaultClass = 'mt-5';
       break;
     default:
       defaultClass = '';
       break;
   }
+
   return (
-    <div
-      className=" cursor-pointer "
-      onClick={isSearch ? undefined : props.onClick}
-    >
+    <div className="flex w-full justify-center px-5 md:px-0">
       <EmptyCard
-        icon={showIcon ? EmptyCardData[type].icon : undefined}
-        title={
-          isSearch ? EmptyCardData[type].notFound : EmptyCardData[type].title
-        }
-        className={className}
+        onClick={isSearch ? undefined : props.onClick}
+        data-testid={testId}
+        tabIndex={tabIndex ?? (isSearch ? undefined : 0)}
+        icon={showIcon ? cardData.icon : undefined}
+        title={isSearch ? notFound : title}
+        className={cn(
+          !isSearch && 'cursor-pointer',
+          props.size === 'large' && 'p-14',
+          className,
+          'w-full max-w-[480px] md:max-w-none',
+          props.size === 'large' && 'md:w-[480px]',
+          props.size === 'small' && 'max-w-64',
+        )}
         style={style}
-        // description={EmptyCardData[type].description}
       >
-        {!isSearch && (
+        {!isSearch && !children && (
           <div
             className={cn(
               defaultClass,
-              'flex items-center justify-start w-full',
+              'flex w-full items-center justify-center md:justify-start',
             )}
           >
             <Plus size={24} />
           </div>
         )}
+        {children}
       </EmptyCard>
     </div>
   );

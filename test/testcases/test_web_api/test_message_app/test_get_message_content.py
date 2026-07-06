@@ -16,12 +16,13 @@
 import random
 
 import pytest
-from test_web_api.common import get_message_content, get_recent_message
+from test_common import get_message_content, get_recent_message
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
+
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
@@ -37,7 +38,6 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_multiple_type_message_func")
 class TestGetMessageContent:
-
     @pytest.mark.p1
     def test_get_message_content(self, WebApiAuth):
         memory_id = self.memory_id
@@ -49,3 +49,16 @@ class TestGetMessageContent:
         for field in ["content", "content_embed"]:
             assert field in content_res["data"]
             assert content_res["data"][field] is not None, content_res
+
+    @pytest.mark.p2
+    def test_get_message_content_invalid_memory_id(self, WebApiAuth):
+        res = get_message_content(WebApiAuth, "missing_memory_id", 1)
+        assert res["code"] == 404, res
+        assert "not found" in res["message"].lower(), res
+
+    @pytest.mark.p2
+    def test_get_message_content_invalid_message_id(self, WebApiAuth):
+        memory_id = self.memory_id
+        res = get_message_content(WebApiAuth, memory_id, 999999999)
+        assert res["code"] == 404, res
+        assert "not found" in res["message"].lower(), res

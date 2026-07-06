@@ -17,7 +17,7 @@
 import time
 import datetime
 import pytest
-from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp, datetime_format, delta_seconds
+from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp, datetime_format, delta_seconds, format_iso_8601_to_ymd_hms
 
 
 class TestCurrentTimestamp:
@@ -68,22 +68,23 @@ class TestTimestampToDate:
         # Test with a specific timestamp
         timestamp = 1704067200000  # 2024-01-01 00:00:00 UTC
         result = timestamp_to_date(timestamp)
-        expected = "2024-01-01 08:00:00"
+        expected = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp / 1000))
         assert result == expected
 
     def test_custom_format_string(self):
         """Test conversion with custom format string"""
         timestamp = 1704067200000  # 2024-01-01 00:00:00 UTC
+        local = time.localtime(timestamp / 1000)
 
         # Test different format strings
         result1 = timestamp_to_date(timestamp, "%Y-%m-%d")
-        assert result1 == "2024-01-01"
+        assert result1 == time.strftime("%Y-%m-%d", local)
 
         result2 = timestamp_to_date(timestamp, "%H:%M:%S")
-        assert result2 == "08:00:00"
+        assert result2 == time.strftime("%H:%M:%S", local)
 
         result3 = timestamp_to_date(timestamp, "%Y/%m/%d %H:%M")
-        assert result3 == "2024/01/01 08:00"
+        assert result3 == time.strftime("%Y/%m/%d %H:%M", local)
 
     def test_zero_timestamp(self):
         """Test conversion with zero timestamp (epoch)"""
@@ -104,14 +105,14 @@ class TestTimestampToDate:
         """Test that string timestamp input is handled correctly"""
         timestamp_str = "1704067200000"
         result = timestamp_to_date(timestamp_str)
-        expected = "2024-01-01 08:00:00"
+        expected = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(timestamp_str) / 1000))
         assert result == expected
 
     def test_float_timestamp_input(self):
         """Test that float timestamp input is handled correctly"""
         timestamp_float = 1704067200000.0
         result = timestamp_to_date(timestamp_float)
-        expected = "2024-01-01 08:00:00"
+        expected = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(timestamp_float) / 1000))
         assert result == expected
 
     def test_different_timezones_handled(self):
@@ -130,19 +131,18 @@ class TestTimestampToDate:
         timestamp = 1704067200123  # 2024-01-01 00:00:00.123 UTC
         result = timestamp_to_date(timestamp)
 
-        # Should still return "08:00:00" since milliseconds are truncated
-        assert "08:00:00" in result
+        # Milliseconds are truncated, so result should match the base timestamp
+        expected = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(timestamp) / 1000))
+        assert result == expected
 
     def test_various_timestamps(self):
         """Test conversion with various timestamp values"""
-        test_cases = [
-            (1609459200000, "2021-01-01 08:00:00"),  # 2020-12-31 16:00:00 UTC
-            (4102444800000, "2100-01-01"),  # Future date
-        ]
+        test_cases = [1609459200000, 4102444800000]
 
-        for timestamp, expected_prefix in test_cases:
+        for timestamp in test_cases:
             result = timestamp_to_date(timestamp)
-            assert expected_prefix in result
+            expected = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp / 1000))
+            assert result == expected
 
     def test_return_type_always_string(self):
         """Test that return type is always string regardless of input"""
@@ -176,21 +176,22 @@ class TestDateStringToTimestamp:
         """Test basic date string to timestamp conversion with default format"""
         date_string = "2024-01-01 08:00:00"
         result = date_string_to_timestamp(date_string)
-        expected = 1704067200000
+        expected = int(time.mktime(time.strptime(date_string, "%Y-%m-%d %H:%M:%S")) * 1000)
         assert result == expected
 
     def test_custom_format_string(self):
         """Test conversion with custom format strings"""
         # Test different date formats
         test_cases = [
-            ("2024-01-01", "%Y-%m-%d", 1704038400000),
-            ("2024/01/01 12:30:45", "%Y/%m/%d %H:%M:%S", 1704083445000),
-            ("01-01-2024", "%m-%d-%Y", 1704038400000),
-            ("20240101", "%Y%m%d", 1704038400000),
+            ("2024-01-01", "%Y-%m-%d"),
+            ("2024/01/01 12:30:45", "%Y/%m/%d %H:%M:%S"),
+            ("01-01-2024", "%m-%d-%Y"),
+            ("20240101", "%Y%m%d"),
         ]
 
-        for date_string, format_string, expected in test_cases:
+        for date_string, format_string in test_cases:
             result = date_string_to_timestamp(date_string, format_string)
+            expected = int(time.mktime(time.strptime(date_string, format_string)) * 1000)
             assert result == expected
 
     def test_return_type_integer(self):
@@ -213,14 +214,15 @@ class TestDateStringToTimestamp:
     def test_different_dates(self):
         """Test conversion with various date strings"""
         test_cases = [
-            ("2024-01-01    00:00:00", 1704038400000),
-            ("2020-12-31 16:00:00", 1609401600000),
-            ("2023-06-15 14:30:00", 1686810600000),
-            ("2025-12-25 23:59:59", 1766678399000),
+            "2024-01-01    00:00:00",
+            "2020-12-31 16:00:00",
+            "2023-06-15 14:30:00",
+            "2025-12-25 23:59:59",
         ]
 
-        for date_string, expected in test_cases:
+        for date_string in test_cases:
             result = date_string_to_timestamp(date_string)
+            expected = int(time.mktime(time.strptime(date_string, "%Y-%m-%d %H:%M:%S")) * 1000)
             assert result == expected
 
     def test_epoch_date(self):
@@ -236,15 +238,15 @@ class TestDateStringToTimestamp:
         """Test conversion with leap year date"""
         date_string = "2024-02-29 12:00:00"  # Valid leap year date
         result = date_string_to_timestamp(date_string)
-        expected = 1709179200000  # 2024-02-29 12:00:00 in milliseconds
+        expected = int(time.mktime(time.strptime(date_string, "%Y-%m-%d %H:%M:%S")) * 1000)
         assert result == expected
 
     def test_date_only_string(self):
         """Test conversion with date-only format (assumes 00:00:00 time)"""
         date_string = "2024-01-01"
         result = date_string_to_timestamp(date_string, "%Y-%m-%d")
-        # Should be equivalent to "2024-01-01 00:00:00"
-        expected = 1704038400000
+        # Should be equivalent to "2024-01-01 00:00:00" in local timezone
+        expected = int(time.mktime(time.strptime(date_string, "%Y-%m-%d")) * 1000)
         assert result == expected
 
     def test_with_whitespace(self):
@@ -455,13 +457,16 @@ class TestDatetimeFormat:
 
         assert result == expected
 
-    @pytest.mark.parametrize("year,month,day,hour,minute,second,microsecond", [
-        (2024, 1, 1, 0, 0, 0, 0),  # Start of day
-        (2024, 12, 31, 23, 59, 59, 999999),  # End of year
-        (2000, 6, 15, 12, 30, 45, 500000),  # Random date
-        (1970, 1, 1, 0, 0, 0, 123456),  # Epoch equivalent
-        (2030, 3, 20, 6, 15, 30, 750000),  # Future date
-    ])
+    @pytest.mark.parametrize(
+        "year,month,day,hour,minute,second,microsecond",
+        [
+            (2024, 1, 1, 0, 0, 0, 0),  # Start of day
+            (2024, 12, 31, 23, 59, 59, 999999),  # End of year
+            (2000, 6, 15, 12, 30, 45, 500000),  # Random date
+            (1970, 1, 1, 0, 0, 0, 123456),  # Epoch equivalent
+            (2030, 3, 20, 6, 15, 30, 750000),  # Future date
+        ],
+    )
     def test_parametrized_datetimes(self, year, month, day, hour, minute, second, microsecond):
         """Test multiple datetime scenarios using parametrization"""
         original_dt = datetime.datetime(year, month, day, hour, minute, second, microsecond)
@@ -649,3 +654,60 @@ class TestDeltaSeconds:
             date_string = "2024-01-31 12:00:00"  # Use a known past date
             result = delta_seconds(date_string)
             assert result > 0
+
+
+@pytest.mark.p2
+class TestTimestampToDateCurrentTimeFallback:
+    """Regression tests for the None/empty fallback of timestamp_to_date.
+
+    The docstring promises "If None or empty, uses current time", but the
+    fallback assigned ``time.time()`` (seconds) and then divided by 1000 again,
+    producing a date around 1970-01-21 instead of now. The existing
+    ``test_return_type_always_string`` only checks the return type, so it never
+    caught this. These tests pin the behaviour by value.
+    """
+
+    def test_none_uses_current_time(self, monkeypatch):
+        """None input must resolve to current_timestamp() fallback."""
+        fixed_ms = 1704067200123
+        monkeypatch.setattr("common.time_utils.current_timestamp", lambda: fixed_ms)
+        assert timestamp_to_date(None) == time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(fixed_ms / 1000))
+
+    def test_empty_string_uses_current_time(self, monkeypatch):
+        """Empty-string input must resolve to current_timestamp() fallback."""
+        fixed_ms = 1704067200123
+        monkeypatch.setattr("common.time_utils.current_timestamp", lambda: fixed_ms)
+        assert timestamp_to_date("") == time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(fixed_ms / 1000))
+
+    def test_zero_timestamp_is_not_treated_as_empty(self):
+        """Zero timestamp should map to Unix epoch, not fallback to current time."""
+        assert timestamp_to_date(0) == time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(0))
+
+
+@pytest.mark.p2
+class TestFormatIso8601ToYmdHms:
+    """Test cases for format_iso_8601_to_ymd_hms function."""
+
+    def test_standard_utc_z(self):
+        """Standard UTC timestamp with trailing Z."""
+        assert format_iso_8601_to_ymd_hms("2024-01-01T12:00:00Z") == "2024-01-01 12:00:00"
+
+    def test_explicit_utc_offset(self):
+        """Timestamp with an explicit +00:00 offset."""
+        assert format_iso_8601_to_ymd_hms("2024-01-01T12:00:00+00:00") == "2024-01-01 12:00:00"
+
+    def test_ordinal_date_extended(self):
+        """ISO 8601 ordinal date (day-of-year), extended form.
+
+        dateutil.isoparse accepts it but datetime.fromisoformat rejects it,
+        which previously made the function silently return the input unchanged.
+        """
+        assert format_iso_8601_to_ymd_hms("2024-001T12:00:00Z") == "2024-01-01 12:00:00"
+
+    def test_ordinal_date_basic(self):
+        """ISO 8601 ordinal date (day-of-year), basic form."""
+        assert format_iso_8601_to_ymd_hms("2024001T120000Z") == "2024-01-01 12:00:00"
+
+    def test_invalid_string_returns_original(self):
+        """Unparseable input is returned unchanged."""
+        assert format_iso_8601_to_ymd_hms("not-a-date") == "not-a-date"

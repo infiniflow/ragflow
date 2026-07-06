@@ -9,7 +9,7 @@ mysql:
   user: '${MYSQL_USER:-root}'
   password: '${MYSQL_PASSWORD:-infini_rag_flow}'
   host: '${MYSQL_HOST:-mysql}'
-  port: 3306
+  port: ${MYSQL_PORT:-3306}
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: ${MYSQL_MAX_PACKET:-1073741824}
@@ -19,6 +19,10 @@ minio:
   host: '${MINIO_HOST:-minio}:9000'
   bucket: '${MINIO_BUCKET:-}'
   prefix_path: '${MINIO_PREFIX_PATH:-}'
+  # optional: set to true for HTTPS (SSL/TLS). Used by MinIO client and health check.
+  # secure: ${MINIO_SECURE:-false}
+  # optional: set to false to allow self-signed certificates (e.g. in development).
+  # verify: ${MINIO_VERIFY:-true}
 es:
   hosts: 'http://${ES_HOST:-es01}:9200'
   username: '${ES_USER:-elastic}'
@@ -27,8 +31,13 @@ os:
   hosts: 'http://${OS_HOST:-opensearch01}:9201'
   username: '${OS_USER:-admin}'
   password: '${OPENSEARCH_PASSWORD:-infini_rag_flow_OS_01}'
+  # Optional hybrid (BM25 + KNN) search tuning. The connector self-provisions the
+  # normalization search pipeline on start-up (requires OpenSearch >= 2.10).
+  # hybrid_search_pipeline: 'ragflow_hybrid_pipeline'
+  # hybrid_search_weights: [0.5, 0.5]   # [text/BM25 leg, vector/KNN leg]
 infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
+  postgres_port: 5432
   db_name: 'default_db'
 oceanbase:
   scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
@@ -38,11 +47,27 @@ oceanbase:
     password: '${OCEANBASE_PASSWORD:-infini_rag_flow}'
     host: '${OCEANBASE_HOST:-oceanbase}'
     port: ${OCEANBASE_PORT:-2881}
+seekdb:
+  scheme: 'oceanbase' # SeekDB is the lite version of OceanBase
+  config:
+    db_name: '${SEEKDB_DOC_DBNAME:-ragflow_doc}'
+    user: '${SEEKDB_USER:-root}'
+    password: '${SEEKDB_PASSWORD:-infini_rag_flow}'
+    host: '${SEEKDB_HOST:-seekdb}'
+    port: ${SEEKDB_PORT:-2881}
 redis:
   db: 1
   username: '${REDIS_USERNAME:-}'
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
   host: '${REDIS_HOST:-redis}:6379'
+nats:
+  host: ${NATS_HOST:-0.0.0.0}
+  port: ${NATS_PORT:-4222}
+task_executor:
+  message_queue_type: 'nats'
+file_syncer:
+  max_concurrent_syncs: 4
+  sync_interval: 3
 user_default_llm:
   default_models:
     embedding_model:
@@ -72,6 +97,8 @@ user_default_llm:
 #   region: '${REGION}'
 #   bucket: '${BUCKET}'
 #   prefix_path: '${OSS_PREFIX_PATH}'
+#   signature_version: 's3'
+#   addressing_style: 'virtual'
 # azure:
 #   auth_type: 'sas'
 #   container_url: 'container_url'
@@ -83,6 +110,7 @@ user_default_llm:
 #   secret: 'secret'
 #   tenant_id: 'tenant_id'
 #   container_name: 'container_name'
+#   cloud: 'public'  # Azure cloud: 'public', 'china', 'government', or 'germany'
 # The OSS object storage uses the MySQL configuration above by default. If you need to switch to another object storage service, please uncomment and configure the following parameters.
 # opendal:
 #   scheme: 'mysql'  # Storage type, such as s3, oss, azure, etc.
@@ -128,12 +156,13 @@ user_default_llm:
 #     client_secret: "your_client_secret"
 #     redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
 # authentication:
-#   client:
-#     switch: false
-#     http_app_key:
-#     http_secret_key:
-#   site:
-#     switch: false
+#  client:
+#    switch: false
+#    http_app_key:
+#    http_secret_key:
+#  site:
+#    switch: false
+#  disable_password_login: false
 # permission:
 #   switch: false
 #   component: false
@@ -153,3 +182,11 @@ user_default_llm:
 #   secret_id: '${TENCENT_SECRET_ID}'
 #   secret_key: '${TENCENT_SECRET_KEY}'
 #   region: '${TENCENT_REGION}'
+# log:
+#   level: info              # debug | info | warn | error
+#   format: text             # text | json (reserved; text only today)
+#   path: server_main.log    # empty/missing = binary default (server_main.log / admin_server.log / ingestion_server.log)
+#   max_size: 100            # MB before rotation
+#   max_backups: 10          # retained rotated files
+#   max_age: 30              # days
+#   compress: true           # gzip rotated files; default true. Set false to disable.

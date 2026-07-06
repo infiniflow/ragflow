@@ -21,16 +21,17 @@ from abc import ABC
 
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 from agent.component.llm import LLMParam, LLM
 from common.connection_utils import timeout
 from rag.llm.chat_model import ERROR_PREFIX
 
 
 class CategorizeParam(LLMParam):
-
     """
     Define the categorize component parameters.
     """
+
     def __init__(self):
         super().__init__()
         self.category_description = {}
@@ -39,7 +40,8 @@ class CategorizeParam(LLMParam):
         self.update_prompt()
 
     def check(self):
-        self.check_positive_integer(self.message_history_window_size, "[Categorize] Message window size > 0")
+        if not isinstance(self.message_history_window_size, int) or self.message_history_window_size < 0:
+            raise ValueError("[Categorize] Message window size cannot be negative")
         self.check_empty(self.category_description, "[Categorize] Category examples")
         for k, v in self.category_description.items():
             if not k:
@@ -48,12 +50,7 @@ class CategorizeParam(LLMParam):
                 raise ValueError(f"[Categorize] 'To' of category {k} can not be empty!")
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "query": {
-                "type": "line",
-                "name": "Query"
-            }
-        }
+        return {"query": {"type": "line", "name": "Query"}}
 
     def update_prompt(self):
         cate_lines = []
@@ -61,13 +58,12 @@ class CategorizeParam(LLMParam):
             for line in desc.get("examples", []):
                 if not line:
                     continue
-                cate_lines.append("USER: \"" + re.sub(r"\n", "    ", line, flags=re.DOTALL) + "\" → "+c)
+                cate_lines.append('USER: "' + re.sub(r"\n", "    ", line, flags=re.DOTALL) + '" → ' + c)
 
         descriptions = []
         for c, desc in self.category_description.items():
             if desc.get("description"):
-                descriptions.append(
-                    "\n------\nCategory: {}\nDescription: {}".format(c, desc["description"]))
+                descriptions.append("\n------\nCategory: {}\nDescription: {}".format(c, desc["description"]))
 
         self.sys_prompt = """
 You are an advanced classification system that categorizes user questions into specific types. Analyze the input question and classify it into ONE of the following categories:
@@ -82,10 +78,7 @@ Here's description of each category:
  - Return only the category name without explanations
  - Use "Other" only when no other category fits
 
- """.format(
-            "\n - ".join(list(self.category_description.keys())),
-            "\n".join(descriptions)
-        )
+ """.format("\n - ".join(list(self.category_description.keys())), "\n".join(descriptions))
 
         if cate_lines:
             self.sys_prompt += """
@@ -97,7 +90,14 @@ Here's description of each category:
 class Categorize(LLM, ABC):
     component_name = "Categorize"
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
+    def get_input_elements(self) -> dict[str, dict]:
+        query_key = self._param.query or "sys.query"
+        elements = self.get_input_elements_from_text(f"{{{query_key}}}")
+        if not elements:
+            logging.warning(f"[Categorize] input element not detected for query key: {query_key}")
+        return elements
+
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     async def _invoke_async(self, **kwargs):
         if self.check_if_canceled("Categorize processing"):
             return
@@ -105,19 +105,23 @@ class Categorize(LLM, ABC):
         msg = self._canvas.get_history(self._param.message_history_window_size)
         if not msg:
             msg = [{"role": "user", "content": ""}]
-        if kwargs.get("sys.query"):
-            msg[-1]["content"] = kwargs["sys.query"]
-            self.set_input_value("sys.query", kwargs["sys.query"])
+        query_key = self._param.query or "sys.query"
+        if query_key in kwargs:
+            query_value = kwargs[query_key]
         else:
-            msg[-1]["content"] = self._canvas.get_variable_value(self._param.query)
-            self.set_input_value(self._param.query, msg[-1]["content"])
+            query_value = self._canvas.get_variable_value(query_key)
+        if query_value is None:
+            query_value = ""
+        msg[-1]["content"] = query_value
+        self.set_input_value(query_key, msg[-1]["content"])
         self._param.update_prompt()
-        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
+        chat_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
+        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config)
 
         user_prompt = """
 ---- Real Data ----
 {} →
-""".format(" | ".join(["{}: \"{}\"".format(c["role"].upper(), re.sub(r"\n", "", c["content"], flags=re.DOTALL)) for c in msg]))
+""".format(" | ".join(['{}: "{}"'.format(c["role"].upper(), re.sub(r"\n", "", c["content"], flags=re.DOTALL)) for c in msg]))
 
         if self.check_if_canceled("Categorize processing"):
             return
@@ -137,7 +141,7 @@ class Categorize(LLM, ABC):
             category_counts[c] = count
 
         cpn_ids = list(self._param.category_description.items())[-1][1]["to"]
-        max_category = list(self._param.category_description.keys())[0]
+        max_category = list(self._param.category_description.keys())[-1]
         if any(category_counts.values()):
             max_category = max(category_counts.items(), key=lambda x: x[1])[0]
             cpn_ids = self._param.category_description[max_category]["to"]
@@ -145,7 +149,7 @@ class Categorize(LLM, ABC):
         self.set_output("category_name", max_category)
         self.set_output("_next", cpn_ids)
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         return asyncio.run(self._invoke_async(**kwargs))
 

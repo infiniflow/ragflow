@@ -17,6 +17,7 @@ import {
 export {
   AgentDialogueMode,
   AgentStructuredOutputField,
+  BeginId,
   JsonSchemaDataType,
   Operator,
   initialBeginValues,
@@ -26,6 +27,10 @@ export * from './pipeline';
 
 import { ModelVariableType } from '@/constants/knowledge';
 import { t } from 'i18next';
+import {
+  buildDefaultCodeOutput,
+  serializeCodeOutputContract,
+} from '../form/code-form/utils';
 
 // DuckDuckGo's channel options
 export enum Channel {
@@ -46,8 +51,6 @@ import {
   ToggleLeft,
   WrapText,
 } from 'lucide-react';
-
-export const BeginId = 'begin';
 
 export const CommonOperatorList = Object.values(Operator).filter(
   (x) => x !== Operator.Note,
@@ -189,6 +192,29 @@ export const initialSearXNGValues = {
   },
 };
 
+export enum KeenableMode {
+  Pro = 'pro',
+  Realtime = 'realtime',
+}
+
+export const initialKeenableValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  mode: KeenableMode.Pro,
+  site: '',
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
 export const initialWikipediaValues = {
   top_n: 10,
   language: 'en',
@@ -209,6 +235,23 @@ export const initialPubMedValues = {
     formalized_content: {
       value: '',
       type: 'string',
+    },
+  },
+};
+
+export const initialBGPTValues = {
+  top_n: 10,
+  api_key: '',
+  days_back: '',
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
     },
   },
 };
@@ -390,6 +433,7 @@ export const initialEmailValues = {
   smtp_server: '',
   smtp_port: 465,
   email: '',
+  smtp_username: '',
   password: '',
   sender_name: '',
   to_email: '',
@@ -412,7 +456,7 @@ export const initialIterationValues = {
 export const initialIterationStartValues = {
   outputs: {
     item: {
-      type: 'unkown',
+      type: 'unknown',
     },
     index: {
       type: 'integer',
@@ -427,7 +471,7 @@ export const initialCodeValues = {
     arg1: '',
     arg2: '',
   },
-  outputs: {},
+  outputs: serializeCodeOutputContract(buildDefaultCodeOutput()),
 };
 
 export const initialWaitingDialogueValues = {};
@@ -583,7 +627,7 @@ export enum SortMethod {
 }
 
 export enum ListOperations {
-  TopN = 'topN',
+  Nth = 'nth',
   Head = 'head',
   Tail = 'tail',
   Filter = 'filter',
@@ -593,7 +637,8 @@ export enum ListOperations {
 
 export const initialListOperationsValues = {
   query: '',
-  operations: ListOperations.TopN,
+  operations: ListOperations.Nth,
+  strict: false,
   outputs: {
     // result: {
     //   type: 'Array<?>',
@@ -637,7 +682,7 @@ export const CategorizeAnchorPointPositions = [
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
   [Operator.Begin]: [Operator.Begin],
-  [Operator.Categorize]: [Operator.Begin, Operator.Categorize],
+  [Operator.Categorize]: [Operator.Begin],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
   [Operator.Message]: [
     Operator.Begin,
@@ -654,12 +699,14 @@ export const RestrictedUpstreamMap = {
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
   [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
+  [Operator.BGPT]: [Operator.Begin, Operator.Retrieval],
   [Operator.ArXiv]: [Operator.Begin, Operator.Retrieval],
   [Operator.Google]: [Operator.Begin, Operator.Retrieval],
   [Operator.Bing]: [Operator.Begin, Operator.Retrieval],
   [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
   [Operator.SearXNG]: [Operator.Begin, Operator.Retrieval],
+  [Operator.KeenableSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
@@ -684,14 +731,16 @@ export const RestrictedUpstreamMap = {
   [Operator.VariableAssigner]: [Operator.Begin],
   [Operator.VariableAggregator]: [Operator.Begin],
   [Operator.Parser]: [Operator.Begin], // pipeline
-  [Operator.Splitter]: [Operator.Begin],
-  [Operator.HierarchicalMerger]: [Operator.Begin],
+  [Operator.TokenChunker]: [Operator.Begin],
+  [Operator.TitleChunker]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
   [Operator.Loop]: [Operator.Begin],
   [Operator.LoopStart]: [Operator.Begin],
   [Operator.ExitLoop]: [Operator.Begin],
+  [Operator.DocGenerator]: [Operator.Begin],
+  [Operator.Browser]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -703,12 +752,14 @@ export const NodeMap = {
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
   [Operator.PubMed]: 'ragNode',
+  [Operator.BGPT]: 'ragNode',
   [Operator.ArXiv]: 'ragNode',
   [Operator.Google]: 'ragNode',
   [Operator.Bing]: 'ragNode',
   [Operator.GoogleScholar]: 'ragNode',
   [Operator.GitHub]: 'ragNode',
   [Operator.SearXNG]: 'ragNode',
+  [Operator.KeenableSearch]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',
@@ -717,7 +768,7 @@ export const NodeMap = {
   [Operator.Crawler]: 'ragNode',
   [Operator.Invoke]: 'ragNode',
   [Operator.Email]: 'ragNode',
-  [Operator.Iteration]: 'group',
+  [Operator.Iteration]: 'iterationNode',
   [Operator.IterationStart]: 'iterationStartNode',
   [Operator.Code]: 'ragNode',
   [Operator.WaitingDialogue]: 'ragNode',
@@ -731,8 +782,8 @@ export const NodeMap = {
   [Operator.File]: 'fileNode',
   [Operator.Parser]: 'parserNode',
   [Operator.Tokenizer]: 'tokenizerNode',
-  [Operator.Splitter]: 'splitterNode',
-  [Operator.HierarchicalMerger]: 'splitterNode',
+  [Operator.TokenChunker]: 'chunkerNode',
+  [Operator.TitleChunker]: 'chunkerNode',
   [Operator.Extractor]: 'contextNode',
   [Operator.DataOperations]: 'dataOperationsNode',
   [Operator.ListOperations]: 'listOperationsNode',
@@ -742,7 +793,8 @@ export const NodeMap = {
   [Operator.LoopStart]: 'loopStartNode',
   [Operator.ExitLoop]: 'exitLoopNode',
   [Operator.ExcelProcessor]: 'ragNode',
-  [Operator.PDFGenerator]: 'ragNode',
+  [Operator.DocGenerator]: 'ragNode',
+  [Operator.Browser]: 'ragNode',
 };
 
 export enum BeginQueryType {
@@ -774,18 +826,19 @@ export const NoDebugOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
+  Operator.TokenChunker,
+  Operator.TitleChunker,
   Operator.Extractor,
   Operator.Tool,
+  Operator.Loop,
 ];
 
 export const NoCopyOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
+  Operator.TokenChunker,
+  Operator.TitleChunker,
   Operator.Extractor,
 ];
 
@@ -958,68 +1011,38 @@ export enum AgentVariableType {
   Conversation = 'conversation',
 }
 
-// PDF Generator enums
-export enum PDFGeneratorFontFamily {
-  Helvetica = 'Helvetica',
-  TimesRoman = 'Times-Roman',
-  Courier = 'Courier',
-  HelveticaBold = 'Helvetica-Bold',
-  TimesBold = 'Times-Bold',
-}
-
-export enum PDFGeneratorLogoPosition {
-  Left = 'left',
-  Center = 'center',
-  Right = 'right',
-}
-
-export enum PDFGeneratorPageSize {
-  A4 = 'A4',
-  Letter = 'Letter',
-}
-
-export enum PDFGeneratorOrientation {
-  Portrait = 'portrait',
-  Landscape = 'landscape',
-}
-
-export const initialPDFGeneratorValues = {
+export const initialDocGeneratorValues = {
   output_format: 'pdf',
   content: '',
-  title: '',
-  subtitle: '',
+  filename: '',
   header_text: '',
   footer_text: '',
-  logo_image: '',
-  logo_position: PDFGeneratorLogoPosition.Left,
-  logo_width: 2.0,
-  logo_height: 1.0,
-  font_family: PDFGeneratorFontFamily.Helvetica,
-  font_size: 12,
-  title_font_size: 24,
-  heading1_font_size: 18,
-  heading2_font_size: 16,
-  heading3_font_size: 14,
-  text_color: '#000000',
-  title_color: '#000000',
-  page_size: PDFGeneratorPageSize.A4,
-  orientation: PDFGeneratorOrientation.Portrait,
-  margin_top: 1.0,
-  margin_bottom: 1.0,
-  margin_left: 1.0,
-  margin_right: 1.0,
-  line_spacing: 1.2,
-  filename: '',
-  output_directory: '/tmp/pdf_outputs',
+  watermark_text: '',
   add_page_numbers: true,
   add_timestamp: true,
-  watermark_text: '',
-  enable_toc: false,
+  include_download_info_in_content: false,
+  font_size: 12,
   outputs: {
-    file_path: { type: 'string', value: '' },
-    pdf_base64: { type: 'string', value: '' },
-    download: { type: 'string', value: '' },
-    success: { type: 'boolean', value: false },
+    doc_id: { type: 'string' },
+    filename: { type: 'string' },
+    mime_type: { type: 'string' },
+    size: { type: 'number' },
+    download: { type: 'string' },
+  },
+};
+
+export const initialBrowserValues = {
+  ...initialLlmBaseValues,
+  prompts: `{${AgentGlobals.SysQuery}}`,
+  max_steps: 30,
+  headless: true,
+  enable_default_extensions: false,
+  chromium_sandbox: false,
+  persist_session: true,
+  upload_sources: '',
+  outputs: {
+    content: { type: 'string', value: '' },
+    downloaded_files: { type: 'Array<Object>', value: [] },
   },
 };
 
@@ -1075,3 +1098,15 @@ export enum WebhookStatus {
   Live = 'live',
   Stopped = 'stopped',
 }
+
+// Map BeginQueryType to TypesWithArray
+export const BeginQueryTypeMap = {
+  [BeginQueryType.Line]: TypesWithArray.String,
+  [BeginQueryType.Paragraph]: TypesWithArray.String,
+  [BeginQueryType.Options]: TypesWithArray.ArrayString,
+  [BeginQueryType.File]: 'File',
+  [BeginQueryType.Integer]: TypesWithArray.Number,
+  [BeginQueryType.Boolean]: TypesWithArray.Boolean,
+};
+
+export const VariableRegex = /{([^{}]*)}/g;

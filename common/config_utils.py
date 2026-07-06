@@ -54,7 +54,7 @@ def conf_realpath(conf_name):
 
 def read_config(conf_name=SERVICE_CONF):
     local_config = {}
-    local_path = conf_realpath(f'local.{conf_name}')
+    local_path = conf_realpath(f"local.{conf_name}")
 
     # load local config file
     if os.path.exists(local_path):
@@ -102,7 +102,7 @@ def show_configs():
             if "authentication" in k:
                 v = copy.deepcopy(v)
                 for key, val in v.items():
-                    if "http_secret_key" in val:
+                    if isinstance(val, dict) and "http_secret_key" in val:
                         val["http_secret_key"] = "*" * 8
         msg += f"\n\t{k}: {v}"
     logging.info(msg)
@@ -128,10 +128,7 @@ def decrypt_database_password(password):
         raise ValueError("No private key")
 
     module_fun = encrypt_module.split("#")
-    pwdecrypt_fun = getattr(
-        importlib.import_module(
-            module_fun[0]),
-        module_fun[1])
+    pwdecrypt_fun = getattr(importlib.import_module(module_fun[0]), module_fun[1])
 
     return pwdecrypt_fun(private_key, password)
 

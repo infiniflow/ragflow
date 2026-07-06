@@ -9,9 +9,17 @@ import {
   useSetDocumentStatus,
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { Ban, CircleCheck, CircleX, Play, Trash2 } from 'lucide-react';
+import {
+  LucideCircleX,
+  LucideCylinder,
+  LucidePlayCircle,
+  LucideToggleLeft,
+  LucideToggleRight,
+  LucideTrash2,
+} from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { toast } from 'sonner';
 import { DocumentType, RunningStatus } from './constant';
 
@@ -27,6 +35,7 @@ export function useBulkOperateDataset({
     rowSelection,
     documents,
   );
+  const { id } = useParams();
 
   const { runDocumentByIds } = useRunDocument();
   const { setDocumentStatus } = useSetDocumentStatus();
@@ -37,10 +46,12 @@ export function useBulkOperateDataset({
     if (!documents.length) {
       return 0;
     }
-    return documents.reduce((acc, cur) => {
-      return acc + cur.chunk_num;
-    }, 0);
-  }, [documents]);
+    return documents
+      .filter((item) => selectedRowKeys.includes(item.id) && item.id)
+      ?.reduce((acc, cur) => {
+        return acc + cur.chunk_count;
+      }, 0);
+  }, [documents, selectedRowKeys]);
 
   const runDocument = useCallback(
     async (run: number, option?: { delete: boolean; apply_kb: boolean }) => {
@@ -76,9 +87,13 @@ export function useBulkOperateDataset({
 
   const onChangeStatus = useCallback(
     (enabled: boolean) => {
-      setDocumentStatus({ status: enabled, documentId: selectedRowKeys });
+      setDocumentStatus({
+        status: enabled,
+        documentId: selectedRowKeys,
+        datasetId: id!,
+      });
     },
-    [selectedRowKeys, setDocumentStatus],
+    [selectedRowKeys, setDocumentStatus, id],
   );
 
   const handleEnableClick = useCallback(() => {
@@ -108,31 +123,36 @@ export function useBulkOperateDataset({
     {
       id: 'enabled',
       label: t('knowledgeDetails.enabled'),
-      icon: <CircleCheck />,
+      icon: <LucideToggleRight />,
       onClick: handleEnableClick,
     },
     {
       id: 'disabled',
       label: t('knowledgeDetails.disabled'),
-      icon: <Ban />,
+      icon: <LucideToggleLeft />,
       onClick: handleDisableClick,
     },
     {
       id: 'run',
       label: t('knowledgeDetails.run'),
-      icon: <Play />,
+      icon: <LucidePlayCircle />,
       onClick: () => showModal(),
     },
     {
       id: 'cancel',
       label: t('knowledgeDetails.cancel'),
-      icon: <CircleX />,
+      icon: <LucideCircleX />,
       onClick: handleCancelClick,
+    },
+    {
+      id: 'batch-metadata',
+      label: t('knowledgeDetails.metadata.metadata'),
+      icon: <LucideCylinder />,
     },
     {
       id: 'delete',
       label: t('common.delete'),
-      icon: <Trash2 />,
+      icon: <LucideTrash2 />,
       onClick: async () => {
         const code = await handleDelete();
         if (code === 0) {

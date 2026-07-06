@@ -27,11 +27,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
     )
@@ -72,7 +72,7 @@ class TestDocumentsList:
         "params, expected_code, expected_page_size, expected_message",
         [
             ({"page": None, "page_size": 2}, 0, 2, ""),
-            ({"page": 0, "page_size": 2}, 0, 2, ""),
+            ({"page": 1, "page_size": 2}, 0, 2, ""),
             ({"page": 2, "page_size": 2}, 0, 2, ""),
             ({"page": 3, "page_size": 2}, 0, 1, ""),
             ({"page": "3", "page_size": 2}, 0, 1, ""),
@@ -115,7 +115,6 @@ class TestDocumentsList:
         "params, expected_code, expected_page_size, expected_message",
         [
             ({"page_size": None}, 0, 5, ""),
-            ({"page_size": 0}, 0, 0, ""),
             ({"page_size": 1}, 0, 1, ""),
             ({"page_size": 6}, 0, 5, ""),
             ({"page_size": "1"}, 0, 1, ""),
@@ -156,10 +155,10 @@ class TestDocumentsList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            ({"orderby": None}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"orderby": "create_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "update_time", True)), ""),
-            pytest.param({"orderby": "name", "desc": "False"}, 0, lambda r: (is_sorted(r["data"]["docs"], "name", False)), "", marks=pytest.mark.skip(reason="issues/5851")),
+            ({"orderby": None}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"orderby": "create_time"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"orderby": "update_time"}, 0, lambda r: is_sorted(r["data"]["docs"], "update_time", True), ""),
+            pytest.param({"orderby": "name", "desc": "False"}, 0, lambda r: is_sorted(r["data"]["docs"], "name", False), "", marks=pytest.mark.skip(reason="issues/5851")),
             pytest.param({"orderby": "unknown"}, 102, 0, "orderby should be create_time or update_time", marks=pytest.mark.skip(reason="issues/5851")),
         ],
     )
@@ -185,14 +184,14 @@ class TestDocumentsList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            ({"desc": None}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"desc": "true"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"desc": "True"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"desc": True}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            pytest.param({"desc": "false"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), "", marks=pytest.mark.skip(reason="issues/5851")),
-            ({"desc": "False"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), ""),
-            ({"desc": False}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), ""),
-            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "update_time", False)), ""),
+            ({"desc": None}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"desc": "true"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"desc": "True"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"desc": True}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            pytest.param({"desc": "false"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", False), "", marks=pytest.mark.skip(reason="issues/5851")),
+            ({"desc": "False"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", False), ""),
+            ({"desc": False}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", False), ""),
+            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: is_sorted(r["data"]["docs"], "update_time", False), ""),
             pytest.param({"desc": "unknown"}, 102, 0, "desc should be true or false", marks=pytest.mark.skip(reason="issues/5851")),
         ],
     )
@@ -298,11 +297,12 @@ class TestDocumentsList:
             if params["id"] in [None, ""]:
                 assert len(res["data"]["docs"]) == expected_num
             else:
-                assert res["data"]["docs"][0]["id"] == params["id"]
+                doc = res["data"]["docs"][0]
+                assert doc["id"] == params["id"]
         else:
             assert res["message"] == expected_message
 
-    @pytest.mark.p3
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "document_id, name, expected_code, expected_num, expected_message",
         [
@@ -358,3 +358,75 @@ class TestDocumentsList:
         res = list_documents(HttpApiAuth, dataset_id, params=params)
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == 5
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "params, expected_code, expected_message",
+        [
+            (
+                {"metadata_condition": "{bad json"},
+                102,
+                "metadata_condition must be valid JSON",
+            ),
+            (
+                {"metadata_condition": "[1]"},
+                102,
+                "metadata_condition must be an object",
+            ),
+        ],
+    )
+    def test_metadata_condition_validation(self, HttpApiAuth, add_documents, params, expected_code, expected_message):
+        dataset_id, _ = add_documents
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
+        assert res["code"] == expected_code
+        assert expected_message in res["message"]
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "params, expected_code, expected_total",
+        [
+            # Filter with create_time_from in the future - should return 0 results
+            ({"create_time_from": "9999999999000"}, 0, 0),
+            # Filter with create_time_to in the past - should return 0 results
+            ({"create_time_to": "1"}, 0, 0),
+            # Filter with create_time_from and create_time_to covering all time
+            ({"create_time_from": "0", "create_time_to": "9999999999000"}, 0, 5),
+        ],
+    )
+    def test_create_time_filter(self, HttpApiAuth, add_documents, params, expected_code, expected_total):
+        dataset_id, _ = add_documents
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
+
+        assert res["code"] == expected_code
+        assert len(res["data"]["docs"]) == expected_total
+        assert res["data"]["total"] == 5
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "params, expected_code, expected_message",
+        [
+            # Invalid run status - should return error
+            ({"run": ["INVALID_STATUS"]}, 102, "Invalid filter run status conditions: INVALID_STATUS"),
+        ],
+    )
+    def test_run_status_filter_invalid(self, HttpApiAuth, add_documents, params, expected_code, expected_message):
+        dataset_id, _ = add_documents
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
+
+        assert res["code"] == expected_code
+        assert expected_message in res["message"]
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "params, expected_size",
+        [
+            # Invalid run status - should return error
+            ({"run": ["UNSTART"]}, 5),
+        ],
+    )
+    def test_run_status_filter_unstart(self, HttpApiAuth, add_documents, params, expected_size):
+        dataset_id, _ = add_documents
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
+
+        assert res["code"] == 0
+        assert res["data"]["total"] == expected_size

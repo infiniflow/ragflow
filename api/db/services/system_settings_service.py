@@ -26,7 +26,13 @@ class SystemSettingsService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_name(cls, name):
-        objs = cls.model.select().where(cls.model.name.startswith(name))
+        objs = cls.model.select().where(cls.model.name == name).order_by(cls.model.name.asc())
+        return objs
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_name_prefix(cls, name_prefix):
+        objs = cls.model.select().where(cls.model.name.startswith(name_prefix)).order_by(cls.model.name.asc())
         return objs
 
     @classmethod
@@ -34,7 +40,7 @@ class SystemSettingsService(CommonService):
     def update_by_name(cls, name, obj):
         obj["update_time"] = current_timestamp()
         obj["update_date"] = datetime_format(datetime.now())
-        cls.model.update(obj).where(cls.model.name.startswith(name)).execute()
+        cls.model.update(obj).where(cls.model.name == name).execute()
         return SystemSettings(**obj)
 
     @classmethod

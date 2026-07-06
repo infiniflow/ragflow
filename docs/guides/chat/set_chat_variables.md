@@ -1,8 +1,10 @@
 ---
 sidebar_position: 4
 slug: /set_chat_variables
+sidebar_custom_props: {
+  categoryIcon: LucideVariable
+}
 ---
-
 # Set variables
 
 Set variables to be used together with the system prompt for your LLM.
@@ -17,7 +19,7 @@ In RAGFlow, variables are closely linked with the system prompt. When you add a 
 
 ## Where to set variables
 
-![set_variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_variables.jpg)
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_variables.jpg)
 
 ## 1. Manage variables
 
@@ -70,13 +72,19 @@ See [Converse with chat assistant](../../references/http_api_reference.md#conver
 
 ```json {9}
 curl --request POST \
-     --url http://{address}/api/v1/chats/{chat_id}/completions \
+     --url http://{address}/api/v1/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
-          "question": "xxxxxxxxx",
+          "chat_id": "{chat_id}",
           "stream": true,
+          "messages": [
+              {
+                  "role": "user",
+                  "content": "xxxxxxxxx"
+              }
+          ],
           "style":"hilarious"
      }'
 ```
@@ -107,4 +115,3 @@ while True:
         print(ans.content[len(cont):], end='', flush=True)
         cont = ans.content
 ```
-

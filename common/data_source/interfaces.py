@@ -1,22 +1,32 @@
 """Interface definitions"""
+
 import abc
 import uuid
 from abc import ABC, abstractmethod
-from enum import IntFlag, auto
+from enum import IntEnum, IntFlag, auto
 from types import TracebackType
 from typing import Any, Dict, Generator, TypeVar, Generic, Callable, TypeAlias
 from collections.abc import Iterator
 from anthropic import BaseModel
 
-from common.data_source.models import (
-    Document,
-    SlimDocument,
-    ConnectorCheckpoint,
-    ConnectorFailure,
-    SecondsSinceUnixEpoch, GenerateSlimDocumentOutput
-)
+from common.data_source.models import Document, KeyRecord, SlimDocument, ConnectorCheckpoint, ConnectorFailure, SecondsSinceUnixEpoch, GenerateSlimDocumentOutput
+
+
+class IncrementalCapability(IntEnum):
+    """How a connector handles incremental sync.
+
+    FULL_RESYNC  -- every sync re-pulls; no per-key state.
+    CURSOR       -- "give me everything since cursor X"; opaque cursor persisted across syncs.
+    FINGERPRINT  -- list_keys() returns (key, fingerprint) cheaply; bodies fetched lazily.
+    """
+
+    FULL_RESYNC = 0
+    CURSOR = 1
+    FINGERPRINT = 2
+
 
 GenerateDocumentsOutput = Iterator[list[Document]]
+
 
 class LoadConnector(ABC):
     """Load connector interface"""
@@ -60,8 +70,6 @@ class SlimConnectorWithPermSync(ABC):
     @abstractmethod
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: Any = None,
     ) -> Generator[list[SlimDocument], None, None]:
         """Retrieve all simplified documents (with permission sync)"""
@@ -153,9 +161,7 @@ class CredentialsProviderInterface(abc.ABC, Generic[T]):
         raise NotImplementedError
 
 
-class StaticCredentialsProvider(
-    CredentialsProviderInterface["StaticCredentialsProvider"]
-):
+class StaticCredentialsProvider(CredentialsProviderInterface["StaticCredentialsProvider"]):
     """Implementation (a very simple one!) to handle static credentials."""
 
     def __init__(
@@ -212,9 +218,7 @@ class BaseConnector(abc.ABC, Generic[CT]):
     @staticmethod
     def parse_metadata(metadata: dict[str, Any]) -> list[str]:
         """Parse the metadata for a document/chunk into a string to pass to Generative AI as additional context"""
-        custom_parser_req_msg = (
-            "Specific metadata parsing required, connector has not implemented it."
-        )
+        custom_parser_req_msg = "Specific metadata parsing required, connector has not implemented it."
         metadata_lines = []
         for metadata_key, metadata_value in metadata.items():
             if isinstance(metadata_value, str):
@@ -222,7 +226,7 @@ class BaseConnector(abc.ABC, Generic[CT]):
             elif isinstance(metadata_value, list):
                 if not all([isinstance(val, str) for val in metadata_value]):
                     raise RuntimeError(custom_parser_req_msg)
-                metadata_lines.append(f'{metadata_key}: {", ".join(metadata_value)}')
+                metadata_lines.append(f"{metadata_key}: {', '.join(metadata_value)}")
             else:
                 raise RuntimeError(custom_parser_req_msg)
         return metadata_lines
@@ -330,14 +334,10 @@ class CheckpointOutputWrapper(Generic[CT]):
             elif isinstance(document_or_failure, ConnectorFailure):
                 yield None, document_or_failure, None
             else:
-                raise ValueError(
-                    f"Invalid document_or_failure type: {type(document_or_failure)}"
-                )
+                raise ValueError(f"Invalid document_or_failure type: {type(document_or_failure)}")
 
         if self.next_checkpoint is None:
-            raise RuntimeError(
-                "Checkpoint is None. This should never happen - the connector should always return a checkpoint."
-            )
+            raise RuntimeError("Checkpoint is None. This should never happen - the connector should always return a checkpoint.")
 
         yield None, None, self.next_checkpoint
 
@@ -417,3 +417,38 @@ class IndexingHeartbeatInterface(ABC):
         just to act as a keep-alive.
         """
 
+
+class FingerprintConnector(ABC):
+    """Tier 1 connector: cheap full listing with per-key fingerprint.
+
+    Sources that can enumerate their entire keyspace via a metadata-only call
+    (e.g. S3 list_objects_v2 returning ETag + LastModified) implement this to
+    let the orchestrator skip GetObject for keys whose fingerprint hasn't
+    changed since the last sync.
+
+    The fingerprint is an opaque equality token: two equal fingerprints mean
+    the content is unchanged from the orchestrator's point of view. Format is
+    a 32-char hex string so it fits the existing Document.content_hash column;
+    connectors are responsible for normalizing whatever the source exposes
+    (typically by hashing it with xxhash128).
+    """
+
+    INCREMENTAL_CAPABILITY: IncrementalCapability = IncrementalCapability.FINGERPRINT
+
+    @abstractmethod
+    def list_keys(self) -> Iterator[KeyRecord]:
+        """Yield one KeyRecord per object currently in the source.
+
+        Must enumerate the full current keyspace -- the orchestrator diffs the
+        result against persisted state to detect adds, updates, and deletes.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_value(self, key: str) -> Document:
+        """Fetch the body for a single key, returning a fully populated Document.
+
+        Called only when list_keys()'s fingerprint differs from the persisted
+        content_hash for that key (or when no persisted fingerprint exists).
+        """
+        raise NotImplementedError

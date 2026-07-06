@@ -1,8 +1,10 @@
 ---
 sidebar_position: 2
 slug: /manage_team_members
+sidebar_custom_props: {
+  categoryIcon: LucideUserCog
+}
 ---
-
 # Manage team members
 
 Invite or remove team members.

@@ -2,6 +2,7 @@ import { FileIconMap } from '@/constants/file';
 import { cn } from '@/lib/utils';
 import { getExtension } from '@/utils/document-util';
 import { CSSProperties } from 'react';
+import SvgIcon from './svg-icon';
 
 type IconFontType = {
   name: string;
@@ -21,14 +22,12 @@ export function IconFontFill({
   isFill = true,
 }: IconFontType & { isFill?: boolean }) {
   return (
-    <span className={cn('size-4', className)}>
-      <svg
-        className={cn('size-4', className)}
-        style={{ fill: isFill ? 'currentColor' : '' }}
-      >
-        <use xlinkHref={`#icon-${name}`} />
-      </svg>
-    </span>
+    <svg
+      className={cn('size-4', className)}
+      style={{ fill: isFill ? 'currentColor' : '' }}
+    >
+      <use xlinkHref={`#icon-${name}`} />
+    </svg>
   );
 }
 
@@ -38,6 +37,14 @@ export function FileIcon({
   type,
 }: IconFontType & { type?: string }) {
   const isFolder = type === 'folder';
+  const isSkills = type === 'skills';
+  if (isSkills) {
+    return (
+      <span className={cn('size-4', className)}>
+        <SvgIcon name="home-icon/skills" width={16} height={16} />
+      </span>
+    );
+  }
   return (
     <span className={cn('size-4', className)}>
       <IconFont

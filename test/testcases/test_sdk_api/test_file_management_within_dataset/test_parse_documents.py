@@ -14,16 +14,16 @@
 #  limitations under the License.
 #
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
 import pytest
-from common import bulk_upload_documents
+from common import bulk_upload_documents, list_all_documents
 from ragflow_sdk import DataSet
+from ragflow_sdk.modules.document import Document
 from utils import wait_for
 
 
 @wait_for(30, 1, "Document parsing timeout")
 def condition(_dataset: DataSet, _document_ids: list[str] = None):
-    documents = _dataset.list_documents(page_size=1000)
+    documents = _dataset.list_documents(page_size=100)
 
     if _document_ids is None:
         for document in documents:
@@ -40,14 +40,17 @@ def condition(_dataset: DataSet, _document_ids: list[str] = None):
 
 
 def validate_document_details(dataset, document_ids):
-    documents = dataset.list_documents(page_size=1000)
-    for document in documents:
-        if document.id in document_ids:
+    target_ids = set(document_ids)
+    found_ids = set()
+    for document in list_all_documents(dataset):
+        if document.id in target_ids:
+            found_ids.add(document.id)
             assert document.run == "DONE"
             assert len(document.process_begin_at) > 0
             assert document.process_duration > 0
             assert document.progress > 0
             assert "Task done" in document.progress_msg
+    assert found_ids == target_ids
 
 
 class TestDocumentsParse:
@@ -114,11 +117,123 @@ class TestDocumentsParse:
         validate_document_details(dataset, document_ids)
 
 
+@pytest.mark.p2
+def test_get_documents_status_handles_retry_terminal_and_progress_paths(add_dataset_func, monkeypatch):
+    dataset = add_dataset_func
+    call_counts = {"doc-retry": 0, "doc-progress": 0, "doc-exception": 0}
+
+    def _doc(doc_id, run, chunk_count, token_count, progress):
+        return Document(
+            dataset.rag,
+            {
+                "id": doc_id,
+                "dataset_id": dataset.id,
+                "run": run,
+                "chunk_count": chunk_count,
+                "token_count": token_count,
+                "progress": progress,
+            },
+        )
+
+    def _list_documents(id=None, **_kwargs):
+        if id == "doc-retry":
+            call_counts["doc-retry"] += 1
+            if call_counts["doc-retry"] == 1:
+                return []
+            return [_doc("doc-retry", "DONE", 3, 5, 0.0)]
+        if id == "doc-progress":
+            call_counts["doc-progress"] += 1
+            return [_doc("doc-progress", "RUNNING", 2, 4, 1.0)]
+        if id == "doc-exception":
+            call_counts["doc-exception"] += 1
+            if call_counts["doc-exception"] == 1:
+                raise Exception("temporary list failure")
+            return [_doc("doc-exception", "DONE", 7, 11, 0.0)]
+        return []
+
+    monkeypatch.setattr(dataset, "list_documents", _list_documents)
+    monkeypatch.setattr("time.sleep", lambda *_args, **_kwargs: None)
+
+    finished = dataset._get_documents_status(["doc-retry", "doc-progress", "doc-exception"])
+    assert {item[0] for item in finished} == {"doc-retry", "doc-progress", "doc-exception"}
+    finished_map = {item[0]: item for item in finished}
+    assert finished_map["doc-retry"][1] == "DONE"
+    assert finished_map["doc-progress"][1] == "DONE"
+    assert finished_map["doc-exception"][1] == "DONE"
+
+
+@pytest.mark.p2
+def test_parse_documents_keyboard_interrupt_triggers_cancel_then_returns_status(add_dataset_func, monkeypatch):
+    dataset = add_dataset_func
+    state = {"cancel_calls": 0, "status_calls": 0}
+    expected_status = [("doc-1", "DONE", 1, 2)]
+
+    def _raise_keyboard_interrupt(_document_ids):
+        raise KeyboardInterrupt
+
+    def _cancel(document_ids):
+        state["cancel_calls"] += 1
+        assert document_ids == ["doc-1"]
+
+    def _status(document_ids):
+        state["status_calls"] += 1
+        assert document_ids == ["doc-1"]
+        return expected_status
+
+    monkeypatch.setattr(dataset, "async_parse_documents", _raise_keyboard_interrupt)
+    monkeypatch.setattr(dataset, "async_cancel_parse_documents", _cancel)
+    monkeypatch.setattr(dataset, "_get_documents_status", _status)
+
+    status = dataset.parse_documents(["doc-1"])
+    assert status == expected_status
+    assert state["cancel_calls"] == 1
+    assert state["status_calls"] == 1
+
+
+@pytest.mark.p2
+def test_parse_documents_happy_path_runs_initial_wait_then_returns_status(add_dataset_func, monkeypatch):
+    dataset = add_dataset_func
+    state = {"status_calls": 0}
+
+    def _noop_parse(_document_ids):
+        return None
+
+    def _status(document_ids):
+        state["status_calls"] += 1
+        assert document_ids == ["doc-1"]
+        return [("doc-1", f"DONE-{state['status_calls']}", 1, 2)]
+
+    monkeypatch.setattr(dataset, "async_parse_documents", _noop_parse)
+    monkeypatch.setattr(dataset, "_get_documents_status", _status)
+
+    status = dataset.parse_documents(["doc-1"])
+    assert state["status_calls"] == 2
+    assert status == [("doc-1", "DONE-2", 1, 2)]
+
+
+@pytest.mark.p2
+def test_async_cancel_parse_documents_raises_on_nonzero_code(add_dataset_func, monkeypatch):
+    dataset = add_dataset_func
+
+    class _Resp:
+        @staticmethod
+        def json():
+            return {"code": 102, "message": "cancel failed"}
+
+    monkeypatch.setattr(dataset, "rm", lambda *_args, **_kwargs: _Resp())
+
+    with pytest.raises(Exception) as exc_info:
+        dataset.async_cancel_parse_documents(["doc-1"])
+    assert "cancel failed" in str(exc_info.value), str(exc_info.value)
+
+
 @pytest.mark.p3
 def test_parse_100_files(add_dataset_func, tmp_path):
     @wait_for(200, 1, "Document parsing timeout")
     def condition_inner(_dataset: DataSet, _count: int):
-        docs = _dataset.list_documents(page_size=_count * 2)
+        docs = list_all_documents(_dataset, limit=_count)
+        if len(docs) < _count:
+            return False
         for document in docs:
             if document.run != "DONE":
                 return False
@@ -138,7 +253,9 @@ def test_parse_100_files(add_dataset_func, tmp_path):
 def test_concurrent_parse(add_dataset_func, tmp_path):
     @wait_for(200, 1, "Document parsing timeout")
     def condition_inner(_dataset: DataSet, _count: int):
-        docs = _dataset.list_documents(page_size=_count * 2)
+        docs = list_all_documents(_dataset, limit=_count)
+        if len(docs) < _count:
+            return False
         for document in docs:
             if document.run != "DONE":
                 return False

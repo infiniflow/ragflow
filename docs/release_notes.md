@@ -1,12 +1,396 @@
 ---
-sidebar_position: 2
+sidebar_position: 1
 slug: /release_notes
+sidebar_custom_props: {
+  sidebarIcon: LucideClipboardPenLine
+}
 ---
-
 # Releases
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.26.3
+
+Released on July 2, 2026.
+
+### New features
+
+- Data source connector: Introduces Google BigQuery as a data source connector for document ingestion and incremental syncing. [#15871](https://github.com/infiniflow/ragflow/pull/15871)
+- MCP: Adds two MCP tools `ragflow_list_datasets` and `ragflow_list_chats` to the RAGFlow MCP server. [#15384](https://github.com/infiniflow/ragflow/pull/15384)
+- File ingestion
+  - Integrates the layout-aware SoMark OCR parser into the system for extracting and indexing complex document elements like tables and figures. [#16482](https://github.com/infiniflow/ragflow/pull/16482)
+  - API: Exposes the [Ingest documents](./references/http_api_reference.md#ingest-documents) endpoint for processing documents using a customized pipeline. [#16395](https://github.com/infiniflow/ragflow/pull/16395)
+
+### Improvements
+
+- Backend: Introduces partial success handling for batch document uploads, ensuring that a single failed file no longer causes the entire batch to be discarded. [#16438](https://github.com/infiniflow/ragflow/pull/16438)
+- UI/UX: Refactors the global header to dynamically switch between a full desktop navigation bar and a mobile-friendly side drawer based on available screen space, resolving overlapping issues and significantly improving the mobile user experience. [#15984](https://github.com/infiniflow/ragflow/pull/15984)
+
+### Bug fixes
+
+- After setting up the Ollama provider, the system returned the error: 'Failed to access model(name) using this api key'. [#16519](https://github.com/infiniflow/ragflow/pull/16519)
+- Deleting a user/assistant chat message pair mistakenly removed the previous conversation turn's reference due to an index misalignment. [#16436](https://github.com/infiniflow/ragflow/pull/16436)
+
+## v0.26.2
+
+Released on June 29, 2026.
+
+### New features
+
+- Chat channels:
+  - Integrates WhatsApp via a QR code scan. [#16238](https://github.com/infiniflow/ragflow/pull/16238)
+  - Integrates DingTalk via bot API credentials. [#16183](https://github.com/infiniflow/ragflow/pull/16183)
+  - Integrates WeCom via WebSocket connection. [#16175](https://github.com/infiniflow/ragflow/pull/16175)
+- File parsing: Adds fallback logic for PP-OCRv6 and similar text recognition models, and integrates image parsing within the PaddleOCR pipeline. [#16150](https://github.com/infiniflow/ragflow/pull/16150)
+
+### Improvements
+
+- Datasets
+  - Adds an edge-case check to the file ingestion logic to safely link empty folders to a dataset. [#16296](https://github.com/infiniflow/ragflow/pull/16296)
+  - Adds pagination to the `get_flatted_meta_by_kbs()` method to prevent CRUD failures relating to datasets with more than 10,000 documents. [#16095](https://github.com/infiniflow/ragflow/pull/16095)
+- Chat channels: Ensures end-user conversation histories persist across restarts but still separate when a channel is bound to a new dialog. [#16274](https://github.com/infiniflow/ragflow/pull/16274)
+
+### i18n
+
+- Expands i18n coverage and refines translations for the Korean UI. [#16203](https://github.com/infiniflow/ragflow/pull/16203)；
+- Adds missing French translations for chat channels, username validation, and model editing. [#16217](https://github.com/infiniflow/ragflow/pull/16217)
+
+### Bug fixes
+
+- File parsing:
+  - A `ValueError` was raised during `.docx` parsing on 'Heading' styles. [#16284](https://github.com/infiniflow/ragflow/pull/16284)
+  - Tables in `.docx` files were silently removed by the laws document parser. [#16155](https://github.com/infiniflow/ragflow/pull/16155)
+  - Lone Markdown headers were separated from their subsequent sections when a DeepDoc delimiter was set. [#16109](https://github.com/infiniflow/ragflow/pull/16109)
+  - Markdown tables appeared twice in chunk results, once as a standalone chunk and again within a regular text chunk. [#16143](https://github.com/infiniflow/ragflow/pull/16143)
+- MCP
+  - The MCP server hung indefinitely when encountering empty document pages; the final page of documents was silently dropped due to flawed pagination. [#16285](https://github.com/infiniflow/ragflow/pull/16285)
+  - The MCP connection and dataset discovery process failed because the server's hardcoded fetch limit exceeded the introduced `page_size` restriction. [#16148](https://github.com/infiniflow/ragflow/pull/16148)
+- Dataflow
+  - Restores the dataflow rerun endpoint and ensures the ingestion response includes the DSL payload to reliably render the timeline and parser views. [#16292](https://github.com/infiniflow/ragflow/pull/16292)
+  - Restores dataflow parser defaults and returns the actual SSE payload, ensuring pipeline runs correctly surface message IDs and log updates. [#16290](https://github.com/infiniflow/ragflow/pull/16290)
+- LLM: Failed to use the new `gemini-3.5-flash` model via the Google Cloud (Vertex AI) provider using `eu` or `us` region endpoint. This is resolved by explicitly routing multi-region requests to the required `aiplatform.<region>.rep.googleapis.com` domains instead of the synthesized `<region>-aiplatform.googleapis.com` hosts. [#15990](https://github.com/infiniflow/ragflow/pull/15990)
+- UI/UX: The metadata add modal sent empty values to the backend. [#15229](https://github.com/infiniflow/ragflow/pull/15229)
+
+## v0.26.1
+
+Released on June 17, 2026.
+
+### New features
+
+- **Model providers**: Allows users to modify the model type of existing model configurations. [#16029](https://github.com/infiniflow/ragflow/pull/16029)
+- **Chat channels**: Enables users to deploy RAGFlow assistants as chatbots within external messaging platforms like Discord and Feishu. [#15850](https://github.com/infiniflow/ragflow/pull/15850)
+- **Observability**: Groups multi-turn chat traces by session within Langfuse to facilitate conversation debugging and replay. [#15679](https://github.com/infiniflow/ragflow/pull/15679)
+
+### i18n
+
+- Adds ~70 missing translation keys for the French UI. [#15983](https://github.com/infiniflow/ragflow/pull/15983)
+
+### Bug fixes
+
+- **Model provider**: Fixes inaccurate token billing, corrects embedding truncation limits to prevent indexing failures, and refactors error handling to surface root error causes. [#15424](https://github.com/infiniflow/ragflow/pull/15424)
+- **API**: Adds a legacy mode to the `/chat/completions` endpoint to restore the v0.23.0 style `<think>` output for backward compatibility. [#16014](https://github.com/infiniflow/ragflow/pull/16014) See also [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant).
+
+## v0.26.0
+
+Released on June 11, 2026.
+
+### New features
+
+- **Model providers**
+  - Implements auto-populated model lists for multiple providers, eliminating the need to type model names manually. This feature currently supports: Ollama, OpenRouter, vLLM, OpenAI-API-Compatible, LM-Studio, VolcEngine, Xinference, LocalAI, BaiduYiyan, GPUStack, and Fish Audio.
+  - Allows configuring multiple API keys for the same model provider. [#14595](https://github.com/infiniflow/ragflow/pull/14595)
+  - Dynamically populates model selection dropdowns in the UI by fetching the currently available models directly from remote model providers. [#15711](https://github.com/infiniflow/ragflow/pull/15711)
+- **Data source connectors**: Implements new data source connectors for Outlook, OneDrive, Microsoft Teams, Slack, SharePoint, Salesforce, and Azure Blob Storage. [#15333](https://github.com/infiniflow/ragflow/pull/15333)[#15330](https://github.com/infiniflow/ragflow/pull/15330)[#15332](https://github.com/infiniflow/ragflow/pull/15332)[#15188](https://github.com/infiniflow/ragflow/pull/15188)[#15190](https://github.com/infiniflow/ragflow/pull/15190)[#15462](https://github.com/infiniflow/ragflow/pull/15462)[#15466](https://github.com/infiniflow/ragflow/pull/15466)
+- **Dataset** - Implements a checkpoint and resume feature for community extraction and entity resolution, the most expensive and time-consuming parts of the GraphRAG indexing pipeline. [#15518](https://github.com/infiniflow/ragflow/issues/15518)[#15523](https://github.com/infiniflow/ragflow/pull/15523)
+
+### Improvements
+
+- Removes `<think>` text buffering to ensure reasoning-capable models feel faster and more transparent during interactions. [#15891](https://github.com/infiniflow/ragflow/pull/15891)
+- Marks MySQL migrations as applied. [#15504](https://github.com/infiniflow/ragflow/pull/15504)
+
+### Model Support
+
+- Four new SiliconFlow models [#15383](https://github.com/infiniflow/ragflow/pull/15383)
+- MiniMax-M3 model [#15513](https://github.com/infiniflow/ragflow/pull/15513)
+- Latest Anthropic models [#15516](https://github.com/infiniflow/ragflow/pull/15516)
+- Voyage 4 model family [#15516](https://github.com/infiniflow/ragflow/pull/15516)
+- Cohere model list. [#15576](https://github.com/infiniflow/ragflow/pull/15576)
+
+### i18n
+
+- Completes Korean translation. [#15863](https://github.com/infiniflow/ragflow/pull/15863)
+- Completes Italian translation. [#15729](https://github.com/infiniflow/ragflow/pull/15729)
+
+### Bug fixes
+
+- The thinking mode of MiniMax models was not correctly enabled. [#15496](https://github.com/infiniflow/ragflow/pull/15496)
+- Infinite loops were triggered when the thinking mode was enabled for Qwen3.5 and Qwen3.6 models. [#15101](https://github.com/infiniflow/ragflow/pull/15101)
+- Streamed answers were being duplicated when using the OpenAI-compatible chat completions API endpoint. [#15286](https://github.com/infiniflow/ragflow/issues/15286)[#15443](https://github.com/infiniflow/ragflow/pull/15443)
+- Serialization errors were caused during chat completions when invalid numeric scores like `NaN` (Not-a-Number) or `Inf` (Infinity) were passed to the JSON encoder. [#15245](https://github.com/infiniflow/ragflow/issues/15245)[#15266](https://github.com/infiniflow/ragflow/pull/15266)
+- Chat completions using LiteLLM providers were failing because unrecognized internal configuration parameters were not being filtered out before reaching the external APIs. [#15427](https://github.com/infiniflow/ragflow/issues/15427)[#15432](https://github.com/infiniflow/ragflow/pull/15432)
+- The OpenAI-compatible chat completions API was defaulting to streamed responses. [#15356](https://github.com/infiniflow/ragflow/issues/15356)[#15394](https://github.com/infiniflow/ragflow/pull/15394)
+- Empty `AND` results were incorrectly dropped during metadata filtering. [#15477](https://github.com/infiniflow/ragflow/pull/15477)
+- Repetitive page chrome, such as headers and footers, was incorrectly extracted as main text by the MinerU parser. [#15335](https://github.com/infiniflow/ragflow/issues/15335)[#15387](https://github.com/infiniflow/ragflow/pull/15387)
+- English chart titles were missing during document extraction in the DeepDoc module. [#15481](https://github.com/infiniflow/ragflow/pull/15481)
+- Empty outputs were returned by the TitleChunker for `json` and `chunks` upstream formats [#14247](https://github.com/infiniflow/ragflow/pull/14247)[#15396](https://github.com/infiniflow/ragflow/pull/15396)
+- An error message was missing when a .tsv file upload attempt failed. [#15284](https://github.com/infiniflow/ragflow/pull/15284)
+- API tokens missing beta values caused token retrieval errors. [#15405](https://github.com/infiniflow/ragflow/pull/15405)
+- Caps the maximum page size to fix system crashes or slowdowns from large queries. [#15292](https://github.com/infiniflow/ragflow/pull/15292)
+- Client errors were caused by the OpenAI-compatible chat completion API incorrectly defaulting to streamed responses. [#15356](https://github.com/infiniflow/ragflow/issues/15356)[#15394](https://github.com/infiniflow/ragflow/pull/15394)
+- HTTP 500 internal server errors were triggered instead of standard 4xx client errors when users attempted to download missing files from the storage backend. [#15369](https://github.com/infiniflow/ragflow/issues/15369)[#15371](https://github.com/infiniflow/ragflow/pull/15371)
+- GraphRAG entity ranking was broken. [#15795](https://github.com/infiniflow/ragflow/issues/15795)[#15797](https://github.com/infiniflow/ragflow/pull/15797)
+
+## v0.25.6
+
+Released on May 26, 2026.
+
+### New features
+
+- Agent: Adds a **Browser** component that enables AI to autonomously navigate and interact with web pages. [#14888](https://github.com/infiniflow/ragflow/pull/14888)
+
+### Improvements
+
+- RAG: Stabilizes RAPTOR's AHC mode (Ψ-RAG), which was introduced in v0.25.3 to resolve previous semantic loss by building individual document trees and then merging them hierarchically. This new approach significantly accelerates index construction and outperforms the legacy GMM mode in Recall@5 and average F1. Users retain the option to switch between the two modes. [#14674](https://github.com/infiniflow/ragflow/issues/14674)[#14679](https://github.com/infiniflow/ragflow/pull/14679)
+- Agent: Introduces lightweight `@tool` decorator to streamline Python function registration process for chat models. [#15047](https://github.com/infiniflow/ragflow/pull/15047)
+- Agent: Enables agent messages to display base64-encoded images. [#15212](https://github.com/infiniflow/ragflow/pull/15212)
+- Agent: Exposes **Doc Generator** component's file metadata as discrete variables. [#15080](https://github.com/infiniflow/ragflow/pull/15080)
+- Agent: Allows developers to pass `chat_template_kwargs` to agent chat completion endpoint. [#14182](https://github.com/infiniflow/ragflow/issues/14182)[#14542](https://github.com/infiniflow/ragflow/pull/14542) See also [Converse with agent](./references/http_api_reference.md#converse-with-agent)
+
+### Bug fixes
+
+- Fixes `/chat/completions` to allow sending only latest message in API payload and removes requirement to transmit full conversation history. [#15197](https://github.com/infiniflow/ragflow/pull/15197) See also [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant).
+- Weight assigned to vector similarity was not properly applied during the retrieval phase. [#15108](https://github.com/infiniflow/ragflow/pull/15108)
+- Users were unable to save parser configurations on the dataset configuration page. [#15175](https://github.com/infiniflow/ragflow/issues/15175)[#15177](https://github.com/infiniflow/ragflow/pull/15177)
+- Log text on a data source's details page was truncated. [#15056](https://github.com/infiniflow/ragflow/pull/15056)
+- An unresponsive "Status" filter on the document list page prevented users from filtering or managing uploaded documents by their parsing status. [#15170](https://github.com/infiniflow/ragflow/issues/15170)[#15216](https://github.com/infiniflow/ragflow/pull/15216)
+- Calling `GET /agents/<agent_id>/sessions/<session_id>` with a missing or invalid session ID caused a server error. [#14989](https://github.com/infiniflow/ragflow/issues/14989)[#15011](https://github.com/infiniflow/ragflow/pull/15011)
+- RAG: RAPTOR construction process halted when using the [Infinity](https://github.com/infiniflow/infinity) document engine. [#14998](https://github.com/infiniflow/ragflow/pull/14998)
+- The system failed to correctly parse structured content returned by Mistral reasoning models. [#14805](https://github.com/infiniflow/ragflow/pull/14805)
+- The **Parser** component in an ingestion pipeline incorrectly retained raw HTML tags in its text output. [#14831](https://github.com/infiniflow/ragflow/issues/14831)[#14920](https://github.com/infiniflow/ragflow/pull/14920)
+- The table parser incorrectly extracted or attached metadata during document processing. [#15127](https://github.com/infiniflow/ragflow/pull/15127)
+- Asynchronous background tasks and nested event loops were not properly handled, causing backend instability. [#14755](https://github.com/infiniflow/ragflow/issues/14755)[#14761](https://github.com/infiniflow/ragflow/pull/14761)
+- Prompt variables configured in the **Agent** component disappeared after being entered. [#15218](https://github.com/infiniflow/ragflow/pull/15218)
+
+### i18n
+
+- Fully translates the interface into French with the addition of roughly 1,400 localization keys. [#15192](https://github.com/infiniflow/ragflow/pull/15192)
+
+## v0.25.5
+
+Released on May 20, 2026.
+
+### New features
+
+- Introduces local and SSH provider options for sandbox environment settings within the admin interface, allowing administrators to configure execution environments without editing environment variables. [#15039](https://github.com/infiniflow/ragflow/pull/15039)
+
+### Improvements
+
+- Elasticsearch: Accelerates the retrieval process by removing unnecessary vector fetches during the main search phase, reducing latency by 50–100%. [#14970](https://github.com/infiniflow/ragflow/pull/14970)
+- Pushes metadata filters down to the [Infinity](https://github.com/infiniflow/infinity) document engine, significantly improving retrieval performance. [#14974](https://github.com/infiniflow/ragflow/pull/14974)
+- Introduces Redis-based caching for Text-to-Speech model outputs, eliminating redundant API calls for identical text to reduce latency and save provider quota. [#14851](https://github.com/infiniflow/ragflow/pull/14851)
+- Reduces server startup time by 5-9 seconds and saves roughly 200MB of memory by replacing heavy module-level imports with lazy runtime loading. [#14973](https://github.com/infiniflow/ragflow/pull/14973)
+- Optimizes the connector dashboard. [#14979](https://github.com/infiniflow/ragflow/pull/14979)
+- Increases minimum supported Python version to 3.13. [#14767](https://github.com/infiniflow/ragflow/pull/14767)
+
+### Bug fixes
+
+- Atomic database updates: Wraps document and dataset chunk counter updates in atomic database transactions to prevent data drift. [#14866](https://github.com/infiniflow/ragflow/issues/14866)[#14867](https://github.com/infiniflow/ragflow/pull/14867)
+- Data source: the GitHub data source connector was failing to sync any content by default. [#13975](https://github.com/infiniflow/ragflow/issues/13975)[#14062](https://github.com/infiniflow/ragflow/pull/14062)
+- The Tongyi-Qianwen text embedding models were hitting the wrong API endpoints when configured with international or Chinese regional URLs. [#14784](https://github.com/infiniflow/ragflow/pull/14784)
+- Agent: Fully aggregates message content, reference data, and structured outputs across all generated events to fix incomplete responses in the non-streaming `/api/v1/agentbots/<agent_id>/completions` endpoint. [#13384](https://github.com/infiniflow/ragflow/issues/13384)[#14848](https://github.com/infiniflow/ragflow/pull/14848)
+- Prevents the **Retrieval** component's manual metadata filters from getting stuck on the first loop's value by making a temporary copy of the filter settings to preserve the original placeholder.[#12582](https://github.com/infiniflow/ragflow/issues/12582)[#14849](https://github.com/infiniflow/ragflow/pull/14849)
+- Agent: Fixed MCP tool name duplication.[#14217](https://github.com/infiniflow/ragflow/pull/14217)
+- Agent: top_k passing issues [#14760](https://github.com/infiniflow/ragflow/pull/14760)
+- Chat file attachment loss. [#13993](https://github.com/infiniflow/ragflow/pull/13993)
+- IMAP synchronization process crashed when multiple email addresses or quoted commas were detected in "From" header. [#14963](https://github.com/infiniflow/ragflow/issues/14963)[#14964](https://github.com/infiniflow/ragflow/issues/14964)[#15006](https://github.com/infiniflow/ragflow/pull/15006)
+- Langfuse integration failed to track token consumption. [#9837](https://github.com/infiniflow/ragflow/issues/9837)[#13294](https://github.com/infiniflow/ragflow/pull/13294)
+- Enhances the stability and fault tolerance of the reranking module by implementing network timeouts, crash-prevention safeguards, and specific provider bug fixes. [#14264](https://github.com/infiniflow/ragflow/pull/14264)
+- Increases minimum supported Nginx to 1.31.0. [#14928](https://github.com/infiniflow/ragflow/issues/14928)[#15007](https://github.com/infiniflow/ragflow/pull/15007)
+
+## v0.25.4
+
+Released on May 14, 2026
+
+### New features
+
+- Introduces a generic RESTful API connector, enabling configurable data ingestion from niche or enterprise-specific platforms into RAGFlow. [#13545](https://github.com/infiniflow/ragflow/pull/13545)
+- Agent: Implements tag management to help users categorize, filter, and sort their Agent apps. [#14799](https://github.com/infiniflow/ragflow/pull/14799)
+
+### Improvements
+
+- Adds widget customization and persistence, allowing users to tailor their chat interface and ensure their settings are retained across sessions. [#14603](https://github.com/infiniflow/ragflow/pull/14603)
+
+### Model support
+
+- Adds gpt-5.4-mini and gpt-5.4-nano to the OpenAI model list [#14908](https://github.com/infiniflow/ragflow/pull/14908)
+
+### Bug fixes
+
+- Corrects the API endpoint for downloading original files from a specified dataset. [#14910](https://github.com/infiniflow/ragflow/pull/14910) See also [Download document](./references/http_api_reference.md#download-document).
+
+## v0.25.3
+
+Released on May 13, 2026.
+
+### New features
+
+- Enables assigning specific roles like content, metadata, and primary key, to table columns. [#13710](https://github.com/infiniflow/ragflow/pull/13710)
+
+### Improvements
+
+- S3 connector: Implements ETag-based incremental synchronization for S3 data sources, drastically reducing sync time and AWS egress costs for users with massive-volumn S3-based datasets. [#14628](https://github.com/infiniflow/ragflow/issues/14628)[#14677](https://github.com/infiniflow/ragflow/pull/14677)
+- API refactoring and security
+  - Continues the transition of web APIs to RESTful conventions, ensuring backward compatibility for all legacy endpoints.
+  - Binds the `user_id` in `POST /api/v1/messages` to the authenticated JWT principal. [#14745](https://github.com/infiniflow/ragflow/pull/14745)
+  - Secures the sandbox executor against dynamic and indirect code execution bypasses. [#14690](https://github.com/infiniflow/ragflow/pull/14690)
+  - Enforces HTTP request timeouts across the LLM integration layer. [#14313](https://github.com/infiniflow/ragflow/pull/14313)
+- Refactors thread pool lifecycle management in `file_service.py` and `task_executor.py` for more efficient, lightweight resource handling. [#14668](https://github.com/infiniflow/ragflow/pull/14668)
+- Agent: Enables the **Code** component to output and display file-based attachments, such as charts and images, directly in the chat. [#14787](https://github.com/infiniflow/ragflow/pull/14787)
+- Reduces ingestion server boot time. [#14894](https://github.com/infiniflow/ragflow/pull/14894)
+
+### Bug fixes
+
+- Images in multi-sheet Excel workbooks were not scoped by sheet, causing images to be incorrectly attributed across different worksheets. [#14120](https://github.com/infiniflow/ragflow/pull/14120)
+- Agent: Splits the **Message** component output into distinct 'waiting' and 'message' states when nested inside an **Iteration** component alongside a **Wait** component. [#14839](https://github.com/infiniflow/ragflow/pull/14839)
+- Agent: The **Iteration** component failed to correctly pass array elements to its child components due to a naming mismatch between the expected `IterationItem` alias and the runtime `item` variable. [#14146](https://github.com/infiniflow/ragflow/pull/14146)
+- Agent: Template strings in tool-type components like **Email** and **Invoke** failed to interpolate; `{{variable}}` placeholders were passed through as raw text. [#14601](https://github.com/infiniflow/ragflow/pull/14601)
+- Volcengine (Doubao/Ark) endpoints were not visible in the provider list. [#14702](https://github.com/infiniflow/ragflow/pull/14702)
+
+## v0.25.2
+
+Released on May 11, 2026.
+
+### Improvements
+
+- API refactoring and unification: Continues the transition of web APIs to RESTful conventions, ensuring backward compatibility for all legacy endpoints.
+
+### Data source
+
+- Introduces a lightweight snapshot mechanism for synchronizing deleted files across eight data sources—including Moodle, DingTalk AI Table, and RSS—ensuring a faithful reflection of all remote data sources. [#14362](https://github.com/infiniflow/ragflow/issues/14362)[#14499](https://github.com/infiniflow/ragflow/pull/14499)
+
+### Bug fixes
+
+- Metadata visibility issues during v0.24.0 to v0.25.0 upgrades.
+- Duplicate chat output.
+- Metadata filtering was handled in-memory instead of leveraging Elasticsearch, incurring performance bottlenecks. [#14576](https://github.com/infiniflow/ragflow/pull/14576)
+
+## v0.25.1
+
+Released on April 29, 2026.
+
+### Improvements
+
+- API refactoring and unification: Standardizes web APIs to RESTful conventions across all endpoints, unifying document creation and indexing flows while maintaining backward compatibility.
+- Parsing optimizations: Adds [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) PDF parser backend. [#14097](https://github.com/infiniflow/ragflow/pull/14097)
+- Introduces lazy loading and chunked parsing for large PDFs (&gt;50 pages), significantly reducing memory footprint. [#14385](https://github.com/infiniflow/ragflow/pull/14385)
+
+### Data source
+
+Enables synchronizing deleted files in Bitbucket, Gmail, Google Drive, and Airtable. [#14362](https://github.com/infiniflow/ragflow/issues/14362)
+
+### Model support
+
+- DeepSeek v4
+
+### Model providers
+
+- UCloud
+
+### Bug fixes
+
+- Metadata visibility issues during v0.24.0 to v0.25.0 upgrades.
+- Duplicate chat output.
+
+## v0.25.0
+
+Released on April 21, 2026.
+
+### New features
+
+- Agent
+  - Introduces seven prebuilt ingestion pipeline templates.
+  - Agent apps can be published.
+  - Supports sandbox code execution and chart generation.
+  - Adds a beginner's data analytics Agent template.
+- Memory: Supports user-level memory storage and retrieval.
+- New UI language: Arabic (implemented a Right-to-Left layout), Bulgarian, and Turkish.
+- Ecosystem integration: RAGFlow datasets are accessible via OpenClaw.
+
+### Improvements
+
+- Optimizes Docx parsing by supporting image lazy-loading, reducing memory footprint.
+- Optimizes Chat, Agent, and Search embedded dialog pages for mobile compatibility.
+- Underlying system & infrastructure optimization:
+  - Bumps RAGFlow's document engine, Elasticsearch to 9.x.
+  - Switches the default object storage container to `pgsty/minio` due to the deprecation of the official MinIO images.
+  - Adds database migration scripts; see [this readme](https://github.com/infiniflow/ragflow/tree/74b44e1aa3ecd6687b3aa4ef731d0187720c3cb5/tools/scripts) for further details.
+
+### Model support
+
+- MiniMax-M2.7 series
+- Perplexity embedding model (pplx-embed)
+- Tongyi rerank model
+
+### New model providers
+
+- avian.io
+- ragcon.ai
+
+### Data sources
+
+- Seafile
+- RSS
+- DingTalk AI Table
+- GitHub: Enables synchronization for deleted files.
+
+## v0.24.0
+
+Released on February 10, 2026.
+
+### New features
+
+- Memory
+  - Introduces memory management APIs (HTTP and Python).
+  - Outputs Memory extraction log to the console.
+- Dataset
+  - Supports batch metadata management.
+  - Renames "ToC (Table of Contents)" to "PageIndex". See [here](./guides/dataset/advanced/extract_table_of_contents.md).
+- Agent
+  - Launches a new Chat-like Agent conversation management interface that retains sessions and dialogue history.
+  - Introduces a multi-Sandbox mechanism supporting local gVisor and Alibaba Cloud, with compatibility for mainstream Sandbox APIs (configurable in the Admin page).
+- Chat
+  - Adds a new "Thinking" mode and removes the previous "Reasoning" configuration option.
+  - Optimizes retrieval strategies for deep-research scenarios, enhancing recall accuracy.
+- Admin
+  - Supports multiple Admin accounts.
+- Model configuration center
+  - Adds model connection test for new models.
+
+### MySQL alternative
+
+- Supports OceanBase as an alternative to MySQL.
+
+### Model support
+
+- Kimi 2.5
+- Stepfun 3
+- doubao-embedding-vision
+- PaddleOCR-VL
+
+### Data sources
+
+- Zendesk
+- Bitbucket
+
+### API changes
+
+#### HTTP API
+
+[Memory management API](./references/http_api_reference.md#memory-management)
+
+#### Python API
+
+[Memory management API](./references/python_api_reference.md#memory-management)
 
 ## v0.23.1
 
@@ -16,7 +400,6 @@ Released on December 31, 2025.
 
 - Memory: Enhances the stability of memory extraction when all memory types are selected.
 - RAG: Refines the context window extraction strategy for images and tables.
-
 
 ### Fixed issues
 
@@ -39,20 +422,20 @@ Released on December 27, 2025.
 ### New features
 
 - Memory
-   - Implements a **Memory** interface for managing memory.
-   - Supports configuring context via the **Retrieval** or **Message** component.
+  - Implements a **Memory** interface for managing memory.
+  - Supports configuring context via the **Retrieval** or **Message** component.
 - Agent
-   - Improves the **Agent** component's performance by refactoring the underlying architecture.
-   - The **Agent** component can now output structured data for use in downstream components.
-   - Supports using webhook to trigger agent execution.
-   - Supports voice input/output.
-   - Supports configuring multiple **Retrieval** components per **Agent** component.
+  - Improves the **Agent** component's performance by refactoring the underlying architecture.
+  - The **Agent** component can now output structured data for use in downstream components.
+  - Supports using webhook to trigger agent execution.
+  - Supports voice input/output.
+  - Supports configuring multiple **Retrieval** components per **Agent** component.
 - Ingestion pipeline
   - Supports extracting table of contents in the **Transformer** component to improve long-context RAG performance.
 - Dataset
-   - Supports configuring context window for images and tables.
-   - Introduces parent-child chunking strategy.
-   - Supports auto-generation of metadata during file parsing.
+  - Supports configuring context window for images and tables.
+  - Introduces parent-child chunking strategy.
+  - Supports auto-generation of metadata during file parsing.
 - Chat: Supports voice input.
 
 ### Improvements
@@ -175,7 +558,7 @@ Released on October 15, 2025.
 
 - Orchestratable ingestion pipeline: Supports customized data ingestion and cleansing workflows, enabling users to flexibly design their data flows or directly apply the official data flow templates on the canvas.
 - GraphRAG & RAPTOR write process optimized: Replaces the automatic incremental build process with manual batch building, significantly reducing construction overhead.
-- Long-context RAG: Automatically generates document-level table of contents (TOC) structures to mitigate context loss caused by inaccurate or excessive chunking, substantially improving retrieval quality. This feature is now available via a TOC extraction template. See [here](./guides/dataset/extract_table_of_contents.md).
+- Long-context RAG: Automatically generates document-level table of contents (TOC) structures to mitigate context loss caused by inaccurate or excessive chunking, substantially improving retrieval quality. This feature is now available via a TOC extraction template. See [here](./guides/dataset/advanced/extract_table_of_contents.md).
 - Video file parsing: Expands the system's multimodal data processing capabilities by supporting video file parsing.
 - Admin CLI: Introduces a new command-line tool for system administration, allowing users to manage and monitor RAGFlow's service status via command line.
 
@@ -314,7 +697,7 @@ Released on August 8, 2025.
 
 ### New agent templates (both workflow and agentic)
 
-- SQL Assistant Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
+- Text-to-SQL data expert Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
 - Choose Your Knowledge Base Workflow: Lets users select a dataset to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
 - Choose Your Knowledge Base Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
 
@@ -347,14 +730,14 @@ From v0.20.0 onwards, Agents are no longer compatible with earlier versions, and
 
 ### New agent templates introduced
 
-- Multi-Agent based Deep Research: Collaborative Agent teamwork led by a Lead Agent with multiple Subagents, distinct from traditional workflow orchestration.
+- Multi-Agent based Deep research: Collaborative Agent teamwork led by a Lead Agent with multiple Subagents, distinct from traditional workflow orchestration.
 - An intelligent Q&A chatbot leveraging internal datasets, designed for customer service and training scenarios.
 - A resume analysis template used by the RAGFlow team to screen, analyze, and record candidate information.
 - A blog generation workflow that transforms raw ideas into SEO-friendly blog content.
 - An intelligent customer service workflow.
 - A user feedback analysis template that directs user feedback to appropriate teams through semantic analysis.
-- Trip Planner: Uses web search and map MCP servers to assist with travel planning.
-- Image Lingo: Translates content from uploaded photos.
+- Trip planner: Uses web search and map MCP servers to assist with travel planning.
+- Photo text translator: Translates content from uploaded photos.
 - An information search assistant that retrieves answers from both internal datasets and the web.
 
 ## v0.19.1
@@ -430,7 +813,7 @@ From this release onwards, built-in rerank models have been removed because they
 #### Added documents
 
 - [Set page rank](./guides/dataset/set_page_rank.md)
-- [Enable RAPTOR](./guides/dataset/enable_raptor.md)
+- [Enable RAPTOR](./guides/dataset/advanced/enable_raptor.md)
 - [Set variables for your chat assistant](./guides/chat/set_chat_variables.md)
 - [Launch RAGFlow MCP server](./develop/mcp/launch_mcp_server.md)
 
@@ -501,7 +884,7 @@ Released on March 3, 2025.
 
 ### New features
 
-- AI chat: Implements Deep Research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt engine** tab of your chat assistant dialogue.
+- AI chat: Implements Deep research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt engine** tab of your chat assistant dialogue.
 - AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant settings** tab of your chat assistant dialogue.
 - AI chat: Supports starting a chat without specifying datasets.
 - AI chat: HTML files can also be previewed and referenced, in addition to PDF files.
@@ -511,11 +894,11 @@ Released on March 3, 2025.
 - Models: Updates the supported model list for Tongyi-Qianwen (Qwen), adding DeepSeek-specific models; adds ModelScope as a model provider.
 - APIs: Document metadata can be updated through an API.
 
-The following diagram illustrates the workflow of RAGFlow's Deep Research:
+The following diagram illustrates the workflow of RAGFlow's Deep research:
 
 ![Image](https://github.com/user-attachments/assets/f65d4759-4f09-4d9d-9549-c0e1fe907525)
 
-The following is a screenshot of a conversation that integrates Deep Research:
+The following is a screenshot of a conversation that integrates Deep research:
 
 ![Image](https://github.com/user-attachments/assets/165b88ff-1f5d-4fb8-90e2-c836b25e32e9)
 
@@ -542,7 +925,7 @@ Released on February 6, 2025.
 ### New features
 
 - Supports DeepSeek R1 and DeepSeek V3.
-- GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](https://ragflow.io/docs/dev/construct_knowledge_graph).
+- GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](./guides/dataset/advanced/construct_knowledge_graph.md).
 - Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_component_reference/iteration.mdx).
 - New UI language: Portuguese.
 - Allows setting metadata for a specific file in a dataset to enhance AI-powered chats. See [here](./guides/dataset/set_metadata.md).
@@ -558,7 +941,7 @@ The **Tag dataset** feature is *unavailable* on the [Infinity](https://github.co
 
 #### Added documents
 
-- [Construct knowledge graph](./guides/dataset/construct_knowledge_graph.md)
+- [Construct knowledge graph](./guides/dataset/advanced/construct_knowledge_graph.md)
 - [Set metadata](./guides/dataset/set_metadata.md)
 - [Begin component](./guides/agent/agent_component_reference/begin.mdx)
 - [Generate component](./guides/agent/agent_component_reference/generate.mdx)
@@ -684,7 +1067,7 @@ From this release onwards, **service_config.yaml.template** replaces **service_c
 This approach eliminates the need to manually update **service_config.yaml** after making changes to **.env**, facilitating dynamic environment configurations.
 
 :::danger IMPORTANT
-Ensure that you [upgrade **both** your code **and** Docker image to this release](https://ragflow.io/docs/dev/upgrade_ragflow#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
+Ensure that you [upgrade **both** your code **and** Docker image to this release](./administrator/upgrade_ragflow.mdx#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
 :::
 
 ### API changes
@@ -762,13 +1145,13 @@ The default Docker image edition is `nightly-slim`. The following list clarifies
 - `nightly`: The full edition of the most recent tested Docker image.
 - `v0.12.0`: The full edition of the most recent **officially released** Docker image.
 
-See [Upgrade RAGFlow](https://ragflow.io/docs/dev/upgrade_ragflow) for instructions on upgrading.
+See [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx) for instructions on upgrading.
 
 ### Documentation
 
 #### Added documents
 
-- [Upgrade RAGFlow](https://ragflow.io/docs/dev/upgrade_ragflow)
+- [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx)
 
 ## v0.11.0
 

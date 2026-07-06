@@ -1,9 +1,11 @@
 ---
-sidebar_position: 0
+sidebar_position: 2
 slug: /
+sidebar_custom_props: {
+  sidebarIcon: LucideRocket
+}
 ---
-
-# Get started
+# Quickstart
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import APITable from '@site/src/components/APITable';
@@ -28,7 +30,8 @@ If you are on an ARM platform, follow [this guide](./develop/build_docker_image.
 - CPU &ge; 4 cores (x86);
 - RAM &ge; 16 GB;
 - Disk &ge; 50 GB;
-- Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1.
+- Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1;
+- Python &ge; 3.13;
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only if you intend to use the code executor ([sandbox](https://github.com/infiniflow/ragflow/tree/main/sandbox)) feature of RAGFlow.
 
 :::tip NOTE
@@ -46,7 +49,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
    `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abnormal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation.
 
-   RAGFlow v0.23.1 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
+   RAGFlow v0.26.3 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
@@ -186,10 +189,14 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
    $ cd ragflow/docker
-   $ git checkout -f v0.23.1
    ```
 
-3. Use the pre-built Docker images and start up the server:
+3. Switch to the current version:
+
+   ```bash
+   $ git checkout -f v0.26.3
+   ```
+4. Use the pre-built Docker images and start up the server:
 
    ```bash
    # Use CPU for DeepDoc tasks:
@@ -202,7 +209,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
    | RAGFlow image tag   | Image size (GB) | Stable?                  |
    | ------------------- | --------------- | ------------------------ |
-   | v0.23.1             | &approx;2       | Stable release           |
+   | v0.26.3             | &approx;2       | Stable release           |
    | nightly             | &approx;2       | _Unstable_ nightly build |
 
    ```mdx-code-block
@@ -213,7 +220,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    The image size shown refers to the size of the *downloaded* Docker image, which is compressed. When Docker runs the image, it unpacks it, resulting in significantly greater disk usage. A Docker image will expand to around 7 GB once unpacked.
    :::
 
-4. Check the server status after having the server up and running:
+5. Check the server status after having the server up and running:
 
    ```bash
    $ docker logs -f docker-ragflow-cpu-1
@@ -235,7 +242,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anomaly` error because, at that moment, your RAGFlow may not be fully initialized.
    :::  
 
-5. In your web browser, enter the IP address of your server and log in to RAGFlow.
+6. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
    :::caution WARNING
    With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default HTTP serving port `80` can be omitted when using the default configurations.
@@ -243,7 +250,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
 ## Configure LLMs
 
-RAGFlow is a RAG engine and needs to work with an LLM to offer grounded, hallucination-free question-answering capabilities. RAGFlow supports most mainstream LLMs. For a complete list of supported models, please refer to [Supported Models](./references/supported_models.mdx).
+RAGFlow is a RAG engine and needs to work with an LLM to offer grounded, hallucination-free question-answering capabilities. RAGFlow supports most mainstream LLMs. For a complete list of supported models, please refer to [Supported Models](./guides/models/supported_models.mdx).
 
 :::note 
 RAGFlow also supports deploying LLMs locally using Ollama, Xinference, or LocalAI, but this part is not covered in this quick start guide. 

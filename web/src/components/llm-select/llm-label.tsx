@@ -1,26 +1,33 @@
-import { getLLMIconName, getLlmNameAndFIdByLlmId } from '@/utils/llm-util';
+import { parseModelValue } from '@/utils/llm-util';
 import { memo } from 'react';
 import { LlmIcon } from '../svg-icon';
 
 interface IProps {
-  id?: string;
   value?: string;
-  onChange?: (value: string) => void;
-  disabled?: boolean;
 }
 
-const LLMLabel = ({ value }: IProps) => {
-  const { llmName, fId } = getLlmNameAndFIdByLlmId(value);
+export const LLMLabel = ({ value }: IProps) => {
+  const parsed = value ? parseModelValue(value) : null;
+  const modelName = parsed?.model_name;
+  const instanceName = parsed?.model_instance;
+  const iconName = parsed ? parsed.model_provider : '';
+
+  if (!modelName) return null;
 
   return (
-    <div className="flex items-center gap-1 text-xs text-text-secondary">
+    <div className="flex items-center gap-1.5 min-w-0">
       <LlmIcon
-        name={getLLMIconName(fId, llmName)}
-        width={20}
-        height={20}
-        size={'small'}
+        name={iconName}
+        width={22}
+        height={22}
+        imgClass="size-[22px] flex-shrink-0"
       />
-      <span className="flex-1 truncate"> {llmName}</span>
+      <span className="font-medium truncate">{modelName}</span>
+      {instanceName && (
+        <span className="text-slate-400 truncate flex-shrink-0">
+          {instanceName}
+        </span>
+      )}
     </div>
   );
 };

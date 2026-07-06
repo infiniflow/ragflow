@@ -1,4 +1,4 @@
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { useUpdateNodeInternals } from '@xyflow/react';
 import { get } from 'lodash';
 import { useEffect, useMemo } from 'react';

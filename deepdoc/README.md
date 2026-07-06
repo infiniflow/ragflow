@@ -98,11 +98,36 @@ We use vision information to resolve problems as human being.
      ```bash
         python deepdoc/vision/t_recognizer.py --inputs=path_to_images_or_pdfs --threshold=0.2 --mode=tsr --output_dir=path_to_store_result
      ```
-    The inputs could be directory to images or PDF, or a image or PDF. 
+    The inputs could be directory to images or PDF, or an image or PDF. 
     You can look into the folder 'path_to_store_result' where has both images and html pages which demonstrate the detection results as following:
     <div align="center" style="margin-top:20px;margin-bottom:20px;">
     <img src="https://github.com/infiniflow/ragflow/assets/12318111/cb24e81b-f2ba-49f3-ac09-883d75606f4c" width="1000"/>
     </div>
+
+  - **Table Auto-Rotation**. For scanned PDFs where tables may be incorrectly oriented (rotated 90°, 180°, or 270°), 
+    the PDF parser automatically detects the best rotation angle using OCR confidence scores before performing 
+    table structure recognition. This significantly improves OCR accuracy and table structure detection for rotated tables.
+    
+    The feature evaluates 4 rotation angles (0°, 90°, 180°, 270°) and selects the one with highest OCR confidence.
+    After determining the best orientation, it re-performs OCR on the correctly rotated table image.
+    
+    This feature is **enabled by default**. You can control it via environment variable:
+    ```bash
+    # Disable table auto-rotation
+    export TABLE_AUTO_ROTATE=false
+    
+    # Enable table auto-rotation (default)
+    export TABLE_AUTO_ROTATE=true
+    ```
+    
+    Or via API parameter:
+    ```python
+    from deepdoc.parser import PdfParser
+    
+    parser = PdfParser()
+    # Disable auto-rotation for this call
+    boxes, tables = parser(pdf_path, auto_rotate_tables=False)
+    ```
         
 <a name="3"></a>
 ## 3. Parser

@@ -22,12 +22,12 @@ from ragflow_sdk import RAGFlow
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
-            (None, "Authentication error: API key is invalid!"),
-            (INVALID_API_TOKEN, "Authentication error: API key is invalid!"),
+            (None, "<Unauthorized '401: Unauthorized'>"),
+            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_auth_invalid(self, invalid_auth, expected_message):
@@ -54,7 +54,7 @@ class TestCapability:
 
 @pytest.mark.usefixtures("add_datasets")
 class TestDatasetsList:
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_params_unset(self, client):
         datasets = client.list_datasets()
         assert len(datasets) == 5, str(datasets)
@@ -135,7 +135,7 @@ class TestDatasetsList:
             client.list_datasets(**params)
         assert "not instance of" in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params",
         [
@@ -171,7 +171,7 @@ class TestDatasetsList:
             client.list_datasets(**params)
         assert "not instance of" in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params",
         [
@@ -219,6 +219,13 @@ class TestDatasetsList:
         assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
+    def test_get_dataset_not_found_raises(self, client, monkeypatch):
+        monkeypatch.setattr(client, "list_datasets", lambda **_: [])
+        with pytest.raises(Exception) as exception_info:
+            client.get_dataset(name="missing-name-for-coverage")
+        assert "Dataset missing-name-for-coverage not found" in str(exception_info.value), str(exception_info.value)
+
+    @pytest.mark.p2
     def test_name_empty(self, client):
         params = {"name": ""}
         datasets = client.list_datasets(**params)
@@ -243,14 +250,14 @@ class TestDatasetsList:
         params = {"id": "not_uuid"}
         with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
+        assert "Invalid UUID format" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_id_not_uuid1(self, client):
         params = {"id": uuid.uuid4().hex}
         with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
+        assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_id_wrong_uuid(self, client):
@@ -264,7 +271,7 @@ class TestDatasetsList:
         params = {"id": ""}
         with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
+        assert "Invalid UUID format" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_id_none(self, client):
@@ -306,7 +313,7 @@ class TestDatasetsList:
             client.list_datasets(**params)
         assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_field_unsupported(self, client):
         params = {"unknown_field": "unknown_field"}
         with pytest.raises(Exception) as exception_info:

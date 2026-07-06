@@ -14,14 +14,14 @@ from common.data_source.exceptions import (
     ConnectorValidationError,
     InsufficientPermissionsError,
 )
-from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch
-from common.data_source.models import Document, GenerateDocumentsOutput
+from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch, SlimConnectorWithPermSync
+from common.data_source.models import Document, GenerateDocumentsOutput, GenerateSlimDocumentOutput, SlimDocument
 from common.data_source.utils import get_file_ext
 
 logger = logging.getLogger(__name__)
 
 
-class DropboxConnector(LoadConnector, PollConnector):
+class DropboxConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     """Dropbox connector for accessing Dropbox files and folders"""
 
     def __init__(self, batch_size: int = INDEX_BATCH_SIZE) -> None:
@@ -87,57 +87,48 @@ class DropboxConnector(LoadConnector, PollConnector):
         if self.dropbox_client is None:
             raise ConnectorMissingCredentialError("Dropbox")
 
-        # Collect all files first to count filename occurrences
-        all_files = []
-        self._collect_files_recursive(path, start, end, all_files)
-        
+        all_files: list[FileMetadata] = []
+        self._collect_file_entries_recursive(path, start, end, all_files)
+
         # Count filename occurrences
         filename_counts: dict[str, int] = {}
-        for entry, _ in all_files:
+        for entry in all_files:
             filename_counts[entry.name] = filename_counts.get(entry.name, 0) + 1
-        
+
         # Process files in batches
         batch: list[Document] = []
-        for entry, downloaded_file in all_files:
-            modified_time = entry.client_modified
-            if modified_time.tzinfo is None:
-                modified_time = modified_time.replace(tzinfo=timezone.utc)
-            else:
-                modified_time = modified_time.astimezone(timezone.utc)
-            
-            # Use full path only if filename appears multiple times
-            if filename_counts.get(entry.name, 0) > 1:
-                # Remove leading slash and replace slashes with ' / '
-                relative_path = entry.path_display.lstrip('/')
-                semantic_id = relative_path.replace('/', ' / ') if relative_path else entry.name
-            else:
-                semantic_id = entry.name
-            
+        for entry in all_files:
+            try:
+                downloaded_file = self._download_file(entry.path_display)
+            except Exception:
+                logger.exception(f"[Dropbox]: Error downloading file {entry.path_display}")
+                continue
+
             batch.append(
                 Document(
                     id=f"dropbox:{entry.id}",
                     blob=downloaded_file,
                     source=DocumentSource.DROPBOX,
-                    semantic_identifier=semantic_id,
+                    semantic_identifier=self._get_semantic_identifier(entry, filename_counts),
                     extension=get_file_ext(entry.name),
-                    doc_updated_at=modified_time,
+                    doc_updated_at=self._normalize_modified_time(entry.client_modified),
                     size_bytes=entry.size if getattr(entry, "size", None) is not None else len(downloaded_file),
                 )
             )
-            
+
             if len(batch) == self.batch_size:
                 yield batch
                 batch = []
-        
+
         if batch:
             yield batch
 
-    def _collect_files_recursive(
+    def _collect_file_entries_recursive(
         self,
         path: str,
         start: SecondsSinceUnixEpoch | None,
         end: SecondsSinceUnixEpoch | None,
-        all_files: list,
+        all_files: list[FileMetadata],
     ) -> None:
         """Recursively collect all files matching time criteria."""
         if self.dropbox_client is None:
@@ -152,32 +143,55 @@ class DropboxConnector(LoadConnector, PollConnector):
         while True:
             for entry in result.entries:
                 if isinstance(entry, FileMetadata):
-                    modified_time = entry.client_modified
-                    if modified_time.tzinfo is None:
-                        modified_time = modified_time.replace(tzinfo=timezone.utc)
-                    else:
-                        modified_time = modified_time.astimezone(timezone.utc)
-
-                    time_as_seconds = modified_time.timestamp()
+                    time_as_seconds = self._normalize_modified_time(entry.client_modified).timestamp()
                     if start is not None and time_as_seconds <= start:
                         continue
                     if end is not None and time_as_seconds > end:
                         continue
 
-                    try:
-                        downloaded_file = self._download_file(entry.path_display)
-                        all_files.append((entry, downloaded_file))
-                    except Exception:
-                        logger.exception(f"[Dropbox]: Error downloading file {entry.path_display}")
-                        continue
+                    all_files.append(entry)
 
                 elif isinstance(entry, FolderMetadata):
-                    self._collect_files_recursive(entry.path_lower, start, end, all_files)
+                    self._collect_file_entries_recursive(entry.path_lower, start, end, all_files)
 
             if not result.has_more:
                 break
 
             result = self.dropbox_client.files_list_folder_continue(result.cursor)
+
+    def _normalize_modified_time(self, modified_time):
+        if modified_time.tzinfo is None:
+            return modified_time.replace(tzinfo=timezone.utc)
+        return modified_time.astimezone(timezone.utc)
+
+    def _get_semantic_identifier(self, entry: FileMetadata, filename_counts: dict[str, int]) -> str:
+        if filename_counts.get(entry.name, 0) <= 1:
+            return entry.name
+
+        relative_path = entry.path_display.lstrip("/")
+        return relative_path.replace("/", " / ") if relative_path else entry.name
+
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        del callback
+
+        if self.dropbox_client is None:
+            raise ConnectorMissingCredentialError("Dropbox")
+
+        all_files: list[FileMetadata] = []
+        self._collect_file_entries_recursive("", None, None, all_files)
+
+        batch: list[SlimDocument] = []
+        for entry in all_files:
+            batch.append(SlimDocument(id=f"dropbox:{entry.id}"))
+            if len(batch) >= self.batch_size:
+                yield batch
+                batch = []
+
+        if batch:
+            yield batch
 
     def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> GenerateDocumentsOutput:
         """Poll Dropbox for recent file changes"""

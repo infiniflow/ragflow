@@ -1,5 +1,6 @@
 import copy
 import email
+import hashlib
 from email.header import decode_header
 import imaplib
 import logging
@@ -8,18 +9,30 @@ import re
 from datetime import datetime, timedelta
 from datetime import timezone
 from email.message import Message
-from email.utils import collapse_rfc2231_value, parseaddr
+from email.utils import collapse_rfc2231_value, getaddresses
 from enum import Enum
 from typing import Any
 from typing import cast
-import uuid
 
 import bs4
 from pydantic import BaseModel
 
 from common.data_source.config import IMAP_CONNECTOR_SIZE_THRESHOLD, DocumentSource
-from common.data_source.interfaces import CheckpointOutput, CheckpointedConnectorWithPermSync, CredentialsConnector, CredentialsProviderInterface
-from common.data_source.models import BasicExpertInfo, ConnectorCheckpoint, Document, ExternalAccess, SecondsSinceUnixEpoch
+from common.data_source.interfaces import (
+    CheckpointOutput,
+    CheckpointedConnectorWithPermSync,
+    CredentialsConnector,
+    CredentialsProviderInterface,
+)
+from common.data_source.models import (
+    BasicExpertInfo,
+    ConnectorCheckpoint,
+    Document,
+    ExternalAccess,
+    GenerateSlimDocumentOutput,
+    SecondsSinceUnixEpoch,
+    SlimDocument,
+)
 
 _DEFAULT_IMAP_PORT_NUMBER = int(os.environ.get("IMAP_PORT", 993))
 _IMAP_OKAY_STATUS = "OK"
@@ -27,14 +40,13 @@ _PAGE_SIZE = 100
 _USERNAME_KEY = "imap_username"
 _PASSWORD_KEY = "imap_password"
 
+
 class Header(str, Enum):
     SUBJECT_HEADER = "subject"
     FROM_HEADER = "from"
     TO_HEADER = "to"
     CC_HEADER = "cc"
-    DELIVERED_TO_HEADER = (
-        "Delivered-To"  # Used in mailing lists instead of the "to" header.
-    )
+    DELIVERED_TO_HEADER = "Delivered-To"  # Used in mailing lists instead of the "to" header.
     DATE_HEADER = "date"
     MESSAGE_ID_HEADER = "Message-ID"
 
@@ -64,13 +76,9 @@ class EmailHeaders(BaseModel):
             for decoded_value, encoding in decoded_fragments:
                 if isinstance(decoded_value, bytes):
                     try:
-                        decoded_strings.append(
-                            decoded_value.decode(encoding or "utf-8", errors="replace")
-                        )
+                        decoded_strings.append(decoded_value.decode(encoding or "utf-8", errors="replace"))
                     except LookupError:
-                        decoded_strings.append(
-                            decoded_value.decode("utf-8", errors="replace")
-                        )
+                        decoded_strings.append(decoded_value.decode("utf-8", errors="replace"))
                 elif isinstance(decoded_value, str):
                     decoded_strings.append(decoded_value)
                 else:
@@ -86,9 +94,6 @@ class EmailHeaders(BaseModel):
             except (TypeError, ValueError):
                 return None
 
-        message_id = _decode(header=Header.MESSAGE_ID_HEADER)
-        if not message_id:
-            message_id = f"<generated-{uuid.uuid4()}@imap.local>"
         # It's possible for the subject line to not exist or be an empty string.
         subject = _decode(header=Header.SUBJECT_HEADER) or "Unknown Subject"
         from_ = _decode(header=Header.FROM_HEADER)
@@ -97,10 +102,22 @@ class EmailHeaders(BaseModel):
             to = _decode(header=Header.DELIVERED_TO_HEADER)
         cc = _decode(header=Header.CC_HEADER)
         date_str = _decode(header=Header.DATE_HEADER)
-        date = _parse_date(date_str=date_str)
+        parsed_date = _parse_date(date_str=date_str)
+        date = parsed_date
 
         if not date:
             date = datetime.now(tz=timezone.utc)
+
+        message_id = _decode(header=Header.MESSAGE_ID_HEADER)
+        if not message_id:
+            message_id = _build_stable_generated_message_id(
+                email_msg=email_msg,
+                subject=subject,
+                sender=from_ or "",
+                recipients=to or "",
+                cc=cc or "",
+                date_key=(_as_utc(parsed_date).isoformat() if parsed_date else (date_str or "")),
+            )
 
         # If any of the above are `None`, model validation will fail.
         # Therefore, no guards (i.e.: `if <header> is None: raise RuntimeError(..)`) were written.
@@ -114,6 +131,7 @@ class EmailHeaders(BaseModel):
                 "date": date,
             }
         )
+
 
 class CurrentMailbox(BaseModel):
     mailbox: str
@@ -158,9 +176,7 @@ class ImapConnector(
     @property
     def credentials(self) -> dict[str, Any]:
         if not self._credentials:
-            raise RuntimeError(
-                "Credentials have not been initialized; call `set_credentials_provider` first"
-            )
+            raise RuntimeError("Credentials have not been initialized; call `set_credentials_provider` first")
         return self._credentials
 
     def _get_mail_client(self) -> imaplib.IMAP4_SSL:
@@ -187,9 +203,7 @@ class ImapConnector(
             if not value:
                 raise RuntimeError(f"Credential item {name=} was not found")
             if not isinstance(value, str):
-                raise RuntimeError(
-                    f"Credential item {name=} must be of type str, instead received {type(name)=}"
-                )
+                raise RuntimeError(f"Credential item {name=} must be of type str, instead received {type(name)=}")
             return value
 
         username = get_or_raise(_USERNAME_KEY)
@@ -221,21 +235,14 @@ class ImapConnector(
             if self._mailboxes:
                 checkpoint.todo_mailboxes = _sanitize_mailbox_names(self._mailboxes)
             else:
-                fetched_mailboxes = _fetch_all_mailboxes_for_email_account(
-                    mail_client=mail_client
-                )
+                fetched_mailboxes = _fetch_all_mailboxes_for_email_account(mail_client=mail_client)
                 if not fetched_mailboxes:
-                    raise RuntimeError(
-                        "Failed to find any mailboxes for this email account"
-                    )
+                    raise RuntimeError("Failed to find any mailboxes for this email account")
                 checkpoint.todo_mailboxes = _sanitize_mailbox_names(fetched_mailboxes)
 
             return checkpoint
 
-        if (
-            not checkpoint.current_mailbox
-            or not checkpoint.current_mailbox.todo_email_ids
-        ):
+        if not checkpoint.current_mailbox or not checkpoint.current_mailbox.todo_email_ids:
             if not checkpoint.todo_mailboxes:
                 checkpoint.has_more = False
                 return checkpoint
@@ -252,15 +259,9 @@ class ImapConnector(
                 todo_email_ids=email_ids,
             )
 
-        _select_mailbox(
-            mail_client=mail_client, mailbox=checkpoint.current_mailbox.mailbox
-        )
-        current_todos = cast(
-            list, copy.deepcopy(checkpoint.current_mailbox.todo_email_ids[:_PAGE_SIZE])
-        )
-        checkpoint.current_mailbox.todo_email_ids = (
-            checkpoint.current_mailbox.todo_email_ids[_PAGE_SIZE:]
-        )
+        _select_mailbox(mail_client=mail_client, mailbox=checkpoint.current_mailbox.mailbox)
+        current_todos = cast(list, copy.deepcopy(checkpoint.current_mailbox.todo_email_ids[:_PAGE_SIZE]))
+        checkpoint.current_mailbox.todo_email_ids = checkpoint.current_mailbox.todo_email_ids[_PAGE_SIZE:]
 
         for email_id in current_todos:
             email_msg = _fetch_email(mail_client=mail_client, email_id=email_id)
@@ -269,12 +270,7 @@ class ImapConnector(
                 continue
 
             email_headers = EmailHeaders.from_email_msg(email_msg=email_msg)
-            msg_dt = email_headers.date
-            if msg_dt.tzinfo is None:
-                msg_dt = msg_dt.replace(tzinfo=timezone.utc)
-            else:
-                msg_dt = msg_dt.astimezone(timezone.utc)
-
+            msg_dt = _as_utc(email_headers.date)
             start_dt = datetime.fromtimestamp(start, tz=timezone.utc)
             end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
 
@@ -304,9 +300,7 @@ class ImapConnector(
 
     # impls for CredentialsConnector
 
-    def set_credentials_provider(
-        self, credentials_provider: CredentialsProviderInterface
-    ) -> None:
+    def set_credentials_provider(self, credentials_provider: CredentialsProviderInterface) -> None:
         self._credentials = credentials_provider.get_credentials()
 
     # impls for CheckpointedConnector
@@ -317,9 +311,7 @@ class ImapConnector(
         end: SecondsSinceUnixEpoch,
         checkpoint: ImapCheckpoint,
     ) -> CheckpointOutput[ImapCheckpoint]:
-        return self._load_from_checkpoint(
-            start=start, end=end, checkpoint=checkpoint, include_perm_sync=False
-        )
+        return self._load_from_checkpoint(start=start, end=end, checkpoint=checkpoint, include_perm_sync=False)
 
     def build_dummy_checkpoint(self) -> ImapCheckpoint:
         return ImapCheckpoint(has_more=True)
@@ -335,9 +327,57 @@ class ImapConnector(
         end: SecondsSinceUnixEpoch,
         checkpoint: ImapCheckpoint,
     ) -> CheckpointOutput[ImapCheckpoint]:
-        return self._load_from_checkpoint(
-            start=start, end=end, checkpoint=checkpoint, include_perm_sync=True
-        )
+        return self._load_from_checkpoint(start=start, end=end, checkpoint=checkpoint, include_perm_sync=True)
+
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        start: SecondsSinceUnixEpoch | None = None,
+        end: SecondsSinceUnixEpoch | None = None,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        del callback
+        mail_client = self._get_mail_client()
+        start_ts = start if start is not None else 0
+        end_ts = end if end is not None else datetime.now(tz=timezone.utc).timestamp()
+        start_dt = datetime.fromtimestamp(start_ts, tz=timezone.utc)
+        end_dt = datetime.fromtimestamp(end_ts, tz=timezone.utc)
+
+        if self._mailboxes:
+            mailboxes = _sanitize_mailbox_names(self._mailboxes)
+        else:
+            mailboxes = _sanitize_mailbox_names(_fetch_all_mailboxes_for_email_account(mail_client=mail_client))
+
+        slim_doc_batch: list[SlimDocument] = []
+        for mailbox in mailboxes:
+            email_ids = _fetch_email_ids_in_mailbox(
+                mail_client=mail_client,
+                mailbox=mailbox,
+                start=start_ts,
+                end=end_ts,
+            )
+            _select_mailbox(mail_client=mail_client, mailbox=mailbox)
+
+            for email_id in email_ids:
+                email_msg = _fetch_email(mail_client=mail_client, email_id=email_id)
+                if not email_msg:
+                    logging.warning(f"Failed to fetch message {email_id=}; skipping")
+                    continue
+
+                email_headers = EmailHeaders.from_email_msg(email_msg=email_msg)
+                msg_dt = _as_utc(email_headers.date)
+                if not (start_dt < msg_dt <= end_dt):
+                    continue
+
+                slim_doc_batch.append(SlimDocument(id=email_headers.id))
+                for att in extract_attachments(email_msg):
+                    slim_doc_batch.append(SlimDocument(id=_attachment_document_id(email_headers.id, att)))
+
+                if len(slim_doc_batch) >= _PAGE_SIZE:
+                    yield slim_doc_batch
+                    slim_doc_batch = []
+
+        if slim_doc_batch:
+            yield slim_doc_batch
 
 
 def _fetch_all_mailboxes_for_email_account(mail_client: imaplib.IMAP4_SSL) -> list[str]:
@@ -353,9 +393,7 @@ def _fetch_all_mailboxes_for_email_account(mail_client: imaplib.IMAP4_SSL) -> li
         elif isinstance(mailboxes_raw, str):
             mailboxes_str = mailboxes_raw
         else:
-            logging.warning(
-                f"Expected the mailbox data to be of type str, instead got {type(mailboxes_raw)=} {mailboxes_raw}; skipping"
-            )
+            logging.warning(f"Expected the mailbox data to be of type str, instead got {type(mailboxes_raw)=} {mailboxes_raw}; skipping")
             continue
 
         # The mailbox LIST response output can be found here:
@@ -367,17 +405,13 @@ def _fetch_all_mailboxes_for_email_account(mail_client: imaplib.IMAP4_SSL) -> li
         # The below regex matches on that pattern; from there, we select the 3rd match (index 2), which is the mailbox-name.
         match = re.match(r'\([^)]*\)\s+"([^"]+)"\s+"?(.+?)"?$', mailboxes_str)
         if not match:
-            logging.warning(
-                f"Invalid mailbox-data formatting structure: {mailboxes_str=}; skipping"
-            )
+            logging.warning(f"Invalid mailbox-data formatting structure: {mailboxes_str=}; skipping")
             continue
 
         mailbox = match.group(2)
         mailboxes.append(mailbox)
     if not mailboxes:
-        logging.warning(
-            "No mailboxes parsed from LIST response; falling back to INBOX"
-        )
+        logging.warning("No mailboxes parsed from LIST response; falling back to INBOX")
         return ["INBOX"]
 
     return mailboxes
@@ -427,12 +461,43 @@ def _fetch_email(mail_client: imaplib.IMAP4_SSL, email_id: str) -> Message | Non
 
     data = msg_data[0]
     if not isinstance(data, tuple):
-        raise RuntimeError(
-            f"Message data should be a tuple; instead got a {type(data)=} {data=}"
-        )
+        raise RuntimeError(f"Message data should be a tuple; instead got a {type(data)=} {data=}")
 
     _, raw_email = data
     return email.message_from_bytes(raw_email)
+
+
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _build_stable_generated_message_id(
+    email_msg: Message,
+    subject: str,
+    sender: str,
+    recipients: str,
+    cc: str,
+    date_key: str,
+) -> str:
+    body = _extract_email_body_text(email_msg)
+    raw_digest = hashlib.sha256(email_msg.as_bytes()).hexdigest()
+    body_digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(
+        "\n".join(
+            [
+                subject,
+                date_key,
+                sender,
+                recipients,
+                cc,
+                body_digest,
+                raw_digest,
+            ]
+        ).encode("utf-8")
+    ).hexdigest()
+    return f"generated:{digest}"
 
 
 def _convert_email_headers_and_body_into_document(
@@ -441,28 +506,13 @@ def _convert_email_headers_and_body_into_document(
     include_perm_sync: bool,
 ) -> Document:
     sender_name, sender_addr = _parse_singular_addr(raw_header=email_headers.sender)
-    to_addrs = (
-        _parse_addrs(email_headers.recipients)
-        if email_headers.recipients
-        else []
-    )
-    cc_addrs = (
-        _parse_addrs(email_headers.cc)
-        if email_headers.cc
-        else []
-    )
+    to_addrs = _parse_addrs(email_headers.recipients) if email_headers.recipients else []
+    cc_addrs = _parse_addrs(email_headers.cc) if email_headers.cc else []
     all_participants = to_addrs + cc_addrs
 
-    expert_info_map = {
-        recipient_addr: BasicExpertInfo(
-            display_name=recipient_name, email=recipient_addr
-        )
-        for recipient_name, recipient_addr in all_participants
-    }
+    expert_info_map = {recipient_addr: BasicExpertInfo(display_name=recipient_name, email=recipient_addr) for recipient_name, recipient_addr in all_participants}
     if sender_addr not in expert_info_map:
-        expert_info_map[sender_addr] = BasicExpertInfo(
-            display_name=sender_name, email=sender_addr
-        )
+        expert_info_map[sender_addr] = BasicExpertInfo(display_name=sender_name, email=sender_addr)
 
     email_body = _parse_email_body(email_msg=email_msg, email_headers=email_headers)
     primary_owners = list(expert_info_map.values())
@@ -482,12 +532,13 @@ def _convert_email_headers_and_body_into_document(
         size_bytes=len(email_body),
         semantic_identifier=email_headers.subject,
         metadata={},
-        extension='.txt',
+        extension=".txt",
         doc_updated_at=email_headers.date,
         source=DocumentSource.IMAP,
         primary_owners=primary_owners,
         external_access=external_access,
     )
+
 
 def extract_attachments(email_msg: Message, max_bytes: int = IMAP_CONNECTOR_SIZE_THRESHOLD):
     attachments = []
@@ -502,10 +553,7 @@ def extract_attachments(email_msg: Message, max_bytes: int = IMAP_CONNECTOR_SIZE
         disposition = (part.get("Content-Disposition") or "").lower()
         filename = part.get_filename()
 
-        if not (
-            disposition.startswith("attachment")
-            or (disposition.startswith("inline") and filename)
-        ):
+        if not (disposition.startswith("attachment") or (disposition.startswith("inline") and filename)):
             continue
 
         payload = part.get_payload(decode=True)
@@ -515,14 +563,17 @@ def extract_attachments(email_msg: Message, max_bytes: int = IMAP_CONNECTOR_SIZE
         if len(payload) > max_bytes:
             continue
 
-        attachments.append({
-            "filename": filename or "attachment.bin",
-            "content_type": part.get_content_type(),
-            "content_bytes": payload,
-            "size_bytes": len(payload),
-        })
+        attachments.append(
+            {
+                "filename": filename or "attachment.bin",
+                "content_type": part.get_content_type(),
+                "content_bytes": payload,
+                "size_bytes": len(payload),
+            }
+        )
 
     return attachments
+
 
 def decode_mime_filename(raw: str | None) -> str | None:
     if not raw:
@@ -544,6 +595,13 @@ def decode_mime_filename(raw: str | None) -> str | None:
 
     return "".join(decoded)
 
+
+def _attachment_document_id(parent_doc_id: str, att: dict) -> str:
+    raw_filename = att["filename"]
+    filename = decode_mime_filename(raw_filename) or "attachment.bin"
+    return f"{parent_doc_id}#att:{filename}"
+
+
 def attachment_to_document(
     parent_doc: Document,
     att: dict,
@@ -554,7 +612,7 @@ def attachment_to_document(
     ext = "." + filename.split(".")[-1] if "." in filename else ""
 
     return Document(
-        id=f"{parent_doc.id}#att:{filename}",
+        id=_attachment_document_id(parent_doc.id, att),
         source=DocumentSource.IMAP,
         semantic_identifier=filename,
         extension=ext,
@@ -570,10 +628,18 @@ def attachment_to_document(
         },
     )
 
+
 def _parse_email_body(
     email_msg: Message,
     email_headers: EmailHeaders,
 ) -> str:
+    body = _extract_email_body_text(email_msg)
+    if not body:
+        logging.warning(f"Email with {email_headers.id=} has an empty body; returning an empty string")
+    return body
+
+
+def _extract_email_body_text(email_msg: Message) -> str:
     body = None
     for part in email_msg.walk():
         if part.is_multipart():
@@ -586,10 +652,7 @@ def _parse_email_body(
         try:
             raw_payload = part.get_payload(decode=True)
             if not isinstance(raw_payload, bytes):
-                logging.warning(
-                    "Payload section from email was expected to be an array of bytes, instead got "
-                    f"{type(raw_payload)=}, {raw_payload=}"
-                )
+                logging.warning(f"Payload section from email was expected to be an array of bytes, instead got {type(raw_payload)=}, {raw_payload=}")
                 continue
             body = raw_payload.decode(charset)
             break
@@ -598,9 +661,6 @@ def _parse_email_body(
             continue
 
     if not body:
-        logging.warning(
-            f"Email with {email_headers.id=} has an empty body; returning an empty string"
-        )
         return ""
 
     soup = bs4.BeautifulSoup(markup=body, features="html.parser")
@@ -617,32 +677,30 @@ def _sanitize_mailbox_names(mailboxes: list[str]) -> list[str]:
 
 
 def _parse_addrs(raw_header: str) -> list[tuple[str, str]]:
-    addrs = raw_header.split(",")
-    name_addr_pairs = [parseaddr(addr=addr) for addr in addrs if addr]
-    return [(name, addr) for name, addr in name_addr_pairs if addr]
+    if not raw_header:
+        return []
+    return getaddresses([raw_header])
 
 
 def _parse_singular_addr(raw_header: str) -> tuple[str, str]:
     addrs = _parse_addrs(raw_header=raw_header)
     if not addrs:
         return ("Unknown", "unknown@example.com")
-    elif len(addrs) >= 2:
-        raise RuntimeError(
-            f"Expected a singular address, but instead got multiple; {raw_header=} {addrs=}"
+    if len(addrs) >= 2:
+        logging.warning(
+            "Multiple addresses in header expected to be singular; using first. parsed_count=%d",
+            len(addrs),
         )
-
     return addrs[0]
 
 
 if __name__ == "__main__":
     import time
+    import uuid
     from types import TracebackType
     from common.data_source.utils import load_all_docs_from_checkpoint_connector
 
-
-    class OnyxStaticCredentialsProvider(
-        CredentialsProviderInterface["OnyxStaticCredentialsProvider"]
-    ):
+    class OnyxStaticCredentialsProvider(CredentialsProviderInterface["OnyxStaticCredentialsProvider"]):
         """Implementation (a very simple one!) to handle static credentials."""
 
         def __init__(
@@ -682,19 +740,16 @@ if __name__ == "__main__":
 
         def is_dynamic(self) -> bool:
             return False
+
     # from tests.daily.connectors.utils import load_all_docs_from_checkpoint_connector
     # from onyx.connectors.credentials_provider import OnyxStaticCredentialsProvider
 
     host = os.environ.get("IMAP_HOST")
-    mailboxes_str = os.environ.get("IMAP_MAILBOXES","INBOX")
+    mailboxes_str = os.environ.get("IMAP_MAILBOXES", "INBOX")
     username = os.environ.get("IMAP_USERNAME")
     password = os.environ.get("IMAP_PASSWORD")
 
-    mailboxes = (
-        [mailbox.strip() for mailbox in mailboxes_str.split(",")]
-        if mailboxes_str
-        else []
-    )
+    mailboxes = [mailbox.strip() for mailbox in mailboxes_str.split(",")] if mailboxes_str else []
 
     if not host:
         raise RuntimeError("`IMAP_HOST` must be set")
@@ -721,4 +776,4 @@ if __name__ == "__main__":
         start=START,
         end=END,
     ):
-        print(doc.id,doc.extension)
+        print(doc.id, doc.extension)

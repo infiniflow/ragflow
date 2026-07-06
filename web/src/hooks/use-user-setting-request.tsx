@@ -1,16 +1,15 @@
 import message from '@/components/ui/message';
-import { LanguageTranslationMap } from '@/constants/common';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
-import { ITenantInfo } from '@/interfaces/database/knowledge';
+import { ITenantInfo } from '@/interfaces/database/dataset';
 import { ILangfuseConfig } from '@/interfaces/database/system';
 import {
-  ISystemStatus,
   ITenant,
   ITenantUser,
   IUserInfo,
 } from '@/interfaces/database/user-setting';
 import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
+import { DEFAULT_LANGUAGE_CODE, supportedLanguages } from '@/locales/config';
 import userService, {
   addTenantUser,
   agreeTenant,
@@ -18,13 +17,11 @@ import userService, {
   listTenant,
   listTenantUser,
 } from '@/services/user-service';
-import { history } from '@/utils/simple-history-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Modal } from 'antd';
-import DOMPurify from 'dompurify';
-import { isEmpty } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { useWarnEmptyModel } from './use-warn-empty-model';
 
 export const enum UserSettingApiAction {
   UserInfo = 'userInfo',
@@ -45,60 +42,44 @@ export const enum UserSettingApiAction {
 }
 
 export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
-  const { i18n } = useTranslation();
-
   const { data, isFetching: loading } = useQuery({
     queryKey: [UserSettingApiAction.UserInfo],
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await userService.user_info();
+      const { data } = await userService.userInfo();
+
       if (data.code === 0) {
-        i18n.changeLanguage(
-          LanguageTranslationMap[
-            data.data.language as keyof typeof LanguageTranslationMap
-          ],
-        );
+        const targetLng =
+          supportedLanguages.find((lang) => lang.code === data.data.language)
+            ?.code ?? DEFAULT_LANGUAGE_CODE;
+
+        return Object.assign({}, data.data, {
+          language: targetLng,
+        });
       }
-      return data?.data ?? {};
+
+      return data.data ?? {};
     },
   });
 
   return { data, loading };
 };
 
+// Stop using this interface to retrieve the default model; instead, directly call `useFetchDefaultModelDictionary`.
 export const useFetchTenantInfo = (
   showEmptyModelWarn = false,
 ): ResponseGetType<ITenantInfo> => {
-  const { t } = useTranslation();
   const { data, isFetching: loading } = useQuery({
     queryKey: [UserSettingApiAction.TenantInfo, showEmptyModelWarn],
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
-      const { data: res } = await userService.get_tenant_info();
+      const { data: res } = await userService.getTenantInfo();
       if (res.code === 0) {
         // llm_id is chat_id
         // asr_id is speech2txt
         const { data } = res;
-        if (
-          showEmptyModelWarn &&
-          (isEmpty(data.embd_id) || isEmpty(data.llm_id))
-        ) {
-          Modal.warning({
-            title: t('common.warn'),
-            content: (
-              <div
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(t('setting.modelProvidersWarn')),
-                }}
-              ></div>
-            ),
-            onOk() {
-              history.push('/user-setting/model');
-            },
-          });
-        }
         data.chat_id = data.llm_id;
         data.speech2text_id = data.asr_id;
 
@@ -109,6 +90,8 @@ export const useFetchTenantInfo = (
     },
   });
 
+  useWarnEmptyModel(showEmptyModelWarn, data?.embd_id, data?.llm_id, loading);
+
   return { data, loading };
 };
 
@@ -117,19 +100,58 @@ export const useSelectParserList = (): Array<{
   label: string;
 }> => {
   const { data: tenantInfo } = useFetchTenantInfo(true);
+  const { t } = useTranslation();
+
+  const defaultParsers = useMemo(
+    () => [
+      { value: 'naive', label: t('knowledgeConfiguration.parserLabel.naive') },
+      { value: 'qa', label: t('knowledgeConfiguration.parserLabel.qa') },
+      {
+        value: 'resume',
+        label: t('knowledgeConfiguration.parserLabel.resume'),
+      },
+      {
+        value: 'manual',
+        label: t('knowledgeConfiguration.parserLabel.manual'),
+      },
+      { value: 'table', label: t('knowledgeConfiguration.parserLabel.table') },
+      { value: 'paper', label: t('knowledgeConfiguration.parserLabel.paper') },
+      { value: 'book', label: t('knowledgeConfiguration.parserLabel.book') },
+      { value: 'laws', label: t('knowledgeConfiguration.parserLabel.laws') },
+      {
+        value: 'presentation',
+        label: t('knowledgeConfiguration.parserLabel.presentation'),
+      },
+      {
+        value: 'picture',
+        label: t('knowledgeConfiguration.parserLabel.picture'),
+      },
+      { value: 'one', label: t('knowledgeConfiguration.parserLabel.one') },
+      { value: 'audio', label: t('knowledgeConfiguration.parserLabel.audio') },
+      { value: 'email', label: t('knowledgeConfiguration.parserLabel.email') },
+      { value: 'tag', label: t('knowledgeConfiguration.parserLabel.tag') },
+    ],
+    [t],
+  );
 
   const parserList = useMemo(() => {
     const parserArray: Array<string> = tenantInfo?.parser_ids?.split(',') ?? [];
-    return parserArray.map((x) => {
+    const filteredArray = parserArray.filter((x) => x.trim() !== '');
+
+    if (filteredArray.length === 0) {
+      return defaultParsers;
+    }
+
+    return filteredArray.map((x) => {
       const arr = x.split(':');
       return { value: arr[0], label: arr[1] };
     });
-  }, [tenantInfo]);
+  }, [tenantInfo, defaultParsers]);
 
   return parserList;
 };
 
-export const useSaveSetting = () => {
+export const useSaveSetting = (silent = false) => {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const {
@@ -143,7 +165,9 @@ export const useSaveSetting = () => {
     ) => {
       const { data } = await userService.setting(userInfo);
       if (data.code === 0) {
-        message.success(t('message.modified'));
+        if (!silent) {
+          message.success(t('message.modified'));
+        }
         queryClient.invalidateQueries({ queryKey: ['userInfo'] });
       }
       return data?.code;
@@ -166,33 +190,12 @@ export const useFetchSystemVersion = () => {
         setLoading(false);
       }
     } catch (error) {
+      console.warn(error);
       setLoading(false);
     }
   }, []);
 
   return { fetchSystemVersion, version, loading };
-};
-
-export const useFetchSystemStatus = () => {
-  const [systemStatus, setSystemStatus] = useState<ISystemStatus>(
-    {} as ISystemStatus,
-  );
-  const [loading, setLoading] = useState(false);
-
-  const fetchSystemStatus = useCallback(async () => {
-    setLoading(true);
-    const { data } = await userService.getSystemStatus();
-    if (data.code === 0) {
-      setSystemStatus(data.data);
-      setLoading(false);
-    }
-  }, []);
-
-  return {
-    systemStatus,
-    fetchSystemStatus,
-    loading,
-  };
 };
 
 export const useFetchManualSystemTokenList = () => {

@@ -13,11 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+import os
 from abc import ABC
 import asyncio
 from crawl4ai import AsyncWebCrawler
-from agent.tools.base import ToolParamBase, ToolBase
-
+from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
+from common.connection_utils import timeout
 
 
 class CrawlerParam(ToolParamBase):
@@ -26,30 +28,76 @@ class CrawlerParam(ToolParamBase):
     """
 
     def __init__(self):
+        self.meta: ToolMeta = {
+            "name": "web_crawler",
+            "description": "This tool can be used to crawl a web page and return its content as HTML, Markdown, or the extracted main text.",
+            "parameters": {
+                "query": {
+                    "type": "string",
+                    "description": "The absolute URL (including the http:// or https:// scheme) of the web page to crawl.",
+                    "default": "{sys.query}",
+                    "required": True,
+                }
+            },
+        }
         super().__init__()
         self.proxy = None
         self.extract_type = "markdown"
 
     def check(self):
-        self.check_valid_value(self.extract_type, "Type of content from the crawler", ['html', 'markdown', 'content'])
+        self.check_valid_value(self.extract_type, "Type of content from the crawler", ["html", "markdown", "content"])
+
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "query": {
+                "name": "URL",
+                "type": "line"
+            }
+        }
 
 
 class Crawler(ToolBase, ABC):
     component_name = "Crawler"
 
-    def _run(self, history, **kwargs):
-        from api.utils.web_utils import is_valid_url
-        ans = self.get_input()
-        ans = " - ".join(ans["content"]) if "content" in ans else ""
-        if not is_valid_url(ans):
-            return Crawler.be_output("URL not valid")
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
+    def _invoke(self, **kwargs):
+        from common.ssrf_guard import assert_url_is_safe, pin_dns_global
+
+        if self.check_if_canceled("Crawler processing"):
+            return
+
+        url = kwargs.get("query")
+        if not url:
+            self.set_output("formalized_content", "")
+            return ""
+
         try:
-            result = asyncio.run(self.get_web(ans))
+            _ssrf_hostname, _ssrf_ip = assert_url_is_safe(url)
+        except ValueError:
+            msg = "URL not valid"
+            self.set_output("_ERROR", msg)
+            return msg
 
-            return Crawler.be_output(result)
+        try:
+            # pin_dns_global is used (not thread-local) because crawl4ai resolves
+            # DNS in asyncio executor threads that don't share thread-local state.
+            with pin_dns_global(_ssrf_hostname, _ssrf_ip):
+                result = asyncio.run(self.get_web(url))
 
+            if self.check_if_canceled("Crawler processing"):
+                return
+
+            result = result or ""
+            self.set_output("formalized_content", result)
+            return result
         except Exception as e:
-            return Crawler.be_output(f"An unexpected error occurred: {str(e)}")
+            if self.check_if_canceled("Crawler processing"):
+                return
+
+            logging.exception(f"Crawler error: {e}")
+            msg = f"An unexpected error occurred: {str(e)}"
+            self.set_output("_ERROR", msg)
+            return msg
 
     async def get_web(self, url):
         if self.check_if_canceled("Crawler async operation"):
@@ -57,18 +105,15 @@ class Crawler(ToolBase, ABC):
 
         proxy = self._param.proxy if self._param.proxy else None
         async with AsyncWebCrawler(verbose=True, proxy=proxy) as crawler:
-            result = await crawler.arun(
-                url=url,
-                bypass_cache=True
-            )
+            result = await crawler.arun(url=url, bypass_cache=True)
 
             if self.check_if_canceled("Crawler async operation"):
                 return
 
-            if self._param.extract_type == 'html':
+            if self._param.extract_type == "html":
                 return result.cleaned_html
-            elif self._param.extract_type == 'markdown':
+            elif self._param.extract_type == "markdown":
                 return result.markdown
-            elif self._param.extract_type == 'content':
+            elif self._param.extract_type == "content":
                 return result.extracted_content
             return result.markdown

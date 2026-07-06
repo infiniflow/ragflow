@@ -11,7 +11,7 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 const formSchema = z.object({
-  file: z.record(z.any()),
+  file: z.array(z.record(z.any())).min(1),
 });
 
 export type FormSchemaType = z.infer<typeof formSchema>;
@@ -25,7 +25,7 @@ export function UploaderForm({ ok, loading }: UploaderFormProps) {
   const { t } = useTranslation();
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
-    defaultValues: {},
+    defaultValues: { file: [] },
   });
 
   return (
@@ -37,6 +37,7 @@ export function UploaderForm({ ok, loading }: UploaderFormProps) {
               <FileUploadDirectUpload
                 value={field.value}
                 onChange={field.onChange}
+                maxFiles={1}
               ></FileUploadDirectUpload>
             );
           }}

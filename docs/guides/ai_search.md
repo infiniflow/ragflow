@@ -1,8 +1,10 @@
 ---
 sidebar_position: 2
 slug: /ai_search
+sidebar_custom_props: {
+  categoryIcon: LucideSearch
+}
 ---
-
 # Search
 
 Conduct an AI search.

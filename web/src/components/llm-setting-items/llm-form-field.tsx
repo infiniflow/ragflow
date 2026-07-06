@@ -1,31 +1,24 @@
-import { LlmModelType } from '@/constants/knowledge';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
+import { ModelTreeSelect } from '@/components/model-tree-select';
 import { useTranslation } from 'react-i18next';
-import { SelectWithSearch } from '../originui/select-with-search';
 import { RAGFlowFormItem } from '../ragflow-form';
 
 export type LLMFormFieldProps = {
-  options?: any[];
+  modelTypes?: string[];
   name?: string;
+  testId?: string;
+  optionTestIdPrefix?: string;
+  config?: any;
 };
 
-export const useModelOptions = () => {
-  const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Chat,
-    LlmModelType.Image2text,
-  ]);
-  return {
-    modelOptions,
-  };
-};
-
-export function LLMFormField({ options, name }: LLMFormFieldProps) {
+export function LLMFormField({ name, config, modelTypes }: LLMFormFieldProps) {
   const { t } = useTranslation();
-  const { modelOptions } = useModelOptions();
 
   return (
     <RAGFlowFormItem name={name || 'llm_id'} label={t('chat.model')}>
-      <SelectWithSearch options={options || modelOptions}></SelectWithSearch>
+      <ModelTreeSelect
+        allowClear={config?.allowClear ?? false}
+        modelTypes={modelTypes}
+      />
     </RAGFlowFormItem>
   );
 }

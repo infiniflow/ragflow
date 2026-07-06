@@ -10,7 +10,7 @@ export const RunTooltip = ({ children }: PropsWithChildren) => {
   const { t } = useTranslation();
   return (
     <Tooltip>
-      <TooltipTrigger>{children}</TooltipTrigger>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent>
         <p>{t('flow.testRun')}</p>
       </TooltipContent>

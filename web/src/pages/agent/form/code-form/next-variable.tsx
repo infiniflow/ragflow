@@ -12,7 +12,7 @@ import {
 import { BlurInput } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
@@ -29,9 +29,12 @@ export const TypeOptions = [
   'String',
   'Number',
   'Boolean',
+  'Object',
   'Array<String>',
   'Array<Number>',
-  'Object',
+  'Array<Any>',
+  'Array<Object>',
+  'Any',
 ].map((x) => ({ label: x, value: x }));
 
 export function DynamicVariableForm({ name = 'arguments', isOutputs }: IProps) {
@@ -90,13 +93,20 @@ export function DynamicVariableForm({ name = 'arguments', isOutputs }: IProps) {
                 </FormItem>
               )}
             />
-            <Button variant={'ghost'} onClick={() => remove(index)}>
+            <Button
+              variant={'ghost'}
+              type="button"
+              onClick={() => remove(index)}
+            >
               <X className="text-text-sub-title-invert " />
             </Button>
           </div>
         );
       })}
-      <BlockButton onClick={() => append({ name: '', type: undefined })}>
+      <BlockButton
+        type="button"
+        onClick={() => append({ name: '', type: undefined })}
+      >
         {t('flow.addVariable')}
       </BlockButton>
     </div>

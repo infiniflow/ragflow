@@ -1,8 +1,10 @@
 ---
 sidebar_position: 6
 slug: /share_agent
+sidebar_custom_props: {
+  categoryIcon: LucideShare2
+}
 ---
-
 # Share Agent
 
 Share an Agent with your team members.

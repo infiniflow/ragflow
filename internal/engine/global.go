@@ -1,0 +1,106 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package engine
+
+import (
+	"fmt"
+	"ragflow/internal/common"
+	"ragflow/internal/engine/nats"
+	"ragflow/internal/server"
+	"sync"
+
+	"ragflow/internal/engine/elasticsearch"
+	"ragflow/internal/engine/infinity"
+
+	"ragflow/internal/tokenizer"
+
+	"go.uber.org/zap"
+)
+
+var (
+	globalEngine       DocEngine
+	engineType         EngineType
+	messageQueueEngine MessageQueue
+	once               sync.Once
+)
+
+// Init initializes document engine
+func Init(cfg *server.DocEngineConfig) error {
+	var initErr error
+	once.Do(func() {
+		tokenizer.RegisterEngineType(func() string {
+			return string(GetEngineType())
+		})
+
+		engineType = EngineType(cfg.Type)
+		var err error
+		switch engineType {
+		case EngineElasticsearch:
+			globalEngine, err = elasticsearch.NewEngine(cfg.ES)
+		case EngineInfinity:
+			globalEngine, err = infinity.NewEngine(cfg.Infinity)
+		default:
+			err = fmt.Errorf("unsupported doc engine type: %s", cfg.Type)
+		}
+
+		if err != nil {
+			initErr = fmt.Errorf("failed to create doc engine: %w", err)
+			return
+		}
+		common.Info("Doc engine initialized", zap.String("type", string(cfg.Type)))
+	})
+	return initErr
+}
+
+// GetEngineType returns the document engine type
+func GetEngineType() EngineType {
+	return engineType
+}
+
+// Get gets global document engine instance
+func Get() DocEngine {
+	return globalEngine
+}
+
+// Close closes document engine
+func Close() error {
+	if globalEngine != nil {
+		return globalEngine.Close()
+	}
+	return nil
+}
+
+func GetMessageQueueEngine() MessageQueue {
+	return messageQueueEngine
+}
+
+func InitMessageQueueEngine(messageQueueType string) error {
+	config := server.GetConfig()
+	switch messageQueueType {
+	case "nats":
+		messageQueueEngine = nats.NewNatsEngine(config.Nats.Host, config.Nats.Port)
+		err := messageQueueEngine.Init()
+		if err != nil {
+			return err
+		}
+	case "":
+		return fmt.Errorf("message queue type is empty")
+	default:
+		return fmt.Errorf("unsupported message queue type: %s", messageQueueType)
+	}
+	return nil
+}

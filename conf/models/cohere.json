@@ -1,0 +1,150 @@
+{
+  "name": "CoHere",
+  "rank": 990,
+  "url": {
+    "default": "https://api.cohere.com"
+  },
+  "url_suffix": {
+    "chat": "v2/chat",
+    "models": "v1/models",
+    "embedding": "v2/embed",
+    "rerank": "v2/rerank",
+    "asr": "audio/transcriptions"
+  },
+  "class": "cohere",
+  "models": [
+    {
+      "name": "command-a-plus-05-2026",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "command-a-03-2025",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "command-r7b-12-2024",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "command-a-translate-08-2025",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "command-a-reasoning-08-2025",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "command-a-vision-07-2025",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "command-r-plus-08-2024",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "command-r-08-2024",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "rerank-v4.0-pro",
+      "max_tokens": 32768,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "rerank-v4.0-fast",
+      "max_tokens": 32768,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "rerank-v3.5",
+      "max_tokens": 4096,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "rerank-english-v3.0",
+      "max_tokens": 4096,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "rerank-multilingual-v3.0",
+      "max_tokens": 4096,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "embed-v4.0",
+      "max_tokens": 131072,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "embed-english-v3.0",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "embed-english-light-v3.0",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "embed-multilingual-v3.0",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "embed-multilingual-light-v3.0",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "cohere-transcribe-03-2026",
+      "max_tokens": 8192,
+      "model_types": [
+        "asr"
+      ]
+    }
+  ]
+}

@@ -28,11 +28,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
     )
@@ -55,7 +55,7 @@ class TestCapability:
 
 @pytest.mark.usefixtures("add_datasets")
 class TestDatasetsList:
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_params_unset(self, HttpApiAuth):
         res = list_datasets(HttpApiAuth, None)
         assert res["code"] == 0, res
@@ -142,12 +142,12 @@ class TestDatasetsList:
         assert res["code"] == 0, res
         assert len(res["data"]) == 5, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, assertions",
         [
-            ({"orderby": "create_time"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"orderby": "update_time"}, lambda r: (is_sorted(r["data"], "update_time", True))),
+            ({"orderby": "create_time"}, lambda r: is_sorted(r["data"], "create_time", True)),
+            ({"orderby": "update_time"}, lambda r: is_sorted(r["data"], "update_time", True)),
         ],
         ids=["orderby_create_time", "orderby_update_time"],
     )
@@ -185,16 +185,16 @@ class TestDatasetsList:
     @pytest.mark.parametrize(
         "params, assertions",
         [
-            ({"desc": True}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": False}, lambda r: (is_sorted(r["data"], "create_time", False))),
-            ({"desc": "true"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": "false"}, lambda r: (is_sorted(r["data"], "create_time", False))),
-            ({"desc": 1}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": 0}, lambda r: (is_sorted(r["data"], "create_time", False))),
-            ({"desc": "yes"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": "no"}, lambda r: (is_sorted(r["data"], "create_time", False))),
-            ({"desc": "y"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": "n"}, lambda r: (is_sorted(r["data"], "create_time", False))),
+            ({"desc": True}, lambda r: is_sorted(r["data"], "create_time", True)),
+            ({"desc": False}, lambda r: is_sorted(r["data"], "create_time", False)),
+            ({"desc": "true"}, lambda r: is_sorted(r["data"], "create_time", True)),
+            ({"desc": "false"}, lambda r: is_sorted(r["data"], "create_time", False)),
+            ({"desc": 1}, lambda r: is_sorted(r["data"], "create_time", True)),
+            ({"desc": 0}, lambda r: is_sorted(r["data"], "create_time", False)),
+            ({"desc": "yes"}, lambda r: is_sorted(r["data"], "create_time", True)),
+            ({"desc": "no"}, lambda r: is_sorted(r["data"], "create_time", False)),
+            ({"desc": "y"}, lambda r: is_sorted(r["data"], "create_time", True)),
+            ({"desc": "n"}, lambda r: is_sorted(r["data"], "create_time", False)),
         ],
         ids=["desc=True", "desc=False", "desc=true", "desc=false", "desc=1", "desc=0", "desc=yes", "desc=no", "desc=y", "desc=n"],
     )
@@ -237,7 +237,7 @@ class TestDatasetsList:
     def test_name_wrong(self, HttpApiAuth):
         params = {"name": "wrong name"}
         res = list_datasets(HttpApiAuth, params)
-        assert res["code"] == 108, res
+        assert res["code"] == 102, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p2
@@ -268,20 +268,20 @@ class TestDatasetsList:
         params = {"id": "not_uuid"}
         res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert "Invalid UUID format" in res["message"], res
 
     @pytest.mark.p2
     def test_id_not_uuid1(self, HttpApiAuth):
         params = {"id": uuid.uuid4().hex}
         res = list_datasets(HttpApiAuth, params)
-        assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert res["code"] == 102, res
+        assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p2
     def test_id_wrong_uuid(self, HttpApiAuth):
         params = {"id": "d94a8dc02c9711f0930f7fbc369eab6d"}
         res = list_datasets(HttpApiAuth, params)
-        assert res["code"] == 108, res
+        assert res["code"] == 102, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p2
@@ -289,7 +289,7 @@ class TestDatasetsList:
         params = {"id": ""}
         res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert "Invalid UUID format" in res["message"], res
 
     @pytest.mark.p2
     def test_id_none(self, HttpApiAuth):
@@ -331,10 +331,10 @@ class TestDatasetsList:
         else:
             params = {"id": dataset_id, "name": name}
         res = list_datasets(HttpApiAuth, params)
-        assert res["code"] == 108, res
+        assert res["code"] == 102, res
         assert "lacks permission for dataset" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_field_unsupported(self, HttpApiAuth):
         params = {"unknown_field": "unknown_field"}
         res = list_datasets(HttpApiAuth, params)

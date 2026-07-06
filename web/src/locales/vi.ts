@@ -18,6 +18,8 @@ export default {
       portugueseBr: 'Tiếng Bồ Đào Nha (Brazil)',
       chinese: 'Tiếng Trung giản thể',
       traditionalChinese: 'Tiếng Trung phồn thể',
+      bulgarian: 'Tiếng Bulgaria',
+      arabic: 'Tiếng Ả Rập',
       language: 'Ngôn ngữ',
       languageMessage: 'Vui lòng chọn ngôn ngữ của bạn!',
       languagePlaceholder: 'chọn ngôn ngữ của bạn',
@@ -38,8 +40,10 @@ export default {
       spanish: 'Tiếng Tây Ban Nha',
       japanese: 'Tiếng Nhật',
       embedIntoSite: 'Nhúng vào trang web',
+      openInNewTab: 'Chat trong tab mới',
       nextPage: 'Tới',
       previousPage: 'Lùi',
+      owner: 'Chủ sở hữu',
     },
     login: {
       login: 'Đăng nhập',
@@ -155,7 +159,7 @@ export default {
       changeSpecificCategory: 'Thay đổi danh mục cụ thể',
       uploadTitle: 'Nhấp hoặc kéo thả tệp vào khu vực này để tải lên',
       uploadDescription:
-        'RAGFlow hỗ trợ tải lên tệp một lần hoặc theo lô. Đối với RAGFlow triển khai cục bộ: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 1GB, với giới hạn tải lên theo lô là 32 tệp. Không có giới hạn về tổng số tệp trên mỗi tài khoản. Đối với demo.ragflow.io: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 10MB, với mỗi tệp không vượt quá 10MB và tối đa là 128 tệp trên mỗi tài khoản.',
+        'RAGFlow hỗ trợ tải lên tệp một lần hoặc theo lô. Đối với RAGFlow triển khai cục bộ: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 1GB, với giới hạn tải lên theo lô là 32 tệp. Không có giới hạn về tổng số tệp trên mỗi tài khoản. Đối với cloud.ragflow.io: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 10MB, với mỗi tệp không vượt quá 10MB và tối đa là 128 tệp trên mỗi tài khoản.',
       chunk: 'Khối',
       bulk: 'Hàng loạt',
       cancel: 'Hủy bỏ',
@@ -198,7 +202,7 @@ export default {
       chunkTokenNumber: 'Kích thước khối được khuyến nghị',
       chunkTokenNumberMessage: 'Số token khối là bắt buộc',
       embeddingModelTip:
-        'Mô hình nhúng mặc định của cơ sở tri thức. Không thể thay đổi khi cơ sở tri thức đã có các đoạn dữ liệu. Để chuyển sang mô hình nhúng mặc định khác, bạn phải xóa tất cả các đoạn dữ liệu hiện có trong cơ sở tri thức.',
+        'Mô hình nhúng mặc định của cơ sở tri thức. Khi cơ sở tri thức đã có các đoạn (chunk), lúc thay đổi mô hình nhúng, hệ thống sẽ lấy ngẫu nhiên một số chunk để kiểm tra tương thích, mã hóa lại bằng mô hình nhúng mới và tính độ tương đồng cosine giữa vector mới và vector cũ. Chỉ cho phép chuyển khi độ tương đồng trung bình của mẫu ≥ 0.9. Nếu không, bạn phải xóa tất cả các chunk trong cơ sở tri thức trước khi có thể thay đổi.',
       permissionsTip:
         'Nếu được đặt thành "Đội", tất cả các thành viên trong nhóm sẽ có thể quản lý cơ sở kiến thức.',
       chunkTokenNumberTip:
@@ -345,7 +349,8 @@ export default {
       tagCloud: 'Đám mây',
       graphRagMethod: 'Phương pháp',
       graphRagMethodTip: `Light: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - HKUDS/LightRAG: "LightRAG: Tạo sinh tăng cường truy xuất đơn giản và nhanh chóng".
-      General: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - microsoft/graphrag: Một hệ thống Tạo sinh tăng cường truy xuất (RAG) dựa trên đồ thị theo mô-đun.`,
+      General: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - microsoft/graphrag: Một hệ thống Tạo sinh tăng cường truy xuất (RAG) dựa trên đồ thị theo mô-đun.
+      NER: Sử dụng spaCy NER và trích xuất từ khóa dựa trên quy tắc để trích xuất thực thể và quan hệ. Không cần LLM cho việc trích xuất, giúp nhanh chóng và tiết kiệm tài nguyên.`,
       useGraphRagTip:
         'Xây dựng một biểu đồ tri thức trên các đoạn tệp của cơ sở tri thức hiện tại để tăng cường khả năng trả lời câu hỏi đa bước liên quan đến logic lồng nhau. Xem https://ragflow.io/docs/dev/construct_knowledge_graph để biết thêm chi tiết.',
       resolution: 'Hợp nhất thực thể',
@@ -354,9 +359,23 @@ export default {
       community: 'Xây dựng mối quan hệ cộng đồng',
       communityTip:
         'Các liên kết được nhóm lại thành các cộng đồng phân cấp, với các thực thể và mối quan hệ kết nối từng phân đoạn lên các cấp độ trừu tượng cao hơn. Sau đó, chúng tôi sử dụng một LLM để tạo ra bản tóm tắt cho mỗi cộng đồng, được gọi là báo cáo cộng đồng. Xem thêm: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
+      paddleocrOptions: 'Tùy chọn PaddleOCR',
+      paddleocrApiUrl: 'URL API PaddleOCR',
+      paddleocrApiUrlTip: 'URL điểm cuối API của dịch vụ PaddleOCR',
+      paddleocrApiUrlPlaceholder:
+        'Ví dụ: https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'Token truy cập AI Studio',
+      paddleocrAccessTokenTip: 'Token truy cập cho API PaddleOCR (tùy chọn)',
+      paddleocrAccessTokenPlaceholder: 'Token AI Studio của bạn (tùy chọn)',
+      paddleocrAlgorithm: 'Thuật toán PaddleOCR',
+      paddleocrAlgorithmTip: 'Thuật toán được sử dụng để xử lý PaddleOCR',
+      paddleocrSelectAlgorithm: 'Chọn thuật toán',
+      paddleocrModelNamePlaceholder: 'Ví dụ: paddleocr-môi-trường-1',
     },
     chunk: {
       chunk: 'Khối',
+      createChunk: 'Tạo khối',
+      editChunk: 'Chỉnh sửa khối',
       bulk: 'Hàng loạt',
       selectAll: 'Chọn tất cả',
       enabledSelected: 'Bật đã chọn',
@@ -378,6 +397,9 @@ export default {
         'Nếu có những câu hỏi được đưa ra, việc nhúng phần đó sẽ dựa trên những câu hỏi đó.',
     },
     chat: {
+      chatSupport: 'Hỗ trợ trò chuyện',
+      replyInstantly: 'Chúng tôi thường phản hồi ngay lập tức',
+      typeYourMessage: 'Nhập tin nhắn của bạn...',
       newConversation: 'Cuộc trò chuyện mới',
       createAssistant: 'Tạo trợ lý',
       assistantSetting: 'Cài đặt trợ lý',
@@ -396,7 +418,7 @@ export default {
       assistantAvatar: 'Avatar trợ lý',
       language: 'Ngôn ngữ',
       emptyResponse: 'Phản hồi trống',
-      emptyResponseTip: `Nếu không tìm thấy gì với câu hỏi của người dùng trong cơ sở kiến thức, nó sẽ sử dụng điều này làm câu trả lời. Nếu bạn muốn LLM đưa ra ý kiến ​​riêng của mình khi không tìm thấy gì, hãy để trống.`,
+      emptyResponseTip: `Nếu không tìm thấy gì với câu hỏi của người dùng trong cơ sở kiến thức, nó sẽ sử dụng điều này làm câu trả lời. Nếu bạn muốn LLM đưa ra ý kiến riêng của mình khi không tìm thấy gì, hãy để trống.`,
       setAnOpener: 'Đặt lời mở đầu',
       setAnOpenerInitial: `Xin chào! Tôi là trợ lý của bạn, tôi có thể giúp gì cho bạn?`,
       setAnOpenerTip: 'Bạn muốn chào đón khách hàng của mình như thế nào?',
@@ -446,8 +468,7 @@ export default {
         'Tương tự như hình phạt hiện diện, điều này làm giảm xu hướng của mô hình lặp lại cùng một từ thường xuyên.',
       maxTokens: 'Token tối đa',
       maxTokensMessage: 'Token tối đa là bắt buộc',
-      maxTokensTip:
-        'Điều này đặt độ dài tối đa của đầu ra của mô hình, được đo bằng số lượng token (từ hoặc phần của từ).',
+      maxTokensTip: `Kích thước ngữ cảnh tối đa của mô hình; giá trị không hợp lệ hoặc sai sẽ gây lỗi. Mặc định là 512.`,
       maxTokensInvalidMessage: 'Vui lòng nhập số Token tối đa hợp lệ.',
       maxTokensMinMessage: 'Token tối đa không thể nhỏ hơn 0.',
       quote: 'Hiển thị Trích dẫn',
@@ -505,6 +526,11 @@ export default {
         'Áp dụng LLM (Mô hình ngôn ngữ lớn) để phân tích câu hỏi của người dùng, trích xuất các từ khóa sẽ được nhấn mạnh trong quá trình tính toán độ liên quan. Hoạt động tốt với các truy vấn dài nhưng sẽ làm tăng thời gian phản hồi.',
       languageTip:
         'Cho phép viết lại câu với ngôn ngữ được chỉ định, hoặc sử dụng câu hỏi mới nhất nếu không chọn ngôn ngữ nào.',
+      showChunkMetadata: 'Hiển thị siêu dữ liệu đoạn',
+      showChunkMetadataTip:
+        'Hiển thị siêu dữ liệu tài liệu (tiêu đề, số trang, ngày tải lên, v.v.) bên cạnh các đoạn văn bản được truy xuất',
+      metadataFields: 'Trường siêu dữ liệu',
+      metadataFieldsTip: 'Chọn các trường siêu dữ liệu hiển thị với mỗi đoạn',
     },
     setting: {
       profile: 'Hồ sơ',
@@ -512,8 +538,7 @@ export default {
       profileDescription: 'Cập nhật ảnh và thông tin cá nhân của bạn tại đây.',
       maxTokens: 'Token tối đa',
       maxTokensMessage: 'Token tối đa là bắt buộc',
-      maxTokensTip:
-        'Điều này đặt độ dài tối đa của đầu ra của mô hình, được đo bằng số lượng token (từ hoặc phần của từ).',
+      maxTokensTip: `Kích thước ngữ cảnh tối đa của mô hình; giá trị không hợp lệ hoặc sai sẽ gây lỗi. Mặc định là 512.`,
       maxTokensInvalidMessage: 'Vui lòng nhập số Token tối đa hợp lệ.',
       maxTokensMinMessage: 'Token tối đa không thể nhỏ hơn 0.',
       password: 'Mật khẩu',
@@ -561,6 +586,8 @@ export default {
       baseUrl: 'Base-Url',
       baseUrlTip:
         'Nếu khóa API của bạn từ OpenAI, chỉ cần bỏ qua nó. Bất kỳ nhà cung cấp trung gian nào khác sẽ cung cấp URL cơ sở này với khóa API.',
+      siliconBaseUrlTip:
+        'For Chinese users, no need to fill in or use https://api.siliconflow.cn/v1. For international users, use https://api.siliconflow.com/v1',
       minimaxBaseUrlTip:
         'Chỉ người dùng quốc tế: dùng https://api.minimax.io/v1.',
       minimaxBaseUrlPlaceholder:
@@ -595,13 +622,24 @@ export default {
       modelTypeMessage: 'Vui lòng nhập loại mô hình của bạn!',
       addLlmBaseUrl: 'URL cơ sở',
       baseUrlNameMessage: 'Vui lòng nhập URL cơ sở của bạn!',
+      paddleocr: {
+        apiUrl: 'URL API PaddleOCR',
+        apiUrlPlaceholder: 'Ví dụ: https://paddleocr-server.com/layout-parsing',
+        accessToken: 'Token truy cập AI Studio',
+        accessTokenPlaceholder: 'Token AI Studio của bạn (tùy chọn)',
+        algorithm: 'Thuật toán PaddleOCR',
+        selectAlgorithm: 'Chọn thuật toán',
+        modelNamePlaceholder: 'Ví dụ: paddleocr-from-env-1',
+        modelNameRequired: 'Tên mô hình là bắt buộc',
+        apiUrlRequired: 'URL API PaddleOCR là bắt buộc',
+      },
       vision: 'Có hỗ trợ Tầm nhìn không?',
       ollamaLink: 'Cách tích hợp {{name}}',
       FishAudioLink: 'Cách sử dụng FishAudio',
       TencentCloudLink: 'Cách sử dụng TencentCloud ASR',
       volcModelNameMessage: 'Vui lòng nhập tên mô hình của bạn!',
-      addEndpointID: 'EndpointID của mô hình',
-      endpointIDMessage: 'Vui lòng nhập EndpointID của mô hình của bạn',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Vui lòng nhập Model ID của mô hình',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Vui lòng nhập ARK_API_KEY của bạn',
       addBedrockEngineAK: 'KHÓA TRUY CẬP',
@@ -645,10 +683,6 @@ export default {
       'sa-east-1': 'South America (São Paulo)',
       'us-gov-east-1': 'AWS GovCloud (US-East)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
-      addHunyuanSID: 'Hunyuan Secret ID',
-      HunyuanSIDMessage: 'Vui lòng nhập ID bí mật của bạn',
-      addHunyuanSK: 'Hunyuan Secret Key',
-      HunyuanSKMessage: 'Vui lòng nhập Khóa bí mật của bạn',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Vui lòng nhập ID bí mật của bạn',
       addTencentCloudSK: 'TencentCloud Secret Key',
@@ -702,6 +736,8 @@ export default {
       FishAudioRefIDMessage: `Vui lòng nhập ID của model tham chiếu (để trống để sử dụng model mặc định)`,
       modelsToBeAddedTooltip:
         'Nếu nhà cung cấp mô hình của bạn không có trong danh sách nhưng tuyên bố tương thích với "OpenAI", hãy chọn thẻ OpenAI-API-compatible để thêm mô hình liên quan.',
+      dingtalkAITableDescription:
+        'Kết nối với Dingtalk AI Table và đồng bộ hóa bản ghi từ một bảng được chỉ định.',
     },
     message: {
       registered: 'Đã đăng ký!',
@@ -752,7 +788,7 @@ export default {
       directory: 'Thư mục',
       uploadTitle: 'Nhấp hoặc kéo thả tệp vào khu vực này để tải lên',
       uploadDescription:
-        'RAGFlow hỗ trợ tải lên tệp một lần hoặc theo lô. Đối với RAGFlow triển khai cục bộ: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 1GB, với giới hạn tải lên theo lô là 32 tệp. Không có giới hạn về tổng số tệp trên mỗi tài khoản. Đối với demo.ragflow.io: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 10MB, với mỗi tệp không vượt quá 10MB và tối đa là 128 tệp trên mỗi tài khoản.',
+        'RAGFlow hỗ trợ tải lên tệp một lần hoặc theo lô. Đối với RAGFlow triển khai cục bộ: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 1GB, với giới hạn tải lên theo lô là 32 tệp. Không có giới hạn về tổng số tệp trên mỗi tài khoản. Đối với cloud.ragflow.io: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 10MB, với mỗi tệp không vượt quá 10MB và tối đa là 128 tệp trên mỗi tài khoản.',
       local: 'Tải lên cục bộ',
       s3: 'Tải lên S3',
       preview: 'Xem trước',
@@ -828,10 +864,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Một thành phần tìm kiếm thông qua URL phiên bản SearXNG bạn cung cấp. Chỉ định TopN và URL phiên bản.',
-      pdfGenerator: 'Trình tạo Tài liệu',
-      pDFGenerator: 'Trình tạo Tài liệu',
-      pdfGeneratorDescription: `Một thành phần tạo tài liệu (PDF, DOCX, TXT) từ nội dung định dạng markdown với kiểu tùy chỉnh, hình ảnh và bảng. Hỗ trợ: **in đậm**, *in nghiêng*, # tiêu đề, - danh sách, bảng với cú pháp |.`,
-      pDFGeneratorDescription: `Một thành phần tạo tài liệu (PDF, DOCX, TXT) từ nội dung định dạng markdown với kiểu tùy chỉnh, hình ảnh và bảng. Hỗ trợ: **in đậm**, *in nghiêng*, # tiêu đề, - danh sách, bảng với cú pháp |.`,
+      docGenerator: 'Trình tạo Tài liệu',
+      docGeneratorDescription: `Tạo tệp từ nội dung Markdown.`,
       subtitle: 'Phụ đề',
       logoImage: 'Hình ảnh Logo',
       logoPosition: 'Vị trí Logo',
@@ -1175,8 +1209,8 @@ export default {
       toEmail: 'Email người nhận',
       smtpServerRequired: 'Vui lòng nhập địa chỉ máy chủ SMTP',
       emailContent: 'Nội dung',
-      smtpServer: 'SMTP Server',
-      smtpPort: 'SMTP Port',
+      smtpServer: 'Máy chủ SMTP',
+      smtpPort: 'Cổng SMTP',
       senderEmailRequired: 'Vui lòng nhập email người gửi',
       authCodeRequired: 'Vui lòng nhập mã xác thực',
       toEmailRequired: 'Vui lòng nhập email người nhận',
@@ -1186,9 +1220,10 @@ export default {
       jsonFormatTip:
         'Thành phần thượng nguồn phải cung cấp chuỗi JSON theo định dạng sau:',
       emailComponent: 'Email',
-      senderEmail: 'Người gửi Email',
-      authCode: 'Mã xác minh',
-      senderName: 'Tên người gửi',
+      senderEmail: 'Địa chỉ người gửi (From)',
+      smtpUsername: 'Tên đăng nhập SMTP',
+      authCode: 'Mật khẩu SMTP / mật khẩu ứng dụng',
+      senderName: 'Tên hiển thị người gửi',
       jsonUploadContentErrorMessage: 'lỗi tệp json',
       contentTip: 'content: Nội dung email (Tùy chọn)',
       subjectTip: 'subject: Tiêu đề email (Tùy chọn)',
@@ -1215,6 +1250,11 @@ export default {
         'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
       promptMessage: 'Nhắc nhở là bắt buộc',
       runningHintText: 'đang chạy...🕞',
+      canvasCategory: 'Danh mục canvas',
+      tags: 'Thẻ',
+      created: 'Đã tạo',
+      id: 'ID',
+      logTitle: 'Tiêu đề',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1223,6 +1263,15 @@ export default {
       file: 'tệp',
       knowledge: 'kiến thức',
       chat: 'trò chuyện',
+    },
+    language: {
+      english: 'Tiếng Anh',
+      chinese: 'Tiếng Trung',
+      russian: 'Tiếng Nga',
+      bulgarian: 'Tiếng Bulgaria',
+      arabic: 'Tiếng Ả Rập',
+      turkish: 'Tiếng Thổ Nhĩ Kỳ',
+      korean: 'Tiếng Hàn',
     },
   },
 };

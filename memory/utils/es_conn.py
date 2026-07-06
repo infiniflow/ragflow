@@ -27,21 +27,23 @@ from common.doc_store.doc_store_base import MatchExpr, OrderByExpr, MatchTextExp
 from common.doc_store.es_conn_base import ESConnectionBase
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
+from rag.nlp.rag_tokenizer import tokenize, fine_grained_tokenize
 
 ATTEMPT_TIME = 2
 
 
 @singleton
 class ESConnection(ESConnectionBase):
-
     @staticmethod
-    def convert_field_name(field_name: str) -> str:
+    def convert_field_name(field_name: str, use_tokenized_content=False) -> str:
         match field_name:
             case "message_type":
                 return "message_type_kwd"
             case "status":
                 return "status_int"
             case "content":
+                if use_tokenized_content:
+                    return "tokenized_content_ltks"
                 return "content_ltks"
             case _:
                 return field_name
@@ -69,6 +71,7 @@ class ESConnection(ESConnectionBase):
             "status_int": 1 if message["status"] else 0,
             "zone_id": message.get("zone_id", 0),
             "content_ltks": message["content"],
+            "tokenized_content_ltks": fine_grained_tokenize(tokenize(message["content"])),
             f"q_{len(message['content_embed'])}_vec": message["content_embed"],
         }
         return storage_doc
@@ -107,18 +110,19 @@ class ESConnection(ESConnectionBase):
     """
 
     def search(
-            self, select_fields: list[str],
-            highlight_fields: list[str],
-            condition: dict,
-            match_expressions: list[MatchExpr],
-            order_by: OrderByExpr,
-            offset: int,
-            limit: int,
-            index_names: str | list[str],
-            memory_ids: list[str],
-            agg_fields: list[str] | None = None,
-            rank_feature: dict | None = None,
-            hide_forgotten: bool = True
+        self,
+        select_fields: list[str],
+        highlight_fields: list[str],
+        condition: dict,
+        match_expressions: list[MatchExpr],
+        order_by: OrderByExpr,
+        offset: int,
+        limit: int,
+        index_names: str | list[str],
+        memory_ids: list[str],
+        agg_fields: list[str] | None = None,
+        rank_feature: dict | None = None,
+        hide_forgotten: bool = True,
     ):
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
@@ -150,15 +154,17 @@ class ESConnection(ESConnectionBase):
             elif isinstance(v, str) or isinstance(v, int):
                 bool_query.filter.append(Q("term", **{field_name: v}))
             else:
-                raise Exception(
-                    f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
+                raise Exception(f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
         s = Search()
         vector_similarity_weight = 0.5
         for m in match_expressions:
             if isinstance(m, FusionExpr) and m.method == "weighted_sum" and "weights" in m.fusion_params:
-                assert len(match_expressions) == 3 and isinstance(match_expressions[0], MatchTextExpr) and isinstance(match_expressions[1],
-                                                                                                                      MatchDenseExpr) and isinstance(
-                    match_expressions[2], FusionExpr)
+                assert (
+                    len(match_expressions) == 3
+                    and isinstance(match_expressions[0], MatchTextExpr)
+                    and isinstance(match_expressions[1], MatchDenseExpr)
+                    and isinstance(match_expressions[2], FusionExpr)
+                )
                 weights = m.fusion_params["weights"]
                 vector_similarity_weight = get_float(weights.split(",")[1])
         for m in match_expressions:
@@ -166,24 +172,31 @@ class ESConnection(ESConnectionBase):
                 minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
                 if isinstance(minimum_should_match, float):
                     minimum_should_match = str(int(minimum_should_match * 100)) + "%"
-                bool_query.must.append(Q("query_string", fields=[self.convert_field_name(f) for f in m.fields],
-                                   type="best_fields", query=m.matching_text,
-                                   minimum_should_match=minimum_should_match,
-                                   boost=1))
+                bool_query.must.append(
+                    Q(
+                        "query_string",
+                        fields=[self.convert_field_name(f, use_tokenized_content=True) for f in m.fields],
+                        type="best_fields",
+                        query=m.matching_text,
+                        minimum_should_match=minimum_should_match,
+                        boost=1,
+                    )
+                )
                 bool_query.boost = 1.0 - vector_similarity_weight
 
             elif isinstance(m, MatchDenseExpr):
-                assert (bool_query is not None)
+                assert bool_query is not None
                 similarity = 0.0
                 if "similarity" in m.extra_options:
                     similarity = m.extra_options["similarity"]
-                s = s.knn(self.convert_field_name(m.vector_column_name),
-                          m.topn,
-                          m.topn * 2,
-                          query_vector=list(m.embedding_data),
-                          filter=bool_query.to_dict(),
-                          similarity=similarity,
-                          )
+                s = s.knn(
+                    self.convert_field_name(m.vector_column_name),
+                    m.topn,
+                    m.topn * 2,
+                    query_vector=list(m.embedding_data),
+                    filter=bool_query.to_dict(),
+                    similarity=similarity,
+                )
 
         if bool_query and rank_feature:
             for fld, sc in rank_feature.items():
@@ -202,29 +215,33 @@ class ESConnection(ESConnectionBase):
                 order = "asc" if order == 0 else "desc"
                 if field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
+                elif field == "id":
+                    continue  # id as "text", not a "keyword", order by it will cause error
                 else:
-                    order_info = {"order": order, "unmapped_type": "text"}
+                    order_info = {"order": order, "unmapped_type": "keyword"}
                 orders.append({field: order_info})
             s = s.sort(*orders)
 
         if agg_fields:
             for fld in agg_fields:
-                s.aggs.bucket(f'aggs_{fld}', 'terms', field=fld, size=1000000)
+                s.aggs.bucket(f"aggs_{fld}", "terms", field=fld, size=1000000)
 
         if limit > 0:
-            s = s[offset:offset + limit]
+            s = s[offset : offset + limit]
         q = s.to_dict()
         self.logger.debug(f"ESConnection.search {str(index_names)} query: " + json.dumps(q))
 
         for i in range(ATTEMPT_TIME):
             try:
-                #print(json.dumps(q, ensure_ascii=False))
-                res = self.es.search(index=exist_index_list,
-                                     body=q,
-                                     timeout="600s",
-                                     # search_type="dfs_query_then_fetch",
-                                     track_total_hits=True,
-                                     _source=True)
+                # print(json.dumps(q, ensure_ascii=False))
+                res = self.es.search(
+                    index=exist_index_list,
+                    body=q,
+                    timeout="600s",
+                    # search_type="dfs_query_then_fetch",
+                    track_total_hits=True,
+                    _source=True,
+                )
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
                 self.logger.debug(f"ESConnection.search {str(index_names)} res: " + str(res))
@@ -243,7 +260,7 @@ class ESConnection(ESConnectionBase):
         self.logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
         raise Exception("ESConnection.search timeout.")
 
-    def get_forgotten_messages(self, select_fields: list[str], index_name: str, memory_id: str, limit: int=512):
+    def get_forgotten_messages(self, select_fields: list[str], index_name: str, memory_id: str, limit: int = 512):
         bool_query = Q("bool", must=[])
         bool_query.must.append(Q("exists", field="forget_at"))
         bool_query.filter.append(Q("term", memory_id=memory_id))
@@ -286,11 +303,59 @@ class ESConnection(ESConnectionBase):
         self.logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
         raise Exception("ESConnection.search timeout.")
 
+    def get_missing_field_message(self, select_fields: list[str], index_name: str, memory_id: str, field_name: str, limit: int = 512):
+        if not self.index_exist(index_name):
+            return None
+        bool_query = Q("bool", must=[])
+        bool_query.must.append(Q("term", memory_id=memory_id))
+        bool_query.must_not.append(Q("exists", field=field_name))
+        # from old to new
+        order_by = OrderByExpr()
+        order_by.asc("valid_at")
+        # build search
+        s = Search()
+        s = s.query(bool_query)
+        orders = list()
+        for field, order in order_by.fields:
+            order = "asc" if order == 0 else "desc"
+            if field.endswith("_int") or field.endswith("_flt"):
+                order_info = {"order": order, "unmapped_type": "float"}
+            else:
+                order_info = {"order": order, "unmapped_type": "text"}
+            orders.append({field: order_info})
+        s = s.sort(*orders)
+        s = s[:limit]
+        q = s.to_dict()
+        # search
+        for i in range(ATTEMPT_TIME):
+            try:
+                res = self.es.search(index=index_name, body=q, timeout="600s", track_total_hits=True, _source=True)
+                if str(res.get("timed_out", "")).lower() == "true":
+                    raise Exception("Es Timeout.")
+                self.logger.debug(f"ESConnection.search {str(index_name)} res: " + str(res))
+                return res
+            except ConnectionTimeout:
+                self.logger.exception("ES request timeout")
+                self._connect()
+                continue
+            except NotFoundError as e:
+                self.logger.debug(f"ESConnection.search {str(index_name)} query: " + str(q) + str(e))
+                return None
+            except Exception as e:
+                self.logger.exception(f"ESConnection.search {str(index_name)} query: " + str(q) + str(e))
+                raise e
+
+        self.logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
+        raise Exception("ESConnection.search timeout.")
+
     def get(self, doc_id: str, index_name: str, memory_ids: list[str]) -> dict | None:
         for i in range(ATTEMPT_TIME):
             try:
-                res = self.es.get(index=index_name,
-                                  id=doc_id, source=True, )
+                res = self.es.get(
+                    index=index_name,
+                    id=doc_id,
+                    source=True,
+                )
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
                 message = res["_source"]
@@ -314,15 +379,13 @@ class ESConnection(ESConnectionBase):
             d_copy = self.map_message_to_es_fields(d_copy_raw)
             d_copy["memory_id"] = memory_id
             meta_id = d_copy.pop("id", "")
-            operations.append(
-                {"index": {"_index": index_name, "_id": meta_id}})
+            operations.append({"index": {"_index": index_name, "_id": meta_id}})
             operations.append(d_copy)
         res = []
         for _ in range(ATTEMPT_TIME):
             try:
                 res = []
-                r = self.es.bulk(index=index_name, operations=operations,
-                                 refresh=False, timeout="60s")
+                r = self.es.bulk(index=index_name, operations=operations, refresh=False, timeout="60s")
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
                     return res
 
@@ -345,6 +408,8 @@ class ESConnection(ESConnectionBase):
     def update(self, condition: dict, new_value: dict, index_name: str, memory_id: str) -> bool:
         doc = copy.deepcopy(new_value)
         update_dict = {self.convert_field_name(k): v for k, v in doc.items()}
+        if "content_ltks" in update_dict:
+            update_dict["tokenized_content_ltks"] = fine_grained_tokenize(tokenize(update_dict["content_ltks"]))
         update_dict.pop("id", None)
         condition_dict = {self.convert_field_name(k): v for k, v in condition.items()}
         condition_dict["memory_id"] = memory_id
@@ -356,15 +421,14 @@ class ESConnection(ESConnectionBase):
                     if "feas" != k.split("_")[-1]:
                         continue
                     try:
-                        self.es.update(index=index_name, id=message_id, script=f"ctx._source.remove(\"{k}\");")
+                        self.es.update(index=index_name, id=message_id, script=f'ctx._source.remove("{k}");')
                     except Exception:
                         self.logger.exception(f"ESConnection.update(index={index_name}, id={message_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
                 try:
                     self.es.update(index=index_name, id=message_id, doc=update_dict)
                     return True
                 except Exception as e:
-                    self.logger.exception(
-                        f"ESConnection.update(index={index_name}, id={message_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception: " + str(e))
+                    self.logger.exception(f"ESConnection.update(index={index_name}, id={message_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception: " + str(e))
                     break
             return False
 
@@ -381,8 +445,7 @@ class ESConnection(ESConnectionBase):
             elif isinstance(v, str) or isinstance(v, int):
                 bool_query.filter.append(Q("term", **{k: v}))
             else:
-                raise Exception(
-                    f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
+                raise Exception(f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
         scripts = []
         params = {}
         for k, v in update_dict.items():
@@ -412,11 +475,8 @@ class ESConnection(ESConnectionBase):
                 scripts.append(f"ctx._source.{k}=params.pp_{k};")
                 params[f"pp_{k}"] = json.dumps(v, ensure_ascii=False)
             else:
-                raise Exception(
-                    f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str.")
-        ubq = UpdateByQuery(
-            index=index_name).using(
-            self.es).query(bool_query)
+                raise Exception(f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str.")
+        ubq = UpdateByQuery(index=index_name).using(self.es).query(bool_query)
         ubq = ubq.script(source="".join(scripts), params=params)
         ubq = ubq.params(refresh=True)
         ubq = ubq.params(slices=5)
@@ -468,10 +528,7 @@ class ESConnection(ESConnectionBase):
         self.logger.debug("ESConnection.delete query: " + json.dumps(qry.to_dict()))
         for _ in range(ATTEMPT_TIME):
             try:
-                res = self.es.delete_by_query(
-                    index=index_name,
-                    body=Search().query(qry).to_dict(),
-                    refresh=True)
+                res = self.es.delete_by_query(index=index_name, body=Search().query(qry).to_dict(), refresh=True)
                 return res["deleted"]
             except ConnectionTimeout:
                 self.logger.exception("ES request timeout")

@@ -19,6 +19,7 @@ export const S3Constant = (t: TFunction) => [
     type: FormFieldType.Select,
     required: false,
     options: awsRegionOptions,
+    allowCustomValue: true,
     customValidate: (val: string, formValues: any) => {
       const credentials = formValues?.config?.credentials || {};
       const bucketType = formValues?.config?.bucket_type || 's3';
@@ -143,6 +144,7 @@ export const S3Constant = (t: TFunction) => [
     tooltip: t('setting.S3CompatibleAddressingStyleTip'),
     required: false,
     type: FormFieldType.Select,
+    defaultValue: 'virtual',
     options: [
       { label: 'Virtual Hosted Style', value: 'virtual' },
       { label: 'Path Style', value: 'path' },

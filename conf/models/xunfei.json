@@ -1,0 +1,23 @@
+{
+  "name": "XunFei",
+  "url": {
+    "default": "https://spark-api-open.xf-yun.com"
+  },
+  "url_suffix": {
+    "chat": "v2/chat/completions"
+  },
+  "class": "xunfei",
+  "models": [
+    {
+      "name": "spark-x",
+      "max_tokens": 134144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    }
+  ]
+}

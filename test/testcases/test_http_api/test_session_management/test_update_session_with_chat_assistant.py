@@ -18,7 +18,7 @@ from random import randint
 
 import pytest
 from common import delete_chat_assistants, list_session_with_chat_assistants, update_session_with_chat_assistant
-from configs import INVALID_API_TOKEN, SESSION_WITH_CHAT_NAME_LIMIT
+from configs import INVALID_API_TOKEN, INVALID_ID_32, SESSION_WITH_CHAT_NAME_LIMIT
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -27,12 +27,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -72,8 +68,7 @@ class TestSessionWithChatAssistantUpdate:
     @pytest.mark.parametrize(
         "chat_assistant_id, expected_code, expected_message",
         [
-            ("", 100, "<NotFound '404: Not Found'>"),
-            pytest.param("invalid_chat_assistant_id", 102, "Session does not exist", marks=pytest.mark.skip(reason="issues/")),
+            (INVALID_ID_32, 109, "No authorization."),
         ],
     )
     def test_invalid_chat_assistant_id(self, HttpApiAuth, add_sessions_with_chat_assistant_func, chat_assistant_id, expected_code, expected_message):
@@ -87,7 +82,7 @@ class TestSessionWithChatAssistantUpdate:
         "session_id, expected_code, expected_message",
         [
             ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
-            ("invalid_session_id", 102, "Session does not exist"),
+            ("invalid_session_id", 102, "Session not found!"),
         ],
     )
     def test_invalid_session_id(self, HttpApiAuth, add_sessions_with_chat_assistant_func, session_id, expected_code, expected_message):
@@ -146,5 +141,5 @@ class TestSessionWithChatAssistantUpdate:
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
         delete_chat_assistants(HttpApiAuth, {"ids": [chat_assistant_id]})
         res = update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_ids[0], {"name": "valid_name"})
-        assert res["code"] == 102
-        assert res["message"] == "You do not own the session"
+        assert res["code"] == 109
+        assert res["message"] == "No authorization."

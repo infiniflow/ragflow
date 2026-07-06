@@ -1,8 +1,10 @@
 ---
 sidebar_position: -10
 slug: /configure_knowledge_base
+sidebar_custom_props: {
+  categoryIcon: LucideCog
+}
 ---
-
 # Configure dataset
 
 Most of RAGFlow's chat assistants and Agents are based on datasets. Each of RAGFlow's datasets serves as a knowledge source, *parsing* files uploaded from your local machine and file references generated in RAGFlow's File system into the real 'knowledge' for future AI chats. This guide demonstrates some basic usages of the dataset feature, covering the following topics:
@@ -43,7 +45,7 @@ RAGFlow offers multiple built-in chunking template to facilitate chunking files 
 |--------------|-------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
 | General      | Files are consecutively chunked based on a preset chunk token number.         | MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML |
 | Q&A          | Retrieves relevant information and generates answers to respond to questions. | XLSX, XLS (Excel 97-2003), CSV/TXT                                                                      |
-| Resume       | Enterprise edition only. You can also try it out on demo.ragflow.io.          | DOCX, PDF, TXT                                                                                          |
+| Resume       | Enterprise edition only. You can also try it out on cloud.ragflow.io.          | DOCX, PDF, TXT                                                                                          |
 | Manual       |                                                                               | PDF                                                                                                     |
 | Table        | The table mode uses TSI technology for efficient data parsing.                | XLSX, XLS (Excel 97-2003), CSV/TXT                                                                      |
 | Paper        |                                                                               | PDF                                                                                                     |
@@ -133,7 +135,7 @@ See [Run retrieval test](./run_retrieval_test.md) for details.
 
 ## Search for dataset
 
-As of RAGFlow v0.23.1, the search feature is still in a rudimentary form, supporting only dataset search by name.
+As of RAGFlow v0.26.3, the search feature is still in a rudimentary form, supporting only dataset search by name.
 
 ![search dataset](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/search_datasets.jpg)
 

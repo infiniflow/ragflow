@@ -52,7 +52,7 @@ export const useNavigatePage = () => {
 
   const navigateToDataFile = useCallback(
     (id: string) => () => {
-      navigate(`${Routes.DatasetBase}${Routes.DatasetBase}/${id}`);
+      navigate(`${Routes.DatasetBase}${Routes.Files}/${id}`);
     },
     [navigate],
   );
@@ -91,6 +91,13 @@ export const useNavigatePage = () => {
   const navigateToAgent = useCallback(
     (id: string, category?: AgentCategory) => () => {
       navigate(`${Routes.Agent}/${id}?${AgentQuery.Category}=${category}`);
+    },
+    [navigate],
+  );
+
+  const navigateToAgentExplore = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.Agent}/${id}/explore`);
     },
     [navigate],
   );
@@ -176,7 +183,7 @@ export const useNavigatePage = () => {
 
   const navigateToDataflowResult = useCallback(
     (props: NavigateToDataflowResultProps) => () => {
-      let params: string[] = [];
+      const params: string[] = [];
       Object.keys(props).forEach((key) => {
         if (props[key as keyof typeof props]) {
           params.push(`${key}=${props[key as keyof typeof props]}`);
@@ -189,6 +196,10 @@ export const useNavigatePage = () => {
     },
     [navigate],
   );
+
+  const navigateToModelSetting = useCallback(() => {
+    navigate(`${Routes.UserSetting}${Routes.Model}`);
+  }, [navigate]);
 
   return {
     navigateToDatasetList,
@@ -203,6 +214,7 @@ export const useNavigatePage = () => {
     navigateToChunk,
     navigateToAgents,
     navigateToAgent,
+    navigateToAgentExplore,
     navigateToAgentLogs,
     navigateToAgentTemplates,
     navigateToSearchList,
@@ -215,5 +227,6 @@ export const useNavigatePage = () => {
     navigateToDataSourceDetail,
     navigateToMemory,
     navigateToMemoryList,
+    navigateToModelSetting,
   };
 };

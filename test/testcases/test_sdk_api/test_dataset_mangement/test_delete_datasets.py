@@ -23,12 +23,12 @@ from ragflow_sdk import RAGFlow
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
-            (None, "Authentication error: API key is invalid!"),
-            (INVALID_API_TOKEN, "Authentication error: API key is invalid!"),
+            (None, "<Unauthorized '401: Unauthorized'>"),
+            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_auth_invalid(self, invalid_auth, expected_message):
@@ -79,7 +79,7 @@ class TestDatasetsDelete:
         datasets = client.list_datasets()
         assert len(datasets) == remaining, str(datasets)
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
     def test_ids_empty(self, client):
         payload = {"ids": []}
@@ -88,14 +88,14 @@ class TestDatasetsDelete:
         datasets = client.list_datasets()
         assert len(datasets) == 1, str(datasets)
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.usefixtures("add_datasets_func")
     def test_ids_none(self, client):
         payload = {"ids": None}
         client.delete_datasets(**payload)
 
         datasets = client.list_datasets()
-        assert len(datasets) == 0, str(datasets)
+        assert len(datasets) == 3, str(datasets)
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
@@ -103,7 +103,7 @@ class TestDatasetsDelete:
         payload = {"ids": ["not_uuid"]}
         with pytest.raises(Exception) as exception_info:
             client.delete_datasets(**payload)
-        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
+        assert "Invalid UUID format" in str(exception_info.value), str(exception_info.value)
 
         datasets = client.list_datasets()
         assert len(datasets) == 1, str(datasets)
@@ -114,7 +114,7 @@ class TestDatasetsDelete:
         payload = {"ids": [uuid.uuid4().hex]}
         with pytest.raises(Exception) as exception_info:
             client.delete_datasets(**payload)
-        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
+        assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
@@ -167,7 +167,7 @@ class TestDatasetsDelete:
             client.delete_datasets(**payload)
         assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.usefixtures("add_dataset_func")
     def test_field_unsupported(self, client):
         payload = {"unknown_field": "unknown_field"}

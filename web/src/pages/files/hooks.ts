@@ -1,7 +1,7 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useConnectToKnowledge, useRenameFile } from '@/hooks/use-file-request';
+import { TableRowSelection } from '@/interfaces/antd-compat';
 import { IFile } from '@/interfaces/database/file-manager';
-import { TableRowSelection } from 'antd/es/table/interface';
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 
@@ -82,6 +82,7 @@ export const useHandleConnectToKnowledge = () => {
   const { connectFileToKnowledge: connectToKnowledge, loading } =
     useConnectToKnowledge();
   const [record, setRecord] = useState<IFile>({} as IFile);
+  const [documentIds, setDocumentIds] = useState<string[]>([]);
 
   const initialValue = useMemo(() => {
     return Array.isArray(record?.kbs_info)
@@ -92,7 +93,7 @@ export const useHandleConnectToKnowledge = () => {
   const onConnectToKnowledgeOk = useCallback(
     async (knowledgeIds: string[]) => {
       const ret = await connectToKnowledge({
-        fileIds: [record.id],
+        fileIds: documentIds,
         kbIds: knowledgeIds,
       });
 
@@ -101,12 +102,19 @@ export const useHandleConnectToKnowledge = () => {
       }
       return ret;
     },
-    [connectToKnowledge, hideConnectToKnowledgeModal, record.id],
+    [connectToKnowledge, hideConnectToKnowledgeModal, documentIds],
   );
 
   const handleShowConnectToKnowledgeModal = useCallback(
-    (record: IFile) => {
-      setRecord(record);
+    (documents: IFile | string[]) => {
+      if (Array.isArray(documents)) {
+        setDocumentIds(documents);
+        setRecord({} as IFile);
+      } else {
+        setRecord(documents);
+        setDocumentIds([documents.id]);
+      }
+
       showConnectToKnowledgeModal();
     },
     [showConnectToKnowledgeModal],

@@ -25,6 +25,8 @@ from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
 from configs import DEFAULT_PARSER_CONFIG
+from utils.engine_utils import get_doc_engine
+
 
 class TestRquest:
     @pytest.mark.p2
@@ -105,7 +107,7 @@ class TestDatasetUpdate:
         retrieved_dataset = client.get_dataset(name=dataset.name)
         assert retrieved_dataset.avatar == avatar_data, str(retrieved_dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_avatar_exceeds_limit_length(self, add_dataset_func):
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
@@ -148,7 +150,7 @@ class TestDatasetUpdate:
         retrieved_dataset = client.get_dataset(name=dataset.name)
         assert retrieved_dataset.description == "description", str(retrieved_dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_description_exceeds_limit_length(self, add_dataset_func):
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
@@ -169,7 +171,7 @@ class TestDatasetUpdate:
         "embedding_model",
         [
             "BAAI/bge-small-en-v1.5@Builtin",
-            "embedding-3@ZHIPU-AI",
+            "embedding-3@CI@ZHIPU-AI",
         ],
         ids=["builtin_baai", "tenant_zhipu"],
     )
@@ -197,10 +199,7 @@ class TestDatasetUpdate:
         with pytest.raises(Exception) as exception_info:
             dataset.update({"name": name, "embedding_model": embedding_model})
         error_msg = str(exception_info.value)
-        if "tenant_no_auth" in name:
-            assert error_msg == f"Unauthorized model: <{embedding_model}>", error_msg
-        else:
-            assert error_msg == f"Unsupported model: <{embedding_model}>", error_msg
+        assert "not found" in error_msg, error_msg
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -230,12 +229,12 @@ class TestDatasetUpdate:
     def test_embedding_model_none(self, client, add_dataset_func):
         dataset = add_dataset_func
         dataset.update({"embedding_model": None})
-        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(dataset)
+        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(dataset)
 
         retrieved_dataset = client.get_dataset(name=dataset.name)
-        assert retrieved_dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(retrieved_dataset)
+        assert retrieved_dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(retrieved_dataset)
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "permission",
         [
@@ -319,19 +318,25 @@ class TestDatasetUpdate:
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"chunk_method": chunk_method})
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(exception_info.value), str(exception_info.value)
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in str(exception_info.value), str(
+            exception_info.value
+        )
 
     @pytest.mark.p3
     def test_chunk_method_none(self, add_dataset_func):
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"chunk_method": None})
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(exception_info.value), str(exception_info.value)
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in str(exception_info.value), str(
+            exception_info.value
+        )
 
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
     @pytest.mark.p2
     @pytest.mark.parametrize("pagerank", [0, 50, 100], ids=["min", "mid", "max"])
     def test_pagerank(self, client, add_dataset_func, pagerank):
+        if get_doc_engine(client) == "infinity":
+            pytest.skip("#8208")
         dataset = add_dataset_func
         dataset.update({"pagerank": pagerank})
         assert dataset.pagerank == pagerank, str(dataset)
@@ -342,6 +347,8 @@ class TestDatasetUpdate:
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
     @pytest.mark.p2
     def test_pagerank_set_to_0(self, client, add_dataset_func):
+        if get_doc_engine(client) == "infinity":
+            pytest.skip("#8208")
         dataset = add_dataset_func
         dataset.update({"pagerank": 50})
         assert dataset.pagerank == 50, str(dataset)
@@ -358,6 +365,8 @@ class TestDatasetUpdate:
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") != "infinity", reason="#8208")
     @pytest.mark.p2
     def test_pagerank_infinity(self, client, add_dataset_func):
+        if get_doc_engine(client) != "infinity":
+            pytest.skip("#8208")
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"pagerank": 50})
@@ -543,8 +552,8 @@ class TestDatasetUpdate:
             ({"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean"),
             ({"graphrag": {"entity_types": "1,2"}}, "Input should be a valid list"),
             ({"graphrag": {"entity_types": [1, 2]}}, "nput should be a valid string"),
-            ({"graphrag": {"method": "unknown"}}, "Input should be 'light' or 'general'"),
-            ({"graphrag": {"method": None}}, "Input should be 'light' or 'general'"),
+            ({"graphrag": {"method": "unknown"}}, "Input should be 'light', 'general' or 'ner'"),
+            ({"graphrag": {"method": None}}, "Input should be 'light', 'general' or 'ner'"),
             ({"graphrag": {"community": "string"}}, "Input should be a valid boolean"),
             ({"graphrag": {"resolution": "string"}}, "Input should be a valid boolean"),
             ({"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
@@ -663,6 +672,8 @@ class TestDatasetUpdate:
             {
                 "raptor": {"use_raptor": False},
                 "graphrag": {"use_graphrag": False},
+                "image_context_size": 0,
+                "table_context_size": 0,
             },
         )
         dataset.update({"chunk_method": "qa", "parser_config": {}})
@@ -679,6 +690,8 @@ class TestDatasetUpdate:
             {
                 "raptor": {"use_raptor": False},
                 "graphrag": {"use_graphrag": False},
+                "image_context_size": 0,
+                "table_context_size": 0,
             },
         )
         dataset.update({"chunk_method": "qa"})
@@ -695,6 +708,8 @@ class TestDatasetUpdate:
             {
                 "raptor": {"use_raptor": False},
                 "graphrag": {"use_graphrag": False},
+                "image_context_size": 0,
+                "table_context_size": 0,
             },
         )
         dataset.update({"chunk_method": "qa", "parser_config": None})

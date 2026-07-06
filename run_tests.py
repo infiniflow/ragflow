@@ -24,11 +24,12 @@ from typing import List
 
 class Colors:
     """ANSI color codes for terminal output"""
-    RED = '\033[0;31m'
-    GREEN = '\033[0;32m'
-    YELLOW = '\033[1;33m'
-    BLUE = '\033[0;34m'
-    NC = '\033[0m'  # No Color
+
+    RED = "\033[0;31m"
+    GREEN = "\033[0;32m"
+    YELLOW = "\033[1;33m"
+    BLUE = "\033[0;34m"
+    NC = "\033[0m"  # No Color
 
 
 class TestRunner:
@@ -36,12 +37,15 @@ class TestRunner:
 
     def __init__(self):
         self.project_root = Path(__file__).parent.resolve()
-        self.ut_dir = Path(self.project_root / 'test' / 'unit_test')
+        self.ut_dir = Path(self.project_root / "test" / "unit_test")
         # Default options
         self.coverage = False
         self.parallel = False
         self.verbose = False
+        self.ignore_syntax_warning = False
         self.markers = ""
+        self.test_path = ""
+        self.keyword = ""
 
         # Python interpreter path
         self.python = sys.executable
@@ -67,6 +71,7 @@ OPTIONS:
     -h, --help              Show this help message
     -c, --coverage          Run tests with coverage report
     -p, --parallel          Run tests in parallel (requires pytest-xdist)
+    -i, --ignore            Run tests with "-W ignore::SyntaxWarning" option
     -v, --verbose           Verbose output
     -t, --test FILE         Run specific test file or directory
     -m, --markers MARKERS   Run tests with specific markers (e.g., "unit", "integration")
@@ -80,6 +85,9 @@ EXAMPLES:
 
     # Run in parallel
     python run_tests.py --parallel
+
+    # Run tests with "-W ignore::SyntaxWarning" option
+    python run_tests.py --ignore
 
     # Run specific test file
     python run_tests.py --test services/test_dialog_service.py
@@ -95,13 +103,20 @@ EXAMPLES:
 
     def build_pytest_command(self) -> List[str]:
         """Build the pytest command arguments"""
-        cmd = ["pytest", str(self.ut_dir)]
-
-        # Add test path
+        cmd = ["pytest"]
+        if self.test_path:
+            test_target = Path(self.test_path)
+            if not test_target.is_absolute():
+                test_target = self.project_root / test_target
+            cmd.append(str(test_target))
+        else:
+            cmd.append(str(self.ut_dir))
 
         # Add markers
         if self.markers:
             cmd.extend(["-m", self.markers])
+        if self.keyword:
+            cmd.extend(["-k", self.keyword])
 
         # Add verbose flag
         if self.verbose:
@@ -113,22 +128,23 @@ EXAMPLES:
         if self.coverage:
             # Relative path from test directory to source code
             source_path = str(self.project_root / "common")
-            cmd.extend([
-                "--cov", source_path,
-                "--cov-report", "html",
-                "--cov-report", "term"
-            ])
+            cmd.extend(["--cov", source_path, "--cov-report", "html", "--cov-report", "term"])
 
         # Add parallel execution
         if self.parallel:
             # Try to get number of CPU cores
             try:
                 import multiprocessing
+
                 cpu_count = multiprocessing.cpu_count()
                 cmd.extend(["-n", str(cpu_count)])
             except ImportError:
                 # Fallback to auto if multiprocessing not available
                 cmd.extend(["-n", "auto"])
+
+        # Add ignore syntax warning
+        if self.ignore_syntax_warning:
+            cmd.extend(["-W", "ignore::SyntaxWarning"])
 
         # Add default options from pyproject.toml if it exists
         pyproject_path = self.project_root / "pyproject.toml"
@@ -152,9 +168,13 @@ EXAMPLES:
         self.print_info(f"Coverage: {self.coverage}")
         self.print_info(f"Parallel: {self.parallel}")
         self.print_info(f"Verbose: {self.verbose}")
+        if self.test_path:
+            self.print_info(f"Test target: {self.test_path}")
 
         if self.markers:
             self.print_info(f"Markers: {self.markers}")
+        if self.keyword:
+            self.print_info(f"Keyword: {self.keyword}")
 
         print(f"\n{Colors.BLUE}[EXECUTING]{Colors.NC} {' '.join(cmd)}\n")
 
@@ -200,40 +220,23 @@ Examples:
   python run_tests.py --parallel         # Run in parallel
   python run_tests.py --test services/test_dialog_service.py  # Run specific test
   python run_tests.py --markers "unit"   # Run only unit tests
-"""
+  python run_tests.py --ignore           # Run with "-W ignore::SyntaxWarning" option
+""",
         )
 
-        parser.add_argument(
-            "-c", "--coverage",
-            action="store_true",
-            help="Run tests with coverage report"
-        )
+        parser.add_argument("-c", "--coverage", action="store_true", help="Run tests with coverage report")
 
-        parser.add_argument(
-            "-p", "--parallel",
-            action="store_true",
-            help="Run tests in parallel (requires pytest-xdist)"
-        )
+        parser.add_argument("-p", "--parallel", action="store_true", help="Run tests in parallel (requires pytest-xdist)")
 
-        parser.add_argument(
-            "-v", "--verbose",
-            action="store_true",
-            help="Verbose output"
-        )
+        parser.add_argument("-i", "--ignore", action="store_true", help="Run tests with '-W ignore::SyntaxWarning' ")
 
-        parser.add_argument(
-            "-t", "--test",
-            type=str,
-            default="",
-            help="Run specific test file or directory"
-        )
+        parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
-        parser.add_argument(
-            "-m", "--markers",
-            type=str,
-            default="",
-            help="Run tests with specific markers (e.g., 'unit', 'integration')"
-        )
+        parser.add_argument("-t", "--test", type=str, default="", help="Run specific test file or directory")
+
+        parser.add_argument("-k", "--keyword", type=str, default="", help="Run tests matching keyword expression (pytest -k)")
+
+        parser.add_argument("-m", "--markers", type=str, default="", help="Run tests with specific markers (e.g., 'unit', 'integration')")
 
         try:
             args = parser.parse_args()
@@ -243,6 +246,9 @@ Examples:
             self.parallel = args.parallel
             self.verbose = args.verbose
             self.markers = args.markers
+            self.ignore_syntax_warning = args.ignore
+            self.test_path = args.test
+            self.keyword = args.keyword
 
             return True
 

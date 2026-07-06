@@ -10,7 +10,6 @@ import {
 import { MultiSelect } from '@/components/ui/multi-select';
 import { FormLayout } from '@/constants/form';
 import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
-import { Form, Select, Space } from 'antd';
 import DOMPurify from 'dompurify';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -22,18 +21,16 @@ export const TagSetItem = () => {
   const { list: knowledgeList } = useFetchKnowledgeList(true);
 
   const knowledgeOptions = knowledgeList
-    .filter((x) => x.parser_id === 'tag')
+    .filter((x) => x.chunk_method === 'tag')
     .map((x) => ({
       label: x.name,
       value: x.id,
       icon: () => (
-        <Space>
-          <RAGFlowAvatar
-            name={x.name}
-            avatar={x.avatar}
-            className="size-4"
-          ></RAGFlowAvatar>
-        </Space>
+        <RAGFlowAvatar
+          name={x.name}
+          avatar={x.avatar}
+          className="size-4"
+        ></RAGFlowAvatar>
       ),
     }));
 
@@ -63,7 +60,7 @@ export const TagSetItem = () => {
                 <MultiSelect
                   options={knowledgeOptions}
                   onValueChange={field.onChange}
-                  placeholder={t('chat.knowledgeBasesMessage')}
+                  // placeholder={t('chat.knowledgeBasesMessage')}
                   variant="inverted"
                   maxCount={10}
                   {...field}
@@ -78,32 +75,6 @@ export const TagSetItem = () => {
         </FormItem>
       )}
     />
-  );
-
-  return (
-    <Form.Item
-      label={t('knowledgeConfiguration.tagSet')}
-      name={['parser_config', 'tag_kb_ids']}
-      tooltip={
-        <div
-          dangerouslySetInnerHTML={{
-            __html: DOMPurify.sanitize(t('knowledgeConfiguration.tagSetTip')),
-          }}
-        ></div>
-      }
-      rules={[
-        {
-          message: t('chat.knowledgeBasesMessage'),
-          type: 'array',
-        },
-      ]}
-    >
-      <Select
-        mode="multiple"
-        options={knowledgeOptions}
-        placeholder={t('chat.knowledgeBasesMessage')}
-      ></Select>
-    </Form.Item>
   );
 };
 
