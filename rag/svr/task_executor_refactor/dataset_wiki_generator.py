@@ -34,9 +34,8 @@ Design notes:
   module decoupled from ``TaskHandler``'s streaming chunk loader.
 * The eligibility loop resolves each doc's
   ``parser_config.compilation_template_group_id`` to a template list
-  via ``CompilationTemplateGroupService.resolve_template_ids``. That
-  helper is duplicated as a small private function here so the module
-  stays free of a task_handler import (which would be circular).
+  via the shared parser-config helper and
+  ``CompilationTemplateGroupService.resolve_template_ids``.
 * The persistence helpers (``persist_wiki_pages_to_es`` etc.) are
   exposed at module level for testing but are only called from
   :func:`run_wiki` in production.
@@ -89,38 +88,25 @@ WIKI_REGEN_COMMIT_COMMENTS_TEMPLATE = "Auto-update via run_wiki (action={action}
 # ----- helpers -------------------------------------------------------
 
 
-def _parser_config_compilation_template_group_id(parser_config) -> str:
-    """Read the single template-group id from a doc's ``parser_config``.
-
-    Duplicated from ``task_handler`` so this module doesn't import from
-    it (avoids a circular import — ``task_handler`` imports this module
-    from its ``task_type == "artifact"`` dispatch branch).
-    """
-    if not isinstance(parser_config, dict):
-        return ""
-    gid = parser_config.get("compilation_template_group_id")
-    if isinstance(gid, str) and gid.strip():
-        return gid.strip()
-    ext = parser_config.get("ext")
-    if isinstance(ext, dict):
-        gid = ext.get("compilation_template_group_id")
-        if isinstance(gid, str) and gid.strip():
-            return gid.strip()
-    return ""
-
-
 def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> list[str]:
-    """Resolve a doc's ``parser_config`` to its compile-template ids by
-    looking up the configured group. Returns ``[]`` if the doc has no
-    group set or the group cannot be resolved."""
+    """Resolve a doc's ``parser_config`` to compile-template ids by
+    looking up configured groups. Returns ``[]`` if no group resolves."""
+    from rag.svr.task_executor_refactor.chunk_post_processor import (
+        _parser_config_compilation_template_group_ids,
+    )
     from api.db.services.compilation_template_group_service import (
         CompilationTemplateGroupService,
     )
 
-    group_id = _parser_config_compilation_template_group_id(parser_config)
-    if not group_id:
-        return []
-    return CompilationTemplateGroupService.resolve_template_ids(group_id, tenant_id)
+    template_ids: list[str] = []
+    seen: set[str] = set()
+    for group_id in _parser_config_compilation_template_group_ids(parser_config):
+        for template_id in CompilationTemplateGroupService.resolve_template_ids(group_id, tenant_id):
+            if template_id in seen:
+                continue
+            seen.add(template_id)
+            template_ids.append(template_id)
+    return template_ids
 
 
 # ----- persistence ---------------------------------------------------
