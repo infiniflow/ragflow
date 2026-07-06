@@ -40,6 +40,7 @@ import (
 	"github.com/google/uuid"
 
 	iow "ragflow/internal/agent/component/io"
+	"ragflow/internal/utility"
 )
 
 const componentNameDocsGenerator = "DocsGenerator"
@@ -272,15 +273,21 @@ func (d *DocsGenerator) Invoke(ctx context.Context, inputs map[string]any) (map[
 	docID := uuid.New().String()
 	size := len(payload)
 	downloadStub := fmt.Sprintf("inline://docs/%s/%s", docID, safeName)
+	// ext from formatExtension includes a leading dot (".pdf"); strip it
+	// so the preview URL has ?ext=pdf rather than ?ext=.pdf, matching the
+	// Python branch which passes the raw output_format string.
+	extWithoutDot := strings.TrimPrefix(ext, ".")
+	previewURL := utility.AgentAttachmentPreviewPath(docID, extWithoutDot, mime)
 
 	return map[string]any{
-		"doc_id":    docID,
-		"filename":  safeName,
-		"mime_type": mime,
-		"size":      size,
-		"bytes":     payload,
-		"download":  downloadStub,
-		"created":   time.Now().UTC().Format(time.RFC3339),
+		"doc_id":      docID,
+		"filename":    safeName,
+		"mime_type":   mime,
+		"size":        size,
+		"bytes":       payload,
+		"download":    downloadStub,
+		"preview_url": previewURL,
+		"created":     time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
 
@@ -308,13 +315,14 @@ func (d *DocsGenerator) Inputs() map[string]string {
 // Outputs returns the response surface.
 func (d *DocsGenerator) Outputs() map[string]string {
 	return map[string]string{
-		"doc_id":    "Generated document id (UUID).",
-		"filename":  "Sanitized filename (extension matches output_format).",
-		"mime_type": "MIME type for the payload.",
-		"size":      "Payload size in bytes.",
-		"bytes":     "Raw document bytes (for storage upload).",
-		"download":  "Stub URI the canvas engine can resolve to a signed URL.",
-		"created":   "RFC3339 timestamp of the generation.",
+		"doc_id":      "Generated document id (UUID).",
+		"filename":    "Sanitized filename (extension matches output_format).",
+		"mime_type":   "MIME type for the payload.",
+		"size":        "Payload size in bytes.",
+		"bytes":       "Raw document bytes (for storage upload).",
+		"download":    "Stub URI the canvas engine can resolve to a signed URL.",
+		"preview_url": "URL path for inline preview of the generated document.",
+		"created":     "RFC3339 timestamp of the generation.",
 	}
 }
 

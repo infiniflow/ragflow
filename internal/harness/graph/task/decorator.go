@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/graph"
 	"ragflow/internal/harness/graph/types"
 )
@@ -238,8 +239,8 @@ type Entrypoint struct {
 	checkpointer  interface{}
 	store         interface{}
 	configurable  map[string]interface{}
-	graph         *graph.StateGraph
-	compiledGraph *graph.CompiledGraph
+	graph         types.StateGraph
+	compiledGraph types.CompiledGraph
 	compileOnce   sync.Once
 	compileErr    error
 }
@@ -285,7 +286,7 @@ func WithEntrypointConfigurable(configurable map[string]interface{}) EntrypointO
 }
 
 // WithEntrypointGraph sets the graph for the entrypoint.
-func WithEntrypointGraph(g *graph.StateGraph) EntrypointOption {
+func WithEntrypointGraph(g types.StateGraph) EntrypointOption {
 	return func(e *Entrypoint) {
 		e.graph = g
 	}
@@ -331,8 +332,8 @@ func (e *Entrypoint) Compile(ctx context.Context) error {
 		}
 
 		// Collect compile options from the checkpointer if set
-		var opts []graph.CompileOption
-		if cp, ok := e.checkpointer.(graph.Checkpointer); ok {
+		var opts []interface{}
+		if cp, ok := e.checkpointer.(checkpoint.BaseCheckpointer); ok {
 			opts = append(opts, graph.WithCheckpointer(cp))
 		}
 

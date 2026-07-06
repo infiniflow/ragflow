@@ -29,7 +29,7 @@ import (
 type Factory func(params map[string]any) (einotool.BaseTool, error)
 
 var registry = map[string]Factory{
-	"akshare":           noConfig("akshare", func() einotool.BaseTool { return NewAkShareTool() }),
+	"akshare":           buildAkShareTool,
 	"arxiv":             noConfig("arxiv", func() einotool.BaseTool { return NewArxivTool() }),
 	"bgpt":              noConfig("bgpt", func() einotool.BaseTool { return NewBGPTTool() }),
 	"code_exec":         noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
@@ -53,6 +53,7 @@ var registry = map[string]Factory{
 	"tavily":            noConfig("tavily", func() einotool.BaseTool { return NewTavilyTool() }),
 	"tushare":           noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
 	"wencai":            noConfig("wencai", func() einotool.BaseTool { return NewWencaiTool() }),
+	"web_crawler":       noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
 	"wikipedia":         noConfig("wikipedia", func() einotool.BaseTool { return NewWikipediaTool() }),
 	"yahoo_finance":     noConfig("yahoo_finance", func() einotool.BaseTool { return NewYahooFinanceTool() }),
 }
@@ -104,6 +105,24 @@ func BuildAll(names []string, perToolParams map[string]map[string]any) ([]einoto
 		tools = append(tools, t)
 	}
 	return tools, nil
+}
+
+func buildAkShareTool(params map[string]any) (einotool.BaseTool, error) {
+	topN := defaultAkShareTopN
+	if len(params) != 0 {
+		for key := range params {
+			if key != "top_n" {
+				return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param top_n", "akshare")
+			}
+		}
+		if v, ok := intParam(params, "top_n"); ok {
+			topN = v
+		}
+		if topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "akshare")
+		}
+	}
+	return NewAkShareToolWithTopN(nil, topN), nil
 }
 
 func buildExeSQLTool(params map[string]any) (einotool.BaseTool, error) {

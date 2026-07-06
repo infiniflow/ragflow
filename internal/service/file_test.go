@@ -11,6 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
@@ -23,6 +26,7 @@ type fakeStorage struct {
 	blob       []byte
 	err        error
 	exists     bool
+	getCalls   int
 }
 
 func testFileService() *FileService {
@@ -46,6 +50,7 @@ func (f *fakeStorage) Put(bucket, fnm string, binary []byte, tenantID ...string)
 }
 
 func (f *fakeStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
+	f.getCalls++
 	f.lastBucket = bucket
 	f.lastFnm = fnm
 	return f.blob, f.err
@@ -77,6 +82,145 @@ func (f *fakeStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool
 
 func (f *fakeStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
 	panic("not implemented in fakeStorage")
+}
+
+func setupFileContentPermissionDB(t *testing.T, accessible bool) {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+		TranslateError: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.Document{},
+		&entity.Knowledgebase{},
+		&entity.Tenant{},
+		&entity.UserTenant{},
+	); err != nil {
+		t.Fatalf("failed to migrate file content tables: %v", err)
+	}
+
+	location := "doc.txt"
+	if err := db.Create(&entity.File{
+		ID:       "file-1",
+		ParentID: "bucket-1",
+		TenantID: "owner-user",
+		Name:     "doc.txt",
+		Location: &location,
+		Type:     "file",
+	}).Error; err != nil {
+		t.Fatalf("insert file: %v", err)
+	}
+	if err := db.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-owner",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		Status:       sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert document: %v", err)
+	}
+	fileID := "file-1"
+	docID := "doc-1"
+	if err := db.Create(&entity.File2Document{
+		ID:         "f2d-1",
+		FileID:     &fileID,
+		DocumentID: &docID,
+	}).Error; err != nil {
+		t.Fatalf("insert file2document: %v", err)
+	}
+	if err := db.Create(&entity.Knowledgebase{
+		ID:         "kb-owner",
+		TenantID:   "tenant-owner",
+		Name:       "owner-kb",
+		EmbdID:     "embd-1",
+		CreatedBy:  "owner-user",
+		Permission: string(entity.TenantPermissionTeam),
+		Status:     sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert knowledgebase: %v", err)
+	}
+	if err := db.Create(&entity.Tenant{
+		ID:     "tenant-owner",
+		LLMID:  "llm-1",
+		EmbdID: "embd-1",
+		ASRID:  "asr-1",
+		Status: sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert tenant: %v", err)
+	}
+	if accessible {
+		if err := db.Create(&entity.UserTenant{
+			ID:       "ut-user-1",
+			UserID:   "user-1",
+			TenantID: "tenant-owner",
+			Role:     "normal",
+			Status:   sptr(string(entity.StatusValid)),
+		}).Error; err != nil {
+			t.Fatalf("insert user_tenant: %v", err)
+		}
+	}
+
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+}
+
+func TestFileService_GetFileContents_NotAccessible(t *testing.T) {
+	setupFileContentPermissionDB(t, false)
+
+	mockStorage := &fakeStorage{blob: []byte("secret")}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	svc := testFileService()
+	texts, images, err := svc.GetFileContents("user-1", []map[string]interface{}{{"id": "file-1"}}, false)
+	if err == nil {
+		t.Fatal("expected authorization error")
+	}
+	if err.Error() != "No authorization." {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(texts) != 0 || len(images) != 0 {
+		t.Fatalf("expected no content, got texts=%v images=%v", texts, images)
+	}
+	if mockStorage.getCalls != 0 {
+		t.Fatalf("storage should not be read without permission, got %d calls", mockStorage.getCalls)
+	}
+}
+
+func TestFileService_GetFileContents_Accessible(t *testing.T) {
+	setupFileContentPermissionDB(t, true)
+
+	mockStorage := &fakeStorage{blob: []byte("allowed content")}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	svc := testFileService()
+	texts, images, err := svc.GetFileContents("user-1", []map[string]interface{}{{"id": "file-1"}}, false)
+	if err != nil {
+		t.Fatalf("GetFileContents failed: %v", err)
+	}
+	if len(images) != 0 {
+		t.Fatalf("expected no images, got %v", images)
+	}
+	if len(texts) != 1 || !strings.Contains(texts[0], "allowed content") {
+		t.Fatalf("unexpected texts: %v", texts)
+	}
+	if mockStorage.getCalls != 1 {
+		t.Fatalf("storage get calls = %d, want 1", mockStorage.getCalls)
+	}
+	if mockStorage.lastBucket != "bucket-1" || mockStorage.lastFnm != "doc.txt" {
+		t.Fatalf("storage read %s/%s, want bucket-1/doc.txt", mockStorage.lastBucket, mockStorage.lastFnm)
+	}
 }
 
 func TestFileService_DownloadAgentFile_Success(t *testing.T) {
