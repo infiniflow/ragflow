@@ -83,3 +83,11 @@ func ResponseWithCodeData(c *gin.Context, code ErrorCode, data interface{}, mess
 		Message: message,
 	})
 }
+
+func ResponseWithHttpCodeData(c *gin.Context, httpCode int, code ErrorCode, data interface{}, message string) {
+	c.JSON(httpCode, response{
+		Code:    int(code),
+		Data:    data,
+		Message: message,
+	})
+}

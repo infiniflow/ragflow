@@ -18,6 +18,7 @@ package handler
 
 import (
 	"fmt"
+	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/server/local"
@@ -127,7 +128,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader("Authorization")
 		if token == "" {
-			common.ErrorWithCode(c, 401, "Missing Authorization header")
+			common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, 401, nil, "Missing Authorization header")
 			c.Abort()
 			return
 		}
