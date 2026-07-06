@@ -696,6 +696,28 @@ func (h *Handler) ListVariables(c *gin.Context) {
 	success(c, variable, "")
 }
 
+// ShowVariable handle show variable
+func (h *Handler) ShowVariable(c *gin.Context) {
+	encodedVarName := c.Param("var_name")
+	varName, err := common.DecodeFromBase64(encodedVarName)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+	if varName == "" {
+		errorResponse(c, "Var name is required", 400)
+		return
+	}
+
+	variable, err := h.service.GetVariable(varName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, variable, "")
+}
+
 // SetVariableHTTPRequest set variable request
 type SetVariableHTTPRequest struct {
 	VarName  string `json:"var_name" binding:"required"`
@@ -957,7 +979,7 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 // GetLogLevel returns the current log level
 func (h *Handler) GetLogLevel(c *gin.Context) {
 	level := common.GetLevel()
-	success(c, gin.H{"level": level}, "")
+	success(c, gin.H{"level": level}, "SUCCESS")
 }
 
 // SetLogLevelRequest set log level request
@@ -978,7 +1000,7 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 		return
 	}
 
-	success(c, gin.H{"level": req.Level}, "Log level updated successfully")
+	success(c, gin.H{"level": req.Level}, "SUCCESS")
 }
 
 func (h *Handler) ListMessagesFromQueue(c *gin.Context) {
@@ -1271,4 +1293,61 @@ func (h *Handler) Reports(c *gin.Context) {
 	}
 
 	responseWithCode(c, message, http.StatusOK, errCode)
+}
+
+func (h *Handler) ListAllModels(c *gin.Context) {
+
+	page := 0
+	if v := c.Query("page"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	pageSize := 0
+	if v := c.Query("page_size"); v != "" {
+		if ps, err := strconv.Atoi(v); err == nil && ps > 0 {
+			pageSize = ps
+		}
+	}
+
+	// List models
+	models, err := h.service.ListAllModels(page, pageSize)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, models, "")
+}
+
+func (h *Handler) ShowModel(c *gin.Context) {
+	encodedModelName := c.Param("model_name")
+	if encodedModelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Encoded model name is empty",
+		})
+		return
+	}
+
+	decodedModelName, err := common.DecodeFromBase64(encodedModelName)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+	if decodedModelName == "" {
+		errorResponse(c, "Decoded model name is empty", 400)
+		return
+	}
+
+	// Get model
+	model, err := h.service.GetModelByModelName(decodedModelName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, model, "")
+
 }

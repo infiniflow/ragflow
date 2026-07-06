@@ -47,8 +47,7 @@ func withCancelClient(t *testing.T) *miniredis.Miniredis {
 
 func TestWatchCancel_FiresAfterRequest(t *testing.T) {
 	withCancelClient(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	taskID := "task_test_1"
 	fired := atomic.Bool{}

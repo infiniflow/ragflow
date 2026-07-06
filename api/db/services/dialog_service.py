@@ -42,7 +42,7 @@ from api.utils.reference_metadata_utils import (
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_model_type_by_name
 from common.time_utils import current_timestamp, datetime_format
 from common.text_utils import normalize_arabic_digits
-from rag.graphrag.general.mind_map_extractor import MindMapExtractor
+from rag.advanced_rag.knowlege_compile.mind_map_extractor import MindMapExtractor
 from rag.advanced_rag import DeepResearcher
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
@@ -52,6 +52,7 @@ from rag.utils.tavily_conn import Tavily
 from rag.utils.tts_cache import synthesize_with_cache
 from common.string_utils import remove_redundant_spaces
 from common import settings
+
 
 def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
     if len(kb_ids or []) == 1:
@@ -105,6 +106,7 @@ async def _hydrate_chunk_vectors(retriever, chunks, tenant_ids, kb_ids):
         if cid and cid in vectors:
             ck["vector"] = vectors[cid]
 
+
 def _normalize_internet_flag(value):
     if isinstance(value, bool):
         return value
@@ -132,7 +134,6 @@ def _resolve_reference_metadata(config, request_payload=None):
 
 def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
     enrich_chunks_with_document_metadata(chunks, metadata_fields)
-
 
 
 class DialogService(CommonService):
@@ -287,24 +288,27 @@ class DialogService(CommonService):
 
 
 async def async_chat_solo(dialog, messages, stream=True, session_id=None):
-    llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
     attachments = ""
     image_attachments = []
     image_files = []
-    if "files" in messages[-1]:
-        if "chat" in llm_types:
-            text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
-        else:
-            text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
-        attachments = "\n\n".join(text_attachments)
 
     if dialog.llm_id:
-        model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+        if "chat" in llm_types:
+            model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        else:
+            model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
     chat_mdl = LLMBundle(dialog.tenant_id, model_config, langfuse_session_id=session_id)
     factory = model_config.get("llm_factory", "") if model_config else ""
+    if "files" in messages[-1]:
+        if model_config["model_type"] == "chat":
+            text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
+        else:
+            text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
+        attachments = "\n\n".join(text_attachments)
 
     prompt_config = dialog.prompt_config
     tts_mdl = None
@@ -314,10 +318,10 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"]
     if attachments and msg:
         msg[-1]["content"] += attachments
-    if "chat" in llm_types and image_attachments:
+    if model_config["model_type"] == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
     if stream:
-        if "chat" in llm_types:
+        if model_config["model_type"] == "chat":
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
@@ -328,7 +332,7 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
                 continue
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
     else:
-        if "chat" in llm_types:
+        if model_config["model_type"] == "chat":
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
@@ -552,15 +556,15 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     chat_start_ts = timer()
     if dialog.llm_id:
         llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
-        if "image2text" in llm_types:
-            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
-        else:
+        if "chat" in llm_types:
             llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        else:
+            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         llm_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
     factory = llm_model_config.get("llm_factory", "") if llm_model_config else ""
-    max_tokens = llm_model_config.get("max_tokens", 8192)
+    max_tokens = llm_model_config.get("max_tokens") or 8192
 
     check_llm_ts = timer()
 
@@ -616,8 +620,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             if include_reference_metadata and ans.get("reference", {}).get("chunks"):
                 if len(dialog.kb_ids) != 1 and any(not c.get("kb_id") for c in ans["reference"]["chunks"]):
                     logging.warning(
-                        "Skipping some _enrich_chunks_with_document_metadata results because "
-                        "dialog.kb_ids has %d entries and use_sql returned chunks without kb_id.",
+                        "Skipping some _enrich_chunks_with_document_metadata results because dialog.kb_ids has %d entries and use_sql returned chunks without kb_id.",
                         len(dialog.kb_ids),
                     )
                 _enrich_chunks_with_document_metadata(ans["reference"]["chunks"], metadata_fields)
@@ -678,8 +681,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 prompt_config,
                 partial(
                     retriever.retrieval,
-                    embd_mdl=embd_mdl,
-                    tenant_ids=tenant_ids,
+                    embd_mdl = embd_mdl,
+                    tenant_ids = tenant_ids,
                     kb_ids=dialog.kb_ids,
                     page=1,
                     page_size=dialog.top_n,
@@ -738,7 +741,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
             if prompt_config.get("use_kg"):
                 default_chat_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
-                ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, default_chat_model, trace_context=trace_context, langfuse_session_id=session_id))
+                ck = await settings.kg_retriever.retrieval(
+                    " ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, default_chat_model, trace_context=trace_context, langfuse_session_id=session_id)
+                )
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
@@ -756,6 +761,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     retrieval_ts = timer()
     if not knowledges and prompt_config.get("empty_response"):
         empty_res = prompt_config["empty_response"]
+        yield {"answer": empty_res, "reference": {}, "prompt": "", "audio_binary": None, "final": False}
         yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res), "final": True}
         return
 
@@ -764,6 +770,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     knowledge_text = "\n\n------\n\n".join(knowledges)
     if knowledge_text:
         kwargs["knowledge"] = "\n------\n" + knowledge_text
+    else:
+        kwargs.setdefault("knowledge", "")
     gen_conf = dialog.llm_setting
 
     system_content = prompt_config["system"].format(**kwargs) + attachments_
@@ -1304,7 +1312,7 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
     # compose Markdown table
     columns = "|" + "|".join([map_column_name(tbl["columns"][i]["name"]) for i in column_idx]) + ("|Source|" if docid_idx and doc_name_idx else "|")
 
-    line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and docid_idx else "")
+    line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and doc_name_idx else "")
 
     # Build rows ensuring column names match values - create a dict for each row
     # keyed by column name to handle any SQL column order
@@ -1662,8 +1670,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     except TypeError:
         full_text_weight = None
     logger.debug(
-        "Search async_ask retrieval weight: search_id=%s tenant_id=%s kb_count=%s "
-        "vector_similarity_weight=%s full_text_weight=%s",
+        "Search async_ask retrieval weight: search_id=%s tenant_id=%s kb_count=%s vector_similarity_weight=%s full_text_weight=%s",
         search_id,
         tenant_id,
         len(kb_ids),

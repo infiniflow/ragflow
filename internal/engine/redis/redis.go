@@ -989,6 +989,38 @@ func (r *RedisClient) GetClient() *redis.Client {
 	return r.client
 }
 
+// EvalTokenBucketStrict is the fail-closed counterpart to TokenBucket.Allow.
+// It surfaces Lua errors and the uninitialised-Redis case to the caller so
+// security gates (e.g. webhook rate limiter) can deny on transport failure
+// rather than silently passing traffic. The existing TokenBucket.Allow
+// silently fails-open and is reserved for the chat driver path where
+// transient Redis outages should not block traffic.
+//
+// Cost is fixed at 1.0; callers wanting variable cost should compose their
+// own Lua. ctx is used for both the EVALSHA round-trip and the deadline.
+func (r *RedisClient) EvalTokenBucketStrict(
+	ctx context.Context, key string, capacity, rate float64,
+) (allowed bool, err error) {
+	if r == nil || r.client == nil {
+		return false, fmt.Errorf("redis: not initialised")
+	}
+	now := float64(time.Now().Unix())
+	res, err := r.luaTokenBucket.Run(ctx, r.client, []string{key},
+		capacity, rate, now, 1.0).Result()
+	if err != nil {
+		return false, fmt.Errorf("token bucket: %w", err)
+	}
+	values, ok := res.([]interface{})
+	if !ok || len(values) < 1 {
+		return false, fmt.Errorf("token bucket: malformed reply")
+	}
+	allowedI, ok := values[0].(int64)
+	if !ok {
+		return false, fmt.Errorf("token bucket: malformed reply")
+	}
+	return allowedI == 1, nil
+}
+
 // RandomSleep sleeps for random duration between min and max milliseconds
 func RandomSleep(minMs, maxMs int) {
 	duration := time.Duration(rand.Intn(maxMs-minMs)+minMs) * time.Millisecond

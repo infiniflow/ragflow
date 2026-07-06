@@ -32,10 +32,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/elastic/go-elasticsearch/v8/esapi"
-	"github.com/json-iterator/go"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
+
+	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"github.com/json-iterator/go"
 
 	"go.uber.org/zap"
 )
@@ -43,6 +44,8 @@ import (
 var jsonIterator = jsoniter.Config{
 	SortMapKeys: false,
 }.Froze()
+
+var memoryMessageVectorFieldRE = regexp.MustCompile(`^q_\d+_vec$`)
 
 var (
 	elasticsearchHighlightEmTagRE     = regexp.MustCompile(`<em>[^<>]+</em>`)
@@ -64,13 +67,22 @@ func (e *elasticsearchEngine) CreateChunkStore(ctx context.Context, baseName, da
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
 	if exists {
+		if strings.HasPrefix(baseName, "memory_") {
+			if err := e.ensureMemoryMessageVectorMapping(ctx, baseName, vectorSize); err != nil {
+				return fmt.Errorf("failed to ensure memory vector mapping: %w", err)
+			}
+			common.Info("Memory index already exists, ensured vector mapping", zap.String("index_name", baseName), zap.Int("vector_size", vectorSize))
+			return nil
+		}
 		common.Info("Index already exists, skipping creation", zap.String("index_name", baseName))
 		return nil
 	}
 
 	// Load mapping based on index type
 	var mapping map[string]interface{}
-	if datasetID == "skill" {
+	if strings.HasPrefix(baseName, "memory_") {
+		mapping = getMemoryMessageMapping(vectorSize)
+	} else if datasetID == "skill" {
 		// Load skill-specific mapping
 		skillMapping, err := loadSkillMapping()
 		if err != nil {
@@ -144,6 +156,12 @@ func (e *elasticsearchEngine) InsertChunks(ctx context.Context, chunks []map[str
 
 	if baseName == "" {
 		return nil, fmt.Errorf("index name cannot be empty")
+	}
+
+	if strings.HasPrefix(baseName, "memory_") {
+		if err := e.ensureMemoryMessageVectorMappingsForDocs(ctx, baseName, chunks); err != nil {
+			return nil, err
+		}
 	}
 
 	// Build bulk request body with index operations (upsert behavior: insert if not exists, update if exists)
@@ -233,6 +251,14 @@ func (e *elasticsearchEngine) UpdateChunks(ctx context.Context, condition map[st
 		return fmt.Errorf("index '%s' does not exist", fullIndexName)
 	}
 
+	if strings.HasPrefix(fullIndexName, "memory_") {
+		condition["memory_id"] = datasetID
+		if messageDocID, ok := condition["id"].(string); ok {
+			return e.updateSingleMemoryMessage(ctx, fullIndexName, messageDocID, newValue)
+		}
+		return e.updateChunksByQuery(ctx, fullIndexName, mapMemoryMessageESConditionFields(condition), mapMemoryMessageESUpdateFields(newValue))
+	}
+
 	// Add kb_id to condition
 	condition["kb_id"] = datasetID
 
@@ -243,6 +269,146 @@ func (e *elasticsearchEngine) UpdateChunks(ctx context.Context, condition map[st
 
 	// Case 2: Multi-document update via UpdateByQuery
 	return e.updateChunksByQuery(ctx, fullIndexName, condition, newValue)
+}
+
+// AdjustChunkPagerank atomically adjusts pagerank_fea and clamps it to
+// [minWeight, maxWeight].
+func (e *elasticsearchEngine) AdjustChunkPagerank(ctx context.Context, indexName, chunkID, kbID string, delta, minWeight, maxWeight float64) error {
+	if indexName == "" {
+		return fmt.Errorf("index name cannot be empty")
+	}
+	if chunkID == "" {
+		return fmt.Errorf("chunk id cannot be empty")
+	}
+	script := `
+		if (ctx._source.kb_id == null || !ctx._source.kb_id.equals(params.kb_id)) {
+			ctx.op = 'noop';
+		} else {
+			double current = 0.0;
+			if (ctx._source.containsKey(params.field) && ctx._source[params.field] != null) {
+				Object currentValue = ctx._source[params.field];
+				if (currentValue instanceof Number) {
+					current = ((Number)currentValue).doubleValue();
+				} else {
+					try {
+						current = Double.parseDouble(currentValue.toString());
+					} catch (Exception e) {
+						current = 0.0;
+					}
+				}
+			}
+			double next = current + params.delta;
+			if (next < params.min_weight) {
+				next = params.min_weight;
+			}
+			if (next > params.max_weight) {
+				next = params.max_weight;
+			}
+			if (next <= 0.0) {
+				ctx._source.remove(params.field);
+			} else {
+				ctx._source[params.field] = next;
+			}
+		}
+	`
+	body, err := json.Marshal(map[string]interface{}{
+		"script": map[string]interface{}{
+			"source": script,
+			"lang":   "painless",
+			"params": map[string]interface{}{
+				"field":      common.PAGERANK_FLD,
+				"kb_id":      kbID,
+				"delta":      delta,
+				"min_weight": minWeight,
+				"max_weight": maxWeight,
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal pagerank adjust request: %w", err)
+	}
+	retryOnConflict := 3
+	req := esapi.UpdateRequest{
+		Index:           indexName,
+		DocumentID:      chunkID,
+		Body:            bytes.NewReader(body),
+		RetryOnConflict: &retryOnConflict,
+	}
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		return fmt.Errorf("failed to adjust chunk pagerank: %w", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		if res.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
+		}
+		bodyBytes, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("elasticsearch pagerank adjust error: %s, body: %s", res.Status(), string(bodyBytes))
+	}
+	var updateResp struct {
+		Result string `json:"result"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&updateResp); err != nil {
+		return fmt.Errorf("failed to decode pagerank adjust response: %w", err)
+	}
+	if updateResp.Result == "noop" {
+		return fmt.Errorf("chunk %s does not belong to dataset %s", chunkID, kbID)
+	}
+	return nil
+}
+
+func (e *elasticsearchEngine) updateSingleMemoryMessage(ctx context.Context, indexName, messageDocID string, newValue map[string]interface{}) error {
+	doc := mapMemoryMessageESUpdateFields(newValue)
+	delete(doc, "id")
+	if len(doc) == 0 {
+		return nil
+	}
+
+	updateBody := map[string]interface{}{"doc": doc}
+	body, err := json.Marshal(updateBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal memory message update request: %w", err)
+	}
+	req := esapi.UpdateRequest{
+		Index:      indexName,
+		DocumentID: messageDocID,
+		Body:       bytes.NewReader(body),
+	}
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		return fmt.Errorf("failed to update memory message: %w", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		if res.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, messageDocID)
+		}
+		bodyBytes, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("elasticsearch memory message update error: %s, body: %s", res.Status(), string(bodyBytes))
+	}
+	return nil
+}
+
+func mapMemoryMessageESUpdateFields(newValue map[string]interface{}) map[string]interface{} {
+	doc := make(map[string]interface{}, len(newValue))
+	for k, v := range newValue {
+		switch k {
+		case "remove", "add":
+			doc[k] = v
+		default:
+			doc[mapMemoryMessageESField(k, false)] = v
+		}
+	}
+	return doc
+}
+
+func mapMemoryMessageESConditionFields(condition map[string]interface{}) map[string]interface{} {
+	mapped := make(map[string]interface{}, len(condition))
+	for k, v := range condition {
+		mapped[mapMemoryMessageESField(k, false)] = v
+	}
+	return mapped
 }
 
 // updateSingleChunk handles single document update
@@ -762,15 +928,18 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req *types.SearchReque
 
 	// Detect index types
 	isSkillIndex := false
+	isMemoryIndex := false
 	for _, idx := range req.IndexNames {
 		if strings.HasPrefix(idx, "skill_") {
 			isSkillIndex = true
-			break
+		}
+		if strings.HasPrefix(idx, "memory_") {
+			isMemoryIndex = true
 		}
 	}
 
 	// Build bool query from condition
-	boolQuery := buildBoolQueryFromCondition(req.Filter, req.KbIDs, isSkillIndex)
+	boolQuery := buildBoolQueryFromCondition(req.Filter, req.KbIDs, isSkillIndex, isMemoryIndex)
 
 	// Extract vector_similarity_weight from FusionExpr
 	var matchText *types.MatchTextExpr
@@ -816,7 +985,7 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req *types.SearchReque
 	queryBody := make(map[string]interface{})
 
 	if matchText != nil {
-		textQuery := buildQueryStringQuery(matchText, vectorSimilarityWeight, isSkillIndex)
+		textQuery := buildQueryStringQuery(matchText, vectorSimilarityWeight, isSkillIndex, isMemoryIndex)
 		if boolQuery != nil {
 			if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
 				if must, ok := boolMap["must"].([]interface{}); ok {
@@ -834,6 +1003,12 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req *types.SearchReque
 
 	hasVectorMatch := matchDense != nil && len(matchDense.EmbeddingData) > 0
 	if hasVectorMatch {
+		if isMemoryIndex {
+			if err := e.ensureMemoryMessageSearchVectorMappings(ctx, req.IndexNames, matchDense.VectorColumnName, len(matchDense.EmbeddingData)); err != nil {
+				return nil, err
+			}
+		}
+
 		k := matchDense.TopN
 		if k <= 0 {
 			k = limit
@@ -874,7 +1049,7 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req *types.SearchReque
 	}
 
 	// Add rank_feature queries
-	if req.RankFeature != nil && len(req.RankFeature) > 0 && !isSkillIndex {
+	if req.RankFeature != nil && len(req.RankFeature) > 0 && !isSkillIndex && !isMemoryIndex {
 		rankFeatureQuery := buildRankFeatureQuery(req.RankFeature)
 		if rankFeatureQuery != nil {
 			if boolQuery, ok := queryBody["query"].(map[string]interface{}); ok {
@@ -929,21 +1104,25 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req *types.SearchReque
 
 	// Set _source and fields for vector fields
 	hasTextMatch := matchText != nil
+	selectFields := req.SelectFields
+	if isMemoryIndex {
+		selectFields = mapMemoryMessageESFields(req.SelectFields, false)
+	}
 	if len(req.SelectFields) > 0 {
 		// Use caller-specified fields, add pagerank_fld/tag_fld if needed
-		queryBody["_source"] = req.SelectFields
+		queryBody["_source"] = selectFields
 		if hasTextMatch || hasVectorMatch {
-			if !isSkillIndex {
-				if !slices.Contains(req.SelectFields, common.PAGERANK_FLD) {
+			if !isSkillIndex && !isMemoryIndex {
+				if !slices.Contains(selectFields, common.PAGERANK_FLD) {
 					queryBody["_source"] = append(queryBody["_source"].([]string), common.PAGERANK_FLD)
 				}
-				if !slices.Contains(req.SelectFields, common.TAG_FLD) {
+				if !slices.Contains(selectFields, common.TAG_FLD) {
 					queryBody["_source"] = append(queryBody["_source"].([]string), common.TAG_FLD)
 				}
 			}
 		}
 		var vectorFields []string
-		for _, f := range req.SelectFields {
+		for _, f := range selectFields {
 			if strings.HasSuffix(f, "_vec") {
 				vectorFields = append(vectorFields, f)
 			}
@@ -954,7 +1133,7 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req *types.SearchReque
 	} else {
 		// No explicit SelectFields - use match_all, but add pagerank_fld/tag_fld for scoring if needed
 		if hasTextMatch || hasVectorMatch {
-			if !isSkillIndex {
+			if !isSkillIndex && !isMemoryIndex {
 				queryBody["_source"] = []string{common.PAGERANK_FLD, common.TAG_FLD}
 			}
 		}
@@ -1021,6 +1200,10 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req *types.SearchReque
 		}
 	}
 
+	if isMemoryIndex {
+		normalizeMemoryMessageChunks(allResults)
+	}
+
 	// Post-processing: Sort results by score
 	if len(allResults) > 0 && (matchText != nil || hasVectorMatch) {
 		scoreColumn := "_score"
@@ -1030,6 +1213,9 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req *types.SearchReque
 
 		pagerankField := common.PAGERANK_FLD
 		if isSkillIndex {
+			pagerankField = ""
+		}
+		if isMemoryIndex {
 			pagerankField = ""
 		}
 
@@ -1293,17 +1479,105 @@ func sortValuesEqual(a, b []interface{}) bool {
 	return true
 }
 
-// buildBoolQueryFromCondition builds an ES bool query from condition map
-// For skill index, uses 'status' field instead of 'available_int'
-func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, isSkillIndex bool) map[string]interface{} {
+func mapMemoryMessageESField(field string, useTokenizedContent bool) string {
+	name := field
+	boost := ""
+	if base, suffix, ok := strings.Cut(field, "^"); ok {
+		name = base
+		boost = "^" + suffix
+	}
+
+	switch name {
+	case "message_type":
+		name = "message_type_kwd"
+	case "status":
+		name = "status_int"
+	case "content":
+		if useTokenizedContent {
+			name = "tokenized_content_ltks"
+		} else {
+			name = "content_ltks"
+		}
+	}
+	return name + boost
+}
+
+func mapMemoryMessageESFields(fields []string, useTokenizedContent bool) []string {
+	if len(fields) == 0 {
+		return fields
+	}
+	mapped := make([]string, 0, len(fields))
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		mappedField := mapMemoryMessageESField(field, useTokenizedContent)
+		if _, ok := seen[mappedField]; ok {
+			continue
+		}
+		seen[mappedField] = struct{}{}
+		mapped = append(mapped, mappedField)
+	}
+	return mapped
+}
+
+func normalizeMemoryMessageChunks(chunks []map[string]interface{}) {
+	for _, chunk := range chunks {
+		for key, val := range chunk {
+			if memoryMessageVectorFieldRE.MatchString(key) {
+				chunk["content_embed"] = val
+				delete(chunk, key)
+			}
+		}
+		if val, ok := chunk["message_type_kwd"]; ok {
+			chunk["message_type"] = val
+			delete(chunk, "message_type_kwd")
+		}
+		if val, ok := chunk["status_int"]; ok {
+			chunk["status"] = memoryMessageStatusBool(val)
+			delete(chunk, "status_int")
+		}
+		if val, ok := chunk["content_ltks"]; ok {
+			chunk["content"] = val
+			delete(chunk, "content_ltks")
+		}
+	}
+}
+
+func memoryMessageStatusBool(value interface{}) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	case float64:
+		return v != 0
+	case json.Number:
+		n, err := v.Int64()
+		return err == nil && n != 0
+	case string:
+		return v != "" && v != "0" && !strings.EqualFold(v, "false")
+	default:
+		return false
+	}
+}
+
+// buildBoolQueryFromCondition builds an ES bool query from condition map.
+// Skill indexes use status, regular chunk indexes use kb_id, and memory
+// message indexes use memory_id plus message-specific storage fields.
+func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, isSkillIndex, isMemoryIndex bool) map[string]interface{} {
 	var mustClauses []interface{}
 	var filterClauses []interface{}
 	var shouldClauses []interface{}
 
-	// Add kb_id to condition
+	// Memory message indexes use memory_id, regular chunk indexes use kb_id.
 	if kbIDs != nil && len(kbIDs) > 0 {
+		fieldName := "kb_id"
+		if isMemoryIndex {
+			fieldName = "memory_id"
+		}
 		filterClauses = append(filterClauses, map[string]interface{}{
-			"terms": map[string]interface{}{"kb_id": kbIDs},
+			"terms": map[string]interface{}{fieldName: kbIDs},
 		})
 	}
 
@@ -1321,6 +1595,9 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 	}
 
 	for k, v := range filter {
+		if isMemoryIndex {
+			k = mapMemoryMessageESField(k, false)
+		}
 		// For skill index, handle 'status' field instead of 'available_int'
 		if isSkillIndex && k == "status" {
 			if v == nil || v == "" {
@@ -1389,6 +1666,18 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 		if v == nil || v == "" {
 			continue
 		}
+		if isMemoryIndex && k == "session_id" {
+			if strVal, ok := v.(string); ok && strVal != "" {
+				filterClauses = append(filterClauses, map[string]interface{}{
+					"query_string": map[string]interface{}{
+						"query":            fmt.Sprintf("*%s*", strVal),
+						"fields":           []string{"session_id"},
+						"analyze_wildcard": true,
+					},
+				})
+				continue
+			}
+		}
 		if listVal, ok := v.([]interface{}); ok {
 			filterClauses = append(filterClauses, map[string]interface{}{
 				"terms": map[string]interface{}{k: listVal},
@@ -1435,7 +1724,7 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 // buildQueryStringQuery builds a query_string query from MatchTextExpr
 // When isSkillIndex is true, uses skill-specific fields (name_tks, tags_tks, etc.)
 // Otherwise uses document fields (title_tks, content_ltks, etc.)
-func buildQueryStringQuery(matchText *types.MatchTextExpr, vectorSimilarityWeight float64, isSkillIndex bool) map[string]interface{} {
+func buildQueryStringQuery(matchText *types.MatchTextExpr, vectorSimilarityWeight float64, isSkillIndex, isMemoryIndex bool) map[string]interface{} {
 	if matchText == nil {
 		return nil
 	}
@@ -1451,9 +1740,17 @@ func buildQueryStringQuery(matchText *types.MatchTextExpr, vectorSimilarityWeigh
 	if fields == nil || len(fields) == 0 {
 		if isSkillIndex {
 			fields = []string{"name_tks^10", "tags_tks^5", "description_tks^3", "content_tks^1"}
+		} else if isMemoryIndex {
+			fields = []string{"tokenized_content_ltks"}
 		} else {
 			fields = []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"}
 		}
+	}
+	if isSkillIndex {
+		fields = mapSkillSearchFields(fields)
+	}
+	if isMemoryIndex {
+		fields = mapMemoryMessageESFields(fields, true)
 	}
 
 	boost := 1.0
@@ -1472,6 +1769,29 @@ func buildQueryStringQuery(matchText *types.MatchTextExpr, vectorSimilarityWeigh
 			"boost":                boost,
 		},
 	}
+}
+
+func mapSkillSearchFields(fields []string) []string {
+	mapped := make([]string, 0, len(fields))
+	for _, field := range fields {
+		name, boost, hasBoost := strings.Cut(field, "^")
+		switch name {
+		case "name":
+			name = "name_tks"
+		case "tags":
+			name = "tags_tks"
+		case "description":
+			name = "description_tks"
+		case "content":
+			name = "content_tks"
+		}
+		if hasBoost {
+			mapped = append(mapped, name+"^"+boost)
+		} else {
+			mapped = append(mapped, name)
+		}
+	}
+	return mapped
 }
 
 // buildRankFeatureQuery builds rank_feature queries for learning to rank
@@ -1507,6 +1827,10 @@ func buildRankFeatureQuery(rankFeature map[string]float64) []map[string]interfac
 
 // GetChunk gets a chunk by ID using ES search API
 func (e *elasticsearchEngine) GetChunk(ctx context.Context, baseName, chunkID string, datasetIDs []string) (interface{}, error) {
+	if strings.HasPrefix(baseName, "memory_") {
+		return e.getMemoryMessage(ctx, baseName, chunkID)
+	}
+
 	// Try search by doc_id field (which is stored in the document)
 	for _, datasetID := range datasetIDs {
 		searchReq := map[string]interface{}{
@@ -1573,6 +1897,41 @@ func (e *elasticsearchEngine) GetChunk(ctx context.Context, baseName, chunkID st
 
 	common.Info("GetChunk no hits found", zap.String("baseName", baseName), zap.String("chunkID", chunkID))
 	return nil, nil
+}
+
+func (e *elasticsearchEngine) getMemoryMessage(ctx context.Context, indexName, docID string) (interface{}, error) {
+	req := esapi.GetRequest{
+		Index:      indexName,
+		DocumentID: docID,
+	}
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get memory message: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		if res.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("%w: %s", types.ErrDocumentNotFound, docID)
+		}
+		return nil, fmt.Errorf("elasticsearch memory message get error: %s", res.Status())
+	}
+
+	var getResult struct {
+		Found  bool                   `json:"found"`
+		Source map[string]interface{} `json:"_source"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&getResult); err != nil {
+		return nil, fmt.Errorf("failed to parse memory message get response: %w", err)
+	}
+	if !getResult.Found || getResult.Source == nil {
+		return nil, nil
+	}
+
+	message := getResult.Source
+	message["id"] = docID
+	normalizeMemoryMessageChunks([]map[string]interface{}{message})
+	return message, nil
 }
 
 // GetFields extracts the requested fields from ES search response chunks
@@ -2060,6 +2419,239 @@ func loadSkillMapping() (map[string]interface{}, error) {
 	}
 
 	return mapping, nil
+}
+
+func memoryMessageVectorField(vectorSize int) string {
+	return fmt.Sprintf("q_%d_vec", vectorSize)
+}
+
+func memoryMessageVectorProperty(vectorSize int) map[string]interface{} {
+	return map[string]interface{}{
+		"type":       "dense_vector",
+		"dims":       vectorSize,
+		"index":      true,
+		"similarity": "cosine",
+	}
+}
+
+func parseMemoryMessageVectorSize(field string) (int, bool) {
+	if !memoryMessageVectorFieldRE.MatchString(field) {
+		return 0, false
+	}
+	sizeText := strings.TrimSuffix(strings.TrimPrefix(field, "q_"), "_vec")
+	vectorSize, err := strconv.Atoi(sizeText)
+	if err != nil || vectorSize <= 0 {
+		return 0, false
+	}
+	return vectorSize, true
+}
+
+func (e *elasticsearchEngine) memoryMessageVectorMappingExists(ctx context.Context, indexName, fieldName string) (bool, error) {
+	req := esapi.IndicesGetMappingRequest{
+		Index: []string{indexName},
+	}
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		return false, fmt.Errorf("failed to get memory vector mapping: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(bodyBytes)
+		if reason != "" {
+			return false, fmt.Errorf("elasticsearch error getting memory vector mapping %s.%s: %s", indexName, fieldName, reason)
+		}
+		return false, fmt.Errorf("elasticsearch returned error getting memory vector mapping %s.%s: %s, body: %s", indexName, fieldName, res.Status(), string(bodyBytes))
+	}
+
+	var mappings map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&mappings); err != nil {
+		return false, fmt.Errorf("failed to decode memory vector mapping: %w", err)
+	}
+
+	indexMapping, ok := mappings[indexName].(map[string]interface{})
+	if !ok {
+		return false, nil
+	}
+	mapping, ok := indexMapping["mappings"].(map[string]interface{})
+	if !ok {
+		return false, nil
+	}
+	properties, ok := mapping["properties"].(map[string]interface{})
+	if !ok {
+		return false, nil
+	}
+	_, ok = properties[fieldName]
+	return ok, nil
+}
+
+func (e *elasticsearchEngine) ensureMemoryMessageVectorMapping(ctx context.Context, indexName string, vectorSize int) error {
+	if vectorSize <= 0 {
+		return fmt.Errorf("memory vector size must be positive, got %d", vectorSize)
+	}
+
+	fieldName := memoryMessageVectorField(vectorSize)
+	exists, err := e.memoryMessageVectorMappingExists(ctx, indexName, fieldName)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	body := map[string]interface{}{
+		"properties": map[string]interface{}{
+			fieldName: memoryMessageVectorProperty(vectorSize),
+		},
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("failed to marshal memory vector mapping: %w", err)
+	}
+
+	req := esapi.IndicesPutMappingRequest{
+		Index: []string{indexName},
+		Body:  bytes.NewReader(data),
+	}
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		return fmt.Errorf("failed to update memory vector mapping: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(bodyBytes)
+		if reason != "" {
+			return fmt.Errorf("elasticsearch error updating memory vector mapping %s.%s: %s", indexName, fieldName, reason)
+		}
+		return fmt.Errorf("elasticsearch returned error updating memory vector mapping %s.%s: %s, body: %s", indexName, fieldName, res.Status(), string(bodyBytes))
+	}
+
+	return nil
+}
+
+func (e *elasticsearchEngine) ensureMemoryMessageVectorMappingsForDocs(ctx context.Context, indexName string, chunks []map[string]interface{}) error {
+	seen := map[int]struct{}{}
+	for _, chunk := range chunks {
+		for field := range chunk {
+			vectorSize, ok := parseMemoryMessageVectorSize(field)
+			if !ok {
+				continue
+			}
+			if _, ok := seen[vectorSize]; ok {
+				continue
+			}
+			if err := e.ensureMemoryMessageVectorMapping(ctx, indexName, vectorSize); err != nil {
+				return err
+			}
+			seen[vectorSize] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (e *elasticsearchEngine) ensureMemoryMessageSearchVectorMappings(ctx context.Context, indexNames []string, vectorFieldName string, fallbackVectorSize int) error {
+	vectorSize, ok := parseMemoryMessageVectorSize(vectorFieldName)
+	if !ok {
+		vectorSize = fallbackVectorSize
+	}
+	if vectorSize <= 0 {
+		return fmt.Errorf("memory vector size must be positive, got %d", vectorSize)
+	}
+
+	for _, indexName := range indexNames {
+		if !strings.HasPrefix(indexName, "memory_") {
+			continue
+		}
+		exists, err := e.indexExists(ctx, indexName)
+		if err != nil {
+			return fmt.Errorf("failed to check memory index existence: %w", err)
+		}
+		if !exists {
+			continue
+		}
+		if err := e.ensureMemoryMessageVectorMapping(ctx, indexName, vectorSize); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func getMemoryMessageMapping(vectorSize int) map[string]interface{} {
+	vectorField := memoryMessageVectorField(vectorSize)
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"doc_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"kb_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"memory_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"user_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"agent_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"session_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"message_id": map[string]interface{}{
+					"type": "long",
+				},
+				"source_id": map[string]interface{}{
+					"type": "long",
+				},
+				"message_type_kwd": map[string]interface{}{
+					"type": "keyword",
+				},
+				"status_int": map[string]interface{}{
+					"type": "integer",
+				},
+				"content": map[string]interface{}{
+					"type":  "text",
+					"index": false,
+				},
+				"content_ltks": map[string]interface{}{
+					"type":     "text",
+					"analyzer": "whitespace",
+				},
+				"tokenized_content_ltks": map[string]interface{}{
+					"type":     "text",
+					"analyzer": "whitespace",
+				},
+				"valid_at": map[string]interface{}{
+					"type":   "date",
+					"format": "yyyy-MM-dd HH:mm:ss||strict_date_optional_time||epoch_millis",
+				},
+				"invalid_at": map[string]interface{}{
+					"type":   "date",
+					"format": "yyyy-MM-dd HH:mm:ss||strict_date_optional_time||epoch_millis",
+				},
+				"forget_at": map[string]interface{}{
+					"type":   "date",
+					"format": "yyyy-MM-dd HH:mm:ss||strict_date_optional_time||epoch_millis",
+				},
+				vectorField: memoryMessageVectorProperty(vectorSize),
+			},
+		},
+	}
 }
 
 // getDefaultSkillMapping returns the default skill index mapping

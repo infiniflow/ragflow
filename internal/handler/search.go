@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -30,6 +31,9 @@ import (
 type SearchHandler struct {
 	searchService *service.SearchService
 	userService   *service.UserService
+	streamLLM     *service.ModelProviderService
+	askService    *service.AskService
+	sseWriter     SSEWriter
 }
 
 // NewSearchHandler create search handler
@@ -37,7 +41,31 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 	return &SearchHandler{
 		searchService: searchService,
 		userService:   userService,
+		sseWriter:     &ginSSEWriter{},
 	}
+}
+
+// SetCompletionDependencies wires the streaming search completion runtime.
+func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.ModelProviderService, askService *service.AskService) {
+	h.streamLLM = streamLLM
+	h.askService = askService
+}
+
+func getSearchOwnerIDs(c *gin.Context) []string {
+	values := c.QueryArray("owner_ids")
+	if len(values) == 0 {
+		values = c.QueryArray("owner_id")
+	}
+	ownerIDs := make([]string, 0, len(values))
+	for _, value := range values {
+		for _, ownerID := range strings.Split(value, ",") {
+			ownerID = strings.TrimSpace(ownerID)
+			if ownerID != "" {
+				ownerIDs = append(ownerIDs, ownerID)
+			}
+		}
+	}
+	return ownerIDs
 }
 
 // ListSearches list search apps
@@ -51,9 +79,9 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 // @Param page_size query int false "items per page"
 // @Param orderby query string false "order by field (default: create_time)"
 // @Param desc query bool false "descending order (default: true)"
-// @Param request body service.ListSearchAppsRequest true "filter options including owner_ids"
+// @Param owner_ids query []string false "owner IDs"
 // @Success 200 {object} service.ListSearchAppsResponse
-// @Router /api/v1/searches [post]
+// @Router /api/v1/searches [get]
 func (h *SearchHandler) ListSearches(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -86,9 +114,12 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 		desc = descStr != "false"
 	}
 
-	// Parse request body for owner_ids
+	ownerIDs := getSearchOwnerIDs(c)
+
+	// Keep body parsing as a compatibility fallback for existing callers that
+	// send owner_ids in a GET body. Python reads owner_ids from the query.
 	var req service.ListSearchAppsRequest
-	if c.Request.ContentLength > 0 {
+	if len(ownerIDs) == 0 && c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
@@ -96,10 +127,11 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 			})
 			return
 		}
+		ownerIDs = req.OwnerIDs
 	}
 
 	// List search apps with filtering
-	result, err := h.searchService.ListSearches(userID, keywords, page, pageSize, orderby, desc, req.OwnerIDs)
+	result, err := h.searchService.ListSearches(userID, keywords, page, pageSize, orderby, desc, ownerIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -420,4 +452,88 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 		"data":    result,
 		"message": "success",
 	})
+}
+
+func (h *SearchHandler) Completion(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.SearchCompletionsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeArgumentError, "question is required")
+		return
+	}
+
+	searchSvc := h.searchService
+	if searchSvc == nil {
+		searchSvc = service.NewSearchService()
+	}
+
+	plan, code, err := searchSvc.PrepareCompletion(user.ID, c.Param("search_id"), &req)
+	if err != nil {
+		if code == common.CodeAuthenticationError {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    code,
+				"data":    false,
+				"message": err.Error(),
+			})
+			return
+		}
+		if code == common.CodeServerError {
+			jsonInternalError(c, err)
+			return
+		}
+		jsonError(c, code, err.Error())
+		return
+	}
+	if plan == nil {
+		jsonError(c, common.CodeServerError, "completion plan is nil")
+		return
+	}
+
+	disableWriteDeadlineForSSE(c)
+	c.Header("Content-Type", "text/event-stream; charset=utf-8")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	writer := h.sseWriter
+	if writer == nil {
+		writer = &ginSSEWriter{}
+	}
+	if plan.ModelID == "" {
+		writer.Write(c, sseError("chat model not configured"))
+		return
+	}
+	if h.askService == nil {
+		writer.Write(c, sseError("ask service not configured"))
+		return
+	}
+	if h.streamLLM == nil {
+		writer.Write(c, sseError("streaming LLM not configured"))
+		return
+	}
+
+	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: plan.UserID, ModelID: plan.ModelID}
+
+	hadError := false
+	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.KBIDs, plan.Options) {
+		switch delta.Kind {
+		case service.AskDeltaAnswer:
+			writer.Write(c, sseAnswer(delta.Value, nil, false))
+		case service.AskDeltaMarker:
+			writer.Write(c, sseMarker(delta.Value))
+		case service.AskDeltaError:
+			hadError = true
+			writer.Write(c, sseError(delta.Value))
+		case service.AskDeltaFinal:
+			writer.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+		}
+	}
+	if !hadError {
+		writer.Write(c, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
+	}
 }

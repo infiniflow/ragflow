@@ -57,9 +57,7 @@ class TestGetHighlightFromMessages:
         assert get_highlight_from_messages(None, ["k"], "content_ltks") == {}
 
     def test_empty_keywords_returns_empty_dict(self):
-        assert get_highlight_from_messages(
-            [{"id": "m1", "content_ltks": "hello"}], [], "content_ltks"
-        ) == {}
+        assert get_highlight_from_messages([{"id": "m1", "content_ltks": "hello"}], [], "content_ltks") == {}
 
     def test_returns_id_to_highlighted_text(self):
         messages = [

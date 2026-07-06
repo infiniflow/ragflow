@@ -59,13 +59,13 @@ func TestAPITokenDAOGetByBeta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByBeta failed: %v", err)
 	}
-	if got == nil {
-		t.Fatal("expected token, got nil")
+	if len(got) == 0 {
+		t.Fatal("expected token(s), got empty list")
 	}
-	if got.TenantID != "tenant-1" {
-		t.Fatalf("TenantID = %q, want tenant-1", got.TenantID)
+	if got[0].TenantID != "tenant-1" {
+		t.Fatalf("TenantID = %q, want tenant-1", got[0].TenantID)
 	}
-	if got.Beta == nil || *got.Beta != beta {
-		t.Fatalf("Beta = %v, want %q", got.Beta, beta)
+	if got[0].Beta == nil || *got[0].Beta != beta {
+		t.Fatalf("Beta = %v, want %q", got[0].Beta, beta)
 	}
 }

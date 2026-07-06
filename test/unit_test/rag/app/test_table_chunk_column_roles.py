@@ -20,17 +20,8 @@
 from __future__ import annotations
 
 import sys
+from importlib import import_module, reload
 from unittest.mock import MagicMock, patch
-
-# Mock heavy modules that trigger ONNX model loading at import time
-# table.py -> deepdoc.parser.figure_parser -> rag.app.picture -> OCR()
-for mod in [
-    "deepdoc.vision.ocr",
-    "deepdoc.parser.figure_parser",
-    "rag.app.picture",
-]:
-    if mod not in sys.modules:
-        sys.modules[mod] = MagicMock()
 
 import warnings
 
@@ -42,7 +33,6 @@ import pkg_resources  # noqa: F401 — stabilize xgboost import during collectio
 import pytest
 
 import common.settings as settings
-from rag.app.table import chunk
 
 # chunk() removes columns named id, _id, index, idx — use row_id instead of id.
 TEST_CSV = b"""row_id,title,content,country,category
@@ -76,14 +66,38 @@ def _stub_rag_tokenizer(monkeypatch):
     monkeypatch.setattr("rag.nlp.rag_tokenizer.fine_grained_tokenize", fake_tokenize)
 
 
+@pytest.fixture(scope="module")
+def table_module():
+    """Load rag.app.table with heavy optional dependencies stubbed locally."""
+    stub_names = [
+        "deepdoc.vision.ocr",
+        "deepdoc.parser.figure_parser",
+        "rag.app.picture",
+    ]
+    original_modules = {name: sys.modules.get(name) for name in stub_names}
+
+    try:
+        for name in stub_names:
+            sys.modules[name] = MagicMock()
+        module = import_module("rag.app.table")
+        module = reload(module)
+        yield module
+    finally:
+        for name, original in original_modules.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
+
+
 @pytest.fixture
 def mock_update_kb():
     with patch("rag.app.table.KnowledgebaseService.update_parser_config") as m:
         yield m
 
 
-def _run_chunk(parser_config: dict, mock_update_kb: MagicMock):
-    return chunk(
+def _run_chunk(table_module, parser_config: dict, mock_update_kb: MagicMock):
+    return table_module.chunk(
         FILENAME,
         binary=TEST_CSV,
         callback=_noop_callback,
@@ -93,9 +107,9 @@ def _run_chunk(parser_config: dict, mock_update_kb: MagicMock):
     )
 
 
-def test_chunk_auto_mode_all_columns_in_text_and_stored(mock_update_kb: MagicMock):
+def test_chunk_auto_mode_all_columns_in_text_and_stored(table_module, mock_update_kb: MagicMock):
     parser_config: dict = {}
-    chunks = _run_chunk(parser_config, mock_update_kb)
+    chunks = _run_chunk(table_module, parser_config, mock_update_kb)
     assert len(chunks) == 3
     first = chunks[0]
     cww = first["content_with_weight"]
@@ -109,7 +123,7 @@ def test_chunk_auto_mode_all_columns_in_text_and_stored(mock_update_kb: MagicMoc
     assert "title_raw" in first and "country_raw" in first
 
 
-def test_chunk_manual_mode_indexing_only(mock_update_kb: MagicMock):
+def test_chunk_manual_mode_indexing_only(table_module, mock_update_kb: MagicMock):
     parser_config = {
         "table_column_mode": "manual",
         "table_column_roles": {
@@ -120,7 +134,7 @@ def test_chunk_manual_mode_indexing_only(mock_update_kb: MagicMock):
             "category": "metadata",
         },
     }
-    chunks = _run_chunk(parser_config, mock_update_kb)
+    chunks = _run_chunk(table_module, parser_config, mock_update_kb)
     first = chunks[0]
     cww = first["content_with_weight"]
     assert "- title:" in cww and "Earthquake" in cww
@@ -135,7 +149,7 @@ def test_chunk_manual_mode_indexing_only(mock_update_kb: MagicMock):
     assert "row_id_long" in first
 
 
-def test_chunk_manual_mode_legacy_vectorize_role(mock_update_kb: MagicMock):
+def test_chunk_manual_mode_legacy_vectorize_role(table_module, mock_update_kb: MagicMock):
     """Stored configs may still use role *vectorize*; chunking treats it like *indexing*."""
     parser_config = {
         "table_column_mode": "manual",
@@ -147,7 +161,7 @@ def test_chunk_manual_mode_legacy_vectorize_role(mock_update_kb: MagicMock):
             "category": "metadata",
         },
     }
-    chunks = _run_chunk(parser_config, mock_update_kb)
+    chunks = _run_chunk(table_module, parser_config, mock_update_kb)
     first = chunks[0]
     cww = first["content_with_weight"]
     assert "- title:" in cww and "Earthquake" in cww
@@ -155,7 +169,7 @@ def test_chunk_manual_mode_legacy_vectorize_role(mock_update_kb: MagicMock):
     assert "- country:" not in cww
 
 
-def test_chunk_manual_mode_metadata_only(mock_update_kb: MagicMock):
+def test_chunk_manual_mode_metadata_only(table_module, mock_update_kb: MagicMock):
     parser_config = {
         "table_column_mode": "manual",
         "table_column_roles": {
@@ -166,18 +180,18 @@ def test_chunk_manual_mode_metadata_only(mock_update_kb: MagicMock):
             "category": "metadata",
         },
     }
-    chunks = _run_chunk(parser_config, mock_update_kb)
+    chunks = _run_chunk(table_module, parser_config, mock_update_kb)
     first = chunks[0]
     assert (first.get("content_with_weight") or "").strip() == ""
     assert "country_raw" in first and "title_raw" in first
 
 
-def test_chunk_manual_mode_both(mock_update_kb: MagicMock):
+def test_chunk_manual_mode_both(table_module, mock_update_kb: MagicMock):
     parser_config = {
         "table_column_mode": "manual",
         "table_column_roles": {c: "both" for c in ["title", "content", "country", "category", "row_id"]},
     }
-    chunks = _run_chunk(parser_config, mock_update_kb)
+    chunks = _run_chunk(table_module, parser_config, mock_update_kb)
     first = chunks[0]
     cww = first["content_with_weight"]
     assert "Earthquake hits Turkey" in cww
@@ -187,7 +201,7 @@ def test_chunk_manual_mode_both(mock_update_kb: MagicMock):
     assert "title_raw" in first and "country_raw" in first
 
 
-def test_chunk_manual_mode_partial_roles_default_to_both(mock_update_kb: MagicMock):
+def test_chunk_manual_mode_partial_roles_default_to_both(table_module, mock_update_kb: MagicMock):
     parser_config = {
         "table_column_mode": "manual",
         "table_column_roles": {
@@ -195,7 +209,7 @@ def test_chunk_manual_mode_partial_roles_default_to_both(mock_update_kb: MagicMo
             "country": "metadata",
         },
     }
-    chunks = _run_chunk(parser_config, mock_update_kb)
+    chunks = _run_chunk(table_module, parser_config, mock_update_kb)
     first = chunks[0]
     cww = first["content_with_weight"]
     assert "- title:" in cww and "Earthquake" in cww
@@ -208,20 +222,20 @@ def test_chunk_manual_mode_partial_roles_default_to_both(mock_update_kb: MagicMo
     assert "content_raw" in first and "category_raw" in first
 
 
-def test_chunk_manual_mode_raw_fields_for_es(mock_update_kb: MagicMock):
+def test_chunk_manual_mode_raw_fields_for_es(table_module, mock_update_kb: MagicMock):
     parser_config = {
         "table_column_mode": "manual",
         "table_column_roles": {c: "both" for c in ["title", "content", "country", "category", "row_id"]},
     }
-    chunks = _run_chunk(parser_config, mock_update_kb)
+    chunks = _run_chunk(table_module, parser_config, mock_update_kb)
     first = chunks[0]
     for col in ("title", "content", "country", "category"):
         assert f"{col}_raw" in first
         assert f"{col}_tks" in first
 
 
-def test_chunk_updates_table_column_names(mock_update_kb: MagicMock):
-    _run_chunk({}, mock_update_kb)
+def test_chunk_updates_table_column_names(table_module, mock_update_kb: MagicMock):
+    _run_chunk(table_module, {}, mock_update_kb)
     mock_update_kb.assert_called_once()
     args, kwargs = mock_update_kb.call_args
     assert args[0] == KB_ID
@@ -230,6 +244,6 @@ def test_chunk_updates_table_column_names(mock_update_kb: MagicMock):
     assert names == ["row_id", "title", "content", "country", "category"]
 
 
-def test_chunk_count_matches_row_count(mock_update_kb: MagicMock):
-    chunks = _run_chunk({}, mock_update_kb)
+def test_chunk_count_matches_row_count(table_module, mock_update_kb: MagicMock):
+    chunks = _run_chunk(table_module, {}, mock_update_kb)
     assert len(chunks) == 3

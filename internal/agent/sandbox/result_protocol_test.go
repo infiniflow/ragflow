@@ -29,8 +29,10 @@ func TestBuildPythonWrapper_ContainsMainAndArgs(t *testing.T) {
 	if !strings.Contains(wrapped, "def main(x): return x * 2") {
 		t.Errorf("wrapper missing user code; got: %s", wrapped)
 	}
-	if !strings.Contains(wrapped, `main(**{"x": 21})`) {
-		t.Errorf("wrapper missing main(**args) call; got: %s", wrapped)
+	// argsJSON is base64-encoded in the wrapper, so the call site
+	// must use json.loads(base64.b64decode(...)).
+	if !strings.Contains(wrapped, "main(**json.loads(base64.b64decode(") {
+		t.Errorf("wrapper missing main(**json.loads(base64.b64decode(...))) call; got: %s", wrapped)
 	}
 	if !strings.Contains(wrapped, resultMarkerPrefix) {
 		t.Errorf("wrapper missing result marker; got: %s", wrapped)
@@ -46,8 +48,11 @@ func TestBuildJavaScriptWrapper_ContainsMainAndArgs(t *testing.T) {
 	if !strings.Contains(wrapped, "async function main(args)") {
 		t.Errorf("wrapper missing user code; got: %s", wrapped)
 	}
-	if !strings.Contains(wrapped, "const __ragflowArgs = {\"x\": 21};") {
-		t.Errorf("wrapper missing args binding; got: %s", wrapped)
+	if !strings.Contains(wrapped, "const __ragflowArgsB64 = ") {
+		t.Errorf("wrapper missing base64 args literal; got: %s", wrapped)
+	}
+	if !strings.Contains(wrapped, "JSON.parse(Buffer.from(__ragflowArgsB64") {
+		t.Errorf("wrapper missing args decoding; got: %s", wrapped)
 	}
 	if !strings.Contains(wrapped, resultMarkerPrefix) {
 		t.Errorf("wrapper missing result marker; got: %s", wrapped)
