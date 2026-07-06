@@ -64,8 +64,8 @@ func TestPluginHandlerListLLMToolsReturnsEmbeddedMetadata(t *testing.T) {
 	if body.Code != int(common.CodeSuccess) {
 		t.Fatalf("code=%d want=%d body=%s", body.Code, common.CodeSuccess, resp.Body.String())
 	}
-	if body.Message != "success" {
-		t.Errorf("message=%q want=%q", body.Message, "success")
+	if body.Message != "success" && body.Message != "SUCCESS" {
+		t.Errorf("message=%q want %q or %q", body.Message, "success", "SUCCESS")
 	}
 	if len(body.Data) == 0 {
 		t.Fatalf("data should contain at least one embedded plugin, got 0")

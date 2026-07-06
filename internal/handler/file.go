@@ -65,7 +65,7 @@ func NewFileHandler(fileService *service.FileService, userService *service.UserS
 func (h *FileHandler) ListFiles(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
@@ -78,7 +78,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 		if p, err := strconv.Atoi(pageStr); err == nil && p >= 1 {
 			page = p
 		} else if err != nil {
-			jsonError(c, common.CodeParamError, "Invalid page parameter: must be a positive integer")
+			common.ResponseWithCodeData(c, common.CodeParamError, nil, "Invalid page parameter: must be a positive integer")
 			return
 		}
 	}
@@ -87,7 +87,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
 		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
 			if ps < 1 {
-				jsonError(c, common.CodeParamError, "Invalid page_size parameter: must be at least 1")
+				common.ResponseWithCodeData(c, common.CodeParamError, nil, "Invalid page_size parameter: must be at least 1")
 				return
 			}
 			if ps > 100 {
@@ -95,7 +95,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 			}
 			pageSize = ps
 		} else {
-			jsonError(c, common.CodeParamError, "Invalid page_size parameter: must be a positive integer")
+			common.ResponseWithCodeData(c, common.CodeParamError, nil, "Invalid page_size parameter: must be a positive integer")
 			return
 		}
 	}
@@ -112,11 +112,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // GetRootFolder gets root folder for current user
@@ -130,7 +126,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 func (h *FileHandler) GetRootFolder(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
@@ -142,11 +138,7 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    gin.H{"root_folder": rootFolder},
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, gin.H{"root_folder": rootFolder}, common.CodeSuccess.Message())
 }
 
 // GetParentFolder gets parent folder of a file
@@ -161,7 +153,7 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
@@ -169,7 +161,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	// Get file_id from query
 	fileID := c.Query("file_id")
 	if fileID == "" {
-		jsonError(c, common.CodeBadRequest, "file_id is required")
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "file_id is required")
 		return
 	}
 
@@ -180,11 +172,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    gin.H{"parent_folder": parentFolder},
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, gin.H{"parent_folder": parentFolder}, common.CodeSuccess.Message())
 }
 
 // GetAllParentFolders gets all parent folders in path
@@ -199,7 +187,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
@@ -207,7 +195,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 	// Get file_id from query
 	fileID := c.Query("file_id")
 	if fileID == "" {
-		jsonError(c, common.CodeBadRequest, "file_id is required")
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "file_id is required")
 		return
 	}
 
@@ -218,11 +206,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    gin.H{"parent_folders": parentFolders},
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, gin.H{"parent_folders": parentFolders}, common.CodeSuccess.Message())
 }
 
 // GetFileAncestors gets all ancestor folders of a file (matches Python /files/<file_id>/ancestors)
@@ -237,14 +221,14 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
 
 	fileID := c.Param("id")
 	if fileID == "" {
-		jsonError(c, common.CodeBadRequest, "file id is required")
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "file id is required")
 		return
 	}
 
@@ -255,11 +239,7 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    gin.H{"parent_folders": parentFolders},
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, gin.H{"parent_folders": parentFolders}, common.CodeSuccess.Message())
 }
 
 type CreateFolderRequest struct {
@@ -282,7 +262,7 @@ type CreateFolderRequest struct {
 func (h *FileHandler) UploadFile(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -292,13 +272,13 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 	if strings.Contains(contentType, "multipart/form-data") {
 		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
-			jsonError(c, common.CodeBadRequest, "Failed to parse multipart form: "+err.Error())
+			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Failed to parse multipart form: "+err.Error())
 			return
 		}
 
 		form := c.Request.MultipartForm
 		if form == nil {
-			jsonError(c, common.CodeBadRequest, "No file part!")
+			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "No file part!")
 			return
 		}
 		parentID := c.PostForm("parent_id")
@@ -313,38 +293,31 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 		files := form.File["file"]
 		if len(files) == 0 {
-			jsonError(c, common.CodeBadRequest, "No file selected!")
+			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "No file selected!")
 			return
 		}
 
 		for _, fileHeader := range files {
 			if fileHeader.Filename == "" {
-				jsonError(c, common.CodeBadRequest, "No file selected!")
+				common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "No file selected!")
 				return
 			}
 		}
 
 		result, err := h.fileService.UploadFile(userID, parentID, files)
 		if err != nil {
-			jsonError(c, common.CodeBadRequest, err.Error())
+			common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"data":    result,
-			"message": common.CodeSuccess.Message(),
-		})
+		common.SuccessWithData(c, result, common.CodeSuccess.Message())
 		return
 	}
 
 	if strings.Contains(contentType, "application/json") {
 		var req CreateFolderRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": err.Error(),
-			})
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
 			return
 		}
 
@@ -360,19 +333,15 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 		result, err := h.fileService.CreateFolder(userID, req.Name, parentID, req.Type)
 		if err != nil {
-			jsonError(c, common.CodeBadRequest, err.Error())
+			common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"data":    result,
-			"message": common.CodeSuccess.Message(),
-		})
+		common.SuccessWithData(c, result, common.CodeSuccess.Message())
 		return
 	}
 
-	jsonError(c, common.CodeBadRequest, "Unsupported content type")
+	common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Unsupported content type")
 	return
 }
 
@@ -392,27 +361,23 @@ type DeleteFileRequest struct {
 func (h *FileHandler) DeleteFiles(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	var req DeleteFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeBadRequest, err.Error())
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 
 	success, message := h.fileService.DeleteFiles(c.Request.Context(), user.ID, req.IDs)
 	if !success {
-		jsonError(c, common.CodeBadRequest, message)
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, message)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, true, common.CodeSuccess.Message())
 }
 
 // MoveFileRequest represents the request body for move files operation
@@ -438,39 +403,35 @@ type MoveFileRequest struct {
 func (h *FileHandler) MoveFiles(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	var req MoveFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeBadRequest, err.Error())
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 
 	// Validate: at least one of dest_file_id or new_name must be provided
 	if req.DestFileID == "" && req.NewName == "" {
-		jsonError(c, common.CodeParamError, "At least one of dest_file_id or new_name must be provided")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "At least one of dest_file_id or new_name must be provided")
 		return
 	}
 
 	// Validate: new_name can only be used with a single file
 	if req.NewName != "" && len(req.SrcFileIDs) > 1 {
-		jsonError(c, common.CodeParamError, "new_name can only be used with a single file")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "new_name can only be used with a single file")
 		return
 	}
 
 	success, message := h.fileService.MoveFiles(user.ID, req.SrcFileIDs, req.DestFileID, req.NewName)
 	if !success {
-		jsonError(c, common.CodeBadRequest, message)
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, message)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, true, common.CodeSuccess.Message())
 }
 
 // Download handles file download
@@ -485,28 +446,28 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 func (h *FileHandler) Download(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	userID := user.ID
 
 	fileID := c.Param("id")
 	if fileID == "" {
-		jsonError(c, common.CodeParamError, "id is required")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "id is required")
 		return
 	}
 
 	// Get file metadata and check permission
 	file, err := h.fileService.GetFileContent(userID, fileID)
 	if err != nil {
-		jsonError(c, common.CodeUnauthorized, err.Error())
+		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, err.Error())
 		return
 	}
 
 	// Get storage
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
-		jsonError(c, common.CodeServerError, "storage not initialized")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "storage not initialized")
 		return
 	}
 
@@ -521,7 +482,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 	if len(blob) == 0 {
 		storageAddr, err := h.fileService.GetStorageAddress(fileID)
 		if err != nil {
-			jsonError(c, common.CodeServerError, "Failed to get file storage address: "+err.Error())
+			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to get file storage address: "+err.Error())
 			return
 		}
 		blob, getErr = storageImpl.Get(storageAddr.Bucket, storageAddr.Name)
@@ -533,7 +494,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 		if getErr != nil {
 			errMsg += ": " + getErr.Error()
 		}
-		jsonError(c, common.CodeServerError, errMsg)
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, errMsg)
 		return
 	}
 
@@ -572,7 +533,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -592,20 +553,16 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		missing = append(missing, "kb_ids")
 	}
 	if len(missing) > 0 {
-		jsonError(c, common.CodeArgumentError, fmt.Sprintf("required argument are missing: %s; ", strings.Join(missing, ",")))
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("required argument are missing: %s; ", strings.Join(missing, ",")))
 		return
 	}
 
 	if err := h.file2DocumentService.LinkToDatasets(user.ID, &req); err != nil {
-		jsonError(c, linkToDatasetsErrorCode(err), err.Error())
+		common.ResponseWithCodeData(c, linkToDatasetsErrorCode(err), nil, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // linkToDatasetsErrorCode maps File2DocumentService sentinel errors to

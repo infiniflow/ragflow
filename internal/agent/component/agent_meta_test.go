@@ -20,33 +20,43 @@ import (
 	"testing"
 )
 
-// TestAgent_GetInputForm_IncludesSelfMeta: GetInputForm returns the
-// Agent's own meta-schema under the "self" key, even when no tools
-// are configured.
-func TestAgent_GetInputForm_IncludesSelfMeta(t *testing.T) {
+// TestAgent_GetInputForm_UsesPromptReferences verifies the Agent input form
+// follows Python's behavior: it is derived from prompt template references.
+func TestAgent_GetInputForm_UsesPromptReferences(t *testing.T) {
 	c := NewAgentComponent(AgentParam{
-		ModelID: "echo",
-		Meta: AgentMeta{
-			Name:        "research_agent",
-			Description: "Performs multi-step research",
-			Parameters: map[string]AgentMetaParam{
-				"user_prompt": {Type: "string", Description: "The question", Required: true},
-			},
-		},
+		ModelID:      "echo",
+		SystemPrompt: "Use {sys.query} and {{sys.user_id}} to answer.",
+		UserPrompt:   "Question: {sys.query}",
 	})
 	form := c.GetInputForm()
 	if form == nil {
 		t.Fatal("GetInputForm returned nil")
 	}
-	self, ok := form["self"].(AgentMeta)
+	if _, ok := form["self"]; ok {
+		t.Fatalf("form unexpectedly contains synthetic self key: %#v", form["self"])
+	}
+	queryField, ok := form["sys.query"].(map[string]any)
 	if !ok {
-		t.Fatalf("form['self'] type=%T, want AgentMeta", form["self"])
+		t.Fatalf("form['sys.query'] type=%T, want map[string]any", form["sys.query"])
 	}
-	if self.Name != "research_agent" {
-		t.Errorf("Name=%q, want research_agent", self.Name)
+	if queryField["type"] != "line" {
+		t.Errorf("sys.query.type=%v, want line", queryField["type"])
 	}
-	if self.Parameters["user_prompt"].Type != "string" {
-		t.Errorf("user_prompt type=%q, want string", self.Parameters["user_prompt"].Type)
+	if queryField["name"] != "sys.query" {
+		t.Errorf("sys.query.name=%v, want 'sys.query'", queryField["name"])
+	}
+	if queryField["optional"] != false {
+		t.Errorf("sys.query.optional=%v, want false", queryField["optional"])
+	}
+	userIDField, ok := form["sys.user_id"].(map[string]any)
+	if !ok {
+		t.Fatalf("form['sys.user_id'] type=%T, want map[string]any", form["sys.user_id"])
+	}
+	if userIDField["name"] != "sys.user_id" {
+		t.Errorf("sys.user_id.name=%v, want sys.user_id", userIDField["name"])
+	}
+	if userIDField["optional"] != false {
+		t.Errorf("sys.user_id.optional=%v, want false", userIDField["optional"])
 	}
 }
 
@@ -57,17 +67,27 @@ func TestAgent_Reset_NoTools(t *testing.T) {
 	c.Reset() // should not panic
 }
 
-// TestAgent_Meta_DefaultsToEmpty: zero-value AgentParam.Meta is the
-// empty AgentMeta struct (not a nil map dereference).
+// TestAgent_GetInputForm_DeduplicatesPromptReferences ensures repeated refs
+// across system and user prompts collapse to one input field.
+func TestAgent_GetInputForm_DeduplicatesPromptReferences(t *testing.T) {
+	c := NewAgentComponent(AgentParam{
+		ModelID:      "echo",
+		SystemPrompt: "A {sys.query}",
+		UserPrompt:   "B {{sys.query}}",
+	})
+	keys := sortedAgentPromptInputKeys(c.param.SystemPrompt, c.param.UserPrompt)
+	if len(keys) != 1 || keys[0] != "sys.query" {
+		t.Fatalf("keys=%v, want [sys.query]", keys)
+	}
+}
+
+// TestAgent_Meta_DefaultsToEmpty: prompts without variable references yield
+// an empty input-form map.
 func TestAgent_Meta_DefaultsToEmpty(t *testing.T) {
 	c := NewAgentComponent(AgentParam{ModelID: "echo"})
 	form := c.GetInputForm()
-	self, ok := form["self"].(AgentMeta)
-	if !ok {
-		t.Fatalf("form['self'] type=%T, want AgentMeta", form["self"])
-	}
-	if self.Name != "" || self.Description != "" {
-		t.Errorf("expected empty meta, got %+v", self)
+	if len(form) != 0 {
+		t.Fatalf("expected empty input form, got %+v", form)
 	}
 }
 

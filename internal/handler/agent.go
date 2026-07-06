@@ -131,7 +131,7 @@ func NewAgentHandler(agentService *service.AgentService, fileService *service.Fi
 func (h *AgentHandler) ListAgents(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -192,19 +192,11 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		tags,
 	)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"data":    false,
-			"message": err.Error(),
-		})
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // mapAgentError normalises service-layer errors onto the existing
@@ -250,25 +242,21 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 func (h *AgentHandler) CreateAgent(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	var req service.CreateAgentRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
-		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	req.UserID = user.ID
 	row, code, err := h.agentService.CreateAgent(c.Request.Context(), &req)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    row,
-		"message": "success",
-	})
+	common.SuccessWithData(c, row, "success")
 }
 
 // GetAgent returns one canvas by ID.
@@ -281,24 +269,20 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 func (h *AgentHandler) GetAgent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	row, err := h.agentService.GetAgent(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
 		ec, em := mapAgentError(err)
-		jsonError(c, ec, em)
+		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
 	if row != nil {
 		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    row,
-		"message": "success",
-	})
+	common.SuccessWithData(c, row, "success")
 }
 
 // updateAgentRequest is the wire shape for PUT /api/v1/agents/:canvas_id.
@@ -316,13 +300,13 @@ type updateAgentRequest map[string]interface{}
 func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	var req updateAgentRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
-		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	if req == nil {
@@ -330,14 +314,10 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 	}
 	if err := h.agentService.UpdateAgent(c.Request.Context(), user.ID, canvasID, map[string]interface{}(req)); err != nil {
 		ec, em := mapAgentError(err)
-		jsonError(c, ec, em)
+		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // DeleteAgent removes the canvas and cascades to its versions.
@@ -350,20 +330,16 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 func (h *AgentHandler) DeleteAgent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	if err := h.agentService.DeleteAgent(c.Request.Context(), user.ID, canvasID); err != nil {
 		ec, em := mapAgentError(err)
-		jsonError(c, ec, em)
+		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // ListTemplates lists every canvas template available to authenticated users.
@@ -376,7 +352,7 @@ func (h *AgentHandler) DeleteAgent(c *gin.Context) {
 // @Router /api/v1/agents/templates [get]
 func (h *AgentHandler) ListTemplates(c *gin.Context) {
 	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -389,11 +365,7 @@ func (h *AgentHandler) ListTemplates(c *gin.Context) {
 		templates = []*entity.CanvasTemplate{}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    templates,
-		"message": "success",
-	})
+	common.SuccessWithData(c, templates, "success")
 }
 
 // RunAgent returns an SSE stream of execution events.
@@ -407,7 +379,7 @@ func (h *AgentHandler) ListTemplates(c *gin.Context) {
 func (h *AgentHandler) RunAgent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
@@ -418,7 +390,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput)
 	if err != nil {
 		ec, em := mapAgentError(err)
-		jsonError(c, ec, em)
+		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -473,20 +445,16 @@ func readUserInput(c *gin.Context) string {
 func (h *AgentHandler) CancelAgent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	if err := h.agentService.CancelAgent(c.Request.Context(), user.ID, canvasID); err != nil {
 		ec, em := mapAgentError(err)
-		jsonError(c, ec, em)
+		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // publishAgentRequest is the wire shape for POST /api/v1/agents/:canvas_id/publish.
@@ -508,13 +476,13 @@ type publishAgentRequest struct {
 func (h *AgentHandler) PublishAgent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	var req publishAgentRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
-		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	row, err := h.agentService.PublishAgent(c.Request.Context(), user.ID, canvasID, &service.PublishAgentRequest{
@@ -524,14 +492,13 @@ func (h *AgentHandler) PublishAgent(c *gin.Context) {
 	})
 	if err != nil {
 		ec, em := mapAgentError(err)
-		jsonError(c, ec, em)
+		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    row,
-		"message": "success",
-	})
+	if row != nil {
+		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
+	}
+	common.SuccessWithData(c, row, "success")
 }
 
 // ResetAgent clears the per-run state of a canvas (history, retrieval,
@@ -572,24 +539,26 @@ func (h *AgentHandler) ResetAgent(c *gin.Context) {
 func (h *AgentHandler) ListVersions(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	rows, err := h.agentService.ListVersions(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
 		ec, em := mapAgentError(err)
-		jsonError(c, ec, em)
+		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
 	if rows == nil {
 		rows = []*entity.UserCanvasVersion{}
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    rows,
-		"message": "success",
-	})
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
+	}
+	common.SuccessWithData(c, rows, "success")
 }
 
 // GetVersion returns a single version.
@@ -603,7 +572,7 @@ func (h *AgentHandler) ListVersions(c *gin.Context) {
 func (h *AgentHandler) GetVersion(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
@@ -611,14 +580,13 @@ func (h *AgentHandler) GetVersion(c *gin.Context) {
 	row, err := h.agentService.GetVersion(c.Request.Context(), user.ID, canvasID, versionID)
 	if err != nil {
 		ec, em := mapAgentError(err)
-		jsonError(c, ec, em)
+		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    row,
-		"message": "success",
-	})
+	if row != nil {
+		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
+	}
+	common.SuccessWithData(c, row, "success")
 }
 
 // DeleteVersion removes a single version by id.
@@ -632,21 +600,17 @@ func (h *AgentHandler) GetVersion(c *gin.Context) {
 func (h *AgentHandler) DeleteVersion(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	versionID := c.Param("version_id")
 	if err := h.agentService.DeleteVersion(c.Request.Context(), user.ID, canvasID, versionID); err != nil {
 		ec, em := mapAgentError(err)
-		jsonError(c, ec, em)
+		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // --- PR2: missing routes wired up to the existing service layer ---
@@ -654,65 +618,53 @@ func (h *AgentHandler) DeleteVersion(c *gin.Context) {
 // ListAgentTemplates GET /api/v1/agents/templates
 func (h *AgentHandler) ListAgentTemplates(c *gin.Context) {
 	if _, code, msg := GetUser(c); code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	rows, err := h.agentService.ListTemplates()
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    rows,
-		"message": "success",
-	})
+	common.SuccessWithData(c, rows, "success")
 }
 
 // Prompts GET /api/v1/agents/prompts
 func (h *AgentHandler) Prompts(c *gin.Context) {
 	if _, code, msg := GetUser(c); code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": gin.H{
-			"task_analysis":       "As an AI agent designer, your role is to engage users by understanding their objectives and creating effective agent designs. Begin by analyzing the user's request to determine the appropriate actions.",
-			"output_format":       "For each agent you create, detail its components and explain how they collaborate to achieve the user's goal.",
-			"citation_guidelines": "If the agent uses external sources, cite them in the final output. Use the format: [index] document_id, which corresponds to the document identifier in the database.",
-			"few_shots_examples":  "<example/>",
-		},
-		"message": "success",
-	})
+	common.SuccessWithData(c, gin.H{
+		"task_analysis":       "As an AI agent designer, your role is to engage users by understanding their objectives and creating effective agent designs. Begin by analyzing the user's request to determine the appropriate actions.",
+		"output_format":       "For each agent you create, detail its components and explain how they collaborate to achieve the user's goal.",
+		"citation_guidelines": "If the agent uses external sources, cite them in the final output. Use the format: [index] document_id, which corresponds to the document identifier in the database.",
+		"few_shots_examples":  "<example/>",
+	}, "success")
 }
 
 // ListAgentTags GET /api/v1/agents/tags
 func (h *AgentHandler) ListAgentTags(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 
 	rows, errCode, err := h.agentService.ListAgentTags(user.ID, strings.TrimSpace(c.Query("canvas_category")))
 	if err != nil {
-		jsonError(c, errCode, err.Error())
+		common.ResponseWithCodeData(c, errCode, nil, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    rows,
-		"message": "success",
-	})
+	common.SuccessWithData(c, rows, "success")
 }
 
 // UpdateAgentTags PUT /api/v1/agents/:canvas_id/tags
 func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
@@ -720,26 +672,22 @@ func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 		Tags interface{} `json:"tags"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
-		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	ok, errCode, errMsg := h.agentService.UpdateAgentTags(user.ID, canvasID, body.Tags)
 	if !ok {
-		jsonError(c, errCode, errMsg.Error())
+		common.ResponseWithCodeData(c, errCode, nil, errMsg.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // ListAgentSessions GET /api/v1/agents/:canvas_id/sessions
 func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
@@ -768,21 +716,17 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		IncludeDSL: includeDSL,
 	})
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    resp.Data,
-		"message": "success",
-	})
+	common.SuccessWithData(c, resp.Data, "success")
 }
 
 // CreateAgentSession POST /api/v1/agents/:canvas_id/sessions
 func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
@@ -792,7 +736,7 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 		DSL    json.RawMessage `json:"dsl"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
-		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	row, code, err := h.agentService.CreateAgentSession(&service.CreateAgentSessionRequest{
@@ -803,42 +747,34 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 		DSL:     body.DSL,
 	})
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    row,
-		"message": "success",
-	})
+	common.SuccessWithData(c, row, "success")
 }
 
 // GetAgentSession GET /api/v1/agents/:canvas_id/sessions/:session_id
 func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
 	row, code, err := h.agentService.GetAgentSession(user.ID, canvasID, sessionID)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    row,
-		"message": "success",
-	})
+	common.SuccessWithData(c, row, "success")
 }
 
 // DeleteAgentSession DELETE /api/v1/agents/:canvas_id/sessions[/:session_id]
 func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
@@ -846,14 +782,10 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 	if sessionID != "" {
 		ok, code, err := h.agentService.DeleteAgentSessionItem(user.ID, canvasID, sessionID)
 		if err != nil {
-			jsonError(c, code, err.Error())
+			common.ErrorWithCode(c, int(code), err.Error())
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"data":    ok,
-			"message": "success",
-		})
+		common.SuccessWithData(c, ok, "success")
 		return
 	}
 	idsParam := c.Query("ids")
@@ -868,14 +800,10 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 	}
 	result, code, err := h.agentService.DeleteAgentSessions(user.ID, canvasID, ids, deleteAll)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // AgentChatCompletions POST /api/v1/agents/chat/completions
@@ -975,20 +903,20 @@ func userInputMeta(userInput any) []zap.Field {
 func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	var req agentChatCompletionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
-		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	if req.AgentID == "" {
-		jsonError(c, common.CodeArgumentError, "`agent_id` is required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`agent_id` is required.")
 		return
 	}
 	if req.OpenAICompat && len(req.Messages) == 0 {
-		jsonError(c, common.CodeDataError, "at least one message is required in openai-compatible mode.")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "at least one message is required in openai-compatible mode.")
 		return
 	}
 	common.Debug("agent chat completions: request received",
@@ -1005,13 +933,11 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	)
 
 	if req.OpenAICompat {
-		c.JSON(http.StatusOK, gin.H{
-			"code": common.CodeSuccess,
+		common.SuccessWithData(c, gin.H{
 			"choices": []map[string]interface{}{
 				{"message": gin.H{"content": "hello"}},
 			},
-			"message": "success",
-		})
+		}, "success")
 		return
 	}
 
@@ -1044,7 +970,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 			}, userInputMeta(userInput)...)...,
 		)
 		ec, em := mapAgentError(err)
-		jsonError(c, ec, em)
+		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
 
@@ -1082,7 +1008,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 func (h *AgentHandler) RerunAgent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	var body struct {
@@ -1091,7 +1017,7 @@ func (h *AgentHandler) RerunAgent(c *gin.Context) {
 		ComponentID string                 `json:"component_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
-		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	missing := make([]string, 0, 3)
@@ -1105,8 +1031,7 @@ func (h *AgentHandler) RerunAgent(c *gin.Context) {
 		missing = append(missing, "component_id")
 	}
 	if len(missing) > 0 {
-		jsonError(c, common.CodeArgumentError,
-			"required argument are missing: "+strings.Join(missing, ",")+"; ")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "required argument are missing: "+strings.Join(missing, ",")+"; ")
 		return
 	}
 	// Fail closed on missing dependency: a nil documentService
@@ -1116,56 +1041,48 @@ func (h *AgentHandler) RerunAgent(c *gin.Context) {
 	// dependency is loud, not silent.
 	if h.documentService == nil {
 		zap.L().Error("RerunAgent: documentService is nil; refusing request to prevent auth bypass")
-		jsonError(c, common.CodeServerError, "server misconfiguration: document service not wired")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "server misconfiguration: document service not wired")
 		return
 	}
 	if !h.documentService.Accessible(body.ID, user.ID) {
-		jsonError(c, common.CodeDataError, "Document not found.")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Document not found.")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // TestDBConnection POST /api/v1/agents/test_db_connection
 func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	var req service.TestDBConnectionRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
-		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	code, err := h.agentService.TestDBConnection(user.ID, &req)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // GetAgentLogs GET /api/v1/agents/:canvas_id/logs/:message_id
 func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	messageID := c.Param("message_id")
 	ok, errCode, errMsg := h.checkCanvasAccessForHandler(c, user.ID, canvasID)
 	if !ok {
-		jsonError(c, errCode, errMsg)
+		common.ResponseWithCodeData(c, errCode, nil, errMsg)
 		return
 	}
 
@@ -1175,39 +1092,31 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	if rerr == nil && payload != "" {
 		_ = json.Unmarshal([]byte(payload), &data)
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    data,
-		"message": "success",
-	})
+	common.SuccessWithData(c, data, "success")
 }
 
 // GetAgentWebhookLogs GET /api/v1/agents/:canvas_id/webhook/logs
 func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	ok, err := h.agentService.CheckCanvasAccess(user.ID, canvasID)
 	if err != nil || !ok {
 		if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
-			jsonError(c, common.CodeServerError, err.Error())
+			common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 			return
 		}
-		jsonError(c, common.CodeDataError, "Canvas not found.")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Canvas not found.")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": gin.H{
-			"events":        []interface{}{},
-			"finished":      false,
-			"next_since_ts": 0,
-		},
-		"message": "success",
-	})
+	common.SuccessWithData(c, gin.H{
+		"events":        []interface{}{},
+		"finished":      false,
+		"next_since_ts": 0,
+	}, "success")
 }
 
 // checkCanvasAccessForHandler is the shared 103 envelope helper

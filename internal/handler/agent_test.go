@@ -332,31 +332,31 @@ type agentHandlerTestable struct {
 func (h *agentHandlerTestable) listAgents(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "", nil)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": code, "data": false, "message": err.Error()})
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": result, "message": "success"})
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
 	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 	templates, err := h.svc.ListTemplates()
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
 	if templates == nil {
 		templates = []*entity.CanvasTemplate{}
 	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": templates, "message": "success"})
+	common.SuccessWithData(c, templates, "success")
 }
 
 func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
@@ -555,7 +555,7 @@ func TestAgentHandler_NotFoundOnUnknownCanvas(t *testing.T) {
 	r2.Use(setUser())
 	g2 := r2.Group("/api/v1/agents")
 	g2.GET("/:canvas_id", func(c *gin.Context) {
-		jsonError(c, common.CodeNotFound, "agent unknown: not found")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "agent unknown: not found")
 	})
 
 	w := httptest.NewRecorder()
@@ -911,8 +911,12 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsChoices(t *testing.T)
 
 	var resp map[string]interface{}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if _, ok := resp["choices"]; !ok {
-		t.Errorf("response should contain top-level 'choices', got keys: %v", resp)
+	if data, ok := resp["data"].(map[string]interface{}); ok {
+		if _, ok := data["choices"]; !ok {
+			t.Errorf("response data should contain 'choices', got keys: %v", data)
+		}
+	} else {
+		t.Errorf("response should contain 'data' envelope, got keys: %v", resp)
 	}
 }
 

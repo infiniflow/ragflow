@@ -169,6 +169,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         prompt,
         max_token=512,
         threshold=0.1,
+        small_layer_collapse=8,
         max_errors=3,
         tree_builder=RAPTOR_TREE_BUILDER,
         clustering_method=GMM_CLUSTERING_METHOD,
@@ -177,6 +178,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
     ):
         """Configure RAPTOR summarization, clustering, and Psi limits."""
         self._max_cluster = max_cluster
+        self._small_layer_collapse = small_layer_collapse
         self._llm_model = llm_model
         self._embd_model = embd_model
         self._threshold = threshold
@@ -844,18 +846,25 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             # so use positional access — the older ``_, embd, _, _``
             # form crashed on layer-0 entries.
             embeddings = [entry[1] for entry in chunks[start:end]]
-            if len(embeddings) == 2:
-                await summarize([start, start + 1])
+            if end - start <= self._small_layer_collapse:
+                # Too few nodes for meaningful sub-clustering. Skip the
+                # clustering pass entirely and summarize the whole layer
+                # into one parent, so the upper tree doesn't descend one
+                # node per layer (N -> N-1 -> N-2 -> ... each a full
+                # clustering + summarize pass).
+                await summarize(list(range(start, end)))
                 produced = len(chunks) - end
                 if produced == 0:
                     logging.warning("RAPTOR layer produced no summaries; stopping materialization")
                     break
-                if callback:
-                    callback(msg="Cluster one layer: {} -> {}".format(end - start, produced))
+                logging.info(
+                    "RAPTOR small-N collapse: layer of %d node(s) [%d:%d] collapsed into %d summary; stopping at tree top",
+                    end - start, start, end, produced,
+                )
                 layers.append((end, len(chunks)))
-                start = end
-                end = len(chunks)
-                continue
+                if callback:
+                    callback(msg="Cluster one layer: {} -> {} (small-N collapse)".format(end - start, produced))
+                break
 
             n_clusters, lbls = self.clustering(
                 embeddings,

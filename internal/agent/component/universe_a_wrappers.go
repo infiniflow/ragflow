@@ -515,6 +515,15 @@ func (c *exesqlComponent) Inputs() map[string]string {
 	}
 }
 
+func (c *exesqlComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"sql": map[string]any{
+			"name": "SQL",
+			"type": "line",
+		},
+	}
+}
+
 func (c *exesqlComponent) Outputs() map[string]string {
 	return map[string]string{
 		"columns": "Result-set column names.",
@@ -870,6 +879,62 @@ func toFloatParam(v any) float64 {
 		return f
 	}
 	return 0
+}
+
+// yahooFinanceComponent delegates to internal/agent/tool/YahooFinanceTool.
+type yahooFinanceComponent struct {
+	inner *agenttool.YahooFinanceTool
+}
+
+func newYahooFinanceComponent(_ map[string]any) (Component, error) {
+	return &yahooFinanceComponent{inner: agenttool.NewYahooFinanceTool()}, nil
+}
+
+func (c *yahooFinanceComponent) Name() string { return "YahooFinance" }
+
+func (c *yahooFinanceComponent) Inputs() map[string]string {
+	return map[string]string{
+		"stock_code": "Stock symbol to look up (e.g. AAPL, MSFT, 0005.HK).",
+	}
+}
+
+func (c *yahooFinanceComponent) Outputs() map[string]string {
+	return map[string]string{
+		"report": "Stock quote data (JSON).",
+	}
+}
+
+func (c *yahooFinanceComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	stockCode, _ := inputs["stock_code"].(string)
+	if strings.TrimSpace(stockCode) == "" {
+		return map[string]any{"_ERROR": "stock_code is required"}, nil
+	}
+	toolInput := map[string]any{
+		"symbols": []string{stockCode},
+	}
+	argsJSON, _ := json.Marshal(toolInput)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	if err != nil {
+		if out != "" {
+			return parseToolEnvelope(out), nil
+		}
+		return nil, fmt.Errorf("canvas: YahooFinance: %w", err)
+	}
+	result := parseToolEnvelope(out)
+	return map[string]any{"report": result["results"]}, nil
+}
+
+func (c *yahooFinanceComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"stock_code": map[string]any{
+			"type": "line",
+			"name": "Stock code/Company name",
+		},
+	}
+}
+
+func (c *yahooFinanceComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
 }
 
 // Compile-time interface checks.

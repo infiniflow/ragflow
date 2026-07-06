@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"go.uber.org/zap"
@@ -533,17 +534,16 @@ func chunksFromState(ctx context.Context) []prompts.CitationSource {
 	return out
 }
 
-// GetInputForm aggregates the Agent's own meta-schema with each
-// sub-tool's input form. Mirrors Python's `Agent.get_input_form`.
+// GetInputForm aggregates the Agent's own user-callable parameters with each
+// sub-tool's input form. Mirrors Python's `Agent.get_input_form`, which
+// returns a flat field-definition map keyed by input name.
 //
 // Today the sub-tool input forms are aggregated via an optional
 // `InputForm() map[string]any` method on the tool (when tools
 // implement it); tools that don't expose a structured input form
 // are skipped silently.
 func (c *AgentComponent) GetInputForm() map[string]any {
-	out := map[string]any{
-		"self": c.param.Meta,
-	}
+	out := extractAgentPromptInputForm(c.param.SystemPrompt, c.param.UserPrompt)
 	tools, err := buildAgentTools(c.param)
 	if err != nil {
 		return out
@@ -559,6 +559,41 @@ func (c *AgentComponent) GetInputForm() map[string]any {
 		}
 	}
 	return out
+}
+
+func extractAgentPromptInputForm(systemPrompt, userPrompt string) map[string]any {
+	out := map[string]any{}
+	seen := map[string]struct{}{}
+	matches := append(runtime.VarRefPattern.FindAllStringSubmatch(systemPrompt, -1), runtime.VarRefPattern.FindAllStringSubmatch(userPrompt, -1)...)
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		key := strings.TrimSpace(match[1])
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out[key] = map[string]any{
+			"type":     "line",
+			"name":     key,
+			"optional": false,
+		}
+	}
+	return out
+}
+
+func sortedAgentPromptInputKeys(systemPrompt, userPrompt string) []string {
+	form := extractAgentPromptInputForm(systemPrompt, userPrompt)
+	keys := make([]string, 0, len(form))
+	for key := range form {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // Reset calls Reset on every sub-tool that implements the Resetter
