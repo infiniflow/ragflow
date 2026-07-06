@@ -214,13 +214,13 @@ export const useNavigatePage = () => {
 
   const navigateToCompilationTemplate = useCallback(
     (id?: string) => () => {
-      if (id) {
-        navigate(Routes.CompilationTemplate.replace(':id', id));
+      if (id && id !== 'create') {
+        navigate(`${Routes.CompilationTemplatesCreateNext}/${id}`);
       } else {
-        navigateToCompilationTemplates();
+        navigate(Routes.CompilationTemplatesCreateNext);
       }
     },
-    [navigate, navigateToCompilationTemplates],
+    [navigate],
   );
 
   return {

@@ -34,4 +34,6 @@ export const updateCompilationTemplate = (
 export const listBuiltinCompilationTemplates = () =>
   request.get(`${api.compilationTemplates}/builtins`);
 
+export const listWikiPresets = () => request.get(api.wikiPresets);
+
 export default compilationTemplateService;

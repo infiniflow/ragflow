@@ -65,3 +65,10 @@ export interface ICompilationTemplateGroup {
   update_time?: number;
   templates: ICompilationTemplate[];
 }
+
+export interface IWikiPreset {
+  id: string;
+  topic: string;
+  instruction: string;
+  page_example: string;
+}

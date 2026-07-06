@@ -4,6 +4,7 @@ import {
   ICompilationTemplateBuiltin,
   ICompilationTemplateListResult,
   ICompilationTemplateSection,
+  IWikiPreset,
 } from '@/interfaces/database/compilation-template';
 import {
   ICreateCompilationTemplateRequestBody,
@@ -15,6 +16,7 @@ import compilationTemplateService, {
   deleteCompilationTemplate,
   getCompilationTemplate,
   listBuiltinCompilationTemplates,
+  listWikiPresets,
   updateCompilationTemplate,
 } from '@/services/compilation-template-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -33,6 +35,7 @@ export const enum CompilationTemplateApiAction {
   CreateCompilationTemplate = 'createCompilationTemplate',
   UpdateCompilationTemplate = 'updateCompilationTemplate',
   DeleteCompilationTemplate = 'deleteCompilationTemplate',
+  FetchWikiPresets = 'fetchWikiPresets',
 }
 
 export const CompilationTemplateKeys = {
@@ -46,6 +49,7 @@ export const CompilationTemplateKeys = {
   builtins: () =>
     [CompilationTemplateApiAction.FetchBuiltinCompilationTemplates] as const,
   all: () => [CompilationTemplateApiAction.FetchCompilationTemplates] as const,
+  wikiPresets: () => [CompilationTemplateApiAction.FetchWikiPresets] as const,
 };
 
 export const useFetchCompilationTemplatesByPage = () => {
@@ -283,4 +287,18 @@ export const useFetchAllCompilationTemplates = () => {
   });
 
   return { templates: data ?? [], loading };
+};
+
+export const useFetchWikiPresets = () => {
+  const { data, isFetching: loading } = useQuery<IWikiPreset[]>({
+    queryKey: CompilationTemplateKeys.wikiPresets(),
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await listWikiPresets();
+      return (data?.data ?? []) as IWikiPreset[];
+    },
+  });
+
+  return { data: data ?? [], loading };
 };

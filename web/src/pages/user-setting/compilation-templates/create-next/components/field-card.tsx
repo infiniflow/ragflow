@@ -3,26 +3,21 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Pencil, Trash2 } from 'lucide-react';
 
 type FieldCardProps = {
-  index: number;
+  title?: string;
   field: Record<string, string>;
   onEdit: () => void;
   onDelete: () => void;
 };
 
-export function FieldCard({ index, field, onEdit, onDelete }: FieldCardProps) {
-  const title = `FIELD #${String.fromCharCode(65 + index)}`;
-
+export function FieldCard({ title, field, onEdit, onDelete }: FieldCardProps) {
   return (
     <Card className="border-border-button bg-transparent group">
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
-          <div className="space-y-2 space-x-2">
-            <span className="text-sm font-medium text-text-primary">
-              {title}
-            </span>
-            {field.type && (
-              <span className="inline-flex items-center rounded-full border border-border-button px-2 py-0.5 text-xs text-text-secondary">
-                {field.type}
+          <div className="space-y-2 space-x-2 flex-1 min-w-0">
+            {title && (
+              <span className="text-sm font-medium text-text-primary">
+                {title}
               </span>
             )}
           </div>

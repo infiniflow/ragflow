@@ -2,6 +2,7 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useCreateCompilationTemplateGroup,
   useFetchCompilationTemplateGroup,
+  useUpdateCompilationTemplateGroup,
 } from '@/hooks/use-compilation-template-group-request';
 import { useFetchBuiltinCompilationTemplates } from '@/hooks/use-compilation-template-request';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
@@ -17,6 +18,8 @@ export const useCreateNextCompilationTemplateGroup = () => {
   const { id } = useParams<{ id: string }>();
   const { navigateToCompilationTemplates } = useNavigatePage();
 
+  const isCreate = !id || id === 'create';
+
   const { data: detail } = useFetchCompilationTemplateGroup(id);
   const { data: builtins, kindOptions: builtinKindOptions } =
     useFetchBuiltinCompilationTemplates();
@@ -24,6 +27,8 @@ export const useCreateNextCompilationTemplateGroup = () => {
 
   const { createGroup, loading: createLoading } =
     useCreateCompilationTemplateGroup();
+  const { updateGroup, loading: updateLoading } =
+    useUpdateCompilationTemplateGroup();
 
   const kindOptions = useMemo(
     () =>
@@ -37,15 +42,14 @@ export const useCreateNextCompilationTemplateGroup = () => {
   const { form } = useCompilationTemplateGroupForm({
     detail,
     defaultLlmId: defaultModelDictionary.llm_id,
-    isCreate: true,
+    isCreate,
   });
 
   const { onSubmit } = useCompilationTemplateGroupSubmit({
-    isCreate: true,
+    isCreate,
     id,
     createGroup,
-    updateGroup: async () =>
-      ({ code: -1 }) as { code: number } & Record<string, unknown>,
+    updateGroup,
     onSuccess: navigateToCompilationTemplates,
   });
 
@@ -55,7 +59,8 @@ export const useCreateNextCompilationTemplateGroup = () => {
     kindOptions,
     builtins,
     onSubmit,
-    isLoading: createLoading,
+    isCreate,
+    isLoading: isCreate ? createLoading : updateLoading,
     navigateToCompilationTemplates,
   };
 };

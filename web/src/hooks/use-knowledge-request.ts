@@ -347,9 +347,11 @@ export const useFetchKnowledgeBaseConfiguration = (props?: {
   return { data, loading };
 };
 
-const artifactKeys = {
+export const artifactKeys = {
   list: (datasetId: string, keywords: string) =>
     [KnowledgeApiAction.FetchArtifactList, datasetId, keywords] as const,
+  listByDataset: (datasetId: string) =>
+    [KnowledgeApiAction.FetchArtifactList, datasetId] as const,
   detail: (datasetId: string, pageType: string, slug: string) =>
     [KnowledgeApiAction.FetchArtifactPage, datasetId, pageType, slug] as const,
 };

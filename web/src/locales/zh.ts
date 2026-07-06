@@ -403,6 +403,8 @@ export default {
         '从配置了知识编译模板的每个文档中编译 Artifact 页面（实体 / 概念 / 主题 wiki）。每次运行仅处理新添加的 chunk。',
       generateToSkills:
         '从该数据集构建分层技能树，并存储生成的技能页面以供搜索和复用。',
+      noWikiPages: '暂无 Wiki 页面',
+      noSkills: '暂无技能',
       processingType: '处理类型',
       dataPipeline: '切换或配置 ingestion pipeline。',
       dataPipelineTitle: '数据管道',
@@ -1296,6 +1298,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       addField: '添加字段',
       example: '页面结构示例',
       examplePlaceholder: '请输入示例',
+      instruction: 'Instruction',
       globalRules: '全局规则',
       globalRulesPlaceholder: '请输入全局编译规则',
       raptorTreeSettings: 'RAPTOR 树设置',

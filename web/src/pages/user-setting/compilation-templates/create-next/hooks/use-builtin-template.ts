@@ -4,7 +4,10 @@ import {
   ICompilationTemplateBuiltin,
   ICompilationTemplateSection,
 } from '@/interfaces/database/compilation-template';
-import { isConfigMetaKey } from '@/pages/user-setting/compilation-templates/edit-template/utils';
+import {
+  isConfigMetaKey,
+  sortSectionNames,
+} from '@/pages/user-setting/compilation-templates/edit-template/utils';
 
 export const useBuiltinTemplate = (
   builtins: ICompilationTemplateBuiltin[],
@@ -16,7 +19,7 @@ export const useBuiltinTemplate = (
   );
 
   const sectionNames = useMemo(() => {
-    return Object.keys(builtinTemplate?.config ?? {}).filter((key) => {
+    const names = Object.keys(builtinTemplate?.config ?? {}).filter((key) => {
       if (isConfigMetaKey(key)) return false;
       const section = builtinTemplate?.config?.[key];
       return (
@@ -25,6 +28,7 @@ export const useBuiltinTemplate = (
         Array.isArray((section as ICompilationTemplateSection).fields)
       );
     });
+    return sortSectionNames(names);
   }, [builtinTemplate]);
 
   return { builtinTemplate, sectionNames };

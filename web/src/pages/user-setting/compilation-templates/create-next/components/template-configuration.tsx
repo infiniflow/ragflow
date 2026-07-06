@@ -33,6 +33,7 @@ type TemplateConfigurationProps = {
   kindOptions: { label: string; value: string }[];
   selectedTemplateIndex: number;
   onNext: () => void;
+  isArtifacts?: boolean;
 };
 
 export function TemplateConfiguration({
@@ -41,6 +42,7 @@ export function TemplateConfiguration({
   kindOptions,
   selectedTemplateIndex,
   onNext,
+  isArtifacts = false,
 }: TemplateConfigurationProps) {
   const { t } = useTranslation();
 
@@ -98,6 +100,8 @@ export function TemplateConfiguration({
           <SectionFieldGrid
             key={activeFieldsPath}
             fieldsPath={activeFieldsPath}
+            sectionName={sectionName}
+            builtinSection={builtinSection}
             onOpenAddField={handleOpenAddField}
             onEditField={handleOpenEditField}
           />
@@ -107,6 +111,7 @@ export function TemplateConfiguration({
     [
       activeFieldsPath,
       activeSectionTab,
+      builtinSection,
       handleOpenAddField,
       handleOpenEditField,
     ],
@@ -207,7 +212,7 @@ export function TemplateConfiguration({
 
       <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-end">
         <Button type="button" onClick={onNext}>
-          {t('common.next')}
+          {isArtifacts ? t('common.next') : t('common.save')}
         </Button>
       </footer>
 

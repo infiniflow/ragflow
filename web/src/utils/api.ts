@@ -308,6 +308,7 @@ export default {
   compilationTemplateGroups: `${restAPIv1}/compilation_template_groups`,
   compilationTemplateGroup: (id: string) =>
     `${restAPIv1}/compilation_template_groups/${id}`,
+  wikiPresets: `${restAPIv1}/compilation_templates/wiki_presets`,
 
   // mcp server
   listMcpServer: `${restAPIv1}/mcp/servers`,

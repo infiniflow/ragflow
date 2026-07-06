@@ -39,6 +39,8 @@ export const DefaultTemplateValues: TemplateSchemaType = {
     llm_id: '',
     global_rules: '',
     example: '',
+    instruction: '',
+    page_example: '',
   },
 };
 
@@ -50,7 +52,14 @@ export const DefaultValues: FormSchemaType = {
 };
 
 export const isConfigMetaKey = (key: string) =>
-  ['kind', 'llm_id', 'global_rules', 'example'].includes(key);
+  [
+    'kind',
+    'llm_id',
+    'global_rules',
+    'example',
+    'instruction',
+    'page_example',
+  ].includes(key);
 
 export const createEmptyField = (keys: string[]) =>
   Object.fromEntries(keys.map((key) => [key, '']));
@@ -183,12 +192,19 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
 
   Object.entries(template.config).forEach(([key, value]) => {
     if (key === 'kind' || key === 'llm_id') return;
+    if (key === 'instruction' || key === 'page_example') return;
     if (isConfigMetaKey(key)) {
       if (typeof value === 'string') config[key] = value;
     } else {
       config[key] = value as ICompilationTemplateConfigRequest[string];
     }
   });
+
+  if (template.kind === CompilationTemplateKind.Artifacts) {
+    const instruction = String(template.config.instruction ?? '').trim();
+    const pageExample = String(template.config.page_example ?? '').trim();
+    config.example = [instruction, pageExample].filter(Boolean).join('\n\n');
+  }
 
   return {
     name: template.name,
@@ -216,8 +232,28 @@ export const SectionTitleKeyMap: Record<string, string> = {
   claim: 'setting.claimSpecification',
 };
 
+export const SectionPriority = ['entity', 'relation'];
+
+export const sortSectionNames = (names: string[]): string[] => {
+  const priority = SectionPriority.filter((name) => names.includes(name));
+  const rest = names.filter((name) => !SectionPriority.includes(name));
+  return [...priority, ...rest];
+};
+
 export const FieldLabelKeyMap: Record<string, string> = {
   type: 'setting.fieldType',
   description: 'setting.fieldDescription',
   rule: 'setting.fieldRule',
+};
+
+export const getTypeOptionsFromBuiltinSection = (
+  builtinSection?: ICompilationTemplateSection,
+) => {
+  const typeSet = new Set<string>();
+  builtinSection?.fields?.forEach((field) => {
+    if (field.type) typeSet.add(field.type);
+  });
+  return Array.from(typeSet)
+    .sort()
+    .map((value) => ({ label: value, value }));
 };

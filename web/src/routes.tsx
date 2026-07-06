@@ -331,6 +331,12 @@ const routeConfigOptions = [
       import('@/pages/user-setting/compilation-templates/create-next'),
   },
   {
+    path: `${Routes.CompilationTemplatesCreateNext}/:id`,
+    layout: false,
+    Component: () =>
+      import('@/pages/user-setting/compilation-templates/create-next'),
+  },
+  {
     path: `${Routes.SearchShare}`,
     Component: () => import('@/pages/next-search/share'),
   },

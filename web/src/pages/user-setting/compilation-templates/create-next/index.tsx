@@ -7,9 +7,10 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
+import { CompilationTemplateKind } from '@/constants/compilation';
 import { Routes } from '@/routes';
 import { useCallback, useMemo, useState } from 'react';
-import { useFieldArray } from 'react-hook-form';
+import { useFieldArray, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import { BasicInfoStep } from './components/basic-info-step';
@@ -23,13 +24,20 @@ export default function CreateNextCompilationTemplate() {
   const [activeStep, setActiveStep] = useState(1);
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
 
-  const { form, kindOptions, builtins, onSubmit, isLoading } =
+  const { form, kindOptions, builtins, onSubmit, isCreate, isLoading } =
     useCreateNextCompilationTemplateGroup();
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
     name: 'templates',
   });
+
+  const selectedKind = useWatch({
+    control: form.control,
+    name: `templates.${selectedTemplateIndex}.kind`,
+  });
+
+  const isArtifacts = selectedKind === CompilationTemplateKind.Artifacts;
 
   const timelineNodes = useMemo(
     () => [
@@ -43,13 +51,17 @@ export default function CreateNextCompilationTemplate() {
         title: t('setting.templateWizardConfiguration'),
         content: t('setting.templateWizardConfigurationDescription'),
       },
-      {
-        id: 'blueprints',
-        title: t('setting.blueprints'),
-        content: t('setting.blueprintsDescription'),
-      },
+      ...(isArtifacts
+        ? [
+            {
+              id: 'blueprints',
+              title: t('setting.blueprints'),
+              content: t('setting.blueprintsDescription'),
+            },
+          ]
+        : []),
     ],
-    [t],
+    [isArtifacts, t],
   );
 
   const handleNext = useCallback(async () => {
@@ -58,9 +70,14 @@ export default function CreateNextCompilationTemplate() {
       if (valid) setActiveStep(2);
     } else if (activeStep === 2) {
       const valid = await form.trigger(`templates.${selectedTemplateIndex}`);
-      if (valid) setActiveStep(3);
+      if (!valid) return;
+      if (isArtifacts) {
+        setActiveStep(3);
+      } else {
+        form.handleSubmit(onSubmit)();
+      }
     }
-  }, [activeStep, form, selectedTemplateIndex]);
+  }, [activeStep, form, isArtifacts, onSubmit, selectedTemplateIndex]);
 
   return (
     <section className="h-full flex flex-col bg-bg-base">
@@ -69,7 +86,9 @@ export default function CreateNextCompilationTemplate() {
           to={`${Routes.UserSetting}${Routes.CompilationTemplates}`}
         />
         <h2 className="text-xl font-medium text-text-primary">
-          {t('setting.addTemplateGroup')}
+          {isCreate
+            ? t('setting.addTemplateGroup')
+            : t('setting.editTemplateGroup')}
         </h2>
       </header>
 
@@ -110,6 +129,7 @@ export default function CreateNextCompilationTemplate() {
                   kindOptions={kindOptions}
                   selectedTemplateIndex={selectedTemplateIndex}
                   onNext={handleNext}
+                  isArtifacts={isArtifacts}
                 />
               </ResizablePanel>
             </ResizablePanelGroup>
@@ -126,9 +146,10 @@ export default function CreateNextCompilationTemplate() {
                 </>
               )}
 
-              {activeStep === 3 && (
+              {activeStep === 3 && isArtifacts && (
                 <BlueprintsStep
                   form={form}
+                  selectedTemplateIndex={selectedTemplateIndex}
                   onBack={() => setActiveStep(2)}
                   onSave={form.handleSubmit(onSubmit)}
                   isLoading={isLoading}

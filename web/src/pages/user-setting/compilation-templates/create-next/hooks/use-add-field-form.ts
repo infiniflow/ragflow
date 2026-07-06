@@ -2,6 +2,7 @@ import { ICompilationTemplateSection } from '@/interfaces/database/compilation-t
 import {
   createEmptyField,
   getFieldKeyOrder,
+  getTypeOptionsFromBuiltinSection,
 } from '@/pages/user-setting/compilation-templates/edit-template/utils';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
@@ -31,15 +32,10 @@ export const useAddFieldForm = ({
 
   const hasTypeField = fieldKeys.includes('type');
 
-  const typeOptions = useMemo(() => {
-    const typeSet = new Set<string>();
-    builtinSection?.fields?.forEach((field) => {
-      if (field.type) typeSet.add(field.type);
-    });
-    return Array.from(typeSet)
-      .sort()
-      .map((value) => ({ label: value, value }));
-  }, [builtinSection]);
+  const typeOptions = useMemo(
+    () => getTypeOptionsFromBuiltinSection(builtinSection),
+    [builtinSection],
+  );
 
   const buildField = useCallback(
     (typeValue: string) => {

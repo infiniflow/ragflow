@@ -23,6 +23,7 @@ import {
   getFieldKeyOrder,
   isConfigMetaKey,
   SectionTitleKeyMap,
+  sortSectionNames,
 } from '../utils';
 import { FieldsSection } from './fields-section';
 import { TreeTemplateFields } from './tree-template-fields';
@@ -57,9 +58,10 @@ export function TemplateCard({
   );
 
   const sectionNames = useMemo(() => {
-    return Object.keys(builtinTemplate?.config ?? {}).filter(
+    const names = Object.keys(builtinTemplate?.config ?? {}).filter(
       (key) => !isConfigMetaKey(key),
     );
+    return sortSectionNames(names);
   }, [builtinTemplate]);
 
   const handleRemove = useCallback(() => {

@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { Spin } from '@/components/ui/spin';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { IArtifact } from '@/interfaces/database/dataset';
+import { IArtifact, IArtifactGraphEntity } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
 import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -22,6 +22,12 @@ import {
 import { LeftPanelTab } from './constants';
 import { CreateDirectoryDialog } from './create-directory-dialog';
 import { useCreateDirectory } from './hooks/use-create-directory';
+
+const mapNodeToValue = (node: IArtifactGraphEntity) => ({
+  slug: node.slug,
+  title: node.name,
+  page_type: node.type,
+});
 
 type LeftPanelProps = {
   tab: LeftPanelTab;
@@ -192,11 +198,7 @@ export function WikiLeftPanel({
           <ArtifactForceGraph
             data={data}
             show
-            mapNodeToValue={(node) => ({
-              slug: node.slug,
-              title: node.name,
-              page_type: node.type,
-            })}
+            mapNodeToValue={mapNodeToValue}
             onNodeClick={onSelectArtifact}
           />
         )}

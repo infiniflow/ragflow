@@ -1,13 +1,13 @@
 import { type IArtifactGraphEntity } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
 import isEmpty from 'lodash/isEmpty';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
 import { type ArtifactForceGraphProps } from './types';
 import { useContainerDimensions } from './use-container-dimensions';
 import { defaultMapNodeToValue, renderNodeLabel } from './utils';
 
-export function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
+function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   data,
   show = true,
   onNodeClick,
@@ -83,4 +83,11 @@ export function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   );
 }
 
-export default ArtifactForceGraph;
+const MemoizedArtifactForceGraph = memo(ArtifactForceGraph) as <
+  TNodeValue = IArtifactGraphEntity,
+>(
+  props: ArtifactForceGraphProps<TNodeValue>,
+) => React.ReactElement;
+
+export { MemoizedArtifactForceGraph as ArtifactForceGraph };
+export default MemoizedArtifactForceGraph;

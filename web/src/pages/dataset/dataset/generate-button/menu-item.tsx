@@ -5,10 +5,11 @@ import { toFixed } from '@/utils/common-util';
 import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
 import { CirclePause } from 'lucide-react';
-import { useMemo } from 'react';
+
 import { replaceText } from '../../process-log-modal';
 import { GenerateStatus, GenerateType, IconKeyMap } from './constants';
 import { ITraceInfo, useDatasetGenerate } from './hook';
+import { useGenerateStatus } from './use-generate-status';
 
 type DatasetGenerateReturn = ReturnType<typeof useDatasetGenerate>;
 
@@ -25,27 +26,7 @@ function MenuItem({
   data,
   pauseGenerate,
 }: IMenuItemProps) {
-  const status = useMemo(() => {
-    if (!data) {
-      return GenerateStatus.start;
-    }
-    if (data.progress >= 1) {
-      return GenerateStatus.completed;
-    } else if (!data.progress && data.progress !== 0) {
-      return GenerateStatus.start;
-    } else if (data.progress < 0) {
-      return GenerateStatus.failed;
-    } else if (data.progress < 1) {
-      return GenerateStatus.running;
-    }
-  }, [data]);
-
-  const percent =
-    status === GenerateStatus.failed
-      ? 100
-      : status === GenerateStatus.running
-        ? data.progress * 100
-        : 0;
+  const { status, percent } = useGenerateStatus(data);
 
   return (
     <DropdownMenuItem

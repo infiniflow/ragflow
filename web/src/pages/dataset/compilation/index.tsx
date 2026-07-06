@@ -1,6 +1,7 @@
 import BackButton from '@/components/back-button';
 import MarkdownEditor from '@/components/markdown-editor';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import { SkeletonCard } from '@/components/skeleton-card';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
@@ -8,20 +9,21 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
-import { Routes } from '@/routes';
-import { useCallback, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router';
-
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchDatasetSkillPage } from '@/hooks/use-dataset-skill-request';
 import {
+  useFetchArtifactList,
   useFetchKnowledgeBaseConfiguration,
   useFetchKnowledgeGraph,
 } from '@/hooks/use-knowledge-request';
-import { IArtifact } from '@/interfaces/database/dataset';
-import { LeftPanelTab, ViewMode } from './constants';
-import { useWikiVersion } from './hooks/use-wiki-version';
+import { Routes } from '@/routes';
+import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
+
+import { ViewMode } from './constants';
+import CompilationEmptyState from './empty-state';
+import { useCompilationArtifact } from './hooks/use-compilation-artifact';
+import { useCompilationSkill } from './hooks/use-compilation-skill';
+import { useCompilationView } from './hooks/use-compilation-view';
 import KnowledgeForceGraph from './knowledge-force-graph';
 import { SkillsLeftPanel } from './skills-left-panel';
 import { WikiDetailContent } from './wiki-detail-content';
@@ -32,38 +34,50 @@ export default function Compilation() {
   const { id } = useParams();
   const { navigateToDataFile } = useNavigatePage();
   const { data: knowledgeBase } = useFetchKnowledgeBaseConfiguration();
-  const { data: knowledgeGraph } = useFetchKnowledgeGraph();
-  const [leftTab, setLeftTab] = useState<LeftPanelTab>(LeftPanelTab.Contents);
-  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.LlmWiki);
-  const [selectedArtifact, setSelectedArtifact] = useState<IArtifact | null>(
-    null,
-  );
-  const { selectedVersion, selectVersion, clearVersion } = useWikiVersion();
-  const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
-  const { data: skillPage } = useFetchDatasetSkillPage(selectedSkill);
+  const { data: knowledgeGraph, loading: knowledgeGraphLoading } =
+    useFetchKnowledgeGraph();
+  const { artifacts, loading: artifactListLoading } = useFetchArtifactList();
 
-  const handleSwitchToGraph = useCallback(() => {
-    setViewMode(ViewMode.Graph);
-  }, []);
+  const {
+    leftTab,
+    viewMode,
+    artifactRunData,
+    skillRunData,
+    handleSwitchToGraph,
+    handleSwitchToLlmWiki,
+    handleSwitchToSkills,
+    handleLeftTabChange,
+  } = useCompilationView();
 
-  const handleSwitchToLlmWiki = useCallback(() => {
-    setViewMode(ViewMode.LlmWiki);
-  }, []);
+  const {
+    selectedArtifact,
+    selectedVersion,
+    selectVersion,
+    handleSelectArtifact,
+  } = useCompilationArtifact();
 
-  const handleSwitchToSkills = useCallback(() => {
-    setViewMode(ViewMode.Skills);
-  }, []);
+  const {
+    selectedSkill,
+    setSelectedSkill,
+    skillTree,
+    skillTreeLoading,
+    skillPage,
+  } = useCompilationSkill();
 
-  const handleLeftTabChange = useCallback((value: string) => {
-    setLeftTab(value as LeftPanelTab);
-  }, []);
+  const isLlmWikiEmpty = artifacts.length === 0 && !artifactListLoading;
+  const canGenerate = (knowledgeBase?.chunk_count ?? 0) > 0;
 
-  const handleSelectArtifact = useCallback(
-    (artifact: IArtifact) => {
-      setSelectedArtifact(artifact);
-      clearVersion();
-    },
-    [clearVersion],
+  const isGraphLoading = knowledgeGraphLoading && !knowledgeGraph?.graph;
+  const isLlmWikiLoading = artifactListLoading && artifacts.length === 0;
+  const isSkillsLoading =
+    skillTreeLoading && !skillTree?.skill_with_weight?.length;
+  const isSkillsEmpty =
+    !skillTree?.skill_with_weight?.length && !skillTreeLoading;
+
+  const loadingCard = (
+    <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col p-8">
+      <SkeletonCard className="flex-1" />
+    </Card>
   );
 
   return (
@@ -116,30 +130,52 @@ export default function Compilation() {
       </header>
 
       {viewMode === ViewMode.Graph ? (
-        <div className="flex-1 min-h-0 flex flex-col">
-          <KnowledgeForceGraph data={knowledgeGraph?.graph} show />
-        </div>
+        isGraphLoading ? (
+          loadingCard
+        ) : (
+          <div className="flex-1 min-h-0 flex flex-col">
+            <KnowledgeForceGraph data={knowledgeGraph?.graph} show />
+          </div>
+        )
       ) : viewMode === ViewMode.LlmWiki ? (
-        <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
-          <ResizablePanelGroup direction="horizontal" className="flex-1">
-            <ResizablePanel defaultSize={33} minSize={20} maxSize={50}>
-              <WikiLeftPanel
-                tab={leftTab}
-                onTabChange={handleLeftTabChange}
-                selectedArtifact={selectedArtifact}
-                onSelectArtifact={handleSelectArtifact}
-              />
-            </ResizablePanel>
-            <ResizableHandle withHandle />
-            <ResizablePanel>
-              <WikiDetailContent
-                selectedArtifact={selectedArtifact}
-                selectedVersion={selectedVersion}
-                onSelectVersion={selectVersion}
-              />
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        </Card>
+        isLlmWikiLoading ? (
+          loadingCard
+        ) : isLlmWikiEmpty ? (
+          <CompilationEmptyState
+            type="llm-wiki"
+            disabled={!canGenerate}
+            data={artifactRunData}
+          />
+        ) : (
+          <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
+            <ResizablePanelGroup direction="horizontal" className="flex-1">
+              <ResizablePanel defaultSize={33} minSize={20} maxSize={50}>
+                <WikiLeftPanel
+                  tab={leftTab}
+                  onTabChange={handleLeftTabChange}
+                  selectedArtifact={selectedArtifact}
+                  onSelectArtifact={handleSelectArtifact}
+                />
+              </ResizablePanel>
+              <ResizableHandle withHandle />
+              <ResizablePanel>
+                <WikiDetailContent
+                  selectedArtifact={selectedArtifact}
+                  selectedVersion={selectedVersion}
+                  onSelectVersion={selectVersion}
+                />
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </Card>
+        )
+      ) : isSkillsLoading ? (
+        loadingCard
+      ) : isSkillsEmpty ? (
+        <CompilationEmptyState
+          type="skills"
+          disabled={!canGenerate}
+          data={skillRunData}
+        />
       ) : (
         <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
           <ResizablePanelGroup direction="horizontal" className="flex-1">
