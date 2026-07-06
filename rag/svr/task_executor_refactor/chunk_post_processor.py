@@ -332,7 +332,6 @@ from common.exceptions import TaskCanceledException  # noqa: E402
 from common.misc_utils import thread_pool_exec  # noqa: E402
 from common.token_utils import num_tokens_from_string  # noqa: E402
 from rag.nlp import search  # noqa: E402
-from api.apps.restful_apis.chunk_api import _compilation_template_kind  # noqa: E402
 from api.db.services.document_service import DocumentService  # noqa: E402
 from api.db.services.compilation_template_service import (  # noqa: E402
     CompilationTemplateService,
@@ -375,9 +374,6 @@ STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S = 120.0
 
 
 # ----- parser_config helpers -----------------------------------------
-# Duplicated from ``task_handler`` so this module stays free of a
-# reverse import (task_handler → this module via dispatch; the other
-# direction would be circular).
 
 
 def _parser_config_compilation_template_group_ids(parser_config) -> list[str]:
@@ -919,6 +915,8 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
     generate synthesis output (wiki pages, essence paragraphs, etc.).
     Compile_kwd and REFINE prompt are read from the template config.
     """
+    from api.apps.restful_apis.chunk_api import _compilation_template_kind
+
     ctx = handler._task_context
     template_ids = _parser_config_compilation_template_ids(ctx.parser_config, ctx.tenant_id)
     if not template_ids:
@@ -1225,7 +1223,7 @@ async def run_document_post_chunking_if_last(
 
     async def _maybe_run_raptor():
         raptor_cfg = (ctx.parser_config or {}).get("raptor") or {}
-        if not raptor_cfg.get("use_raptor"):
+        if not raptor_cfg.get("do_raptor"):
             return
         try:
             ok_doc, doc_obj = DocumentService.get_by_id(task_doc_id)
