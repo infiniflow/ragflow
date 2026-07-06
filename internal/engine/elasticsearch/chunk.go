@@ -1746,6 +1746,9 @@ func buildQueryStringQuery(matchText *types.MatchTextExpr, vectorSimilarityWeigh
 			fields = []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"}
 		}
 	}
+	if isSkillIndex {
+		fields = mapSkillSearchFields(fields)
+	}
 	if isMemoryIndex {
 		fields = mapMemoryMessageESFields(fields, true)
 	}
@@ -1766,6 +1769,29 @@ func buildQueryStringQuery(matchText *types.MatchTextExpr, vectorSimilarityWeigh
 			"boost":                boost,
 		},
 	}
+}
+
+func mapSkillSearchFields(fields []string) []string {
+	mapped := make([]string, 0, len(fields))
+	for _, field := range fields {
+		name, boost, hasBoost := strings.Cut(field, "^")
+		switch name {
+		case "name":
+			name = "name_tks"
+		case "tags":
+			name = "tags_tks"
+		case "description":
+			name = "description_tks"
+		case "content":
+			name = "content_tks"
+		}
+		if hasBoost {
+			mapped = append(mapped, name+"^"+boost)
+		} else {
+			mapped = append(mapped, name)
+		}
+	}
+	return mapped
 }
 
 // buildRankFeatureQuery builds rank_feature queries for learning to rank
