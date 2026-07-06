@@ -3467,6 +3467,7 @@ func normalizeWebDocumentName(name, contentType string, blob []byte) string {
 func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID, filename, location, filetype string, parserConfig entity.JSONMap, src string, size int64, blob []byte) *entity.Document {
 	docID := strings.ReplaceAll(uuid.New().String(), "-", "")
 	zero := "0"
+	status := "1"
 	suffix := ""
 	if i := strings.LastIndex(filename, "."); i >= 0 {
 		suffix = filename[i+1:]
@@ -3486,7 +3487,7 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 		Size:         size,
 		Suffix:       suffix,
 		Run:          &zero,
-		Status:       &zero,
+		Status:       &status,
 	}
 	if blob != nil {
 		hash := contentHashHex(blob)
