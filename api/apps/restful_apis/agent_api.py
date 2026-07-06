@@ -315,6 +315,10 @@ async def _run_workflow_session(
                     ans["session_id"] = session_id
                     if ans.get("event") == "message":
                         full_content += ans.get("data", {}).get("content", "")
+                        if ans.get("data", {}).get("start_to_think", False):
+                            full_content += "<think>"
+                        elif ans.get("data", {}).get("end_to_think", False):
+                            full_content += "</think>"
                     if ans.get("data", {}).get("reference", None):
                         reference.update(ans["data"]["reference"])
                     if ans.get("event") == "node_finished":
@@ -371,6 +375,10 @@ async def _run_workflow_session(
             ans["session_id"] = session_id
             if ans.get("event") == "message":
                 full_content += ans.get("data", {}).get("content", "")
+                if ans.get("data", {}).get("start_to_think", False):
+                    full_content += "<think>"
+                elif ans.get("data", {}).get("end_to_think", False):
+                    full_content += "</think>"
             if ans.get("data", {}).get("reference", None):
                 reference.update(ans["data"]["reference"])
             if ans.get("event") == "node_finished":
@@ -2466,6 +2474,7 @@ async def webhook_trace(agent_id: str):
             "finished": finished,
         }
     )
+
 
 def _attachment_request_metadata():
     ext = request.args.get("ext")
