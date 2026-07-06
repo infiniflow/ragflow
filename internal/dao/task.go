@@ -51,6 +51,15 @@ func (dao *TaskDAO) GetByID(id string) (*entity.Task, error) {
 	return &task, nil
 }
 
+// DeleteIngestionTasksByDocIDs deletes ingestion tasks by document IDs (hard delete)
+func (dao *TaskDAO) DeleteIngestionTasksByDocIDs(docIDs []string) (int64, error) {
+	if len(docIDs) == 0 {
+		return 0, nil
+	}
+	result := DB.Unscoped().Where("doc_id IN ?", docIDs).Delete(&entity.IngestionTask{})
+	return result.RowsAffected, result.Error
+}
+
 // DeleteByDocIDs deletes tasks by document IDs (hard delete)
 func (dao *TaskDAO) DeleteByDocIDs(docIDs []string) (int64, error) {
 	if len(docIDs) == 0 {
