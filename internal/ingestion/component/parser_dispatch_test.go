@@ -65,6 +65,11 @@ func TestDispatch_OutputFormatValidation_Allowed(t *testing.T) {
 	if !ok || len(pages) == 0 {
 		t.Errorf("pages slice missing or empty: %T", out["pages"])
 	}
+	if ok && len(pages) > 0 {
+		if got, _ := pages[0]["text"].(string); !strings.Contains(got, "Title") {
+			t.Errorf("pages[0].text = %q, want content containing Title", got)
+		}
+	}
 	// File metadata is carried through dispatch.
 	if fm, ok := out["file"].(map[string]any); !ok || fm["name"] != "doc.md" {
 		t.Errorf("file metadata missing or wrong: %+v", out["file"])
