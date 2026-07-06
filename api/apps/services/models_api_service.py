@@ -13,16 +13,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import os
 import logging
+import os
 
-from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, ensure_paddleocr_from_env, ensure_opendataloader_from_env
-from common.constants import ActiveStatusEnum, LLMType
-from common.settings import FACTORY_LLM_INFOS
-from api.db.services.tenant_model_provider_service import TenantModelProviderService
+from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, ensure_opendataloader_from_env, ensure_paddleocr_from_env
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
+from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_service import TenantModelService
 from api.db.services.user_service import TenantService
+from common.constants import ActiveStatusEnum, LLMType
+from common.settings import FACTORY_LLM_INFOS
 
 # Mapping from model_type string to Tenant model field name
 MODEL_TYPE_TO_FIELD = {
@@ -44,38 +44,6 @@ MODEL_TAG_TO_TYPE = {
     "tts": "tts",
     "ocr": "ocr",
 }
-
-
-def _resolve_bare_model_provider(tenant_id: str, model_name: str, model_type: str) -> str:
-    """Resolve the provider factory for a bare model name (no '@' in key).
-
-    Some legacy tenants store their default as a bare model name without a
-    '@'-separated provider suffix (for example LM Studio embedding IDs that
-    contain '@' like ``text-embedding-nomic-embed-text-v1.5@q8_0`` were
-    effectively persisted as bare names because older versions of RAGFlow
-    could not parse the embedded '@'). The enrolled ``tenant_llm`` rows hold
-    the matching ``llm_factory`` so we look it up there.
-
-    Returns the resolved provider name, or an empty string when no
-    single matching row is found. A non-unique match (multiple factories
-    enrolled for the same bare name) is intentionally treated as a miss so
-    the function returns ``""`` rather than guessing.
-    """
-    try:
-        rows = TenantLLMService.get_my_llms(tenant_id) or []
-    except Exception as exc:
-        logging.warning(
-            "could not resolve bare model %r for tenant %r: %s",
-            model_name, tenant_id, exc,
-        )
-        return ""
-    matches = [
-        row for row in rows
-        if row.get("llm_name") == model_name and row.get("model_type") == model_type
-    ]
-    if len(matches) != 1:
-        return ""
-    return matches[0].get("llm_factory") or ""
 
 
 def _to_int(v, default=500):
