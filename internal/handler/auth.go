@@ -140,7 +140,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		if err != nil {
 			user, code, err = h.userService.GetUserByAPIToken(token)
 			if err != nil {
-				common.ErrorWithCode(c, int(code), "Invalid access token")
+				common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 				c.Abort()
 				return
 			}
@@ -148,7 +148,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		if user.IsSuperuser != nil && *user.IsSuperuser {
-			common.ErrorWithCode(c, int(common.CodeForbidden), "Super user shouldn't access the URL")
+			common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "Super user shouldn't access the URL")
 			c.Abort()
 			return
 		}
@@ -157,7 +157,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			license := local.GetAdminStatus()
 			errMsg := fmt.Sprintf("server license %s", license.Reason)
 			common.Warn(errMsg)
-			common.ResponseWithCodeData(c, common.CodeUnauthorized, "No", errMsg)
+			common.ResponseWithHttpCodeData(c, http.StatusServiceUnavailable, common.CodeUnauthorized, "No", errMsg)
 			c.Abort()
 			return
 		}

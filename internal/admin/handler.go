@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
@@ -74,7 +75,7 @@ func (h *Handler) Ping(c *gin.Context) {
 func (h *Handler) Login(c *gin.Context) {
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -474,7 +475,7 @@ func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
 func (h *Handler) GetServices(c *gin.Context) {
 	services, err := h.service.ListServices()
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeServerError), err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -716,7 +717,7 @@ func (h *Handler) GetVersion(c *gin.Context) {
 
 // GetFingerprint handle get system fingerprint
 func (h *Handler) GetFingerprint(c *gin.Context) {
-	common.ErrorWithCode(c, int(common.CodeServerError), "method not implemented")
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
 	return
 }
 
@@ -726,7 +727,7 @@ type SetLicenseHTTPRequest struct {
 
 // SetLicense to set system license
 func (h *Handler) SetLicense(c *gin.Context) {
-	common.ErrorWithCode(c, int(common.CodeServerError), "method not implemented")
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
 	return
 }
 
@@ -736,13 +737,13 @@ type SetLicenseConfigHTTPRequest struct {
 }
 
 func (h *Handler) UpdateLicenseConfig(c *gin.Context) {
-	common.ErrorWithCode(c, int(common.CodeServerError), "method not implemented")
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
 	return
 }
 
 // ShowLicense to get system license
 func (h *Handler) ShowLicense(c *gin.Context) {
-	common.ErrorWithCode(c, int(common.CodeServerError), "method not implemented")
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
 	return
 }
 
@@ -839,7 +840,7 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 
 	result, err := h.service.TestSandboxConnection(req.ProviderType, req.Config)
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), "Invalid access token")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid access token")
 		return
 	}
 
@@ -853,19 +854,20 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		token := c.GetHeader("Authorization")
 		if token == "" {
 			common.ErrorWithCode(c, 401, "Missing authorization header")
+			c.Abort()
 			return
 		}
 
 		// Get user by access token
 		user, code, err := h.userService.GetUserByToken(token)
 		if err != nil {
-			common.ErrorWithCode(c, int(code), "Invalid access token")
+			common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 			c.Abort()
 			return
 		}
 
 		if !*user.IsSuperuser {
-			common.ErrorWithCode(c, int(common.CodeForbidden), "Permission denied")
+			common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "Permission denied")
 			return
 		}
 
@@ -878,7 +880,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 
 // HandleNoRoute handle undefined routes
 func (h *Handler) HandleNoRoute(c *gin.Context) {
-	common.ErrorWithCode(c, 404, "The requested resource was not found")
+	common.ResponseWithHttpCodeData(c, http.StatusNotFound, 404, nil, "The requested resource was not found")
 }
 
 // GetLogLevel returns the current log level
@@ -1169,7 +1171,7 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 func (h *Handler) Reports(c *gin.Context) {
 	var req common.BaseMessage
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -1180,7 +1182,7 @@ func (h *Handler) Reports(c *gin.Context) {
 
 	// Only process heartbeat messages for now
 	if req.MessageType != common.MessageHeartbeat {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), "Unsupported report type: "+string(req.MessageType))
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Unsupported report type: "+string(req.MessageType))
 		return
 	}
 
@@ -1223,7 +1225,7 @@ func (h *Handler) ListAllModels(c *gin.Context) {
 func (h *Handler) ShowModel(c *gin.Context) {
 	encodedModelName := c.Param("model_name")
 	if encodedModelName == "" {
-		common.ErrorWithCode(c, 400, "Encoded model name is empty")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Encoded model name is empty")
 		return
 	}
 

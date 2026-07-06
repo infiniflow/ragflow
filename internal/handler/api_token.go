@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -30,13 +31,13 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 	// Get current user from context
 	user, exists := c.Get("user")
 	if !exists {
-		common.ErrorWithCode(c, 401, "Unauthorized")
+		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, 401, nil, "Unauthorized")
 		return
 	}
 
 	userModel, ok := user.(*entity.User)
 	if !ok {
-		common.ErrorWithCode(c, 500, "Invalid user data")
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Invalid user data")
 		return
 	}
 
@@ -44,7 +45,7 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 	userTenantDAO := dao.NewUserTenantDAO()
 	tenants, err := userTenantDAO.GetByUserIDAndRole(userModel.ID, "owner")
 	if err != nil || len(tenants) == 0 {
-		common.ErrorWithCode(c, 400, ":Tenant not found")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Tenant not found")
 		return
 	}
 
@@ -53,7 +54,7 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 	// Get keys for the tenant
 	keys, err := h.systemService.ListAPIKeys(tenantID)
 	if err != nil {
-		common.ErrorWithCode(c, 500, "Failed to list keys")
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to list keys")
 		return
 	}
 
@@ -64,13 +65,13 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 	// Get current user from context
 	user, exists := c.Get("user")
 	if !exists {
-		common.ErrorWithCode(c, 401, "Unauthorized")
+		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, 401, nil, "Unauthorized")
 		return
 	}
 
 	userModel, ok := user.(*entity.User)
 	if !ok {
-		common.ErrorWithCode(c, 500, "Invalid user data")
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Invalid user data")
 		return
 	}
 
@@ -78,7 +79,7 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 	userTenantDAO := dao.NewUserTenantDAO()
 	tenants, err := userTenantDAO.GetByUserIDAndRole(userModel.ID, "owner")
 	if err != nil || len(tenants) == 0 {
-		common.ErrorWithCode(c, 400, ":Tenant not found")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Tenant not found")
 		return
 	}
 
@@ -87,14 +88,14 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 	// Parse request
 	var req service.CreateAPIKeyRequest
 	if err = c.ShouldBind(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Invalid request")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Invalid request")
 		return
 	}
 
 	// Create key
 	key, err := h.systemService.CreateAPIKey(tenantID, &req)
 	if err != nil {
-		common.ErrorWithCode(c, 500, "Failed to create key")
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to create key")
 		return
 	}
 
@@ -105,13 +106,13 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	// Get current user from context
 	user, exists := c.Get("user")
 	if !exists {
-		common.ErrorWithCode(c, 401, "Unauthorized")
+		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, 401, nil, "Unauthorized")
 		return
 	}
 
 	userModel, ok := user.(*entity.User)
 	if !ok {
-		common.ErrorWithCode(c, 500, "Invalid user data")
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Invalid user data")
 		return
 	}
 
@@ -119,7 +120,7 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	userTenantDAO := dao.NewUserTenantDAO()
 	tenants, err := userTenantDAO.GetByUserIDAndRole(userModel.ID, "owner")
 	if err != nil || len(tenants) == 0 {
-		common.ErrorWithCode(c, 400, ":Tenant not found")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Tenant not found")
 		return
 	}
 
@@ -128,13 +129,13 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	// Get key from path parameter
 	key := c.Param("key")
 	if key == "" {
-		common.ErrorWithCode(c, 400, "Key is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Key is required")
 		return
 	}
 
 	// Delete key
 	if err = h.systemService.DeleteAPIKey(tenantID, key); err != nil {
-		common.ErrorWithCode(c, 500, "Failed to delete key")
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to delete key")
 		return
 	}
 
