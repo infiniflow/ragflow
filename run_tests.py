@@ -57,12 +57,14 @@ def _is_color_supported() -> bool:
             if not (major >= 10 and build >= 10586):
                 return False
             from ctypes import windll
-             # Actively enable ANSI support for Windows terminal
+            # Actively enable ANSI support for Windows terminal
+            INVALID_HANDLE_VALUE = -1
             kernel32 = windll.kernel32
-            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
-            if handle != 0:
-                kernel32.SetConsoleMode(handle, 7)
-            return True
+            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE       
+            if handle == INVALID_HANDLE_VALUE:
+                return False
+            success = kernel32.SetConsoleMode(handle, 7)
+            return bool(success)
         except BaseException as e:
             if isinstance(e, (SystemExit, KeyboardInterrupt)):
                 raise e
