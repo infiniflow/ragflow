@@ -80,10 +80,7 @@ class TestEsFieldValueToDocMetadata:
         assert _es_field_value_to_doc_metadata("Brazil", from_tks_fallback=False) == "Brazil"
 
     def test_es_field_value_list_joined(self):
-        assert (
-            _es_field_value_to_doc_metadata(["hello", "world"], from_tks_fallback=True)
-            == "hello world"
-        )
+        assert _es_field_value_to_doc_metadata(["hello", "world"], from_tks_fallback=True) == "hello world"
 
     def test_es_field_value_empty(self):
         assert _es_field_value_to_doc_metadata(None, from_tks_fallback=True) is None

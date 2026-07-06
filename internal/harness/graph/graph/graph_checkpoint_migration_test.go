@@ -143,7 +143,11 @@ func TestCheckpointMigration_VersionEvolution(t *testing.T) {
 		t.Fatalf("V1 Invoke: %v", err)
 	}
 
-	snap, err := v1Compiled.GetState(context.Background(), cfg)
+	inspector, ok := v1Compiled.(StateInspector)
+	if !ok {
+		t.Fatal("v1Compiled does not implement StateInspector")
+	}
+	snap, err := inspector.GetState(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("V1 GetState: %v", err)
 	}
@@ -168,7 +172,11 @@ func TestCheckpointMigration_VersionEvolution(t *testing.T) {
 		t.Fatalf("V2 Invoke: %v", err)
 	}
 
-	snap2, err := v2Compiled.GetState(context.Background(), cfg)
+	inspector2, ok2 := v2Compiled.(StateInspector)
+	if !ok2 {
+		t.Fatal("v2Compiled does not implement StateInspector")
+	}
+	snap2, err := inspector2.GetState(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("V2 GetState: %v", err)
 	}
@@ -294,7 +302,7 @@ func TestCheckpointMigration_DuplicateSubgraph(t *testing.T) {
 // Helpers
 // ============================================================
 
-func mkEchoGraph() *StateGraph {
+func mkEchoGraph() types.StateGraph {
 	g := NewStateGraph(map[string]any{})
 	g.AddNode("echo", func(ctx context.Context, state any) (any, error) { return state, nil })
 	g.AddEdge(constants.Start, "echo")
@@ -302,7 +310,7 @@ func mkEchoGraph() *StateGraph {
 	return g
 }
 
-func mkRootGraph() *StateGraph {
+func mkRootGraph() types.StateGraph {
 	g := NewStateGraph(map[string]any{})
 	g.AddNode("root", func(ctx context.Context, state any) (any, error) { return state, nil })
 	g.AddEdge(constants.Start, "root")
@@ -310,7 +318,7 @@ func mkRootGraph() *StateGraph {
 	return g
 }
 
-func mkEchoGraphCompiled(t *testing.T) (*StateGraph, *CompiledGraph) {
+func mkEchoGraphCompiled(t *testing.T) (types.StateGraph, types.CompiledGraph) {
 	t.Helper()
 	g := mkEchoGraph()
 	c, err := g.Compile()

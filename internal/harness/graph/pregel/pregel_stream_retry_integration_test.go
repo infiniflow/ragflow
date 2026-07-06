@@ -153,15 +153,13 @@ func TestStream_ConcurrentConsumers(t *testing.T) {
 
 	// Multiple consumers read from the same channel.
 	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for result := range outputCh {
 				if _, ok := result.(*StreamEvent); ok {
 					eventCount.Add(1)
 				}
 			}
-		}()
+		})
 	}
 	// Wait for all consumers.
 	wg.Wait()
@@ -367,9 +365,6 @@ func TestEngine_ChainOf100(t *testing.T) {
 			if m == nil {
 				m = map[string]any{}
 			}
-			if m == nil {
-				m = map[string]any{}
-			}
 			m["value"] = i
 			return m, nil
 		})
@@ -380,14 +375,16 @@ func TestEngine_ChainOf100(t *testing.T) {
 
 	engine := NewEngine(sg,
 		WithRecursionLimit(150),
-		WithMaxConcurrency(4),
 	)
 
 	result, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
-	m := result.(map[string]any)
+	m, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map[string]any result, got %T", result)
+	}
 	if v, ok := m["value"]; !ok || v.(int) != 99 {
 		t.Fatalf("expected value=99, got %v", m["value"])
 	}

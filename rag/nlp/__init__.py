@@ -28,33 +28,122 @@ from PIL import Image
 
 import chardet
 
-__all__ = ['rag_tokenizer']
+__all__ = ["rag_tokenizer"]
 
 all_codecs = [
-    'utf-8', 'gb2312', 'gbk', 'utf_16', 'ascii', 'big5', 'big5hkscs',
-    'cp037', 'cp273', 'cp424', 'cp437',
-    'cp500', 'cp720', 'cp737', 'cp775', 'cp850', 'cp852', 'cp855', 'cp856', 'cp857',
-    'cp858', 'cp860', 'cp861', 'cp862', 'cp863', 'cp864', 'cp865', 'cp866', 'cp869',
-    'cp874', 'cp875', 'cp932', 'cp949', 'cp950', 'cp1006', 'cp1026', 'cp1125',
-    'cp1140', 'cp1250', 'cp1251', 'cp1252', 'cp1253', 'cp1254', 'cp1255', 'cp1256',
-    'cp1257', 'cp1258', 'euc_jp', 'euc_jis_2004', 'euc_jisx0213', 'euc_kr',
-    'gb18030', 'hz', 'iso2022_jp', 'iso2022_jp_1', 'iso2022_jp_2',
-    'iso2022_jp_2004', 'iso2022_jp_3', 'iso2022_jp_ext', 'iso2022_kr', 'latin_1',
-    'iso8859_2', 'iso8859_3', 'iso8859_4', 'iso8859_5', 'iso8859_6', 'iso8859_7',
-    'iso8859_8', 'iso8859_9', 'iso8859_10', 'iso8859_11', 'iso8859_13',
-    'iso8859_14', 'iso8859_15', 'iso8859_16', 'johab', 'koi8_r', 'koi8_t', 'koi8_u',
-    'kz1048', 'mac_cyrillic', 'mac_greek', 'mac_iceland', 'mac_latin2', 'mac_roman',
-    'mac_turkish', 'ptcp154', 'shift_jis', 'shift_jis_2004', 'shift_jisx0213',
-    'utf_32', 'utf_32_be', 'utf_32_le', 'utf_16_be', 'utf_16_le', 'utf_7', 'windows-1250', 'windows-1251',
-    'windows-1252', 'windows-1253', 'windows-1254', 'windows-1255', 'windows-1256',
-    'windows-1257', 'windows-1258', 'latin-2'
+    "utf-8",
+    "gb2312",
+    "gbk",
+    "utf_16",
+    "ascii",
+    "big5",
+    "big5hkscs",
+    "cp037",
+    "cp273",
+    "cp424",
+    "cp437",
+    "cp500",
+    "cp720",
+    "cp737",
+    "cp775",
+    "cp850",
+    "cp852",
+    "cp855",
+    "cp856",
+    "cp857",
+    "cp858",
+    "cp860",
+    "cp861",
+    "cp862",
+    "cp863",
+    "cp864",
+    "cp865",
+    "cp866",
+    "cp869",
+    "cp874",
+    "cp875",
+    "cp932",
+    "cp949",
+    "cp950",
+    "cp1006",
+    "cp1026",
+    "cp1125",
+    "cp1140",
+    "cp1250",
+    "cp1251",
+    "cp1252",
+    "cp1253",
+    "cp1254",
+    "cp1255",
+    "cp1256",
+    "cp1257",
+    "cp1258",
+    "euc_jp",
+    "euc_jis_2004",
+    "euc_jisx0213",
+    "euc_kr",
+    "gb18030",
+    "hz",
+    "iso2022_jp",
+    "iso2022_jp_1",
+    "iso2022_jp_2",
+    "iso2022_jp_2004",
+    "iso2022_jp_3",
+    "iso2022_jp_ext",
+    "iso2022_kr",
+    "latin_1",
+    "iso8859_2",
+    "iso8859_3",
+    "iso8859_4",
+    "iso8859_5",
+    "iso8859_6",
+    "iso8859_7",
+    "iso8859_8",
+    "iso8859_9",
+    "iso8859_10",
+    "iso8859_11",
+    "iso8859_13",
+    "iso8859_14",
+    "iso8859_15",
+    "iso8859_16",
+    "johab",
+    "koi8_r",
+    "koi8_t",
+    "koi8_u",
+    "kz1048",
+    "mac_cyrillic",
+    "mac_greek",
+    "mac_iceland",
+    "mac_latin2",
+    "mac_roman",
+    "mac_turkish",
+    "ptcp154",
+    "shift_jis",
+    "shift_jis_2004",
+    "shift_jisx0213",
+    "utf_32",
+    "utf_32_be",
+    "utf_32_le",
+    "utf_16_be",
+    "utf_16_le",
+    "utf_7",
+    "windows-1250",
+    "windows-1251",
+    "windows-1252",
+    "windows-1253",
+    "windows-1254",
+    "windows-1255",
+    "windows-1256",
+    "windows-1257",
+    "windows-1258",
+    "latin-2",
 ]
 
 
 def find_codec(blob):
     detected = chardet.detect(blob[:1024])
-    if detected['confidence'] > 0.5:
-        if detected['encoding'] == "ascii":
+    if detected["confidence"] > 0.5:
+        if detected["encoding"] == "ascii":
             return "utf-8"
 
     for c in all_codecs:
@@ -88,44 +177,44 @@ QUESTION_PATTERN = [
 
 
 def has_qbullet(reg, box, last_box, last_index, last_bull, bull_x0_list):
-    section, last_section = box['text'], last_box['text']
-    q_reg = r'(\w|\W)*?(?:？|\?|\n|$)+'
+    section, last_section = box["text"], last_box["text"]
+    q_reg = r"(\w|\W)*?(?:？|\?|\n|$)+"
     full_reg = reg + q_reg
     has_bull = re.match(full_reg, section)
     index_str = None
     if has_bull:
-        if 'x0' not in last_box:
-            last_box['x0'] = box['x0']
-        if 'top' not in last_box:
-            last_box['top'] = box['top']
-        if last_bull and box['x0'] - last_box['x0'] > 10:
+        if "x0" not in last_box:
+            last_box["x0"] = box["x0"]
+        if "top" not in last_box:
+            last_box["top"] = box["top"]
+        if last_bull and box["x0"] - last_box["x0"] > 10:
             return None, last_index
-        if not last_bull and box['x0'] >= last_box['x0'] and box['top'] - last_box['top'] < 20:
+        if not last_bull and box["x0"] >= last_box["x0"] and box["top"] - last_box["top"] < 20:
             return None, last_index
         avg_bull_x0 = 0
         if bull_x0_list:
             avg_bull_x0 = sum(bull_x0_list) / len(bull_x0_list)
         else:
-            avg_bull_x0 = box['x0']
-        if box['x0'] - avg_bull_x0 > 10:
+            avg_bull_x0 = box["x0"]
+        if box["x0"] - avg_bull_x0 > 10:
             return None, last_index
         index_str = has_bull.group(1)
         index = index_int(index_str)
-        if last_section[-1] == ':' or last_section[-1] == '：':
+        if last_section[-1] == ":" or last_section[-1] == "：":
             return None, last_index
         if not last_index or index >= last_index:
-            bull_x0_list.append(box['x0'])
+            bull_x0_list.append(box["x0"])
             return has_bull, index
-        if section[-1] == '?' or section[-1] == '？':
-            bull_x0_list.append(box['x0'])
+        if section[-1] == "?" or section[-1] == "？":
+            bull_x0_list.append(box["x0"])
             return has_bull, index
-        if box['layout_type'] == 'title':
-            bull_x0_list.append(box['x0'])
+        if box["layout_type"] == "title":
+            bull_x0_list.append(box["x0"])
             return has_bull, index
         pure_section = section.lstrip(re.match(reg, section).group()).lower()
-        ask_reg = r'(what|when|where|how|why|which|who|whose|为什么|为啥|哪)'
+        ask_reg = r"(what|when|where|how|why|which|who|whose|为什么|为啥|哪)"
         if re.match(ask_reg, pure_section):
-            bull_x0_list.append(box['x0'])
+            bull_x0_list.append(box["x0"])
             return has_bull, index
     return None, last_index
 
@@ -166,38 +255,38 @@ def qbullets_category(sections):
     return res, QUESTION_PATTERN[res]
 
 
-BULLET_PATTERN = [[
-    r"第[零一二三四五六七八九十百0-9]+(分?编|部分)",
-    r"第[零一二三四五六七八九十百0-9]+章",
-    r"第[零一二三四五六七八九十百0-9]+节",
-    r"第[零一二三四五六七八九十百0-9]+条",
-    r"[\(（][零一二三四五六七八九十百]+[\)）]",
-], [
-    r"第[0-9]+章",
-    r"第[0-9]+节",
-    r"[0-9]{,2}[\. 、]",
-    r"[0-9]{,2}\.[0-9]{,2}[^a-zA-Z/%~-]",
-    r"[0-9]{,2}\.[0-9]{,2}\.[0-9]{,2}",
-    r"[0-9]{,2}\.[0-9]{,2}\.[0-9]{,2}\.[0-9]{,2}",
-], [
-    r"第[零一二三四五六七八九十百0-9]+章",
-    r"第[零一二三四五六七八九十百0-9]+节",
-    r"[零一二三四五六七八九十百]+[ 、]",
-    r"[\(（][零一二三四五六七八九十百]+[\)）]",
-    r"[\(（][0-9]{,2}[\)）]",
-], [
-    r"PART (ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)",
-    r"Chapter (I+V?|VI*|XI|IX|X)",
-    r"Section [0-9]+",
-    r"Article [0-9]+"
-], [
-    r"^#[^#]",
-    r"^##[^#]",
-    r"^###.*",
-    r"^####.*",
-    r"^#####.*",
-    r"^######.*",
-]
+BULLET_PATTERN = [
+    [
+        r"第[零一二三四五六七八九十百0-9]+(分?编|部分)",
+        r"第[零一二三四五六七八九十百0-9]+章",
+        r"第[零一二三四五六七八九十百0-9]+节",
+        r"第[零一二三四五六七八九十百0-9]+条",
+        r"[\(（][零一二三四五六七八九十百]+[\)）]",
+    ],
+    [
+        r"第[0-9]+章",
+        r"第[0-9]+节",
+        r"[0-9]{,2}[\. 、]",
+        r"[0-9]{,2}\.[0-9]{,2}[^a-zA-Z/%~-]",
+        r"[0-9]{,2}\.[0-9]{,2}\.[0-9]{,2}",
+        r"[0-9]{,2}\.[0-9]{,2}\.[0-9]{,2}\.[0-9]{,2}",
+    ],
+    [
+        r"第[零一二三四五六七八九十百0-9]+章",
+        r"第[零一二三四五六七八九十百0-9]+节",
+        r"[零一二三四五六七八九十百]+[ 、]",
+        r"[\(（][零一二三四五六七八九十百]+[\)）]",
+        r"[\(（][0-9]{,2}[\)）]",
+    ],
+    [r"PART (ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)", r"Chapter (I+V?|VI*|XI|IX|X)", r"Section [0-9]+", r"Article [0-9]+"],
+    [
+        r"^#[^#]",
+        r"^##[^#]",
+        r"^###.*",
+        r"^####.*",
+        r"^#####.*",
+        r"^######.*",
+    ],
 ]
 
 
@@ -207,9 +296,7 @@ def random_choices(arr, k):
 
 
 def not_bullet(line):
-    patt = [
-        r"0", r"[0-9]+ +[0-9~个只-]", r"[0-9]+\.{2,}"
-    ]
+    patt = [r"0", r"[0-9]+ +[0-9~个只-]", r"[0-9]+\.{2,}", r"[0-9]+(\.[0-9]+){2,}[的中]"]
     return any([re.match(r, line) for r in patt])
 
 
@@ -240,7 +327,7 @@ def is_english(texts):
     pattern = re.compile(r"[`a-zA-Z0-9\s.,':;/\"?<>!\(\)\-]+")
 
     if isinstance(texts, str):
-        texts = list(texts)
+        texts = [texts]
     elif isinstance(texts, list):
         texts = [t for t in texts if isinstance(t, str) and t.strip()]
     else:
@@ -258,7 +345,7 @@ def is_chinese(text):
         return False
     chinese = 0
     for ch in text:
-        if '\u4e00' <= ch <= '\u9fff':
+        if "\u4e00" <= ch <= "\u9fff":
             chinese += 1
     if chinese / len(text) > 0.2:
         return True
@@ -267,6 +354,7 @@ def is_chinese(text):
 
 def tokenize(d, txt, eng):
     from . import rag_tokenizer
+
     d["content_with_weight"] = txt
     t = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt)
     d["content_ltks"] = rag_tokenizer.tokenize(t)
@@ -394,7 +482,7 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
         de = "; " if eng else "； "
         for i in range(0, len(rows), batch_size):
             d = copy.deepcopy(doc)
-            r = de.join(rows[i:i + batch_size])
+            r = de.join(rows[i : i + batch_size])
             tokenize(d, r, eng)
             d["doc_type_kwd"] = "table"
             if img:
@@ -546,7 +634,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
     def collect_context_from_sentences(sentences, boundary_idx, token_budget):
         prev_ctx = []
         remaining_prev = token_budget
-        for s in reversed(sentences[:boundary_idx + 1]):
+        for s in reversed(sentences[: boundary_idx + 1]):
             if remaining_prev <= 0:
                 break
             tks = num_tokens_from_string(s)
@@ -561,7 +649,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
 
         next_ctx = []
         remaining_next = token_budget
-        for s in sentences[boundary_idx + 1:]:
+        for s in sentences[boundary_idx + 1 :]:
             if remaining_next <= 0:
                 break
             tks = num_tokens_from_string(s)
@@ -658,7 +746,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
             if page_order and idx in page_order:
                 pos_in_page = page_order.index(idx)
                 if pos_in_page == 0:
-                    for neighbor in page_order[pos_in_page + 1:]:
+                    for neighbor in page_order[pos_in_page + 1 :]:
                         if is_text_chunk(chunks[neighbor]):
                             best_idx = neighbor
                             break
@@ -695,8 +783,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
             if "content_ltks" in ck:
                 ck["content_ltks"] = rag_tokenizer.tokenize(combined)
             if "content_sm_ltks" in ck:
-                ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(
-                    ck.get("content_ltks", rag_tokenizer.tokenize(combined)))
+                ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck.get("content_ltks", rag_tokenizer.tokenize(combined)))
 
     if positioned_indices:
         chunks[:] = [chunks[i] for i in ordered_indices]
@@ -706,7 +793,8 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
 
 def append_context2table_image4pdf(sections: list, tabls: list, table_context_size=0, return_context=False):
     from deepdoc.parser import PdfParser
-    if table_context_size <=0:
+
+    if table_context_size <= 0:
         return [] if return_context else tabls
 
     page_bucket = defaultdict(list)
@@ -750,12 +838,12 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
                 page -= 1
                 if page < 0 or page not in page_bucket:
                     break
-                i = len(page_bucket[page]) -1
+                i = len(page_bucket[page]) - 1
             blks = page_bucket[page]
             (_, _, _, _), cnt = blks[i]
             txts = re.split(r"([。!?？；！\n]|\. )", cnt, flags=re.DOTALL)[::-1]
             for j in range(0, len(txts), 2):
-                txt = (txts[j+1] if j+1<len(txts) else "") + txts[j] + txt
+                txt = (txts[j + 1] if j + 1 < len(txts) else "") + txts[j] + txt
                 if num_tokens_from_string(txt) > table_context_size:
                     break
             i -= 1
@@ -775,7 +863,7 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
             (_, _, _, _), cnt = blks[i]
             txts = re.split(r"([。!?？；！\n]|\. )", cnt, flags=re.DOTALL)
             for j in range(0, len(txts), 2):
-                txt += txts[j] + (txts[j+1] if j+1<len(txts) else "")
+                txt += txts[j] + (txts[j + 1] if j + 1 < len(txts) else "")
                 if num_tokens_from_string(txt) > table_context_size:
                     break
             i += 1
@@ -807,7 +895,7 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
             (_, _, t, b), txt = blks[i]
             if b > top:
                 break
-            (_, _, _t, _b), _txt = blks[i+1]
+            (_, _, _t, _b), _txt = blks[i + 1]
             if _t < _bott:
                 i += 1
                 continue
@@ -847,13 +935,12 @@ def add_positions(d, poss):
 def remove_contents_table(sections, eng=False):
     i = 0
     while i < len(sections):
+
         def get(i):
             nonlocal sections
-            return (sections[i] if isinstance(sections[i],
-                                              type("")) else sections[i][0]).strip()
+            return (sections[i] if isinstance(sections[i], type("")) else sections[i][0]).strip()
 
-        if not re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$",
-                        re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], flags=re.IGNORECASE)):
+        if not re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$", re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], flags=re.IGNORECASE)):
             i += 1
             continue
         sections.pop(i)
@@ -935,15 +1022,14 @@ def tree_merge(bull, sections, depth):
         sections = [(s, "") for s in sections]
 
     # filter out position information in pdf sections
-    sections = [(t, o) for t, o in sections if
-                t and len(t.split("@")[0].strip()) > 1 and not re.match(r"[0-9]+$", t.split("@")[0].strip())]
+    sections = [(t, o) for t, o in sections if t and len(t.split("@")[0].strip()) > 1 and not re.match(r"[0-9]+$", t.split("@")[0].strip())]
 
     def get_level(bull, section):
         text, layout = section
         text = re.sub(r"\u3000", " ", text).strip()
 
         for i, title in enumerate(BULLET_PATTERN[bull]):
-            if re.match(title, text.strip()):
+            if re.match(title, text.strip()) and not not_bullet(text):
                 return i + 1, text
         else:
             if re.search(r"(title|head)", layout) and not not_title(text):
@@ -982,8 +1068,7 @@ def hierarchical_merge(bull, sections, depth):
         return []
     if isinstance(sections[0], type("")):
         sections = [(s, "") for s in sections]
-    sections = [(t, o) for t, o in sections if
-                t and len(t.split("@")[0].strip()) > 1 and not re.match(r"[0-9]+$", t.split("@")[0].strip())]
+    sections = [(t, o) for t, o in sections if t and len(t.split("@")[0].strip()) > 1 and not re.match(r"[0-9]+$", t.split("@")[0].strip())]
     bullets_size = len(BULLET_PATTERN[bull])
     levels = [[] for _ in range(bullets_size + 2)]
 
@@ -1069,6 +1154,7 @@ def hierarchical_merge(bull, sections, depth):
 
 def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
+
     if not sections:
         return []
     if isinstance(sections, str):
@@ -1086,10 +1172,12 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
         if tnum < 8:
             pos = ""
         # Ensure that the length of the merged chunk does not exceed chunk_token_num
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent) / 100.:
+        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent) / 100.0:
             if cks:
                 overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
-                t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.):] + t
+                t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.0) :] + t
+                # Recount with the overlap prefix included, else chunks overshoot chunk_token_num.
+                tnum = num_tokens_from_string(t)
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)
@@ -1103,6 +1191,7 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
     has_custom = bool(custom_delimiters)
     if has_custom:
+        # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
         custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
         cks, tk_nums = [], []
         for sec, pos in sections:
@@ -1120,14 +1209,24 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
                 tk_nums.append(num_tokens_from_string(text))
         return cks
 
+    # Split oversized sections at sentence delimiters; add_chunk re-merges to size.
+    dels = get_delimiters(delimiter)
     for sec, pos in sections:
-        add_chunk("\n" + sec, pos)
+        if not dels or num_tokens_from_string(sec) < chunk_token_num:
+            add_chunk("\n" + sec, pos)
+            continue
+        for sub_sec in re.split(r"(%s)" % dels, sec, flags=re.DOTALL):
+            if not sub_sec or re.fullmatch(dels, sub_sec):
+                continue
+            add_chunk("\n" + sub_sec, pos)
 
+    logging.debug("naive_merge: %d sections -> %d chunks (delimiter=%r)", len(sections), len(cks), delimiter)
     return cks
 
 
 def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
+
     if not texts or len(texts) != len(images):
         return [], []
     cks = [""]
@@ -1142,10 +1241,12 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         if tnum < 8:
             pos = ""
         # Ensure that the length of the merged chunk does not exceed chunk_token_num
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent) / 100.:
+        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent) / 100.0:
             if cks:
                 overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
-                t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.):] + t
+                t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.0) :] + t
+                # Recount with the overlap prefix included, else chunks overshoot chunk_token_num.
+                tnum = num_tokens_from_string(t)
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)
@@ -1164,6 +1265,7 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
     custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
     has_custom = bool(custom_delimiters)
     if has_custom:
+        # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
         custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
         cks, result_images, tk_nums = [], [], []
         for text, image in zip(texts, images):
@@ -1186,21 +1288,32 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
                 tk_nums.append(num_tokens_from_string(text_seg))
         return cks, result_images
 
+    # Split oversized sections at sentence delimiters; the section's image rides
+    # along on every piece (concat_img dedupes when pieces re-merge into a chunk).
+    dels = get_delimiters(delimiter)
     for text, image in zip(texts, images):
         # if text is tuple, unpack it
         if isinstance(text, tuple):
             text_str = text[0] if text[0] is not None else ""
             text_pos = text[1] if len(text) > 1 else ""
-            add_chunk("\n" + text_str, image, text_pos)
         else:
-            add_chunk("\n" + (text or ""), image)
+            text_str = text or ""
+            text_pos = ""
+        if not dels or num_tokens_from_string(text_str) < chunk_token_num:
+            add_chunk("\n" + text_str, image, text_pos)
+            continue
+        for sub_sec in re.split(r"(%s)" % dels, text_str, flags=re.DOTALL):
+            if not sub_sec or re.fullmatch(dels, sub_sec):
+                continue
+            add_chunk("\n" + sub_sec, image, text_pos)
 
+    logging.debug("naive_merge_with_images: %d texts -> %d chunks (delimiter=%r)", len(texts), len(cks), delimiter)
     return cks, result_images
 
 
 def docx_question_level(p, bull=-1):
     txt = re.sub(r"\u3000", " ", p.text).strip()
-    if hasattr(p.style, 'name') and p.style.name and p.style.name.startswith('Heading'):
+    if hasattr(p.style, "name") and p.style.name and p.style.name.startswith("Heading"):
         # Heading styles are usually "Heading N", but the base "Heading" style,
         # custom "Heading"-prefixed styles, or "HeadingN" (no space) have no
         # space-separated trailing integer. Extract the level digits safely and
@@ -1219,8 +1332,12 @@ def docx_question_level(p, bull=-1):
 def concat_img(img1, img2):
     from rag.utils.lazy_image import ensure_pil_image, LazyImage
 
-    if (img1 is None or isinstance(img1, LazyImage)) and \
-       (img2 is None or isinstance(img2, LazyImage)):
+    # Same image must not stack with itself (the LazyImage branch would otherwise
+    # concatenate its blob list); mirrors the PIL branch's same-reference guard.
+    if img1 is img2:
+        return img1
+
+    if (img1 is None or isinstance(img1, LazyImage)) and (img2 is None or isinstance(img2, LazyImage)):
         if img1 and not img2:
             return img1
         if not img1 and img2:
@@ -1252,11 +1369,12 @@ def concat_img(img1, img2):
 
     new_width = max(width1, width2)
     new_height = height1 + height2
-    new_image = Image.new('RGB', (new_width, new_height))
+    new_image = Image.new("RGB", (new_width, new_height))
 
     new_image.paste(img1, (0, 0))
     new_image.paste(img2, (0, height1))
     return new_image
+
 
 def _build_cks(sections, delimiter):
     cks = []
@@ -1269,9 +1387,7 @@ def _build_cks(sections, delimiter):
 
     if has_custom:
         # escape delimiters and build alternation pattern, longest first
-        custom_pattern = "|".join(
-            re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True)
-        )
+        custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
         # capture delimiters so they appear in re.split results
         pattern = r"(%s)" % custom_pattern
 
@@ -1287,24 +1403,28 @@ def _build_cks(sections, delimiter):
             # table chunk
             ck_text = text + str(table)
             idx = len(cks)
-            cks.append({
-                "text": ck_text,
-                "image": image,
-                "ck_type": "table",
-                "tk_nums": num_tokens_from_string(ck_text),
-            })
+            cks.append(
+                {
+                    "text": ck_text,
+                    "image": image,
+                    "ck_type": "table",
+                    "tk_nums": num_tokens_from_string(ck_text),
+                }
+            )
             tables.append(idx)
             continue
 
         if image:
             # image chunk (text kept as-is for context)
             idx = len(cks)
-            cks.append({
-                "text": text,
-                "image": image,
-                "ck_type": "image",
-                "tk_nums": num_tokens_from_string(text),
-            })
+            cks.append(
+                {
+                    "text": text,
+                    "image": image,
+                    "ck_type": "image",
+                    "tk_nums": num_tokens_from_string(text),
+                }
+            )
             images.append(idx)
             continue
 
@@ -1316,12 +1436,14 @@ def _build_cks(sections, delimiter):
                 if not sub_sec or not sub_sec.strip():
                     if seg and seg.strip():
                         s = seg.strip()
-                        cks.append({
-                            "text": s,
-                            "image": None,
-                            "ck_type": "text",
-                            "tk_nums": num_tokens_from_string(s),
-                        })
+                        cks.append(
+                            {
+                                "text": s,
+                                "image": None,
+                                "ck_type": "text",
+                                "tk_nums": num_tokens_from_string(s),
+                            }
+                        )
                     seg = ""
                     continue
 
@@ -1329,37 +1451,42 @@ def _build_cks(sections, delimiter):
                 if re.fullmatch(custom_pattern, sub_sec.strip()):
                     if seg and seg.strip():
                         s = seg.strip()
-                        cks.append({
-                            "text": s,
-                            "image": None,
-                            "ck_type": "text",
-                            "tk_nums": num_tokens_from_string(s),
-                        })
+                        cks.append(
+                            {
+                                "text": s,
+                                "image": None,
+                                "ck_type": "text",
+                                "tk_nums": num_tokens_from_string(s),
+                            }
+                        )
                     seg = ""
                     continue
 
                 # ③ normal text content → accumulate
                 seg += sub_sec
         else:
-             
             if text and text.strip():
                 t = text.strip()
-                cks.append({
-                    "text": t,
-                    "image": None,
-                    "ck_type": "text",
-                    "tk_nums": num_tokens_from_string(t),
-                })
+                cks.append(
+                    {
+                        "text": t,
+                        "image": None,
+                        "ck_type": "text",
+                        "tk_nums": num_tokens_from_string(t),
+                    }
+                )
 
     # final flush after loop (only when custom delimiters are used)
     if has_custom and seg and seg.strip():
         s = seg.strip()
-        cks.append({
-            "text": s,
-            "image": None,
-            "ck_type": "text",
-            "tk_nums": num_tokens_from_string(s),
-        })
+        cks.append(
+            {
+                "text": s,
+                "image": None,
+                "ck_type": "text",
+                "tk_nums": num_tokens_from_string(s),
+            }
+        )
 
     return cks, tables, images, has_custom
 
@@ -1454,7 +1581,7 @@ def _merge_cks(cks, chunk_token_num, has_custom):
                 image_idxs.append(len(merged) - 1)
             continue
 
-        if prev_text_ck<0 or merged[prev_text_ck]["tk_nums"] >= chunk_token_num or has_custom:
+        if prev_text_ck < 0 or merged[prev_text_ck]["tk_nums"] >= chunk_token_num or has_custom:
             merged.append(cks[i])
             prev_text_ck = len(merged) - 1
             continue
@@ -1467,10 +1594,11 @@ def _merge_cks(cks, chunk_token_num, has_custom):
 
 def naive_merge_docx(
     sections,
-    chunk_token_num = 128,
+    chunk_token_num=128,
     delimiter="\n。；！？",
     table_context_size=0,
-    image_context_size=0,):
+    image_context_size=0,
+):
 
     if not sections:
         return [], []
@@ -1484,7 +1612,7 @@ def naive_merge_docx(
     if image_context_size > 0:
         for i in images:
             _add_context(cks, i, image_context_size)
-    
+
     merged_cks, merged_image_idx = _merge_cks(cks, chunk_token_num, has_custom)
 
     return merged_cks, merged_image_idx
@@ -1501,7 +1629,7 @@ def get_delimiters(delimiters: str):
     for m in re.finditer(r"`([^`]+)`", delimiters, re.I):
         f, t = m.span()
         dels.append(m.group(1))
-        dels.extend(list(delimiters[s: f]))
+        dels.extend(list(delimiters[s:f]))
         s = t
     if s < len(delimiters):
         dels.extend(list(delimiters[s:]))

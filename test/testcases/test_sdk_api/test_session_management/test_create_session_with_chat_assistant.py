@@ -32,7 +32,6 @@ class _DummyStreamResponse:
             yield line
 
 
-
 @pytest.mark.usefixtures("clear_session_with_chat_assistants")
 class TestSessionWithChatAssistantCreate:
     @pytest.mark.p1
@@ -128,9 +127,7 @@ def test_session_module_streaming_and_helper_paths_unit(monkeypatch):
     monkeypatch.setattr(
         chat_done_session,
         "post",
-        lambda *_args, **_kwargs: _DummyStreamResponse(
-            ['{"data":{"answer":"chat-done","reference":{"chunks":[]}}}', "data: [DONE]"]
-        ),
+        lambda *_args, **_kwargs: _DummyStreamResponse(['{"data":{"answer":"chat-done","reference":{"chunks":[]}}}', "data: [DONE]"]),
     )
     monkeypatch.setattr(agent_session, "post", _agent_post)
 

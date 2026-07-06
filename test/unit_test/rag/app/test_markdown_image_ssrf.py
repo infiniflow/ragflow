@@ -28,25 +28,44 @@ from __future__ import annotations
 
 import io
 import sys
+from importlib import import_module, reload
 from unittest.mock import MagicMock, patch
-
-# Mock heavy modules that trigger ONNX/OCR model loading or optional parser
-# backends at import time so importing rag.app.naive stays lightweight.
-for _mod in [
-    "deepdoc.vision.ocr",
-    "deepdoc.parser.figure_parser",
-    "deepdoc.parser.docling_parser",
-    "deepdoc.parser.tcadp_parser",
-    "rag.app.picture",
-]:
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 import pytest
 from PIL import Image
 
 from common import ssrf_guard
-from rag.app.naive import MAX_IMAGE_REDIRECTS, Markdown
+
+
+@pytest.fixture(scope="module")
+def naive_module():
+    """Load rag.app.naive with heavy optional dependencies stubbed locally."""
+    stub_names = [
+        "deepdoc.vision.ocr",
+        "deepdoc.parser.figure_parser",
+        "deepdoc.parser.docling_parser",
+        "deepdoc.parser.tcadp_parser",
+        "rag.app.picture",
+    ]
+    original_modules = {name: sys.modules.get(name) for name in stub_names}
+
+    try:
+        for name in stub_names:
+            sys.modules[name] = MagicMock()
+        module = import_module("rag.app.naive")
+        module = reload(module)
+        yield module
+    finally:
+        for name, original in original_modules.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
+
+
+@pytest.fixture(scope="module")
+def max_image_redirects(naive_module):
+    return naive_module.MAX_IMAGE_REDIRECTS
 
 
 def _png_bytes() -> bytes:
@@ -68,8 +87,8 @@ class _Resp:
 
 
 @pytest.fixture
-def parser():
-    return Markdown(128)
+def parser(naive_module):
+    return naive_module.Markdown(128)
 
 
 @pytest.mark.p1
@@ -127,7 +146,7 @@ def test_fetches_legitimate_public_image(parser):
 
 
 @pytest.mark.p1
-def test_redirect_chain_is_bounded(parser):
+def test_redirect_chain_is_bounded(parser, max_image_redirects):
     """An endless redirect loop is abandoned instead of being followed forever."""
     loop = _Resp(302, headers={"Location": "http://public.example/next"})
     with (
@@ -136,5 +155,5 @@ def test_redirect_chain_is_bounded(parser):
     ):
         images, _ = parser.load_images_from_urls(["http://public.example/start"])
 
-    assert get.call_count == MAX_IMAGE_REDIRECTS + 1
+    assert get.call_count == max_image_redirects + 1
     assert images == []

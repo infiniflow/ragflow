@@ -21,7 +21,10 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"strings"
+
+	"ragflow/internal/utility"
 )
 
 // ErrSSRFBlocked is returned when a tool is asked to fetch a URL whose
@@ -83,6 +86,20 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 		return "", nil, fmt.Errorf("ssrf: empty host")
 	}
 
+	if allowAnyHost() {
+		if ip := net.ParseIP(host); ip != nil {
+			return host, ip, nil
+		}
+		ips, lerr := net.LookupIP(host)
+		if lerr != nil {
+			return "", nil, fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
+		}
+		if len(ips) == 0 {
+			return "", nil, fmt.Errorf("ssrf: %s has no A/AAAA records", host)
+		}
+		return host, ips[0], nil
+	}
+
 	// Short-circuit the well-known host aliases that DNS lookups may
 	// also catch, but defending against the literal name is cheap and
 	// saves a syscall on the common probe path.
@@ -134,6 +151,94 @@ func isPrivateOrLoopback(ip net.IP) bool {
 		return true
 	}
 	return false
+}
+
+func allowAnyHost() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ALLOW_ANY_HOST"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidateDBHost parses host (literal IP or DNS name), verifies it
+// resolves only to public IPs, and returns the validated address as a
+// string. The returned value is safe to pass to a SQL driver instead
+// of the original hostname so the connection is pinned at the
+// transport layer — closing the DNS-rebinding window between
+// validation and the actual TCP connect. Mirrors the SSRF guard
+// applied to `test_db_connection` (PR #15609, Python
+// agent/tools/exesql.py).
+//
+// The function lives here (next to ResolveAndValidate) rather than in
+// the utility package because the DB-host guard is a tool concern, not
+// a generic URL guard: callers feed the result straight into a SQL
+// driver DSN, where the format differs from URL parsing rules (IPv6
+// literals need brackets in URL hostnames but not in DSNs).
+func ValidateDBHost(host string) (string, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return "", fmt.Errorf("%w: empty host", ErrSSRFBlocked)
+	}
+
+	// Mirror ResolveAndValidate's bypass for dev/test runs.
+	if allowAnyHost() {
+		if ip := net.ParseIP(host); ip != nil {
+			return ip.String(), nil
+		}
+		addrs, lerr := utility.LookupHost(host)
+		if lerr != nil {
+			return "", fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
+		}
+		if len(addrs) == 0 {
+			return "", fmt.Errorf("ssrf: %s has no A/AAAA records", host)
+		}
+		return addrs[0], nil
+	}
+
+	// Short-circuit the well-known host aliases DNS lookups may also
+	// catch but defending against the literal name is cheap and saves
+	// a syscall on the common probe path.
+	lower := strings.ToLower(host)
+	if lower == "localhost" || strings.HasSuffix(lower, ".localhost") ||
+		lower == "metadata.google.internal" || lower == "metadata" ||
+		lower == "0.0.0.0" || lower == "::" {
+		return "", fmt.Errorf("%w: %s", ErrSSRFBlocked, host)
+	}
+
+	// Literal IP — no DNS lookup needed.
+	if ip := net.ParseIP(host); ip != nil {
+		if isPrivateOrLoopback(ip) {
+			return "", fmt.Errorf("%w: literal %s", ErrSSRFBlocked, host)
+		}
+		return ip.String(), nil
+	}
+
+	// Resolve via utility.LookupHost so tests can stub DNS without
+	// touching real network — matches the stubbing pattern used by
+	// the utility package (see internal/utility/ssrf.go LookupHost).
+	addrs, lerr := utility.LookupHost(host)
+	if lerr != nil {
+		return "", fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
+	}
+	if len(addrs) == 0 {
+		return "", fmt.Errorf("ssrf: %s has no A/AAAA records", host)
+	}
+	var firstSafe string
+	for _, addr := range addrs {
+		ip := net.ParseIP(addr)
+		if ip == nil {
+			return "", fmt.Errorf("ssrf: could not parse resolved address %q for %s", addr, host)
+		}
+		if isPrivateOrLoopback(ip) {
+			return "", fmt.Errorf("%w: %s -> %s", ErrSSRFBlocked, host, ip)
+		}
+		if firstSafe == "" {
+			firstSafe = ip.String()
+		}
+	}
+	return firstSafe, nil
 }
 
 // SanitizeURL strips query parameters whose names match a small set of

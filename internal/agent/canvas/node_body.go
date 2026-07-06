@@ -167,7 +167,7 @@ func componentTimeout() time.Duration {
 // attribution authoritative.
 func realComponentBody(cpnID, componentClass string, comp runtime.Component) nodeBodyFn {
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
-		timeout := resolveTimeout(componentClass)
+		timeout := resolveTimeoutFromContext(ctx, componentClass)
 		cctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		out, err := comp.Invoke(cctx, in)

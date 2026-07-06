@@ -241,6 +241,149 @@ func TestSwitch_LegacyConditionsAndArrayTo(t *testing.T) {
 	}
 }
 
+// TestSwitch_NilUpstreamContainsEmptyNeedleMatches ports the
+// regression covered by python PR #16320: when an upstream
+// component yields nil and the configured value is the empty
+// string, the "contains" operator must match (Python semantics
+// after the fix: "" in "anything"). Pre-fix Python crashed with
+// AttributeError; pre-port Go returned false because fmt rendered
+// nil as "<nil>" instead of "". The fix coerces nil → "" before
+// formatting, restoring parity with the Python workflow.
+func TestSwitch_NilUpstreamContainsEmptyNeedleMatches(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-nil-contains", "task-nil-contains")
+	state.Sys["answer"] = nil
+	ctx := withStateForTest(context.Background(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"op": "and",
+				"to": []any{"case_target"},
+				"clauses": []any{
+					map[string]any{"left": "{{sys.answer}}", "op": "contains", "right": ""},
+				},
+			},
+		},
+		"default": "else_target",
+	}
+	out, err := s.Invoke(ctx, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	if len(targets) != 1 || targets[0] != "case_target" {
+		t.Errorf("_next: got %v, want [\"case_target\"] (nil coerced to \"\" should match empty needle)", targets)
+	}
+}
+
+// TestSwitch_NilUpstreamContainsNonEmptyDoesNotMatch verifies
+// the inverse: nil coerced to "" still must NOT match a
+// non-empty needle (we only coerce, we don't synthesize a match).
+func TestSwitch_NilUpstreamContainsNonEmptyDoesNotMatch(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-nil-needle", "task-nil-needle")
+	state.Sys["answer"] = nil
+	ctx := withStateForTest(context.Background(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"op": "and",
+				"to": []any{"case_target"},
+				"clauses": []any{
+					map[string]any{"left": "{{sys.answer}}", "op": "contains", "right": "foo"},
+				},
+			},
+		},
+		"default": "else_target",
+	}
+	out, err := s.Invoke(ctx, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	if len(targets) != 1 || targets[0] != "else_target" {
+		t.Errorf("_next: got %v, want [\"else_target\"] (\"\" does not contain \"foo\")", targets)
+	}
+}
+
+// TestSwitch_NilValueContainsDoesNotRaise mirrors python test
+// "test_switch_none_value_contains_does_not_raise": the configured
+// value can also be nil and the operator must not crash. With
+// nil coerced to "" on both sides, "foobar" contains "" matches.
+func TestSwitch_NilValueContainsDoesNotRaise(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-nil-value", "task-nil-value")
+	state.Sys["answer"] = "foobar"
+	ctx := withStateForTest(context.Background(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"op": "and",
+				"to": []any{"case_target"},
+				"clauses": []any{
+					map[string]any{"left": "{{sys.answer}}", "op": "contains", "right": nil},
+				},
+			},
+		},
+		"default": "else_target",
+	}
+	out, err := s.Invoke(ctx, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	if len(targets) != 1 || targets[0] != "case_target" {
+		t.Errorf("_next: got %v, want [\"case_target\"] (nil value coerced to \"\" matches any string)", targets)
+	}
+}
+
+// TestSwitch_NilUpstreamStartWithEndWithDoNotCrash guards the
+// remaining two string operators covered by PR #16320. They were
+// crash-prone in Python for the same reason; in Go they don't
+// crash but the nil → "" coercion still applies, so a nil
+// upstream with an empty prefix/suffix must match (rather than
+// being rendered as "<nil>" and silently missing).
+func TestSwitch_NilUpstreamStartWithEndWithDoNotCrash(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-nil-start-end", "task-nil-start-end")
+	state.Sys["answer"] = nil
+	ctx := withStateForTest(context.Background(), state)
+
+	for _, tc := range []struct {
+		name string
+		op   string
+	}{
+		{name: "start with", op: "start with"},
+		{name: "end with", op: "end with"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inputs := map[string]any{
+				"conditions": []any{
+					map[string]any{
+						"op": "and",
+						"to": []any{"case_target"},
+						"clauses": []any{
+							map[string]any{"left": "{{sys.answer}}", "op": tc.op, "right": ""},
+						},
+					},
+				},
+				"default": "else_target",
+			}
+			out, err := s.Invoke(ctx, inputs)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			targets := nextTargets(out)
+			if len(targets) != 1 || targets[0] != "case_target" {
+				t.Errorf("_next: got %v, want [\"case_target\"] (nil coerced to \"\" %s \"\")", targets, tc.op)
+			}
+		})
+	}
+}
+
 // TestSwitch_MultiTargetTo verifies that Switch returns all cpn_ids
 // from a multi-element "to" field. This mirrors Python's behavior
 // where a condition can route to multiple downstream nodes
@@ -275,5 +418,113 @@ func TestSwitch_MultiTargetTo(t *testing.T) {
 	targets := nextTargets(out)
 	if len(targets) != 2 || targets[0] != "DataOperations:UpdateSample" || targets[1] != "CodeExec:FunnyBronsShare" {
 		t.Errorf("_next: got %v, want [\"DataOperations:UpdateSample\", \"CodeExec:FunnyBronsShare\"]", targets)
+	}
+}
+
+// TestSwitch_EmptyAndConditionFallsThrough guards PR #15644 port:
+// an "and" condition with no clauses (or all clauses filtered out
+// by the legacy normaliser) must NOT match. Previously the empty
+// `clauses` short-circuit returned `true` (vacuously), routing the
+// Switch to the empty group's `to` target before reaching the
+// default / end_cpn_ids branch.
+func TestSwitch_EmptyAndConditionFallsThrough(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-empty-and", "task-1")
+	ctx := withStateForTest(context.Background(), state)
+
+	// Empty clauses: must not match. Should fall through to default.
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"op":      "and",
+				"clauses": []any{},
+				"to":      "WRONG_TARGET",
+			},
+		},
+		"default": "DEFAULT",
+	}
+	out, err := s.Invoke(ctx, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	for _, tgt := range targets {
+		if tgt == "WRONG_TARGET" {
+			t.Errorf("empty and-condition must not match, but Switch routed to %q", tgt)
+		}
+	}
+}
+
+// TestSwitch_LegacyEmptyItemsFallsThrough covers the legacy
+// "logical_operator" / "items" form, where every item has an
+// empty `cpn_id` (the bug scenario from the Python PR: items
+// list non-empty but every item skipped, so clauses is empty).
+func TestSwitch_LegacyEmptyItemsFallsThrough(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-legacy-empty", "task-1")
+	ctx := withStateForTest(context.Background(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"logical_operator": "and",
+				"items": []any{
+					map[string]any{"cpn_id": "", "operator": "contains", "value": "x"},
+				},
+				"to": "WRONG_TARGET",
+			},
+		},
+		"default": "DEFAULT",
+	}
+	out, err := s.Invoke(ctx, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	for _, tgt := range targets {
+		if tgt == "WRONG_TARGET" {
+			t.Errorf("all-skipped and-condition must not match, but Switch routed to %q", tgt)
+		}
+	}
+}
+
+// TestSwitch_SatisfiedAndConditionStillRoutes is the negative
+// control: a genuinely satisfied "and" condition MUST still match
+// after the fix. Without this guard, a refactor that breaks the
+// real all() path would slip through.
+func TestSwitch_SatisfiedAndConditionStillRoutes(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-and-ok", "task-1")
+	state.Sys["greeting"] = "hello world"
+	ctx := withStateForTest(context.Background(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"logical_operator": "and",
+				"items": []any{
+					map[string]any{"cpn_id": "sys.greeting", "operator": "contains", "value": "hello"},
+				},
+				"to": "CORRECT_TARGET",
+			},
+		},
+		"default": "DEFAULT",
+	}
+	out, err := s.Invoke(ctx, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	if len(targets) == 0 {
+		t.Fatalf("expected non-empty _next, got nothing (out=%v)", out)
+	}
+	found := false
+	for _, tgt := range targets {
+		if tgt == "CORRECT_TARGET" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("satisfied and-condition must route to CORRECT_TARGET, got %v", targets)
 	}
 }

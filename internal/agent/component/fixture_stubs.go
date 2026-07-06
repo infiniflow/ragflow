@@ -505,4 +505,5 @@ func init() {
 	Register(componentNameAnswer, NewAnswerStub)
 	Register(componentNameIteration, NewIterationStub)
 	Register(componentNameIterationItem, NewIterationItemStub)
+	Register("YahooFinance", newYahooFinanceComponent)
 }

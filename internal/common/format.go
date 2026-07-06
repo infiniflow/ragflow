@@ -20,7 +20,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // PtrString formats a pointer value as a string for debug/log output.
@@ -84,4 +86,82 @@ func DecodeFromBase64(encoded string) (string, error) {
 		return "", err
 	}
 	return string(decoded), nil
+}
+
+func FormatBytes(bytes int64) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+		TB = GB * 1024
+	)
+	switch {
+	case bytes >= TB:
+		return fmt.Sprintf("%.1f TB", float64(bytes)/float64(TB))
+	case bytes >= GB:
+		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(GB))
+	case bytes >= MB:
+		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(MB))
+	case bytes >= KB:
+		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(KB))
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
+}
+
+func FormatNumber(n int64) string {
+	s := fmt.Sprintf("%d", n)
+	parts := []string{}
+	for i := len(s); i > 0; i -= 3 {
+		start := i - 3
+		if start < 0 {
+			start = 0
+		}
+		parts = append([]string{s[start:i]}, parts...)
+	}
+	return strings.Join(parts, ",")
+}
+
+func ParseBytesString(s string) int64 {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" || s == "-" || s == "0" {
+		return 0
+	}
+
+	var multiplier int64 = 1
+	switch {
+	case strings.HasSuffix(s, "tb"):
+		multiplier = 1024 * 1024 * 1024 * 1024
+		s = strings.TrimSuffix(s, "tb")
+	case strings.HasSuffix(s, "gb"):
+		multiplier = 1024 * 1024 * 1024
+		s = strings.TrimSuffix(s, "gb")
+	case strings.HasSuffix(s, "mb"):
+		multiplier = 1024 * 1024
+		s = strings.TrimSuffix(s, "mb")
+	case strings.HasSuffix(s, "kb"):
+		multiplier = 1024
+		s = strings.TrimSuffix(s, "kb")
+	case strings.HasSuffix(s, "b"):
+		s = strings.TrimSuffix(s, "b")
+	}
+
+	s = strings.TrimSpace(s)
+	val, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return int64(val * float64(multiplier))
+}
+
+func FormatTime(t *int64) string {
+	if t == nil {
+		return "N/A"
+	}
+	return time.UnixMilli(*t).Format("2006-01-02 15:04:05")
+}
+
+func IsValidString(v interface{}) bool {
+	str, ok := v.(string)
+	return ok && str != ""
 }

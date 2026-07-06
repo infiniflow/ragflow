@@ -1,5 +1,6 @@
 {
   "name": "HuggingFace",
+  "rank": 991,
   "url": {
     "default": "https://router.huggingface.co/v1"
   },

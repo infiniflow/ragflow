@@ -20,8 +20,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
+	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"strings"
 
@@ -30,6 +32,8 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 var (
@@ -51,6 +55,8 @@ type ChunkService struct {
 	userTenantDAO  *dao.UserTenantDAO
 	documentDAO    *dao.DocumentDAO
 	searchService  *SearchService
+
+	decrementChunkStatsFunc func(string, string, int64, int64, float64) error
 }
 
 // RetrievalTestRequest retrieval test request
@@ -93,6 +99,29 @@ type GetChunkResponse struct {
 // ParseFileRequest is the request body for reparsing documents in a dataset.
 type ParseFileRequest struct {
 	DocumentIDs []string `json:"document_ids"`
+}
+
+// AddChunkRequest request for adding a chunk
+type AddChunkRequest struct {
+	DatasetID         string      `json:"dataset_id"`
+	DocumentID        string      `json:"document_id"`
+	Content           string      `json:"content"`
+	ImportantKeywords []string    `json:"important_keywords,omitempty"`
+	Questions         []string    `json:"questions,omitempty"`
+	TagKwd            []string    `json:"tag_kwd,omitempty"`
+	TagFeas           interface{} `json:"tag_feas,omitempty"`
+	ImageBase64       *string     `json:"image_base64,omitempty"`
+}
+
+// AddChunkResponse response for adding a chunk
+type AddChunkResponse struct {
+	Chunk map[string]interface{} `json:"chunk"`
+}
+
+// ErrorCoder exposes an application error code alongside an error string.
+type ErrorCoder interface {
+	error
+	Code() common.ErrorCode
 }
 
 // Get retrieves a chunk by ID
@@ -608,7 +637,11 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 
 	// Tag features
 	if req.TagFeas != nil {
-		d["tag_feas"] = req.TagFeas
+		tagFeas, err := validateUpdateTagFeatures(req.TagFeas)
+		if err != nil {
+			return updateChunkError{code: common.CodeArgumentError, message: "`tag_feas` " + err.Error()}
+		}
+		d["tag_feas"] = tagFeas
 	}
 
 	// Always include id
@@ -625,6 +658,57 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 	}
 
 	return nil
+}
+
+type updateChunkError struct {
+	code    common.ErrorCode
+	message string
+}
+
+func (e updateChunkError) Error() string {
+	return e.message
+}
+
+func (e updateChunkError) Code() common.ErrorCode {
+	return e.code
+}
+
+func validateUpdateTagFeatures(raw interface{}) (map[string]float64, error) {
+	parsed, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("must be an object mapping string tags to finite numeric scores greater than 0")
+	}
+	cleaned := make(map[string]float64, len(parsed))
+	for key, value := range parsed {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("keys must be non-empty strings")
+		}
+		var numeric float64
+		switch typed := value.(type) {
+		case float64:
+			numeric = typed
+		case float32:
+			numeric = float64(typed)
+		case int:
+			numeric = float64(typed)
+		case int8:
+			numeric = float64(typed)
+		case int16:
+			numeric = float64(typed)
+		case int32:
+			numeric = float64(typed)
+		case int64:
+			numeric = float64(typed)
+		default:
+			return nil, fmt.Errorf("values must be finite numbers greater than 0")
+		}
+		if math.IsNaN(numeric) || math.IsInf(numeric, 0) || numeric <= 0 {
+			return nil, fmt.Errorf("values must be finite numbers greater than 0")
+		}
+		cleaned[key] = numeric
+	}
+	return cleaned, nil
 }
 
 // RemoveChunksRequest request for removing chunks
@@ -704,7 +788,48 @@ func (s *ChunkService) RemoveChunks(req *RemoveChunksRequest, userID string) (in
 		return 0, fmt.Errorf("failed to delete chunks: %w", err)
 	}
 
+	if deletedCount > 0 {
+		if err := s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
+			return deletedCount, fmt.Errorf("failed to update chunk stats: %w", err)
+		}
+	}
+
 	return deletedCount, nil
+}
+
+func (s *ChunkService) decrementChunkStats(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {
+	if s.decrementChunkStatsFunc != nil {
+		return s.decrementChunkStatsFunc(docID, kbID, tokenNum, chunkNum, duration)
+	}
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&entity.Document{}).
+			Where("id = ? AND kb_id = ?", docID, kbID).
+			Updates(map[string]interface{}{
+				"token_num":        gorm.Expr("CASE WHEN token_num - ? >= 0 THEN token_num - ? ELSE 0 END", tokenNum, tokenNum),
+				"chunk_num":        gorm.Expr("CASE WHEN chunk_num - ? >= 0 THEN chunk_num - ? ELSE 0 END", chunkNum, chunkNum),
+				"process_duration": gorm.Expr("CASE WHEN process_duration + ? >= 0 THEN process_duration + ? ELSE 0 END", duration, duration),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("document not found")
+		}
+
+		result = tx.Model(&entity.Knowledgebase{}).
+			Where("id = ?", kbID).
+			Updates(map[string]interface{}{
+				"token_num": gorm.Expr("CASE WHEN token_num - ? >= 0 THEN token_num - ? ELSE 0 END", tokenNum, tokenNum),
+				"chunk_num": gorm.Expr("CASE WHEN chunk_num - ? >= 0 THEN chunk_num - ? ELSE 0 END", chunkNum, chunkNum),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("knowledgebase not found")
+		}
+		return nil
+	})
 }
 
 // SourcedChunk is a typed, normalized view over a retrieval result chunk.

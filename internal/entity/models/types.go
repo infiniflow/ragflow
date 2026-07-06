@@ -60,6 +60,16 @@ type ChatResponse struct {
 	Answer        *string                  `json:"answer"`
 	ReasonContent *string                  `json:"reason_content"`
 	ToolCalls     []map[string]interface{} `json:"tool_calls,omitempty"`
+	Usage         *ChatUsage               `json:"usage,omitempty"`
+}
+
+// ChatUsage holds token usage split for one LLM call. Consumed by
+// LLMBundle for accurate Langfuse reporting and run aggregation.
+// Mirrors Python's common.token_utils.usage_from_response() split.
+type ChatUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 type EmbeddingData struct {
@@ -154,6 +164,12 @@ type ChatConfig struct {
 	Tools           interface{}               `json:"tools,omitempty"`
 	ToolChoice      *string                   `json:"tool_choice,omitempty"`
 	ToolCallsResult *[]map[string]interface{} `json:"-"`
+	// UsageResult receives the token usage extracted from the final
+	// streaming chunk when stream_options.include_usage is true.
+	// The ChatStreamlyWithSender driver writes to this pointer (if
+	// non-nil) after the stream completes; callers read it the same
+	// way they read ToolCallsResult.
+	UsageResult *ChatUsage `json:"-"`
 }
 
 type APIConfig struct {
@@ -180,6 +196,7 @@ type TTSConfig struct {
 }
 
 type OCRConfig struct {
+	Algorithm string
 }
 
 type ParseFileConfig struct {
@@ -238,6 +255,10 @@ type ChatModel struct {
 	ModelName   *string
 	APIConfig   *APIConfig
 	ToolConfig  *ToolConfig
+	// LastUsage holds the token usage (prompt/completion/total) of the most
+	// recent chat call. Consumed by callers for accurate Langfuse reporting
+	// and per-run token aggregation. Reset before each call.
+	LastUsage *ChatUsage
 }
 
 // NewChatModel creates a new ChatModel

@@ -233,7 +233,7 @@ func (s *UserService) registerOAuthUser(channel string, info *oauth.UserInfo) (*
 		ASRID:     cfg.UserDefaultLLM.DefaultModels.ASRModel.Name,
 		Img2TxtID: cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name,
 		RerankID:  cfg.UserDefaultLLM.DefaultModels.RerankModel.Name,
-		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
+		ParserIDs: "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
 	userTenantID := utility.GenerateToken()
