@@ -1223,7 +1223,7 @@ async def run_document_post_chunking_if_last(
 
     async def _maybe_run_raptor():
         raptor_cfg = (ctx.parser_config or {}).get("raptor") or {}
-        if not raptor_cfg.get("use_raptor"):
+        if not raptor_cfg.get("do_raptor"):
             return
         try:
             ok_doc, doc_obj = DocumentService.get_by_id(task_doc_id)
