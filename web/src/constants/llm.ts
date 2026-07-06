@@ -73,6 +73,12 @@ export enum LLMFactory {
   RAGcon = 'RAGcon',
   Perplexity = 'Perplexity',
   NewAPI = 'New API',
+  Astraflow = 'Astraflow',
+  AstraflowCN = 'Astraflow-CN',
+  FastEmbed = 'FastEmbed',
+  FuturMix = 'FuturMix',
+  SiliconFlowIntl = 'siliconflow_intl',
+  Xiaomi = 'Xiaomi',
 }
 
 // Please lowercase the file name
@@ -171,12 +177,12 @@ export const APIMapUrl = {
   [LLMFactory.Gemini]: 'https://aistudio.google.com/app/apikey',
   [LLMFactory.DeepSeek]: 'https://platform.deepseek.com/api_keys',
   [LLMFactory.Moonshot]: 'https://platform.moonshot.cn/console/api-keys',
-  [LLMFactory.TongYiQianWen]: 'https://dashscope.console.aliyun.com/apiKey',
+  [LLMFactory.TongYiQianWen]: 'https://www.aliyun.com/product/bailian',
   [LLMFactory.ZhipuAI]: 'https://open.bigmodel.cn/usercenter/apikeys',
   [LLMFactory.XAI]: 'https://x.ai/api/',
   [LLMFactory.HuggingFace]: 'https://huggingface.co/settings/tokens',
   [LLMFactory.Mistral]: 'https://console.mistral.ai/api-keys/',
-  [LLMFactory.Cohere]: 'https://dashboard.cohere.com/api-keys',
+  [LLMFactory.Cohere]: 'https://cohere.com/',
   [LLMFactory.BaiduYiYan]:
     'https://console.bce.baidu.com/qianfan/ais/console/apiKey',
   [LLMFactory.Meituan]: 'https://longcat.chat/platform/api_keys',
@@ -218,4 +224,11 @@ export const APIMapUrl = {
   [LLMFactory.Avian]: 'https://avian.io',
   [LLMFactory.Perplexity]:
     'https://docs.perplexity.ai/docs/embeddings/quickstart',
+  [LLMFactory.Astraflow]: 'https://umodelverse.ai',
+  [LLMFactory.AstraflowCN]: 'https://modelverse.cn',
+  [LLMFactory.FastEmbed]: 'https://qdrant.github.io/fastembed',
+  [LLMFactory.FuturMix]: 'https://futurmix.ai',
+  [LLMFactory.SiliconFlowIntl]: 'https://cloud.siliconflow.cn/account/ak',
+  [LLMFactory.Xiaomi]: 'https://xiaomimimo.com',
+  [LLMFactory.OpenDataLoader]: 'https://github.com/infiniflow/ragflow',
 };
