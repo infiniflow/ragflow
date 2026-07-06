@@ -330,7 +330,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [put]
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
@@ -341,6 +341,19 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid document id",
 		})
+		return
+	}
+
+	doc, err := h.documentService.GetDocumentByID(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "document not found",
+		})
+		return
+	}
+	if !h.datasetService.Accessible(doc.KbID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
 
@@ -374,7 +387,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [delete]
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
@@ -385,6 +398,19 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid document id",
 		})
+		return
+	}
+
+	doc, err := h.documentService.GetDocumentByID(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "document not found",
+		})
+		return
+	}
+	if !h.datasetService.Accessible(doc.KbID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
 
@@ -1254,7 +1280,7 @@ type SetMetaRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/document/set_meta [post]
 func (h *DocumentHandler) SetMeta(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
@@ -1321,7 +1347,21 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 		}
 	}
 
-	err := h.documentService.SetDocumentMetadata(req.DocID, meta)
+	// Authorization: user must be able to access the document's dataset.
+	doc, err := h.documentService.GetDocumentByID(req.DocID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "document not found",
+		})
+		return
+	}
+	if !h.datasetService.Accessible(doc.KbID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		return
+	}
+
+	err = h.documentService.SetDocumentMetadata(req.DocID, meta)
 	if err != nil {
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
