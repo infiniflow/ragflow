@@ -33,18 +33,24 @@ from PIL import Image
 from common.constants import MAXIMUM_PAGE_NUMBER
 
 try:
-    from docling.document_converter import DocumentConverter
+    from docling.document_converter import DocumentConverter, PdfFormatOption
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
 except Exception:
     DocumentConverter = None
+    PdfFormatOption = None
+    InputFormat = None
+    PdfPipelineOptions = None
 
 try:
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 except Exception:
-    class RAGFlowPdfParser:  
+
+    class RAGFlowPdfParser:
         pass
 
-from deepdoc.parser.utils import extract_pdf_outlines
 
+from deepdoc.parser.utils import extract_pdf_outlines
 
 
 class DoclingContentType(str, Enum):
@@ -56,7 +62,7 @@ class DoclingContentType(str, Enum):
 
 @dataclass
 class _BBox:
-    page_no: int  
+    page_no: int
     x0: float
     y0: float
     x1: float
@@ -67,17 +73,17 @@ def _extract_bbox_from_prov(item, prov_attr: str = "prov") -> Optional[_BBox]:
     prov = getattr(item, prov_attr, None)
     if not prov:
         return None
-    
+
     prov_item = prov[0] if isinstance(prov, list) else prov
     pn = getattr(prov_item, "page_no", None)
     bb = getattr(prov_item, "bbox", None)
     if pn is None or bb is None:
         return None
-    
+
     coords = [getattr(bb, attr) for attr in ("l", "t", "r", "b")]
     if None in coords:
         return None
-    
+
     return _BBox(page_no=int(pn), x0=coords[0], y0=coords[1], x1=coords[2], y1=coords[3])
 
 
@@ -92,9 +98,7 @@ class DoclingParser(RAGFlowPdfParser):
         self.request_timeout = request_timeout
 
     def _effective_server_url(self, docling_server_url: Optional[str] = None) -> str:
-        return (docling_server_url or self.docling_server_url or "").rstrip("/") or (
-            os.environ.get("DOCLING_SERVER_URL", "").rstrip("/")
-        )
+        return (docling_server_url or self.docling_server_url or "").rstrip("/") or (os.environ.get("DOCLING_SERVER_URL", "").rstrip("/"))
 
     @staticmethod
     def _is_http_endpoint_valid(url: str, timeout: int = 5) -> bool:
@@ -146,16 +150,14 @@ class DoclingParser(RAGFlowPdfParser):
             if bytes_io:
                 bytes_io.close()
 
-    def _make_line_tag(self,bbox: _BBox) -> str:
+    def _make_line_tag(self, bbox: _BBox) -> str:
         if bbox is None:
             return ""
-        x0,x1, top, bott = bbox.x0, bbox.x1, bbox.y0, bbox.y1
+        x0, x1, top, bott = bbox.x0, bbox.x1, bbox.y0, bbox.y1
         if hasattr(self, "page_images") and self.page_images and len(self.page_images) >= bbox.page_no:
-            _, page_height = self.page_images[bbox.page_no-1].size
-            top, bott = page_height-top ,page_height-bott
-        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(
-            bbox.page_no, x0,x1, top, bott
-        )
+            _, page_height = self.page_images[bbox.page_no - 1].size
+            top, bott = page_height - top, page_height - bott
+        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(bbox.page_no, x0, x1, top, bott)
 
     @staticmethod
     def extract_positions(txt: str) -> list[tuple[list[int], float, float, float, float]]:
@@ -183,10 +185,10 @@ class DoclingParser(RAGFlowPdfParser):
                 bottom = top + 4
             img0 = self.page_images[pns[0]]
             x0, y0, x1, y1 = int(left), int(top), int(right), int(min(bottom, img0.size[1]))
-            
+
             crop0 = img0.crop((x0, y0, x1, y1))
             imgs.append(crop0)
-            if 0 < ii < len(poss)-1:
+            if 0 < ii < len(poss) - 1:
                 positions.append((pns[0] + self.page_from, x0, x1, y0, y1))
             remain_bottom = bottom - img0.size[1]
             for pn in pns[1:]:
@@ -220,19 +222,19 @@ class DoclingParser(RAGFlowPdfParser):
 
     def _iter_doc_items(self, doc) -> Iterable[tuple[str, Any, Optional[_BBox]]]:
         for t in getattr(doc, "texts", []):
+            label = getattr(t, "label", "")
+            if label in ("formula",):
+                text = getattr(t, "text", "") or getattr(t, "orig", "")
+                bbox = _extract_bbox_from_prov(t)
+                yield (DoclingContentType.EQUATION.value, text, bbox)
+                continue
+
             parent = getattr(t, "parent", "")
             ref = getattr(parent, "cref", "")
-            label = getattr(t, "label", "")
             if (label in ("section_header", "text") and ref in ("#/body",)) or label in ("list_item",):
                 text = getattr(t, "text", "") or ""
                 bbox = _extract_bbox_from_prov(t)
                 yield (DoclingContentType.TEXT.value, text, bbox)
-
-        for item in getattr(doc, "texts", []):
-            if getattr(item, "label", "") in ("FORMULA",):
-                text = getattr(item, "text", "") or ""
-                bbox = _extract_bbox_from_prov(item)
-                yield (DoclingContentType.EQUATION.value, text, bbox)
 
     def _transfer_to_sections(self, doc, parse_method: str) -> list[tuple[str, ...]]:
         sections: list[tuple[str, ...]] = []
@@ -243,10 +245,12 @@ class DoclingParser(RAGFlowPdfParser):
                     continue
             elif typ == DoclingContentType.EQUATION.value:
                 section = payload.strip()
+                if not section:
+                    continue
             else:
                 continue
-            
-            tag = self._make_line_tag(bbox) if isinstance(bbox,_BBox) else ""
+
+            tag = self._make_line_tag(bbox) if isinstance(bbox, _BBox) else ""
             if parse_method in {"manual", "pipeline"}:
                 sections.append((section, typ, tag))
             elif parse_method == "paper":
@@ -268,9 +272,9 @@ class DoclingParser(RAGFlowPdfParser):
         left, top, right, bott = bbox
 
         x0 = float(left)
-        y0 = float(H-top)
+        y0 = float(H - top)
         x1 = float(right)
-        y1 = float(H-bott)
+        y1 = float(H - bott)
 
         x0, y0 = max(0.0, min(x0, W - 1)), max(0.0, min(y0, H - 1))
         x1, y1 = max(x0 + 1.0, min(x1, W)), max(y0 + 1.0, min(y1, H))
@@ -280,7 +284,7 @@ class DoclingParser(RAGFlowPdfParser):
         except Exception:
             return None, ""
 
-        pos = (page_no-1 if page_no>0 else 0, x0, x1, y0, y1)
+        pos = (page_no - 1 if page_no > 0 else 0, x0, x1, y0, y1)
         return crop, [pos]
 
     def _transfer_to_tables(self, doc):
@@ -355,9 +359,9 @@ class DoclingParser(RAGFlowPdfParser):
     ):
         """
         Parses a PDF document using a remote Docling server.
-        
-        Prioritizes native chunking endpoints (/v1/chunk/source, /v1alpha/chunk/source) 
-        to prevent token overflow, with a graceful fallback to standard conversion 
+
+        Prioritizes native chunking endpoints (/v1/chunk/source, /v1alpha/chunk/source)
+        to prevent token overflow, with a graceful fallback to standard conversion
         endpoints if chunking is unavailable.
         """
         server_url = self._effective_server_url(docling_server_url)
@@ -382,7 +386,7 @@ class DoclingParser(RAGFlowPdfParser):
 
         filename = Path(filepath).name or "input.pdf"
         b64 = base64.b64encode(pdf_bytes).decode("ascii")
-        
+
         # Standard payloads
         # Standard fallback payloads (no chunking)
         v1_payload_standard = {
@@ -393,17 +397,17 @@ class DoclingParser(RAGFlowPdfParser):
             "options": {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"]},
             "file_sources": [{"filename": filename, "base64_string": b64}],
         }
-        
+
         # --- NEW: Correct API Contract for Chunking ---
         chunking_opts = {
-            "from_formats": ["pdf"], 
+            "from_formats": ["pdf"],
             "to_formats": ["json", "md", "text"],
             "do_chunking": True,
             "chunking_options": {
                 "max_tokens": 512,
                 "overlap": 50,
-                "tokenizer": "sentencepiece" # Required by Docling contract
-            }
+                "tokenizer": "sentencepiece",  # Required by Docling contract
+            },
         }
         v1_payload_chunked = {
             "options": chunking_opts,
@@ -434,21 +438,21 @@ class DoclingParser(RAGFlowPdfParser):
                 if resp.status_code < 300:
                     response_json = resp.json()
                     is_chunked_response = chunk_flag
-                    
+
                     if chunk_flag:
                         self.logger.info(f"[Docling] Successfully used native chunking on: {endpoint}")
                     else:
                         self.logger.info(f"[Docling] Chunking unavailable, fell back to standard: {endpoint}")
                     break
-                
-                # If chunking request is rejected (e.g., 422 Unprocessable Entity on older servers), 
+
+                # If chunking request is rejected (e.g., 422 Unprocessable Entity on older servers),
                 # log it and let the loop naturally fall back to the standard payload.
                 if chunk_flag:
                     self.logger.warning(f"[Docling] Server rejected chunking parameters: HTTP {resp.status_code}")
                     continue
 
                 errors.append(f"{endpoint}: HTTP {resp.status_code} {resp.text[:300]}")
-                
+
             except Exception as exc:
                 self.logger.error(f"[Docling] Request error on {endpoint}: {exc}")
                 errors.append(f"{endpoint}: {exc}")
@@ -458,7 +462,7 @@ class DoclingParser(RAGFlowPdfParser):
 
         sections: list[tuple[str, ...]] = []
         tables = []
-        
+
         # --- NEW: Handle Native Chunked Response ---
         if is_chunked_response:
             # The chunking endpoint returns an array of chunk items
@@ -470,14 +474,17 @@ class DoclingParser(RAGFlowPdfParser):
                 chunk_text = chunk_data.get("text", "")
                 if not chunk_text and isinstance(chunk_data.get("chunk"), dict):
                     chunk_text = chunk_data["chunk"].get("text", "")
-                
+
                 if isinstance(chunk_text, str) and chunk_text.strip():
                     # Feed the pre-sliced chunks directly into RAGFlow's expected format
                     sections.extend(self._sections_from_remote_text(chunk_text, parse_method=parse_method))
-                    
+
             if callback:
                 callback(0.95, f"[Docling] Native chunks received: {len(sections)}")
-            return sections, tables
+            if sections:
+                return sections, tables
+
+            self.logger.warning("[Docling] Native chunking returned no usable chunks; trying standard response parsing.")
 
         # --- FALLBACK: Standard RAGFlow parsing for older docling servers ---
         docs = self._extract_remote_document_entries(response_json)
@@ -508,9 +515,9 @@ class DoclingParser(RAGFlowPdfParser):
         binary: BytesIO | bytes | None = None,
         callback: Optional[Callable] = None,
         *,
-        output_dir: Optional[str] = None, 
-        lang: Optional[str] = None,        
-        method: str = "auto",             
+        output_dir: Optional[str] = None,
+        lang: Optional[str] = None,
+        method: str = "auto",
         delete_output: bool = True,
         parse_method: str = "raw",
         docling_server_url: Optional[str] = None,
@@ -556,7 +563,11 @@ class DoclingParser(RAGFlowPdfParser):
         except Exception as e:
             self.logger.warning(f"[Docling] render pages failed: {e}")
 
-        conv = DocumentConverter()  
+        do_formula_enrichment = os.environ.get("DOCLING_FORMULA_ENRICHMENT", "0").strip().lower() in ("1", "true", "yes", "on")
+        self.logger.info(f"[Docling] Local conversion (formula_enrichment={do_formula_enrichment}): {src_path}")
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_formula_enrichment = do_formula_enrichment
+        conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
         conv_res = conv.convert(str(src_path))
         doc = conv_res.document
         if callback:

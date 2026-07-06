@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import copy
+import hashlib
 import json
 import re
 
@@ -22,24 +23,23 @@ import logging
 from quart import Response, request
 
 from agent.canvas import Canvas
+from api.apps import AUTH_BETA, login_required
 from api.db.db_models import APIToken
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.canvas_service import completion as agent_completion
-from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.conversation_service import async_iframe_completion as iframe_completion
 from api.db.services.dialog_service import DialogService, async_ask, gen_mindmap
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
+from api.db.services.user_service import TenantService
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_by_id, \
-    get_model_config_by_type_and_name
-from common.misc_utils import get_uuid, thread_pool_exec
-from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_json_result, \
-    get_result, get_request_json, server_error_response, token_required, validate_request
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from common.misc_utils import thread_pool_exec
+from api.utils.api_utils import get_error_data_result, get_json_result, add_tenant_id_to_kwargs, get_result, get_request_json, server_error_response, validate_request
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction
@@ -54,118 +54,20 @@ logger = logging.getLogger(__name__)
 
 
 def _get_sdk_authorization_token():
-    token = request.headers.get("Authorization", "").split()
-    if len(token) != 2:
-        return None
-    return token[1]
-
-
-@token_required
-async def create_agent_session(tenant_id, agent_id):
-    req = await get_request_json()
-    user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
-    release_mode = bool(req.get("release", request.args.get("release", False)))
-
-    if not await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id):
-        return get_error_data_result("You cannot access the agent.")
-
-    try:
-        cvs, dsl = await thread_pool_exec(UserCanvasService.get_agent_dsl_with_release, agent_id, release_mode, tenant_id)
-    except LookupError:
-        return get_error_data_result("Agent not found.")
-    except PermissionError as e:
-        return get_error_data_result(str(e))
-
-    session_id = get_uuid()
-    canvas = Canvas(dsl, tenant_id, agent_id, canvas_id=cvs.id)
-    canvas.reset()
-
-    cvs.dsl = json.loads(str(canvas))
-    # Get the version title based on release_mode
-    version_title = await thread_pool_exec(UserCanvasVersionService.get_latest_version_title, cvs.id, release_mode=release_mode)
-    conv = {
-        "id": session_id,
-        "dialog_id": cvs.id,
-        "user_id": user_id,
-        "message": [{"role": "assistant", "content": canvas.get_prologue()}],
-        "source": "agent",
-        "dsl": cvs.dsl,
-        "version_title": version_title
-    }
-    await thread_pool_exec(API4ConversationService.save, **conv)
-    conv["agent_id"] = conv.pop("dialog_id")
-    return get_result(data=conv)
-
-
-@manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821
-@token_required
-async def delete_agent_session(tenant_id, agent_id):
-    errors = []
-    success_count = 0
-    req = await get_request_json()
-    cvs = await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id)
-    if not cvs:
-        return get_error_data_result(f"You don't own the agent {agent_id}")
-
-    if not req:
-        return get_result()
-
-    ids = req.get("ids")
-    if not ids:
-        if req.get("delete_all") is True:
-            ids = [conv.id for conv in await thread_pool_exec(API4ConversationService.query, dialog_id=agent_id)]
-            if not ids:
-                return get_result()
-        else:
-            return get_result()
-
-    conv_list = ids
-
-    unique_conv_ids, duplicate_messages = check_duplicate_ids(conv_list, "session")
-    conv_list = unique_conv_ids
-
-    for session_id in conv_list:
-        conv = await thread_pool_exec(API4ConversationService.query, id=session_id, dialog_id=agent_id)
-        if not conv:
-            errors.append(f"The agent doesn't own the session {session_id}")
-            continue
-        await thread_pool_exec(API4ConversationService.delete_by_id, session_id)
-        success_count += 1
-
-    if errors:
-        if success_count > 0:
-            return get_result(data={"success_count": success_count, "errors": errors},
-                              message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
-        else:
-            return get_error_data_result(message="; ".join(errors))
-
-    if duplicate_messages:
-        if success_count > 0:
-            return get_result(
-                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors",
-                data={"success_count": success_count, "errors": duplicate_messages})
-        else:
-            return get_error_data_result(message=";".join(duplicate_messages))
-
-    return get_result()
-
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return ""
+    return auth_header[len("Bearer ") :].strip()
 
 
 @manager.route("/chatbots/<dialog_id>/completions", methods=["POST"])  # noqa: F821
-async def chatbot_completions(dialog_id):
+@login_required(auth_types=AUTH_BETA)
+@add_tenant_id_to_kwargs
+async def chatbot_completions(dialog_id, tenant_id=None):
     req = await get_request_json()
 
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_error_data_result(message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_error_data_result(message='Authentication error: API key is invalid!"')
-    tenant_id = objs[0].tenant_id
     exists, dialog = DialogService.get_by_id(dialog_id)
-    if (not exists
-            or getattr(dialog, "tenant_id", None) != tenant_id
-            or str(getattr(dialog, "status", "")) != StatusEnum.VALID.value):
+    if not exists or getattr(dialog, "tenant_id", None) != tenant_id or str(getattr(dialog, "status", "")) != StatusEnum.VALID.value:
         logger.warning(
             "Denied chatbot access: reason=%s tenant_id=%s dialog_id=%s user_id=%s session_id=%s",
             "no access to this chatbot",
@@ -227,19 +129,13 @@ async def chatbot_completions(dialog_id):
 
     return None
 
+
 @manager.route("/chatbots/<dialog_id>/info", methods=["GET"])  # noqa: F821
-async def chatbots_inputs(dialog_id):
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_error_data_result(message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_error_data_result(message='Authentication error: API key is invalid!"')
-    tenant_id = objs[0].tenant_id
+@login_required(auth_types=AUTH_BETA)
+@add_tenant_id_to_kwargs
+async def chatbots_inputs(dialog_id, tenant_id=None):
     exists, dialog = await thread_pool_exec(DialogService.get_by_id, dialog_id)
-    if (not exists
-            or getattr(dialog, "tenant_id", None) != tenant_id
-            or str(getattr(dialog, "status", "")) != StatusEnum.VALID.value):
+    if not exists or getattr(dialog, "tenant_id", None) != tenant_id or str(getattr(dialog, "status", "")) != StatusEnum.VALID.value:
         request_args = getattr(request, "args", {}) or {}
         request_user_id = request_args.get("user_id") if hasattr(request_args, "get") else None
         request_session_id = request_args.get("session_id") if hasattr(request_args, "get") else None
@@ -258,37 +154,46 @@ async def chatbots_inputs(dialog_id):
             "avatar": dialog.icon,
             "prologue": dialog.prompt_config.get("prologue", ""),
             "has_tavily_key": bool(dialog.prompt_config.get("tavily_api_key", "").strip()),
+            "llm_id": dialog.llm_id or "",
         }
     )
 
 
 @manager.route("/agentbots/<agent_id>/completions", methods=["POST"])  # noqa: F821
-async def agent_bot_completions(agent_id):
+@login_required(auth_types=AUTH_BETA)
+@add_tenant_id_to_kwargs
+async def agent_bot_completions(agent_id, tenant_id=None):
     req = await get_request_json()
 
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_error_data_result(message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_error_data_result(message='Authentication error: API key is invalid!"')
+    if not await thread_pool_exec(UserCanvasService.accessible, agent_id, tenant_id):
+        logger.warning(
+            "agent_bot_completions access denied tenant_id=%s agent_id=%s",
+            tenant_id,
+            agent_id,
+        )
+        return get_error_data_result(message=f"Can't find agent by ID: {agent_id}")
 
     if req.get("stream", True):
+
         async def stream():
             try:
-                async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
+                async for answer in agent_completion(tenant_id, agent_id, **req):
                     yield answer
             except Exception as e:
                 logging.exception(e)
                 error_result = get_error_data_result(message=str(e) or "Unknown error")
-                yield "data:" + json.dumps(
-                    {
-                        "event": "message",
-                        "data": {"content": f"Error {error_result['code']}: {error_result['message']}\n\n"},
-                        **error_result,
-                    },
-                    ensure_ascii=False,
-                ) + "\n\n"
+                yield (
+                    "data:"
+                    + json.dumps(
+                        {
+                            "event": "message",
+                            "data": {"content": f"Error {error_result['code']}: {error_result['message']}\n\n"},
+                            **error_result,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n\n"
+                )
 
         resp = Response(stream(), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
@@ -302,7 +207,7 @@ async def agent_bot_completions(agent_id):
         reference = {}
         structured_output = {}
         final_ans = {}
-        async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
+        async for answer in agent_completion(tenant_id, agent_id, **req):
             # agent_completion yields SSE-formatted strings. A single yielded
             # chunk can contain multiple "data:..." frames separated by "\n\n"
             # plus blank or comment lines, so parse line-by-line rather than
@@ -313,7 +218,7 @@ async def agent_bot_completions(agent_id):
                 line = line.strip()
                 if not line.startswith("data:"):
                     continue
-                payload = line[len("data:"):].strip()
+                payload = line[len("data:") :].strip()
                 if not payload:
                     continue
                 try:
@@ -350,36 +255,83 @@ async def agent_bot_completions(agent_id):
 
 
 @manager.route("/agentbots/<agent_id>/inputs", methods=["GET"])  # noqa: F821
-async def begin_inputs(agent_id):
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_error_data_result(message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_error_data_result(message='Authentication error: API key is invalid!"')
+@login_required(auth_types=AUTH_BETA)
+@add_tenant_id_to_kwargs
+async def begin_inputs(agent_id, tenant_id=None):
+    if not await thread_pool_exec(UserCanvasService.accessible, agent_id, tenant_id):
+        logger.warning(
+            "begin_inputs access denied tenant_id=%s agent_id=%s",
+            tenant_id,
+            agent_id,
+        )
+        return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
     e, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
     if not e:
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
-    canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id, canvas_id=cvs.id)
-    return get_result(
-        data={"title": cvs.title, "avatar": cvs.avatar, "inputs": canvas.get_component_input_form("begin"),
-              "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
+    canvas = Canvas(json.dumps(cvs.dsl), tenant_id, canvas_id=cvs.id)
+    return get_result(data={"title": cvs.title, "avatar": cvs.avatar, "inputs": canvas.get_component_input_form("begin"), "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
+
+
+@manager.route("/agentbots/<shared_id>/logs/<message_id>", methods=["GET"])  # noqa: F821
+async def agent_bot_logs(shared_id, message_id):
+    # Beta-token sibling of /agents/<agent_id>/logs/<message_id>.
+    # Used by the shared/embedded chat page's "Thinking" button (fixes #14985).
+    # The <shared_id> path segment is just the value the client passed in the
+    # URL (it equals the beta token in the share flow); authentication comes
+    # from the Authorization header and the real agent_id is read from the
+    # looked-up APIToken so we never trust client-supplied identifiers.
+    from rag.utils.redis_conn import REDIS_CONN
+
+    token = _get_sdk_authorization_token()
+    if not token:
+        logger.warning(
+            "agent_bot_logs: missing Authorization header (shared_id=%s message_id=%s)",
+            shared_id,
+            message_id,
+        )
+        return get_error_data_result(message="Authorization is not valid!")
+    # Non-reversible fingerprint of the share token: lets operators correlate
+    # auth-failure log lines for the same token without leaking a guessable
+    # substring of the secret itself.
+    token_fp = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+    objs = await thread_pool_exec(APIToken.query, beta=token)
+    if not objs:
+        logger.warning(
+            "agent_bot_logs: invalid beta token (fingerprint=%s shared_id=%s)",
+            token_fp,
+            shared_id,
+        )
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    agent_id = objs[0].dialog_id
+    if not agent_id:
+        logger.warning(
+            "agent_bot_logs: APIToken has no dialog_id (tenant_id=%s fingerprint=%s)",
+            objs[0].tenant_id,
+            token_fp,
+        )
+        return get_error_data_result(message="API token is not bound to an agent.")
+
+    try:
+        binary = await thread_pool_exec(REDIS_CONN.get, f"{agent_id}-{message_id}-logs")
+        if not binary:
+            return get_json_result(data={})
+        payload = binary.decode("utf-8") if isinstance(binary, bytes) else binary
+        return get_json_result(data=json.loads(payload))
+    except Exception as exc:
+        logging.exception(exc)
+        return server_error_response(exc)
 
 
 @manager.route("/searchbots/ask", methods=["POST"])  # noqa: F821
+@login_required(auth_types=AUTH_BETA)
+@add_tenant_id_to_kwargs
 @validate_request("question", "kb_ids")
-async def ask_about_embedded():
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_error_data_result(message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_error_data_result(message='Authentication error: API key is invalid!"')
-
+async def ask_about_embedded(tenant_id=None):
     req = await get_request_json()
-    uid = objs[0].tenant_id
+    uid = tenant_id
 
     search_id = req.get("search_id", "")
     search_config = {}
@@ -387,15 +339,18 @@ async def ask_about_embedded():
         if search_app := await thread_pool_exec(SearchService.get_detail, search_id):
             search_config = search_app.get("search_config", {})
 
+    chat_llm_name = ""
+    if not search_config or not search_config.get("chat_id"):
+        _, tenant_info = TenantService.get_by_id(uid)
+        chat_llm_name = tenant_info.llm_id
+
     async def stream():
         nonlocal req, uid
         try:
-            async for ans in async_ask(req["question"], req["kb_ids"], uid, search_config=search_config):
+            async for ans in async_ask(req["question"], req["kb_ids"], uid, chat_llm_name=chat_llm_name, search_config=search_config):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as e:
-            yield "data:" + json.dumps(
-                {"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
-                ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
     resp = Response(stream(), mimetype="text/event-stream")
@@ -407,15 +362,10 @@ async def ask_about_embedded():
 
 
 @manager.route("/searchbots/retrieval_test", methods=["POST"])  # noqa: F821
+@login_required(auth_types=AUTH_BETA)
+@add_tenant_id_to_kwargs
 @validate_request("kb_id", "question")
-async def retrieval_test_embedded():
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_error_data_result(message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_error_data_result(message='Authentication error: API key is invalid!"')
-
+async def retrieval_test_embedded(tenant_id=None):
     req = await get_request_json()
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
@@ -424,8 +374,7 @@ async def retrieval_test_embedded():
     if isinstance(kb_ids, str):
         kb_ids = [kb_ids]
     if not kb_ids:
-        return get_json_result(data=False, message='Please specify dataset firstly.',
-                               code=RetCode.DATA_ERROR)
+        return get_json_result(data=False, message="Please specify dataset firstly.", code=RetCode.DATA_ERROR)
     doc_ids = req.get("doc_ids", [])
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
@@ -435,8 +384,6 @@ async def retrieval_test_embedded():
         return get_error_data_result("`top_k` must be greater than 0")
     langs = req.get("cross_languages", [])
     rerank_id = req.get("rerank_id", "")
-    tenant_rerank_id = req.get("tenant_rerank_id", "")
-    tenant_id = objs[0].tenant_id
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
     search_config = {}
@@ -458,7 +405,7 @@ async def retrieval_test_embedded():
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_id = search_config.get("chat_id", "")
                 if chat_id:
-                    chat_model_config = await thread_pool_exec(get_model_config_by_type_and_name, tenant_id, LLMType.CHAT, chat_id)
+                    chat_model_config = await thread_pool_exec(get_model_config_from_provider_instance, tenant_id, LLMType.CHAT, chat_id)
                 else:
                     chat_model_config = await thread_pool_exec(get_tenant_default_model_by_type, tenant_id, LLMType.CHAT)
                 chat_mdl = LLMBundle(tenant_id, chat_model_config)
@@ -495,8 +442,7 @@ async def retrieval_test_embedded():
                     tenant_ids.append(tenant.tenant_id)
                     break
             else:
-                return get_json_result(data=False, message="Only owner of dataset authorized for this operation.",
-                                       code=RetCode.OPERATING_ERROR)
+                return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
 
         e, kb = await thread_pool_exec(KnowledgebaseService.get_by_id, kb_ids[0])
         if not e:
@@ -504,24 +450,12 @@ async def retrieval_test_embedded():
 
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
-        if kb.tenant_embd_id:
-            embd_model_config = await thread_pool_exec(get_model_config_by_id, kb.tenant_embd_id)
-        else:
-            embd_model_config = await thread_pool_exec(get_model_config_by_type_and_name, kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        embd_model_config = await thread_pool_exec(get_model_config_from_provider_instance, kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None
-        if tenant_rerank_id:
-            allowed_rerank_tenant_ids = {tenant_id, *tenant_ids}
-            rerank_model_config = await thread_pool_exec(
-                get_model_config_by_id,
-                tenant_rerank_id,
-                allowed_rerank_tenant_ids,
-                tenant_id,
-            )
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
-        elif rerank_id:
-            rerank_model_config = await thread_pool_exec(get_model_config_by_type_and_name, tenant_id, LLMType.RERANK, rerank_id)
+        if rerank_id:
+            rerank_model_config = await thread_pool_exec(get_model_config_from_provider_instance, tenant_id, LLMType.RERANK, rerank_id)
             rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
         if req.get("keyword", False):
@@ -531,13 +465,23 @@ async def retrieval_test_embedded():
 
         labels = label_question(_question, [kb])
         ranks = await settings.retriever.retrieval(
-            _question, embd_mdl, tenant_ids, kb_ids, page, size, similarity_threshold, vector_similarity_weight, top,
-            local_doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"), rank_feature=labels
+            _question,
+            embd_mdl,
+            tenant_ids,
+            kb_ids,
+            page,
+            size,
+            similarity_threshold,
+            vector_similarity_weight,
+            top,
+            local_doc_ids,
+            rerank_mdl=rerank_mdl,
+            highlight=req.get("highlight"),
+            rank_feature=labels,
         )
         if use_kg:
             default_chat_model = await thread_pool_exec(get_tenant_default_model_by_type, kb.tenant_id, LLMType.CHAT)
-            ck = await settings.kg_retriever.retrieval(_question, tenant_ids, kb_ids, embd_mdl,
-                                                 LLMBundle(kb.tenant_id, default_chat_model))
+            ck = await settings.kg_retriever.retrieval(_question, tenant_ids, kb_ids, embd_mdl, LLMBundle(kb.tenant_id, default_chat_model))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
@@ -556,23 +500,16 @@ async def retrieval_test_embedded():
         return await _retrieval()
     except Exception as e:
         if "not_found" in str(e):
-            return get_json_result(data=False, message="No chunk found! Check the chunk status please!",
-                                   code=RetCode.DATA_ERROR)
+            return get_json_result(data=False, message="No chunk found! Check the chunk status please!", code=RetCode.DATA_ERROR)
         return server_error_response(e)
 
 
 @manager.route("/searchbots/related_questions", methods=["POST"])  # noqa: F821
+@login_required(auth_types=AUTH_BETA)
+@add_tenant_id_to_kwargs
 @validate_request("question")
-async def related_questions_embedded():
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_error_data_result(message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_error_data_result(message='Authentication error: API key is invalid!"')
-
+async def related_questions_embedded(tenant_id=None):
     req = await get_request_json()
-    tenant_id = objs[0].tenant_id
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
 
@@ -586,7 +523,7 @@ async def related_questions_embedded():
 
     chat_id = search_config.get("chat_id", "")
     if chat_id:
-        chat_model_config = await thread_pool_exec(get_model_config_by_type_and_name, tenant_id, LLMType.CHAT, chat_id)
+        chat_model_config = await thread_pool_exec(get_model_config_from_provider_instance, tenant_id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = await thread_pool_exec(get_tenant_default_model_by_type, tenant_id, LLMType.CHAT)
     chat_mdl = LLMBundle(tenant_id, chat_model_config)
@@ -610,16 +547,10 @@ Related search terms:
 
 
 @manager.route("/searchbots/detail", methods=["GET"])  # noqa: F821
-async def detail_share_embedded():
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_error_data_result(message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_error_data_result(message='Authentication error: API key is invalid!"')
-
+@login_required(auth_types=AUTH_BETA)
+@add_tenant_id_to_kwargs
+async def detail_share_embedded(tenant_id=None):
     search_id = request.args["search_id"]
-    tenant_id = objs[0].tenant_id
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
     try:
@@ -628,8 +559,7 @@ async def detail_share_embedded():
             if await thread_pool_exec(SearchService.query, tenant_id=tenant.tenant_id, id=search_id):
                 break
         else:
-            return get_json_result(data=False, message="Has no permission for this operation.",
-                                   code=RetCode.OPERATING_ERROR)
+            return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
 
         search = await thread_pool_exec(SearchService.get_detail, search_id)
         if not search:
@@ -640,22 +570,16 @@ async def detail_share_embedded():
 
 
 @manager.route("/searchbots/mindmap", methods=["POST"])  # noqa: F821
+@login_required(auth_types=AUTH_BETA)
+@add_tenant_id_to_kwargs
 @validate_request("question", "kb_ids")
-async def mindmap():
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_error_data_result(message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_error_data_result(message='Authentication error: API key is invalid!"')
-
-    tenant_id = objs[0].tenant_id
+async def mindmap(tenant_id=None):
     req = await get_request_json()
 
     search_id = req.get("search_id", "")
     search_app = await thread_pool_exec(SearchService.get_detail, search_id) if search_id else {}
 
-    mind_map =await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
+    mind_map = await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)

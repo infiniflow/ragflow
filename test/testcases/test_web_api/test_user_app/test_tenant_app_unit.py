@@ -149,7 +149,7 @@ def _load_tenant_module(monkeypatch):
     api_utils_mod.get_json_result = lambda data=None, message="", code=0: {"code": code, "message": message, "data": data}
     api_utils_mod.get_data_error_result = lambda message="": {"code": 102, "message": message, "data": False}
     api_utils_mod.server_error_response = lambda exc: {"code": 100, "message": repr(exc), "data": False}
-    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda fn: fn)
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda fn: fn
     api_utils_mod.get_request_json = lambda: _AwaitableValue({})
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 

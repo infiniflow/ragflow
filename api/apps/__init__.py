@@ -34,6 +34,7 @@ from quart_schema import QuartSchema
 from common import settings
 from api.utils.api_utils import server_error_response, get_json_result
 from api.constants import API_VERSION
+from common.exceptions import ModelException
 from common.misc_utils import get_uuid
 
 settings.init_settings()
@@ -77,20 +78,33 @@ app.config["BODY_TIMEOUT"] = int(os.environ.get("QUART_BODY_TIMEOUT", 600))
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "redis"
 app.config["SESSION_REDIS"] = settings.decrypt_database_config(name="redis")
-app.config["MAX_CONTENT_LENGTH"] = int(
-    os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024)
-)
-app.config['SECRET_KEY'] = settings.get_secret_key()
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024))
+app.config["SECRET_KEY"] = settings.get_secret_key()
 app.secret_key = settings.get_secret_key()
 commands.register_commands(app)
 
 from functools import wraps
 from typing import ParamSpec, TypeVar
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from werkzeug.local import LocalProxy
 
 T = TypeVar("T")
 P = ParamSpec("P")
+
+AUTH_JWT = "JWT"
+AUTH_API = "API"
+AUTH_BETA = "BETA"
+DEFAULT_AUTH_TYPES = (AUTH_JWT, AUTH_API)
+
+
+def _normalize_auth_types(auth_types=None):
+    if auth_types is None:
+        return set(DEFAULT_AUTH_TYPES)
+    if isinstance(auth_types, str):
+        return {auth_types.upper()}
+    if isinstance(auth_types, Iterable):
+        return {str(auth_type).upper() for auth_type in auth_types}
+    return {str(auth_types).upper()}
 
 
 def _load_user_from_session():
@@ -122,76 +136,103 @@ def _load_user_from_session():
     if not access_token or len(access_token) < 32 or access_token.startswith("INVALID_"):
         return None
     logging.debug("Authenticated request via session fallback for user_id=%s", user_id)
+    g.auth_type = AUTH_JWT
     g.user = user
     return user
 
 
-def _load_user():
-    jwt = Serializer(secret_key=settings.get_secret_key())
+def _load_user(auth_types=None):
+    explicit_auth_types = auth_types is not None
+    auth_types = _normalize_auth_types(auth_types)
+    if getattr(g, "user", None) and (not explicit_auth_types or getattr(g, "auth_type", None) in auth_types):
+        return g.user
+
+    # No Authorization header, try to load user from session cookie if JWT auth is allowed
     authorization = request.headers.get("Authorization")
-    g.user = None
-    g.auth_via_api_token = False
     if not authorization:
-        return _load_user_from_session()
+        return _load_user_from_session() if AUTH_JWT in auth_types else None
 
     # Extract auth_token based on whether Authorization starts with "bearer" (case-insensitive)
-    if authorization.lower().startswith("bearer "):
+    if authorization[:7].lower() == "bearer ":
         parts = authorization.split(maxsplit=1)
         if len(parts) < 2:
             logging.warning("Authorization header has invalid bearer format")
-            return _load_user_from_session()
+            return None
         auth_token = parts[1]
     else:
         auth_token = authorization
 
+    g.user = None
+    g.auth_type = None
+    g.auth_error_message = None
+
+    # Try Beta token
+    if AUTH_BETA in auth_types:
+        try:
+            objs = APIToken.query(beta=auth_token)
+            if objs:
+                user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
+                if user:
+                    g.auth_type = AUTH_BETA
+                    g.user = user[0]
+                    return user[0]
+            g.auth_error_message = "Authentication error: API key is invalid! "
+        except Exception as e_beta:
+            logging.warning(f"load_user from beta token got exception {e_beta}")
+            g.auth_error_message = "Authentication error: API key is invalid!"
+
     # Try JWT decoding
-    try:
-        access_token = str(jwt.loads(auth_token))
+    if AUTH_JWT in auth_types:
+        try:
+            jwt = Serializer(secret_key=settings.get_secret_key())
+            access_token = str(jwt.loads(auth_token))
 
-        if not access_token or not access_token.strip():
-            logging.warning("Authentication attempt with empty access token")
-            return _load_user_from_session()
+            if not access_token or not access_token.strip():
+                logging.warning("Authentication attempt with empty access token")
+                return None
 
-        if len(access_token.strip()) < 32:
-            logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
-            return _load_user_from_session()
+            if len(access_token.strip()) < 32:
+                logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
+                return None
 
-        user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
-        if user:
-            if not user[0].access_token or not user[0].access_token.strip():
-                logging.warning(f"User {user[0].email} has empty access_token in database")
-                return _load_user_from_session()
-            g.user = user[0]
-            return user[0]
-        return _load_user_from_session()
-    except Exception as e_jwt:
-        logging.warning(f"load_user from jwt got exception {e_jwt}")
-
-    # JWT decode failed, try as api_token
-    try:
-        objs = APIToken.query(token=auth_token)
-        if objs:
-            user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
+            user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
             if user:
                 if not user[0].access_token or not user[0].access_token.strip():
                     logging.warning(f"User {user[0].email} has empty access_token in database")
-                    return _load_user_from_session()
-                g.auth_via_api_token = True
+                    return None
+                g.auth_type = AUTH_JWT
                 g.user = user[0]
                 return user[0]
-            logging.warning(f"load_user: No user found for tenant_id={objs[0].tenant_id} from APIToken")
-        else:
-            logging.warning(f"load_user: No APIToken found for token={auth_token[:10]}...")
-    except Exception as e_api_token:
-        logging.warning(f"load_user from api token got exception {e_api_token}")
+            return None
+        except Exception as e_jwt:
+            logging.warning(f"load_user from jwt got exception {e_jwt}")
 
-    return _load_user_from_session()
+    # JWT decode failed, try as api_token
+    if AUTH_API in auth_types:
+        try:
+            objs = APIToken.query(token=auth_token)
+            if objs:
+                user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
+                if user:
+                    if not user[0].access_token or not user[0].access_token.strip():
+                        logging.warning(f"User {user[0].email} has empty access_token in database")
+                        return None
+                    g.auth_type = AUTH_API
+                    g.user = user[0]
+                    return user[0]
+                logging.warning(f"load_user: No user found for tenant_id={objs[0].tenant_id} from APIToken")
+            else:
+                logging.warning(f"load_user: No APIToken found for token={auth_token[:10]}...")
+        except Exception as e_api_token:
+            logging.warning(f"load_user from api token got exception {e_api_token}")
+
+    return None
 
 
 current_user = LocalProxy(_load_user)
 
 
-def login_required(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
+def login_required(func: Callable[P, Awaitable[T]] = None, auth_types=None) -> Callable[P, Awaitable[T]]:
     """A decorator to restrict route access to authenticated users.
 
     This should be used to wrap a route handler (or view function) to
@@ -211,22 +252,32 @@ def login_required(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]
 
     """
 
-    @wraps(func)
-    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-        timing_enabled = os.getenv("RAGFLOW_API_TIMING")
-        t_start = time.perf_counter() if timing_enabled else None
-        user = current_user
-        if timing_enabled:
-            logging.info(
-                "api_timing login_required auth_ms=%.2f path=%s",
-                (time.perf_counter() - t_start) * 1000,
-                request.path,
-            )
-        if not user:  # or not session.get("_user_id"):
-            raise QuartAuthUnauthorized()
-        return await current_app.ensure_async(func)(*args, **kwargs)
+    def decorator(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
+        @wraps(func)
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            timing_enabled = os.getenv("RAGFLOW_API_TIMING")
+            t_start = time.perf_counter() if timing_enabled else None
+            user = _load_user(auth_types)
+            if timing_enabled:
+                logging.info(
+                    "api_timing login_required auth_ms=%.2f path=%s",
+                    (time.perf_counter() - t_start) * 1000,
+                    request.path,
+                )
+            if not user:  # or not session.get("_user_id"):
+                if _normalize_auth_types(auth_types) == {AUTH_BETA}:
+                    return get_json_result(
+                        code=RetCode.DATA_ERROR,
+                        message=getattr(g, "auth_error_message", None) or "Authorization is not valid!",
+                    )
+                raise QuartAuthUnauthorized()
+            return await current_app.ensure_async(func)(*args, **kwargs)
 
-    return wrapper
+        return wrapper
+
+    if func is None:
+        return decorator
+    return decorator(func)
 
 
 def login_user(user, remember=False, duration=None, force=False, fresh=True):
@@ -359,6 +410,12 @@ async def unauthorized_quart_auth(error):
 async def unauthorized_werkzeug(error):
     logging.warning("Unauthorized request (werkzeug)")
     return get_json_result(code=error.code, message=error.description), RetCode.UNAUTHORIZED
+
+
+@app.errorhandler(ModelException)
+async def handle_model_exception(error):
+    logging.warning("Forbidden request")
+    return get_json_result(code=RetCode.BAD_REQUEST, message=repr(error)), 200
 
 
 @app.teardown_request

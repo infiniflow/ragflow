@@ -79,7 +79,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `SVR_HTTP_PORT`  
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW_IMAGE`  
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.25.5`. The RAGFlow Docker image does not include embedding models.
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.26.3`. The RAGFlow Docker image does not include embedding models.
 
   
 > [!TIP]  
@@ -88,6 +88,17 @@ The [.env](./.env) file contains important environment variables for Docker.
 > - For the `nightly` edition:  
 >   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
 >   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
+
+### DeepDoc Vision Service (OSS)
+
+- `DEEPDOC_URL`  
+  URL for the deepdoc vision API serving DLA (layout analysis), OCR (text detection/recognition), and TSR (table structure recognition). The `deepdoc` service in `docker-compose.yml` provides this endpoint. Defaults to `http://deepdoc:9390`. When unset, the parser falls back to inline ONNX Runtime inference.
+
+  > The OSS deepdoc service runs on CPU using ONNX Runtime models. No GPU required.  
+  > API endpoints: `GET /health`, `GET /model`, `POST /predict/dla`, `POST /predict/tsr`, `POST /predict/ocr`.
+
+- `DEEPDOC_IMAGE`  
+  Docker image for the OSS deepdoc service. Defaults to `infiniflow/deepdoc_oss:latest`.
 
 ### Timezone
 
@@ -119,6 +130,46 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `EMBEDDING_BATCH_SIZE`  
   The number of text chunks processed in a single batch during embedding vectorization. Defaults to `16`.
 
+### OceanBase prerequisites
+
+Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file descriptor and core dump limits OceanBase expects.
+
+1. Set host limits:
+
+   ```bash
+   sudo tee /etc/security/limits.d/99-oceanbase.conf >/dev/null <<'EOF'
+   root soft nofile 655350
+   root hard nofile 655350
+   * soft nofile 655350
+   * hard nofile 655350
+   * soft core unlimited
+   * hard core unlimited
+   EOF
+   ```
+
+2. Make sure PAM limits are enabled:
+
+   ```bash
+   grep -E 'pam_limits\.so' /etc/pam.d/common-session /etc/pam.d/common-session-noninteractive
+   ```
+
+   If missing, add them:
+
+   ```bash
+   echo 'session required pam_limits.so' | sudo tee -a /etc/pam.d/common-session
+   echo 'session required pam_limits.so' | sudo tee -a /etc/pam.d/common-session-noninteractive
+   ```
+
+3. Log out and log back in, or reboot.
+
+4. Verify the effective limit:
+
+   ```bash
+   ulimit -n
+   ```
+
+   Expected: `655350`, or at least `20000`.
+
 ## 🐋 Service configuration
 
 [service_conf.yaml](./service_conf.yaml) specifies the system-level configuration for RAGFlow and is used by its API server and task executor. In a dockerized setup, this file is automatically created based on the [service_conf.yaml.template](./service_conf.yaml.template) file (replacing all environment variables by their values).
@@ -126,6 +177,13 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `ragflow`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
   - `port`: The API server's serving port inside the Docker container. Defaults to `9380`.
+
+- `deepdoc`  
+  The OSS DeepDoc vision service provides DLA, OCR, and TSR inference via ONNX Runtime.
+  Defined in `docker-compose.yml`, it is started automatically as a dependency of `ragflow-cpu` and `ragflow-gpu`.
+  - `image`: Docker image. Defaults to `infiniflow/deepdoc_oss:latest`.
+  - `port`: Serving port inside the container. Defaults to `9390`.
+  - Health check: `curl -f http://localhost:9390/health` every 10s.
 
 - `mysql`
   - `name`: The MySQL database name. Defaults to `rag_flow`.

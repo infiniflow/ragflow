@@ -53,23 +53,24 @@ class TestGetProjectBaseDirectory:
     def test_uses_environment_variable_when_available(self):
         """Test that function uses RAG_PROJECT_BASE environment variable when set"""
         test_path = "/custom/project/path"
-
-        file_utils.PROJECT_BASE = test_path
-
-        result = get_project_base_directory()
+        with patch.dict(os.environ, {"RAG_PROJECT_BASE": test_path}, clear=False):
+            result = get_project_base_directory()
         assert result == test_path
 
     def test_calculates_default_path_when_no_env_vars(self):
         """Test that function calculates default path when no environment variables are set"""
         with patch.dict(os.environ, {}, clear=True):  # Clear all environment variables
-            # Reset the global variable to force re-initialization
+            original_base = file_utils.PROJECT_BASE
+            try:
+                file_utils.PROJECT_BASE = None
+                result = get_project_base_directory()
 
-            result = get_project_base_directory()
-
-            # Should return a valid absolute path
-            assert result is not None
-            assert os.path.isabs(result)
-            assert os.path.basename(result) != ""  # Should not be root directory
+                # Should return a valid absolute path
+                assert result is not None
+                assert os.path.isabs(result)
+                assert os.path.basename(result) != ""  # Should not be root directory
+            finally:
+                file_utils.PROJECT_BASE = original_base
 
     def test_caches_project_base_value(self):
         """Test that PROJECT_BASE is cached after first calculation"""
@@ -106,12 +107,15 @@ class TestGetProjectBaseDirectory:
 
 
 # Parameterized tests for different path combinations
-@pytest.mark.parametrize("path_args,expected_suffix", [
-    ((), ""),  # No additional arguments
-    (("src",), "src"),
-    (("data", "models"), os.path.join("data", "models")),
-    (("config", "app", "settings.json"), os.path.join("config", "app", "settings.json")),
-])
+@pytest.mark.parametrize(
+    "path_args,expected_suffix",
+    [
+        ((), ""),  # No additional arguments
+        (("src",), "src"),
+        (("data", "models"), os.path.join("data", "models")),
+        (("config", "app", "settings.json"), os.path.join("config", "app", "settings.json")),
+    ],
+)
 def test_various_path_combinations(path_args, expected_suffix):
     """Test various combinations of path arguments"""
     base_path = get_project_base_directory()

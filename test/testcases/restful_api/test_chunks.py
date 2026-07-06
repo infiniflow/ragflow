@@ -22,6 +22,23 @@ from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import wait_for
 
 
+def _is_infinity_doc_engine(rest_client: RestClient) -> bool:
+    env_engine = (os.getenv("DOC_ENGINE") or "").strip().lower()
+    if env_engine:
+        return env_engine == "infinity"
+    try:
+        res = rest_client.get("/system/status")
+        if res.status_code != 200:
+            return False
+        payload = res.json()
+        if payload.get("code") != 0:
+            return False
+        engine = str(payload.get("data", {}).get("doc_engine", {}).get("type", "")).strip().lower()
+        return engine == "infinity"
+    except Exception:
+        return False
+
+
 def _assert_created_chunk_id(payload):
     chunk_id = payload["data"]["chunk"].get("id")
     assert chunk_id, payload
@@ -482,7 +499,7 @@ def test_chunk_delete_concurrent_and_bulk_contract(rest_client, create_document)
     for index in range(40):
         payload = rest_client.post(base_path, json={"content": f"bulk chunk {index}"}).json()
         assert payload["code"] == 0, payload
-    bulk_ids_payload = rest_client.get(base_path, params={"page_size": 200}).json()
+    bulk_ids_payload = rest_client.get(base_path, params={"page_size": 100}).json()
     assert bulk_ids_payload["code"] == 0, bulk_ids_payload
     bulk_ids = [chunk["id"] for chunk in bulk_ids_payload["data"]["chunks"]]
     bulk_res = rest_client.delete(base_path, json={"chunk_ids": bulk_ids})
@@ -549,8 +566,9 @@ def test_chunk_list_default_get_id_and_invalid_target_contract(rest_client, crea
 
 
 @pytest.mark.p2
-@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="infinity")
 def test_chunk_list_keyword_and_invalid_param_contract(rest_client, create_document):
+    if _is_infinity_doc_engine(rest_client):
+        pytest.skip("infinity")
     dataset_id, document_id = create_document("chunk_list_keywords.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
     _reset_chunk_batch(rest_client, base_path)
@@ -575,8 +593,9 @@ def test_chunk_list_keyword_and_invalid_param_contract(rest_client, create_docum
 
 
 @pytest.mark.p2
-@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="infinity")
 def test_chunk_list_page_and_page_size_contract(rest_client, create_document):
+    if _is_infinity_doc_engine(rest_client):
+        pytest.skip("infinity")
     dataset_id, document_id = create_document("chunk_list_paging.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
     _reset_chunk_batch(rest_client, base_path)
@@ -759,9 +778,7 @@ def test_chunk_update_invalid_target_and_param_contract(rest_client, create_docu
 
 @pytest.mark.p2
 def test_chunk_update_repeated_concurrent_and_deleted_document_contract(rest_client, create_document):
-    dataset_id, document_id, chunk_id, base_path = _create_chunk_for_update(
-        rest_client, create_document, "chunk_update_repeated_concurrent_deleted.txt"
-    )
+    dataset_id, document_id, chunk_id, base_path = _create_chunk_for_update(rest_client, create_document, "chunk_update_repeated_concurrent_deleted.txt")
 
     first_res = rest_client.patch(f"{base_path}/{chunk_id}", json={"content": "chunk test 1"})
     assert first_res.status_code == 200

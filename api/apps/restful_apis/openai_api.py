@@ -15,19 +15,16 @@
 #
 
 import json
-import logging
 import time
-from uuid import uuid4
 
 from quart import Response, jsonify
 
 from api.apps import current_user, login_required
-from api.db.services.conversation_service import ConversationService, structure_answer
+from api.apps.restful_apis._generation_params import extract_generation_config, merge_generation_config
 from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.doc_metadata_service import DocMetadataService
-from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_api_key
 from api.utils.api_utils import get_error_data_result, get_request_json, validate_request
-from api.utils.reference_metadata_utils import enrich_chunks_with_document_metadata
 from common.constants import RetCode, StatusEnum
 from common.metadata_utils import convert_conditions, meta_filter
 from common.token_utils import num_tokens_from_string
@@ -38,19 +35,24 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if not llm_id:
         return None
 
-    llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(llm_id)
     model_type = (llm_setting or {}).get("model_type")
     if model_type not in {"chat", "image2text"}:
         model_type = "chat"
 
-    if not TenantLLMService.query(
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type=model_type,
-    ):
+    try:
+        get_model_config_from_provider_instance(
+            tenant_id=tenant_id,
+            model_name=llm_id,
+            model_type=model_type,
+        )
+    except Exception as e:
+        logging.error(f"Fail to get model config for {llm_id}: {e}")
         return f"`llm_id` {llm_id} doesn't exist"
     return None
+
+
+import logging
+from api.utils.reference_metadata_utils import enrich_chunks_with_document_metadata
 
 
 def _build_reference_chunks(reference, include_metadata=False, metadata_fields=None):
@@ -92,45 +94,144 @@ def _build_sse_response(body):
     return resp
 
 
-def _build_chat_messages(messages, conv=None):
-    if conv is not None:
-        if not conv.message:
-            conv.message = []
-        user_message = dict(messages[-1])
-        user_message.setdefault("id", str(uuid4()))
-        user_message.setdefault("created_at", time.time())
-        conv.message.append(user_message)
-        source_messages = conv.message
-    else:
-        source_messages = messages
+async def _stream_chat_completion_sse(
+    ans_iter,
+    *,
+    completion_id,
+    requested_model,
+    prompt,
+    need_reference,
+    include_reference_metadata=False,
+    metadata_fields=None,
+):
+    """Translate RAGFlow's chat event stream into OpenAI-compatible SSE chunks.
 
-    chat_messages = []
-    for message in source_messages:
-        if message["role"] == "system":
-            continue
-        if message["role"] == "assistant" and not chat_messages:
-            continue
-        chat_messages.append(message)
+    ``ans_iter`` yields RAGFlow dialog events. The body is streamed
+    incrementally as ``delta.content`` chunks; the terminating ``final`` event
+    carries the complete (decorated) answer, which is surfaced only via the
+    trailing chunk's ``final_content`` / ``reference`` fields and must NOT be
+    re-emitted as content — doing so duplicates the whole message (#15286).
+    """
+    token_used = 0
+    last_ans = {}
+    full_content = ""
+    final_answer = None
+    final_reference = None
+    in_think = False
+    response = {
+        "id": completion_id,
+        "choices": [
+            {
+                "delta": {
+                    "content": "",
+                    "role": "assistant",
+                    "function_call": None,
+                    "tool_calls": None,
+                    "reasoning_content": "",
+                },
+                "finish_reason": None,
+                "index": 0,
+                "logprobs": None,
+            }
+        ],
+        "created": int(time.time()),
+        "model": requested_model,
+        "object": "chat.completion.chunk",
+        "system_fingerprint": "",
+        "usage": None,
+    }
 
-    message_id = chat_messages[-1].get("id") if chat_messages else None
-    return chat_messages, message_id
+    try:
+        async for ans in ans_iter:
+            last_ans = ans
+            if ans.get("final"):
+                # The `final` event carries the complete, decorated answer.
+                # Do NOT re-emit it as a content delta — the body was already
+                # streamed incrementally above, so echoing the whole answer
+                # here duplicates the entire message in the stream (#15286).
+                # Surface it only through the trailing chunk's `final_content`
+                # and `reference` fields.
+                final_answer = ans.get("answer") or full_content
+                final_reference = ans.get("reference", {})
+                continue
+            if ans.get("start_to_think"):
+                in_think = True
+                continue
+            if ans.get("end_to_think"):
+                in_think = False
+                continue
+            delta = ans.get("answer") or ""
+            if not delta:
+                continue
+            token_used += num_tokens_from_string(delta)
+            if in_think:
+                response["choices"][0]["delta"]["reasoning_content"] = delta
+                response["choices"][0]["delta"]["content"] = None
+            else:
+                full_content += delta
+                response["choices"][0]["delta"]["content"] = delta
+                response["choices"][0]["delta"]["reasoning_content"] = None
+            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
+    except Exception as e:
+        response["choices"][0]["delta"]["content"] = "**ERROR**: " + str(e)
+        yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
+
+    response["choices"][0]["delta"]["content"] = None
+    response["choices"][0]["delta"]["reasoning_content"] = None
+    response["choices"][0]["finish_reason"] = "stop"
+    prompt_tokens = num_tokens_from_string(prompt)
+    response["usage"] = {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": token_used,
+        "total_tokens": prompt_tokens + token_used,
+    }
+    if need_reference:
+        reference_payload = final_reference if final_reference is not None else last_ans.get("reference", [])
+        response["choices"][0]["delta"]["reference"] = _build_reference_chunks(
+            reference_payload,
+            include_metadata=include_reference_metadata,
+            metadata_fields=metadata_fields,
+        )
+        response["choices"][0]["delta"]["final_content"] = final_answer if final_answer is not None else full_content
+    yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
+    yield "data:[DONE]\n\n"
 
 
-def _prepare_session(chat_id, session_id):
-    if not session_id:
-        return None
+def _normalize_message_content(content):
+    """Convert OpenAI message content to a string for the dialog layer.
 
-    ok, conv = ConversationService.get_by_id(session_id)
-    if not ok:
-        return "Session not found!"
-    if conv.dialog_id != chat_id:
-        return "Session does not belong to this chat!"
+    Supports string content and array parts with ``type: text``. Other part types
+    (e.g. image_url) are ignored until vision is wired through this route.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text = part.get("text", "")
+                if text is not None:
+                    parts.append(str(text))
+        return "\n".join(parts)
+    return None
 
-    if not conv.reference:
-        conv.reference = []
-    conv.reference = [ref for ref in conv.reference if ref]
-    conv.reference.append({"chunks": [], "doc_aggs": []})
-    return conv
+
+def _normalize_openai_messages(messages):
+    """Return (normalized_messages, error_message). error_message is set on failure."""
+    if not isinstance(messages, list):
+        return None, "messages must be an array."
+
+    normalized = []
+    for message in messages:
+        if not isinstance(message, dict):
+            return None, "Each message must be an object."
+        content = _normalize_message_content(message.get("content"))
+        if content is None:
+            return None, "messages[].content must be a string or an array of content parts."
+        normalized.append({**message, "content": content})
+    return normalized, None
 
 
 @manager.route("/openai/<chat_id>/chat/completions", methods=["POST"])  # noqa: F821
@@ -152,15 +253,12 @@ async def openai_chat_completions(chat_id):
     if metadata_fields is not None and not isinstance(metadata_fields, list):
         return get_error_data_result("reference_metadata.fields must be an array.")
 
-    session_id = req.get("session_id", extra_body.get("session_id", ""))
-    if session_id is None:
-        session_id = ""
-    if not isinstance(session_id, str):
-        return get_error_data_result("session_id must be a string.")
-
     messages = req.get("messages", [])
     if len(messages) < 1:
         return get_error_data_result("You have to provide messages.")
+    messages, normalize_error = _normalize_openai_messages(messages)
+    if normalize_error:
+        return get_error_data_result(normalize_error)
     if messages[-1]["role"] != "user":
         return get_error_data_result("The last content of this conversation is not from user.")
 
@@ -174,10 +272,6 @@ async def openai_chat_completions(chat_id):
         return get_error_data_result(f"You don't own the chat {chat_id}")
     dia = dia[0]
 
-    conv = _prepare_session(chat_id, session_id)
-    if isinstance(conv, str):
-        return get_error_data_result(conv)
-
     using_placeholder_model = requested_model == "model"
     if using_placeholder_model:
         requested_model = dia.llm_id or requested_model
@@ -186,8 +280,9 @@ async def openai_chat_completions(chat_id):
         if llm_id_error:
             return get_error_data_result(message=llm_id_error, code=RetCode.ARGUMENT_ERROR)
         dia.llm_id = requested_model
-        if not TenantLLMService.get_api_key(tenant_id=dia.tenant_id, model_name=requested_model):
+        if not get_api_key(tenant_id=dia.tenant_id, model_name=requested_model):
             return get_error_data_result(message=f"Cannot use specified model {requested_model}.")
+    merge_generation_config(dia, extract_generation_config(req))
 
     metadata_condition = extra_body.get("metadata_condition") or {}
     if metadata_condition and not isinstance(metadata_condition, dict):
@@ -205,108 +300,34 @@ async def openai_chat_completions(chat_id):
             filtered_doc_ids = ["-999"]
         doc_ids_str = ",".join(filtered_doc_ids) if filtered_doc_ids else None
 
-    msg, message_id = _build_chat_messages(messages, conv)
+    msg = []
+    for message in messages:
+        if message["role"] == "system":
+            continue
+        if message["role"] == "assistant" and not msg:
+            continue
+        msg.append(message)
 
     tools = None
     toolcall_session = None
-    stream_mode = req.get("stream", True)
+    stream_mode = bool(req.get("stream", False))
 
     if stream_mode:
-        async def streamed_response_generator():
-            token_used = 0
-            last_ans = {}
-            full_content = ""
-            final_answer = None
-            final_reference = None
-            in_think = False
-            response = {
-                "id": completion_id,
-                "choices": [
-                    {
-                        "delta": {
-                            "content": "",
-                            "role": "assistant",
-                            "function_call": None,
-                            "tool_calls": None,
-                            "reasoning_content": "",
-                        },
-                        "finish_reason": None,
-                        "index": 0,
-                        "logprobs": None,
-                    }
-                ],
-                "created": int(time.time()),
-                "model": requested_model,
-                "object": "chat.completion.chunk",
-                "system_fingerprint": "",
-                "usage": None,
-            }
-            if session_id:
-                response["session_id"] = session_id
-
-            try:
-                chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
-                if doc_ids_str:
-                    chat_kwargs["doc_ids"] = doc_ids_str
-                async for ans in async_chat(dia, msg, True, **chat_kwargs):
-                    if conv is not None:
-                        ans = structure_answer(conv, ans, message_id, session_id)
-                    last_ans = ans
-                    if ans.get("final"):
-                        if ans.get("answer"):
-                            full_content = ans["answer"]
-                            response["choices"][0]["delta"]["content"] = full_content
-                            response["choices"][0]["delta"]["reasoning_content"] = None
-                            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-                        final_answer = full_content
-                        final_reference = ans.get("reference", {})
-                        continue
-                    if ans.get("start_to_think"):
-                        in_think = True
-                        continue
-                    if ans.get("end_to_think"):
-                        in_think = False
-                        continue
-                    delta = ans.get("answer") or ""
-                    if not delta:
-                        continue
-                    token_used += num_tokens_from_string(delta)
-                    if in_think:
-                        response["choices"][0]["delta"]["reasoning_content"] = delta
-                        response["choices"][0]["delta"]["content"] = None
-                    else:
-                        full_content += delta
-                        response["choices"][0]["delta"]["content"] = delta
-                        response["choices"][0]["delta"]["reasoning_content"] = None
-                    yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-                if conv is not None:
-                    ConversationService.update_by_id(conv.id, conv.to_dict())
-            except Exception as e:
-                response["choices"][0]["delta"]["content"] = "**ERROR**: " + str(e)
-                yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-
-            response["choices"][0]["delta"]["content"] = None
-            response["choices"][0]["delta"]["reasoning_content"] = None
-            response["choices"][0]["finish_reason"] = "stop"
-            prompt_tokens = num_tokens_from_string(prompt)
-            response["usage"] = {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": token_used,
-                "total_tokens": prompt_tokens + token_used,
-            }
-            if need_reference:
-                reference_payload = final_reference if final_reference is not None else last_ans.get("reference", [])
-                response["choices"][0]["delta"]["reference"] = _build_reference_chunks(
-                    reference_payload,
-                    include_metadata=include_reference_metadata,
-                    metadata_fields=metadata_fields,
-                )
-                final_content = final_answer if final_answer is not None else full_content
-                response["choices"][0]["delta"]["final_content"] = final_content
-            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-            yield "data:[DONE]\n\n"
-
-        return _build_sse_response(streamed_response_generator())
+        chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
+        if doc_ids_str:
+            chat_kwargs["doc_ids"] = doc_ids_str
+        ans_iter = async_chat(dia, msg, True, **chat_kwargs)
+        return _build_sse_response(
+            _stream_chat_completion_sse(
+                ans_iter,
+                completion_id=completion_id,
+                requested_model=requested_model,
+                prompt=prompt,
+                need_reference=need_reference,
+                include_reference_metadata=include_reference_metadata,
+                metadata_fields=metadata_fields,
+            )
+        )
 
     answer = None
     chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
@@ -315,9 +336,6 @@ async def openai_chat_completions(chat_id):
     async for ans in async_chat(dia, msg, False, **chat_kwargs):
         answer = ans
         break
-    if conv is not None:
-        answer = structure_answer(conv, answer, message_id, session_id)
-        ConversationService.update_by_id(conv.id, conv.to_dict())
 
     content = answer["answer"]
     response = {
@@ -347,8 +365,6 @@ async def openai_chat_completions(chat_id):
             }
         ],
     }
-    if session_id:
-        response["session_id"] = session_id
     if need_reference:
         response["choices"][0]["message"]["reference"] = _build_reference_chunks(
             answer.get("reference", {}),

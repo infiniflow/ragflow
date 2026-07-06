@@ -91,7 +91,7 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
             {t('locale')}
           </label>
           <RAGFlowSelect
-            placeholder="Select a locale"
+            placeholder={t('selectLocalePlaceholder')}
             value={locale}
             onChange={(value) => setLocale(value)}
             options={languageOptions}

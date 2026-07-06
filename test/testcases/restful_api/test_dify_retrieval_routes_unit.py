@@ -53,11 +53,7 @@ class _DummyKB:
 
 class _DummyRetriever:
     async def retrieval(self, *_args, **_kwargs):
-        return {
-            "chunks": [
-                {"doc_id": "doc-1", "content_with_weight": "chunk-content", "similarity": 0.8, "docnm_kwd": "doc-title", "vector": [0.1]}
-            ]
-        }
+        return {"chunks": [{"doc_id": "doc-1", "content_with_weight": "chunk-content", "similarity": 0.8, "docnm_kwd": "doc-title", "vector": [0.1]}]}
 
     def retrieval_by_children(self, chunks, _tenant_ids):
         return chunks
@@ -67,12 +63,22 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def set_tenant_info():
+    return None
+
+
 def _load_dify_retrieval_module(monkeypatch):
     repo_root = Path(__file__).resolve().parents[3]
 
     common_pkg = ModuleType("common")
     common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
+
+    api_apps_mod = ModuleType("api.apps")
+    api_apps_mod.current_user = SimpleNamespace(id="tenant-1")
+    api_apps_mod.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
 
     deepdoc_pkg = ModuleType("deepdoc")
     deepdoc_parser_pkg = ModuleType("deepdoc.parser")
@@ -102,8 +108,6 @@ def _load_dify_retrieval_module(monkeypatch):
     deepdoc_parser_utils.get_text = lambda *_args, **_kwargs: ""
     monkeypatch.setitem(sys.modules, "deepdoc.parser.utils", deepdoc_parser_utils)
     monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
-
-    tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
 
     class _MockModelConfig:
         def __init__(self, tenant_id, model_name):
@@ -156,15 +160,6 @@ def _load_dify_retrieval_module(monkeypatch):
                 parts = model_name.split("@")
                 return parts[0], parts[1]
             return model_name, None
-
-    tenant_llm_service_mod.TenantService = _StubTenantService
-    tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService
-
-    class _StubLLMFactoriesService:
-        pass
-
-    tenant_llm_service_mod.LLMFactoriesService = _StubLLMFactoriesService
-    monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)
 
     llm_service_mod = ModuleType("api.db.services.llm_service")
 
@@ -233,12 +228,17 @@ def _load_dify_retrieval_module(monkeypatch):
             raise Exception("Model Name is required")
         return _MockModelConfig2(tenant_id, model_name).to_dict()
 
+    def _get_model_config_from_provider_instance(tenant_id: str, model_type: str, model_name: str):
+        if not model_name:
+            raise Exception("Model Name is required")
+        return _MockModelConfig2(tenant_id, model_name).to_dict()
+
     def _get_tenant_default_model_by_type(tenant_id: str, model_type):
         return _MockModelConfig2(tenant_id, "chat-model").to_dict()
 
     tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
-    tenant_model_service_mod.get_model_config_by_type_and_name = _get_model_config_by_type_and_name
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
+    tenant_model_service_mod.get_model_config_from_provider_instance = _get_model_config_from_provider_instance
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
     module_name = "test_dify_retrieval_routes_unit_module"

@@ -18,8 +18,12 @@ package dao
 
 import (
 	"fmt"
-	"ragflow/internal/entity"
 	"strings"
+	"time"
+
+	"gorm.io/gorm"
+
+	"ragflow/internal/entity"
 )
 
 // ChatDAO chat data access object
@@ -169,6 +173,15 @@ func (dao *ChatDAO) GetExistingNames(tenantID string, status string) ([]string, 
 	return names, err
 }
 
+// ExistsByNameTenantStatus checks whether a chat with the given name exists.
+func (dao *ChatDAO) ExistsByNameTenantStatus(name, tenantID, status string) (bool, error) {
+	var count int64
+	err := DB.Model(&entity.Chat{}).
+		Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, status).
+		Count(&count).Error
+	return count > 0, err
+}
+
 // Create creates a new chat/dialog
 func (dao *ChatDAO) Create(chat *entity.Chat) error {
 	return DB.Create(chat).Error
@@ -176,7 +189,28 @@ func (dao *ChatDAO) Create(chat *entity.Chat) error {
 
 // UpdateByID updates a chat by ID
 func (dao *ChatDAO) UpdateByID(id string, updates map[string]interface{}) error {
-	return DB.Model(&entity.Chat{}).Where("id = ?", id).Updates(updates).Error
+	if updates == nil {
+		updates = make(map[string]interface{})
+	}
+
+	now := time.Now().Local()
+	updates["update_time"] = now.UnixMilli()
+	updates["update_date"] = now.Truncate(time.Second)
+
+	result := DB.Session(&gorm.Session{SkipHooks: true}).Model(&entity.Chat{}).Where("id = ?", id).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		var count int64
+		if err := DB.Model(&entity.Chat{}).Where("id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return gorm.ErrRecordNotFound
+		}
+	}
+	return nil
 }
 
 // UpdateManyByID updates multiple chats by ID (batch update)

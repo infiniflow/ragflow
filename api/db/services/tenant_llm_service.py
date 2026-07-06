@@ -188,30 +188,36 @@ class TenantLLMService(CommonService):
         api_key = model_config.get("api_key_payload", model_config["api_key"])
         if model_config["model_type"] == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
+                logging.error("Factory not in embedding model. Supported factories: %s", list(EmbeddingModel.keys()))
                 return None
             return EmbeddingModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"])
 
-        elif model_config["model_type"] == LLMType.RERANK:
+        elif model_config["model_type"] == LLMType.RERANK.value:
             if model_config["llm_factory"] not in RerankModel:
+                logging.error("Factory not in rerank model. Supported factories: %s", list(RerankModel.keys()))
                 return None
             return RerankModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"])
 
         elif model_config["model_type"] == LLMType.IMAGE2TEXT.value:
             if model_config["llm_factory"] not in CvModel:
+                logging.error("Factory not in cv model. Supported factories: %s", list(CvModel.keys()))
                 return None
             return CvModel[model_config["llm_factory"]](api_key, model_config["llm_name"], lang, base_url=model_config["api_base"], **kwargs)
 
         elif model_config["model_type"] == LLMType.CHAT.value:
             if model_config["llm_factory"] not in ChatModel:
+                logging.error("Factory not in chat model. Supported factories: %s", list(ChatModel.keys()))
                 return None
             return ChatModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"], **kwargs)
 
-        elif model_config["model_type"] == LLMType.SPEECH2TEXT:
+        elif model_config["model_type"] == LLMType.SPEECH2TEXT.value:
             if model_config["llm_factory"] not in Seq2txtModel:
+                logging.error("Factory not in speech2text model. Supported factories: %s", list(Seq2txtModel.keys()))
                 return None
             return Seq2txtModel[model_config["llm_factory"]](key=api_key, model_name=model_config["llm_name"], lang=lang, base_url=model_config["api_base"])
-        elif model_config["model_type"] == LLMType.TTS:
+        elif model_config["model_type"] == LLMType.TTS.value:
             if model_config["llm_factory"] not in TTSModel:
+                logging.error("Factory not in tts model. Supported factories: %s", list(TTSModel.keys()))
                 return None
             return TTSModel[model_config["llm_factory"]](
                 api_key,
@@ -219,8 +225,9 @@ class TenantLLMService(CommonService):
                 base_url=model_config["api_base"],
             )
 
-        elif model_config["model_type"] == LLMType.OCR:
+        elif model_config["model_type"] == LLMType.OCR.value:
             if model_config["llm_factory"] not in OcrModel:
+                logging.error("Factory not in ocr model. Supported factories: %s", list(OcrModel.keys()))
                 return None
             return OcrModel[model_config["llm_factory"]](
                 key=api_key,
@@ -498,12 +505,14 @@ class TenantLLMService(CommonService):
 
 class LLM4Tenant:
     def __init__(self, tenant_id: str, model_config: dict, lang="Chinese", **kwargs):
+        self.trace_context = kwargs.pop("trace_context", None) or {}
+        self.langfuse_session_id = kwargs.pop("langfuse_session_id", None)
         self.tenant_id = tenant_id
         self.llm_name = model_config["llm_name"]
         self.model_config = model_config
         self.mdl = TenantLLMService.model_instance(model_config, lang=lang, **kwargs)
         assert self.mdl, "Can't find model for {}/{}/{}".format(tenant_id, model_config["model_type"], model_config["llm_name"])
-        self.max_length = model_config.get("max_tokens", 8192)
+        self.max_length = model_config.get("max_tokens") or 8192
 
         self.is_tools = model_config.get("is_tools", False)
         self.verbose_tool_use = kwargs.get("verbose_tool_use")
@@ -515,8 +524,37 @@ class LLM4Tenant:
             try:
                 if langfuse.auth_check():
                     self.langfuse = langfuse
-                    trace_id = self.langfuse.create_trace_id()
-                    self.trace_context = {"trace_id": trace_id}
+                    if not self.trace_context:
+                        trace_id = self.langfuse.create_trace_id()
+                        self.trace_context = {"trace_id": trace_id}
             except Exception:
                 # Skip langfuse tracing if connection fails
+                pass
+
+    def close(self):
+        """Release resources held by this LLM4Tenant instance.
+
+        This method should be called when the instance is no longer needed
+        to properly release resources such as:
+        - Langfuse tracing client (flush and shutdown)
+        - Underlying model instance resources (HTTP sessions, etc.)
+        """
+        # Flush and shutdown Langfuse client if it was initialized
+        if self.langfuse:
+            try:
+                self.langfuse.flush()
+                if hasattr(self.langfuse, "shutdown"):
+                    self.langfuse.shutdown()
+            except Exception:
+                # Ignore errors during cleanup
+                pass
+            finally:
+                self.langfuse = None
+
+        # Release underlying model instance if it has a close method
+        if self.mdl and hasattr(self.mdl, "close") and callable(getattr(self.mdl, "close")):
+            try:
+                self.mdl.close()
+            except Exception:
+                # Ignore errors during cleanup
                 pass

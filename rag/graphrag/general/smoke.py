@@ -24,7 +24,7 @@ from common.constants import LLMType
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_by_id, get_model_config_by_type_and_name
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
 from rag.graphrag.general.graph_extractor import GraphExtractor
 from rag.graphrag.general.index import update_graph, with_resolution, with_community
 from common import settings
@@ -74,10 +74,7 @@ async def main():
     llm_config = get_tenant_default_model_by_type(args.tenant_id, LLMType.CHAT)
     llm_bdl = LLMBundle(args.tenant_id, llm_config)
     _, kb = KnowledgebaseService.get_by_id(kb_id)
-    if kb.tenant_embd_id:
-        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
-    else:
-        embd_model_config = get_model_config_by_type_and_name(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    embd_model_config = get_model_config_from_provider_instance(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
     embed_bdl = LLMBundle(args.tenant_id, embd_model_config)
 
     graph, doc_ids = await update_graph(
@@ -93,12 +90,8 @@ async def main():
     )
     print(json.dumps(nx.node_link_data(graph), ensure_ascii=False, indent=2))
 
-    await with_resolution(
-        args.tenant_id, kb_id, args.doc_id, llm_bdl, embed_bdl, callback
-    )
-    community_structure, community_reports = await with_community(
-        args.tenant_id, kb_id, args.doc_id, llm_bdl, embed_bdl, callback
-    )
+    await with_resolution(args.tenant_id, kb_id, args.doc_id, llm_bdl, embed_bdl, callback)
+    community_structure, community_reports = await with_community(args.tenant_id, kb_id, args.doc_id, llm_bdl, embed_bdl, callback)
 
     print(
         "------------------ COMMUNITY STRUCTURE--------------------\n",

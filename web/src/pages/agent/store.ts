@@ -41,6 +41,91 @@ import { deleteAllDownstreamAgentsAndTool } from './utils/delete-node';
 
 type IAgentTool = IAgentForm['tools'][number];
 
+const collectDescendantNodeIds = (
+  nodes: RAGFlowNodeType[],
+  rootId: string,
+): string[] => {
+  const descendantNodeIds: string[] = [];
+  const queue = [rootId];
+
+  while (queue.length > 0) {
+    const currentNodeId = queue.shift();
+    if (!currentNodeId) {
+      continue;
+    }
+
+    const childNodeIds = nodes
+      .filter((node) => node.parentId === currentNodeId)
+      .map((node) => node.id);
+
+    childNodeIds.forEach((nodeId) => {
+      if (!descendantNodeIds.includes(nodeId)) {
+        descendantNodeIds.push(nodeId);
+        queue.push(nodeId);
+      }
+    });
+  }
+
+  return descendantNodeIds;
+};
+
+const collectAgentAttachmentNodeIds = (
+  nodes: RAGFlowNodeType[],
+  edges: Edge[],
+  rootNodeIds: string[],
+) => {
+  const attachedNodeIds: string[] = [];
+
+  rootNodeIds.forEach((nodeId) => {
+    const node = nodes.find((item) => item.id === nodeId);
+    if (node?.data?.label !== Operator.Agent) {
+      return;
+    }
+
+    const { downstreamAgentAndToolNodeIds } = deleteAllDownstreamAgentsAndTool(
+      nodeId,
+      edges,
+    );
+
+    downstreamAgentAndToolNodeIds.forEach((attachedNodeId) => {
+      if (!attachedNodeIds.includes(attachedNodeId)) {
+        attachedNodeIds.push(attachedNodeId);
+      }
+    });
+  });
+
+  return attachedNodeIds;
+};
+
+export const collectDeletionNodeIds = (
+  nodes: RAGFlowNodeType[],
+  edges: Edge[],
+  rootId: string,
+): string[] => {
+  const deletedNodeIds = [rootId, ...collectDescendantNodeIds(nodes, rootId)];
+  const attachedNodeIds = collectAgentAttachmentNodeIds(
+    nodes,
+    edges,
+    deletedNodeIds,
+  );
+
+  attachedNodeIds.forEach((nodeId) => {
+    if (!deletedNodeIds.includes(nodeId)) {
+      deletedNodeIds.push(nodeId);
+    }
+  });
+
+  return deletedNodeIds;
+};
+
+export const removeEdgesForNodeIds = (edges: Edge[], nodeIds: string[]) => {
+  const nodeIdSet = new Set(nodeIds);
+
+  return edges.filter(
+    (edge) => !nodeIdSet.has(edge.source) && !nodeIdSet.has(edge.target),
+  );
+};
+
 interface GetAgentToolByIdFunc {
   (id: string): IAgentTool | undefined;
   (id: string, agentNode: RAGFlowNodeType): IAgentTool | undefined;
@@ -406,18 +491,32 @@ const useGraphStore = create<RFState>()(
         }
       },
       deleteIterationNodeById: (id: string) => {
-        const { nodes, edges } = get();
-        const children = nodes.filter((node) => node.parentId === id);
+        const {
+          nodes,
+          edges,
+          selectedNodeIds,
+          selectedEdgeIds,
+          clickedNodeId,
+        } = get();
+        const deletedNodeIds = collectDeletionNodeIds(nodes, edges, id);
+        const deletedNodeIdSet = new Set(deletedNodeIds);
+        const remainingEdges = removeEdgesForNodeIds(edges, deletedNodeIds);
+        const remainingEdgeIdSet = new Set(
+          remainingEdges.map((edge) => edge.id),
+        );
+
         set({
-          nodes: nodes.filter((node) => node.id !== id && node.parentId !== id),
-          edges: edges.filter(
-            (edge) =>
-              edge.source !== id &&
-              edge.target !== id &&
-              !children.some(
-                (child) => edge.source === child.id && edge.target === child.id,
-              ),
+          nodes: nodes.filter((node) => !deletedNodeIdSet.has(node.id)),
+          edges: remainingEdges,
+          selectedNodeIds: selectedNodeIds.filter(
+            (nodeId) => !deletedNodeIdSet.has(nodeId),
           ),
+          selectedEdgeIds: selectedEdgeIds.filter((edgeId) =>
+            remainingEdgeIdSet.has(edgeId),
+          ),
+          clickedNodeId: deletedNodeIdSet.has(clickedNodeId)
+            ? ''
+            : clickedNodeId,
         });
       },
       findNodeByName: (name: Operator) => {

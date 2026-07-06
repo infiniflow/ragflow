@@ -21,7 +21,7 @@ RESTful API migration. Each deprecated route forwards to the corresponding
 new API implementation.
 
 Deprecated APIs and their replacements:
-- POST /api/v1/agents/{agent_id}/completions -> POST /api/v1/agents/chat/completion
+- POST /api/v1/agents/{agent_id}/completions -> POST /api/v1/agents/chat/completions
 - POST /api/v1/agents_openai/{agent_id}/chat/completions -> POST /api/v1/agents/chat/completions
 - POST /api/v1/chats/{chat_id}/completions -> POST /api/v1/chat/completions
 - POST /api/v1/chats_openai/{chat_id}/chat/completions -> POST /api/v1/openai/{chat_id}/chat/completions
@@ -34,15 +34,17 @@ Deprecated APIs and their replacements:
 - PUT /api/v1/chats/{chat_id}/sessions/{session_id} -> PATCH /api/v1/chats/{chat_id}/sessions/{session_id}
 - DELETE /api/v1/chats -> DELETE /api/v1/chats/{chat_id} (with body)
 - POST /api/v1/file/convert -> POST /api/v1/files/link-to-datasets
+- POST /v1/document/upload_info -> POST /api/v1/documents/upload
 - GET /api/v1/file/* -> GET /api/v1/files*
 - POST /api/v1/file/* -> POST /api/v1/files*
 - GET /api/v1/document/get/{doc_id} -> GET /api/v1/documents/{doc_id}/preview
-- GET /api/v1/document/download/{doc_id} -> GET /api/v1/documents/{doc_id}/download
-- GET /v1/document/download/{attachment_id} -> GET /api/v1/documents/{attachment_id}/download
+- GET /api/v1/document/download/{doc_id} -> GET /api/v1/agents/attachments/{doc_id}/download
+- GET /v1/document/download/{attachment_id} -> GET /api/v1/agents/attachments/{attachment_id}/download
 - GET /v1/system/healthz -> GET /api/v1/system/healthz
 - POST /api/v1/sessions/related_questions -> POST /api/v1/chat/recommandation
 - PUT (chunk update) -> PATCH (chunk update)
 """
+
 import logging
 
 from quart import Blueprint, jsonify, request
@@ -67,6 +69,7 @@ def _index_result(success, result):
 # System APIs
 # =============================================================================
 
+
 @legacy_v1_manager.route("/system/healthz", methods=["GET"])
 async def deprecated_system_healthz():
     """
@@ -75,16 +78,15 @@ async def deprecated_system_healthz():
     Old path: GET /v1/system/healthz
     New path: GET /api/v1/system/healthz
     """
-    logging.warning(
-        "API endpoint /v1/system/healthz is deprecated. "
-        "Please use /api/v1/system/healthz instead."
-    )
+    logging.warning("API endpoint /v1/system/healthz is deprecated. Please use /api/v1/system/healthz instead.")
     result, all_ok = run_health_checks()
     return jsonify(result), (200 if all_ok else 500)
+
 
 # =============================================================================
 # Chat Completion APIs
 # =============================================================================
+
 
 @manager.route("/chats/<chat_id>/completions", methods=["POST"])
 @login_required
@@ -96,8 +98,7 @@ async def deprecated_chat_completions(chat_id):
     New path: POST /api/v1/chat/completions
     """
     logging.warning(
-        "API endpoint /api/v1/chats/%s/completions is deprecated. "
-        "Please use /api/v1/chat/completions instead.",
+        "API endpoint /api/v1/chats/%s/completions is deprecated. Please use /api/v1/chat/completions instead.",
         chat_id,
     )
     # Forward to the new API implementation
@@ -114,9 +115,9 @@ async def deprecated_openai_chat_completions(chat_id):
     New path: POST /api/v1/openai/{chat_id}/chat/completions
     """
     logging.warning(
-        "API endpoint /api/v1/chats_openai/%s/chat/completions is deprecated. "
-        "Please use /api/v1/openai/%s/chat/completions instead.",
-        chat_id, chat_id,
+        "API endpoint /api/v1/chats_openai/%s/chat/completions is deprecated. Please use /api/v1/openai/%s/chat/completions instead.",
+        chat_id,
+        chat_id,
     )
     # Forward to the new API implementation
     return await openai_api.openai_chat_completions(chat_id)
@@ -133,8 +134,7 @@ async def deprecated_agents_openai_chat_completions(agent_id, tenant_id=None):
     New path: POST /api/v1/agents/chat/completions
     """
     logging.warning(
-        "API endpoint /api/v1/agents_openai/%s/chat/completions is deprecated. "
-        "Please use /api/v1/agents/chat/completions with `openai-compatible` instead.",
+        "API endpoint /api/v1/agents_openai/%s/chat/completions is deprecated. Please use /api/v1/agents/chat/completions with `openai-compatible` instead.",
         agent_id,
     )
     req = dict(await get_request_json())
@@ -147,6 +147,7 @@ async def deprecated_agents_openai_chat_completions(agent_id, tenant_id=None):
 # Dataset Graph and Index APIs
 # =============================================================================
 
+
 @manager.route("/datasets/<dataset_id>/knowledge_graph", methods=["GET"])
 @login_required
 async def deprecated_get_knowledge_graph(dataset_id):
@@ -157,9 +158,9 @@ async def deprecated_get_knowledge_graph(dataset_id):
     New path: GET /api/v1/datasets/{dataset_id}/graph
     """
     logging.warning(
-        "API endpoint /api/v1/datasets/%s/knowledge_graph is deprecated. "
-        "Please use /api/v1/datasets/%s/graph instead.",
-        dataset_id, dataset_id,
+        "API endpoint /api/v1/datasets/%s/knowledge_graph is deprecated. Please use /api/v1/datasets/%s/graph instead.",
+        dataset_id,
+        dataset_id,
     )
     return await dataset_api.get_knowledge_graph(dataset_id=dataset_id)
 
@@ -174,9 +175,9 @@ async def deprecated_delete_knowledge_graph(dataset_id):
     New path: DELETE /api/v1/datasets/{dataset_id}/graph
     """
     logging.warning(
-        "API endpoint DELETE /api/v1/datasets/%s/knowledge_graph is deprecated. "
-        "Please use DELETE /api/v1/datasets/%s/graph instead.",
-        dataset_id, dataset_id,
+        "API endpoint DELETE /api/v1/datasets/%s/knowledge_graph is deprecated. Please use DELETE /api/v1/datasets/%s/graph instead.",
+        dataset_id,
+        dataset_id,
     )
     return await dataset_api.delete_knowledge_graph(dataset_id=dataset_id)
 
@@ -192,9 +193,9 @@ async def deprecated_run_graphrag(dataset_id, tenant_id=None):
     New path: POST /api/v1/datasets/{dataset_id}/index?type=graph
     """
     logging.warning(
-        "API endpoint /api/v1/datasets/%s/run_graphrag is deprecated. "
-        "Please use /api/v1/datasets/%s/index?type=graph instead.",
-        dataset_id, dataset_id,
+        "API endpoint /api/v1/datasets/%s/run_graphrag is deprecated. Please use /api/v1/datasets/%s/index?type=graph instead.",
+        dataset_id,
+        dataset_id,
     )
     return _index_result(*dataset_api_service.run_index(dataset_id, tenant_id, "graph"))
 
@@ -210,9 +211,9 @@ async def deprecated_trace_graphrag(dataset_id, tenant_id=None):
     New path: GET /api/v1/datasets/{dataset_id}/index?type=graph
     """
     logging.warning(
-        "API endpoint /api/v1/datasets/%s/trace_graphrag is deprecated. "
-        "Please use /api/v1/datasets/%s/index?type=graph instead.",
-        dataset_id, dataset_id,
+        "API endpoint /api/v1/datasets/%s/trace_graphrag is deprecated. Please use /api/v1/datasets/%s/index?type=graph instead.",
+        dataset_id,
+        dataset_id,
     )
     return _index_result(*dataset_api_service.trace_index(dataset_id, tenant_id, "graph"))
 
@@ -228,9 +229,9 @@ async def deprecated_run_raptor(dataset_id, tenant_id=None):
     New path: POST /api/v1/datasets/{dataset_id}/index?type=raptor
     """
     logging.warning(
-        "API endpoint /api/v1/datasets/%s/run_raptor is deprecated. "
-        "Please use /api/v1/datasets/%s/index?type=raptor instead.",
-        dataset_id, dataset_id,
+        "API endpoint /api/v1/datasets/%s/run_raptor is deprecated. Please use /api/v1/datasets/%s/index?type=raptor instead.",
+        dataset_id,
+        dataset_id,
     )
     return _index_result(*dataset_api_service.run_index(dataset_id, tenant_id, "raptor"))
 
@@ -246,9 +247,9 @@ async def deprecated_trace_raptor(dataset_id, tenant_id=None):
     New path: GET /api/v1/datasets/{dataset_id}/index?type=raptor
     """
     logging.warning(
-        "API endpoint /api/v1/datasets/%s/trace_raptor is deprecated. "
-        "Please use /api/v1/datasets/%s/index?type=raptor instead.",
-        dataset_id, dataset_id,
+        "API endpoint /api/v1/datasets/%s/trace_raptor is deprecated. Please use /api/v1/datasets/%s/index?type=raptor instead.",
+        dataset_id,
+        dataset_id,
     )
     return _index_result(*dataset_api_service.trace_index(dataset_id, tenant_id, "raptor"))
 
@@ -256,6 +257,7 @@ async def deprecated_trace_raptor(dataset_id, tenant_id=None):
 # =============================================================================
 # Chat Session APIs
 # =============================================================================
+
 
 @manager.route("/chats/<chat_id>/sessions/<session_id>", methods=["PUT"])
 @login_required
@@ -267,9 +269,11 @@ async def deprecated_update_session(chat_id, session_id):
     New path: PATCH /api/v1/chats/{chat_id}/sessions/{session_id}
     """
     logging.warning(
-        "API endpoint PUT /api/v1/chats/%s/sessions/%s is deprecated. "
-        "Please use PATCH /api/v1/chats/%s/sessions/%s instead.",
-        chat_id, session_id, chat_id, session_id,
+        "API endpoint PUT /api/v1/chats/%s/sessions/%s is deprecated. Please use PATCH /api/v1/chats/%s/sessions/%s instead.",
+        chat_id,
+        session_id,
+        chat_id,
+        session_id,
     )
     # Forward to the new API implementation
     return await chat_api.update_session(chat_id, session_id)
@@ -278,6 +282,7 @@ async def deprecated_update_session(chat_id, session_id):
 # =============================================================================
 # File APIs (Old /api/v1/file/* -> New /api/v1/files*)
 # =============================================================================
+
 
 @manager.route("/file/get/<file_id>", methods=["GET"])
 @login_required
@@ -289,9 +294,9 @@ async def deprecated_file_get(file_id):
     New path: GET /api/v1/files/{file_id}
     """
     logging.warning(
-        "API endpoint /api/v1/file/get/%s is deprecated. "
-        "Please use /api/v1/files/%s instead.",
-        file_id, file_id,
+        "API endpoint /api/v1/file/get/%s is deprecated. Please use /api/v1/files/%s instead.",
+        file_id,
+        file_id,
     )
     # Forward to the new API implementation (download)
     return await file_api.download(file_id=file_id)
@@ -306,10 +311,7 @@ async def deprecated_file_list():
     Old path: GET /api/v1/file/list?...
     New path: GET /api/v1/files?...
     """
-    logging.warning(
-        "API endpoint /api/v1/file/list is deprecated. "
-        "Please use /api/v1/files instead."
-    )
+    logging.warning("API endpoint /api/v1/file/list is deprecated. Please use /api/v1/files instead.")
     # Forward to the new API implementation
     return await file_api.list_files()
 
@@ -327,8 +329,7 @@ async def deprecated_file_all_parent_folder():
     if not file_id:
         return get_data_error_result(message="`file_id` query parameter is required")
     logging.warning(
-        "API endpoint /api/v1/file/all_parent_folder is deprecated. "
-        "Please use /api/v1/files/%s/ancestors instead.",
+        "API endpoint /api/v1/file/all_parent_folder is deprecated. Please use /api/v1/files/%s/ancestors instead.",
         file_id,
     )
     # Forward to the new API implementation
@@ -348,8 +349,7 @@ async def deprecated_file_parent_folder():
     if not file_id:
         return get_data_error_result(message="`file_id` query parameter is required")
     logging.warning(
-        "API endpoint /api/v1/file/parent_folder is deprecated. "
-        "Please use /api/v1/files/%s/parent instead.",
+        "API endpoint /api/v1/file/parent_folder is deprecated. Please use /api/v1/files/%s/parent instead.",
         file_id,
     )
     # Forward to the new API implementation
@@ -365,10 +365,7 @@ async def deprecated_file_root_folder():
     Old path: GET /api/v1/file/root_folder
     New path: GET /api/v1/files?parent_id=<root_id>
     """
-    logging.warning(
-        "API endpoint /api/v1/file/root_folder is deprecated. "
-        "Please use /api/v1/files with appropriate parent_id instead."
-    )
+    logging.warning("API endpoint /api/v1/file/root_folder is deprecated. Please use /api/v1/files with appropriate parent_id instead.")
     # Forward to the new API implementation with empty parent_id to get root
     return await file_api.list_files()
 
@@ -383,10 +380,7 @@ async def deprecated_file_create(tenant_id=None):
     Old path: POST /api/v1/file/create
     New path: POST /api/v1/files
     """
-    logging.warning(
-        "API endpoint /api/v1/file/create is deprecated. "
-        "Please use POST /api/v1/files instead."
-    )
+    logging.warning("API endpoint /api/v1/file/create is deprecated. Please use POST /api/v1/files instead.")
     # Forward to the new API implementation
     return await file_api.create_or_upload(tenant_id=tenant_id)
 
@@ -401,10 +395,7 @@ async def deprecated_file_upload(tenant_id=None):
     Old path: POST /api/v1/file/upload
     New path: POST /api/v1/files
     """
-    logging.warning(
-        "API endpoint /api/v1/file/upload is deprecated. "
-        "Please use POST /api/v1/files with multipart/form-data instead."
-    )
+    logging.warning("API endpoint /api/v1/file/upload is deprecated. Please use POST /api/v1/files with multipart/form-data instead.")
     # Forward to the new API implementation
     return await file_api.create_or_upload(tenant_id=tenant_id)
 
@@ -418,10 +409,7 @@ async def deprecated_file_convert():
     Old path: POST /api/v1/file/convert
     New path: POST /api/v1/files/link-to-datasets
     """
-    logging.warning(
-        "API endpoint /api/v1/file/convert is deprecated. "
-        "Please use POST /api/v1/files/link-to-datasets instead."
-    )
+    logging.warning("API endpoint /api/v1/file/convert is deprecated. Please use POST /api/v1/files/link-to-datasets instead.")
     return await file2document_api.convert()
 
 
@@ -435,10 +423,7 @@ async def deprecated_file_mv(tenant_id=None):
     Old path: POST /api/v1/file/mv
     New path: POST /api/v1/files/move
     """
-    logging.warning(
-        "API endpoint /api/v1/file/mv is deprecated. "
-        "Please use POST /api/v1/files/move instead."
-    )
+    logging.warning("API endpoint /api/v1/file/mv is deprecated. Please use POST /api/v1/files/move instead.")
     # Forward to the new API implementation
     return await file_api.move(tenant_id=tenant_id)
 
@@ -453,10 +438,7 @@ async def deprecated_file_rename(tenant_id=None):
     Old path: POST /api/v1/file/rename
     New path: POST /api/v1/files/move
     """
-    logging.warning(
-        "API endpoint /api/v1/file/rename is deprecated. "
-        "Please use POST /api/v1/files/move with `new_name` instead."
-    )
+    logging.warning("API endpoint /api/v1/file/rename is deprecated. Please use POST /api/v1/files/move with `new_name` instead.")
     # Transform the old API format to new format
     req = await request.get_json()
     # Old API used `file_id` and `name`, new API uses `src_file_ids` and `new_name`
@@ -464,9 +446,7 @@ async def deprecated_file_rename(tenant_id=None):
     new_name = req.get("name")
     # Call the underlying service directly with transformed data
     try:
-        success, result = await file_api_service.move_files(
-            tenant_id, src_file_ids, None, new_name
-        )
+        success, result = await file_api_service.move_files(tenant_id, src_file_ids, None, new_name)
         if success:
             return get_json_result(data=result)
         else:
@@ -486,10 +466,7 @@ async def deprecated_file_rm(tenant_id=None):
     Old path: POST /api/v1/file/rm
     New path: DELETE /api/v1/files
     """
-    logging.warning(
-        "API endpoint /api/v1/file/rm is deprecated. "
-        "Please use DELETE /api/v1/files instead."
-    )
+    logging.warning("API endpoint /api/v1/file/rm is deprecated. Please use DELETE /api/v1/files instead.")
     # Transform POST with body to DELETE behavior
     # The new API expects a JSON body with `ids`
     return await file_api.delete(tenant_id=tenant_id)
@@ -498,6 +475,7 @@ async def deprecated_file_rm(tenant_id=None):
 # =============================================================================
 # Related Questions API
 # =============================================================================
+
 
 @manager.route("/sessions/related_questions", methods=["POST"])
 @login_required
@@ -508,10 +486,7 @@ async def deprecated_related_questions():
     Old path: POST /api/v1/sessions/related_questions
     New path: POST /api/v1/chat/recommendation
     """
-    logging.warning(
-        "API endpoint /api/v1/sessions/related_questions is deprecated. "
-        "Please use /api/v1/chat/recommendation instead."
-    )
+    logging.warning("API endpoint /api/v1/sessions/related_questions is deprecated. Please use /api/v1/chat/recommendation instead.")
     # Forward to the new API implementation
     return await chat_api.recommendation()
 
@@ -519,6 +494,7 @@ async def deprecated_related_questions():
 # =============================================================================
 # Chunk Update API (PUT -> PATCH)
 # =============================================================================
+
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks/<chunk_id>", methods=["PUT"])
 @login_required
@@ -530,9 +506,10 @@ async def deprecated_update_chunk(dataset_id, document_id, chunk_id):
     New path: PATCH /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}
     """
     logging.warning(
-        "API endpoint PUT /api/v1/datasets/%s/documents/%s/chunks/%s is deprecated. "
-        "Please use PATCH instead.",
-        dataset_id, document_id, chunk_id,
+        "API endpoint PUT /api/v1/datasets/%s/documents/%s/chunks/%s is deprecated. Please use PATCH instead.",
+        dataset_id,
+        document_id,
+        chunk_id,
     )
     # Forward to the new API implementation
     return await chunk_api.update_chunk(dataset_id=dataset_id, document_id=document_id, chunk_id=chunk_id)
@@ -541,6 +518,7 @@ async def deprecated_update_chunk(dataset_id, document_id, chunk_id):
 # =============================================================================
 # File Upload Info API
 # =============================================================================
+
 
 @manager.route("/file/upload_info", methods=["POST"])
 @login_required
@@ -553,12 +531,25 @@ async def deprecated_file_upload_info():
     """
     from api.apps import current_user
 
-    logging.warning(
-        "API endpoint /api/v1/file/upload_info is deprecated. "
-        "Please use POST /api/v1/documents/upload instead."
-    )
+    logging.warning("API endpoint /api/v1/file/upload_info is deprecated. Please use POST /api/v1/documents/upload instead.")
     # Forward to the new API implementation
     # Need to pass tenant_id explicitly since we're calling the function directly
+    tenant_id = current_user.id
+    return await document_api.upload_info(tenant_id=tenant_id)
+
+
+@legacy_v1_manager.route("/document/upload_info", methods=["POST"])
+@login_required
+async def deprecated_legacy_document_upload_info():
+    """
+    Deprecated: Use POST /api/v1/documents/upload instead.
+
+    Old path: POST /v1/document/upload_info
+    New path: POST /api/v1/documents/upload
+    """
+    from api.apps import current_user
+
+    logging.warning("API endpoint /v1/document/upload_info is deprecated. Please use POST /api/v1/documents/upload instead.")
     tenant_id = current_user.id
     return await document_api.upload_info(tenant_id=tenant_id)
 
@@ -566,6 +557,7 @@ async def deprecated_file_upload_info():
 # =============================================================================
 # Document APIs
 # =============================================================================
+
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PUT"])
 @login_required
@@ -577,9 +569,9 @@ async def deprecated_update_document(dataset_id, document_id):
     New path: PATCH /api/v1/datasets/{dataset_id}/documents/{document_id}
     """
     logging.warning(
-        "API endpoint PUT /api/v1/datasets/%s/documents/%s is deprecated. "
-        "Please use PATCH instead.",
-        dataset_id, document_id,
+        "API endpoint PUT /api/v1/datasets/%s/documents/%s is deprecated. Please use PATCH instead.",
+        dataset_id,
+        document_id,
     )
     # Forward to the new API implementation
     return await document_api.update_document(dataset_id=dataset_id, document_id=document_id)
@@ -595,9 +587,9 @@ async def deprecated_document_get(doc_id):
     New path: GET /api/v1/documents/{doc_id}/preview
     """
     logging.warning(
-        "API endpoint /api/v1/document/get/%s is deprecated. "
-        "Please use /api/v1/documents/%s/preview instead.",
-        doc_id, doc_id,
+        "API endpoint /api/v1/document/get/%s is deprecated. Please use /api/v1/documents/%s/preview instead.",
+        doc_id,
+        doc_id,
     )
     return await document_api.get(doc_id)
 
@@ -606,17 +598,17 @@ async def deprecated_document_get(doc_id):
 @login_required
 async def deprecated_document_download(doc_id):
     """
-    Deprecated: Use GET /api/v1/documents/{doc_id}/download instead.
+    Deprecated: Use GET /api/v1/agents/attachments/{attachment_id}/download instead.
 
     Old path: GET /api/v1/document/download/{doc_id}
-    New path: GET /api/v1/documents/{doc_id}/download
+    New path: GET /api/v1/agents/attachments/{doc_id}/download
     """
     logging.warning(
-        "API endpoint /api/v1/document/download/%s is deprecated. "
-        "Please use /api/v1/documents/%s/download instead.",
-        doc_id, doc_id,
+        "API endpoint /api/v1/document/download/%s is deprecated. Please use /api/v1/agents/attachments/%s/download instead.",
+        doc_id,
+        doc_id,
     )
-    return await document_api.download_attachment(doc_id=doc_id)
+    return await agent_api.download_attachment(attachment_id=doc_id)
 
 
 @legacy_v1_manager.route("/document/download/<attachment_id>", methods=["GET"])
@@ -626,18 +618,20 @@ async def document_download_v1(attachment_id):
     Compatibility alias for document download under /v1.
 
     Old path: GET /v1/document/download/{attachment_id}
-    New path: GET /api/v1/documents/{attachment_id}/download
+    New path: GET /api/v1/agents/attachments/{attachment_id}/download
     """
     logging.warning(
-        "API endpoint /v1/document/download/%s is deprecated. "
-        "Please use /api/v1/documents/%s/download instead.",
-        attachment_id, attachment_id,
+        "API endpoint /v1/document/download/%s is deprecated. Please use /api/v1/agents/attachments/%s/download instead.",
+        attachment_id,
+        attachment_id,
     )
-    return await document_api.download_attachment(attachment_id=attachment_id)
+    return await agent_api.download_attachment(attachment_id=attachment_id)
+
 
 # =============================================================================
 # Agent Chat API
 # =============================================================================
+
 
 @manager.route("/agents/<agent_id>/completions", methods=["POST"])
 @login_required
@@ -650,11 +644,11 @@ async def deprecated_agent_completions(agent_id, tenant_id=None):
     New path: POST /api/v1/agents/chat/completions
     """
     logging.warning(
-        "API endpoint /api/v1/agents/%s/completions is deprecated. "
-        "Please use /api/v1/agents/chat/completions instead.",
+        "API endpoint /api/v1/agents/%s/completions is deprecated. Please use /api/v1/agents/chat/completions instead.",
         agent_id,
     )
     return await agent_api.agent_chat_completion(tenant_id=tenant_id, agent_id=agent_id)
+
 
 def register_backward_compat_routes(app_instance):
     """

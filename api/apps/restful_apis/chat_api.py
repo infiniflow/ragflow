@@ -16,6 +16,7 @@
 
 import json
 import logging
+import math
 import os
 import re
 import tempfile
@@ -25,17 +26,14 @@ from types import SimpleNamespace
 from quart import Response, request
 
 from api.apps import current_user, login_required
-from api.db.joint_services.tenant_model_service import (
-    get_model_config_by_type_and_name,
-    get_tenant_default_model_by_type,
-)
+from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_api_key, split_model_name
 from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
 from api.db.services.dialog_service import DialogService, async_chat, gen_mindmap
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
-from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import (
     check_duplicate_ids,
@@ -45,17 +43,50 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.tenant_utils import ensure_tenant_model_id_for_params
+from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
 from rag.prompts.generator import chunks_format
 from rag.prompts.template import load_prompt
 
+
+def _sanitize_json_floats(obj):
+    """Replace NaN/Infinity floats with None so the result is RFC 8259 JSON.
+
+    `json.dumps` emits the literal tokens `NaN`/`Infinity` by default
+    (allow_nan=True). Those tokens are valid Python JSON output but invalid
+    per the JSON spec, and downstream proxies / Go consumers reject the
+    response with `failed to encode response: json: unsupported value: NaN`
+    (fixes #15245). Retrieval scores (similarity, vector_similarity,
+    term_similarity) can become NaN when an aggregation runs over an empty
+    set or when a similarity denominator is zero, so the chat completions
+    stream is the realistic trigger.
+
+    `isinstance(obj, float)` alone catches Python float and numpy.float64
+    (a float subclass) but misses numpy.float32 / numpy.float16 and any
+    other duck-typed numeric. Probe via math.isnan/isinf in a try/except
+    so any object math can evaluate gets sanitized — without changing
+    upstream callers like chunks_format or rag/nlp/search.py.
+    """
+    try:
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+    except TypeError:
+        pass
+    if isinstance(obj, dict):
+        return {k: _sanitize_json_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_json_floats(v) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(_sanitize_json_floats(v) for v in obj)
+    return obj
+
+
 _DEFAULT_PROMPT_CONFIG = {
     "system": (
-        'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. '
-        'Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the '
+        "You are an intelligent assistant. Please summarize the content of the dataset to answer the question. "
+        "Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the "
         'question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" '
         "Answers need to consider chat history.\n"
         "      Here is the knowledge base:\n"
@@ -130,10 +161,7 @@ def _build_session_response(conv: dict) -> dict:
 
 
 async def _ensure_owned_chat(chat_id):
-    return await thread_pool_exec(
-        DialogService.query,
-        tenant_id=current_user.id, id=chat_id, status=StatusEnum.VALID.value
-    )
+    return await thread_pool_exec(DialogService.query, tenant_id=current_user.id, id=chat_id, status=StatusEnum.VALID.value)
 
 
 def _build_default_completion_dialog():
@@ -169,41 +197,116 @@ async def _create_session_for_completion(chat_id, dialog, user_id):
     return conv_obj
 
 
+def _get_bool_request_flag(req, *names, default=False):
+    for name in names:
+        if name not in req:
+            continue
+        value = req.pop(name)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+    return default
+
+
+def _normalize_completion_messages(req):
+    messages = req.get("messages")
+    if messages is None:
+        question = req.get("question")
+        if question is None:
+            return None, get_data_error_result(
+                code=RetCode.ARGUMENT_ERROR,
+                message="required argument are missing: messages",
+            )
+        messages = [{"role": "user", "content": question}]
+        if req.get("files"):
+            messages[-1]["files"] = req["files"]
+
+    if not isinstance(messages, list) or not messages:
+        return None, get_data_error_result(
+            code=RetCode.ARGUMENT_ERROR,
+            message="`messages` must be a non-empty list.",
+        )
+
+    for message in messages:
+        if not isinstance(message, dict):
+            return None, get_data_error_result(
+                code=RetCode.ARGUMENT_ERROR,
+                message="Every item in `messages` must be an object.",
+            )
+        if "role" not in message or "content" not in message:
+            return None, get_data_error_result(
+                code=RetCode.ARGUMENT_ERROR,
+                message="Every item in `messages` must include `role` and `content`.",
+            )
+
+    msg = []
+    for m in messages:
+        if m["role"] == "system":
+            continue
+        if m["role"] == "assistant" and not msg:
+            continue
+        msg.append(m)
+
+    if not msg:
+        return None, get_data_error_result(
+            code=RetCode.ARGUMENT_ERROR,
+            message="`messages` must contain a user message.",
+        )
+    if msg[-1]["role"] != "user":
+        return None, get_data_error_result(
+            code=RetCode.ARGUMENT_ERROR,
+            message="The last message must be from user.",
+        )
+    if not msg[-1].get("id"):
+        msg[-1]["id"] = get_uuid()
+
+    # till now, message and msg are sharing the same copy
+    return (messages, msg), None
+
+
 async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if not llm_id:
         return None
 
-    llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(llm_id)
-    model_type = (llm_setting or {}).get("model_type")
-    if model_type not in {"chat", "image2text"}:
+    conf_model_type = (llm_setting or {}).get("model_type")
+    if isinstance(conf_model_type, str):
+        model_type = conf_model_type if conf_model_type in {"chat", "image2text"} else "chat"
+    elif isinstance(conf_model_type, list):
+        model_type = "image2text" if "image2text" in conf_model_type else "chat"
+    else:
         model_type = "chat"
-
-    if not await thread_pool_exec(
-        TenantLLMService.query,
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type=model_type,
-    ):
+    try:
+        await thread_pool_exec(
+            get_model_config_from_provider_instance,
+            tenant_id=tenant_id,
+            model_name=llm_id,
+            model_type=model_type,
+        )
+    except Exception as e:
+        logging.error(f"Fail to get model config for {llm_id}: {e}")
         return f"`llm_id` {llm_id} doesn't exist"
+
     return None
 
 
 async def _validate_rerank_id(rerank_id, tenant_id):
     if not rerank_id:
         return None
-    llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(rerank_id)
+    parts = rerank_id.split("@")
+    llm_name = parts[0]
     if llm_name in _DEFAULT_RERANK_MODELS:
         return None
-    if await thread_pool_exec(
-        TenantLLMService.query,
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type="rerank",
-    ):
-        return None
-    return f"`rerank_id` {rerank_id} doesn't exist"
+    try:
+        await thread_pool_exec(
+            get_model_config_from_provider_instance,
+            tenant_id=tenant_id,
+            model_name=rerank_id,
+            model_type="rerank",
+        )
+    except Exception as e:
+        logging.error(f"Fail to get model config for {rerank_id}: {e}")
+        return f"`rerank_id` {rerank_id} doesn't exist"
+    return None
 
 
 # def _validate_prompt_config(prompt_config):
@@ -234,9 +337,9 @@ async def _validate_dataset_ids(dataset_ids, tenant_id):
             return f"The dataset {dataset_id} doesn't own parsed file"
         kbs.append(kb)
 
-    embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]
+    embd_ids = [split_model_name(kb.embd_id)[0] for kb in kbs]
     if len(set(embd_ids)) > 1:
-        return f'Datasets use different embedding models: {[kb.embd_id for kb in kbs]}'
+        return f"Datasets use different embedding models: {[kb.embd_id for kb in kbs]}"
 
     return normalized_ids
 
@@ -312,7 +415,6 @@ async def create():
         # if err:
         #     return get_data_error_result(message=err)
 
-        req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
             req.pop(field, None)
@@ -352,38 +454,39 @@ async def list_chats():
 
     try:
         page_number = int(request.args.get("page", 0))
-        items_per_page = int(request.args.get("page_size", 0))
-
-        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        authorized_owner_ids = {member["tenant_id"] for member in tenants}
-        authorized_owner_ids.add(current_user.id)
+        items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
 
         if owner_ids:
-            requested_owner_ids = set(owner_ids)
-            unauthorized_owner_ids = requested_owner_ids - authorized_owner_ids
-            if unauthorized_owner_ids:
-                logging.warning(
-                    "Rejected list_chats request: user=%s attempted unauthorized owner_ids=%s",
-                    current_user.id,
-                    sorted(unauthorized_owner_ids),
-                )
-                return get_json_result(
-                    data=False,
-                    message="Only authorized owner_ids can be queried.",
-                    code=RetCode.OPERATING_ERROR,
-                )
-            effective_owner_ids = list(requested_owner_ids)
+            chats, total = await thread_pool_exec(
+                DialogService.get_by_tenant_ids,
+                owner_ids,
+                current_user.id,
+                0,
+                0,
+                orderby,
+                desc,
+                keywords,
+                **exact_filters,
+            )
+            chats = [chat for chat in chats if chat["tenant_id"] in owner_ids]
+            total = len(chats)
+            if page_number and items_per_page:
+                start = (page_number - 1) * items_per_page
+                chats = chats[start : start + items_per_page]
         else:
-            effective_owner_ids = list(authorized_owner_ids)
+            chats, total = await thread_pool_exec(
+                DialogService.get_by_tenant_ids,
+                [],
+                current_user.id,
+                page_number,
+                items_per_page,
+                orderby,
+                desc,
+                keywords,
+                **exact_filters,
+            )
 
-        chats, total = await thread_pool_exec(
-            DialogService.get_by_tenant_ids,
-            effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters,
-        )
-
-        return get_json_result(
-            data={"chats": [_build_chat_response(chat) for chat in chats], "total": total}
-        )
+        return get_json_result(data={"chats": [_build_chat_response(chat) for chat in chats], "total": total})
     except Exception as ex:
         return server_error_response(ex)
 
@@ -396,7 +499,9 @@ async def get_chat(chat_id):
         for tenant in tenants:
             if await thread_pool_exec(
                 DialogService.query,
-                tenant_id=tenant.tenant_id, id=chat_id, status=StatusEnum.VALID.value,
+                tenant_id=tenant.tenant_id,
+                id=chat_id,
+                status=StatusEnum.VALID.value,
             ):
                 break
         else:
@@ -418,9 +523,7 @@ async def get_chat(chat_id):
 @login_required
 async def update_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(
-            data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR
-        )
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         req = await get_request_json()
@@ -472,8 +575,6 @@ async def update_chat(chat_id):
         # kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
         # if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
         #     return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
-
-        req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
             req.pop(field, None)
@@ -504,9 +605,7 @@ async def update_chat(chat_id):
 @login_required
 async def patch_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(
-            data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR
-        )
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         req = await get_request_json()
@@ -564,7 +663,6 @@ async def patch_chat(chat_id):
         #     if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
         #         return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
 
-        req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
             req.pop(field, None)
@@ -595,9 +693,7 @@ async def patch_chat(chat_id):
 @login_required
 async def delete_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(
-            data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR
-        )
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         if not DialogService.update_by_id(chat_id, {"status": StatusEnum.INVALID.value}):
@@ -617,12 +713,7 @@ async def bulk_delete_chats():
     ids = req.get("ids")
     if not ids:
         if req.get("delete_all") is True:
-            ids = [
-                chat.id
-                for chat in DialogService.query(
-                    tenant_id=current_user.id, status=StatusEnum.VALID.value
-                )
-            ]
+            ids = [chat.id for chat in DialogService.query(tenant_id=current_user.id, status=StatusEnum.VALID.value)]
             if not ids:
                 return get_json_result(data={})
         else:
@@ -702,15 +793,13 @@ async def list_sessions(chat_id):
                 code=RetCode.AUTHENTICATION_ERROR,
             )
         page_number = int(request.args.get("page", 1))
-        items_per_page = int(request.args.get("page_size", 30))
+        items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 30)))
         orderby = request.args.get("orderby", "create_time")
         desc = request.args.get("desc", "true").lower() != "false"
         session_id = request.args.get("id")
         name = request.args.get("name")
         user_id = request.args.get("user_id")
-        convs = ConversationService.get_list(
-            chat_id, page_number, items_per_page, orderby, desc, session_id, name, user_id
-        )
+        convs = ConversationService.get_list(chat_id, page_number, items_per_page, orderby, desc, session_id, name, user_id)
         if items_per_page == 0:
             convs = []
         return get_json_result(data=[_build_session_response(c) for c in convs])
@@ -838,7 +927,8 @@ async def delete_session_message(chat_id, session_id, msg_id):
             assert conv["message"][i + 1]["id"] == msg_id
             conv["message"].pop(i)
             conv["message"].pop(i)
-            conv["reference"].pop(max(0, i // 2 - 1))
+            ref_index = (i - 1) // 2
+            conv["reference"].pop(ref_index)
             break
         ConversationService.update_by_id(conv["id"], conv)
         return get_json_result(data=_build_session_response(conv))
@@ -953,17 +1043,21 @@ async def transcription():
     uploaded = files["file"]
 
     ALLOWED_EXTS = {
-        ".wav", ".mp3", ".m4a", ".aac",
-        ".flac", ".ogg", ".webm",
-        ".opus", ".wma",
+        ".wav",
+        ".mp3",
+        ".m4a",
+        ".aac",
+        ".flac",
+        ".ogg",
+        ".webm",
+        ".opus",
+        ".wma",
     }
 
     filename = uploaded.filename or ""
     suffix = os.path.splitext(filename)[-1].lower()
     if suffix not in ALLOWED_EXTS:
-        return get_data_error_result(
-            message=f"Unsupported audio format: {suffix}. Allowed: {', '.join(sorted(ALLOWED_EXTS))}"
-        )
+        return get_data_error_result(message=f"Unsupported audio format: {suffix}. Allowed: {', '.join(sorted(ALLOWED_EXTS))}")
 
     fd, temp_audio_path = tempfile.mkstemp(suffix=suffix)
     os.close(fd)
@@ -1033,7 +1127,7 @@ async def recommendation():
 
     chat_id = search_config.get("chat_id", "")
     if chat_id:
-        chat_model_config = get_model_config_by_type_and_name(current_user.id, LLMType.CHAT, chat_id)
+        chat_model_config = get_model_config_from_provider_instance(current_user.id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.CHAT)
     chat_mdl = LLMBundle(current_user.id, chat_model_config)
@@ -1057,28 +1151,22 @@ async def recommendation():
 
 @manager.route("/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("messages")
 async def session_completion(chat_id_in_arg=""):
     """Handle chat completion requests, streaming or non-streaming, scoped to the authenticated user."""
     req = await get_request_json()
-    msg = []
-    for m in req["messages"]:
-        if m["role"] == "system":
-            continue
-        if m["role"] == "assistant" and not msg:
-            continue
-        msg.append(m)
-    message_id = msg[-1].get("id") if msg else None
+    normalized, error = _normalize_completion_messages(req)
+    if error:
+        return error
+    request_messages, request_msg = normalized
+    pass_all_history_messages = _get_bool_request_flag(req, "pass_all_history_messages", "pass_all_history", default=False)
+    msg = request_msg
+    message_id = request_msg[-1].get("id")
     chat_id = req.pop("chat_id", "") or ""
     chat_id = chat_id or chat_id_in_arg
-    session_id = req.pop("session_id", "") or ""
+    session_id = req.pop("session_id", "") or req.pop("conversation_id", "") or ""
     chat_model_id = req.pop("llm_id", "")
 
-    chat_model_config = {}
-    for model_config in ["temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens"]:
-        config = req.get(model_config)
-        if config:
-            chat_model_config[model_config] = config
+    chat_model_config = pop_generation_config(req)
 
     try:
         conv = None
@@ -1104,12 +1192,26 @@ async def session_completion(chat_id_in_arg=""):
             else:
                 conv = await _create_session_for_completion(chat_id, dia, current_user.id)
                 session_id = conv.id
-            conv.message = deepcopy(req["messages"])
+
+            if pass_all_history_messages:
+                conv.message = deepcopy(request_messages)
+                msg = request_msg
+            else:
+                if not conv.message:
+                    conv.message = []
+                conv.message.append(deepcopy(request_msg[-1]))
+                msg = []
+                for m in conv.message:
+                    if m["role"] == "system":
+                        continue
+                    if m["role"] == "assistant" and not msg:
+                        continue
+                    msg.append(m)
         else:
             dia = _build_default_completion_dialog()
-            dia.llm_setting = chat_model_config
 
-        del req["messages"]
+        req.pop("messages", None)
+        req.pop("question", None)
 
         if conv is not None:
             if not conv.reference:
@@ -1118,11 +1220,23 @@ async def session_completion(chat_id_in_arg=""):
             conv.reference.append({"chunks": [], "doc_aggs": []})
 
         if chat_model_id:
-            if not await thread_pool_exec(TenantLLMService.get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
+            if not await thread_pool_exec(get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
                 return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
             dia.llm_id = chat_model_id
             dia.llm_setting = chat_model_config
+        elif not dia.llm_id:
+            logging.info("empty chat_model_id in req, use default chat model.")
+            _, tenant_info = TenantService.get_by_id(dia.tenant_id)
+            if not tenant_info or not tenant_info.llm_id:
+                raise LookupError("No default chat model for tenant.")
+            dia.llm_id = tenant_info.llm_id
+            merge_generation_config(dia, chat_model_config)
 
+        legacy = _get_bool_request_flag(
+            req,
+            "legacy",
+            default=False,
+        )
         stream_mode = req.pop("stream", True)
 
         def _format_answer(ans):
@@ -1136,9 +1250,53 @@ async def session_completion(chat_id_in_arg=""):
             """Yield SSE-formatted chunks from the async chat generator."""
             nonlocal dia, msg, req, conv
             try:
-                async for ans in async_chat(dia, msg, True, **req):
-                    ans = _format_answer(ans)
-                    yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+                if legacy:
+                    # v0.23.0-style streaming: emit accumulated answer text and
+                    # reconstruct raw <think>...</think> markers from the newer
+                    # start_to_think/end_to_think events.
+                    legacy_answer = ""
+                    final_answer = None
+                    async for ans in async_chat(dia, msg, True, session_id=session_id, **req):
+                        ans = _format_answer(ans)
+                        if ans.get("final"):
+                            final_answer = ans
+                            continue
+                        if ans.get("start_to_think"):
+                            legacy_answer += "<think>"
+                            legacy_chunk = {**ans, "answer": legacy_answer}
+                            legacy_chunk.pop("start_to_think", None)
+                            legacy_chunk.pop("end_to_think", None)
+                            payload = _sanitize_json_floats({"code": 0, "message": "", "data": legacy_chunk})
+                            yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                            continue
+                        if ans.get("end_to_think"):
+                            legacy_answer += "</think>"
+                            legacy_chunk = {**ans, "answer": legacy_answer}
+                            legacy_chunk.pop("start_to_think", None)
+                            legacy_chunk.pop("end_to_think", None)
+                            payload = _sanitize_json_floats({"code": 0, "message": "", "data": legacy_chunk})
+                            yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                            continue
+                        delta = ans.get("answer") or ""
+                        if not delta:
+                            continue
+                        legacy_answer += delta
+                        legacy_chunk = {**ans, "answer": legacy_answer}
+                        legacy_chunk.pop("start_to_think", None)
+                        legacy_chunk.pop("end_to_think", None)
+                        payload = _sanitize_json_floats({"code": 0, "message": "", "data": legacy_chunk})
+                        yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                    if final_answer is not None:
+                        final_chunk = {**final_answer, "answer": final_answer.get("answer") or legacy_answer}
+                        final_chunk.pop("start_to_think", None)
+                        final_chunk.pop("end_to_think", None)
+                        payload = _sanitize_json_floats({"code": 0, "message": "", "data": final_chunk})
+                        yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                else:
+                    async for ans in async_chat(dia, msg, True, session_id=session_id, **req):
+                        ans = _format_answer(ans)
+                        payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
+                        yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
                 if conv is not None:
                     await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             except Exception as ex:
@@ -1155,11 +1313,11 @@ async def session_completion(chat_id_in_arg=""):
             return resp
 
         answer = None
-        async for ans in async_chat(dia, msg, **req):
+        async for ans in async_chat(dia, msg, False, session_id=session_id, **req):
             answer = _format_answer(ans)
             if conv is not None:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             break
-        return get_json_result(data=answer)
+        return get_json_result(data=_sanitize_json_floats(answer))
     except Exception as ex:
         return server_error_response(ex)

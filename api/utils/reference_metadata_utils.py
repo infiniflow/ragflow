@@ -51,8 +51,7 @@ def resolve_reference_metadata_preferences(
         return include_metadata, None
     if not isinstance(fields, list):
         logger.warning(
-            "reference_metadata.fields is not a list; include_metadata=%s fields=%r type=%s resolved=%r. "
-            "enrich_chunks_with_document_metadata will skip enrichment.",
+            "reference_metadata.fields is not a list; include_metadata=%s fields=%r type=%s resolved=%r. enrich_chunks_with_document_metadata will skip enrichment.",
             include_metadata,
             fields,
             type(fields).__name__,
@@ -96,12 +95,10 @@ def enrich_chunks_with_document_metadata(
     # Resolve service lazily so callers/tests that swap service modules at runtime
     # (e.g. via monkeypatch) don't get stuck with a stale class reference.
     from api.db.services.doc_metadata_service import DocMetadataService
+
     metadata_getter = getattr(DocMetadataService, "get_metadata_for_documents", None)
     if not callable(metadata_getter):
-        logging.warning(
-            "DocMetadataService.get_metadata_for_documents is unavailable; "
-            "skipping metadata enrichment."
-        )
+        logging.warning("DocMetadataService.get_metadata_for_documents is unavailable; skipping metadata enrichment.")
         return
 
     meta_by_doc: dict[str, dict] = {}

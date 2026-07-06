@@ -12,6 +12,7 @@ export type IMetaDataReturnJSONType = Record<
 
 export interface IMetaDataReturnJSONSettingItem {
   key: string;
+  type?: string;
   description?: string;
   enum?: string[];
 }
@@ -97,7 +98,7 @@ export interface IManageValuesProps {
   onSave: (data: IMetaDataTableData) => void;
   addUpdateValue: (
     key: string,
-    originalValue: string | undefined,
+    originalValue: string,
     newValue: string | string[],
     type?: MetadataValueType,
   ) => void;
