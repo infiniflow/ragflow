@@ -517,6 +517,15 @@ func (c *exesqlComponent) Inputs() map[string]string {
 	}
 }
 
+func (c *exesqlComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"sql": map[string]any{
+			"name": "SQL",
+			"type": "line",
+		},
+	}
+}
+
 func (c *exesqlComponent) Outputs() map[string]string {
 	return map[string]string{
 		"columns": "Result-set column names.",
