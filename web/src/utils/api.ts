@@ -69,6 +69,13 @@ export default {
     `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
   deleteProviderInstance: ({ provider_name }: { provider_name: string }) =>
     `${restAPIv1}/providers/${provider_name}/instances`,
+  updateProviderInstance: ({
+    provider_name,
+    instance_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+  }) => `${restAPIv1}/providers/${provider_name}/instances/${instance_name}`,
   updateModelStatus: ({
     provider_name,
     instance_name,
@@ -79,6 +86,24 @@ export default {
     model_name: string;
   }) =>
     `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models/${model_name}`,
+  patchInstanceModel: ({
+    provider_name,
+    instance_name,
+    model_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+    model_name: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models/${model_name}`,
+  deleteInstanceModels: ({
+    provider_name,
+    instance_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
 
   // data source
   dataSourceUpdate: (id: string) => `${restAPIv1}/connectors/${id}`,
