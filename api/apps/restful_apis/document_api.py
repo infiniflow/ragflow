@@ -78,46 +78,19 @@ from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
 
 
-def _parser_config_compilation_template_group_ids(parser_config) -> list[str]:
-    """Read template-group ids from a doc's parser_config.
-
-    The doc now references compilation template groups via a list. A
-    legacy single string id is still accepted. Old
-    ``compilation_template_ids`` data is
-    intentionally ignored per the migration spec.
-    """
-
-    def _normalize(raw) -> list[str]:
-        if isinstance(raw, str):
-            raw = [raw]
-        if not isinstance(raw, list):
-            return []
-        ids: list[str] = []
-        seen: set[str] = set()
-        for gid in raw:
-            if not isinstance(gid, str):
-                continue
-            gid = gid.strip()
-            if gid and gid not in seen:
-                seen.add(gid)
-                ids.append(gid)
-        return ids
-
-    if not isinstance(parser_config, dict):
-        return []
-    if "compilation_template_group_id" in parser_config:
-        return _normalize(parser_config.get("compilation_template_group_id"))
-    ext = parser_config.get("ext")
-    if isinstance(ext, dict):
-        return _normalize(ext.get("compilation_template_group_id"))
-    return []
-
-
 def _compilation_template_group_id_changed(old_config, new_config) -> bool:
+    from rag.svr.task_executor_refactor.chunk_post_processor import (
+        _parser_config_compilation_template_group_ids,
+    )
+
     return _parser_config_compilation_template_group_ids(old_config) != _parser_config_compilation_template_group_ids(new_config)
 
 
 def _normalize_parser_config_compilation_template_group_ids(parser_config) -> bool:
+    from rag.svr.task_executor_refactor.chunk_post_processor import (
+        _parser_config_compilation_template_group_ids,
+    )
+
     if not isinstance(parser_config, dict):
         return False
     if "compilation_template_group_id" not in parser_config and not (isinstance(parser_config.get("ext"), dict) and "compilation_template_group_id" in parser_config["ext"]):
