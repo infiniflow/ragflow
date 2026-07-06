@@ -59,24 +59,24 @@ type SetLangfuseRequest struct {
 func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	var req SetLangfuseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Invalid request: "+err.Error())
 		return
 	}
 
 	row, code, err := h.langfuseService.SetAPIKey(user.ID, req.SecretKey, req.PublicKey, req.Host)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
 	// Echo back the stored keys, matching the Python langfuse_keys payload.
-	jsonResponse(c, common.CodeSuccess, gin.H{
+	common.SuccessWithData(c, gin.H{
 		"tenant_id":  row.TenantID,
 		"secret_key": row.SecretKey,
 		"public_key": row.PublicKey,
@@ -88,35 +88,35 @@ func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
 func (h *LangfuseHandler) GetAPIKey(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	data, code, message, err := h.langfuseService.GetAPIKey(user.ID)
 	if err != nil {
-		jsonError(c, code, message)
+		common.ResponseWithCodeData(c, code, nil, message)
 		return
 	}
-	jsonResponse(c, code, data, message)
+	common.ResponseWithCodeData(c, code, data, message)
 }
 
 // DeleteAPIKey handles DELETE /langfuse/api-key.
 func (h *LangfuseHandler) DeleteAPIKey(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	ok, code, message, err := h.langfuseService.DeleteAPIKey(user.ID)
 	if err != nil {
-		jsonError(c, code, message)
+		common.ResponseWithCodeData(c, code, nil, message)
 		return
 	}
 	// No record: mirror get_json_result(message=...) with data=nil.
 	if message != "" {
-		jsonResponse(c, common.CodeSuccess, nil, message)
+		common.SuccessWithData(c, nil, message)
 		return
 	}
-	jsonResponse(c, common.CodeSuccess, ok, "success")
+	common.SuccessWithData(c, ok, "success")
 }

@@ -158,9 +158,11 @@ func (f *fakeTenantStore) GetTenantIDsByUserID(userID string) ([]string, error) 
 type fakePipeline struct {
 	resultChan <-chan AsyncChatResult
 	err        error
+	userID     string
 }
 
-func (f *fakePipeline) AsyncChat(ctx context.Context, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error) {
+func (f *fakePipeline) AsyncChat(ctx context.Context, userID string, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error) {
+	f.userID = userID
 	return f.resultChan, f.err
 }
 
@@ -824,6 +826,9 @@ func TestCompletion_Success(t *testing.T) {
 	if ans != "Hello world" {
 		t.Fatalf("expected answer 'Hello world', got %q", ans)
 	}
+	if pipeline.userID != "user-1" {
+		t.Fatalf("pipeline userID = %q, want user-1", pipeline.userID)
+	}
 
 	got := parseMessages(store.sessions["session-1"].Message)
 	if len(got) != 3 {
@@ -837,6 +842,64 @@ func TestCompletion_Success(t *testing.T) {
 	}
 	if got[2]["role"] != "assistant" || got[2]["content"] != "Hello world" || got[2]["id"] != "msg-1" {
 		t.Fatalf("stored assistant message=%#v", got[2])
+	}
+}
+
+func TestChatCompletionsPassesRequestUserIDToPipeline(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:        "session-1",
+		DialogID:  "dialog-1",
+		Message:   json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
+		Reference: json.RawMessage(`[]`),
+	}
+	store.dialogs["dialog-1"] = &entity.Chat{
+		ID:         "dialog-1",
+		TenantID:   "tenant-owner",
+		LLMID:      "chat@factory",
+		LLMSetting: entity.JSONMap{},
+		PromptConfig: entity.JSONMap{
+			"parameters": []interface{}{},
+		},
+	}
+	store.dialogExists["tenant-owner|dialog-1"] = true
+
+	pipeline := &fakePipeline{
+		resultChan: makeResultChan(
+			AsyncChatResult{Answer: "ok", Final: true, Reference: map[string]interface{}{"chunks": []interface{}{}}},
+		),
+	}
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-owner"}},
+		pipeline:       pipeline,
+	}
+
+	_, err := svc.ChatCompletions(
+		context.Background(),
+		"user-1",
+		"dialog-1",
+		"session-1",
+		[]map[string]interface{}{{"role": "user", "content": "hi"}},
+		"",
+		nil,
+		"",
+		nil,
+		nil,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatCompletions failed: %v", err)
+	}
+	if pipeline.userID != "user-1" {
+		t.Fatalf("pipeline userID = %q, want request user user-1", pipeline.userID)
+	}
+	if pipeline.userID == store.dialogs["dialog-1"].TenantID {
+		t.Fatalf("pipeline used dialog tenant %q instead of request user", pipeline.userID)
 	}
 }
 
