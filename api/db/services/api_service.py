@@ -19,6 +19,7 @@ import peewee
 
 from api.db.db_models import DB, API4Conversation, APIToken, Dialog
 from api.db.services.common_service import CommonService
+from api.utils.json_encode import json_dumps
 from common.time_utils import current_timestamp, datetime_format
 
 
@@ -65,7 +66,13 @@ class API4ConversationService(CommonService):
         if user_id:
             sessions = sessions.where(cls.model.user_id == user_id)
         if keywords:
-            sessions = sessions.where(peewee.fn.LOWER(cls.model.message).contains(keywords.lower()))
+            keywords = keywords.lower()
+            escaped_keywords = json_dumps(keywords)[1:-1]
+            message = peewee.fn.LOWER(cls.model.message)
+            if escaped_keywords == keywords:
+                sessions = sessions.where(message.contains(keywords))
+            else:
+                sessions = sessions.where(message.contains(keywords) | message.contains(escaped_keywords))
         date_field = cls.model.update_date if orderby.startswith("update_") else cls.model.create_date
         if from_date:
             sessions = sessions.where(date_field >= cls._normalize_query_date(from_date))

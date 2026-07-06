@@ -260,7 +260,10 @@ async def search_message():
     query = args.get("query")
     similarity_threshold = float(args.get("similarity_threshold", 0.2))
     keywords_similarity_weight = float(args.get("keywords_similarity_weight", 0.7))
-    top_n = int(args.get("top_n", 5))
+    try:
+        top_n = validate_rest_api_page_size(int(args.get("top_n", 5)))
+    except ValueError as exc:
+        return get_error_argument_result(str(exc))
     agent_id = args.get("agent_id", "")
     session_id = args.get("session_id", "")
     user_id = args.get("user_id", "")
@@ -280,7 +283,10 @@ async def get_messages():
         memory_ids = memory_ids[0].split(",")
     agent_id = args.get("agent_id", "")
     session_id = args.get("session_id", "")
-    limit = int(args.get("limit", 10))
+    try:
+        limit = validate_rest_api_page_size(int(args.get("limit", 10)))
+    except ValueError as exc:
+        return get_error_argument_result(str(exc))
     if not memory_ids:
         return get_error_argument_result("memory_ids is required.")
     try:
