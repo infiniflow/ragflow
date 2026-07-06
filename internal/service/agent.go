@@ -1100,6 +1100,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if canvas.IsInterruptError(err) {
 				s.markRunFailed(ctx2, runID, "interrupt: "+err.Error())
 				if answer != "" {
+					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
 					msgData, _ := json.Marshal(canvas.MessageEvent{
 						Content:   answer,
 						Reference: reference,
@@ -1114,6 +1115,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				return state, err
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
+				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
 				msgData, _ := json.Marshal(canvas.MessageEvent{
 					Content:   answer,
 					Reference: reference,
@@ -1145,6 +1147,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 
 		// Emit message + message_end (mirrors Python's ans dict).
+		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
 		msgData, _ := json.Marshal(canvas.MessageEvent{
 			Content:   answer,
 			Reference: reference,
@@ -1184,6 +1187,51 @@ func runIDFor(canvasID string, root map[string]any) string {
 		return canvasID + "-" + s
 	}
 	return canvasID
+}
+
+func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID string, userInput any, answer string, reference []interface{}) {
+	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
+		return
+	}
+	session, err := s.api4ConversationDAO.GetBySessionID(sessionID, agentID)
+	if err != nil {
+		common.Warn("agent run: load session for update failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
+		return
+	}
+	if session == nil {
+		return
+	}
+	messages := parseAgentSessionMessages(session.Message)
+	now := time.Now().Unix()
+	if text := stringifyAgentUserInput(userInput); text != "" {
+		messages = append(messages, map[string]interface{}{"role": "user", "content": text, "id": strings.ReplaceAll(uuid.New().String(), "-", ""), "created_at": now})
+	}
+	messages = append(messages, map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": now})
+	if raw, err := json.Marshal(messages); err == nil {
+		session.Message = raw
+	}
+	references := parseAgentSessionReferences(session.Reference)
+	references = append(references, normalizeAgentReferenceEntry(map[string]interface{}{"chunks": reference}))
+	if raw, err := json.Marshal(references); err == nil {
+		session.Reference = raw
+	}
+	if err := s.api4ConversationDAO.Update(session); err != nil {
+		common.Warn("agent run: update session failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
+	}
+}
+
+func stringifyAgentUserInput(userInput any) string {
+	switch v := userInput.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	default:
+		if b, err := json.Marshal(v); err == nil {
+			return string(b)
+		}
+		return fmt.Sprint(v)
+	}
 }
 
 // tenantIDFromRoot returns the optional run-tracker tenant id that
