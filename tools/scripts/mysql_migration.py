@@ -1659,6 +1659,10 @@ class ModelTypeMergeStage(MigrationStage):
             id_, model_name, provider_id, instance_id, _, _, extra, \
                 create_time, create_date, update_time, update_date = first_row
 
+            # Only include records whose merged status is "active"
+            if merged_status != "active":
+                continue
+
             merged_records.append((
                 self.generate_uuid(), model_name, provider_id, instance_id,
                 merged_type, merged_status, extra,
