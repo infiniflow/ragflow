@@ -20,17 +20,91 @@ import argparse
 import subprocess
 from pathlib import Path
 from typing import List
-
-
-class Colors:
+import platform
+from enum import Enum
+class Colors(Enum):
     """ANSI color codes for terminal output"""
 
     RED = "\033[0;31m"
     GREEN = "\033[0;32m"
     YELLOW = "\033[1;33m"
     BLUE = "\033[0;34m"
+    BLACK = '\033[30m'
+    MAGENTA = '\033[35m'
+    CYAN = '\033[36m'
+    WHITE = '\033[37m'
     NC = "\033[0m"  # No Color
 
+def _is_color_supported() -> bool:
+    """
+    Detect whether the current environment supports color output
+
+    Args:
+        None
+    Returns:
+        result(bool): Whether color output is supported
+    """
+     # Non-interactive terminals do not support color output
+    if not sys.stdout.isatty():
+        return False
+    
+    # Handle Windows systems
+    if sys.platform.startswith("win"):
+        try:
+            # Get Windows version number
+            win_version = platform.version()
+            major, _, build = map(int, win_version.split("."))
+            if not (major >= 10 and build >= 10586):
+                return False
+            from ctypes import windll
+             # Actively enable ANSI support for Windows terminal
+            kernel32 = windll.kernel32
+            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+            if handle != 0:
+                kernel32.SetConsoleMode(handle, 7)
+            return True
+        except BaseException as e:
+            if isinstance(e, (SystemExit, KeyboardInterrupt)):
+                raise e
+            return False
+    # Handle Linux/macOS systems
+    else:
+        try:
+            # Detect color support
+            result = subprocess.check_output(
+                ["tput", "colors"], 
+                stderr=subprocess.DEVNULL,
+                text=True
+            )
+            color_count = int(result.strip())
+            return color_count >= 8
+        # Explicitly catch tput-related exceptions
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+            return False 
+        
+COLOR_SUPPORT = _is_color_supported()
+
+def set_color(s: str,
+              color: str) -> str:
+    """
+    Wrap input string with specified ANSI terminal color escape sequence.
+    Color name argument is case-insensitive. If color is unsupported or invalid,
+    returns original raw string without any escape codes.
+
+    Args:
+        s: Original text string to be colored
+        color: Color enum name, case-insensitive (e.g. "red", "GREEN", "Yellow")
+    Returns:
+        str: Text wrapped with ANSI color codes if color output is available,
+             otherwise the unmodified input string
+    Examples:
+        >>> set_color(s="hello world",color="red")
+
+    """
+    
+    if COLOR_SUPPORT:
+        return f"{getattr(Colors, color.strip().upper()).value}{s}{Colors.NC.value}"
+    return f"{s}"  # pragma: no cover
 
 class TestRunner:
     """RAGFlow Unit Test Runner"""
@@ -53,12 +127,12 @@ class TestRunner:
     @staticmethod
     def print_info(message: str) -> None:
         """Print informational message"""
-        print(f"{Colors.BLUE}[INFO]{Colors.NC} {message}")
+        print(f"{set_color(s="[INFO]",color="blue")} {message}")
 
     @staticmethod
     def print_error(message: str) -> None:
         """Print error message"""
-        print(f"{Colors.RED}[ERROR]{Colors.NC} {message}")
+        print(f"{set_color(s="[ERROR]",color="red")} {message}")
 
     @staticmethod
     def show_usage() -> None:
@@ -176,20 +250,20 @@ EXAMPLES:
         if self.keyword:
             self.print_info(f"Keyword: {self.keyword}")
 
-        print(f"\n{Colors.BLUE}[EXECUTING]{Colors.NC} {' '.join(cmd)}\n")
+        print(f"\n{set_color(s="[EXECUTING]",color='blue')} {' '.join(cmd)}\n")
 
         # Run pytest
         try:
             result = subprocess.run(cmd, check=False)
 
             if result.returncode == 0:
-                print(f"\n{Colors.GREEN}[SUCCESS]{Colors.NC} All tests passed!")
+                print(f"\n{set_color(s="[SUCCESS]",color="green")} All tests passed!")
 
                 if self.coverage:
                     coverage_dir = self.ut_dir / "htmlcov"
                     if coverage_dir.exists():
                         index_file = coverage_dir / "index.html"
-                        print(f"\n{Colors.BLUE}[INFO]{Colors.NC} Coverage report generated:")
+                        print(f"\n{set_color(s="[INFO]",color="blue")} Coverage report generated:")
                         print(f"    {index_file}")
                         print("\nOpen with:")
                         print(f"    - Windows: start {index_file}")
@@ -198,11 +272,11 @@ EXAMPLES:
 
                 return True
             else:
-                print(f"\n{Colors.RED}[FAILURE]{Colors.NC} Some tests failed!")
+                print(f"\n{set_color(s="[FAILURE]",color="red")} Some tests failed!")
                 return False
 
         except KeyboardInterrupt:
-            print(f"\n{Colors.YELLOW}[INTERRUPTED]{Colors.NC} Test execution interrupted by user")
+            print(f"\n{set_color(s="[INTERRUPTED]",color="yellow")} Test execution interrupted by user")
             return False
         except Exception as e:
             self.print_error(f"Failed to execute tests: {e}")
