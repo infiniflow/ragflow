@@ -80,10 +80,7 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxMCPBodyBytes)
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": "Failed to read request body: " + err.Error(),
-		})
+		common.ErrorWithCode(c, 1, "Failed to read request body: "+err.Error())
 		return
 	}
 
@@ -99,10 +96,7 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 	server := mcp.NewServer(connector)
 	respBody, hasResponse, err := server.HandleRequest(body)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    common.CodeServerError,
-			"message": "MCP server error: " + err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeServerError), "MCP server error: "+err.Error())
 		return
 	}
 

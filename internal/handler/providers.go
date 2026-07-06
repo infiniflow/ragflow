@@ -58,10 +58,7 @@ func (h *ProviderHandler) ListProviders(c *gin.Context) {
 		// list pool providers
 		providers, err := dao.GetModelProviderManager().ListProviders()
 		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeNotFound,
-				"message": err.Error(),
-			})
+			common.ErrorWithCode(c, int(common.CodeNotFound), err.Error())
 			return
 		}
 
@@ -70,11 +67,7 @@ func (h *ProviderHandler) ListProviders(c *gin.Context) {
 			delete(provider, "tags")
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"code":    0,
-			"message": "success",
-			"data":    providers,
-		})
+		common.SuccessWithData(c, providers, "success")
 		return
 	}
 

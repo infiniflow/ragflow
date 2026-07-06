@@ -127,10 +127,7 @@ func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "created successfully",
-		"data":    document,
-	})
+	common.SuccessWithData(c, document, "created successfully")
 }
 
 // GetDocumentByID get document by ID
@@ -253,16 +250,10 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 		case errors.Is(err, service.ErrArtifactInvalidFilename),
 			errors.Is(err, service.ErrArtifactInvalidFileType),
 			errors.Is(err, service.ErrArtifactNotFound):
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeDataError,
-				"message": err.Error(),
-			})
+			common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+
 		default:
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeExceptionError,
-				"data":    nil,
-				"message": err.Error(),
-			})
+			common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		}
 		return
 	}
@@ -287,10 +278,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 
 	preview, err := h.documentService.GetDocumentPreview(docID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": "Document not found!",
-		})
+		common.ErrorWithCode(c, int(common.CodeDataError), "Document not found!")
 		return
 	}
 
@@ -332,10 +320,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 
 	doc, err := h.documentService.GetDocumentByID(id)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    1,
-			"message": "document not found",
-		})
+		common.ErrorWithCode(c, 1, "document not found!")
 		return
 	}
 	if !h.datasetService.Accessible(doc.KbID, user.ID) {
@@ -349,16 +334,14 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		return
 	}
 
-	if err := h.documentService.UpdateDocument(id, &req); err != nil {
+	if err = h.documentService.UpdateDocument(id, &req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "updated successfully",
-	})
+	common.SuccessWithMessage(c, "updated successfully")
 }
 
 // DeleteDocument delete document
@@ -387,10 +370,7 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 
 	doc, err := h.documentService.GetDocumentByID(id)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    1,
-			"message": "document not found",
-		})
+		common.ErrorWithCode(c, 1, "document not found")
 		return
 	}
 	if !h.datasetService.Accessible(doc.KbID, user.ID) {
@@ -398,7 +378,7 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 		return
 	}
 
-	if err := h.documentService.DeleteDocument(id); err != nil {
+	if err = h.documentService.DeleteDocument(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
@@ -1028,27 +1008,18 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 	docID := c.Param("document_id")
 
 	if docID == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": "Specify document_id please.",
-		})
+		common.ErrorWithCode(c, int(common.CodeDataError), "Specify document_id please.")
 		return
 	}
 	if datasetID == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": fmt.Sprintf("The dataset not own the document %s.", docID),
-		})
+		common.ErrorWithCode(c, int(common.CodeDataError), fmt.Sprintf("The dataset not own the document %s.", docID))
 		return
 	}
 
 	res, err := h.documentService.DownloadDocument(datasetID, docID)
 
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
 		return
 	}
 
@@ -1169,38 +1140,23 @@ func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&requestBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    1,
-			"message": "kb_id is required",
-		})
+		common.ErrorWithCode(c, 1, "kb_id is required")
 		return
 	}
 
 	kbID := requestBody.KBID
 	if kbID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    1,
-			"message": "kb_id is required",
-		})
+		common.ErrorWithCode(c, 1, "kb_id is required")
 		return
 	}
 
 	summary, err := h.documentService.GetMetadataSummary(kbID, requestBody.DocIDs)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    1,
-			"message": "Failed to get metadata summary: " + err.Error(),
-		})
+		common.ErrorWithCode(c, 1, "Failed to get metadata summary: "+err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data": gin.H{
-			"summary": summary,
-		},
-	})
+	common.SuccessWithData(c, gin.H{"summary": summary}, "success")
 }
 
 // SetMetaRequest represents the request for setting document metadata
@@ -1228,36 +1184,24 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 
 	var req SetMetaRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    1,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 1, err.Error())
 		return
 	}
 
 	if req.DocID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    1,
-			"message": "doc_id is required",
-		})
+		common.ErrorWithCode(c, 1, "doc_id is required")
 		return
 	}
 
 	// Parse meta JSON string
 	var meta map[string]interface{}
 	if err := json.Unmarshal([]byte(req.Meta), &meta); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    1,
-			"message": "Json syntax error: " + err.Error(),
-		})
+		common.ErrorWithCode(c, 1, "Json syntax error: "+err.Error())
 		return
 	}
 
 	if meta == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    1,
-			"message": "meta is required",
-		})
+		common.ErrorWithCode(c, 1, "meta is required")
 		return
 	}
 
@@ -1270,19 +1214,13 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 			for _, item := range val {
 				if _, ok := item.(string); !ok {
 					if _, ok := item.(float64); !ok {
-						c.JSON(http.StatusBadRequest, gin.H{
-							"code":    1,
-							"message": fmt.Sprintf("Unsupported type in list for key %s: %T", k, item),
-						})
+						common.ErrorWithCode(c, 1, fmt.Sprintf("Unsupported type in list for key %s: %T", k, item))
 						return
 					}
 				}
 			}
 		default:
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    1,
-				"message": fmt.Sprintf("Unsupported type for key %s: %T", k, v),
-			})
+			common.ErrorWithCode(c, 1, fmt.Sprintf("Unsupported type for key %s: %T", k, v))
 			return
 		}
 	}
@@ -1290,10 +1228,7 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 	// Authorization: user must be able to access the document's dataset.
 	doc, err := h.documentService.GetDocumentByID(req.DocID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    1,
-			"message": "document not found",
-		})
+		common.ErrorWithCode(c, 1, "document not found")
 		return
 	}
 	if !h.datasetService.Accessible(doc.KbID, user.ID) {
@@ -1305,15 +1240,9 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 	if err != nil {
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    1,
-				"message": errMsg,
-			})
+			common.ErrorWithCode(c, 1, errMsg)
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    1,
-				"message": "Failed to set metadata: " + errMsg,
-			})
+			common.ErrorWithCode(c, 1, "Failed to set metadata: "+errMsg)
 		}
 		return
 	}
@@ -1374,28 +1303,19 @@ func (h *DocumentHandler) DeleteMeta(c *gin.Context) {
 
 	var req DeleteMetaRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    1,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 1, err.Error())
 		return
 	}
 
 	if req.DocID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    1,
-			"message": "doc_id is required",
-		})
+		common.ErrorWithCode(c, 1, "doc_id is required")
 		return
 	}
 
 	// Authorization: user must be able to access the document's dataset.
 	doc, err := h.documentService.GetDocumentByID(req.DocID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    1,
-			"message": "document not found",
-		})
+		common.ErrorWithCode(c, 1, "document not found")
 		return
 	}
 	if !h.datasetService.Accessible(doc.KbID, user.ID) {
@@ -1407,53 +1327,35 @@ func (h *DocumentHandler) DeleteMeta(c *gin.Context) {
 	if req.Keys != "" {
 		// Parse keys JSON string - expected to be a list of key names to delete
 		var keys []string
-		if err := json.Unmarshal([]byte(req.Keys), &keys); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    1,
-				"message": "Json syntax error: " + err.Error(),
-			})
+		if err = json.Unmarshal([]byte(req.Keys), &keys); err != nil {
+			common.ErrorWithCode(c, 1, "Json syntax error: "+err.Error())
 			return
 		}
 
 		if keys == nil || len(keys) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    1,
-				"message": "keys list is required",
-			})
+			common.ErrorWithCode(c, 1, "keys list is required")
 			return
 		}
 
-		err := h.documentService.DeleteDocumentMetadata(req.DocID, keys)
+		err = h.documentService.DeleteDocumentMetadata(req.DocID, keys)
 		if err != nil {
 			errMsg := err.Error()
 			if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"code":    1,
-					"message": errMsg,
-				})
+				common.ErrorWithCode(c, 1, errMsg)
 			} else {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"code":    1,
-					"message": "Failed to delete metadata: " + errMsg,
-				})
+				common.ErrorWithCode(c, 1, "Failed to delete metadata: "+errMsg)
 			}
 			return
 		}
 	} else {
 		// Delete entire document metadata
-		err := h.documentService.DeleteDocumentAllMetadata(req.DocID)
+		err = h.documentService.DeleteDocumentAllMetadata(req.DocID)
 		if err != nil {
 			errMsg := err.Error()
 			if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"code":    1,
-					"message": errMsg,
-				})
+				common.ErrorWithCode(c, 1, errMsg)
 			} else {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"code":    1,
-					"message": "Failed to delete metadata: " + errMsg,
-				})
+				common.ErrorWithCode(c, 1, "Failed to delete metadata: "+errMsg)
 			}
 			return
 		}
@@ -1490,11 +1392,7 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    parseResult,
-	})
+	common.SuccessWithData(c, parseResult, "success")
 }
 
 type StartParseDocumentsRequest struct {
@@ -1522,11 +1420,7 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    parseResult,
-	})
+	common.SuccessWithData(c, parseResult, "success")
 }
 
 type StopIngestionsRequest struct {
@@ -1547,11 +1441,7 @@ func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    parseResult,
-	})
+	common.SuccessWithData(c, parseResult, "success")
 }
 
 type RemoveIngestionsRequest struct {
@@ -1566,10 +1456,7 @@ func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 	}
 
 	if req.Tasks == nil || len(req.Tasks) == 0 {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    1,
-			"message": "task_ids is required",
-		})
+		common.ErrorWithCode(c, 1, "task_ids is required")
 		return
 	}
 
@@ -1580,11 +1467,7 @@ func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    deletedTasks,
-	})
+	common.SuccessWithData(c, deletedTasks, "success")
 }
 
 type ParseDocumentRequest struct {
@@ -1612,11 +1495,7 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    parseResult,
-	})
+	common.SuccessWithData(c, parseResult, "success")
 }
 
 type StopParseDocumentRequest struct {
@@ -1633,10 +1512,7 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 	}
 
 	if len(req.DocumentIDs) == 0 {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": "`document_ids` is required",
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), "`document_ids` is required")
 		return
 	}
 
@@ -1652,11 +1528,7 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    result,
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
@@ -1668,17 +1540,11 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "dataset_id is required",
-		})
+		common.ErrorWithCode(c, int(common.CodeServerError), "dataset_id is required")
 		return
 	}
 	if !h.datasetService.Accessible(datasetID, user.ID) {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "You don't own the dataset " + datasetID,
-		})
+		common.ErrorWithCode(c, int(common.CodeServerError), "You don't own the dataset "+datasetID)
 		return
 	}
 
@@ -1689,18 +1555,11 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 
 	summary, err := h.documentService.GetMetadataSummary(datasetID, docIDS)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Failed to  get metadata summary" + err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeServerError), "Failed to get metadata summary"+err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    gin.H{"summary": summary},
-	})
+	common.SuccessWithData(c, gin.H{"summary": summary}, "success")
 }
 
 func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
@@ -1736,7 +1595,7 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 		present[key] = true
 	}
 	var req service.UpdateDatasetDocumentRequest
-	if err := json.Unmarshal(body, &req); err != nil {
+	if err = json.Unmarshal(body, &req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
@@ -1747,10 +1606,7 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": data,
-	})
+	common.SuccessNoMessage(c, data)
 }
 
 func (h *DocumentHandler) UploadInfo(c *gin.Context) {
@@ -1787,11 +1643,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 			common.ErrorWithCode(c, int(code), err.Error())
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"data":    data,
-			"message": "success",
-		})
+		common.SuccessWithData(c, data, "success")
 		return
 	}
 
@@ -1807,11 +1659,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	} else {
 		payload = data
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    payload,
-		"message": "success",
-	})
+	common.SuccessWithData(c, payload, "success")
 }
 
 type documentMetadataBatchRequest struct {
@@ -1865,10 +1713,5 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    resp,
-		"message": "success",
-	})
+	common.SuccessWithData(c, resp, "success")
 }

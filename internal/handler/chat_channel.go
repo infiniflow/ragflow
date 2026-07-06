@@ -15,7 +15,6 @@
 package handler
 
 import (
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -123,11 +122,7 @@ func (h *ChatChannelHandler) GetChatChannel(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    channel,
-		"message": "success",
-	})
+	common.SuccessWithData(c, channel, "success")
 }
 
 // UpdateChatChannel handles PATCH /chat-channels/:channel_id.
@@ -203,11 +198,7 @@ func unwrapChatChannelPayload(payload map[string]interface{}) map[string]interfa
 
 func writeChatChannelError(c *gin.Context, code common.ErrorCode, message string) {
 	if code == common.CodeAuthenticationError && message == "No authorization." {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"data":    false,
-			"message": message,
-		})
+		common.ResponseWithCodeData(c, code, false, message)
 		return
 	}
 	common.ResponseWithCodeData(c, code, nil, message)

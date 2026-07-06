@@ -17,7 +17,6 @@
 package handler
 
 import (
-	"net/http"
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
@@ -121,10 +120,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	var req service.ListSearchAppsRequest
 	if len(ownerIDs) == 0 && c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": err.Error(),
-			})
+			common.ErrorWithCode(c, 400, err.Error())
 			return
 		}
 		ownerIDs = req.OwnerIDs
@@ -208,11 +204,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"data":    nil,
-			"message": "search_id is required",
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "search_id is required")
 		return
 	}
 
@@ -221,11 +213,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	if err != nil {
 		// Check if it's a permission error
 		if err.Error() == "has no permission for this operation" {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeOperatingError,
-				"data":    false,
-				"message": "Has no permission for this operation.",
-			})
+			common.ResponseWithCodeData(c, common.CodeOperatingError, false, "Has no permission for this operation.")
 			return
 		}
 		// Not found error
@@ -274,11 +262,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"data":    nil,
-			"message": "search_id is required",
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "search_id is required")
 		return
 	}
 
@@ -321,11 +305,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"data":    nil,
-			"message": "search_id is required",
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "search_id is required")
 		return
 	}
 
@@ -350,25 +330,13 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 		case "no authorization":
 			common.ResponseWithCodeData(c, common.CodeDataError, false, "No authorization")
 		case "duplicated search name":
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeDataError,
-				"data":    nil,
-				"message": "Duplicated search name.",
-			})
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Duplicated search name.")
 		default:
 			// Check if it's a "cannot find search" error
 			if len(errMsg) > 18 && errMsg[:18] == "cannot find search" {
-				c.JSON(http.StatusOK, gin.H{
-					"code":    common.CodeDataError,
-					"data":    false,
-					"message": errMsg,
-				})
+				common.ResponseWithCodeData(c, common.CodeDataError, false, errMsg)
 			} else {
-				c.JSON(http.StatusOK, gin.H{
-					"code":    common.CodeDataError,
-					"data":    nil,
-					"message": errMsg,
-				})
+				common.ResponseWithCodeData(c, common.CodeDataError, nil, errMsg)
 			}
 		}
 		return
@@ -417,11 +385,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 	plan, code, err := searchSvc.PrepareCompletion(user.ID, c.Param("search_id"), &req)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    code,
-				"data":    false,
-				"message": err.Error(),
-			})
+			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
 		if code == common.CodeServerError {

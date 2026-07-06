@@ -18,7 +18,6 @@ package handler
 
 import (
 	"fmt"
-	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -152,20 +151,16 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 		ct = *commit.CreateTime
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": entity.CommitResponse{
-			ID:         commit.ID,
-			FolderID:   commit.FolderID,
-			ParentID:   commit.ParentID,
-			Message:    commit.Message,
-			AuthorID:   commit.AuthorID,
-			FileCount:  commit.FileCount,
-			TreeState:  commit.TreeState,
-			CreateTime: &ct,
-		},
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, entity.CommitResponse{
+		ID:         commit.ID,
+		FolderID:   commit.FolderID,
+		ParentID:   commit.ParentID,
+		Message:    commit.Message,
+		AuthorID:   commit.AuthorID,
+		FileCount:  commit.FileCount,
+		TreeState:  commit.TreeState,
+		CreateTime: &ct,
+	}, common.CodeSuccess.Message())
 }
 
 // ListCommits lists commits for a workspace folder
@@ -240,16 +235,12 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": gin.H{
-			"total":     total,
-			"page":      page,
-			"page_size": pageSize,
-			"commits":   commitList,
-		},
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, gin.H{
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+		"commits":   commitList,
+	}, common.CodeSuccess.Message())
 }
 
 // GetCommit gets details of a single commit
@@ -297,20 +288,16 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 		ct = *commit.CreateTime
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": gin.H{
-			"id":          commit.ID,
-			"folder_id":   commit.FolderID,
-			"parent_id":   commit.ParentID,
-			"message":     commit.Message,
-			"author_id":   commit.AuthorID,
-			"file_count":  commit.FileCount,
-			"create_time": ct,
-			"files":       items,
-		},
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, gin.H{
+		"id":          commit.ID,
+		"folder_id":   commit.FolderID,
+		"parent_id":   commit.ParentID,
+		"message":     commit.Message,
+		"author_id":   commit.AuthorID,
+		"file_count":  commit.FileCount,
+		"create_time": ct,
+		"files":       items,
+	}, common.CodeSuccess.Message())
 }
 
 // ListCommitFiles lists all file changes in a commit
@@ -353,11 +340,7 @@ func (h *FileCommitHandler) ListCommitFiles(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    items,
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, items, common.CodeSuccess.Message())
 }
 
 // DiffCommits compares two commits
@@ -407,11 +390,7 @@ func (h *FileCommitHandler) DiffCommits(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    diff,
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, diff, common.CodeSuccess.Message())
 }
 
 // GetUncommittedChanges gets uncommitted changes
@@ -442,11 +421,7 @@ func (h *FileCommitHandler) GetUncommittedChanges(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    changes,
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, changes, common.CodeSuccess.Message())
 }
 
 // GetCommitTree gets the folder tree snapshot for a commit
@@ -489,11 +464,7 @@ func (h *FileCommitHandler) GetCommitTree(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    tree,
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, tree, common.CodeSuccess.Message())
 }
 
 // GetCommitFileContent gets file content as it existed in a given commit
@@ -539,13 +510,7 @@ func (h *FileCommitHandler) GetCommitFileContent(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": gin.H{
-			"content": string(content),
-		},
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, gin.H{"content": string(content)}, common.CodeSuccess.Message())
 }
 
 // GetFileVersionHistory gets version history for a specific file
@@ -576,9 +541,5 @@ func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    versions,
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, versions, common.CodeSuccess.Message())
 }

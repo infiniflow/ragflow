@@ -38,8 +38,8 @@ type errorResponse struct {
 func SuccessWithData(c *gin.Context, data interface{}, message interface{}) {
 	c.JSON(http.StatusOK, response{
 		Code:    int(CodeSuccess),
-		Message: message,
 		Data:    data,
+		Message: message,
 	})
 }
 
@@ -55,8 +55,8 @@ func SuccessNoMessage(c *gin.Context, data interface{}) {
 func SuccessNoData(c *gin.Context, message interface{}) {
 	c.JSON(http.StatusOK, response{
 		Code:    int(CodeSuccess),
-		Message: message,
 		Data:    nil,
+		Message: message,
 	})
 }
 
@@ -79,7 +79,7 @@ func ErrorWithCode(c *gin.Context, code int, message string) {
 func ResponseWithCodeData(c *gin.Context, code ErrorCode, data interface{}, message string) {
 	c.JSON(http.StatusOK, response{
 		Code:    int(code),
-		Message: message,
 		Data:    data,
+		Message: message,
 	})
 }

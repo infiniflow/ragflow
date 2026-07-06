@@ -18,7 +18,6 @@ package handler
 
 import (
 	"fmt"
-	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/server/local"
@@ -128,10 +127,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader("Authorization")
 		if token == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"code":    401,
-				"message": "Missing Authorization header",
-			})
+			common.ErrorWithCode(c, 401, "Missing Authorization header")
 			c.Abort()
 			return
 		}
@@ -143,10 +139,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		if err != nil {
 			user, code, err = h.userService.GetUserByAPIToken(token)
 			if err != nil {
-				c.JSON(http.StatusUnauthorized, gin.H{
-					"code":    code,
-					"message": "Invalid access token",
-				})
+				common.ErrorWithCode(c, int(code), "Invalid access token")
 				c.Abort()
 				return
 			}
@@ -154,10 +147,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		if user.IsSuperuser != nil && *user.IsSuperuser {
-			c.JSON(http.StatusForbidden, gin.H{
-				"code":    common.CodeForbidden,
-				"message": "Super user shouldn't access the URL",
-			})
+			common.ErrorWithCode(c, int(common.CodeForbidden), "Super user shouldn't access the URL")
 			c.Abort()
 			return
 		}
@@ -166,11 +156,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			license := local.GetAdminStatus()
 			errMsg := fmt.Sprintf("server license %s", license.Reason)
 			common.Warn(errMsg)
-			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"code":    common.CodeUnauthorized,
-				"message": errMsg,
-				"data":    "No",
-			})
+			common.ResponseWithCodeData(c, common.CodeUnauthorized, "No", errMsg)
 			c.Abort()
 			return
 		}

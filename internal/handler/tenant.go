@@ -18,7 +18,6 @@ package handler
 
 import (
 	"encoding/json"
-	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -346,10 +345,7 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 	}
 
 	if req.FilePath == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "file_path is required",
-		})
+		common.ErrorWithCode(c, 400, "file_path is required")
 		return
 	}
 
@@ -360,10 +356,7 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 	// to admin/owner roles upstream.
 	data, err := os.ReadFile(req.FilePath)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "failed to read file: " + err.Error(),
-		})
+		common.ErrorWithCode(c, 400, "failed to read file: "+err.Error())
 		return
 	}
 
@@ -376,18 +369,12 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 	}
 
 	if err = json.Unmarshal(data, &debugFormat); err != nil || debugFormat.Chunks == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "invalid JSON format: expected {\"index_name\"/\"table_name\": ..., \"knowledgebase_id\": ..., \"chunks\": [...]}",
-		})
+		common.ErrorWithCode(c, 400, "invalid JSON format: expected {\"index_name\"/\"table_name\": ..., \"knowledgebase_id\": ..., \"chunks\": [...]}")
 		return
 	}
 
 	if len(debugFormat.Chunks) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "no chunks found in file",
-		})
+		common.ErrorWithCode(c, 400, "no chunks found in file")
 		return
 	}
 
@@ -401,10 +388,7 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 	docEngine := engine.Get()
 	result, err := docEngine.InsertChunks(c.Request.Context(), debugFormat.Chunks, indexName, debugFormat.KnowledgebaseID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "failed to insert into dataset: " + err.Error(),
-		})
+		common.ErrorWithCode(c, 500, "failed to insert into dataset: "+err.Error())
 		return
 	}
 
@@ -439,10 +423,7 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 	}
 
 	if req.FilePath == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "file_path is required",
-		})
+		common.ErrorWithCode(c, 400, "file_path is required")
 		return
 	}
 
@@ -453,10 +434,7 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 	// codeql[go/path-injection] False positive: req.FilePath is the
 	data, err := os.ReadFile(req.FilePath)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "failed to read file: " + err.Error(),
-		})
+		common.ErrorWithCode(c, 400, "failed to read file: "+err.Error())
 		return
 	}
 
@@ -466,18 +444,12 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 	}
 
 	if err = json.Unmarshal(data, &inputFormat); err != nil || inputFormat.Chunks == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "invalid JSON format: expected {\"chunks\": [...]}",
-		})
+		common.ErrorWithCode(c, 400, "invalid JSON format: expected {\"chunks\": [...]}")
 		return
 	}
 
 	if len(inputFormat.Chunks) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "no chunks found in file",
-		})
+		common.ErrorWithCode(c, 400, "no chunks found in file")
 		return
 	}
 
@@ -488,10 +460,7 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 	docEngine := engine.Get()
 	result, err := docEngine.InsertMetadata(c.Request.Context(), inputFormat.Chunks, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "failed to insert metadata: " + err.Error(),
-		})
+		common.ErrorWithCode(c, 500, "failed to insert metadata: "+err.Error())
 		return
 	}
 
@@ -522,7 +491,7 @@ func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": members, "message": "success"})
+	common.SuccessWithData(c, members, "success")
 }
 
 // AddTenantMember invites a user (by email) to the tenant.
@@ -548,7 +517,7 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 
 	var req service.AddMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "invalid request body: " + err.Error()})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "invalid request body: "+err.Error())
 		return
 	}
 
@@ -557,7 +526,7 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": resp, "message": "success"})
+	common.SuccessWithData(c, resp, "success")
 }
 
 // RemoveTenantMember removes a user from the tenant.
@@ -585,7 +554,7 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 		UserID string `json:"user_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || body.UserID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "user_id is required"})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "user_id is required")
 		return
 	}
 

@@ -18,7 +18,6 @@ package handler
 
 import (
 	"errors"
-	"net/http"
 	"time"
 
 	"ragflow/internal/common"
@@ -58,9 +57,5 @@ func (h *SystemHandler) GetStats(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    stats,
-	})
+	common.SuccessWithData(c, stats, "success")
 }

@@ -286,7 +286,7 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 
 	connectorID := c.Param("connector_id")
 	if connectorID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "connector_id is required"})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "connector_id is required")
 		return
 	}
 
@@ -297,7 +297,7 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 	}
 	if err != nil && !errors.Is(err, service.ErrConnectorNoAuth) && !errors.Is(err, service.ErrConnectorNotFound) {
 		// Validation failure (e.g. missing credentials): mirror Python's DATA_ERROR with data=false.
-		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		common.ResponseWithCodeData(c, common.CodeDataError, false, err.Error())
 		return
 	}
 	if connectorErrorResponse(c, err) {
@@ -348,20 +348,12 @@ func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
 		KbID string `json:"kb_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    nil,
-			"message": "required argument is missing: kb_id",
-		})
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "required argument is missing: kb_id")
 		return
 	}
 
 	if strings.TrimSpace(req.KbID) == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    nil,
-			"message": "kb_id cannot be empty",
-		})
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "kb_id cannot be empty")
 		return
 	}
 

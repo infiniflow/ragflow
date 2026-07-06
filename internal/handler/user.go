@@ -66,30 +66,18 @@ func (h *UserHandler) Register(c *gin.Context) {
 		if code == common.CodeExceptionError {
 			data = nil
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    data,
-		})
+		common.ResponseWithCodeData(c, code, data, err.Error())
 		return
 	}
 
 	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
 		return
 	}
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Failed to generate auth token",
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
 		return
 	}
 
@@ -101,11 +89,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(user)
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": fmt.Sprintf("%s, welcome aboard!", req.Nickname),
-		"data":    profile,
-	})
+	common.SuccessWithData(c, profile, fmt.Sprintf("%s, welcome aboard!", req.Nickname))
 }
 
 // Login user login
@@ -133,20 +117,12 @@ func (h *UserHandler) Login(c *gin.Context) {
 	// Sign the access_token using itsdangerous (compatible with Python)
 	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, false, fmt.Sprintf("Failed to get secret key: %s", err.Error()))
 		return
 	}
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Failed to generate auth token",
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
 		return
 	}
 
@@ -160,11 +136,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(user)
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "Welcome back!",
-		"data":    profile,
-	})
+	common.SuccessWithData(c, profile, "Welcome back!")
 }
 
 // LoginByEmail user login by email
@@ -185,11 +157,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 
 	if !local.IsAdminAvailable() {
 		license := local.GetAdminStatus()
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeAuthenticationError,
-			"message": license.Reason,
-			"data":    "No",
-		})
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, "No", license.Reason)
 		return
 	}
 
@@ -201,20 +169,12 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 
 	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, false, fmt.Sprintf("Failed to get secret key: %s", err.Error()))
 		return
 	}
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Failed to generate auth token",
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
 		return
 	}
 	setOAuthAuthCookie(c, authToken)
@@ -225,11 +185,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(user)
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "Welcome back!",
-		"data":    profile,
-	})
+	common.SuccessWithData(c, profile, "Welcome back!")
 }
 
 // GetUserByID get user by ID
@@ -245,11 +201,7 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": "invalid user id",
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, false, "invalid user id")
 		return
 	}
 
@@ -259,11 +211,7 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    user,
-	})
+	common.SuccessWithData(c, user, "success")
 }
 
 // ListUsers user list
@@ -293,16 +241,12 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data": gin.H{
-			"items":     users,
-			"total":     total,
-			"page":      page,
-			"page_size": pageSize,
-		},
-	})
+	common.SuccessWithData(c, gin.H{
+		"items":     users,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	}, "success")
 }
 
 // Logout user logout
@@ -328,10 +272,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	// Same as AuthMiddleware@auth.go
 	token := c.GetHeader("Authorization")
 	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
+		common.ErrorWithCode(c, int(common.CodeUnauthorized), "Missing Authorization header")
 		c.Abort()
 		return
 	}
@@ -339,10 +280,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	// Get user by access token
 	user, code, err := h.userService.GetUserByToken(token)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": "Invalid access token",
-		})
+		common.ErrorWithCode(c, int(common.CodeUnauthorized), "Invalid access token")
 		c.Abort()
 		return
 	}
@@ -376,11 +314,7 @@ func (h *UserHandler) Info(c *gin.Context) {
 	// Get user profile
 	profile := h.userService.GetUserProfile(user)
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    profile,
-	})
+	common.SuccessWithData(c, profile, "success")
 }
 
 // Setting update user settings
@@ -411,11 +345,7 @@ func (h *UserHandler) Setting(c *gin.Context) {
 	code, err := h.userService.UpdateUserSettings(user, &req)
 	if err != nil {
 		if code == common.CodeExceptionError {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    code,
-				"message": err.Error(),
-				"data":    nil,
-			})
+			common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 			return
 		}
 		common.ResponseWithCodeData(c, code, false, err.Error())
@@ -456,11 +386,7 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "password changed successfully",
-		"data":    true,
-	})
+	common.SuccessWithData(c, true, "password changed successfully")
 }
 
 // GetLoginChannels get all supported authentication channels
@@ -474,19 +400,11 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 func (h *UserHandler) GetLoginChannels(c *gin.Context) {
 	channels, code, err := h.userService.GetLoginChannels()
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": "Load channels failure, error: " + err.Error(),
-			"data":    []interface{}{},
-		})
+		common.ResponseWithCodeData(c, code, []interface{}{}, "Load channels failure, error: "+err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    channels,
-	})
+	common.SuccessWithData(c, channels, "success")
 }
 
 // SetTenantInfo update tenant information
@@ -511,11 +429,7 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 
 	var payload map[string]interface{}
 	if err := c.ShouldBindBodyWith(&payload, binding.JSON); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": missingArgumentMessage,
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, missingArgumentMessage)
 		return
 	}
 
@@ -526,11 +440,7 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		}
 	}
 	if len(missing) > 0 {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)),
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)))
 		return
 	}
 
@@ -628,21 +538,13 @@ func (h *UserHandler) ForgotCaptcha(c *gin.Context) {
 
 	captchaID, captchaImage, errCode, err := h.userService.ForgotIssueCaptcha(req.Email)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    errCode,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, errCode, false, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "captcha issued",
-		"data": gin.H{
-			"captcha_id":    captchaID,
-			"captcha_image": captchaImage,
-		},
-	})
+	common.SuccessWithData(c, gin.H{
+		"captcha_id":    captchaID,
+		"captcha_image": captchaImage,
+	}, "captcha issued")
 }
 
 type forgotSendOTPRequest struct {
@@ -665,27 +567,15 @@ type forgotSendOTPRequest struct {
 func (h *UserHandler) ForgotSendOTP(c *gin.Context) {
 	var req forgotSendOTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
 		return
 	}
 	errCode, err := h.userService.ForgotSendOTP(req.Email, req.CaptchaID, req.Captcha)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    errCode,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, errCode, false, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "verification passed, email sent",
-		"data":    true,
-	})
+	common.SuccessWithData(c, true, "verification passed, email sent")
 }
 
 type forgotVerifyOTPRequest struct {
@@ -707,27 +597,15 @@ type forgotVerifyOTPRequest struct {
 func (h *UserHandler) ForgotVerifyOTP(c *gin.Context) {
 	var req forgotVerifyOTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
 		return
 	}
 	errCode, err := h.userService.ForgotVerifyOTP(req.Email, req.OTP)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    errCode,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, errCode, false, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "otp verified",
-		"data":    true,
-	})
+	common.SuccessWithData(c, true, "otp verified")
 }
 
 // ForgotResetPassword POST /api/v1/auth/password/reset
@@ -744,11 +622,7 @@ func (h *UserHandler) ForgotVerifyOTP(c *gin.Context) {
 func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 	var req service.ForgotResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
 		return
 	}
 
@@ -760,20 +634,12 @@ func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 
 	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, false, fmt.Sprintf("Failed to get secret key: %s", err.Error()))
 		return
 	}
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Failed to generate auth token",
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
 		return
 	}
 	c.Header("Authorization", authToken)
@@ -787,9 +653,5 @@ func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 	profile := h.userService.GetUserProfile(user)
 	delete(profile, "password")
 	delete(profile, "access_token")
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "Password reset successful. Logged in.",
-		"data":    profile,
-	})
+	common.SuccessWithData(c, profile, "Password reset successful. Logged in.")
 }

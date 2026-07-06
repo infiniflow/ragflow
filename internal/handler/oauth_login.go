@@ -65,17 +65,10 @@ func (h *UserHandler) OAuthLogin(c *gin.Context) {
 		// server_error_response, which replies HTTP 200 with code 100 and
 		// the exception's repr() as the message (no short error code).
 		if errors.Is(err, service.ErrOAuthInvalidChannel) {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeExceptionError,
-				"data":    nil,
-				"message": fmt.Sprintf("ValueError('Invalid channel name: %s')", channel),
-			})
+			common.ResponseWithCodeData(c, common.CodeExceptionError, nil, fmt.Sprintf("ValueError('Invalid channel name: %s')", channel))
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 

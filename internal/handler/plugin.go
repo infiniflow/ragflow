@@ -17,8 +17,6 @@
 package handler
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
@@ -53,9 +51,5 @@ func (h *PluginHandler) ListLLMTools(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    h.pluginService.ListLLMTools(),
-	})
+	common.SuccessWithData(c, h.pluginService.ListLLMTools(), "SUCCESS")
 }

@@ -112,11 +112,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // GetRootFolder gets root folder for current user
@@ -142,11 +138,7 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    gin.H{"root_folder": rootFolder},
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, gin.H{"root_folder": rootFolder}, common.CodeSuccess.Message())
 }
 
 // GetParentFolder gets parent folder of a file
@@ -180,11 +172,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    gin.H{"parent_folder": parentFolder},
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, gin.H{"parent_folder": parentFolder}, common.CodeSuccess.Message())
 }
 
 // GetAllParentFolders gets all parent folders in path
@@ -218,11 +206,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    gin.H{"parent_folders": parentFolders},
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, gin.H{"parent_folders": parentFolders}, common.CodeSuccess.Message())
 }
 
 // GetFileAncestors gets all ancestor folders of a file (matches Python /files/<file_id>/ancestors)
@@ -255,11 +239,7 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    gin.H{"parent_folders": parentFolders},
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, gin.H{"parent_folders": parentFolders}, common.CodeSuccess.Message())
 }
 
 type CreateFolderRequest struct {
@@ -330,21 +310,14 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"data":    result,
-			"message": common.CodeSuccess.Message(),
-		})
+		common.SuccessWithData(c, result, common.CodeSuccess.Message())
 		return
 	}
 
 	if strings.Contains(contentType, "application/json") {
 		var req CreateFolderRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": err.Error(),
-			})
+			common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 			return
 		}
 
@@ -364,11 +337,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"data":    result,
-			"message": common.CodeSuccess.Message(),
-		})
+		common.SuccessWithData(c, result, common.CodeSuccess.Message())
 		return
 	}
 
@@ -408,11 +377,7 @@ func (h *FileHandler) DeleteFiles(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, true, common.CodeSuccess.Message())
 }
 
 // MoveFileRequest represents the request body for move files operation
@@ -466,11 +431,7 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": common.CodeSuccess.Message(),
-	})
+	common.SuccessWithData(c, true, common.CodeSuccess.Message())
 }
 
 // Download handles file download

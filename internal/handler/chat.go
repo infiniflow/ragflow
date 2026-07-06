@@ -19,7 +19,6 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
@@ -251,11 +250,7 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 	}
 	userID := user.ID
 	if c.Request.Body == nil || c.Request.ContentLength == 0 {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"data":    map[string]interface{}{},
-			"message": "success",
-		})
+		common.SuccessWithData(c, map[string]interface{}{}, "success")
 		return
 	}
 
@@ -269,34 +264,18 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 		if req.ChatID != "" {
 			if err := h.chatService.DeleteChat(userID, req.ChatID); err != nil {
 				if err.Error() == "no authorization" {
-					c.JSON(http.StatusOK, gin.H{
-						"code":    common.CodeAuthenticationError,
-						"data":    false,
-						"message": "No authorization.",
-					})
+					common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
 					return
 				}
-				c.JSON(http.StatusOK, gin.H{
-					"code":    common.CodeDataError,
-					"data":    nil,
-					"message": err.Error(),
-				})
+				common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 				return
 			}
 
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeSuccess,
-				"data":    true,
-				"message": "success",
-			})
+			common.SuccessWithData(c, true, "success")
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"data":    map[string]interface{}{},
-			"message": "success",
-		})
+		common.SuccessWithData(c, map[string]interface{}{}, "success")
 		return
 	}
 

@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net/http"
 	"ragflow/internal/engine/redis"
 	"strconv"
 	"strings"
@@ -370,11 +369,7 @@ func (h *AgentHandler) ListTemplates(c *gin.Context) {
 		templates = []*entity.CanvasTemplate{}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    templates,
-		"message": "success",
-	})
+	common.SuccessWithData(c, templates, "success")
 }
 
 // RunAgent returns an SSE stream of execution events. The Phase 5 stub emits
@@ -636,16 +631,12 @@ func (h *AgentHandler) Prompts(c *gin.Context) {
 		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": gin.H{
-			"task_analysis":       "As an AI agent designer, your role is to engage users by understanding their objectives and creating effective agent designs. Begin by analyzing the user's request to determine the appropriate actions.",
-			"output_format":       "For each agent you create, detail its components and explain how they collaborate to achieve the user's goal.",
-			"citation_guidelines": "If the agent uses external sources, cite them in the final output. Use the format: [index] document_id, which corresponds to the document identifier in the database.",
-			"few_shots_examples":  "<example/>",
-		},
-		"message": "success",
-	})
+	common.SuccessWithData(c, gin.H{
+		"task_analysis":       "As an AI agent designer, your role is to engage users by understanding their objectives and creating effective agent designs. Begin by analyzing the user's request to determine the appropriate actions.",
+		"output_format":       "For each agent you create, detail its components and explain how they collaborate to achieve the user's goal.",
+		"citation_guidelines": "If the agent uses external sources, cite them in the final output. Use the format: [index] document_id, which corresponds to the document identifier in the database.",
+		"few_shots_examples":  "<example/>",
+	}, "success")
 }
 
 // ListAgentTags list agent tags.
@@ -794,11 +785,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 			common.ErrorWithCode(c, int(code), err.Error())
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"data":    ok,
-			"message": "success",
-		})
+		common.SuccessWithData(c, ok, "success")
 		return
 	}
 	idsParam := c.Query("ids")
@@ -976,13 +963,11 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// terminator, `reference` attached to the final choice. Land that
 	// once the chat path needs to interop with OpenAI clients.
 	if req.OpenAICompat {
-		c.JSON(http.StatusOK, gin.H{
-			"code": common.CodeSuccess,
+		common.SuccessWithData(c, gin.H{
 			"choices": []map[string]interface{}{
 				{"message": gin.H{"content": "hello"}},
 			},
-			"message": "success",
-		})
+		}, "success")
 		return
 	}
 
@@ -1215,15 +1200,11 @@ func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Canvas not found.")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": gin.H{
-			"events":        []interface{}{},
-			"finished":      false,
-			"next_since_ts": 0,
-		},
-		"message": "success",
-	})
+	common.SuccessWithData(c, gin.H{
+		"events":        []interface{}{},
+		"finished":      false,
+		"next_since_ts": 0,
+	}, "success")
 }
 
 // checkCanvasAccessForHandler is the shared 103 envelope helper for
@@ -1287,9 +1268,5 @@ func (h *AgentHandler) ResetAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    dsl,
-		"message": "success",
-	})
+	common.SuccessWithData(c, dsl, "success")
 }

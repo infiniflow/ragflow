@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net/http"
 	"ragflow/internal/common"
 	"strings"
 
@@ -72,22 +71,14 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	if err != nil {
 		// Check if it's an authorization error
 		if err.Error() == "Only owner of dialog authorized for this operation" {
-			c.JSON(http.StatusForbidden, gin.H{
-				"code":    403,
-				"data":    false,
-				"message": err.Error(),
-			})
+			common.ResponseWithCodeData(c, 403, false, err.Error())
 			return
 		}
 		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    result.Sessions,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result.Sessions, "success")
 }
 
 type ChatCompletionsRequest struct {

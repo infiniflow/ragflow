@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -117,11 +116,7 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 	result, code, err := h.mcpService.ListMCPServers(user.ID, mcpIDs, keywords, page, pageSize, orderby, desc)
 	if err != nil {
 		if code == common.CodeServerError {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    code,
-				"message": err.Error(),
-				"data":    nil,
-			})
+			common.ResponseWithCodeData(c, code, nil, err.Error())
 			return
 		}
 		common.ErrorWithCode(c, int(code), err.Error())
@@ -145,11 +140,7 @@ func (h *MCPHandler) GetMCPServer(c *gin.Context) {
 			mcpDetailError(c, code, err)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"message": "success",
-			"data":    result,
-		})
+		common.SuccessWithData(c, result, "success")
 		return
 	}
 
@@ -158,11 +149,7 @@ func (h *MCPHandler) GetMCPServer(c *gin.Context) {
 		mcpDetailError(c, code, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    newMCPServerResponse(result),
-	})
+	common.SuccessWithData(c, newMCPServerResponse(result), "success")
 }
 
 func mcpDetailError(c *gin.Context, code common.ErrorCode, err error) {
@@ -170,11 +157,7 @@ func mcpDetailError(c *gin.Context, code common.ErrorCode, err error) {
 		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeExceptionError,
-		"message": err.Error(),
-		"data":    nil,
-	})
+	common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 }
 
 // UpdateMCPServer updates an MCP server for the current user.
@@ -198,11 +181,7 @@ func (h *MCPHandler) UpdateMCPServer(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    newMCPServerResponse(result),
-	})
+	common.SuccessWithData(c, newMCPServerResponse(result), "success")
 }
 
 // DeleteMCPServer deletes an MCP server for the current user.
@@ -233,9 +212,9 @@ func mcpErrorResponse(c *gin.Context, err error) bool {
 		errors.Is(err, service.ErrMCPInvalidName),
 		errors.Is(err, service.ErrMCPInvalidURL),
 		errors.Is(err, service.ErrMCPTestFailed):
-		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": mcpErrorMessage(err)})
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, mcpErrorMessage(err))
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": err.Error()})
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 	}
 	return true
 }
@@ -309,8 +288,8 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 	}
 	var raw map[string]json.RawMessage
 	if len(body) > 0 {
-		if err := json.Unmarshal(body, &raw); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "Invalid request body: " + err.Error()})
+		if err = json.Unmarshal(body, &raw); err != nil {
+			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 			return
 		}
 	}
@@ -319,11 +298,7 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 	if !hasServers {
 		// Match Python validate_request: code 101, message includes the
 		// trailing "; " separator the Python decorator emits.
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"data":    nil,
-			"message": "required argument are missing: mcpServers; ",
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "required argument are missing: mcpServers; ")
 		return
 	}
 
@@ -333,7 +308,7 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 		return
 	}
 	if len(servers) == 0 {
-		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": "No MCP servers provided."})
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "No MCP servers provided.")
 		return
 	}
 
@@ -347,11 +322,11 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 
 	results, err := h.mcpService.ImportServers(user.ID, servers, timeout)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": err.Error()})
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": gin.H{"results": results}, "message": "success"})
+	common.SuccessWithData(c, gin.H{"results": results}, "success")
 }
 
 // TestMCPServer opens a live MCP session and returns the tools the server advertises.
@@ -371,7 +346,7 @@ func (h *MCPHandler) TestMCPServer(c *gin.Context) {
 
 	mcpID := c.Param("mcp_id")
 	if mcpID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "mcp_id is required"})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "mcp_id is required")
 		return
 	}
 
@@ -389,11 +364,7 @@ func (h *MCPHandler) TestMCPServer(c *gin.Context) {
 		missingFields = append(missingFields, "server_type")
 	}
 	if len(missingFields) > 0 {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"data":    nil,
-			"message": "required argument are missing: " + strings.Join(missingFields, ", ") + "; ",
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "required argument are missing: "+strings.Join(missingFields, ", ")+"; ")
 		return
 	}
 
@@ -401,7 +372,7 @@ func (h *MCPHandler) TestMCPServer(c *gin.Context) {
 	if mcpErrorResponse(c, err) {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": tools, "message": "success"})
+	common.SuccessWithData(c, tools, "success")
 }
 
 func newMCPServerResponse(server *entity.MCPServer) *mcpServerResponse {

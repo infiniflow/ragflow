@@ -356,7 +356,7 @@ func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
 	if templates == nil {
 		templates = []*entity.CanvasTemplate{}
 	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": templates, "message": "success"})
+	common.SuccessWithData(c, templates, "success")
 }
 
 func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*service.ListAgentsResponse, common.ErrorCode, error) {

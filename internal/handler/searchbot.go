@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -139,39 +138,23 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 
 	var req SearchBotRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"data":    nil,
-			"message": "question is required",
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
 	if req.Question == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"data":    nil,
-			"message": "question is required",
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
 		return
 	}
 
 	questions, err := service.GenerateRelatedQuestions(user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
 	if err != nil {
 		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeOperatingError,
-			"data":    nil,
-			"message": "LLM call failed",
-		})
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "LLM call failed")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    questions,
-		"message": "success",
-	})
+	common.SuccessWithData(c, questions, "success")
 }
 
 // RetrievalTest performs a retrieval test against specified knowledge bases.

@@ -192,11 +192,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 			// 501 — multipart/form-data uploads are not yet
 			// supported. Body is short so operators see exactly what
 			// is missing.
-			c.JSON(http.StatusNotImplemented, gin.H{
-				"code":    http.StatusNotImplemented,
-				"data":    false,
-				"message": parseErr.Error(),
-			})
+			common.ResponseWithCodeData(c, http.StatusNotImplemented, false, parseErr.Error())
 			return
 		case errors.Is(parseErr, ErrWebhookContentTypeMismatch):
 			common.ResponseWithCodeData(c, common.CodeDataError, nil, parseErr.Error())

@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
@@ -89,28 +88,19 @@ func (h *Handler) Login(c *gin.Context) {
 
 	// Check if user is superuser (admin)
 	if user.IsSuperuser == nil || !*user.IsSuperuser {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeForbidden,
-			"message": "Only superuser can login admin system",
-		})
+		common.ErrorWithCode(c, int(common.CodeForbidden), "Only superuser can login admin system")
 		return
 	}
 
 	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
-		})
+		common.ErrorWithCode(c, int(common.CodeServerError), fmt.Sprintf("Failed to get secret key: %s", err.Error()))
 		return
 	}
 
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": fmt.Sprintf("Failed to generate auth token: %s", err.Error()),
-		})
+		common.ErrorWithCode(c, int(common.CodeServerError), fmt.Sprintf("Failed to generate auth token: %s", err.Error()))
 		return
 	}
 
@@ -122,11 +112,7 @@ func (h *Handler) Login(c *gin.Context) {
 	c.Header("Access-Control-Allow-Headers", "*")
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "Welcome back!",
-		"data":    user,
-	})
+	common.SuccessWithData(c, user, "Welcome back!")
 }
 
 // Logout handle logout
@@ -488,10 +474,7 @@ func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
 func (h *Handler) GetServices(c *gin.Context) {
 	services, err := h.service.ListServices()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    common.CodeServerError,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeServerError), err.Error())
 		return
 	}
 
@@ -733,10 +716,7 @@ func (h *Handler) GetVersion(c *gin.Context) {
 
 // GetFingerprint handle get system fingerprint
 func (h *Handler) GetFingerprint(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{
-		"code":    common.CodeServerError,
-		"message": "method not implemented",
-	})
+	common.ErrorWithCode(c, int(common.CodeServerError), "method not implemented")
 	return
 }
 
@@ -746,10 +726,7 @@ type SetLicenseHTTPRequest struct {
 
 // SetLicense to set system license
 func (h *Handler) SetLicense(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{
-		"code":    common.CodeServerError,
-		"message": "method not implemented",
-	})
+	common.ErrorWithCode(c, int(common.CodeServerError), "method not implemented")
 	return
 }
 
@@ -759,19 +736,13 @@ type SetLicenseConfigHTTPRequest struct {
 }
 
 func (h *Handler) UpdateLicenseConfig(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{
-		"code":    common.CodeServerError,
-		"message": "method not implemented",
-	})
+	common.ErrorWithCode(c, int(common.CodeServerError), "method not implemented")
 	return
 }
 
 // ShowLicense to get system license
 func (h *Handler) ShowLicense(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{
-		"code":    common.CodeServerError,
-		"message": "method not implemented",
-	})
+	common.ErrorWithCode(c, int(common.CodeServerError), "method not implemented")
 	return
 }
 
@@ -888,19 +859,13 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		// Get user by access token
 		user, code, err := h.userService.GetUserByToken(token)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"code":    code,
-				"message": "Invalid access token",
-			})
+			common.ErrorWithCode(c, int(code), "Invalid access token")
 			c.Abort()
 			return
 		}
 
 		if !*user.IsSuperuser {
-			c.JSON(http.StatusForbidden, gin.H{
-				"code":    common.CodeForbidden,
-				"message": "Permission denied",
-			})
+			common.ErrorWithCode(c, int(common.CodeForbidden), "Permission denied")
 			return
 		}
 
@@ -1215,10 +1180,7 @@ func (h *Handler) Reports(c *gin.Context) {
 
 	// Only process heartbeat messages for now
 	if req.MessageType != common.MessageHeartbeat {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": "Unsupported report type: " + string(req.MessageType),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), "Unsupported report type: "+string(req.MessageType))
 		return
 	}
 
@@ -1261,10 +1223,7 @@ func (h *Handler) ListAllModels(c *gin.Context) {
 func (h *Handler) ShowModel(c *gin.Context) {
 	encodedModelName := c.Param("model_name")
 	if encodedModelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Encoded model name is empty",
-		})
+		common.ErrorWithCode(c, 400, "Encoded model name is empty")
 		return
 	}
 

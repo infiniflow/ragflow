@@ -22,7 +22,6 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -572,11 +571,6 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": message,
-		"data":    nil,
-	})
 	common.SuccessNoData(c, message)
 }
 
