@@ -213,7 +213,7 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	debugState := canvas.NewCanvasState("debug-"+componentID, "debug-task")
 	debugState.Sys["tenant_id"] = user.ID
 	for key, value := range inputs {
-		if strings.HasPrefix(key, "sys.") {
+		if strings.HasPrefix(key, "sys.") && key != "sys.tenant_id" {
 			debugState.Sys[strings.TrimPrefix(key, "sys.")] = value
 		}
 	}
