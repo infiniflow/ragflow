@@ -1,0 +1,47 @@
+instruction: |
+    - Each page must be a proper encyclopedic article, NOT a flat bullet list:
+    - 1. Take prefix ">" or "-" in the "page_example" as instructions to generate the content.
+    - 2. Sections with H2 headings, each starting with prose before sub-bullets.
+page_example: |
+    # Tone of voice
+
+    ## Principles
+    > The tonal principles that shape the way you communicate.
+    ### Principle 1
+    > Details
+    ### Principle 2
+    > Details
+
+    ## Voice
+    > Qualify what your company public's personality is and is not.
+
+    ### We are adjective, not adjective
+    > Details
+
+    ### We are adjective, not adjective
+    > Details
+
+    ## Tone
+    > Describe your general tone
+    > Use the matrix below to determine which tonal principles should drive which messaging.
+    | Channel | Leading tonal principle |	Copy examples
+    | :--- | :---: | ---: |
+    |Website|Principle|Example
+    |Advertising|Principle|Example
+    |Social|Principle|Example
+
+    ## Stylistic guidance
+    > Easy rules and tactics everyone can apply about punctuation, lexicon, formatting...
+    ### Tip 1
+    > Details
+    ### Tip 2
+    > Details
+
+    ## Dos & Dont's
+    |We say  👍|	We don't say  🙅|
+    | :--- | :---: | 
+    |Example|	Example|
+    |Example|	Example|
+
+topic: marketing
+      

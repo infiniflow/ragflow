@@ -16,14 +16,18 @@
 
 import asyncio
 import io
+import logging
+import os
 import re
+import tempfile
 
 import numpy as np
 from PIL import Image
 
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_first_provider_model_name, get_model_config_from_provider_instance, ensure_paddleocr_from_env
 from common.constants import LLMType
+from common.parser_config_utils import normalize_layout_recognizer
 from common.string_utils import clean_markdown_block
 from deepdoc.vision import OCR
 from rag.nlp import attach_media_context, rag_tokenizer, tokenize
@@ -54,8 +58,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             cv_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.IMAGE2TEXT)
             cv_mdl = LLMBundle(tenant_id, model_config=cv_model_config, lang=lang)
             video_prompt = str(parser_config.get("video_prompt", "") or "")
-            ans = asyncio.run(
-                cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=binary, filename=filename, video_prompt=video_prompt))
+            ans = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=binary, filename=filename, video_prompt=video_prompt))
             callback(0.8, "CV LLM respond: %s ..." % ans[:32])
             ans += "\n" + ans
             tokenize(doc, ans, eng)
@@ -70,8 +73,15 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
                 "doc_type_kwd": "image",
             }
         )
-        bxs = ocr(np.array(img))
-        txt = "\n".join([t[0] for _, t in bxs if t[0]])
+
+        # Try PaddleOCR if configured as layout_recognize
+        txt = _try_paddleocr_image(filename, binary, tenant_id, parser_config, callback)
+
+        if not txt:
+            # Fallback to local deepdoc OCR
+            bxs = ocr(np.array(img))
+            txt = "\n".join([t[0] for _, t in bxs if t[0]])
+
         callback(0.4, "Finish OCR: (%s ...)" % txt[:12])
         if (eng and len(txt.split()) > 32) or len(txt) > 32:
             tokenize(doc, txt, eng)
@@ -94,6 +104,47 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             callback(prog=-1, msg=str(e))
 
     return []
+
+
+def _try_paddleocr_image(filename, binary, tenant_id, parser_config, callback):
+    """Try to parse image using PaddleOCR if configured. Returns text or empty string."""
+    layout_recognize = parser_config.get("layout_recognize", "")
+    if not layout_recognize:
+        return ""
+
+    layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize)
+    if layout_recognizer != "PaddleOCR":
+        return ""
+
+    try:
+        paddleocr_llm_name = parser_model_name
+        if not paddleocr_llm_name:
+            paddleocr_llm_name = get_first_provider_model_name(tenant_id, "PaddleOCR", LLMType.OCR) or ensure_paddleocr_from_env(tenant_id)
+
+        if not paddleocr_llm_name:
+            return ""
+
+        ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, paddleocr_llm_name)
+        ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config)
+        pdf_parser = ocr_model.mdl
+
+        if not hasattr(pdf_parser, "parse_image"):
+            logging.warning("[PaddleOCR] parse_image not available, falling back to local OCR")
+            return ""
+
+        callback(0.2, "Using PaddleOCR to parse image...")
+        with tempfile.NamedTemporaryFile(suffix=os.path.splitext(filename)[1] or ".png", delete=True) as tmp:
+            tmp.write(binary)
+            tmp.flush()
+            txt = pdf_parser.parse_image(filepath=tmp.name, binary=binary, callback=callback)
+
+        if txt:
+            logging.info(f"[PaddleOCR] image parsed successfully: {len(txt)} chars")
+            return txt
+    except Exception as e:
+        logging.warning(f"[PaddleOCR] image parsing failed, falling back to local OCR: {e}")
+
+    return ""
 
 
 def vision_llm_chunk(binary, vision_model, prompt=None, callback=None):

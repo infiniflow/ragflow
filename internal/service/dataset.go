@@ -17,20 +17,33 @@
 package service
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
+	"math"
+	"math/rand"
+	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	redisengine "ragflow/internal/engine/redis"
+	"ragflow/internal/engine/types"
+	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/server"
 	"ragflow/internal/service/nlp"
+	"ragflow/internal/storage"
 	"ragflow/internal/utility"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -79,9 +92,14 @@ var (
 
 const (
 	// Keep the legacy worker marker in queue payloads; persisted tasks use a real document ID.
-	graphRaptorQueueDocID = "graph_raptor_x"
-	maximumTaskPageNumber = int64(100000000)
-	serverQueueNamePrefix = "te"
+	graphRaptorQueueDocID    = "graph_raptor_x"
+	maximumPageNumber        = int64(100000)
+	maximumTaskPageNumber    = int64(100000000)
+	serverQueueNamePrefix    = "te"
+	defaultEmbeddingCheckNum = 5
+
+	graphPhaseResolutionDone = "resolution_done"
+	graphPhaseCommunityDone  = "community_done"
 )
 
 // DatasetService implements the RESTful dataset APIs from dataset_api.py.
@@ -123,15 +141,15 @@ func NewDatasetService() *DatasetService {
 	}
 }
 
-func (s *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
-	if _, err := s.kbDAO.GetByIDAndTenantID(datasetID, userID); err != nil {
+func (d *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
+	if _, err := d.kbDAO.GetByIDAndTenantID(datasetID, userID); err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("You don't own the dataset.")
 		}
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
 
-	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(documentID, datasetID)
+	doc, err := d.documentDAO.GetByDocumentIDAndDatasetID(documentID, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("Document %s not found in dataset %s", documentID, datasetID)
@@ -150,11 +168,11 @@ func (s *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documen
 	}
 	parserConfig["metadata"] = metadata
 
-	if err := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
+	if err := d.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
 		return nil, common.CodeExceptionError, err
 	}
 
-	updatedDoc, err := s.documentDAO.GetByID(doc.ID)
+	updatedDoc, err := d.documentDAO.GetByID(doc.ID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("Document not found!")
@@ -165,6 +183,7 @@ func (s *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documen
 	return updatedDoc, common.CodeSuccess, nil
 }
 
+// checkType reports whether indexType is supported by dataset index APIs.
 func checkType(indexType string) bool {
 	haveType := false
 	for _, t := range validIndexTypes {
@@ -175,7 +194,7 @@ func checkType(indexType string) bool {
 	return haveType
 }
 
-func (s *DatasetService) newRaptorOrGraphRagTask(sampleDoc *entity.Document, taskType string, taskDocID string, queueDocID string, docIDs []string) (*entity.Task, map[string]interface{}, error) {
+func (d *DatasetService) newRaptorOrGraphRagTask(sampleDoc *entity.Document, taskType string, taskDocID string, queueDocID string, docIDs []string) (*entity.Task, map[string]interface{}, error) {
 	if docIDs == nil || len(docIDs) == 0 {
 		docIDs = make([]string, 0)
 	}
@@ -183,7 +202,7 @@ func (s *DatasetService) newRaptorOrGraphRagTask(sampleDoc *entity.Document, tas
 		return nil, nil, errors.New("type should be graphrag, raptor or mindmap")
 	}
 
-	chunkingConfig, err := s.documentDAO.GetChunkingConfig(sampleDoc.ID)
+	chunkingConfig, err := d.documentDAO.GetChunkingConfig(sampleDoc.ID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -318,6 +337,19 @@ func datasetIndexTaskIDColumn(indexType string) string {
 	}
 }
 
+func datasetIndexTaskFinishAtColumn(indexType string) string {
+	switch indexType {
+	case "graph":
+		return "graphrag_task_finish_at"
+	case "raptor":
+		return "raptor_task_finish_at"
+	case "mindmap":
+		return "mindmap_task_finish_at"
+	default:
+		return ""
+	}
+}
+
 func checkIndexTaskType(taskType string) bool {
 	switch taskType {
 	case "graphrag", "raptor", "mindmap":
@@ -379,8 +411,27 @@ func datasetIndexQueueName(priority int) string {
 	return fmt.Sprintf("%s.%d.common", serverQueueNamePrefix, priority)
 }
 
+func interfaceSlice(items ...string) []interface{} {
+	result := make([]interface{}, len(items))
+	for i, item := range items {
+		result[i] = item
+	}
+	return result
+}
+
+func clearGraphPhaseMarkers(redisClient *redisengine.RedisClient, datasetID string) {
+	if redisClient == nil || datasetID == "" {
+		return
+	}
+	for _, phase := range []string{graphPhaseResolutionDone, graphPhaseCommunityDone} {
+		if !redisClient.Delete(fmt.Sprintf("graphrag:phase:%s:%s", datasetID, phase)) {
+			common.Warn("Failed to clear GraphRAG phase marker", zap.String("dataset_id", datasetID), zap.String("phase", phase))
+		}
+	}
+}
+
 // RunIndex Run an indexing task (graph/raptor/mindmap) for a dataset.
-func (s *DatasetService) RunIndex(userID, datasetID, indexType string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) RunIndex(userID, datasetID, indexType string) (map[string]interface{}, common.ErrorCode, error) {
 	if !checkType(indexType) {
 		return nil, common.CodeDataError, fmt.Errorf("Invalid index type '%s'. Must be one of %v", indexType, validIndexTypes)
 	}
@@ -388,11 +439,11 @@ func (s *DatasetService) RunIndex(userID, datasetID, indexType string) (map[stri
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
 	}
-	if !s.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("No authorization.")
 	}
 
-	kb, err := s.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
@@ -403,7 +454,7 @@ func (s *DatasetService) RunIndex(userID, datasetID, indexType string) (map[stri
 	taskType := indexTypeToTaskType[indexType]
 	displayName := indexTypeToDisplayName[indexType]
 
-	documents, code, err := s.getDocumentsByDatasetForIndex(datasetID)
+	documents, code, err := d.getDocumentsByDatasetForIndex(datasetID)
 	if err != nil {
 		return nil, code, err
 	}
@@ -416,7 +467,7 @@ func (s *DatasetService) RunIndex(userID, datasetID, indexType string) (map[stri
 		documentIDs[i] = doc.ID
 	}
 
-	task, queueMessage, err := s.newRaptorOrGraphRagTask(sampleDocument, taskType, sampleDocument.ID, graphRaptorQueueDocID, documentIDs)
+	task, queueMessage, err := d.newRaptorOrGraphRagTask(sampleDocument, taskType, sampleDocument.ID, graphRaptorQueueDocID, documentIDs)
 	if err != nil {
 		common.Warn("Failed to build dataset index task", zap.String("dataset_id", datasetID), zap.String("task_type", taskType), zap.Error(err))
 		return nil, common.CodeDataError, errors.New("Internal server error")
@@ -472,8 +523,8 @@ func (s *DatasetService) RunIndex(userID, datasetID, indexType string) (map[stri
 	return map[string]interface{}{"task_id": task.ID}, common.CodeSuccess, nil
 }
 
-func (s *DatasetService) getDocumentsByDatasetForIndex(datasetID string) ([]*entity.Document, common.ErrorCode, error) {
-	documents, _, err := s.documentDAO.GetByKBID(datasetID)
+func (d *DatasetService) getDocumentsByDatasetForIndex(datasetID string) ([]*entity.Document, common.ErrorCode, error) {
+	documents, _, err := d.documentDAO.GetByKBID(datasetID)
 	if err != nil {
 		common.Warn("Failed to load dataset documents for index", zap.String("dataset_id", datasetID), zap.Error(err))
 		return nil, common.CodeDataError, errors.New("Internal server error")
@@ -489,7 +540,7 @@ type TraceIndexRequest struct {
 }
 
 // TraceIndex Trace an indexing task (graph/raptor/mindmap) for a dataset.
-func (s *DatasetService) TraceIndex(datasetID, userID, indexType string) (*entity.Task, common.ErrorCode, error) {
+func (d *DatasetService) TraceIndex(datasetID, userID, indexType string) (*entity.Task, common.ErrorCode, error) {
 	if !checkType(indexType) {
 		return nil, common.CodeDataError, fmt.Errorf("Invalid index type '%s'. Must be one of %v", indexType, validIndexTypes)
 	}
@@ -497,11 +548,11 @@ func (s *DatasetService) TraceIndex(datasetID, userID, indexType string) (*entit
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
 	}
-	if !s.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("No authorization.")
 	}
 
-	kb, err := s.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
@@ -513,7 +564,7 @@ func (s *DatasetService) TraceIndex(datasetID, userID, indexType string) (*entit
 
 	var task *entity.Task
 	if taskID != "" {
-		task, err = s.taskDAO.GetByID(taskID)
+		task, err = d.taskDAO.GetByID(taskID)
 		if err != nil {
 			if dao.IsNotFoundErr(err) {
 				return nil, common.CodeSuccess, nil
@@ -526,6 +577,1119 @@ func (s *DatasetService) TraceIndex(datasetID, userID, indexType string) (*entit
 	}
 
 	return task, common.CodeSuccess, nil
+}
+
+type CheckEmbeddingRequest struct {
+	EmbeddingID string `json:"embd_id" binding:"required"`
+	CheckNum    *int   `json:"check_num,omitempty"`
+}
+
+type EmbeddingCheckSummary struct {
+	KbID      string  `json:"kb_id"`
+	Model     string  `json:"model"`
+	Sampled   int     `json:"sampled"`
+	Valid     int     `json:"valid"`
+	AvgCosSim float64 `json:"avg_cos_sim"`
+	MinCosSim float64 `json:"min_cos_sim"`
+	MaxCosSim float64 `json:"max_cos_sim"`
+	MatchMode string  `json:"match_mode"`
+}
+
+type EmbeddingCheckResult struct {
+	ChunkID     string  `json:"chunk_id"`
+	DocID       string  `json:"doc_id,omitempty"`
+	DocName     string  `json:"doc_name,omitempty"`
+	VectorField string  `json:"vector_field,omitempty"`
+	VectorDim   int     `json:"vector_dim,omitempty"`
+	CosSim      float64 `json:"cos_sim,omitempty"`
+	Reason      string  `json:"reason,omitempty"`
+}
+
+type EmbeddingCheckResponse struct {
+	Summary EmbeddingCheckSummary  `json:"summary"`
+	Results []EmbeddingCheckResult `json:"results"`
+}
+
+type embeddingCheckSample struct {
+	ChunkID           string
+	KbID              string
+	DocID             string
+	DocName           string
+	VectorField       string
+	Vector            []float64
+	PageNum           interface{}
+	Position          interface{}
+	Top               interface{}
+	ContentWithWeight string
+	QuestionKeywords  []string
+}
+
+type datasetParsePageRange struct {
+	from int64
+	to   int64
+}
+
+// RunEmbedding runs embedding for all documents in a dataset.
+func (d *DatasetService) RunEmbedding(userID, datasetID string) (map[string]interface{}, common.ErrorCode, error) {
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+	}
+	if !d.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("No authorization.")
+	}
+
+	kb, err := d.kbDAO.GetByID(datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+		}
+		return nil, common.CodeServerError, errors.New("Internal server error")
+	}
+
+	documents, _, err := d.documentDAO.GetByKBID(datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("Internal server error")
+	}
+	if len(documents) == 0 {
+		return nil, common.CodeDataError, fmt.Errorf("No documents in Dataset %s", datasetID)
+	}
+
+	tableDoneCountByKB := make(map[string]int64)
+	scheduledCount := 0
+	for _, doc := range documents {
+		if doc == nil {
+			continue
+		}
+		if err := d.runEmbeddingDocument(kb, doc, tableDoneCountByKB); err != nil {
+			common.Warn("Failed to schedule dataset embedding document",
+				zap.String("datasetID", datasetID),
+				zap.String("docID", doc.ID),
+				zap.Error(err))
+			return nil, common.CodeServerError, errors.New("Internal server error")
+		}
+		scheduledCount++
+	}
+
+	return map[string]interface{}{
+		"scheduled_count": scheduledCount,
+	}, common.CodeSuccess, nil
+}
+
+func (d *DatasetService) runEmbeddingDocument(kb *entity.Knowledgebase, doc *entity.Document, tableDoneCountByKB map[string]int64) error {
+	if doc.PipelineID != nil && strings.TrimSpace(*doc.PipelineID) != "" {
+		return d.queueDatasetDataflowTask(kb, doc, strings.TrimSpace(*doc.PipelineID), 0)
+	}
+
+	if doc.ParserID == string(entity.ParserTypeTable) {
+		doneCount, ok := tableDoneCountByKB[doc.KbID]
+		if !ok {
+			count, err := d.countDoneDocuments(doc.KbID)
+			if err != nil {
+				return err
+			}
+			doneCount = count
+			tableDoneCountByKB[doc.KbID] = doneCount
+			if doneCount <= 0 {
+				if err := d.kbDAO.DeleteFieldMap(doc.KbID); err != nil && !dao.IsNotFoundErr(err) {
+					return err
+				}
+			}
+		}
+	}
+
+	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+	if d.docEngine != nil {
+		if _, err := d.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+			return err
+		}
+	}
+	if _, err := d.taskDAO.DeleteByDocIDs([]string{doc.ID}); err != nil {
+		return err
+	}
+
+	bucket, objectName, err := NewDocumentService().GetDocumentStorageAddress(doc)
+	if err != nil {
+		return err
+	}
+	if err := d.queueDatasetParseTasks(doc, bucket, objectName, 0); err != nil {
+		return err
+	}
+	if err := d.beginDatasetParseDocument(doc.ID); err != nil {
+		if _, delErr := d.taskDAO.DeleteByDocIDs([]string{doc.ID}); delErr != nil {
+			common.Warn("Failed to clean parse tasks after document state update failure",
+				zap.String("docID", doc.ID),
+				zap.Error(delErr))
+		}
+		return err
+	}
+	return nil
+}
+
+func (d *DatasetService) queueDatasetDataflowTask(kb *entity.Knowledgebase, doc *entity.Document, flowID string, priority int64) error {
+	if _, err := d.taskDAO.DeleteByDocIDs([]string{doc.ID}); err != nil {
+		return err
+	}
+	if err := d.beginDatasetParseDocument(doc.ID); err != nil {
+		return err
+	}
+
+	now := time.Now()
+	task := &entity.Task{
+		ID:       common.GenerateUUID(),
+		DocID:    doc.ID,
+		FromPage: 0,
+		ToPage:   maximumTaskPageNumber,
+		TaskType: "dataflow",
+		Priority: priority,
+		BeginAt:  &now,
+		Progress: 0,
+	}
+	if err := d.taskDAO.CreateMany([]*entity.Task{task}); err != nil {
+		return err
+	}
+
+	message := datasetParseTaskMessage(task)
+	message["task_type"] = task.TaskType
+	message["kb_id"] = doc.KbID
+	message["tenant_id"] = kb.TenantID
+	message["dataflow_id"] = flowID
+	message["file"] = nil
+	if redisClient := redisengine.Get(); redisClient == nil || !redisClient.QueueProduct(datasetParseQueueName(doc, priority), message) {
+		return fmt.Errorf("Can't access Redis. Please check the Redis' status.")
+	}
+	return nil
+}
+
+func (d *DatasetService) countDoneDocuments(datasetID string) (int64, error) {
+	var count int64
+	err := dao.GetDB().Model(&entity.Document{}).
+		Where("kb_id = ? AND run = ?", datasetID, string(entity.TaskStatusDone)).
+		Count(&count).Error
+	return count, err
+}
+
+func (d *DatasetService) queueDatasetParseTasks(doc *entity.Document, bucket, objectName string, priority int64) error {
+	tasks, err := d.buildDatasetParseTasks(doc, bucket, objectName, priority)
+	if err != nil {
+		return err
+	}
+	if len(tasks) == 0 {
+		return nil
+	}
+	if err := d.taskDAO.CreateMany(tasks); err != nil {
+		return err
+	}
+	queueName := datasetParseQueueName(doc, priority)
+	for _, task := range tasks {
+		if task.Progress >= 1 {
+			continue
+		}
+		if redisClient := redisengine.Get(); redisClient == nil || !redisClient.QueueProduct(queueName, datasetParseTaskMessage(task)) {
+			if _, delErr := d.taskDAO.DeleteByDocIDs([]string{doc.ID}); delErr != nil {
+				common.Warn("Failed to clean parse tasks after Redis enqueue failure",
+					zap.String("docID", doc.ID),
+					zap.Error(delErr))
+			}
+			return fmt.Errorf("Can't access Redis. Please check the Redis' status.")
+		}
+	}
+	return nil
+}
+
+func (d *DatasetService) buildDatasetParseTasks(doc *entity.Document, bucket, objectName string, priority int64) ([]*entity.Task, error) {
+	ranges, err := datasetParseTaskRanges(doc, bucket, objectName)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	tasks := make([]*entity.Task, 0, len(ranges))
+	for _, pageRange := range ranges {
+		progressMsg := ""
+		digest := datasetParseTaskDigest(doc, pageRange.from, pageRange.to)
+		chunkIDs := ""
+		tasks = append(tasks, &entity.Task{
+			ID:          common.GenerateUUID(),
+			DocID:       doc.ID,
+			FromPage:    pageRange.from,
+			ToPage:      pageRange.to,
+			TaskType:    "",
+			Priority:    priority,
+			BeginAt:     &now,
+			Progress:    0,
+			ProgressMsg: &progressMsg,
+			Digest:      &digest,
+			ChunkIDs:    &chunkIDs,
+		})
+	}
+	return tasks, nil
+}
+
+func (d *DatasetService) beginDatasetParseDocument(docID string) error {
+	now := time.Now()
+	return dao.GetDB().Model(&entity.Document{}).Where("id = ?", docID).Updates(map[string]interface{}{
+		"progress_msg":     "Task is queued...",
+		"process_begin_at": now,
+		"progress":         rand.Float64() * 0.01,
+		"run":              string(entity.TaskStatusRunning),
+		"chunk_num":        0,
+		"token_num":        0,
+	}).Error
+}
+
+// CheckEmbedding checks whether a new embedding model is compatible with stored vectors.
+func (d *DatasetService) CheckEmbedding(userID, datasetID string, req *CheckEmbeddingRequest) (*EmbeddingCheckResponse, common.ErrorCode, error) {
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+	}
+	if !d.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("No authorization.")
+	}
+
+	kb, err := d.kbDAO.GetByID(datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+		}
+		return nil, common.CodeServerError, errors.New("Internal server error")
+	}
+
+	if req == nil || strings.TrimSpace(req.EmbeddingID) == "" {
+		return nil, common.CodeDataError, errors.New("`embd_id` is required.")
+	}
+	embeddingID := strings.TrimSpace(req.EmbeddingID)
+	if ok, message := d.verifyEmbeddingAvailability(embeddingID, userID); !ok {
+		return nil, common.CodeDataError, errors.New(message)
+	}
+	if d.docEngine == nil {
+		return nil, common.CodeServerError, errors.New("doc engine not initialized")
+	}
+
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().GetModelConfigFromProviderInstance(kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+
+	checkNum := defaultEmbeddingCheckNum
+	if req.CheckNum != nil {
+		checkNum = *req.CheckNum
+	}
+	if checkNum <= 0 {
+		checkNum = defaultEmbeddingCheckNum
+	}
+
+	samples, err := d.sampleRandomChunksWithVectors(context.Background(), kb.TenantID, datasetID, checkNum)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	results := make([]EmbeddingCheckResult, 0, len(samples))
+	effectiveSimilarities := make([]float64, 0, len(samples))
+	matchMode := "content_only"
+	for _, sample := range samples {
+		title := sample.DocName
+		if strings.TrimSpace(title) == "" {
+			title = "Title"
+		}
+
+		textInput := strings.Join(sample.QuestionKeywords, "\n")
+		if strings.TrimSpace(textInput) == "" {
+			textInput = sample.ContentWithWeight
+		}
+		textInput = datasetCleanEmbeddingText(textInput)
+		if textInput == "" {
+			results = append(results, EmbeddingCheckResult{ChunkID: sample.ChunkID, Reason: "no_text"})
+			continue
+		}
+		if len(sample.Vector) == 0 {
+			results = append(results, EmbeddingCheckResult{ChunkID: sample.ChunkID, Reason: "no_stored_vector"})
+			continue
+		}
+
+		vectors, err := datasetEncodeEmbedding(embeddingModel, []string{title, textInput})
+		if err != nil {
+			return nil, common.CodeDataError, fmt.Errorf("Embedding failure. %w", err)
+		}
+		if len(vectors) < 2 {
+			return nil, common.CodeDataError, errors.New("Embedding failure. embedding response is incomplete")
+		}
+		if len(vectors[1]) != len(sample.Vector) {
+			return nil, common.CodeDataError, fmt.Errorf("Embedding failure. The dimension (%d) of given embedding model is different from the original (%d)", len(vectors[1]), len(sample.Vector))
+		}
+
+		simContent := datasetCosSim(vectors[1], sample.Vector)
+		simMix := datasetCosSim(datasetMixVectors(vectors[0], vectors[1], 0.1), sample.Vector)
+		sim := simContent
+		matchMode = "content_only"
+		if simMix > sim {
+			sim = simMix
+			matchMode = "title+content"
+		}
+		sim = datasetRoundFloat(sim, 6)
+
+		effectiveSimilarities = append(effectiveSimilarities, sim)
+		results = append(results, EmbeddingCheckResult{
+			ChunkID:     sample.ChunkID,
+			DocID:       sample.DocID,
+			DocName:     sample.DocName,
+			VectorField: sample.VectorField,
+			VectorDim:   len(sample.Vector),
+			CosSim:      sim,
+		})
+	}
+
+	summary := datasetEmbeddingCheckSummary(datasetID, embeddingID, len(samples), effectiveSimilarities, matchMode)
+	response := &EmbeddingCheckResponse{Summary: summary, Results: results}
+	if len(effectiveSimilarities) == 0 {
+		return nil, common.CodeDataError, errors.New("No embedded chunks are available to compare.")
+	}
+	if summary.AvgCosSim >= 0.9 {
+		return response, common.CodeSuccess, nil
+	}
+	return response, common.CodeNotEffective, errors.New("Embedding model switch failed: the average similarity between old and new vectors is below 0.9, indicating incompatible vector spaces.")
+}
+
+func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tenantID, datasetID string, n int) ([]embeddingCheckSample, error) {
+	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	totalResult, err := d.docEngine.Search(ctx, &enginetypes.SearchRequest{
+		IndexNames: []string{indexName},
+		KbIDs:      []string{datasetID},
+		Offset:     0,
+		Limit:      1,
+		Filter: map[string]interface{}{
+			"kb_id":         datasetID,
+			"available_int": 1,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if totalResult == nil || totalResult.Total <= 0 {
+		return []embeddingCheckSample{}, nil
+	}
+
+	total := int(totalResult.Total)
+	// Cap n to a sane upper bound so a hostile caller can't force a
+	// huge preallocation. The downstream `samples` slice is sized
+	// directly from n.
+	const maxEmbeddingSamples = 1024
+	if n < 0 {
+		return nil, fmt.Errorf("invalid sample size: %d", n)
+	}
+	if n > maxEmbeddingSamples {
+		n = maxEmbeddingSamples
+	}
+	if n > total {
+		n = total
+	}
+	limit := total
+	if limit > 1000 {
+		limit = 1000
+	}
+	if n > limit {
+		n = limit
+	}
+	offsets := rand.Perm(limit)
+	offsets = offsets[:n]
+	sort.Ints(offsets)
+
+	baseFields := []string{"docnm_kwd", "doc_id", "content_with_weight", "page_num_int", "position_int", "top_int"}
+	// codeql[go/uncontrolled-allocation-size] False positive: n is
+	// bounded to maxEmbeddingSamples (1024) at the top of this
+	// function, so the samples slice cannot exceed ~1 MiB
+	// (embeddingCheckSample is a small struct).
+	samples := make([]embeddingCheckSample, 0, n)
+	for _, offset := range offsets {
+		searchResult, err := d.docEngine.Search(ctx, &enginetypes.SearchRequest{
+			IndexNames:   []string{indexName},
+			KbIDs:        []string{datasetID},
+			Offset:       offset,
+			Limit:        1,
+			SelectFields: baseFields,
+			Filter: map[string]interface{}{
+				"kb_id":         datasetID,
+				"available_int": 1,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if searchResult == nil || len(searchResult.Chunks) == 0 {
+			continue
+		}
+		chunkID := datasetChunkID(searchResult.Chunks[0])
+		if chunkID == "" {
+			continue
+		}
+		fullChunk, err := d.docEngine.GetChunk(ctx, indexName, chunkID, []string{datasetID})
+		if err != nil {
+			return nil, err
+		}
+		chunkMap := datasetMap(fullChunk)
+		if len(chunkMap) == 0 {
+			continue
+		}
+		vectorField := datasetGuessVecField(chunkMap)
+		vector := datasetAsFloatVec(chunkMap[vectorField])
+		samples = append(samples, embeddingCheckSample{
+			ChunkID:           chunkID,
+			KbID:              datasetID,
+			DocID:             datasetString(chunkMap["doc_id"]),
+			DocName:           datasetString(chunkMap["docnm_kwd"]),
+			VectorField:       vectorField,
+			Vector:            vector,
+			PageNum:           chunkMap["page_num_int"],
+			Position:          chunkMap["position_int"],
+			Top:               chunkMap["top_int"],
+			ContentWithWeight: datasetString(chunkMap["content_with_weight"]),
+			QuestionKeywords:  datasetStringSlice(chunkMap["question_kwd"]),
+		})
+	}
+	return samples, nil
+}
+
+func datasetGuessVecField(src map[string]interface{}) string {
+	for k := range src {
+		if strings.HasSuffix(k, "_vec") {
+			return k
+		}
+	}
+	return ""
+}
+
+func datasetAsFloatVec(v interface{}) []float64 {
+	if v == nil {
+		return []float64{}
+	}
+	switch val := v.(type) {
+	case string:
+		parts := strings.Split(val, "\t")
+		res := make([]float64, 0, len(parts))
+		for _, p := range parts {
+			if p == "" {
+				continue
+			}
+			f, err := strconv.ParseFloat(p, 64)
+			if err != nil {
+				continue
+			}
+			res = append(res, f)
+		}
+		return res
+	case []float64:
+		return val
+	case []float32:
+		res := make([]float64, len(val))
+		for i, x := range val {
+			res[i] = float64(x)
+		}
+		return res
+	case []int:
+		res := make([]float64, len(val))
+		for i, x := range val {
+			res[i] = float64(x)
+		}
+		return res
+	case []interface{}:
+		res := make([]float64, 0, len(val))
+		for _, x := range val {
+			switch n := x.(type) {
+			case float64:
+				res = append(res, n)
+			case float32:
+				res = append(res, float64(n))
+			case int:
+				res = append(res, float64(n))
+			case string:
+				f, err := strconv.ParseFloat(n, 64)
+				if err == nil {
+					res = append(res, f)
+				}
+			}
+		}
+		return res
+	}
+	return []float64{}
+}
+
+func datasetCosSim(a, b []float64) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	var dot, na, nb float64
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		dot += a[i] * b[i]
+	}
+	for _, x := range a {
+		na += x * x
+	}
+	for _, x := range b {
+		nb += x * x
+	}
+
+	if na == 0 || nb == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(na) * math.Sqrt(nb))
+}
+
+func datasetCleanEmbeddingText(s string) string {
+	re := regexp.MustCompile(`</?(table|td|caption|tr|th)( [^<>]{0,12})?>`)
+	return strings.TrimSpace(re.ReplaceAllString(s, " "))
+}
+
+func datasetEncodeEmbedding(embeddingModel *models.EmbeddingModel, texts []string) ([][]float64, error) {
+	embeddingConfig := &models.EmbeddingConfig{Dimension: 0}
+	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, texts, embeddingModel.APIConfig, embeddingConfig)
+	if err != nil {
+		return nil, err
+	}
+	vectors := make([][]float64, len(embeddings))
+	for i, embedding := range embeddings {
+		vectors[i] = embedding.Embedding
+	}
+	return vectors, nil
+}
+
+func datasetMixVectors(titleVector, contentVector []float64, titleWeight float64) []float64 {
+	if len(titleVector) != len(contentVector) {
+		return contentVector
+	}
+	mixed := make([]float64, len(contentVector))
+	contentWeight := 1 - titleWeight
+	for i := range contentVector {
+		mixed[i] = titleWeight*titleVector[i] + contentWeight*contentVector[i]
+	}
+	return mixed
+}
+
+func datasetEmbeddingCheckSummary(datasetID, embeddingID string, sampled int, similarities []float64, matchMode string) EmbeddingCheckSummary {
+	summary := EmbeddingCheckSummary{
+		KbID:      datasetID,
+		Model:     embeddingID,
+		Sampled:   sampled,
+		Valid:     len(similarities),
+		MatchMode: matchMode,
+	}
+	if len(similarities) == 0 {
+		return summary
+	}
+	minValue := similarities[0]
+	maxValue := similarities[0]
+	total := 0.0
+	for _, value := range similarities {
+		total += value
+		if value < minValue {
+			minValue = value
+		}
+		if value > maxValue {
+			maxValue = value
+		}
+	}
+	summary.AvgCosSim = datasetRoundFloat(total/float64(len(similarities)), 6)
+	summary.MinCosSim = datasetRoundFloat(minValue, 6)
+	summary.MaxCosSim = datasetRoundFloat(maxValue, 6)
+	return summary
+}
+
+func datasetRoundFloat(value float64, places int) float64 {
+	factor := math.Pow10(places)
+	return math.Round(value*factor) / factor
+}
+
+func datasetChunkID(chunk map[string]interface{}) string {
+	for _, key := range []string{"id", "_id"} {
+		if value := datasetString(chunk[key]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func datasetMap(value interface{}) map[string]interface{} {
+	switch typedValue := value.(type) {
+	case map[string]interface{}:
+		return typedValue
+	default:
+		return map[string]interface{}{}
+	}
+}
+
+func datasetString(value interface{}) string {
+	switch typedValue := value.(type) {
+	case string:
+		return typedValue
+	case fmt.Stringer:
+		return typedValue.String()
+	case nil:
+		return ""
+	default:
+		return fmt.Sprint(typedValue)
+	}
+}
+
+func datasetStringSlice(value interface{}) []string {
+	switch typedValue := value.(type) {
+	case []string:
+		return typedValue
+	case []interface{}:
+		values := make([]string, 0, len(typedValue))
+		for _, item := range typedValue {
+			if s := strings.TrimSpace(datasetString(item)); s != "" {
+				values = append(values, s)
+			}
+		}
+		return values
+	case string:
+		if typedValue == "" {
+			return nil
+		}
+		return []string{typedValue}
+	default:
+		return nil
+	}
+}
+
+func datasetParseQueueName(doc *entity.Document, priority int64) string {
+	suffix := "common"
+	if doc.ParserID == string(entity.ParserTypeResume) {
+		suffix = "resume"
+	}
+	return fmt.Sprintf("%s.%d.%s", serverQueueNamePrefix, priority, suffix)
+}
+
+func datasetParseTaskMessage(task *entity.Task) map[string]interface{} {
+	beginAt := ""
+	if task.BeginAt != nil {
+		beginAt = task.BeginAt.Format("2006-01-02 15:04:05")
+	}
+	digest := ""
+	if task.Digest != nil {
+		digest = *task.Digest
+	}
+	return map[string]interface{}{
+		"id":        task.ID,
+		"doc_id":    task.DocID,
+		"from_page": task.FromPage,
+		"to_page":   task.ToPage,
+		"progress":  task.Progress,
+		"priority":  task.Priority,
+		"begin_at":  beginAt,
+		"digest":    digest,
+	}
+}
+
+func datasetParseTaskDigest(doc *entity.Document, fromPage, toPage int64) string {
+	hasher := xxhash.New()
+	config := datasetChunkingConfigForDigest(doc)
+	keys := make([]string, 0, len(config))
+	for key := range config {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		hasher.WriteString(datasetStableString(config[key]))
+	}
+	hasher.WriteString(doc.ID)
+	hasher.WriteString(strconv.FormatInt(fromPage, 10))
+	hasher.WriteString(strconv.FormatInt(toPage, 10))
+	return fmt.Sprintf("%x", hasher.Sum64())
+}
+
+func datasetChunkingConfigForDigest(doc *entity.Document) map[string]interface{} {
+	return map[string]interface{}{
+		"doc_id":        doc.ID,
+		"kb_id":         doc.KbID,
+		"parser_id":     doc.ParserID,
+		"parser_config": datasetCopyParserConfigForDigest(doc.ParserConfig),
+	}
+}
+
+func datasetCopyParserConfigForDigest(config map[string]interface{}) map[string]interface{} {
+	copied := make(map[string]interface{}, len(config))
+	for key, value := range config {
+		if key == "raptor" || key == "graphrag" {
+			continue
+		}
+		copied[key] = value
+	}
+	return copied
+}
+
+func datasetStableString(value interface{}) string {
+	binary, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprint(value)
+	}
+	return string(binary)
+}
+
+func datasetParseTaskRanges(doc *entity.Document, bucket, objectName string) ([]datasetParsePageRange, error) {
+	if doc.Type == "pdf" {
+		return datasetPDFParseTaskRanges(doc, bucket, objectName)
+	}
+	if doc.ParserID == string(entity.ParserTypeTable) {
+		return datasetTableParseTaskRanges(doc, bucket, objectName)
+	}
+	return []datasetParsePageRange{{from: 0, to: maximumTaskPageNumber}}, nil
+}
+
+func datasetPDFParseTaskRanges(doc *entity.Document, bucket, objectName string) ([]datasetParsePageRange, error) {
+	binary, err := datasetStorageBinary(bucket, objectName)
+	if err != nil {
+		return nil, err
+	}
+	pages := datasetEstimatePDFPageCount(binary)
+	pageSize := int64(datasetParserConfigInt(doc.ParserConfig, "task_page_size", 12))
+	if doc.ParserID == string(entity.ParserTypePaper) {
+		pageSize = int64(datasetParserConfigInt(doc.ParserConfig, "task_page_size", 22))
+	}
+	if doc.ParserID == string(entity.ParserTypeOne) ||
+		doc.ParserID == string(entity.ParserTypeKG) ||
+		datasetParserConfigString(doc.ParserConfig, "layout_recognize", "DeepDOC") != "DeepDOC" ||
+		datasetParserConfigBool(doc.ParserConfig, "toc_extraction", false) {
+		pageSize = maximumTaskPageNumber
+	}
+	if pageSize <= 0 {
+		pageSize = 12
+	}
+
+	pageRanges := datasetParserConfigPageRanges(doc.ParserConfig)
+	ranges := make([]datasetParsePageRange, 0)
+	for _, configuredRange := range pageRanges {
+		start := configuredRange.from - 1
+		if start < 0 {
+			start = 0
+		}
+		end := configuredRange.to - 1
+		if pages >= 0 && end > pages {
+			end = pages
+		}
+		for page := start; page < end; page += pageSize {
+			to := page + pageSize
+			if to > end {
+				to = end
+			}
+			ranges = append(ranges, datasetParsePageRange{from: page, to: to})
+		}
+	}
+	if len(ranges) == 0 {
+		ranges = append(ranges, datasetParsePageRange{from: 0, to: maximumTaskPageNumber})
+	}
+	return ranges, nil
+}
+
+func datasetTableParseTaskRanges(doc *entity.Document, bucket, objectName string) ([]datasetParsePageRange, error) {
+	binary, err := datasetStorageBinary(bucket, objectName)
+	if err != nil {
+		return nil, err
+	}
+	rows := datasetEstimateTableRowCount(datasetDocName(doc), binary)
+	if rows <= 0 {
+		return []datasetParsePageRange{{from: 0, to: maximumTaskPageNumber}}, nil
+	}
+	ranges := make([]datasetParsePageRange, 0, (rows+2999)/3000)
+	for row := int64(0); row < int64(rows); row += 3000 {
+		to := row + 3000
+		if to > int64(rows) {
+			to = int64(rows)
+		}
+		ranges = append(ranges, datasetParsePageRange{from: row, to: to})
+	}
+	return ranges, nil
+}
+
+func datasetStorageBinary(bucket, objectName string) ([]byte, error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+	return storageImpl.Get(bucket, objectName)
+}
+
+func datasetDocName(doc *entity.Document) string {
+	if doc == nil || doc.Name == nil {
+		return ""
+	}
+	return *doc.Name
+}
+
+func datasetParserConfigInt(config map[string]interface{}, key string, fallback int) int {
+	value, ok := config[key]
+	if !ok || value == nil {
+		return fallback
+	}
+	switch typedValue := value.(type) {
+	case int:
+		return typedValue
+	case int64:
+		return int(typedValue)
+	case float64:
+		return int(typedValue)
+	case json.Number:
+		if intValue, err := typedValue.Int64(); err == nil {
+			return int(intValue)
+		}
+	case string:
+		if intValue, err := strconv.Atoi(strings.TrimSpace(typedValue)); err == nil {
+			return intValue
+		}
+	}
+	return fallback
+}
+
+func datasetParserConfigString(config map[string]interface{}, key, fallback string) string {
+	value, ok := config[key]
+	if !ok || value == nil {
+		return fallback
+	}
+	if stringValue, ok := value.(string); ok {
+		return stringValue
+	}
+	return fmt.Sprint(value)
+}
+
+func datasetParserConfigBool(config map[string]interface{}, key string, fallback bool) bool {
+	value, ok := config[key]
+	if !ok || value == nil {
+		return fallback
+	}
+	switch typedValue := value.(type) {
+	case bool:
+		return typedValue
+	case string:
+		switch strings.ToLower(strings.TrimSpace(typedValue)) {
+		case "true", "1", "yes", "on":
+			return true
+		case "false", "0", "no", "off":
+			return false
+		}
+	}
+	return fallback
+}
+
+func datasetParserConfigPageRanges(config map[string]interface{}) []datasetParsePageRange {
+	defaultRanges := []datasetParsePageRange{{from: 1, to: maximumPageNumber}}
+	raw, ok := config["pages"]
+	if !ok || raw == nil {
+		return defaultRanges
+	}
+	rawRanges, ok := raw.([]interface{})
+	if !ok || len(rawRanges) == 0 {
+		return defaultRanges
+	}
+
+	ranges := make([]datasetParsePageRange, 0, len(rawRanges))
+	for _, rawRange := range rawRanges {
+		rangeValues, ok := rawRange.([]interface{})
+		if !ok || len(rangeValues) < 2 {
+			continue
+		}
+		from, okFrom := datasetToInt64(rangeValues[0])
+		to, okTo := datasetToInt64(rangeValues[1])
+		if okFrom && okTo && to > from {
+			ranges = append(ranges, datasetParsePageRange{from: from, to: to})
+		}
+	}
+	if len(ranges) == 0 {
+		return defaultRanges
+	}
+	return ranges
+}
+
+func datasetToInt64(value interface{}) (int64, bool) {
+	switch typedValue := value.(type) {
+	case int:
+		return int64(typedValue), true
+	case int64:
+		return typedValue, true
+	case float64:
+		return int64(typedValue), true
+	case json.Number:
+		intValue, err := typedValue.Int64()
+		return intValue, err == nil
+	case string:
+		intValue, err := strconv.ParseInt(strings.TrimSpace(typedValue), 10, 64)
+		return intValue, err == nil
+	default:
+		return 0, false
+	}
+}
+
+var datasetPDFPagePattern = regexp.MustCompile(`/Type\s*/Page\b`)
+
+func datasetEstimatePDFPageCount(binary []byte) int64 {
+	if len(binary) == 0 {
+		return 0
+	}
+	return int64(len(datasetPDFPagePattern.FindAll(binary, -1)))
+}
+
+func datasetEstimateTableRowCount(name string, binary []byte) int {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".xlsx":
+		if rows, err := datasetCountXLSXRows(binary); err == nil {
+			return rows
+		}
+	case ".csv", ".tsv", ".txt":
+		return datasetCountDelimitedRows(name, binary)
+	}
+	return 0
+}
+
+func datasetCountDelimitedRows(name string, binary []byte) int {
+	reader := csv.NewReader(bytes.NewReader(binary))
+	reader.FieldsPerRecord = -1
+	reader.ReuseRecord = true
+	if strings.EqualFold(filepath.Ext(name), ".tsv") {
+		reader.Comma = '\t'
+	}
+	rows := 0
+	for {
+		_, err := reader.Read()
+		if err == nil {
+			rows++
+			continue
+		}
+		if err == io.EOF {
+			break
+		}
+		rows += bytes.Count(binary, []byte{'\n'})
+		if len(binary) > 0 && binary[len(binary)-1] != '\n' {
+			rows++
+		}
+		break
+	}
+	return rows
+}
+
+func datasetCountXLSXRows(binary []byte) (int, error) {
+	zipReader, err := zip.NewReader(bytes.NewReader(binary), int64(len(binary)))
+	if err != nil {
+		return 0, err
+	}
+	maxRows := 0
+	for _, file := range zipReader.File {
+		if !strings.HasPrefix(file.Name, "xl/worksheets/") || !strings.HasSuffix(file.Name, ".xml") {
+			continue
+		}
+		rows, err := datasetCountWorksheetRows(file)
+		if err != nil {
+			return 0, err
+		}
+		if rows > maxRows {
+			maxRows = rows
+		}
+	}
+	return maxRows, nil
+}
+
+func datasetCountWorksheetRows(file *zip.File) (int, error) {
+	reader, err := file.Open()
+	if err != nil {
+		return 0, err
+	}
+	defer reader.Close()
+
+	decoder := xml.NewDecoder(reader)
+	rows := 0
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
+		start, ok := token.(xml.StartElement)
+		if ok && start.Name.Local == "row" {
+			rows++
+		}
+	}
+	return rows, nil
+}
+
+func (d *DatasetService) DeleteIndex(userID, datasetID, indexType string, wipe bool) (common.ErrorCode, error) {
+	if !checkType(indexType) {
+		return common.CodeArgumentError, fmt.Errorf("Invalid index type '%s'", indexType)
+	}
+
+	if datasetID == "" {
+		return common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+	}
+
+	if !d.kbDAO.Accessible(datasetID, userID) {
+		return common.CodeDataError, errors.New("No authorization.")
+	}
+
+	kb, err := d.kbDAO.GetByID(datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return common.CodeDataError, errors.New("Invalid Dataset ID")
+		}
+		return common.CodeDataError, errors.New("Internal server error")
+	}
+
+	taskIDField := datasetIndexTaskIDColumn(indexType)
+	taskFinishAtField := datasetIndexTaskFinishAtColumn(indexType)
+	taskID := datasetIndexTaskID(kb, indexType)
+
+	common.Info("delete_index", zap.String("dataset_id", datasetID), zap.String("index_type", indexType), zap.Bool("wipe", wipe))
+
+	if taskID != "" {
+		redisClient := redisengine.Get()
+		if redisClient == nil || !redisClient.Set(fmt.Sprintf("%s-cancel", taskID), "x", 0) {
+			common.Warn("Failed to set dataset index cancellation marker", zap.String("dataset_id", datasetID), zap.String("task_id", taskID))
+		}
+		if err := dao.DB.Unscoped().Where("id = ?", taskID).Delete(&entity.Task{}).Error; err != nil {
+			common.Warn("Failed to delete dataset index task", zap.String("dataset_id", datasetID), zap.String("task_id", taskID), zap.Error(err))
+			return common.CodeDataError, errors.New("Internal server error")
+		}
+	}
+
+	if wipe && indexType == "graph" {
+		if d.docEngine == nil {
+			return common.CodeServerError, errors.New("Document engine is not initialized")
+		}
+		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+		_, err = d.docEngine.DeleteChunks(context.Background(), map[string]interface{}{
+			"knowledge_graph_kwd": interfaceSlice("graph", "subgraph", "entity", "relation", "community_report"),
+			"kb_id":               datasetID,
+		}, indexName, datasetID)
+		if err != nil {
+			common.Warn("Failed to delete GraphRAG artefacts", zap.String("dataset_id", datasetID), zap.Error(err))
+			return common.CodeDataError, errors.New("Internal server error")
+		}
+		clearGraphPhaseMarkers(redisengine.Get(), datasetID)
+		common.Info("delete_index: cleared GraphRAG artefacts and phase markers", zap.String("dataset_id", datasetID))
+	} else if wipe && indexType == "raptor" {
+		if d.docEngine == nil {
+			return common.CodeServerError, errors.New("Document engine is not initialized")
+		}
+		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+		_, err = d.docEngine.DeleteChunks(context.Background(), map[string]interface{}{
+			"raptor_kwd": interfaceSlice("raptor"),
+			"kb_id":      datasetID,
+		}, indexName, datasetID)
+		if err != nil {
+			common.Warn("Failed to delete RAPTOR artefacts", zap.String("dataset_id", datasetID), zap.Error(err))
+			return common.CodeDataError, errors.New("Internal server error")
+		}
+	}
+
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", kb.ID).Updates(map[string]interface{}{
+		taskIDField:       "",
+		taskFinishAtField: nil,
+	}).Error; err != nil {
+		common.Warn("Failed to clear dataset index task fields", zap.String("dataset_id", datasetID), zap.String("index_type", indexType), zap.Error(err))
+		return common.CodeDataError, errors.New("Internal server error")
+	}
+
+	return common.CodeSuccess, nil
 }
 
 // SearchDatasetsRequest is the request structure for searching chunks across datasets.
@@ -544,6 +1708,7 @@ type SearchDatasetsRequest struct {
 	Keyword                *bool                  `json:"keyword,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+	ForceRefresh           bool                   `json:"force_refresh"`
 }
 
 // SearchDatasetsResponse is the response structure for dataset search results.
@@ -554,10 +1719,58 @@ type SearchDatasetsResponse struct {
 	Total   int64                    `json:"total"`
 }
 
+// SearchDatasetRequest is the request structure for searching chunks within one dataset.
+type SearchDatasetRequest struct {
+	Question               string                 `json:"question"`
+	Page                   *int                   `json:"page,omitempty"`
+	Size                   *int                   `json:"size,omitempty"`
+	DocIDs                 []string               `json:"doc_ids,omitempty"`
+	UseKG                  *bool                  `json:"use_kg,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"`
+	CrossLanguages         []string               `json:"cross_languages,omitempty"`
+	SearchID               *string                `json:"search_id,omitempty"`
+	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
+	RerankID               *string                `json:"rerank_id,omitempty"`
+	Keyword                *bool                  `json:"keyword,omitempty"`
+	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
+	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+}
+
+// ToSearchDatasetsRequest converts a single-dataset search request into the multi-dataset form.
+func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *SearchDatasetsRequest {
+	if req == nil {
+		return &SearchDatasetsRequest{DatasetIDs: []string{datasetID}}
+	}
+	return &SearchDatasetsRequest{
+		DatasetIDs:             []string{datasetID},
+		Question:               req.Question,
+		Page:                   req.Page,
+		Size:                   req.Size,
+		DocIDs:                 req.DocIDs,
+		UseKG:                  req.UseKG,
+		TopK:                   req.TopK,
+		CrossLanguages:         req.CrossLanguages,
+		SearchID:               req.SearchID,
+		MetadataFilter:         req.MetadataFilter,
+		RerankID:               req.RerankID,
+		Keyword:                req.Keyword,
+		SimilarityThreshold:    req.SimilarityThreshold,
+		VectorSimilarityWeight: req.VectorSimilarityWeight,
+	}
+}
+
+// SearchDataset searches chunks within one knowledge base based on a question.
+func (d *DatasetService) SearchDataset(datasetID, userID string, req *SearchDatasetRequest) (*SearchDatasetsResponse, error) {
+	if datasetID == "" {
+		return nil, fmt.Errorf("dataset_id is required")
+	}
+	return d.SearchDatasets(req.ToSearchDatasetsRequest(datasetID), userID)
+}
+
 // SearchDatasets searches chunks across one or more knowledge bases based on a question.
 // It retrieves relevant chunks using embedding and optional reranking, applying filters,
 // cross-language translation, and keyword extraction as configured.
-func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID string) (*SearchDatasetsResponse, error) {
+func (d *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID string) (*SearchDatasetsResponse, error) {
 	if req.Question == "" {
 		return nil, fmt.Errorf("question is required")
 	}
@@ -641,12 +1854,12 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	var kbRecords []*entity.Knowledgebase
 	seenTenants := make(map[string]bool)
 	for _, datasetID := range datasetIDs {
-		if !s.kbDAO.Accessible(datasetID, userID) {
+		if !d.kbDAO.Accessible(datasetID, userID) {
 			common.Warn("SearchDatasets access denied", zap.String("datasetID", datasetID), zap.String("userID", userID))
 			return nil, fmt.Errorf("only owner of dataset %s is authorized for this operation", datasetID)
 		}
 
-		kb, err := s.kbDAO.GetByID(datasetID)
+		kb, err := d.kbDAO.GetByID(datasetID)
 		if err != nil || kb == nil {
 			common.Warn("SearchDatasets dataset not found", zap.String("datasetID", datasetID))
 			return nil, fmt.Errorf("dataset %s not found", datasetID)
@@ -663,7 +1876,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		firstEmbdID := kbRecords[0].EmbdID
 		for i := 1; i < len(kbRecords); i++ {
 			if kbRecords[i].EmbdID != firstEmbdID {
-				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
+				return nil, fmt.Errorf("Datasets use different embedding models.")
 			}
 		}
 	}
@@ -671,9 +1884,14 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	// Override request fields with values from saved search config (if search_id is provided)
 	var chatID string
 	if searchID != "" {
-		searchDetail, err := s.searchService.GetDetail(searchID)
-		if err != nil {
-			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", searchID), zap.Error(err))
+		if d.searchService == nil {
+			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("Invalid search_id")
+		}
+		searchDetail, err := d.searchService.GetDetail(searchID)
+		if err != nil || searchDetail == nil || len(searchDetail) == 0 {
+			common.Warn("Invalid search_id", zap.String("searchID", searchID), zap.Error(err))
+			return nil, fmt.Errorf("Invalid search_id")
 		} else if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				metadataFilter = scMetadataFilter
@@ -724,7 +1942,8 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 				zap.String("chatID", chatID),
 				zap.Bool("useKG", useKG))
 		} else {
-			common.Warn("No search_config found in search detail", zap.String("searchID", searchID))
+			common.Warn("Invalid search_id: search_config missing or invalid", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("Invalid search_id")
 		}
 	}
 
@@ -762,7 +1981,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	// Apply meta_data_filter to get filtered doc_ids
 	docIDs := make([]string, len(req.DocIDs))
 	copy(docIDs, req.DocIDs)
-	if metadataFilter != nil {
+	if len(metadataFilter) > 0 {
 		metadataSvc := NewMetadataService()
 		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(datasetIDs)
 		if err != nil {
@@ -878,7 +2097,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		EmbeddingModel:         embeddingModel,
 	}
 
-	retrievalResult, err := nlp.NewRetrievalService(s.docEngine, s.documentDAO).Retrieval(ctx, retrievalReq)
+	retrievalResult, err := nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)
 	if err != nil {
 		return nil, fmt.Errorf("retrieval search failed: %w", err)
 	}
@@ -889,7 +2108,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		common.Warn("use_kg is not yet implemented in Go - skipping KG retrieval")
 	}
 
-	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, s.docEngine, ctx)
+	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, d.docEngine, ctx)
 
 	for i := range filteredChunks {
 		delete(filteredChunks[i], "vector")
@@ -953,7 +2172,7 @@ type CreateDatasetRequest struct {
 }
 
 // ListDatasets lists datasets with pagination and filtering.
-func (s *DatasetService) ListDatasets(id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
+func (d *DatasetService) ListDatasets(id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	id = strings.TrimSpace(id)
 	if id != "" {
 		normalizedID, err := normalizeDatasetID(id)
@@ -962,7 +2181,7 @@ func (s *DatasetService) ListDatasets(id, name string, page, pageSize int, order
 		}
 		id = normalizedID
 
-		kbs, err := s.kbDAO.GetKBByIDAndUserID(id, userID)
+		kbs, err := d.kbDAO.GetKBByIDAndUserID(id, userID)
 		if err != nil {
 			return nil, 0, common.CodeServerError, errors.New("Database operation failed")
 		}
@@ -973,7 +2192,7 @@ func (s *DatasetService) ListDatasets(id, name string, page, pageSize int, order
 
 	name = strings.TrimSpace(name)
 	if name != "" {
-		kbs, err := s.kbDAO.GetKBByNameAndUserID(name, userID)
+		kbs, err := d.kbDAO.GetKBByNameAndUserID(name, userID)
 		if err != nil {
 			return nil, 0, common.CodeServerError, errors.New("Database operation failed")
 		}
@@ -1006,7 +2225,7 @@ func (s *DatasetService) ListDatasets(id, name string, page, pageSize int, order
 		}
 	}
 	if len(tenantIDs) == 0 {
-		joinedTenants, err := s.tenantDAO.GetJoinedTenantsByUserID(userID)
+		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(userID)
 		if err != nil {
 			return nil, 0, common.CodeServerError, errors.New("Database operation failed")
 		}
@@ -1018,7 +2237,7 @@ func (s *DatasetService) ListDatasets(id, name string, page, pageSize int, order
 		}
 	}
 
-	kbs, total, err := s.kbDAO.GetByTenantIDs(tenantIDs, userID, page, pageSize, orderby, desc, keywords, parserID)
+	kbs, total, err := d.kbDAO.GetByTenantIDs(tenantIDs, userID, page, pageSize, orderby, desc, keywords, parserID)
 	if err != nil {
 		return nil, 0, common.CodeServerError, errors.New("Database operation failed")
 	}
@@ -1035,8 +2254,8 @@ func (s *DatasetService) ListDatasets(id, name string, page, pageSize int, order
 }
 
 // CreateDataset creates a new dataset.
-func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
-	if !isValidString(req.Name) {
+func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+	if !common.IsValidString(req.Name) {
 		return nil, common.CodeDataError, errors.New("Dataset name must be string.")
 	}
 
@@ -1048,7 +2267,7 @@ func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(name), entity.DatasetNameLimit)
 	}
 
-	tenant, err := s.tenantDAO.GetByID(tenantID)
+	tenant, err := d.tenantDAO.GetByID(tenantID)
 	if err != nil || tenant == nil {
 		return nil, common.CodeDataError, errors.New("Tenant not found.")
 	}
@@ -1228,7 +2447,7 @@ func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 
 	embdID := tenant.EmbdID
 	if embeddingModel != "" {
-		ok, message := s.verifyEmbeddingAvailability(embeddingModel, tenantID)
+		ok, message := d.verifyEmbeddingAvailability(embeddingModel, tenantID)
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
@@ -1240,7 +2459,7 @@ func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 	status := string(entity.StatusValid)
 	// Deduplicate name within tenant
 	duplicateName, err := common.DuplicateName(func(n, tid string) bool {
-		existing, err := s.kbDAO.GetByName(n, tid)
+		existing, err := d.kbDAO.GetByName(n, tid)
 		return err == nil && existing != nil
 	}, name, tenantID)
 	if err != nil {
@@ -1270,11 +2489,11 @@ func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		kb.Language = language
 	}
 
-	if err := s.kbDAO.Create(kb); err != nil {
+	if err = d.kbDAO.Create(kb); err != nil {
 		return nil, common.CodeServerError, errors.New("Failed to save dataset")
 	}
 
-	createdKB, err := s.kbDAO.GetByID(kbID)
+	createdKB, err := d.kbDAO.GetByID(kbID)
 	if err != nil || createdKB == nil {
 		return nil, common.CodeServerError, errors.New("Dataset created failed")
 	}
@@ -1283,7 +2502,7 @@ func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 }
 
 // DeleteDatasets deletes multiple datasets.
-func (s *DatasetService) DeleteDatasets(ids []string, deleteAll bool, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) DeleteDatasets(ids []string, deleteAll bool, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
 	normalizedIDs := make([]string, 0, len(ids))
 	seenIDs := make(map[string]struct{}, len(ids))
 
@@ -1305,7 +2524,7 @@ func (s *DatasetService) DeleteDatasets(ids []string, deleteAll bool, tenantID s
 			return map[string]interface{}{"success_count": 0}, common.CodeSuccess, nil
 		}
 
-		kbs, err := s.kbDAO.Query(map[string]interface{}{"tenant_id": tenantID})
+		kbs, err := d.kbDAO.Query(map[string]interface{}{"tenant_id": tenantID})
 		if err != nil {
 			return nil, common.CodeServerError, errors.New("Database operation failed")
 		}
@@ -1317,7 +2536,7 @@ func (s *DatasetService) DeleteDatasets(ids []string, deleteAll bool, tenantID s
 	kbs := make([]*entity.Knowledgebase, 0, len(normalizedIDs))
 	unauthorizedIDs := make([]string, 0)
 	for _, id := range normalizedIDs {
-		kb, err := s.kbDAO.GetByIDAndTenantID(id, tenantID)
+		kb, err := d.kbDAO.GetByIDAndTenantID(id, tenantID)
 		if err != nil || kb == nil {
 			unauthorizedIDs = append(unauthorizedIDs, id)
 			continue
@@ -1331,7 +2550,7 @@ func (s *DatasetService) DeleteDatasets(ids []string, deleteAll bool, tenantID s
 	errorsList := make([]string, 0)
 	successCount := 0
 	for _, kb := range kbs {
-		if err := s.deleteDataset(tenantID, kb); err != nil {
+		if err := d.deleteDataset(tenantID, kb); err != nil {
 			errorsList = append(errorsList, err.Error())
 			continue
 		}
@@ -1363,7 +2582,7 @@ func (s *DatasetService) DeleteDatasets(ids []string, deleteAll bool, tenantID s
 }
 
 // GetDataset gets a single dataset with its size and linked connectors.
-func (s *DatasetService) GetDataset(datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetDataset(datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
@@ -1375,28 +2594,28 @@ func (s *DatasetService) GetDataset(datasetID, userID string) (map[string]interf
 	}
 	datasetID = normalizedID
 
-	if !s.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(datasetID, userID) {
 		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, datasetID)
 	}
 
-	kb, err := s.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(datasetID)
 	if err != nil || kb == nil {
 		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
 	}
 
 	data := datasetToMap(kb)
 
-	size, err := s.documentDAO.SumSizeByDatasetID(datasetID)
+	size, err := d.documentDAO.SumSizeByDatasetID(datasetID)
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
 	data["size"] = size
 
-	connectors, err := s.connectorDAO.ListByDatasetID(datasetID)
+	connectors, err := d.connectorDAO.ListByDatasetID(datasetID)
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
-	data["connectors"] = connectors
+	data["connectors"] = datasetConnectorsOrEmpty(connectors)
 
 	return data, common.CodeSuccess, nil
 }
@@ -1425,8 +2644,8 @@ type UpdateDatasetRequest struct {
 }
 
 // UpdateDataset Update a dataset
-func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
-	kb, err := s.kbDAO.GetByID(datasetID)
+func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
+	kb, err := d.kbDAO.GetByID(datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("Dataset not found")
@@ -1546,7 +2765,7 @@ func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		if embdID == "" {
 			embdID = kb.EmbdID
 		}
-		ok, message := s.verifyEmbeddingAvailability(embdID, tenantID)
+		ok, message := d.verifyEmbeddingAvailability(embdID, tenantID)
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
@@ -1570,14 +2789,14 @@ func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		if *req.Pagerank < 0 || *req.Pagerank > 100 {
 			return nil, common.CodeDataError, errors.New("Input should be less than or equal to 100")
 		}
-		if s.engineType == server.EngineInfinity {
+		if d.engineType == server.EngineInfinity {
 			return nil, common.CodeDataError, errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
 		}
 		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 		if *req.Pagerank > 0 {
-			err = s.docEngine.UpdateChunks(context.Background(), map[string]interface{}{"kb_id": kb.ID}, map[string]interface{}{common.PAGERANK_FLD: *req.Pagerank}, indexName, kb.ID)
+			err = d.docEngine.UpdateChunks(context.Background(), map[string]interface{}{"kb_id": kb.ID}, map[string]interface{}{common.PAGERANK_FLD: *req.Pagerank}, indexName, kb.ID)
 		} else {
-			err = s.docEngine.UpdateChunks(context.Background(), map[string]interface{}{"exists": common.PAGERANK_FLD}, map[string]interface{}{"remove": common.PAGERANK_FLD}, indexName, kb.ID)
+			err = d.docEngine.UpdateChunks(context.Background(), map[string]interface{}{"exists": common.PAGERANK_FLD}, map[string]interface{}{"remove": common.PAGERANK_FLD}, indexName, kb.ID)
 		}
 		if err != nil {
 			return nil, common.CodeServerError, err
@@ -1597,7 +2816,7 @@ func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 	}
 
 	if nameValue, ok := updates["name"].(string); ok && strings.ToLower(nameValue) != strings.ToLower(kb.Name) {
-		existing, lookupErr := s.kbDAO.GetByName(nameValue, tenantID)
+		existing, lookupErr := d.kbDAO.GetByName(nameValue, tenantID)
 		if lookupErr != nil && !dao.IsNotFoundErr(lookupErr) {
 			return nil, common.CodeServerError, errors.New("Database operation failed")
 		}
@@ -1611,7 +2830,7 @@ func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 	}
 
 	if len(updates) > 0 {
-		if err = s.kbDAO.UpdateByID(kb.ID, updates); err != nil {
+		if err = d.kbDAO.UpdateByID(kb.ID, updates); err != nil {
 			return nil, common.CodeServerError, errors.New("Update dataset error.(Database error)")
 		}
 	}
@@ -1628,23 +2847,30 @@ func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 				AutoParse: connector.AutoParse,
 			})
 		}
-		if err = s.connectorDAO.LinkDatasetConnectors(kb.ID, connectorLinks); err != nil {
+		if err = d.connectorDAO.LinkDatasetConnectors(kb.ID, connectorLinks); err != nil {
 			return nil, common.CodeServerError, errors.New("Database operation failed")
 		}
 	}
 
-	updatedKB, err := s.kbDAO.GetByID(kb.ID)
+	updatedKB, err := d.kbDAO.GetByID(kb.ID)
 	if err != nil {
 		return nil, common.CodeDataError, errors.New("Dataset updated failed")
 	}
 
 	data := datasetToMap(updatedKB)
-	linkedConnectors, err := s.connectorDAO.ListByDatasetID(kb.ID)
+	linkedConnectors, err := d.connectorDAO.ListByDatasetID(kb.ID)
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
-	data["connectors"] = linkedConnectors
+	data["connectors"] = datasetConnectorsOrEmpty(linkedConnectors)
 	return data, common.CodeSuccess, nil
+}
+
+func datasetConnectorsOrEmpty(connectors []*dao.ConnectorDatasetListItem) []*dao.ConnectorDatasetListItem {
+	if connectors == nil {
+		return make([]*dao.ConnectorDatasetListItem, 0)
+	}
+	return connectors
 }
 
 func datasetUpdateParserID(req UpdateDatasetRequest) (string, bool, error) {
@@ -1762,8 +2988,8 @@ func datasetBoolValue(value interface{}) bool {
 }
 
 // GetMetadataConfig gets the auto-metadata configuration for a dataset.
-func (s *DatasetService) GetMetadataConfig(datasetID, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
-	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
+func (d *DatasetService) GetMetadataConfig(datasetID, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+	kb, err := d.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
@@ -1781,11 +3007,11 @@ func (s *DatasetService) GetMetadataConfig(datasetID, tenantID string) (map[stri
 }
 
 // UpdateMetadataConfig updates the auto-metadata configuration for a dataset.
-func (s *DatasetService) UpdateMetadataConfig(datasetID, tenantID string, req *MetadataConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) UpdateMetadataConfig(datasetID, tenantID string, req *MetadataConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	tenantID = strings.TrimSpace(tenantID)
 
-	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
+	kb, err := d.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
@@ -1816,7 +3042,7 @@ func (s *DatasetService) UpdateMetadataConfig(datasetID, tenantID string, req *M
 	parserConfig["metadata"] = metadata
 	parserConfig["built_in_metadata"] = builtInMetadata
 
-	if err := s.kbDAO.UpdateByID(kb.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
+	if err = d.kbDAO.UpdateByID(kb.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
 		return nil, common.CodeServerError, errors.New("Update auto-metadata error.(Database error)")
 	}
 
@@ -1827,29 +3053,243 @@ func (s *DatasetService) UpdateMetadataConfig(datasetID, tenantID string, req *M
 }
 
 // Accessible checks if a knowledge base is accessible by a user
-func (s *DatasetService) Accessible(kbID, userID string) bool {
-	return s.kbDAO.Accessible(kbID, userID)
+func (d *DatasetService) Accessible(kbID, userID string) bool {
+	return d.kbDAO.Accessible(kbID, userID)
 }
 
-// GetIngestionSummary returns dataset-level ingestion counters together with
-// the aggregated document parsing status, mirroring
-// dataset_api_service.get_ingestion_summary.
-func (s *DatasetService) GetIngestionSummary(datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetByID(kbID string) (*entity.Knowledgebase, error) {
+	return d.kbDAO.GetByID(kbID)
+}
+
+// GetKnowledgebaseByID resolves a dataset entity without applying permission
+// checks. Upload needs the same existence-then-auth ordering as Python.
+func (d *DatasetService) GetKnowledgebaseByID(datasetID string) (*entity.Knowledgebase, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	if datasetID == "" {
+		return nil, errors.New("Lack of \"Dataset ID\"")
+	}
+	normalizedID, err := normalizeDatasetID(datasetID)
+	if err != nil {
+		return nil, err
+	}
+	return d.kbDAO.GetByID(normalizedID)
+}
+
+// CheckKBTeamPermission mirrors Python check_kb_team_permission.
+func (d *DatasetService) CheckKBTeamPermission(kb *entity.Knowledgebase, userID string) bool {
+	return hasKBTeamPermission(kb, userID, d.tenantDAO)
+}
+
+func (d *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+	if len(datasetIDs) == 0 {
+		return nil, common.CodeDataError, errors.New("Lack of dataset_ids in query parameters")
+	}
+	if d.docEngine == nil {
+		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
+	}
+
+	datasetIDsByTenant := make(map[string][]string)
+	for _, rawID := range datasetIDs {
+		rawID = strings.TrimSpace(rawID)
+		if rawID == "" {
+			continue
+		}
+		datasetID, err := normalizeDatasetID(rawID)
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		if !d.kbDAO.Accessible(datasetID, userID) {
+			return nil, common.CodeDataError, fmt.Errorf("No authorization for dataset '%s'", datasetID)
+		}
+		kb, err := d.kbDAO.GetByID(datasetID)
+		if err != nil {
+			if dao.IsNotFoundErr(err) {
+				return nil, common.CodeDataError, fmt.Errorf("Invalid Dataset ID '%s'", datasetID)
+			}
+			return nil, common.CodeServerError, errors.New("Database operation failed")
+		}
+		if kb.DocNum <= 0 {
+			continue
+		}
+		datasetIDsByTenant[kb.TenantID] = append(datasetIDsByTenant[kb.TenantID], datasetID)
+	}
+
+	const pageSize = 10000
+	merged := make(map[string]int)
+	for tenantID, kbIDs := range datasetIDsByTenant {
+		for offset := 0; ; offset += pageSize {
+			searchResp, err := d.docEngine.Search(context.Background(), &types.SearchRequest{
+				IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
+				KbIDs:        kbIDs,
+				Offset:       offset,
+				Limit:        pageSize,
+				SelectFields: []string{"tag_kwd"},
+			})
+			if err != nil {
+				return nil, common.CodeServerError, fmt.Errorf("failed to aggregate tags: %w", err)
+			}
+			for _, agg := range d.docEngine.GetAggregation(searchResp.Chunks, "tag_kwd") {
+				tag, _ := agg["key"].(string)
+				if tag == "" {
+					continue
+				}
+				switch count := agg["count"].(type) {
+				case int:
+					merged[tag] += count
+				case int32:
+					merged[tag] += int(count)
+				case int64:
+					merged[tag] += int(count)
+				case float64:
+					merged[tag] += int(count)
+				}
+			}
+
+			chunkCount := len(searchResp.Chunks)
+			if chunkCount == 0 || chunkCount < pageSize {
+				break
+			}
+			if searchResp.Total > 0 && int64(offset+chunkCount) >= searchResp.Total {
+				break
+			}
+		}
+	}
+	result := make([]map[string]interface{}, 0, len(merged))
+	for tag, count := range merged {
+		result = append(result, map[string]interface{}{
+			"value": tag,
+			"count": count,
+		})
+	}
+	return result, common.CodeSuccess, nil
+}
+
+func (d *DatasetService) ListTags(datasetID, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
 	}
 
-	if !s.kbDAO.Accessible(datasetID, userID) {
-		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, datasetID)
+	normalizedID, err := normalizeDatasetID(datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	datasetID = normalizedID
+
+	if !d.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("No authorization.")
+	}
+	if d.docEngine == nil {
+		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
 	}
 
-	kb, err := s.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(datasetID)
 	if err != nil || kb == nil {
 		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
 	}
 
-	status, err := s.documentDAO.GetParsingStatusByKBID(datasetID)
+	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	exists, err := d.docEngine.ChunkStoreExists(ctx, indexName, datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to inspect chunk store: %w", err)
+	}
+	if !exists {
+		return []map[string]interface{}{}, common.CodeSuccess, nil
+	}
+
+	const pageSize = 10000
+	counts := make(map[string]int)
+	for offset := 0; ; offset += pageSize {
+		if err = ctx.Err(); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("list tags timeout or canceled: %w", err)
+		}
+
+		searchResp, err := d.docEngine.Search(ctx, &types.SearchRequest{
+			IndexNames:   []string{indexName},
+			KbIDs:        []string{datasetID},
+			Offset:       offset,
+			Limit:        pageSize,
+			SelectFields: []string{"tag_kwd"},
+		})
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to list tags: %w", err)
+		}
+
+		for _, agg := range d.docEngine.GetAggregation(searchResp.Chunks, "tag_kwd") {
+			tag, _ := agg["key"].(string)
+			if tag == "" {
+				continue
+			}
+			switch count := agg["count"].(type) {
+			case int:
+				counts[tag] += count
+			case int32:
+				counts[tag] += int(count)
+			case int64:
+				counts[tag] += int(count)
+			case float64:
+				counts[tag] += int(count)
+			}
+		}
+
+		chunkCount := len(searchResp.Chunks)
+		if chunkCount == 0 || chunkCount < pageSize {
+			break
+		}
+		if searchResp.Total > 0 && int64(offset+chunkCount) >= searchResp.Total {
+			break
+		}
+	}
+
+	if len(counts) == 0 {
+		return []map[string]interface{}{}, common.CodeSuccess, nil
+	}
+
+	tags := make([]string, 0, len(counts))
+	for tag := range counts {
+		tags = append(tags, tag)
+	}
+	sort.Slice(tags, func(i, j int) bool {
+		if counts[tags[i]] != counts[tags[j]] {
+			return counts[tags[i]] > counts[tags[j]]
+		}
+		return tags[i] < tags[j]
+	})
+
+	result := make([]map[string]interface{}, 0, len(tags))
+	for _, tag := range tags {
+		result = append(result, map[string]interface{}{
+			"key":   tag,
+			"count": counts[tag],
+		})
+	}
+
+	return result, common.CodeSuccess, nil
+}
+
+// GetIngestionSummary returns dataset-level ingestion counters together with
+// the aggregated document parsing status, mirroring
+// dataset_api_service.get_ingestion_summary.
+func (d *DatasetService) GetIngestionSummary(datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
+	}
+
+	if !d.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, datasetID)
+	}
+
+	kb, err := d.kbDAO.GetByID(datasetID)
+	if err != nil || kb == nil {
+		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+	}
+
+	status, err := d.documentDAO.GetParsingStatusByKBID(datasetID)
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
@@ -1865,13 +3305,13 @@ func (s *DatasetService) GetIngestionSummary(datasetID, userID string) (map[stri
 // ListIngestionLogs lists ingestion logs for a dataset, mirroring
 // dataset_api_service.list_ingestion_logs. log_type selects between
 // dataset-level logs ("dataset") and per-file logs ("file").
-func (s *DatasetService) ListIngestionLogs(datasetID, userID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, logType, keywords string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) ListIngestionLogs(datasetID, userID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, logType, keywords string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
 	}
 
-	if !s.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("No authorization.")
 	}
 
@@ -1885,9 +3325,9 @@ func (s *DatasetService) ListIngestionLogs(datasetID, userID string, page, pageS
 		err   error
 	)
 	if logType == "file" {
-		logs, total, err = s.pipelineLogDAO.GetFileLogsByKBID(datasetID, page, pageSize, orderby, desc, keywords, operationStatus, createDateFrom, createDateTo)
+		logs, total, err = d.pipelineLogDAO.GetFileLogsByKBID(datasetID, page, pageSize, orderby, desc, keywords, operationStatus, createDateFrom, createDateTo)
 	} else {
-		logs, total, err = s.pipelineLogDAO.GetDatasetLogsByKBID(datasetID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, keywords)
+		logs, total, err = d.pipelineLogDAO.GetDatasetLogsByKBID(datasetID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, keywords)
 	}
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Database operation failed")
@@ -1917,17 +3357,17 @@ func (s *DatasetService) ListIngestionLogs(datasetID, userID string, page, pageS
 // dataflow-result page can render the pipeline timeline and chunks. The
 // file-level converter is a superset of the dataset-level fields, so it is
 // correct for both dataset-level (graph/raptor/mindmap) and per-file logs.
-func (s *DatasetService) GetIngestionLog(datasetID, userID, logID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetIngestionLog(datasetID, userID, logID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
 	}
 
-	if !s.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("No authorization.")
 	}
 
-	log, err := s.pipelineLogDAO.GetByIDAndKBID(logID, datasetID)
+	log, err := d.pipelineLogDAO.GetByIDAndKBID(logID, datasetID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, common.CodeDataError, errors.New("Log not found")
@@ -2015,7 +3455,7 @@ func jsonMapValue(m entity.JSONMap) interface{} {
 	return m
 }
 
-func (s *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase) error {
+func (d *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase) error {
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
 		if taskIDs := datasetIndexTaskIDs(kb); len(taskIDs) > 0 {
 			if err := tx.Where("id IN ?", taskIDs).Delete(&entity.Task{}).Error; err != nil {
@@ -2173,7 +3613,7 @@ func normalizeDatasetID(id string) (string, error) {
 	return strings.ReplaceAll(parsedUUID.String(), "-", ""), nil
 }
 
-func (s *DatasetService) verifyEmbeddingAvailability(embdID string, tenantID string) (bool, string) {
+func (d *DatasetService) verifyEmbeddingAvailability(embdID string, tenantID string) (bool, string) {
 	_, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return false, err.Error()
@@ -2343,4 +3783,56 @@ func limitStrings(values []string, limit int) []string {
 		return values
 	}
 	return values[:limit]
+}
+
+func (d *DatasetService) RenameTag(datasetID, userID, fromTag, toTag string) (map[string]interface{}, common.ErrorCode, error) {
+	fromTag = strings.TrimSpace(fromTag)
+	toTag = strings.TrimSpace(toTag)
+
+	datasetID, err := normalizeDatasetID(datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	if strings.TrimSpace(datasetID) == "" {
+		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
+	}
+	if !d.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("No authorization.")
+	}
+	if d.docEngine == nil {
+		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
+	}
+
+	kb, err := d.kbDAO.GetByID(datasetID)
+	if err != nil || kb == nil {
+		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+	}
+	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+
+	condition := map[string]interface{}{
+		"tag_kwd": fromTag,
+		"kb_id":   datasetID,
+	}
+	newValue := map[string]interface{}{
+		"remove": map[string]interface{}{
+			"tag_kwd": fromTag,
+		},
+		"add": map[string]interface{}{
+			"tag_kwd": toTag,
+		},
+	}
+
+	err = d.docEngine.UpdateChunks(context.Background(), condition, newValue, indexName, datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to rename tag: %w", err)
+	}
+
+	return map[string]interface{}{
+		"from": fromTag,
+		"to":   toTag,
+	}, common.CodeSuccess, nil
+}
+
+func (d *DatasetService) GetFieldMap(ids []string) (map[string]interface{}, error) {
+	return d.kbDAO.GetFieldMap(ids)
 }

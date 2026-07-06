@@ -25,7 +25,7 @@
         <img alt="Lencana Daring" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.1">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.3">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Rilis%20Terbaru" alt="Rilis Terbaru">
@@ -191,12 +191,12 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 > Semua gambar Docker dibangun untuk platform x86. Saat ini, kami tidak menawarkan gambar Docker untuk ARM64.
 > Jika Anda menggunakan platform ARM64, [silakan gunakan panduan ini untuk membangun gambar Docker yang kompatibel dengan sistem Anda](https://ragflow.io/docs/dev/build_docker_image).
 
-> Perintah di bawah ini mengunduh edisi v0.26.1 dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.26.1, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server.
+> Perintah di bawah ini mengunduh edisi v0.26.3 dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.26.3, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server.
 
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.26.1
+   # git checkout v0.26.3
    # Opsional: gunakan tag stabil (lihat releases: https://github.com/infiniflow/ragflow/releases)
    # This steps ensures the **entrypoint.sh** file in the code matches the Docker image version.
 
@@ -291,10 +291,10 @@ docker build --platform linux/amd64 \
 
 ## 🔨 Menjalankan Aplikasi dari untuk Pengembangan
 
-1. Instal `uv` dan `pre-commit`, atau lewati langkah ini jika sudah terinstal:
+1. Instal `uv`, atau lewati langkah ini jika sudah terinstal:
 
    ```bash
-   pipx install uv pre-commit
+   pipx install uv
    ```
 2. Clone kode sumber dan instal dependensi Python:
 
@@ -303,7 +303,7 @@ docker build --platform linux/amd64 \
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
    uv run python3 ragflow_deps/download_deps.py
-   pre-commit install
+   lefthook install
    ```
 3. Jalankan aplikasi yang diperlukan (MinIO, Elasticsearch, Redis, dan MySQL) menggunakan Docker Compose:
 

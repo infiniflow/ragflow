@@ -102,11 +102,8 @@ type CheckConnectionRequest struct {
 }
 
 func (m *ModelProviderService) AddModelProvider(providerName, userID string) (common.ErrorCode, error) {
-
-	_, err := dao.GetModelProviderManager().GetProviderByName(providerName)
-	if err != nil {
-		return common.CodeNotFound, err
-	}
+	providerName = strings.TrimSpace(providerName)
+	providerName = strings.ToLower(providerName)
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -118,6 +115,14 @@ func (m *ModelProviderService) AddModelProvider(providerName, userID string) (co
 	}
 
 	tenantID := tenants[0].TenantID
+
+	existing, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return common.CodeServerError, err
+	}
+	if existing != nil {
+		return common.CodeSuccess, nil
+	}
 
 	providerID := utility.GenerateToken()
 
@@ -170,6 +175,7 @@ func (m *ModelProviderService) ListProvidersOfTenant(userID string) ([]map[strin
 			}
 			return nil, common.CodeServerError, err
 		}
+		provider["name"] = providerName
 		result = append(result, provider)
 	}
 
@@ -187,7 +193,7 @@ func isExcludedTenantProvider(name string) bool {
 	return false
 }
 
-func (m *ModelProviderService) DeleteModelProvider(providerName, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) DeleteModelProvider(userID, providerName string) (common.ErrorCode, error) {
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
@@ -206,6 +212,8 @@ func (m *ModelProviderService) DeleteModelProvider(providerName, userID string) 
 }
 
 func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, userID string) ([]map[string]interface{}, error) {
+	providerName = strings.TrimSpace(providerName)
+	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -280,6 +288,9 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 }
 
 func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, baseURL, region, userID string) (common.ErrorCode, error) {
+	providerName = strings.TrimSpace(providerName)
+	providerName = strings.ToLower(providerName)
+
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -327,6 +338,8 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 }
 
 func (m *ModelProviderService) ListProviderInstances(providerName, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+	providerName = strings.TrimSpace(providerName)
+	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")

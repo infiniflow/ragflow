@@ -105,10 +105,7 @@ class TestChunksDeletion:
         chunk_ids = batch_add_chunks(WebApiAuth, dataset_id, document_id, count)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(delete_chunks, WebApiAuth, dataset_id, document_id, {"chunk_ids": chunk_ids[i : i + 1]})
-                for i in range(count)
-            ]
+            futures = [executor.submit(delete_chunks, WebApiAuth, dataset_id, document_id, {"chunk_ids": chunk_ids[i : i + 1]}) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)

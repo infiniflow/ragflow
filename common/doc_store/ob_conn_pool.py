@@ -28,12 +28,11 @@ from common.decorator import singleton
 ATTEMPT_TIME = 2
 OB_QUERY_TIMEOUT = int(os.environ.get("OB_QUERY_TIMEOUT", "100_000_000"))
 
-logger = logging.getLogger('ragflow.ob_conn_pool')
+logger = logging.getLogger("ragflow.ob_conn_pool")
 
 
 @singleton
 class OceanBaseConnectionPool:
-
     def __init__(self):
         self.client = None
         self.es = None  # HybridSearch client
@@ -112,9 +111,7 @@ class OceanBaseConnectionPool:
 
         ob_version = ObVersion.from_db_version_string(version_str)
         if ob_version < ObVersion.from_db_version_nums(4, 3, 5, 1):
-            raise Exception(
-                f"The version of OceanBase needs to be higher than or equal to 4.3.5.1, current version is {version_str}"
-            )
+            raise Exception(f"The version of OceanBase needs to be higher than or equal to 4.3.5.1, current version is {version_str}")
 
     def _try_to_update_ob_query_timeout(self):
         try:
@@ -135,7 +132,7 @@ class OceanBaseConnectionPool:
             logger.warning(f"Failed to set 'ob_query_timeout' variable: {str(e)}")
 
     def _init_hybrid_search(self, max_connections, max_overflow, pool_timeout):
-        enable_hybrid_search = os.getenv('ENABLE_HYBRID_SEARCH', 'false').lower() in ['true', '1', 'yes', 'y']
+        enable_hybrid_search = os.getenv("ENABLE_HYBRID_SEARCH", "false").lower() in ["true", "1", "yes", "y"]
         if enable_hybrid_search:
             try:
                 self.es = HybridSearch(

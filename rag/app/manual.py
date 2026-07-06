@@ -183,7 +183,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
             txt, layoutno, poss = section
             if isinstance(poss, str):
-                poss = (getattr(pdf_parser, "extract_positions", lambda _: [])(poss) or [[0, 0, 0, 0, 0]])
+                poss = getattr(pdf_parser, "extract_positions", lambda _: [])(poss) or [[0, 0, 0, 0, 0]]
                 if poss:
                     first = poss[0]  # tuple: ([pn], x1, x2, y1, y2)
                     pn = first[0]
@@ -268,10 +268,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if table_ctx or image_ctx:
             attach_media_context(res, table_ctx, image_ctx)
         if res and pdf_parser and getattr(pdf_parser, "outlines", None):
-            res[0]["__outline__"] = [
-                {"title": title, "depth": depth}
-                for title, depth, *_ in pdf_parser.outlines
-            ]
+            res[0]["__outline__"] = [{"title": title, "depth": depth} for title, depth, *_ in pdf_parser.outlines]
         return res
 
     elif re.search(r"\.docx?$", filename, re.IGNORECASE):

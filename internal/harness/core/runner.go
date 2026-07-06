@@ -39,7 +39,9 @@ func (r *TypedRunner[M]) Run(ctx context.Context, msgs []M, opts ...RunOption) *
 
 func (r *TypedRunner[M]) Query(ctx context.Context, query string, opts ...RunOption) *AsyncIterator[*TypedAgentEvent[M]] {
 	msgs, err := newUserMsg[M](query)
-	if err != nil { return errorIter[M](err) }
+	if err != nil {
+		return errorIter[M](err)
+	}
 	return r.Run(ctx, []M{msgs}, opts...)
 }
 
@@ -83,7 +85,9 @@ func runImpl[M MessageType](a TypedAgent[M], streaming bool, store CheckPointSto
 			return errorIter[M](fmt.Errorf("agent does not implement Agent interface"))
 		}
 		fa := toFlowAgent(ctx, ca)
-		if store != nil { fa.checkPointStore = store }
+		if store != nil {
+			fa.checkPointStore = store
+		}
 		ci, ok := any(input).(*AgentInput)
 		if !ok {
 			return errorIter[M](fmt.Errorf("input type assertion failed: expected *AgentInput, got %T", input))
@@ -93,21 +97,31 @@ func runImpl[M MessageType](a TypedAgent[M], streaming bool, store CheckPointSto
 	}
 
 	tfa := toTypedFlowAgent(a)
-	if store != nil { tfa.checkPointStore = store }
+	if store != nil {
+		tfa.checkPointStore = store
+	}
 	ctx = setupRunContext(ctx, input, o)
 	return wrapIterForStore(streaming, store, ctx, tfa.Run(ctx, input, opts...), o)
 }
 
 func resumeInternal[M MessageType](a TypedAgent[M], store CheckPointStore, ctx context.Context, cid string, data map[string]any, opts ...RunOption) (*AsyncIterator[*TypedAgentEvent[M]], error) {
-	if store == nil { return nil, fmt.Errorf("resume requires a checkpoint store") }
+	if store == nil {
+		return nil, fmt.Errorf("resume requires a checkpoint store")
+	}
 	ctx, rc, info, err := loadCheckpoint(store, ctx, cid)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	streaming := info.EnableStreaming
 	o := getCommonOptions(nil, opts...)
 	if o.sharedParentSession {
-		if ps := getSession(ctx); ps != nil { rc.Session.Values = ps.Values }
+		if ps := getSession(ctx); ps != nil {
+			rc.Session.Values = ps.Values
+		}
 	}
-	if rc.Session.Values == nil { rc.Session.Values = make(map[string]any) }
+	if rc.Session.Values == nil {
+		rc.Session.Values = make(map[string]any)
+	}
 	ctx = setRunCtx(ctx, rc)
 	AddSessionValues(ctx, o.sessionValues)
 
@@ -116,13 +130,17 @@ func resumeInternal[M MessageType](a TypedAgent[M], store CheckPointStore, ctx c
 		ca, _ := any(a).(Agent)
 		fa := toFlowAgent(ctx, ca)
 		ra, ok := Agent(fa).(ResumableAgent)
-		if !ok { return nil, fmt.Errorf("agent %T does not support resume", a) }
+		if !ok {
+			return nil, fmt.Errorf("agent %T does not support resume", a)
+		}
 		return newIterForStore(streaming, store, ctx, any(ra.Resume(ctx, info, opts...)).(*AsyncIterator[*TypedAgentEvent[M]]), &cid, o.cancelCtx), nil
 	}
 
 	tfa := toTypedFlowAgent(a)
 	ra, ok := TypedAgent[M](tfa).(TypedResumableAgent[M])
-	if !ok { return nil, fmt.Errorf("agent %T does not support resume", a) }
+	if !ok {
+		return nil, fmt.Errorf("agent %T does not support resume", a)
+	}
 	return newIterForStore(streaming, store, ctx, ra.Resume(ctx, info, opts...), &cid, o.cancelCtx), nil
 }
 
@@ -152,17 +170,23 @@ func newIterForStore[M MessageType](streaming bool, store CheckPointStore, ctx c
 
 func handleIter[M MessageType](streaming bool, store CheckPointStore, ctx context.Context, ai *AsyncIterator[*TypedAgentEvent[M]], gen *AsyncGenerator[*TypedAgentEvent[M]], cid *string, cc *cancelContext) {
 	defer func() {
-		if r := recover(); r != nil { gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("panic: %v", r)}) }
+		if r := recover(); r != nil {
+			gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("panic: %v", r)})
+		}
 		gen.Close()
 	}()
 	var sig *InterruptSignal
 	for {
 		ev, ok := ai.Next()
-		if !ok { break }
+		if !ok {
+			break
+		}
 		if ev.Err != nil {
 			var ce *CancelError
 			if errors.As(ev.Err, &ce) {
-				if cc != nil && cc.isRoot() && cc.shouldCancel() { cc.markHandled() }
+				if cc != nil && cc.isRoot() && cc.shouldCancel() {
+					cc.markHandled()
+				}
 				if ce.interruptSignal != nil && cid != nil {
 					ce.InterruptContexts = nil
 					saveCheckpoint(store, ctx, *cid, streaming, &InterruptInfo{}, ce.interruptSignal)
@@ -172,13 +196,17 @@ func handleIter[M MessageType](streaming bool, store CheckPointStore, ctx contex
 			}
 		}
 		if ev.Action != nil && ev.Action.internalInterrupted != nil {
-			if sig != nil { panic("multiple interrupt actions") }
+			if sig != nil {
+				panic("multiple interrupt actions")
+			}
 			sig = ev.Action.internalInterrupted
 			ev = &TypedAgentEvent[M]{
 				AgentName: ev.AgentName, RunPath: ev.RunPath, Output: ev.Output,
-			Action: &AgentAction{Interrupted: &InterruptInfo{Data: ev.Action.Interrupted.Data}, internalInterrupted: sig},
-				}
-				if cid != nil { saveCheckpoint(store, ctx, *cid, streaming, &InterruptInfo{Data: ev.Action.Interrupted.Data}, sig) }
+				Action: &AgentAction{Interrupted: &InterruptInfo{Data: ev.Action.Interrupted.Data}, internalInterrupted: sig},
+			}
+			if cid != nil {
+				saveCheckpoint(store, ctx, *cid, streaming, &InterruptInfo{Data: ev.Action.Interrupted.Data}, sig)
+			}
 		}
 		gen.Send(ev)
 	}

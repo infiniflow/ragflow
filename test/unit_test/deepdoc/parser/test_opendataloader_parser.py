@@ -30,8 +30,12 @@ for _m in ("pdfplumber", "PIL", "PIL.Image"):
 # deepdoc.parser.pdf_parser — provide a real base class so OpenDataLoaderParser
 # inherits a proper Python class, not a MagicMock (which breaks __init__).
 _pdf_parser_mod = _types.ModuleType("deepdoc.parser.pdf_parser")
+
+
 class _RAGFlowPdfParserStub:  # noqa: E302
     pass
+
+
 _pdf_parser_mod.RAGFlowPdfParser = _RAGFlowPdfParserStub
 sys.modules.setdefault("deepdoc.parser.pdf_parser", _pdf_parser_mod)
 sys.modules.setdefault("deepdoc", mock.MagicMock())
@@ -60,6 +64,7 @@ OpenDataLoaderParser = _mod.OpenDataLoaderParser
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_parser(api_url: str = "http://odl:9383") -> OpenDataLoaderParser:
     p = OpenDataLoaderParser()
     p.api_url = api_url
@@ -77,6 +82,7 @@ def _fake_page_image(width: int = 600, height: int = 800):
 # ---------------------------------------------------------------------------
 # check_installation()
 # ---------------------------------------------------------------------------
+
 
 class TestCheckInstallation:
     def test_no_api_url_returns_false(self):
@@ -106,6 +112,7 @@ class TestCheckInstallation:
 # parse_pdf()
 # ---------------------------------------------------------------------------
 
+
 class TestParsePdf:
     def _mock_response(self, json_doc=None, md_text=None) -> mock.MagicMock:
         resp = mock.MagicMock()
@@ -127,8 +134,7 @@ class TestParsePdf:
         pdf.write_bytes(b"%PDF-dummy")
         resp = self._mock_response(md_text="hello world")
 
-        with mock.patch.object(p, "__images__"), \
-             mock.patch("requests.post", return_value=resp) as mock_post:
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", return_value=resp) as mock_post:
             p.parse_pdf(filepath=str(pdf))
 
         mock_post.assert_called_once()
@@ -140,8 +146,7 @@ class TestParsePdf:
         pdf_bytes = b"%PDF-binary"
         resp = self._mock_response(md_text="section text")
 
-        with mock.patch.object(p, "__images__"), \
-             mock.patch("requests.post", return_value=resp) as mock_post:
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", return_value=resp) as mock_post:
             p.parse_pdf(filepath="file.pdf", binary=pdf_bytes)
 
         files_arg = mock_post.call_args.kwargs.get("files", {})
@@ -155,8 +160,7 @@ class TestParsePdf:
         pdf_bytes = b"%PDF-bytesio"
         resp = self._mock_response(md_text="text from bytesio")
 
-        with mock.patch.object(p, "__images__"), \
-             mock.patch("requests.post", return_value=resp) as mock_post:
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", return_value=resp) as mock_post:
             p.parse_pdf(filepath="file.pdf", binary=io.BytesIO(pdf_bytes))
 
         files_arg = mock_post.call_args.kwargs.get("files", {})
@@ -173,8 +177,7 @@ class TestParsePdf:
         }
         resp = self._mock_response(json_doc=json_doc)
 
-        with mock.patch.object(p, "__images__"), \
-             mock.patch("requests.post", return_value=resp):
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", return_value=resp):
             sections, tables = p.parse_pdf(filepath="doc.pdf", binary=b"%PDF", parse_method="pipeline")
 
         assert any("Hello from JSON" in s[0] for s in sections)
@@ -183,8 +186,7 @@ class TestParsePdf:
         p = _make_parser()
         resp = self._mock_response(json_doc=None, md_text="# Markdown heading\n\nBody text.")
 
-        with mock.patch.object(p, "__images__"), \
-             mock.patch("requests.post", return_value=resp):
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", return_value=resp):
             sections, tables = p.parse_pdf(filepath="doc.pdf", binary=b"%PDF", parse_method="pipeline")
 
         assert len(sections) > 0
@@ -194,8 +196,7 @@ class TestParsePdf:
         p = _make_parser()
         resp = self._mock_response(md_text="ok")
 
-        with mock.patch.object(p, "__images__"), \
-             mock.patch("requests.post", return_value=resp) as mock_post:
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", return_value=resp) as mock_post:
             p.parse_pdf(filepath="doc.pdf", binary=b"%PDF", sanitize=True)
 
         data_arg = mock_post.call_args.kwargs.get("data", {})
@@ -205,8 +206,7 @@ class TestParsePdf:
         p = _make_parser()
         resp = self._mock_response(md_text="ok")
 
-        with mock.patch.object(p, "__images__"), \
-             mock.patch("requests.post", return_value=resp) as mock_post:
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", return_value=resp) as mock_post:
             p.parse_pdf(filepath="doc.pdf", binary=b"%PDF", sanitize=False)
 
         data_arg = mock_post.call_args.kwargs.get("data", {})
@@ -216,10 +216,8 @@ class TestParsePdf:
         p = _make_parser()
         resp = self._mock_response(md_text="ok")
 
-        with mock.patch.object(p, "__images__"), \
-             mock.patch("requests.post", return_value=resp) as mock_post:
-            p.parse_pdf(filepath="doc.pdf", binary=b"%PDF",
-                        hybrid="docling-fast", image_output="embedded")
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", return_value=resp) as mock_post:
+            p.parse_pdf(filepath="doc.pdf", binary=b"%PDF", hybrid="docling-fast", image_output="embedded")
 
         data_arg = mock_post.call_args.kwargs.get("data", {})
         assert data_arg.get("hybrid") == "docling-fast"
@@ -229,8 +227,7 @@ class TestParsePdf:
         p = _make_parser()
         resp = self._mock_response(md_text="ok")
 
-        with mock.patch.object(p, "__images__"), \
-             mock.patch("requests.post", return_value=resp) as mock_post:
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", return_value=resp) as mock_post:
             p.parse_pdf(filepath="doc.pdf", binary=b"%PDF")
 
         data_arg = mock_post.call_args.kwargs.get("data", {})
@@ -243,8 +240,7 @@ class TestParsePdf:
         resp = self._mock_response(md_text="text")
         cb = mock.MagicMock()
 
-        with mock.patch.object(p, "__images__"), \
-             mock.patch("requests.post", return_value=resp):
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", return_value=resp):
             p.parse_pdf(filepath="doc.pdf", binary=b"%PDF", callback=cb)
 
         progress_values = [call.args[0] for call in cb.call_args_list]
@@ -254,8 +250,7 @@ class TestParsePdf:
     def test_http_error_raises_runtime_error(self):
         p = _make_parser()
 
-        with mock.patch.object(p, "__images__"), \
-             mock.patch("requests.post", side_effect=requests.ConnectionError("down")):
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", side_effect=requests.ConnectionError("down")):
             with pytest.raises(RuntimeError, match="service call failed"):
                 p.parse_pdf(filepath="doc.pdf", binary=b"%PDF")
 
@@ -264,8 +259,7 @@ class TestParsePdf:
         resp = mock.MagicMock()
         resp.raise_for_status.side_effect = requests.HTTPError("500 Server Error")
 
-        with mock.patch.object(p, "__images__"), \
-             mock.patch("requests.post", return_value=resp):
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", return_value=resp):
             with pytest.raises(RuntimeError, match="service call failed"):
                 p.parse_pdf(filepath="doc.pdf", binary=b"%PDF")
 
@@ -273,6 +267,7 @@ class TestParsePdf:
 # ---------------------------------------------------------------------------
 # crop() — bounds guard
 # ---------------------------------------------------------------------------
+
 
 class TestCrop:
     def test_returns_none_when_no_page_images(self):
@@ -307,8 +302,7 @@ class TestCrop:
         canvas = mock.MagicMock()
         canvas.paste = mock.MagicMock()
         try:
-            with mock.patch.object(_mod.Image, "new", return_value=canvas), \
-                 mock.patch.object(_mod.Image, "alpha_composite", return_value=img):
+            with mock.patch.object(_mod.Image, "new", return_value=canvas), mock.patch.object(_mod.Image, "alpha_composite", return_value=img):
                 p.crop(tag)
         except IndexError:
             pytest.fail("crop() raised IndexError for a valid page index")

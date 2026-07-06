@@ -1,5 +1,6 @@
 {
   "name": "OpenRouter",
+  "rank": 989,
   "url": {
     "default": "https://openrouter.ai/api/v1"
   },

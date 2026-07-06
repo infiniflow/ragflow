@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -153,12 +154,17 @@ type ModelThinking struct {
 	ClearThinking bool `json:"clear_thinking"`
 }
 
+type ModelTools struct {
+	Support bool `json:"support"`
+}
+
 // Model represents a single LLM model
 type Model struct {
 	Name         string         `json:"name"`
 	MaxTokens    *int           `json:"max_tokens"`
 	ModelTypes   []string       `json:"model_types"`
 	Thinking     *ModelThinking `json:"thinking"`
+	Tools        *ModelTools    `json:"tools"`
 	Class        *string        `json:"class"`
 	MaxDimension *int           `json:"max_dimension"` // used by embedding models
 	Dimensions   []int          `json:"dimensions"`
@@ -169,6 +175,7 @@ type Model struct {
 // Provider represents an LLM provider
 type Provider struct {
 	Name        string            `json:"name"`
+	Rank        int               `json:"rank"`
 	URL         map[string]string `json:"url"`
 	URLSuffix   URLSuffix         `json:"url_suffix"`
 	Models      []*Model          `json:"models"`
@@ -367,12 +374,18 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 
 		providerData := map[string]interface{}{
 			"name":        provider.Name,
+			"rank":        provider.Rank,
 			"url":         provider.URL,
 			"model_types": modelTypes,
 			"url_suffix":  provider.URLSuffix,
 		}
 		providers = append(providers, providerData)
 	}
+
+	// Sort providers by rank
+	sort.Slice(providers, func(i, j int) bool {
+		return providers[i]["rank"].(int) > providers[j]["rank"].(int)
+	})
 
 	if len(providers) == 0 {
 		return nil, fmt.Errorf("no providers found")
@@ -405,6 +418,12 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 		}
 		if len(model.Dimensions) > 0 {
 			modelData["dimensions"] = model.Dimensions
+		}
+		if model.Thinking != nil {
+			modelData["thinking"] = "supported"
+		}
+		if model.Tools != nil {
+			modelData["tools"] = "supported"
 		}
 		modelList = append(modelList, modelData)
 	}
@@ -472,6 +491,12 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 			"model_type":    model.ModelTypes,
 			"max_dimension": model.MaxDimension,
 			"dimensions":    model.Dimensions,
+		}
+		if model.Thinking != nil {
+			modelData["thinking"] = "supported"
+		}
+		if model.Tools != nil {
+			modelData["tools"] = "supported"
 		}
 		modelList = append(modelList, modelData)
 	}

@@ -19,11 +19,13 @@ import GoogleScholarForm from '../form/google-scholar-form';
 import InvokeForm from '../form/invoke-form';
 import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
+import KeenableForm from '../form/keenable-form';
 import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
 import ParserForm from '../form/parser-form';
 import PubMedForm from '../form/pubmed-form';
+import BGPTForm from '../form/bgpt-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
 import SearXNGForm from '../form/searxng-form';
@@ -70,11 +72,17 @@ export const FormConfigMap = {
   [Operator.DuckDuckGo]: {
     component: DuckDuckGoForm,
   },
+  [Operator.KeenableSearch]: {
+    component: KeenableForm,
+  },
   [Operator.Wikipedia]: {
     component: WikipediaForm,
   },
   [Operator.PubMed]: {
     component: PubMedForm,
+  },
+  [Operator.BGPT]: {
+    component: BGPTForm,
   },
   [Operator.ArXiv]: {
     component: ArXivForm,

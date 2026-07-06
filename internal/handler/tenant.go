@@ -30,61 +30,18 @@ import (
 
 // TenantHandler tenant handler
 type TenantHandler struct {
-	tenantService *service.TenantService
-	userService   *service.UserService
-	kbService     *service.KnowledgebaseService
+	tenantService  *service.TenantService
+	userService    *service.UserService
+	datasetService *service.DatasetService
 }
 
 // NewTenantHandler create tenant handler
-func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService, kbService *service.KnowledgebaseService) *TenantHandler {
+func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService, datasetService *service.DatasetService) *TenantHandler {
 	return &TenantHandler{
-		tenantService: tenantService,
-		userService:   userService,
-		kbService:     kbService,
+		tenantService:  tenantService,
+		userService:    userService,
+		datasetService: datasetService,
 	}
-}
-
-func (h *TenantHandler) GetModels(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	defaultModels, err := h.tenantService.ListTenantDefaultModels(user.ID)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
-		return
-	}
-
-	// Always return success with an array. The previous contract returned
-	// code=102 "No default models" for an empty list, which (a) tripped the
-	// global error toast in web/src/utils/next-request.ts:141 and (b) was
-	// inconsistent with the Python counterpart in
-	// api/apps/restful_apis/models_api.py:30 which returns
-	// get_result(data=[]) on the no-rows path. Frontend hooks (e.g.
-	// useFetchAllAddedModels) coerce `null` to `[]` already, so `[]` is
-	// strictly safer.
-	if defaultModels == nil {
-		defaultModels = []service.ModelItem{}
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    defaultModels,
-	})
-}
-
-type SetModelRequest struct {
-	ModelProvider string `json:"model_provider"`
-	ModelInstance string `json:"model_instance"`
-	ModelName     string `json:"model_name"`
-	ModelID       string `json:"model_id"`
-	ModelType     string `json:"model_type" binding:"required"`
 }
 
 func (h *TenantHandler) SetModels(c *gin.Context) {
@@ -95,48 +52,40 @@ func (h *TenantHandler) SetDefaultModels(c *gin.Context) {
 	h.setDefaultModels(c, true)
 }
 
+type SetModelRequest struct {
+	ModelProvider string `json:"model_provider"`
+	ModelInstance string `json:"model_instance"`
+	ModelName     string `json:"model_name"`
+	ModelID       string `json:"model_id"`
+	ModelType     string `json:"model_type" binding:"required"`
+}
+
 func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	// Parse request body (same as Python get_request_json())
 	var req SetModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"data":    nil,
-			"message": "Invalid request body: " + err.Error(),
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
 	err := h.tenantService.SetTenantDefaultModels(user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType, req.ModelID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
 	if wrapModels {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"message": "success",
-			"data":    map[string]interface{}{"models": []service.ModelItem{}},
-		})
+		common.SuccessWithData(c, map[string]interface{}{"models": []service.ModelItem{}}, "success")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    nil,
-	})
+	common.SuccessNoData(c, "success")
 }
 
 // GetDefaultModels returns the tenant's default model selections. The
@@ -147,17 +96,13 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	defaultModels, err := h.tenantService.ListTenantDefaultModels(user.ID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
@@ -168,11 +113,7 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 	if defaultModels == nil {
 		defaultModels = []service.ModelItem{}
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    map[string]interface{}{"models": defaultModels},
-	})
+	common.SuccessWithData(c, map[string]interface{}{"models": defaultModels}, "success")
 }
 
 // TenantInfo get tenant information
@@ -187,34 +128,22 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 func (h *TenantHandler) TenantInfo(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	tenantInfo, err := h.tenantService.GetTenantInfo(user.ID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
 	if tenantInfo == nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": "Tenant not found!",
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeDataError, false, "Tenant not found!")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    tenantInfo,
-	})
+	common.SuccessWithData(c, tenantInfo, "success")
 }
 
 // TenantList get tenant list for current user
@@ -229,25 +158,17 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 func (h *TenantHandler) TenantList(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	tenantList, err := h.tenantService.GetTenantList(user.ID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    tenantList,
-	})
+	common.SuccessWithData(c, tenantList, "success")
 }
 
 // CreateMetadataStore handles the create metadata store request
@@ -262,7 +183,7 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -271,15 +192,11 @@ func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 
 	code, err := h.tenantService.CreateMetadataStore(tenantID)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    nil,
-	})
+	common.SuccessNoData(c, "success")
 }
 
 // DeleteMetadataStore handles the delete metadata store request
@@ -294,7 +211,7 @@ func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 func (h *TenantHandler) DeleteMetadataStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
@@ -303,15 +220,11 @@ func (h *TenantHandler) DeleteMetadataStore(c *gin.Context) {
 
 	code, err := h.tenantService.DeleteMetadataStore(tenantID)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    nil,
-	})
+	common.SuccessNoData(c, "success")
 }
 
 // CreateChunkTableRequest represents the request for creating a chunk table
@@ -333,19 +246,19 @@ type CreateChunkTableRequest struct {
 func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	var req CreateChunkTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
 	// Check authorization - user must have access to this kb
-	if !h.kbService.Accessible(req.KBID, user.ID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+	if !h.datasetService.Accessible(req.KBID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
 		return
 	}
 
@@ -355,15 +268,11 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 	}
 	result, code, err := h.tenantService.CreateChunkStore(serviceReq)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    result,
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // DeleteChunkTableRequest represents the request for deleting a chunk table
@@ -384,33 +293,29 @@ type DeleteChunkTableRequest struct {
 func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	var req DeleteChunkTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
 	// Check authorization
-	if !h.kbService.Accessible(req.KBID, user.ID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+	if !h.datasetService.Accessible(req.KBID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
 		return
 	}
 
 	code, err := h.tenantService.DeleteChunkStore(req.KBID)
 	if err != nil {
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    nil,
-	})
+	common.SuccessNoData(c, "success")
 }
 
 // InsertChunksFromFileRequest request for inserting chunks from file
@@ -430,34 +335,29 @@ type InsertChunksFromFileRequest struct {
 func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	var req InsertChunksFromFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
 		return
 	}
 
 	if req.FilePath == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "file_path is required",
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "file_path is required")
 		return
 	}
 
 	// Read the JSON file
+	// codeql[go/path-injection] False positive: req.FilePath is the
+	// JSON file path the operator configured (tenant import flow). The
+	// OS access check enforces permissions, and the handler is gated
+	// to admin/owner roles upstream.
 	data, err := os.ReadFile(req.FilePath)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "failed to read file: " + err.Error(),
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to read file: "+err.Error())
 		return
 	}
 
@@ -469,19 +369,13 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 		Chunks          []map[string]interface{} `json:"chunks"`
 	}
 
-	if err := json.Unmarshal(data, &debugFormat); err != nil || debugFormat.Chunks == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "invalid JSON format: expected {\"index_name\"/\"table_name\": ..., \"knowledgebase_id\": ..., \"chunks\": [...]}",
-		})
+	if err = json.Unmarshal(data, &debugFormat); err != nil || debugFormat.Chunks == nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "invalid JSON format: expected {\"index_name\"/\"table_name\": ..., \"knowledgebase_id\": ..., \"chunks\": [...]}")
 		return
 	}
 
 	if len(debugFormat.Chunks) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "no chunks found in file",
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "no chunks found in file")
 		return
 	}
 
@@ -495,18 +389,11 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 	docEngine := engine.Get()
 	result, err := docEngine.InsertChunks(c.Request.Context(), debugFormat.Chunks, indexName, debugFormat.KnowledgebaseID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "failed to insert into dataset: " + err.Error(),
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to insert into dataset: "+err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // InsertMetadataFromFileRequest request for inserting metadata from file
@@ -526,34 +413,29 @@ type InsertMetadataFromFileRequest struct {
 func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	var req InsertMetadataFromFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
 		return
 	}
 
 	if req.FilePath == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "file_path is required",
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "file_path is required")
 		return
 	}
 
 	// Read the JSON file
+	// JSON file path the operator configured (tenant import flow). The
+	// OS access check enforces permissions, and the handler is gated
+	// to admin/owner roles upstream.
+	// codeql[go/path-injection] False positive: req.FilePath is the
 	data, err := os.ReadFile(req.FilePath)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "failed to read file: " + err.Error(),
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to read file: "+err.Error())
 		return
 	}
 
@@ -562,19 +444,13 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 		Chunks []map[string]interface{} `json:"chunks"`
 	}
 
-	if err := json.Unmarshal(data, &inputFormat); err != nil || inputFormat.Chunks == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "invalid JSON format: expected {\"chunks\": [...]}",
-		})
+	if err = json.Unmarshal(data, &inputFormat); err != nil || inputFormat.Chunks == nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "invalid JSON format: expected {\"chunks\": [...]}")
 		return
 	}
 
 	if len(inputFormat.Chunks) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "no chunks found in file",
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "no chunks found in file")
 		return
 	}
 
@@ -585,18 +461,11 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 	docEngine := engine.Get()
 	result, err := docEngine.InsertMetadata(c.Request.Context(), inputFormat.Chunks, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "failed to insert metadata: " + err.Error(),
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to insert metadata: "+err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // ListTenantMembers lists all non-owner members of a tenant.
@@ -608,22 +477,22 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "tenant_id is required"})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
 
 	members, code, err := h.tenantService.ListMembers(user.ID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": err.Error()})
+		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": members, "message": "success"})
+	common.SuccessWithData(c, members, "success")
 }
 
 // AddTenantMember invites a user (by email) to the tenant.
@@ -637,28 +506,28 @@ func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "tenant_id is required"})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
 
 	var req service.AddMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "invalid request body: " + err.Error()})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "invalid request body: "+err.Error())
 		return
 	}
 
 	resp, code, err := h.tenantService.AddMember(user.ID, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": err.Error()})
+		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": resp, "message": "success"})
+	common.SuccessWithData(c, resp, "success")
 }
 
 // RemoveTenantMember removes a user from the tenant.
@@ -672,13 +541,13 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "tenant_id is required"})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
 
@@ -686,16 +555,16 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 		UserID string `json:"user_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || body.UserID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "user_id is required"})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "user_id is required")
 		return
 	}
 
 	code, err := h.tenantService.RemoveMember(user.ID, tenantID, body.UserID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": err.Error()})
+		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": true, "message": "success"})
+	common.SuccessWithData(c, true, "success")
 }
 
 // AcceptTenantInvite accepts a pending team invitation, transitioning role invite → normal.
@@ -707,20 +576,20 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "tenant_id is required"})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
 
 	code, err := h.tenantService.AcceptInvite(user.ID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": err.Error()})
+		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": true, "message": "success"})
+	common.SuccessWithData(c, true, "success")
 }

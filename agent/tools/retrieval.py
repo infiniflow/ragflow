@@ -40,7 +40,7 @@ class RetrievalParam(ToolParamBase):
     """
 
     def __init__(self):
-        self.meta:ToolMeta = {
+        self.meta: ToolMeta = {
             "name": "search_my_dateset",
             "description": "This tool can be utilized for relevant content searching in the datasets.",
             "parameters": {
@@ -48,9 +48,9 @@ class RetrievalParam(ToolParamBase):
                     "type": "string",
                     "description": "The keywords to search the dataset. The keywords should be the most important words/terms(includes synonyms) from the original request.",
                     "default": "",
-                    "required": True
+                    "required": True,
                 }
-            }
+            },
         }
         super().__init__()
         self.function_name = "search_my_dateset"
@@ -68,7 +68,7 @@ class RetrievalParam(ToolParamBase):
         self.use_kg = False
         self.cross_languages = []
         self.toc_enhance = False
-        self.meta_data_filter={}
+        self.meta_data_filter = {}
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
@@ -76,12 +76,8 @@ class RetrievalParam(ToolParamBase):
         self.check_positive_number(self.top_n, "[Retrieval] Top N")
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "query": {
-                "name": "Query",
-                "type": "line"
-            }
-        }
+        return {"query": {"name": "Query", "type": "line"}}
+
 
 class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"
@@ -101,8 +97,7 @@ class Retrieval(ToolBase, ABC):
             # if kb_nm is a list
             kb_nm_list = kb_nm if isinstance(kb_nm, list) else [kb_nm]
             for nm_or_id in kb_nm_list:
-                e, kb = KnowledgebaseService.get_by_name(nm_or_id,
-                                                         self._canvas._tenant_id)
+                e, kb = KnowledgebaseService.get_by_name(nm_or_id, self._canvas._tenant_id)
                 if not e:
                     e, kb = KnowledgebaseService.get_by_id(nm_or_id)
                     if not e:
@@ -153,7 +148,7 @@ class Retrieval(ToolBase, ABC):
                 last = 0
 
                 for m in pat.finditer(s):
-                    out_parts.append(s[last:m.start()])
+                    out_parts.append(s[last : m.start()])
                     key = m.group(1)
                     v = self._canvas.get_variable_value(key)
                     if v is None:
@@ -220,22 +215,16 @@ class Retrieval(ToolBase, ABC):
                 tenant_id = self._canvas._tenant_id
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
                 chat_mdl = LLMBundle(tenant_id, chat_model_config)
-                cks = await settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs],
-                                                          chat_mdl, self._param.top_n)
+                cks = await settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs], chat_mdl, self._param.top_n)
                 if self.check_if_canceled("Retrieval processing"):
                     return
                 if cks:
                     kbinfos["chunks"] = cks
-            kbinfos["chunks"] = settings.retriever.retrieval_by_children(kbinfos["chunks"],
-                                                                         [kb.tenant_id for kb in kbs])
+            kbinfos["chunks"] = settings.retriever.retrieval_by_children(kbinfos["chunks"], [kb.tenant_id for kb in kbs])
             if self._param.use_kg:
                 tenant_id = self._canvas.get_tenant_id()
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                ck = await settings.kg_retriever.retrieval(query,
-                                                     [kb.tenant_id for kb in kbs],
-                                                     kb_ids,
-                                                     embd_mdl,
-                                                     LLMBundle(tenant_id, chat_model_config))
+                ck = await settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], kb_ids, embd_mdl, LLMBundle(tenant_id, chat_model_config))
                 if self.check_if_canceled("Retrieval processing"):
                     return
                 if ck["content_with_weight"]:
@@ -245,8 +234,7 @@ class Retrieval(ToolBase, ABC):
 
         if self._param.use_kg and kbs:
             chat_model_config = get_tenant_default_model_by_type(kbs[0].tenant_id, LLMType.CHAT)
-            ck = await settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl,
-                                                 LLMBundle(kbs[0].tenant_id, chat_model_config))
+            ck = await settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, chat_model_config))
             if self.check_if_canceled("Retrieval processing"):
                 return
             if ck["content_with_weight"]:
@@ -293,16 +281,14 @@ class Retrieval(ToolBase, ABC):
         filter_dict: dict = {"memory_id": memory_ids}
         if user_id:
             import re
+
             # is variable
             if re.match(r"^{.*}$", user_id):
                 user_id = self._canvas.get_variable_value(user_id)
             filter_dict["user_id"] = user_id
-        message_list = memory_message_service.query_message(filter_dict, {
-            "query": query,
-            "similarity_threshold": self._param.similarity_threshold,
-            "keywords_similarity_weight": self._param.keywords_similarity_weight,
-            "top_n": self._param.top_n
-        })
+        message_list = memory_message_service.query_message(
+            filter_dict, {"query": query, "similarity_threshold": self._param.similarity_threshold, "keywords_similarity_weight": self._param.keywords_similarity_weight, "top_n": self._param.top_n}
+        )
         if not message_list:
             self.set_output("formalized_content", self._param.empty_response)
             return ""

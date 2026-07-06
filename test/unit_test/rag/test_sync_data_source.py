@@ -174,7 +174,14 @@ async def test_run_task_logic_skips_multiple_empty_sync_batches(monkeypatch):
         lambda *_args, **_kwargs: pytest.fail("duplicate_and_parse should not be called for empty batches"),
     )
 
-    await _FakeSync(iter(([], [],)))._run_task_logic(_make_task())
+    await _FakeSync(
+        iter(
+            (
+                [],
+                [],
+            )
+        )
+    )._run_task_logic(_make_task())
 
 
 @pytest.mark.asyncio
@@ -197,9 +204,7 @@ async def test_run_prune_task_logic_cleans_up_for_empty_snapshot(monkeypatch):
     task = {**_make_task(), "task_type": sync_data_source.ConnectorTaskType.PRUNE}
     sync = _FakeSync(iter(()))
     sync.conf["sync_deleted_files"] = True
-    sync.connector = types.SimpleNamespace(
-        retrieve_all_slim_docs_perm_sync=lambda: iter(([],))
-    )
+    sync.connector = types.SimpleNamespace(retrieve_all_slim_docs_perm_sync=lambda: iter(([],)))
 
     await sync._run_task_logic(task)
 
@@ -238,9 +243,7 @@ async def test_run_prune_task_logic_cleans_up_for_non_empty_snapshot(monkeypatch
     task = {**_make_task(), "task_type": sync_data_source.ConnectorTaskType.PRUNE}
     sync = _FakeSync(iter(()))
     sync.conf["sync_deleted_files"] = True
-    sync.connector = types.SimpleNamespace(
-        retrieve_all_slim_docs_perm_sync=lambda: iter((file_list,))
-    )
+    sync.connector = types.SimpleNamespace(retrieve_all_slim_docs_perm_sync=lambda: iter((file_list,)))
 
     await sync._run_task_logic(task)
 
@@ -314,9 +317,9 @@ class _FakeRDBMSConnector:
         self.load_from_state_called = True
         return iter((["full-sync"],))
 
-    def load_from_cursor_range(self, start_value=None, end_value=None):
+    def load_from_cursor_range(self, start_value=None, start_id=None, end_value=None):
         self.load_from_cursor_range_called = True
-        return iter(([ _make_fake_doc("incremental-doc") ],))
+        return iter(([_make_fake_doc("incremental-doc")],))
 
     def persist_sync_state(self):
         self.persist_sync_state_called = True
@@ -407,6 +410,54 @@ async def test_rdbms_cursor_persists_only_after_success(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.p2
+async def test_rdbms_cursor_does_not_persist_when_parse_returns_errors(monkeypatch):
+    monkeypatch.setattr(sync_data_source, "RDBMSConnector", _FakeRDBMSConnector)
+    _patch_common_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: None,
+    )
+
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "duplicate_and_parse",
+        lambda *_args, **_kwargs: (["parse error"], ["parsed-doc-id"]),
+    )
+
+    task = {
+        **_make_task(),
+        "reindex": "0",
+        "poll_range_start": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "skip_connection_log": True,
+    }
+    sync = sync_data_source.MySQL(
+        {
+            "host": "localhost",
+            "port": 3306,
+            "database": "db",
+            "query": "SELECT * FROM t",
+            "content_columns": "name",
+            "timestamp_column": "ts",
+            "credentials": {"username": "u", "password": "p"},
+            "sync_deleted_files": False,
+        }
+    )
+
+    await sync._run_task_logic(task)
+
+    connector = _FakeRDBMSConnector.instance
+    assert connector is not None
+    assert connector.persist_sync_state_called is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
 async def test_rdbms_cursor_does_not_persist_when_batch_is_skipped(monkeypatch):
     monkeypatch.setattr(sync_data_source, "RDBMSConnector", _FakeRDBMSConnector)
     _patch_common_dependencies(monkeypatch)
@@ -454,6 +505,263 @@ async def test_rdbms_cursor_does_not_persist_when_batch_is_skipped(monkeypatch):
     connector = _FakeRDBMSConnector.instance
     assert connector is not None
     assert connector.persist_sync_state_called is False
+
+
+class _FakeBigQueryConnector:
+    instance = None
+
+    def __init__(
+        self,
+        project_id,
+        dataset_id=None,
+        table_id=None,
+        location=None,
+        query="",
+        content_columns="",
+        metadata_columns=None,
+        id_column=None,
+        timestamp_column=None,
+        batch_size=2,
+        page_size=1000,
+        maximum_bytes_billed=None,
+        job_timeout_ms=None,
+        use_query_cache=True,
+    ):
+        self.project_id = project_id
+        self.dataset_id = dataset_id
+        self.table_id = table_id
+        self.query = query
+        self.content_columns = content_columns
+        self.timestamp_column = timestamp_column
+        self.batch_size = batch_size
+        self.load_from_state_called = False
+        self.load_from_cursor_range_called = False
+        self.retrieve_all_slim_docs_perm_sync_called = False
+        self.prepare_sync_state_called = False
+        self.persist_sync_state_called = False
+        self._pending_sync_cursor_value = None
+        _FakeBigQueryConnector.instance = self
+
+    def load_credentials(self, credentials):
+        self.credentials = credentials
+
+    def validate_connector_settings(self):
+        return None
+
+    def prepare_sync_state(self, connector_id, config):
+        self.prepare_sync_state_called = True
+        self.prepare_sync_state_args = (connector_id, config)
+
+    def get_saved_sync_cursor_value(self):
+        return None
+
+    def retrieve_all_slim_docs_perm_sync(self, callback=None):
+        del callback
+        self.retrieve_all_slim_docs_perm_sync_called = True
+        yield [types.SimpleNamespace(id="bq-row-1")]
+
+    def load_from_state(self):
+        self.load_from_state_called = True
+        return iter((["full-sync"],))
+
+    def load_from_cursor_range(self, start_value=None, start_id=None, end_value=None):
+        self.load_from_cursor_range_called = True
+        return iter(([_make_fake_doc("bq-incremental-doc")],))
+
+    def persist_sync_state(self):
+        self.persist_sync_state_called = True
+
+
+def _bigquery_conf(**overrides):
+    conf = {
+        "project_id": "proj",
+        "dataset_id": "ds",
+        "table_id": "tbl",
+        "content_columns": "name",
+        "credentials": {"service_account_json": "{}"},
+        "sync_deleted_files": False,
+    }
+    conf.update(overrides)
+    return conf
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_bigquery_generate_full_sync_on_first_run(monkeypatch):
+    monkeypatch.setattr(sync_data_source, "BigQueryConnector", _FakeBigQueryConnector)
+
+    task = {
+        **_make_task(),
+        "reindex": "0",
+        "poll_range_start": None,
+        "skip_connection_log": True,
+    }
+    sync = sync_data_source.BigQuery(_bigquery_conf())
+
+    document_generator = await sync._generate(task)
+    connector = _FakeBigQueryConnector.instance
+
+    assert connector is not None
+    assert connector.prepare_sync_state_called is True
+    assert connector.load_from_state_called is True
+    assert connector.load_from_cursor_range_called is False
+    assert list(document_generator) == [["full-sync"]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_bigquery_generate_incremental_cursor_path(monkeypatch):
+    monkeypatch.setattr(sync_data_source, "BigQueryConnector", _FakeBigQueryConnector)
+
+    task = {
+        **_make_task(),
+        "reindex": "0",
+        "poll_range_start": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "skip_connection_log": True,
+    }
+    sync = sync_data_source.BigQuery(_bigquery_conf(timestamp_column="updated_at"))
+
+    document_generator = await sync._generate(task)
+    connector = _FakeBigQueryConnector.instance
+
+    assert connector is not None
+    assert connector.load_from_cursor_range_called is True
+    assert connector.load_from_state_called is False
+    assert [doc.id for doc in list(document_generator)[0]] == ["bq-incremental-doc"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_bigquery_cursor_persists_only_after_success(monkeypatch):
+    monkeypatch.setattr(sync_data_source, "BigQueryConnector", _FakeBigQueryConnector)
+    _patch_common_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "duplicate_and_parse",
+        lambda *_args, **_kwargs: ([], ["parsed-doc-id"]),
+    )
+
+    task = {
+        **_make_task(),
+        "reindex": "0",
+        "poll_range_start": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "skip_connection_log": True,
+    }
+    sync = sync_data_source.BigQuery(_bigquery_conf(timestamp_column="updated_at"))
+
+    await sync._run_task_logic(task)
+
+    connector = _FakeBigQueryConnector.instance
+    assert connector is not None
+    assert connector.persist_sync_state_called is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_bigquery_cursor_does_not_persist_when_parse_returns_errors(monkeypatch):
+    monkeypatch.setattr(sync_data_source, "BigQueryConnector", _FakeBigQueryConnector)
+    _patch_common_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: None,
+    )
+
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "duplicate_and_parse",
+        lambda *_args, **_kwargs: (["parse error"], ["parsed-doc-id"]),
+    )
+
+    task = {
+        **_make_task(),
+        "reindex": "0",
+        "poll_range_start": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "skip_connection_log": True,
+    }
+    sync = sync_data_source.BigQuery(_bigquery_conf(timestamp_column="updated_at"))
+
+    await sync._run_task_logic(task)
+
+    connector = _FakeBigQueryConnector.instance
+    assert connector is not None
+    assert connector.persist_sync_state_called is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_bigquery_cursor_does_not_persist_when_batch_is_skipped(monkeypatch):
+    monkeypatch.setattr(sync_data_source, "BigQueryConnector", _FakeBigQueryConnector)
+    _patch_common_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: None,
+    )
+
+    def _raise_in_duplicate_and_parse(*_args, **_kwargs):
+        raise RuntimeError("batch failed")
+
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "duplicate_and_parse",
+        _raise_in_duplicate_and_parse,
+    )
+
+    task = {
+        **_make_task(),
+        "reindex": "0",
+        "poll_range_start": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "skip_connection_log": True,
+    }
+    sync = sync_data_source.BigQuery(_bigquery_conf(timestamp_column="updated_at"))
+
+    await sync._run_task_logic(task)
+
+    connector = _FakeBigQueryConnector.instance
+    assert connector is not None
+    assert connector.persist_sync_state_called is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_bigquery_collect_prune_snapshot_when_enabled(monkeypatch):
+    monkeypatch.setattr(sync_data_source, "BigQueryConnector", _FakeBigQueryConnector)
+
+    task = {
+        **_make_task(),
+        "reindex": "0",
+        "poll_range_start": None,
+        "skip_connection_log": True,
+    }
+    sync = sync_data_source.BigQuery(_bigquery_conf(sync_deleted_files=True))
+
+    await sync._generate(task)
+    file_list = sync._collect_prune_snapshot(task)
+    connector = _FakeBigQueryConnector.instance
+
+    assert connector.retrieve_all_slim_docs_perm_sync_called is True
+    assert [doc.id for doc in file_list] == ["bq-row-1"]
 
 
 class _FakeDropboxConnector:

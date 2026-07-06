@@ -15,8 +15,10 @@
 #
 
 import importlib
+import os
 import sys
 import types
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -113,10 +115,28 @@ def raptor_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.token_utils", token_utils_module)
     monkeypatch.setitem(sys.modules, "rag.graphrag.utils", graphrag_utils_module)
     monkeypatch.setitem(sys.modules, "common.misc_utils", misc_utils_module)
-    monkeypatch.delitem(sys.modules, "rag.raptor", raising=False)
-    module = importlib.import_module("rag.raptor")
+    # Create stub parent packages and load raptor directly via spec_from_file_location
+    # to bypass rag/advanced_rag/__init__.py (which triggers ES connection etc.).
+    _test_dir = os.path.dirname(__file__)
+    _rag_adv_kc_dir = os.path.normpath(os.path.join(_test_dir, "../../../rag/advanced_rag/knowlege_compile"))
+    _rag_adv = types.ModuleType("rag.advanced_rag")
+    _rag_adv.__path__ = [os.path.normpath(os.path.join(_test_dir, "../../../rag/advanced_rag"))]
+    _rag_adv.__package__ = "rag.advanced_rag"
+    monkeypatch.setitem(sys.modules, "rag.advanced_rag", _rag_adv)
+    _rag_adv_kc = types.ModuleType("rag.advanced_rag.knowlege_compile")
+    _rag_adv_kc.__path__ = [_rag_adv_kc_dir]
+    _rag_adv_kc.__package__ = "rag.advanced_rag.knowlege_compile"
+    monkeypatch.setitem(sys.modules, "rag.advanced_rag.knowlege_compile", _rag_adv_kc)
+    monkeypatch.delitem(sys.modules, "rag.advanced_rag.knowlege_compile.raptor", raising=False)
+    _raptor_spec = importlib.util.spec_from_file_location(
+        "rag.advanced_rag.knowlege_compile.raptor",
+        os.path.join(_rag_adv_kc_dir, "raptor.py"),
+    )
+    module = importlib.util.module_from_spec(_raptor_spec)
+    sys.modules["rag.advanced_rag.knowlege_compile.raptor"] = module
+    _raptor_spec.loader.exec_module(module)
     yield module
-    monkeypatch.delitem(sys.modules, "rag.raptor", raising=False)
+    monkeypatch.delitem(sys.modules, "rag.advanced_rag.knowlege_compile.raptor", raising=False)
 
 
 class FakeChatModel:
@@ -205,6 +225,46 @@ def test_ahc_clustering_method_is_supported_in_original_tree_builder(raptor_modu
 def test_unknown_clustering_method_is_rejected(raptor_module):
     with pytest.raises(ValueError, match="Unsupported RAPTOR clustering method"):
         _make_raptor(raptor_module, clustering_method="psi")
+
+
+@pytest.mark.p2
+def test_get_optimal_clusters_handles_max_cluster_equal_one(raptor_module):
+    raptor = _make_raptor(raptor_module, max_cluster=1)
+
+    optimal = raptor._get_optimal_clusters(
+        np.array([[0.0, 0.0], [0.1, 0.0], [1.0, 1.0], [1.1, 1.1]]),
+        random_state=0,
+    )
+
+    assert optimal == 1
+
+
+@pytest.mark.p2
+def test_get_optimal_clusters_evaluates_upper_bound_candidate(monkeypatch, raptor_module):
+    raptor = _make_raptor(raptor_module, max_cluster=3)
+    evaluated = []
+
+    class RecordingGaussianMixture:
+        def __init__(self, n_components, random_state=None):
+            self.n_components = n_components
+            evaluated.append(n_components)
+
+        def fit(self, embeddings):
+            return self
+
+        def bic(self, embeddings):
+            scores = {1: 30.0, 2: 20.0, 3: 10.0}
+            return scores[self.n_components]
+
+    monkeypatch.setattr(raptor_module, "GaussianMixture", RecordingGaussianMixture)
+
+    optimal = raptor._get_optimal_clusters(
+        np.array([[0.0, 0.0], [0.1, 0.0], [1.0, 1.0], [1.1, 1.1]]),
+        random_state=0,
+    )
+
+    assert optimal == 3
+    assert evaluated == [1, 2, 3]
 
 
 def test_psi_tree_builder_ranks_all_leaf_pairs_by_original_cosine_similarity(raptor_module):
@@ -332,7 +392,7 @@ async def test_psi_tree_builder_materializes_rebalanced_summary_layers_without_u
     def fail_umap(*args, **kwargs):
         raise AssertionError("Psi tree builder must use original embeddings, not UMAP")
 
-    monkeypatch.setattr(raptor_module.umap, "UMAP", fail_umap)
+    monkeypatch.setattr("umap.UMAP", fail_umap)
     raptor = _make_raptor(raptor_module, max_cluster=2)
 
     chunks, layers = await raptor(_chunks(), random_state=0)

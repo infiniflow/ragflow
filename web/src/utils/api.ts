@@ -141,7 +141,7 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   unbindPipelineTask: (datasetId: string, indexType: string, wipe?: boolean) =>
     `${restAPIv1}/datasets/${datasetId}/${indexType.toLowerCase()}${wipe === false ? '?wipe=false' : ''}`,
-  pipelineRerun: `${webAPI}/canvas/rerun`,
+  pipelineRerun: `${restAPIv1}/agents/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
   updateDocumentsMetadata: (datasetId: string) =>
@@ -256,6 +256,8 @@ export default {
     `${restAPIv1}/agents/${agentId}/components/${componentId}/debug`,
   trace: (agentId: string, messageId: string) =>
     `${restAPIv1}/agents/${agentId}/logs/${messageId}`,
+  sharedTrace: (sharedId: string, messageId: string) =>
+    `${restAPIv1}/agentbots/${sharedId}/logs/${messageId}`,
   cancelCanvas: (taskId: string) => `${restAPIv1}/tasks/${taskId}/cancel`,
   // agent
   inputForm: (agentId: string, componentId: string) =>
@@ -278,6 +280,24 @@ export default {
   cancelDataflow: (id: string) => `${restAPIv1}/tasks/${id}/cancel`,
   getAttachmentFileDownload: (docId: string) =>
     `${restAPIv1}/agents/attachments/${docId}/download`,
+  getAttachmentFilePreview: ({
+    docId,
+    ext,
+    mimeType,
+    filename,
+  }: {
+    docId: string;
+    ext?: string;
+    mimeType?: string;
+    filename?: string;
+  }) => {
+    const params = new URLSearchParams();
+    if (ext) params.set('ext', ext);
+    if (mimeType) params.set('mime_type', mimeType);
+    if (filename) params.set('filename', filename);
+    const query = params.toString();
+    return `${restAPIv1}/agents/attachments/${docId}/preview${query ? `?${query}` : ''}`;
+  },
   downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,

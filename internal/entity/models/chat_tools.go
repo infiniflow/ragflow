@@ -25,6 +25,20 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
+// recordUsageFromResponse records one chat call's token usage to both
+// cm.LastUsage and the context-level run sink (if installed). Callers
+// should invoke this after each ChatWithMessages / ChatStreamlyWithSender
+// call so the canvas-layer aggregator and Langfuse both see the split.
+func recordUsageFromResponse(ctx context.Context, cm *ChatModel) {
+	if cm == nil {
+		return
+	}
+	if cm.LastUsage == nil {
+		return
+	}
+	tokenizer.RecordRunTokenUsage(ctx, cm.LastUsage.PromptTokens, cm.LastUsage.CompletionTokens, cm.LastUsage.TotalTokens)
+}
+
 const (
 	defaultMaxRetries = 3
 	defaultMaxRounds  = 5
@@ -77,7 +91,32 @@ func (cm *ChatModel) ChatWithTools(ctx context.Context, system string, history [
 }
 
 func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsList interface{}, chatCfg *ChatConfig, maxRounds int) (string, int, error) {
+	// Aggregate prompt/completion/total across all tool-calling rounds.
+	// Mirrors Python PR #16420 fix: previously the total was overwritten
+	// each round; now we accumulate so multi-round tool conversations
+	// report the correct grand total.
+	// Reset stale per-call usage from a previous call so a response
+	// without usage doesn't leak the prior call's data.
+	cm.LastUsage = nil
 	var totalTokens int
+	aggUsage := &ChatUsage{}
+
+	addRoundUsage := func(resp *ChatResponse) {
+		u := resp.Usage
+		if u == nil {
+			return
+		}
+		aggUsage.PromptTokens += u.PromptTokens
+		aggUsage.CompletionTokens += u.CompletionTokens
+		aggUsage.TotalTokens += u.TotalTokens
+		totalTokens = aggUsage.TotalTokens
+		// Store per-round delta (not cumulative) so RecordRunTokenUsage
+		// records each round's contribution exactly once.
+		cm.LastUsage = &ChatUsage{
+			PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, TotalTokens: u.TotalTokens,
+		}
+		recordUsageFromResponse(ctx, cm)
+	}
 
 	for round := 0; round <= maxRounds; round++ {
 		select {
@@ -97,6 +136,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		if resp == nil {
 			return "", totalTokens, fmt.Errorf("round %d: nil response", round)
 		}
+		addRoundUsage(resp)
 
 		if len(resp.ToolCalls) == 0 {
 			answer := ""
@@ -106,7 +146,11 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 			if resp.ReasonContent != nil && *resp.ReasonContent != "" {
 				answer = "<think>" + *resp.ReasonContent + "</think>" + answer
 			}
-			totalTokens += tokenizer.NumTokensFromString(answer)
+			// Fallback: if the provider didn't return usage info,
+			// estimate from the answer text using tiktoken.
+			if resp.Usage == nil || resp.Usage.TotalTokens == 0 {
+				totalTokens += tokenizer.NumTokensFromString(answer)
+			}
 			return answer, totalTokens, nil
 		}
 
@@ -126,7 +170,11 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 	if resp == nil || resp.Answer == nil {
 		return "", totalTokens, fmt.Errorf("final call: no answer")
 	}
-	totalTokens += tokenizer.NumTokensFromString(*resp.Answer)
+	addRoundUsage(resp)
+	// Fallback: use text-based estimation if no authoritative usage.
+	if resp.Usage == nil || resp.Usage.TotalTokens == 0 {
+		totalTokens += tokenizer.NumTokensFromString(*resp.Answer)
+	}
 	return *resp.Answer, totalTokens, nil
 }
 
@@ -177,7 +225,37 @@ func (cm *ChatModel) ChatStreamlyWithTools(ctx context.Context, system string, h
 }
 
 func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsList interface{}, chatCfg *ChatConfig, maxRounds int, sender func(*string, *string) error) (int, error) {
+	// Aggregate token counts across every tool-calling round (each round is a
+	// separate provider request). Committing per round avoids the previous
+	// bug where a later round's total overwrote earlier rounds.
+	// Reset stale per-call usage from a previous call.
+	cm.LastUsage = nil
 	var totalTokens int
+	aggUsage := &ChatUsage{}
+
+	commitRound := func(cfg *ChatConfig, roundTokens int) {
+		// Prefer the authoritative usage from the API (extracted via
+		// stream_options.include_usage=true) over text-based token
+		// counting. Mirrors Python's usage_from_response accumulation
+		// in chat_model.py streaming handlers.
+		// Track per-round delta so RecordRunTokenUsage records each
+		// round's contribution exactly once (the sink does Add, not Set).
+		var deltaPrompt, deltaCompletion, deltaTotal int
+		if u := cfg.UsageResult; u != nil && u.TotalTokens > 0 {
+			deltaPrompt, deltaCompletion, deltaTotal = u.PromptTokens, u.CompletionTokens, u.TotalTokens
+			aggUsage.PromptTokens += deltaPrompt
+			aggUsage.CompletionTokens += deltaCompletion
+			aggUsage.TotalTokens += deltaTotal
+		} else {
+			deltaTotal = roundTokens
+			aggUsage.TotalTokens += deltaTotal
+		}
+		totalTokens = aggUsage.TotalTokens
+		cm.LastUsage = &ChatUsage{
+			PromptTokens: deltaPrompt, CompletionTokens: deltaCompletion, TotalTokens: deltaTotal,
+		}
+		recordUsageFromResponse(ctx, cm)
+	}
 
 	for round := 0; round <= maxRounds; round++ {
 		select {
@@ -192,10 +270,13 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 		cfg.Stream = boolPtr(true)
 		var tcs []map[string]interface{}
 		cfg.ToolCallsResult = &tcs
+		var roundUsage ChatUsage
+		cfg.UsageResult = &roundUsage
 
 		reasoningStarted := false
 		var answer string
 		var pendingThinkClose bool
+		var roundTokens int
 
 		err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, func(delta *string, reason *string) error {
 			if reason != nil && *reason != "" {
@@ -207,6 +288,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 					}
 				}
 				pendingThinkClose = true
+				roundTokens += tokenizer.NumTokensFromString(*reason)
 				return sender(reason, nil)
 			}
 			// Reasoning ended, close the think block if open
@@ -221,7 +303,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 				if *delta == "[DONE]" {
 					return nil
 				}
-				totalTokens += tokenizer.NumTokensFromString(*delta)
+				roundTokens += tokenizer.NumTokensFromString(*delta)
 				answer += *delta
 				if e := sender(delta, nil); e != nil {
 					return e
@@ -237,6 +319,9 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 				return totalTokens, e
 			}
 		}
+		// Commit this round's token count to the running aggregate.
+		// Prefer authoritative API usage over text-based estimation.
+		commitRound(&cfg, roundTokens)
 		if err != nil {
 			return totalTokens, fmt.Errorf("round %d: %w", round, err)
 		}
@@ -263,7 +348,17 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 	})
 	cfg := *chatCfg
 	cfg.Stream = boolPtr(true)
-	return totalTokens, cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, sender)
+	var exceedUsage ChatUsage
+	cfg.UsageResult = &exceedUsage
+	var exceedTokens int
+	err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, func(delta *string, reason *string) error {
+		if delta != nil && *delta != "" && *delta != "[DONE]" {
+			exceedTokens += tokenizer.NumTokensFromString(*delta)
+		}
+		return nil
+	})
+	commitRound(&cfg, exceedTokens)
+	return totalTokens, err
 }
 
 // appendToolResults executes tool calls concurrently, appends the assistant

@@ -193,7 +193,7 @@ func (s *SkillSpaceService) CreateSpace(req *CreateSpaceRequest) (map[string]int
 
 	// Check if there's an existing folder with the same name under skills folder
 	// If exists, delete it to prevent duplicate folder names
-	existingFolders := s.fileDAO.Query(req.Name, skillsFolderID)
+	existingFolders := s.fileDAO.Query(req.Name, skillsFolderID, req.TenantID)
 	for _, f := range existingFolders {
 		if f.Type == "folder" && f.Name == req.Name {
 			common.Info("Deleting existing space folder with same name", zap.String("folderID", f.ID), zap.String("name", req.Name))

@@ -25,6 +25,11 @@ const HighLightMarkdown = ({
   children: string | null | undefined;
 }) => {
   const isDarkTheme = useIsDarkTheme();
+  // IMPORTANT: preprocessLaTeX() decodes &lt;/&gt;/&amp; back to raw HTML before
+  // rehypeRaw parses the markdown. Sanitizing children *before* preprocessLaTeX
+  // would let entity-encoded payloads bypass DOMPurify and inject HTML.
+  // Sanitize the *post*-processed string instead. (Coderabbit CRITICAL #3486038798)
+  const processed = children ? preprocessLaTeX(children) : children;
   const dir = children
     ? getDirAttribute(children.replace(citationMarkerReg, ''))
     : undefined;
@@ -60,7 +65,7 @@ const HighLightMarkdown = ({
           } as any
         }
       >
-        {children ? preprocessLaTeX(children) : children}
+        {processed}
       </Markdown>
     </div>
   );

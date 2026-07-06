@@ -20,7 +20,7 @@
 // The Python provider uses the high-level `agentrun-sdk` Python
 // package, which exposes a `Sandbox` class with `create()` /
 // `connect()` / `context.execute()` / `delete_by_id()` methods.
-// The Go SDK at v1.1.0 is the OpenAPI stub — it has lifecycle
+// The Go SDK at v5.8.4 is the OpenAPI stub — it has lifecycle
 // operations (CreateCodeInterpreter / DeleteCodeInterpreter /
 // ListCodeInterpreters / GetCodeInterpreter) but does NOT expose
 // the execute endpoint.
@@ -48,8 +48,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alibabacloud-go/agentrun-20250910/client"
-	agentrun "github.com/alibabacloud-go/agentrun-20250910/client"
+	"github.com/alibabacloud-go/agentrun-20250910/v5/client"
+	agentrun "github.com/alibabacloud-go/agentrun-20250910/v5/client"
 	openapiutil "github.com/alibabacloud-go/darabonba-openapi/v2/utils"
 )
 
@@ -213,7 +213,7 @@ func (p *AliyunCodeInterpreterProvider) CreateInstance(ctx context.Context, temp
 		templateName = fmt.Sprintf("ragflow-%s-default", lang)
 	}
 
-	// NOTE: Go SDK v1.1.0's CreateCodeInterpreterInput does not
+	// NOTE: Go SDK v5.8.4's CreateCodeInterpreterInput does not
 	// expose a TemplateName field. The Python SDK creates the
 	// template via the high-level `Template.create()` API and
 	// then references it from `Sandbox.create(template_name=...)`.

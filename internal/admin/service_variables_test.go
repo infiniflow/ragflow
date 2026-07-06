@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"testing"
 )
@@ -42,7 +43,7 @@ func TestValidateSystemSettingValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			setting := entity.SystemSettings{Name: "test.setting", DataType: tt.dataType}
-			err := validateSystemSettingValue(setting, tt.value)
+			err := common.ValidateSystemSettingValue(setting, tt.value)
 			if (err != nil) != tt.wantError {
 				t.Fatalf("validateSystemSettingValue() error = %v, wantError %v", err, tt.wantError)
 			}
@@ -58,7 +59,7 @@ func TestInferSystemSettingDataType(t *testing.T) {
 	}
 
 	for name, want := range tests {
-		if got := inferSystemSettingDataType(name); got != want {
+		if got := common.InferSystemSettingDataType(name); got != want {
 			t.Fatalf("inferSystemSettingDataType(%q) = %q, want %q", name, got, want)
 		}
 	}

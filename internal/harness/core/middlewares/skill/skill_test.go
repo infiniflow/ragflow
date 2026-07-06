@@ -16,7 +16,7 @@ type testBackend struct {
 }
 
 func (b *testBackend) Read(path string) (string, error) { return b.content, nil }
-func (b *testBackend) List() ([]string, error)         { return nil, nil }
+func (b *testBackend) List() ([]string, error)          { return nil, nil }
 
 type testModel struct{}
 
@@ -38,7 +38,9 @@ func TestBeforeAgent_InlineSkill(t *testing.T) {
 	})
 	rc := &core.ReActAgentContext{Instruction: "Base instruction", Tools: make([]core.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
-	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
+	if err != nil {
+		t.Fatalf("BeforeAgent: %v", err)
+	}
 
 	// Inline skill should modify instruction
 	if !strings.Contains(newRc.Instruction, "test_skill") && !strings.Contains(newRc.Instruction, "test assistant") {
@@ -54,7 +56,9 @@ func TestBeforeAgent_ForkSkill(t *testing.T) {
 	})
 	rc := &core.ReActAgentContext{Instruction: "Base", Tools: make([]core.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
-	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
+	if err != nil {
+		t.Fatalf("BeforeAgent: %v", err)
+	}
 	// Fork skills should add a tool
 	if len(newRc.Tools) == 0 {
 		t.Log("fork skill should add a tool to the tool list")
@@ -68,20 +72,34 @@ description: My custom skill
 ---
 This is the skill content.`
 	skill := parseSkill(content)
-	if skill == nil { t.Fatal("nil skill") }
-	if skill.Name != "my_skill" { t.Errorf("name = %q", skill.Name) }
-	if skill.Description != "My custom skill" { t.Errorf("desc = %q", skill.Description) }
+	if skill == nil {
+		t.Fatal("nil skill")
+	}
+	if skill.Name != "my_skill" {
+		t.Errorf("name = %q", skill.Name)
+	}
+	if skill.Description != "My custom skill" {
+		t.Errorf("desc = %q", skill.Description)
+	}
 }
 
 func TestParseSkill_NoFrontmatter(t *testing.T) {
 	content := "Simple skill without frontmatter"
 	skill := parseSkill(content)
-	if skill == nil { t.Fatal("nil skill") }
-	if skill.Name != "" { t.Error("expected empty name for no frontmatter") }
-	if skill.Content != content { t.Errorf("content = %q", skill.Content) }
+	if skill == nil {
+		t.Fatal("nil skill")
+	}
+	if skill.Name != "" {
+		t.Error("expected empty name for no frontmatter")
+	}
+	if skill.Content != content {
+		t.Errorf("content = %q", skill.Content)
+	}
 }
 
 func TestBeforeAgent_NilConfig(t *testing.T) {
 	mw := NewTyped[*schema.Message](nil)
-	if mw == nil { t.Fatal("nil middleware") }
+	if mw == nil {
+		t.Fatal("nil middleware")
+	}
 }

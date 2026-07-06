@@ -102,10 +102,10 @@ func TestNewSynonymWithMockFile(t *testing.T) {
 
 	// Create mock synonym.json
 	synonymData := map[string]interface{}{
-		"happy":    []string{"joyful", "cheerful", "glad"},
-		"sad":      []string{"unhappy", "sorrowful"},
-		"test":     "single", // Test string value
-		"UPPER":    []string{"lower"}, // Test case conversion
+		"happy": []string{"joyful", "cheerful", "glad"},
+		"sad":   []string{"unhappy", "sorrowful"},
+		"test":  "single",          // Test string value
+		"UPPER": []string{"lower"}, // Test case conversion
 	}
 	data, _ := json.Marshal(synonymData)
 	if err := os.WriteFile(filepath.Join(tmpDir, "synonym.json"), data, 0644); err != nil {
@@ -238,7 +238,7 @@ func TestSynonymLoad(t *testing.T) {
 	s := NewSynonym(redis, tmpDir, testSynonymWordNetDir)
 
 	// Simulate multiple lookups to trigger load
-	s.lookupNum.Store(200) // Set above threshold
+	s.lookupNum.Store(200)                         // Set above threshold
 	s.loadTm = time.Now().Add(-4000 * time.Second) // Set load time > 1 hour ago
 
 	// Call load directly

@@ -55,8 +55,6 @@
 package harness
 
 import (
-	"context"
-
 	"ragflow/internal/harness/core"
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/checkpoint"
@@ -64,34 +62,34 @@ import (
 	"ragflow/internal/harness/graph/errors"
 	"ragflow/internal/harness/graph/graph"
 	"ragflow/internal/harness/graph/interrupt"
-	"ragflow/internal/harness/prebuilt"
-	"ragflow/internal/harness/graph/pregel"
+	_ "ragflow/internal/harness/graph/pregel" // triggers pregel.init() → sets PregelRunFunc
 	"ragflow/internal/harness/graph/types"
+	"ragflow/internal/harness/prebuilt"
 )
 
 // Re-export main types for convenience.
 type (
 	// StateGraph is a graph whose nodes communicate by reading and writing to a shared state.
-	StateGraph = graph.StateGraph
-	
+	StateGraph = types.StateGraph
+
 	// CompiledGraph is a compiled, executable graph.
-	CompiledGraph = graph.CompiledGraph
-	
+	CompiledGraph = types.CompiledGraph
+
 	// Node represents a node in the graph.
-	Node = graph.Node
-	
+	Node = types.Node
+
 	// Edge represents an edge in the graph.
-	Edge = graph.Edge
-	
+	Edge = types.Edge
+
 	// Send represents a dynamic node invocation.
-	Send = graph.Send
-	
+	Send = types.Send
+
 	// Checkpointer is the interface for checkpoint savers.
-	Checkpointer = graph.Checkpointer
-	
+	Checkpointer = checkpoint.BaseCheckpointer
+
 	// MemorySaver is an in-memory checkpoint saver.
 	MemorySaver = checkpoint.MemorySaver
-	
+
 	// NATSSaver is a NATS JetStream-based checkpoint saver.
 	NATSSaver = checkpoint.NATSSaver
 	// NATSConfig holds configuration for the NATS checkpoint saver.
@@ -99,52 +97,52 @@ type (
 
 	// Channel is the base interface for all channels.
 	Channel = channels.Channel
-	
+
 	// BaseChannel provides a base implementation of Channel.
 	BaseChannel = channels.BaseChannel
-	
+
 	// LastValue stores the last value received.
 	LastValue = channels.LastValue
-	
+
 	// Topic is a configurable PubSub Topic.
 	Topic = channels.Topic
-	
+
 	// BinaryOperatorAggregate stores the result of applying a binary operator.
 	BinaryOperatorAggregate = channels.BinaryOperatorAggregate
-	
+
 	// BinaryOperator is a function that combines two values into one.
 	BinaryOperator = channels.BinaryOperator
-	
+
 	// EphemeralValue stores a value that is cleared after being read once.
 	EphemeralValue = channels.EphemeralValue
-	
+
 	// NamedBarrierValue waits until all named nodes have written a value.
 	NamedBarrierValue = channels.NamedBarrierValue
-	
+
 	// NamedBarrierValueAfterFinish waits for all named nodes, available only after finish.
 	NamedBarrierValueAfterFinish = channels.NamedBarrierValueAfterFinish
-	
+
 	// LastValueAfterFinish stores last value, available only after finish.
 	LastValueAfterFinish = channels.LastValueAfterFinish
-	
+
 	// UntrackedValue stores a value but does not track it for checkpointing.
 	UntrackedValue = channels.UntrackedValue
-	
+
 	// AnyValue stores any value received.
 	AnyValue = channels.AnyValue
-	
+
 	// RunnableConfig is the configuration for a runnable.
 	RunnableConfig = types.RunnableConfig
-	
+
 	// StreamMode defines how the stream method should emit outputs.
 	StreamMode = types.StreamMode
-	
+
 	// RetryPolicy configures retrying nodes.
 	RetryPolicy = types.RetryPolicy
-	
+
 	// CachePolicy configures caching nodes.
 	CachePolicy = types.CachePolicy
-	
+
 	// Command is used to update the graph's state and send messages to nodes.
 	Command = types.Command
 
@@ -246,8 +244,8 @@ var (
 	WithCancel = core.WithCancel
 
 	// Run option constructors
-	WithSessionValues       = core.WithSessionValues
-	WithCheckPointID        = core.WithCheckPointID
+	WithSessionValues        = core.WithSessionValues
+	WithCheckPointID         = core.WithCheckPointID
 	WithSkipTransferMessages = core.WithSkipTransferMessages
 	WithCallbacks            = core.WithCallbacks
 	WithAgentNames           = core.WithAgentNames
@@ -269,15 +267,14 @@ var (
 	DeleteRunLocalValue = core.DeleteRunLocalValue
 
 	// Transfer and middleware
-	AgentWithOptions           = core.AgentWithOptions
+	AgentWithOptions               = core.AgentWithOptions
 	AgentWithDeterministicTransfer = core.AgentWithDeterministicTransfer
-	SetLanguage                = core.SetLanguage
+	SetLanguage                    = core.SetLanguage
 
 	// Errors
 	ErrCancelTimeout  = core.ErrCancelTimeout
 	ErrExecutionEnded = core.ErrExecutionEnded
 	ErrStreamCanceled = core.ErrStreamCanceled
-
 )
 
 // Prebuilt component functions.
@@ -298,13 +295,13 @@ var (
 const (
 	// Start is the first (virtual) node in the graph.
 	Start = constants.Start
-	
+
 	// End is the last (virtual) node in the graph.
 	End = constants.End
-	
+
 	// TagNoStream is a tag to disable streaming.
 	TagNoStream = constants.TagNoStream
-	
+
 	// TagHidden is a tag to hide a node/edge from tracing.
 	TagHidden = constants.TagHidden
 )
@@ -322,19 +319,19 @@ const (
 
 // Re-export error types.
 type (
-	GraphRecursionError   = errors.GraphRecursionError
-	InvalidUpdateError    = errors.InvalidUpdateError
-	GraphInterrupt        = errors.GraphInterrupt
-	EmptyChannelError     = errors.EmptyChannelError
-	EmptyInputError       = errors.EmptyInputError
-	NodeNotFoundError     = errors.NodeNotFoundError
-	InvalidNodeError      = errors.InvalidNodeError
-	InvalidEdgeError      = errors.InvalidEdgeError
-	ChannelNotFoundError  = errors.ChannelNotFoundError
+	GraphRecursionError  = errors.GraphRecursionError
+	InvalidUpdateError   = errors.InvalidUpdateError
+	GraphInterrupt       = errors.GraphInterrupt
+	EmptyChannelError    = errors.EmptyChannelError
+	EmptyInputError      = errors.EmptyInputError
+	NodeNotFoundError    = errors.NodeNotFoundError
+	InvalidNodeError     = errors.InvalidNodeError
+	InvalidEdgeError     = errors.InvalidEdgeError
+	ChannelNotFoundError = errors.ChannelNotFoundError
 )
 
 // NewStateGraph creates a new StateGraph with the given state schema.
-func NewStateGraph(stateSchema interface{}) *StateGraph {
+func NewStateGraph(stateSchema interface{}) StateGraph {
 	return graph.NewStateGraph(stateSchema)
 }
 
@@ -347,25 +344,52 @@ func NewMemorySaver() *MemorySaver {
 var (
 	// WithCheckpointer sets the checkpointer for the compiled graph.
 	WithCheckpointer = graph.WithCheckpointer
-	
+
 	// WithInterrupts sets the nodes that should trigger interrupts.
 	WithInterrupts = graph.WithInterrupts
-	
+
+	// WithInterruptsAfter sets the nodes that should trigger interrupts AFTER execution.
+	WithInterruptsAfter = graph.WithInterruptsAfter
+
 	// WithRecursionLimit sets the recursion limit.
 	WithRecursionLimit = graph.WithRecursionLimit
-	
+
 	// WithDebug enables debug mode.
 	WithDebug = graph.WithDebug
+
+	// WithNodeTriggerMode sets the node trigger mode (AnyPredecessor / AllPredecessor).
+	WithNodeTriggerMode = graph.WithNodeTriggerMode
 )
+
+// Loop / Parallel option constructors.
+var (
+	// WithLoopMaxIterations sets the maximum number of iterations for a Loop node.
+	WithLoopMaxIterations = graph.WithLoopMaxIterations
+	// WithLoopCheckpointIDPrefix sets a stable checkpoint prefix for loop iterations.
+	WithLoopCheckpointIDPrefix = graph.WithLoopCheckpointIDPrefix
+	// WithParallelMaxConcurrency sets the maximum concurrency for a Parallel node.
+	WithParallelMaxConcurrency = graph.WithParallelMaxConcurrency
+)
+
+// Loop / Parallel node constructor functions.
+var (
+	// NewLoopNodeFunc creates a NodeFunc that repeatedly executes a sub-graph.
+	NewLoopNodeFunc = graph.NewLoopNodeFunc
+	// NewParallelNodeFunc creates a NodeFunc that fans out items to a sub-graph.
+	NewParallelNodeFunc = graph.NewParallelNodeFunc
+)
+
+// LoopCondition is the per-iteration exit predicate for loop nodes.
+type LoopCondition = graph.LoopCondition
 
 // Interrupt functions.
 var (
 	// InterruptFunc interrupts the graph with a resumable exception.
 	InterruptFunc = interrupt.Interrupt
-	
+
 	// IsInterrupt checks if an error is a GraphInterrupt.
 	IsInterrupt = interrupt.IsInterrupt
-	
+
 	// GetInterruptValue extracts the interrupt value from a GraphInterrupt error.
 	GetInterruptValue = interrupt.GetInterruptValue
 )
@@ -374,28 +398,28 @@ var (
 var (
 	// NewLastValue creates a new LastValue channel.
 	NewLastValue = channels.NewLastValue
-	
+
 	// NewTopic creates a new Topic channel.
 	NewTopic = channels.NewTopic
-	
+
 	// NewBinaryOperatorAggregate creates a new BinaryOperatorAggregate channel.
 	NewBinaryOperatorAggregate = channels.NewBinaryOperatorAggregate
-	
+
 	// NewEphemeralValue creates a new EphemeralValue channel.
 	NewEphemeralValue = channels.NewEphemeralValue
-	
+
 	// NewNamedBarrierValue creates a new NamedBarrierValue channel.
 	NewNamedBarrierValue = channels.NewNamedBarrierValue
-	
+
 	// NewNamedBarrierValueAfterFinish creates a new NamedBarrierValueAfterFinish channel.
 	NewNamedBarrierValueAfterFinish = channels.NewNamedBarrierValueAfterFinish
-	
+
 	// NewLastValueAfterFinish creates a new LastValueAfterFinish channel.
 	NewLastValueAfterFinish = channels.NewLastValueAfterFinish
-	
+
 	// NewUntrackedValue creates a new UntrackedValue channel.
 	NewUntrackedValue = channels.NewUntrackedValue
-	
+
 	// NewAnyValue creates a new AnyValue channel.
 	NewAnyValue = channels.NewAnyValue
 )
@@ -404,10 +428,10 @@ var (
 var (
 	// ListAppend appends two lists.
 	ListAppend = channels.ListAppend
-	
+
 	// IntAdd adds two integers.
 	IntAdd = channels.IntAdd
-	
+
 	// StringConcat concatenates two strings.
 	StringConcat = channels.StringConcat
 )
@@ -434,34 +458,6 @@ func NewSend(node string, arg interface{}) *Send {
 	return &Send{Node: node, Arg: arg}
 }
 
-// init configures the graph package to use pregel.Engine as the Pregel runner.
-// This merges the two Pregel implementations: CompiledGraph.run() delegates
-// to pregel.Engine.RunSync() instead of its inline loop.
-func init() {
-	graph.SetPregelRunFunc(pregelRunCompiledGraph)
-}
-
-// pregelRunCompiledGraph is the Pregel runner that delegates to pregel.Engine.
-// It is set as graph.PregelRunFunc via init() above.
-func pregelRunCompiledGraph(
-	ctx context.Context,
-	cg *graph.CompiledGraph,
-	input interface{},
-	config *types.RunnableConfig,
-	streamMode types.StreamMode,
-) (interface{}, error) {
-	// Extract interrupt node names from the set
-	interruptKeys := make([]string, 0, len(cg.GetInterrupts()))
-	for k := range cg.GetInterrupts() {
-		interruptKeys = append(interruptKeys, k)
-	}
-
-	engine := pregel.NewEngine(cg.GetGraph(),
-		pregel.WithCheckpointer(cg.GetCheckpointer()),
-		pregel.WithInterrupts(interruptKeys...),
-		pregel.WithRecursionLimit(cg.GetRecursionLimit()),
-		pregel.WithDebug(cg.IsDebug()),
-		pregel.WithConfig(config),
-	)
-	return engine.RunSync(ctx, input)
-}
+// Pregel engine wiring (init + runner) moved to
+// internal/harness/graph/pregel/init_pregel.go so that any
+// package importing pregel automatically activates it.

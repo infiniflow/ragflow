@@ -152,6 +152,19 @@ func (m *MCPToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON strin
 	return res.Text, nil
 }
 
+// Close releases resources held by the adapter. In Go's architecture
+// MCP sessions are per-invocation (created and torn down within each
+// InvokableRun call), so there are no persistent connections to drain.
+// The primary resource is the http.Client's idle-connection pool;
+// calling Close explicitly drops those idle connections so they don't
+// accumulate across many adapter instances over long-running processes.
+// Mirrors Python's close_sync() in common/mcp_tool_call_conn.py.
+func (m *MCPToolAdapter) Close() {
+	if m.httpClient != nil {
+		m.httpClient.CloseIdleConnections()
+	}
+}
+
 // BuildMCPToolAdapters wraps a slice of mcpclient.Tool descriptors as
 // eino InvokableTool. Returned slice is suitable for handing to
 // agenttool.NewRetrieverTool / NewMCPToolAdapter paths or directly to

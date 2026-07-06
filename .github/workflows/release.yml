@@ -137,8 +137,8 @@ jobs:
             output_ext: .exe
     runs-on: ${{ matrix.runner }}
     env:
-      CLI_NAME: ragflow_cli
-      CLI_MAIN: ./cmd/ragflow_cli.go
+      CLI_NAME: ragflow-cli
+      CLI_MAIN: ./cmd/ragflow-cli.go
       DIST_DIR: dist/cli
       OFFICE_OXIDE_VERSION: "0.1.2"
       RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
@@ -350,8 +350,8 @@ jobs:
           set -euo pipefail
 
           cmake_args=(
-            -S internal/cpp
-            -B internal/cpp/cmake-build-release
+            -S internal/binding/cpp
+            -B internal/binding/cpp/cmake-build-release
             -DCMAKE_BUILD_TYPE=Release
           )
 
@@ -366,9 +366,9 @@ jobs:
           fi
 
           cmake "${cmake_args[@]}"
-          cmake --build internal/cpp/cmake-build-release --target rag_tokenizer_c_api --parallel
+          cmake --build internal/binding/cpp/cmake-build-release --target rag_tokenizer_c_api --parallel
 
-          test -f internal/cpp/cmake-build-release/librag_tokenizer_c_api.a
+          test -f internal/binding/cpp/cmake-build-release/librag_tokenizer_c_api.a
 
       - name: Build rag tokenizer native library
         if: runner.os == 'Windows'
@@ -390,16 +390,16 @@ jobs:
 
           test -f "${MINGW_PREFIX}/include/simde/x86/sse4.1.h"
 
-          cmake -S internal/cpp -B internal/cpp/cmake-build-release -G Ninja \
+          cmake -S internal/binding/cpp -B internal/binding/cpp/cmake-build-release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER="$(cygpath -m "${cc_path}")" \
             -DCMAKE_CXX_COMPILER="$(cygpath -m "${cxx_path}")" \
             -DCMAKE_C_FLAGS="-I${MINGW_PREFIX}/include" \
             -DCMAKE_CXX_FLAGS="-I${MINGW_PREFIX}/include"
 
-          cmake --build internal/cpp/cmake-build-release --target rag_tokenizer_c_api --parallel
+          cmake --build internal/binding/cpp/cmake-build-release --target rag_tokenizer_c_api --parallel
 
-          test -f internal/cpp/cmake-build-release/librag_tokenizer_c_api.a
+          test -f internal/binding/cpp/cmake-build-release/librag_tokenizer_c_api.a
 
       - name: Build Go CLI release binaries
         if: runner.os != 'Windows'
@@ -492,7 +492,7 @@ jobs:
             Write-Error "liboffice_oxide.a does not exist: ${officeOxidePrefix}/lib/liboffice_oxide.a"
             exit 1
           }
-          if (-not (Test-Path "internal/cpp/cmake-build-release/librag_tokenizer_c_api.a")) {
+          if (-not (Test-Path "internal/binding/cpp/cmake-build-release/librag_tokenizer_c_api.a")) {
             Write-Error "librag_tokenizer_c_api.a does not exist"
             exit 1
           }
@@ -501,7 +501,7 @@ jobs:
             exit 1
           }
 
-          $ragTokenizerLib = (Resolve-Path "internal/cpp/cmake-build-release/librag_tokenizer_c_api.a").Path -replace '\\', '/'
+          $ragTokenizerLib = (Resolve-Path "internal/binding/cpp/cmake-build-release/librag_tokenizer_c_api.a").Path -replace '\\', '/'
           $pcre2LibDir = $env:PCRE2_LIBDIR -replace '\\', '/'
           $pcre2IncludeDir = $env:PCRE2_INCLUDEDIR -replace '\\', '/'
 
