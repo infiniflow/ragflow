@@ -21,7 +21,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"image"
 	"os"
+	"sort"
 	"strings"
 
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
@@ -36,22 +38,236 @@ import (
 // is compiled behind `//go:build cgo`.
 var ErrPDFEngineUnavailable = errors.New("parser: PDF backend unavailable in this build")
 
+var supportedPDFParseMethods = map[string]struct{}{
+	"":               {},
+	"deepdoc":        {},
+	"plain_text":     {},
+	"mineru":         {},
+	"paddleocr":      {},
+	"docling":        {},
+	"opendataloader": {},
+	"somark":         {},
+	"tcadp":          {},
+}
+
 type PDFParser struct {
 	ParserType string // DeepDoc, PaddleOCR, MinerU
 	Model      string // DeepDoc@buildin@ragflow
 	LibType    string // pdf_oxide, used by DeepDoc
+
+	FlattenMediaToText                bool
+	RemoveTOC                         bool
+	RemoveHeaderFooter                bool
+	EnableMultiColumn                 bool
+	OutputFormat                      string
+	ParseMethod                       string
+	MinerUAPIServer                   string
+	MinerUAPIKey                      string
+	MinerUBackend                     string
+	PaddleOCRBaseURL                  string
+	PaddleOCRAPIKey                   string
+	PaddleOCRAlgorithm                string
+	DoclingServerURL                  string
+	DoclingAPIKey                     string
+	OpenDataLoaderAPIServer           string
+	OpenDataLoaderAPIKey              string
+	OpenDataLoaderTimeout             int
+	OpenDataLoaderHybrid              string
+	OpenDataLoaderImageOutput         string
+	OpenDataLoaderSanitize            *bool
+	SoMarkBaseURL                     string
+	SoMarkAPIKey                      string
+	SoMarkImageFormat                 string
+	SoMarkFormulaFormat               string
+	SoMarkTableFormat                 string
+	SoMarkCSFormat                    string
+	SoMarkEnableTextCrossPage         bool
+	SoMarkEnableTableCrossPage        bool
+	SoMarkEnableTitleLevelRecognition bool
+	SoMarkEnableInlineImage           bool
+	SoMarkEnableTableImage            bool
+	SoMarkEnableImageUnderstanding    bool
+	SoMarkKeepHeaderFooter            bool
+	TCADPAPIServer                    string
+	TCADPAPIKey                       string
+	TCADPTableResultType              string
+	TCADPMarkdownImageResponseType    string
 }
 
 func NewPDFParser() *PDFParser {
 	return &PDFParser{
-		ParserType: "DeepDoc",
-		Model:      "DeepDoc@buildin@ragflow",
-		LibType:    "pdf_oxide",
+		ParserType:                     "DeepDoc",
+		Model:                          "DeepDoc@buildin@ragflow",
+		LibType:                        "pdf_oxide",
+		ParseMethod:                    "deepdoc",
+		OutputFormat:                   "json",
+		MinerUBackend:                  "pipeline",
+		PaddleOCRAlgorithm:             "PaddleOCR-VL",
+		OpenDataLoaderTimeout:          600,
+		SoMarkBaseURL:                  "https://somark.tech/api/v1",
+		SoMarkImageFormat:              "url",
+		SoMarkFormulaFormat:            "latex",
+		SoMarkTableFormat:              "html",
+		SoMarkCSFormat:                 "image",
+		SoMarkEnableInlineImage:        true,
+		SoMarkEnableTableImage:         true,
+		SoMarkEnableImageUnderstanding: true,
+		TCADPTableResultType:           "1",
+		TCADPMarkdownImageResponseType: "1",
 	}
 }
 
 func (p *PDFParser) String() string {
 	return "PDFParser"
+}
+
+func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["flatten_media_to_text"].(bool); ok {
+		p.FlattenMediaToText = v
+	}
+	if v, ok := setup["remove_toc"].(bool); ok {
+		p.RemoveTOC = v
+	}
+	if v, ok := setup["remove_header_footer"].(bool); ok {
+		p.RemoveHeaderFooter = v
+	}
+	if v, ok := setup["enable_multi_column"].(bool); ok {
+		p.EnableMultiColumn = v
+	}
+	if v, ok := setup["parse_method"].(string); ok && v != "" {
+		p.ParseMethod = v
+	}
+	if v, ok := setup["mineru_apiserver"].(string); ok && v != "" {
+		p.MinerUAPIServer = v
+	}
+	if v, ok := setup["mineru_api_key"].(string); ok {
+		p.MinerUAPIKey = v
+	}
+	if v, ok := setup["mineru_backend"].(string); ok && v != "" {
+		p.MinerUBackend = v
+	}
+	if v, ok := setup["output_format"].(string); ok && v != "" {
+		p.OutputFormat = v
+	}
+	if v, ok := setup["paddleocr_base_url"].(string); ok && v != "" {
+		p.PaddleOCRBaseURL = v
+	}
+	if v, ok := setup["paddleocr_api_key"].(string); ok {
+		p.PaddleOCRAPIKey = v
+	}
+	if v, ok := setup["paddleocr_algorithm"].(string); ok && v != "" {
+		p.PaddleOCRAlgorithm = v
+	}
+	if v, ok := setup["docling_server_url"].(string); ok && v != "" {
+		p.DoclingServerURL = v
+	}
+	if v, ok := setup["docling_api_key"].(string); ok {
+		p.DoclingAPIKey = v
+	}
+	if v, ok := setup["opendataloader_apiserver"].(string); ok && v != "" {
+		p.OpenDataLoaderAPIServer = v
+	}
+	if v, ok := setup["opendataloader_api_key"].(string); ok {
+		p.OpenDataLoaderAPIKey = v
+	}
+	if v, ok := setup["opendataloader_timeout"].(int); ok && v > 0 {
+		p.OpenDataLoaderTimeout = v
+	}
+	if v, ok := setup["opendataloader_timeout"].(float64); ok && v > 0 {
+		p.OpenDataLoaderTimeout = int(v)
+	}
+	if v, ok := setup["hybrid"].(string); ok && v != "" {
+		p.OpenDataLoaderHybrid = v
+	}
+	if v, ok := setup["image_output"].(string); ok && v != "" {
+		p.OpenDataLoaderImageOutput = v
+	}
+	if v, ok := setup["sanitize"].(bool); ok {
+		p.OpenDataLoaderSanitize = &v
+	}
+	if v, ok := setup["somark_base_url"].(string); ok && v != "" {
+		p.SoMarkBaseURL = v
+	}
+	if v, ok := setup["somark_api_key"].(string); ok {
+		p.SoMarkAPIKey = v
+	}
+	if v, ok := setup["somark_image_format"].(string); ok && v != "" {
+		p.SoMarkImageFormat = v
+	}
+	if v, ok := setup["somark_formula_format"].(string); ok && v != "" {
+		p.SoMarkFormulaFormat = v
+	}
+	if v, ok := setup["somark_table_format"].(string); ok && v != "" {
+		p.SoMarkTableFormat = v
+	}
+	if v, ok := setup["somark_cs_format"].(string); ok && v != "" {
+		p.SoMarkCSFormat = v
+	}
+	if v, ok := setup["somark_enable_text_cross_page"].(bool); ok {
+		p.SoMarkEnableTextCrossPage = v
+	}
+	if v, ok := setup["somark_enable_table_cross_page"].(bool); ok {
+		p.SoMarkEnableTableCrossPage = v
+	}
+	if v, ok := setup["somark_enable_title_level_recognition"].(bool); ok {
+		p.SoMarkEnableTitleLevelRecognition = v
+	}
+	if v, ok := setup["somark_enable_inline_image"].(bool); ok {
+		p.SoMarkEnableInlineImage = v
+	}
+	if v, ok := setup["somark_enable_table_image"].(bool); ok {
+		p.SoMarkEnableTableImage = v
+	}
+	if v, ok := setup["somark_enable_image_understanding"].(bool); ok {
+		p.SoMarkEnableImageUnderstanding = v
+	}
+	if v, ok := setup["somark_keep_header_footer"].(bool); ok {
+		p.SoMarkKeepHeaderFooter = v
+	}
+	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
+		p.TCADPAPIServer = v
+	}
+	if v, ok := setup["tcadp_api_key"].(string); ok {
+		p.TCADPAPIKey = v
+	}
+	if v, ok := setup["table_result_type"].(string); ok && v != "" {
+		p.TCADPTableResultType = v
+	}
+	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
+		p.TCADPMarkdownImageResponseType = v
+	}
+}
+
+func normalizePDFParseMethod(raw string) string {
+	method := strings.ToLower(strings.TrimSpace(raw))
+	switch {
+	case strings.HasSuffix(method, "@mineru"):
+		return "mineru"
+	case strings.HasSuffix(method, "@paddleocr"):
+		return "paddleocr"
+	case strings.HasSuffix(method, "@somark"):
+		return "somark"
+	case strings.HasSuffix(method, "@opendataloader"):
+		return "opendataloader"
+	}
+	switch method {
+	case "plaintext":
+		return "plain_text"
+	case "tcadp parser":
+		return "tcadp"
+	}
+	return method
+}
+
+func (p *PDFParser) validateParseMethod() error {
+	method := normalizePDFParseMethod(p.ParseMethod)
+	if _, ok := supportedPDFParseMethods[method]; ok {
+		return nil
+	}
+	return fmt.Errorf("parser: unsupported PDF parse_method %q (Go currently supports: deepdoc, plain_text, mineru, paddleocr, docling, opendataloader, somark, tcadp; tenant-resolved custom IMAGE2TEXT/VLM model names are not supported in the Go parser layer)", p.ParseMethod)
 }
 
 func emptyPDFResult(filename string) ParseResult {
@@ -85,10 +301,22 @@ func deepDocAnalyzerFromEnv() deepdoctype.DocAnalyzer {
 }
 
 func pdfParseResultToJSON(filename string, parsed *deepdoctype.ParseResult) ParseResult {
+	return pdfParseResultToJSONWithOptions(filename, parsed, pdfPostProcessOptions{})
+}
+
+func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseResult, opts pdfPostProcessOptions) ParseResult {
 	if parsed == nil {
 		return ParseResult{Err: fmt.Errorf("parser: nil DeepDOC PDF result for %s", filename)}
 	}
-	items := pdflayout.SectionsToJSON(parsed.Sections)
+	processed := *parsed
+	processed.Sections = append([]deepdoctype.Section(nil), parsed.Sections...)
+	processed.Outlines = append([]deepdoctype.Outline(nil), parsed.Outlines...)
+	if opts.enableMultiColumn && opts.pageWidth <= 0 {
+		opts.pageWidth = firstPDFPageWidth(processed.PageImages, opts.zoom)
+	}
+	applyPDFPostProcess(&processed, opts)
+
+	items := pdflayout.SectionsToJSON(processed.Sections)
 	if len(items) == 0 {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
@@ -112,10 +340,33 @@ func pdfParseResultToJSON(filename string, parsed *deepdoctype.ParseResult) Pars
 		OutputFormat: "json",
 		File: map[string]any{
 			"name":       filename,
-			"page_count": len(parsed.PageImages),
-			"outline":    outlinesToFileMeta(parsed.Outlines),
+			"page_count": len(processed.PageImages),
+			"outline":    outlinesToFileMeta(processed.Outlines),
 		},
 		JSON: items,
+	}
+}
+
+func pdfParseResultToMarkdownWithOptions(filename string, parsed *deepdoctype.ParseResult, opts pdfPostProcessOptions) ParseResult {
+	if parsed == nil {
+		return ParseResult{Err: fmt.Errorf("parser: nil DeepDOC PDF result for %s", filename)}
+	}
+	processed := *parsed
+	processed.Sections = append([]deepdoctype.Section(nil), parsed.Sections...)
+	processed.Outlines = append([]deepdoctype.Outline(nil), parsed.Outlines...)
+	if opts.enableMultiColumn && opts.pageWidth <= 0 {
+		opts.pageWidth = firstPDFPageWidth(processed.PageImages, opts.zoom)
+	}
+	applyPDFPostProcess(&processed, opts)
+
+	return ParseResult{
+		OutputFormat: "markdown",
+		File: map[string]any{
+			"name":       filename,
+			"page_count": len(processed.PageImages),
+			"outline":    outlinesToFileMeta(processed.Outlines),
+		},
+		Markdown: sectionsToMarkdown(processed.Sections),
 	}
 }
 
@@ -162,6 +413,44 @@ func inlinePNGDataURL(raw string) string {
 		return raw
 	}
 	return "data:image/png;base64," + raw
+}
+
+func sectionsToMarkdown(sections []deepdoctype.Section) string {
+	var b strings.Builder
+	for _, section := range sections {
+		layoutType := strings.TrimSpace(section.LayoutType)
+		if layoutType == deepdoctype.LayoutTypeTitle {
+			b.WriteString("\n## ")
+		}
+		if layoutType == deepdoctype.LayoutTypeFigure && section.Image != "" {
+			b.WriteString("\n![Image](")
+			b.WriteString(inlinePNGDataURL(section.Image))
+			b.WriteString(")")
+			continue
+		}
+		b.WriteString(section.Text)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func firstPDFPageWidth(pageImages map[int]image.Image, zoom float64) float64 {
+	if len(pageImages) == 0 {
+		return 0
+	}
+	if zoom <= 0 {
+		zoom = deepdoctype.DefaultParserConfig().Zoom
+	}
+	pages := make([]int, 0, len(pageImages))
+	for page := range pageImages {
+		pages = append(pages, page)
+	}
+	sort.Ints(pages)
+	img := pageImages[pages[0]]
+	if img == nil {
+		return 0
+	}
+	return float64(img.Bounds().Dx()) / zoom
 }
 
 func normalizePDFPositions(raw any) [][]any {
@@ -252,6 +541,10 @@ func normalizePDFDocType(item map[string]any) {
 }
 
 func parsePDFWithDeepDoc(ctx context.Context, filename string, data []byte, parseFn func(context.Context, []byte, deepdoctype.DocAnalyzer) (*deepdoctype.ParseResult, error)) ParseResult {
+	return parsePDFWithDeepDocOptions(ctx, filename, data, pdfPostProcessOptions{}, parseFn)
+}
+
+func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byte, opts pdfPostProcessOptions, parseFn func(context.Context, []byte, deepdoctype.DocAnalyzer) (*deepdoctype.ParseResult, error)) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
@@ -259,7 +552,15 @@ func parsePDFWithDeepDoc(ctx context.Context, filename string, data []byte, pars
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	res := pdfParseResultToJSON(filename, parsed)
+	var res ParseResult
+	switch strings.ToLower(strings.TrimSpace(opts.outputFormat)) {
+	case "", "json":
+		res = pdfParseResultToJSONWithOptions(filename, parsed, opts)
+	case "markdown":
+		res = pdfParseResultToMarkdownWithOptions(filename, parsed, opts)
+	default:
+		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", opts.outputFormat)}
+	}
 	for i := range res.JSON {
 		if img, _ := res.JSON[i]["image"].(string); img != "" {
 			res.JSON[i]["image"] = inlinePNGDataURL(img)

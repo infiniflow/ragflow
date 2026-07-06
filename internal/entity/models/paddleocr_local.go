@@ -138,6 +138,9 @@ func (p *PaddleOCRLocalModel) OCRFile(modelName *string, content []byte, fileURL
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
