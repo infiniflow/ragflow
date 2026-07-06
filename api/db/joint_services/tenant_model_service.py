@@ -306,8 +306,8 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
 
 def get_model_config_by_id(tenant_id: str, model_id: str):
     """Get model config from tenant_model by its id (CharField PK)."""
-    model_obj = TenantModelService.get_by_id(model_id)
-    if not model_obj:
+    exist, model_obj = TenantModelService.get_by_id(model_id)
+    if not exist:
         raise LookupError(f"TenantModel id={model_id} not found.")
     if model_obj.status != ActiveStatusEnum.ACTIVE.value:
         raise LookupError(f"TenantModel id={model_id} is disabled.")

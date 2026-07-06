@@ -1916,8 +1916,14 @@ class TenantModelIdMigrationStage(MigrationStage):
                                         f"UPDATE `{table_name}` SET `{tenant_id_col}` = %s WHERE id = %s",
                                         (resolved_id, row_id),
                                     )
-                                rows_updated += 1
-                                tables_operated.add(table_name)
+                            else:
+                                if not self.dry_run:
+                                    self.db.execute_sql(
+                                        f"UPDATE `{table_name}` SET `{tenant_id_col}` = '' WHERE id = %s",
+                                        (row_id,),
+                                    )
+                            rows_updated += 1
+                            tables_operated.add(table_name)
                 else:
                     cursor = self.db.execute_sql(
                         f"SELECT id, tenant_id, `{legacy_col}` FROM `{table_name}` "
@@ -1936,8 +1942,14 @@ class TenantModelIdMigrationStage(MigrationStage):
                                         f"UPDATE `{table_name}` SET `{tenant_id_col}` = %s WHERE id = %s",
                                         (resolved_id, row_id),
                                     )
-                                rows_updated += 1
-                                tables_operated.add(table_name)
+                            else:
+                                if not self.dry_run:
+                                    self.db.execute_sql(
+                                        f"UPDATE `{table_name}` SET `{tenant_id_col}` = '' WHERE id = %s",
+                                        (row_id,),
+                                    )
+                            rows_updated += 1
+                            tables_operated.add(table_name)
 
         if self.dry_run:
             logger.info(f"[DRY RUN] Would update {rows_updated} rows")
