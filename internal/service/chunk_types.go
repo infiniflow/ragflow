@@ -639,7 +639,7 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 	if req.TagFeas != nil {
 		tagFeas, err := validateUpdateTagFeatures(req.TagFeas)
 		if err != nil {
-			return fmt.Errorf("`tag_feas` %w", err)
+			return updateChunkError{code: common.CodeArgumentError, message: "`tag_feas` " + err.Error()}
 		}
 		d["tag_feas"] = tagFeas
 	}
@@ -658,6 +658,19 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 	}
 
 	return nil
+}
+
+type updateChunkError struct {
+	code    common.ErrorCode
+	message string
+}
+
+func (e updateChunkError) Error() string {
+	return e.message
+}
+
+func (e updateChunkError) Code() common.ErrorCode {
+	return e.code
 }
 
 func validateUpdateTagFeatures(raw interface{}) (map[string]float64, error) {
