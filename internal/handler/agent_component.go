@@ -29,7 +29,9 @@
 package handler
 
 import (
+	"context"
 	"errors"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
 
@@ -64,7 +66,7 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 		return
 	}
 
-	form, err := dsl.ExtractComponentInputForm(cv.DSL, componentID)
+	form, err := h.componentInputForm(c.Request.Context(), cv.DSL, componentID, user.ID)
 	if err != nil {
 		mapDSLError(c, componentID, err)
 		return
@@ -74,6 +76,41 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 		"data":    form,
 		"message": "success",
 	})
+}
+
+// componentInputForm returns the input-form schema for a single component.
+// It first tries the static input_form stored in the DSL; if the component
+// does not define one (e.g. Agent components that generate it dynamically),
+// it instantiates the runtime component and calls its GetInputForm method.
+// This mirrors Python's Canvas.get_component_input_form which invokes the
+// component's own get_input_form when the static field is absent.
+func (h *AgentHandler) componentInputForm(ctx context.Context, dslMap map[string]any, componentID, userID string) (map[string]any, error) {
+	form, err := dsl.ExtractComponentInputForm(dslMap, componentID)
+	if err == nil {
+		return form, nil
+	}
+	if !errors.Is(err, dsl.ErrMissingInputForm) {
+		return nil, err
+	}
+
+	name, err := dsl.ExtractComponentName(dslMap, componentID)
+	if err != nil {
+		return nil, err
+	}
+	params, _ := dsl.ExtractComponentParams(dslMap, componentID)
+	comp, err := runtime.DefaultFactory()(name, params)
+	if err != nil {
+		return nil, fmt.Errorf("%w: component factory: %v", dsl.ErrMalformedDSL, err)
+	}
+	getter, ok := comp.(interface{ GetInputForm() map[string]any })
+	if !ok {
+		return nil, dsl.ErrMissingInputForm
+	}
+	form = getter.GetInputForm()
+	if form == nil {
+		form = map[string]any{}
+	}
+	return form, nil
 }
 
 // DebugComponent POST /api/v1/agents/:canvas_id/components/:component_id/debug
@@ -166,7 +203,15 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	// from the request context. We attach a fresh one here so
 	// debug works on a single component without standing up the
 	// full canvas compile.
-	invokeCtx := runtime.WithState(c.Request.Context(), canvas.NewCanvasState("debug-"+componentID, "debug-task"))
+	//
+	// Seed state.Sys["tenant_id"] with the canvas owner so that
+	// components which resolve LLM credentials from the tenant
+	// tables (e.g. AgentComponent) can find the API key in single-
+	// component debug mode. Mirrors Python's @add_tenant_id_to_kwargs
+	// decorator for the debug endpoint.
+	debugState := canvas.NewCanvasState("debug-"+componentID, "debug-task")
+	debugState.Sys["tenant_id"] = user.ID
+	invokeCtx := runtime.WithState(c.Request.Context(), debugState)
 
 	outputs, err := comp.Invoke(invokeCtx, inputs)
 	if err != nil {
