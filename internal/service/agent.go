@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/tokenizer"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -772,20 +773,25 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if payload, ok := ctx.Value(webhookPayloadKey{}).(map[string]any); ok && payload != nil {
 		root["webhook_payload"] = payload
 	}
-	// Phase 4.4 V2.1 (v3.6.1): populate root["tenant_id"] so the
-	// RunTracker.Start call (in buildRunFunc) records the run
-	// under the right tenant. The lookup is best-effort — a
-	// failure here (DAO down, user has no tenants) logs and
-	// continues with an empty tenant_id rather than failing
-	// the run; the run still works, the only loss is the
-	// per-tenant filterability of the run-history log.
+	// Match Python's @add_tenant_id_to_kwargs behavior for runtime
+	// components and model credential lookup: the canvas runs under
+	// the current caller's tenant id. Team-agent access was already
+	// authorized by loadCanvasForUser above; do not replace this with
+	// an arbitrary joined team tenant or LLM credential lookup can miss
+	// the caller's configured provider key.
+	root["tenant_id"] = userID
+
+	// Preserve the historical RunTracker tenant dimension separately.
+	// Existing tests and log filters expect the joined tenant id in the
+	// run hash, but runtime state must keep tenant_id=userID.
 	if tenantIDs, terr := s.userTenantDAO.GetTenantIDsByUserID(userID); terr == nil && len(tenantIDs) > 0 {
-		root["tenant_id"] = tenantIDs[0]
+		root["run_tenant_id"] = tenantIDs[0]
 	} else if terr != nil {
-		common.Warn("service: RunAgent userTenantDAO.GetTenantIDsByUserID (best-effort, run not blocked)",
+		common.Warn("service: RunAgent userTenantDAO.GetTenantIDsByUserID (best-effort, run tracker tenant not populated)",
 			zap.String("user_id", userID),
 			zap.Error(terr))
 	}
+
 	// v3.6.1 diagnostic: log what RunAgent put into root so we can
 	// confirm tenant_id / user_id / session_id / user_input all
 	// reached the buildRunFunc closure (which runs in the runner's
@@ -835,11 +841,26 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			return nil, err
 		}
 
+		// Install a per-run token usage sink so every LLM call inside
+		// this turn records its token usage (the sink is read at the end
+		// and emitted in workflow_finished). Mirrors Python's
+		// Canvas.run() installing token_usage_sink + langfuse_run_attrs.
+		ctx = tokenizer.WithRunUsage(ctx)
+
 		// Extract the event channel + metadata injected by Runner.Run.
 		events, _ := root["__events__"].(chan canvas.RunEvent)
 		messageID, _ := root["__message_id__"].(string)
 		taskID, _ := root["__task_id__"].(string)
 		sessionID, _ := root["__session_id__"].(string)
+		userID, _ := root["user_id"].(string)
+
+		// Install per-run Langfuse correlation attrs so LLM calls inside
+		// this turn are grouped by session/user. Mirrors Python's
+		// Canvas.run() setting langfuse_run_attrs.
+		ctx = tokenizer.WithRunAttrs(ctx, &tokenizer.RunAttrs{
+			SessionID: sessionID,
+			UserID:    userID,
+		})
 
 		// Helper to build an SSE event with metadata.
 		emit := func(typ, data string) {
@@ -853,6 +874,22 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				TaskID:    taskID,
 				SessionID: sessionID,
 			})
+		}
+
+		// usagePayload returns the aggregated per-run token usage as a
+		// JSON-serializable map, or nil when no sink was installed.
+		usagePayload := func() map[string]int {
+			sink := tokenizer.GetRunUsage(ctx)
+			if sink == nil {
+				return nil
+			}
+			pt, ct, tt, calls := sink.Snapshot()
+			return map[string]int{
+				"prompt_tokens":     pt,
+				"completion_tokens": ct,
+				"total_tokens":      tt,
+				"calls":             calls,
+			}
 		}
 
 		startedAt := float64(time.Now().UnixNano()) / 1e9
@@ -883,7 +920,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			meData, _ := json.Marshal(canvas.MessageEndEvent{})
 			emit("message", string(msgData))
 			emit("message_end", string(meData))
-			wfData, _ := json.Marshal(map[string]any{"outputs": answer})
+			wfPayload := map[string]any{"outputs": answer}
+			if u := usagePayload(); u != nil {
+				wfPayload["usage"] = u
+			}
+			wfData, _ := json.Marshal(wfPayload)
 			emit("workflow_finished", string(wfData))
 			return state, nil
 		}
@@ -894,6 +935,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			s.markRunFailed(ctx, runID, "decode: "+err.Error())
 			return nil, err
 		}
+		// Close MCP tool adapters and any other closeable resources
+		// held by the canvas after execution completes. Mirrors
+		// Python's finally: canvas.close() in canvas_service.py.
+		defer c.Close()
 
 		// Store events channel + run metadata on the context so the
 		// per-node statePre/statePost wrappers (in scheduler.go) can
@@ -1080,12 +1125,16 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				})
 				emit("message_end", string(meData))
 
-				wfData, _ := json.Marshal(map[string]interface{}{
+				wfPayload := map[string]interface{}{
 					"inputs":       map[string]any{"query": userInput},
 					"outputs":      answer,
 					"elapsed_time": now - startedAt,
 					"created_at":   now,
-				})
+				}
+				if u := usagePayload(); u != nil {
+					wfPayload["usage"] = u
+				}
+				wfData, _ := json.Marshal(wfPayload)
 				emit("workflow_finished", string(wfData))
 
 				s.markRunSucceeded(ctx2, runID)
@@ -1107,13 +1156,18 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		})
 		emit("message_end", string(meData))
 
-		// Emit workflow_finished with the final outputs.
-		wfData, _ := json.Marshal(map[string]interface{}{
+		// Emit workflow_finished with the final outputs and aggregated
+		// per-run token usage across all LLM calls in this turn.
+		wfPayload := map[string]interface{}{
 			"inputs":       map[string]any{"query": userInput},
 			"outputs":      answer,
 			"elapsed_time": now - startedAt,
 			"created_at":   now,
-		})
+		}
+		if u := usagePayload(); u != nil {
+			wfPayload["usage"] = u
+		}
+		wfData, _ := json.Marshal(wfPayload)
 		emit("workflow_finished", string(wfData))
 
 		s.markRunSucceeded(ctx2, runID)
@@ -1132,11 +1186,16 @@ func runIDFor(canvasID string, root map[string]any) string {
 	return canvasID
 }
 
-// tenantIDFromRoot returns the optional tenant_id that the handler
-// may have populated on the root map. Empty when absent — the
-// RunTracker stores "" as the tenant id, which the test suite
-// already exercises.
+// tenantIDFromRoot returns the optional run-tracker tenant id that
+// RunAgent populated on the root map. Runtime components use
+// root["tenant_id"] / state.Sys["tenant_id"] for the caller tenant;
+// RunTracker keeps the historical joined-tenant dimension separately.
+// Empty when absent — the RunTracker stores "" as the tenant id, which
+// the test suite already exercises.
 func tenantIDFromRoot(root map[string]any) string {
+	if s, ok := root["run_tenant_id"].(string); ok {
+		return s
+	}
 	if s, ok := root["tenant_id"].(string); ok {
 		return s
 	}

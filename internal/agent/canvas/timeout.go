@@ -39,11 +39,24 @@
 package canvas
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
+
+type timeoutContextKey struct{}
+
+// WithComponentTimeoutOverride forces all component invokes under ctx to use
+// the provided timeout. This lets callers with stricter execution contracts
+// reuse canvas execution without mutating the global timeout policy.
+func WithComponentTimeoutOverride(ctx context.Context, d time.Duration) context.Context {
+	if d <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, timeoutContextKey{}, d)
+}
 
 // componentDefaults lists the per-class timeout (in seconds) used when
 // no per-class env override is set. The class keys are the PascalCase
@@ -116,6 +129,15 @@ func resolveTimeout(componentClass string) time.Duration {
 		return d
 	}
 	return defaultComponentTimeout
+}
+
+func resolveTimeoutFromContext(ctx context.Context, componentClass string) time.Duration {
+	if ctx != nil {
+		if d, ok := ctx.Value(timeoutContextKey{}).(time.Duration); ok && d > 0 {
+			return d
+		}
+	}
+	return resolveTimeout(componentClass)
 }
 
 // parseSecondsEnv reads an env var and parses it as seconds ("42" →

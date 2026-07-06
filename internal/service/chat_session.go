@@ -56,7 +56,7 @@ type userTenantStore interface {
 }
 
 type chatPipelineRunner interface {
-	AsyncChat(ctx context.Context, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error)
+	AsyncChat(ctx context.Context, userID string, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error)
 }
 
 // chunkFeedbackApplier is the dispatch seam for chunk-level feedback
@@ -1297,7 +1297,7 @@ func (s *ChatSessionService) Completion(userID string, conversationID string, me
 	if kwargs == nil {
 		kwargs = map[string]interface{}{}
 	}
-	resultChan, err := s.pipeline.AsyncChat(context.Background(), dialog, messages, false, kwargs)
+	resultChan, err := s.pipeline.AsyncChat(context.Background(), userID, dialog, messages, false, kwargs)
 	if err != nil {
 		return nil, err
 	}
@@ -1383,7 +1383,7 @@ func (s *ChatSessionService) CompletionStream(ctx context.Context, userID string
 	if kwargs == nil {
 		kwargs = map[string]interface{}{}
 	}
-	resultChan, err := s.pipeline.AsyncChat(ctx, dialog, messages, true, kwargs)
+	resultChan, err := s.pipeline.AsyncChat(ctx, userID, dialog, messages, true, kwargs)
 	if err != nil {
 		streamChan <- fmt.Sprintf("data: %s\n\n", fmt.Sprintf(`{"code": 500, "message": "%s", "data": {"answer": "**ERROR**: %s", "reference": []}}`, err.Error(), err.Error()))
 		return err
@@ -1556,7 +1556,7 @@ func (s *ChatSessionService) ChatCompletions(
 	}
 
 	// --- 6. Run pipeline ---
-	resultChan, err := s.pipeline.AsyncChat(ctx, dialog, requestMsg, stream, kwargs)
+	resultChan, err := s.pipeline.AsyncChat(ctx, userID, dialog, requestMsg, stream, kwargs)
 	if err != nil {
 		return fail(err)
 	}
@@ -1609,20 +1609,31 @@ func (s *ChatSessionService) ChatCompletions(
 							ans["chat_id"] = chatID
 						}
 						sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
+					} else {
+						ans := s.structureAnswer(session, "", messageID, sessionID, reference)
+						ans["final"] = true
+						if chatID != "" {
+							ans["chat_id"] = chatID
+						}
+						sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
 					}
 					continue
 				}
+				deltaAnswer := ""
 				if result.StartToThink {
 					fullAnswer.WriteString("<think>")
 				} else if result.EndToThink {
 					fullAnswer.WriteString("</think>")
 				} else if result.Answer != "" {
 					fullAnswer.WriteString(result.Answer)
+					deltaAnswer = result.Answer
 				}
 				if session != nil {
 					s.appendAssistantToSession(session, fullAnswer.String(), messageID)
 				}
-				ans := s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
+				ans := s.structureAnswer(session, deltaAnswer, messageID, sessionID, reference)
+				ans["start_to_think"] = result.StartToThink
+				ans["end_to_think"] = result.EndToThink
 				if chatID != "" {
 					ans["chat_id"] = chatID
 				}
@@ -1928,15 +1939,17 @@ func (s *ChatSessionService) checkTenantLLMAPIKey(tenantID, modelName string) (b
 
 // sseAnswerChunk has deterministic JSON field order matching Python's structure_answer output.
 type sseAnswerChunk struct {
-	Answer      string                 `json:"answer"`
-	Reference   map[string]interface{} `json:"reference"`
-	AudioBinary interface{}            `json:"audio_binary"`
-	Prompt      string                 `json:"prompt"`
-	CreatedAt   float64                `json:"created_at"`
-	Final       bool                   `json:"final"`
-	ID          string                 `json:"id"`
-	SessionID   string                 `json:"session_id"`
-	ChatID      string                 `json:"chat_id,omitempty"`
+	Answer       string                 `json:"answer"`
+	Reference    map[string]interface{} `json:"reference"`
+	AudioBinary  interface{}            `json:"audio_binary"`
+	Prompt       string                 `json:"prompt"`
+	CreatedAt    float64                `json:"created_at"`
+	Final        bool                   `json:"final"`
+	ID           string                 `json:"id"`
+	SessionID    string                 `json:"session_id"`
+	ChatID       string                 `json:"chat_id,omitempty"`
+	StartToThink bool                   `json:"start_to_think,omitempty"`
+	EndToThink   bool                   `json:"end_to_think,omitempty"`
 }
 
 // sseWrapper wraps the SSE response with deterministic field order matching Python:
@@ -2036,16 +2049,21 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 	createdAt, _ := ans["created_at"].(float64)
 	final, _ := ans["final"].(bool)
 
+	startToThink, _ := ans["start_to_think"].(bool)
+	endToThink, _ := ans["end_to_think"].(bool)
+
 	chunk := sseAnswerChunk{
-		Answer:      answer,
-		Reference:   ref,
-		AudioBinary: ans["audio_binary"],
-		Prompt:      prompt,
-		CreatedAt:   createdAt,
-		Final:       final,
-		ID:          id,
-		SessionID:   sessionID,
-		ChatID:      chatID,
+		Answer:       answer,
+		Reference:    ref,
+		AudioBinary:  ans["audio_binary"],
+		Prompt:       prompt,
+		CreatedAt:    createdAt,
+		Final:        final,
+		ID:           id,
+		SessionID:    sessionID,
+		ChatID:       chatID,
+		StartToThink: startToThink,
+		EndToThink:   endToThink,
 	}
 	wrapper := sseWrapper{Code: 0, Message: "", Data: chunk}
 	return marshalJSONWithSpaces(wrapper)

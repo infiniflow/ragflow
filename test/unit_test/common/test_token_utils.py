@@ -62,8 +62,7 @@ class TestNumTokensFromString:
 
     def test_long_text(self):
         """Test token count for longer text"""
-        long_text = "This is a longer piece of text that should contain multiple sentences. " \
-                    "It will help verify that the token counting works correctly for substantial input."
+        long_text = "This is a longer piece of text that should contain multiple sentences. It will help verify that the token counting works correctly for substantial input."
         result = num_tokens_from_string(long_text)
         assert result > 10
 
@@ -93,13 +92,16 @@ class TestNumTokensFromString:
 
 
 # Additional parameterized tests for efficiency
-@pytest.mark.parametrize("input_string,expected_min_tokens", [
-    ("a", 1),  # Single character
-    ("test", 1),  # Single word
-    ("hello world", 2),  # Two words
-    ("This is a sentence.", 4),  # Short sentence
-    # ("A" * 100, 100),  # Repeated characters
-])
+@pytest.mark.parametrize(
+    "input_string,expected_min_tokens",
+    [
+        ("a", 1),  # Single character
+        ("test", 1),  # Single word
+        ("hello world", 2),  # Two words
+        ("This is a sentence.", 4),  # Short sentence
+        # ("A" * 100, 100),  # Repeated characters
+    ],
+)
 def test_token_count_ranges(input_string, expected_min_tokens):
     """Parameterized test for various input strings"""
     result = num_tokens_from_string(input_string)
@@ -127,88 +129,42 @@ class TestTotalTokenCountFromResponse:
 
     def test_dict_with_usage_total_tokens(self):
         """Test dictionary response with usage['total_tokens']"""
-        resp_dict = {
-            'usage': {
-                'total_tokens': 175
-            }
-        }
+        resp_dict = {"usage": {"total_tokens": 175}}
 
         result = total_token_count_from_response(resp_dict)
         assert result == 175
 
     def test_dict_with_usage_input_output_tokens(self):
         """Test dictionary response with input_tokens and output_tokens in usage"""
-        resp_dict = {
-            'usage': {
-                'input_tokens': 100,
-                'output_tokens': 50
-            }
-        }
+        resp_dict = {"usage": {"input_tokens": 100, "output_tokens": 50}}
 
         result = total_token_count_from_response(resp_dict)
         assert result == 150
 
     def test_dict_with_meta_tokens_input_output(self):
         """Test dictionary response with meta.tokens.input_tokens and output_tokens"""
-        resp_dict = {
-            'meta': {
-                'tokens': {
-                    'input_tokens': 80,
-                    'output_tokens': 40
-                }
-            }
-        }
+        resp_dict = {"meta": {"tokens": {"input_tokens": 80, "output_tokens": 40}}}
 
         result = total_token_count_from_response(resp_dict)
         assert result == 120
 
     def test_priority_order_dict_usage_total_tokens_third(self):
         """Test that dict['usage']['total_tokens'] is third in priority"""
-        resp_dict = {
-            'usage': {
-                'total_tokens': 180,
-                'input_tokens': 100,
-                'output_tokens': 80
-            },
-            'meta': {
-                'tokens': {
-                    'input_tokens': 200,
-                    'output_tokens': 100
-                }
-            }
-        }
+        resp_dict = {"usage": {"total_tokens": 180, "input_tokens": 100, "output_tokens": 80}, "meta": {"tokens": {"input_tokens": 200, "output_tokens": 100}}}
 
         result = total_token_count_from_response(resp_dict)
         assert result == 180  # Should use total_tokens from usage
 
     def test_priority_order_dict_usage_input_output_fourth(self):
         """Test that dict['usage']['input_tokens'] + output_tokens is fourth in priority"""
-        resp_dict = {
-            'usage': {
-                'input_tokens': 120,
-                'output_tokens': 60
-            },
-            'meta': {
-                'tokens': {
-                    'input_tokens': 200,
-                    'output_tokens': 100
-                }
-            }
-        }
+        resp_dict = {"usage": {"input_tokens": 120, "output_tokens": 60}, "meta": {"tokens": {"input_tokens": 200, "output_tokens": 100}}}
 
         result = total_token_count_from_response(resp_dict)
         assert result == 180  # Should sum input_tokens + output_tokens from usage
 
     def test_priority_order_meta_tokens_last(self):
         """Test that meta.tokens is the last option in priority"""
-        resp_dict = {
-            'meta': {
-                'tokens': {
-                    'input_tokens': 90,
-                    'output_tokens': 30
-                }
-            }
-        }
+        resp_dict = {"meta": {"tokens": {"input_tokens": 90, "output_tokens": 30}}}
 
         result = total_token_count_from_response(resp_dict)
         assert result == 120
@@ -222,8 +178,8 @@ class TestTotalTokenCountFromResponse:
     def test_partial_dict_usage_missing_output_tokens(self):
         """Test dictionary with usage but missing output_tokens"""
         resp_dict = {
-            'usage': {
-                'input_tokens': 100
+            "usage": {
+                "input_tokens": 100
                 # Missing output_tokens
             }
         }
@@ -234,9 +190,9 @@ class TestTotalTokenCountFromResponse:
     def test_partial_meta_tokens_missing_input_tokens(self):
         """Test dictionary with meta.tokens but missing input_tokens"""
         resp_dict = {
-            'meta': {
-                'tokens': {
-                    'output_tokens': 50
+            "meta": {
+                "tokens": {
+                    "output_tokens": 50
                     # Missing input_tokens
                 }
             }

@@ -218,14 +218,7 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*C
 	if driver == "" {
 		driver = "dummy"
 	}
-	// baseURL: drivers consult map["default"] as the canonical endpoint
-	// (see internal/entity/models/base_model.go:GetBaseURL). When the
-	// caller did not override, leave the driver default in place by
-	// passing nil — every driver seeds its own map at construction time.
-	var baseURL map[string]string
-	if req.BaseURL != "" {
-		baseURL = map[string]string{"default": req.BaseURL}
-	}
+	baseURL := baseURLMapForDriver(driver, req.BaseURL)
 	// urlSuffix: each driver appends URLSuffix.Chat to baseURL to form
 	// the chat-completions endpoint (e.g. "chat/completions" for
 	// openai-compatible drivers, "v1/messages" for anthropic). The
@@ -250,6 +243,18 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*C
 		Temperature: req.Temperature,
 		TopP:        req.TopP,
 		MaxTokens:   req.MaxTokens,
+	}
+	// Propagate the agent-level Thinking setting to the driver so
+	// providers like DeepSeek can send thinking: {type: "disabled"}
+	// and prevent chain-of-thought from leaking into the answer.
+	// Mirrors the Python agent/component/llm.py behaviour.
+	switch req.Thinking {
+	case "enabled":
+		t := true
+		chatCfg.Thinking = &t
+	case "disabled":
+		f := false
+		chatCfg.Thinking = &f
 	}
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	out, err := wrapper.Generate(ctx, toEinoMessages(req.Messages))
@@ -319,6 +324,25 @@ func chatURLSuffixFor(driver string) models.URLSuffix {
 	default:
 		return models.URLSuffix{Chat: "chat/completions"}
 	}
+}
+
+func baseURLMapForDriver(driver, override string) map[string]string {
+	if override != "" {
+		return map[string]string{"default": override}
+	}
+	pm := models.GetProviderManager()
+	if pm == nil {
+		return nil
+	}
+	provider := pm.FindProvider(driver)
+	if provider == nil || len(provider.URL) == 0 {
+		return nil
+	}
+	baseURL := make(map[string]string, len(provider.URL))
+	for region, url := range provider.URL {
+		baseURL[region] = url
+	}
+	return baseURL
 }
 
 // NewLLMComponent builds an LLMComponent from raw params.
@@ -517,8 +541,18 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
 	}
 
+	// Strip think blocks + JSON fences from the response.
+	// Mirrors Python's clean_formated_answer() exactly
+	// (re.sub(r"^.*</think>", "", ...) + ^.*```json + trailing ```).
+	// Python only cleans for structured output — keep raw content for
+	// regular responses (llm.py:483: self.set_output("content", ans)).
+	cleaned := resp.Content
+	if p.OutputStructure != nil || p.JSONOutput {
+		cleaned = cleanFormattedAnswer(resp.Content)
+	}
+
 	out := map[string]any{
-		"content": resp.Content,
+		"content": cleaned,
 		"model":   resp.Model,
 		"stopped": resp.Stopped,
 		"tokens":  resp.Tokens,
@@ -564,7 +598,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 			out["structured"] = parsed
 			// Also update content to the validated response so
 			// downstream consumers reading "content" get the JSON text.
-			out["content"] = resp.Content
+			out["content"] = cleanFormattedAnswer(resp.Content)
 		} else {
 			common.Warn("component: LLM: output_structure set but no parseable JSON after retry")
 		}
@@ -975,14 +1009,13 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		p.MaxTokens = &i
 	}
 	if v, ok := stringFrom(inputs, "thinking"); ok {
-		// Only allow "enabled" or "disabled"; arbitrary DSL
-		// strings are dropped. Python PR #15220 removed
-		// thinking from llm.py's gen_conf() — it is no
-		// longer forwarded to the model. The field is still
-		// parsed here to match the Python form parameter
-		// definition, but einoChatInvoker does not consume
-		// it, consistent with Python's behavior.
-		if v == "enabled" || v == "disabled" {
+		// Forward any non-empty, non-"default" value to match the
+		// lenient Python gate: hasattr(self,"thinking") and
+		// self.thinking and self.thinking != "default".
+		// Downstream (einoChatInvoker) only acts on "enabled" /
+		// "disabled" and silently ignores unknown values, so
+		// this is safe.
+		if v != "" && v != "default" {
 			p.Thinking = v
 		}
 	}
@@ -1352,4 +1385,25 @@ func init() {
 		}
 		return NewLLMComponent(p), nil
 	})
+}
+
+// cleanFormattedAnswer mirrors Python's clean_formated_answer():
+//
+//  1. Strip everything up to and including </think> (dotall).
+//  2. Strip everything up to and including ```json (dotall).
+//  3. Strip trailing ``` and optional newlines.
+//
+// This removes DeepSeek-R1-style thinking blocks and JSON-fence
+// prefixes/suffixes from the raw model response.
+var (
+	reThinkPrefix     = regexp.MustCompile(`(?s)^.*</think>`)
+	reJSONFencePrefix = regexp.MustCompile(`(?s)^.*` + "```json")
+	reJSONFenceSuffix = regexp.MustCompile("```\n*$")
+)
+
+func cleanFormattedAnswer(ans string) string {
+	ans = reThinkPrefix.ReplaceAllString(ans, "")
+	ans = reJSONFencePrefix.ReplaceAllString(ans, "")
+	ans = reJSONFenceSuffix.ReplaceAllString(ans, "")
+	return ans
 }

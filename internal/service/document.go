@@ -41,6 +41,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
 	enginetypes "ragflow/internal/engine/types"
@@ -235,7 +236,7 @@ var artifactUnsafeFilenameChars = regexp.MustCompile(`[^\pL\pN_.-]`)
 
 // GetDocumentImage retrieves an image object from storage.
 func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
-	parts := strings.Split(imageID, "-")
+	parts := strings.SplitN(imageID, "-", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return nil, fmt.Errorf("Image not found.")
 	}
@@ -1011,9 +1012,23 @@ func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status st
 }
 
 // ListDocumentsByDatasetID list documents by knowledge base ID
-func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
-	offset := (page - 1) * pageSize
-	documents, total, err := s.documentDAO.ListByKBID(kbID, offset, pageSize)
+func (s *DocumentService) ListDocumentsByDatasetID(kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+	return s.ListDocumentsByDatasetIDWithOptions(dao.DocumentListOptions{
+		KbID:     kbID,
+		Keywords: keywords,
+		OrderBy:  "create_time",
+		Desc:     true,
+	}, page, pageSize)
+}
+
+// ListDocumentsByDatasetIDWithOptions lists documents by knowledge base ID with filters.
+func (s *DocumentService) ListDocumentsByDatasetIDWithOptions(opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+	opts.Offset = (page - 1) * pageSize
+	opts.Limit = pageSize
+	if opts.OrderBy == "" {
+		opts.OrderBy = "create_time"
+	}
+	documents, total, err := s.documentDAO.ListByKBIDWithOptions(opts)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1024,6 +1039,64 @@ func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize i
 	}
 
 	return responses, total, nil
+}
+
+// GetDocumentFiltersByDatasetID returns aggregate filter values for documents in a dataset.
+func (s *DocumentService) GetDocumentFiltersByDatasetID(opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
+	filters, total, err := s.documentDAO.GetFilterByKBID(opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	docIDs, err := s.documentDAO.ListIDsByKBIDWithOptions(opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	metadataFilter, err := s.getDocumentMetadataFilter(opts.KbID, docIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	filters["metadata"] = metadataFilter
+	return filters, total, nil
+}
+
+func (s *DocumentService) getDocumentMetadataFilter(kbID string, docIDs []string) (map[string]interface{}, error) {
+	metadataByKey, err := s.GetMetadataByKBs([]string{kbID})
+	if err != nil {
+		return nil, err
+	}
+	candidateSet := make(map[string]bool, len(docIDs))
+	for _, docID := range docIDs {
+		candidateSet[docID] = true
+	}
+
+	metadataCounter := map[string]interface{}{}
+	docIDsWithMetadata := map[string]bool{}
+	for key, rawValues := range metadataByKey {
+		values, ok := rawValues.(map[string][]string)
+		if !ok {
+			continue
+		}
+		valueCounter := map[string]int64{}
+		for value, valueDocIDs := range values {
+			for _, docID := range valueDocIDs {
+				if !candidateSet[docID] {
+					continue
+				}
+				valueCounter[value]++
+				docIDsWithMetadata[docID] = true
+			}
+		}
+		if len(valueCounter) > 0 {
+			metadataCounter[key] = valueCounter
+		}
+	}
+	metadataCounter["empty_metadata"] = map[string]int64{"true": int64(len(docIDs) - len(docIDsWithMetadata))}
+	return metadataCounter, nil
+}
+
+// ListDocumentIDsByDatasetIDWithOptions lists matching document IDs without pagination.
+func (s *DocumentService) ListDocumentIDsByDatasetIDWithOptions(opts dao.DocumentListOptions) ([]string, error) {
+	return s.documentDAO.ListIDsByKBIDWithOptions(opts)
 }
 
 // GetDocumentsByAuthorID get documents by author ID
@@ -1545,6 +1618,10 @@ func documentParseTaskRanges(doc *entity.Document, bucket, objectName string) ([
 			}
 		}
 		if len(ranges) == 0 {
+			// pages == 0 means page count detection failed (e.g. compressed
+			// PDF where both regex and pdfoxide fallbacks failed). Fall back
+			// to maximumTaskPageNumber so the Python parser processes all
+			// pages via slicing (Python gracefully caps at actual page count).
 			ranges = append(ranges, documentParsePageRange{from: 0, to: maximumTaskPageNumber})
 		}
 		return ranges, nil
@@ -1682,7 +1759,20 @@ func documentEstimatePDFPageCount(binary []byte) int64 {
 	if len(binary) == 0 {
 		return 0
 	}
-	return int64(len(documentPDFPagePattern.FindAll(binary, -1)))
+	// Fast path: regex works for uncompressed PDFs.
+	count := int64(len(documentPDFPagePattern.FindAll(binary, -1)))
+	if count > 0 {
+		return count
+	}
+	// Fallback for compressed PDFs where /Type /Page is inside a
+	// compressed object stream: use pdf_oxide to get the real page count.
+	if doc, err := pdfoxide.OpenBytes(binary); err == nil {
+		defer doc.Close()
+		if pages, err := doc.PageCount(); err == nil {
+			return int64(pages)
+		}
+	}
+	return 0
 }
 
 func documentEstimateTableRowCount(name string, binary []byte) int {
@@ -3233,7 +3323,7 @@ func (s *DocumentService) ensureKBFolder(kb *entity.Knowledgebase, tenantID stri
 // newAFileFromKB returns the existing folder named name under parentID, or
 // creates it. Mirrors Python FileService.new_a_file_from_kb.
 func (s *DocumentService) newAFileFromKB(tenantID, name, parentID string) (*entity.File, error) {
-	for _, f := range s.fileDAO.Query(name, parentID) {
+	for _, f := range s.fileDAO.Query(name, parentID, tenantID) {
 		if f.TenantID == tenantID {
 			return f, nil
 		}
@@ -3628,6 +3718,7 @@ func (s *DocumentService) UploadDocumentInfos(userID string, files []*multipart.
 	fileSvc := &FileService{
 		fileDAO:          s.fileDAO,
 		file2DocumentDAO: s.file2DocumentDAO,
+		documentService:  s,
 	}
 	data, err := fileSvc.UploadInfos(userID, files)
 	if err != nil {
@@ -3640,6 +3731,7 @@ func (s *DocumentService) UploadDocumentInfoByURL(userID, rawURL string) (map[st
 	fileSvc := &FileService{
 		fileDAO:          s.fileDAO,
 		file2DocumentDAO: s.file2DocumentDAO,
+		documentService:  s,
 	}
 	data, err := fileSvc.UploadFromURL(userID, rawURL)
 	if err != nil {

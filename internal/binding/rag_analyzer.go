@@ -1,3 +1,5 @@
+//go:build cgo
+
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -18,13 +20,13 @@ package rag_analyzer
 
 /*
 #cgo CXXFLAGS: -std=c++20 -I${SRCDIR}/..
-#cgo linux LDFLAGS: ${SRCDIR}/../cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread -lpcre2-8
+#cgo linux LDFLAGS: ${SRCDIR}/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread -lpcre2-8
 // Apple Silicon: Homebrew installs to /opt/homebrew; Intel Macs keep /usr/local.
-#cgo darwin,arm64 LDFLAGS: ${SRCDIR}/../cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /opt/homebrew/lib/libpcre2-8.a
-#cgo darwin,amd64 LDFLAGS: ${SRCDIR}/../cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/local/lib/libpcre2-8.a
+#cgo darwin,arm64 LDFLAGS: ${SRCDIR}/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /opt/homebrew/lib/libpcre2-8.a
+#cgo darwin,amd64 LDFLAGS: ${SRCDIR}/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/local/lib/libpcre2-8.a
 
 #include <stdlib.h>
-#include "../cpp/rag_analyzer_c_api.h"
+#include "cpp/rag_analyzer_c_api.h"
 */
 import "C"
 import (

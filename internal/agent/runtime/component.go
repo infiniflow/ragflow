@@ -79,21 +79,32 @@ var (
 )
 
 // SetDefaultFactory installs the production ComponentFactory. The
-// component package calls this in its init() with `component.New`.
-// Calling SetDefaultFactory more than once with a non-nil factory is
-// a no-op after the first call (the first wins) so concurrent
-// registration is safe. Passing nil clears the factory — tests use
-// this to assert "no factory registered" error paths.
+// component package calls this in its init() via
+// installDefaultRegistryFactory (see below). After Phase 0, the
+// "first writer wins" guard is REMOVED: SetDefaultFactory now ALWAYS
+// replaces the active default, regardless of whether one is already
+// installed. This preserves the existing test-override pattern where
+// tests save the previous factory, install a stub, and restore on
+// t.Cleanup. Passing nil clears the factory — tests use this to
+// assert "no factory registered" error paths.
+//
+// Two-layer model:
+//
+//   - Production: installDefaultRegistryFactory installs a closure
+//     that calls runtime.DefaultRegistry.Lookup on every invocation.
+//     It captures DefaultRegistry by reference, so even if
+//     installDefaultRegistryFactory runs before all init()
+//     registrations complete, the factory is correct at every
+//     subsequent lookup (the registry is read lazily, not captured
+//     at install time).
+//   - Override: tests call SetDefaultFactory(stub) directly to stub
+//     the default factory. t.Cleanup restores the production factory
+//     by calling installDefaultRegistryFactory again (or by saving
+//     the previous value and re-injecting it).
 func SetDefaultFactory(f ComponentFactory) {
 	factoryMu.Lock()
 	defer factoryMu.Unlock()
-	if f == nil {
-		defaultFactory = nil
-		return
-	}
-	if defaultFactory == nil {
-		defaultFactory = f
-	}
+	defaultFactory = f
 }
 
 // DefaultFactory returns the registered ComponentFactory, or nil if
@@ -104,6 +115,36 @@ func DefaultFactory() ComponentFactory {
 	factoryMu.RLock()
 	defer factoryMu.RUnlock()
 	return defaultFactory
+}
+
+// InstallDefaultRegistryFactory installs the production
+// ComponentFactory: a closure that resolves component names via
+// runtime.DefaultRegistry.Lookup at every invocation. The closure
+// captures DefaultRegistry by reference (the variable, not the
+// concrete registry), so lookup always reads the current state of
+// the singleton even if a test later swaps it out via SetDefaultFactory.
+//
+// This is the helper the component package's init() calls (from
+// internal/agent/component/runtime_wire.go). Production callers
+// should prefer InstallDefaultRegistryFactory over SetDefaultFactory
+// directly so the wiring stays in one place — if the resolution
+// strategy changes (e.g. switch to a per-call registry handle),
+// only this function changes.
+//
+// Note: this is EXPORTED (unlike the helper sketched in plan §4
+// Phase 0 task 3) because the call site lives in a different package
+// (internal/agent/component) and Go's visibility rules don't allow
+// access to unexported names across package boundaries. The "test
+// override layer" still owns SetDefaultFactory — tests that want to
+// stub the factory call SetDefaultFactory directly, not this helper.
+func InstallDefaultRegistryFactory() {
+	SetDefaultFactory(func(name string, params map[string]any) (Component, error) {
+		f, _, _, ok := DefaultRegistry.Lookup(name)
+		if !ok {
+			return nil, fmt.Errorf("runtime: unknown component %q", name)
+		}
+		return f(name, params)
+	})
 }
 
 // ResetDefaultFactoryForTesting clears the registered factory.

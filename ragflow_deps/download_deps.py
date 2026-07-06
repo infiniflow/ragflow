@@ -22,7 +22,7 @@
 #
 # Typical workflow:
 #
-#   uv run ragflow_deps/download_deps.py            # download
+#   uv run python3 ragflow_deps/download_deps.py            # download
 #   cd ragflow_deps
 #   docker build -f Dockerfile -t infiniflow/ragflow_deps .
 #
@@ -70,12 +70,9 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             # Native static libraries for Go build (pdfium, pdf_oxide, office_oxide)
             # Used by build.sh's check_*_deps functions — pre-downloaded to avoid
             # network access during CI.
-            ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz",
-             "pdfium-linux-x64-static.tgz"],
-            ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.67/pdf_oxide-go-ffi-linux-amd64.tar.gz",
-             "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.2/native-linux-x86_64.tar.gz",
-             "office_oxide-linux-x86_64.tar.gz"],
+            ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
+            ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.67/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
+            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.2/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
         ]
     else:
         return [
@@ -107,12 +104,9 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             # Native static libraries for Go build (pdfium, pdf_oxide, office_oxide)
             # Used by build.sh's check_*_deps functions — pre-downloaded to avoid
             # network access during CI.
-            ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz",
-             "pdfium-linux-x64-static.tgz"],
-            ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.67/pdf_oxide-go-ffi-linux-amd64.tar.gz",
-             "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.2/native-linux-x86_64.tar.gz",
-             "office_oxide-linux-x86_64.tar.gz"],
+            ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
+            ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.67/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
+            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.2/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
         ]
 
 
@@ -163,6 +157,7 @@ if __name__ == "__main__":
         ("office_oxide-linux-x86_64.tar.gz", "office_oxide"),
     ]
     import tarfile
+
     for archive, subdir in extractions:
         archive_path = os.path.join(os.getcwd(), archive)
         if not os.path.isfile(archive_path):

@@ -27,7 +27,11 @@ import time
 from functools import partial, wraps
 from typing import Set
 
-from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
+from api.utils.file_response import (
+    apply_download_file_response_headers,
+    apply_preview_file_response_headers,
+    resolve_attachment_content_type,
+)
 import jwt
 from quart import Response, jsonify, request, make_response
 
@@ -1407,7 +1411,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                 dsl_str = workflow_dsl
             else:
                 dsl_str = json.dumps(workflow_dsl, ensure_ascii=False)
-            canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id, custom_header=custom_header)
+            canvas = Canvas(dsl_str, str(tenant_id), task_id=session_id, canvas_id=agent_id, custom_header=custom_header)
         except Exception as exc:
             return server_error_response(exc)
 
@@ -1528,7 +1532,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         try:
             from agent.canvas import Canvas
 
-            canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id, custom_header=custom_header)
+            canvas = Canvas(dsl_str, str(tenant_id), task_id=session_id, canvas_id=agent_id, custom_header=custom_header)
             canvas.clear_history()
         except Exception as exc:
             return server_error_response(exc)
@@ -2463,37 +2467,51 @@ async def webhook_trace(agent_id: str):
         }
     )
 
+def _attachment_request_metadata():
+    ext = request.args.get("ext")
+    mime_type = request.args.get("mime_type")
+    filename = request.args.get("filename")
+    content_type, resolved_ext = resolve_attachment_content_type(ext, mime_type)
+    if not content_type:
+        content_type = "application/octet-stream"
+    if not resolved_ext:
+        resolved_ext = ext.lower().strip(".") if isinstance(ext, str) and ext else "bin"
+    return content_type, resolved_ext, filename
+
+
+async def _stream_agent_attachment(tenant_id, attachment_id, *, inline: bool):
+    attachment_id = attachment_id or request.view_args.get("attachment_id")
+    content_type, ext, filename = _attachment_request_metadata()
+    data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+    if not data:
+        return get_data_error_result(message="Document not found!")
+    response = await make_response(data)
+    if inline:
+        apply_preview_file_response_headers(response, content_type, ext, filename)
+    else:
+        apply_download_file_response_headers(response, content_type, ext, filename)
+    return response
+
+
+@manager.route("/agents/attachments/<attachment_id>/preview", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def preview_attachment(tenant_id=None, attachment_id=None):
+    """Stream an agent-generated attachment for inline preview in MCP clients."""
+    try:
+        return await _stream_agent_attachment(tenant_id, attachment_id, inline=True)
+    except Exception as e:
+        return server_error_response(e)
+
 
 @manager.route("/agents/attachments/<attachment_id>/download", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def download_attachment(tenant_id=None, attachment_id=None):
-    """Stream a document's underlying file to the requesting user.
-
-    Mirrors the authorization model of the preview endpoint: the user must belong
-    to the tenant that owns the document's knowledge base. A denial returns the
-    same "Attachment not found!" response so the endpoint cannot be used to
-    enumerate doc ids across tenants.
-    """
+    """Stream an agent-generated attachment as a download."""
     try:
-        # Keep backward compatibility with older callers and unit tests that still
-        # pass `attachment_id` instead of the route parameter name.
-        ext = request.args.get("ext", "markdown")
-        data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
-        if not data:
-            # Storage object missing or empty (orphaned DB metadata, tenant
-            # mismatch). Without this guard `make_response(None)` raises
-            # `TypeError: response value cannot be None` and the caller
-            # sees HTTP 500 — same bug class as #15365 on document
-            # preview. Return the same "Attachment not found!" shape used
-            # by the preview route's missing-record path so byte-streaming
-            # endpoints respond consistently on a not-found.
-            return get_data_error_result(message="Attachment not found!")
-        response = await make_response(data)
-        content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
-        apply_safe_file_response_headers(response, content_type, ext)
-
-        return response
-
+        if request.args.get("disposition", "").lower() == "inline":
+            return await _stream_agent_attachment(tenant_id, attachment_id, inline=True)
+        return await _stream_agent_attachment(tenant_id, attachment_id, inline=False)
     except Exception as e:
         return server_error_response(e)

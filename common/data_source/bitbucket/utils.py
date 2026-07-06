@@ -88,9 +88,7 @@ class BitbucketNonRetriableError(Exception):
     exceptions=(BitbucketRetriableError, httpx.RequestError),
 )
 @rate_limit_builder(max_calls=60, period=60)
-def bitbucket_get(
-    client: httpx.Client, url: str, params: dict[str, Any] | None = None
-) -> httpx.Response:
+def bitbucket_get(client: httpx.Client, url: str, params: dict[str, Any] | None = None) -> httpx.Response:
     """Perform a GET against Bitbucket with retry and rate limiting.
 
     Retries on 429 and 5xx responses, and on transport errors. Honors
@@ -162,9 +160,7 @@ def paginate(
         query = None
 
 
-def list_repositories(
-    client: httpx.Client, workspace: str, project_key: str | None = None
-) -> Iterator[dict[str, Any]]:
+def list_repositories(client: httpx.Client, workspace: str, project_key: str | None = None) -> Iterator[dict[str, Any]]:
     """List repositories in a workspace, optionally filtered by project key."""
     base_url = f"https://api.bitbucket.org/2.0/repositories/{workspace}"
     params: dict[str, Any] = {
@@ -189,26 +185,16 @@ def map_pr_to_document(pr: dict[str, Any], workspace: str, repo_slug: str) -> Do
     reviewers = pr.get("reviewers", [])
     participants = pr.get("participants", [])
 
-    link = pr.get("links", {}).get("html", {}).get("href") or (
-        f"https://bitbucket.org/{workspace}/{repo_slug}/pull-requests/{pr_id}"
-    )
+    link = pr.get("links", {}).get("html", {}).get("href") or (f"https://bitbucket.org/{workspace}/{repo_slug}/pull-requests/{pr_id}")
 
     created_on = pr.get("created_on")
     updated_on = pr.get("updated_on")
-    updated_dt = (
-        datetime.fromisoformat(updated_on.replace("Z", "+00:00")).astimezone(
-            timezone.utc
-        )
-        if isinstance(updated_on, str)
-        else None
-    )
+    updated_dt = datetime.fromisoformat(updated_on.replace("Z", "+00:00")).astimezone(timezone.utc) if isinstance(updated_on, str) else None
 
     source_branch = pr.get("source", {}).get("branch", {}).get("name", "")
     destination_branch = pr.get("destination", {}).get("branch", {}).get("name", "")
 
-    approved_by = [
-        _get_user_name(p.get("user", {})) for p in participants if p.get("approved")
-    ]
+    approved_by = [_get_user_name(p.get("user", {})) for p in participants if p.get("approved")]
 
     primary_owner = None
     if author:
@@ -216,21 +202,16 @@ def map_pr_to_document(pr: dict[str, Any], workspace: str, repo_slug: str) -> Do
             display_name=_get_user_name(author),
         )
 
-    # secondary_owners = [ 
+    # secondary_owners = [
     #     BasicExpertInfo(display_name=_get_user_name(r)) for r in reviewers
-    # ] or None 
+    # ] or None
 
     reviewer_names = [_get_user_name(r) for r in reviewers]
 
     # Create a concise summary of key PR info
     created_date = created_on.split("T")[0] if created_on else "N/A"
     updated_date = updated_on.split("T")[0] if updated_on else "N/A"
-    content_text = (
-        "Pull Request Information:\n"
-        f"- Pull Request ID: {pr_id}\n"
-        f"- Title: {title}\n"
-        f"- State: {state or 'N/A'} {'(Draft)' if draft else ''}\n"
-    )
+    content_text = f"Pull Request Information:\n- Pull Request ID: {pr_id}\n- Title: {title}\n- State: {state or 'N/A'} {'(Draft)' if draft else ''}\n"
     if state == "DECLINED":
         content_text += f"- Reason: {pr.get('reason', 'N/A')}\n"
     content_text += (
@@ -262,9 +243,7 @@ def map_pr_to_document(pr: dict[str, Any], workspace: str, repo_slug: str) -> Do
         "updated_on": updated_on or "",
         "source_branch": source_branch,
         "destination_branch": destination_branch,
-        "closed_by": (
-            _get_user_name(pr.get("closed_by", {})) if pr.get("closed_by") else ""
-        ),
+        "closed_by": (_get_user_name(pr.get("closed_by", {})) if pr.get("closed_by") else ""),
         "close_source_branch": str(bool(pr.get("close_source_branch", False))),
     }
 

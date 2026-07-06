@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	_ "ragflow/internal/agent/component" // registers the production factory
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -207,6 +209,115 @@ func TestDebugComponent_HappyPath_Begin(t *testing.T) {
 	}
 	if env.Data["query"] != "hello world" {
 		t.Errorf("data.query = %v, want 'hello world'", env.Data["query"])
+	}
+}
+
+type sysEchoComponent struct{}
+
+func (s *sysEchoComponent) Invoke(ctx context.Context, _ map[string]any) (map[string]any, error) {
+	state, _, err := agentruntime.GetStateFromContext[*agentruntime.CanvasState](ctx)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"query":     state.Sys["query"],
+		"tenant_id": state.Sys["tenant_id"],
+	}, nil
+}
+
+func TestDebugComponent_SeedsSysInputsIntoCanvasState(t *testing.T) {
+	origFactory := agentruntime.DefaultFactory()
+	agentruntime.SetDefaultFactory(func(name string, _ map[string]any) (agentruntime.Component, error) {
+		if name != "Probe" {
+			return nil, errors.New("unexpected component name: " + name)
+		}
+		return &sysEchoComponent{}, nil
+	})
+	t.Cleanup(func() { agentruntime.SetDefaultFactory(origFactory) })
+
+	cv := &entity.UserCanvas{
+		ID: "c1",
+		DSL: map[string]any{
+			"components": map[string]any{
+				"probe": map[string]any{
+					"obj": map[string]any{
+						"component_name": "Probe",
+						"params":         map[string]any{},
+					},
+				},
+			},
+		},
+	}
+	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
+
+	body := `{"params":{"sys.query":{"value":"hello sys"}}}`
+	c, w := componentCtx(t, "POST", "/api/v1/agents/c1/components/probe/debug", body)
+	c.Params = gin.Params{
+		{Key: "canvas_id", Value: "c1"},
+		{Key: "component_id", Value: "probe"},
+	}
+	h.DebugComponent(c)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, w.Body.String())
+	}
+	if env.Data["query"] != "hello sys" {
+		t.Fatalf("data.query = %v, want 'hello sys'", env.Data["query"])
+	}
+}
+
+func TestDebugComponent_RejectsSysTenantIDOverride(t *testing.T) {
+	origFactory := agentruntime.DefaultFactory()
+	agentruntime.SetDefaultFactory(func(name string, _ map[string]any) (agentruntime.Component, error) {
+		if name != "Probe" {
+			return nil, errors.New("unexpected component name: " + name)
+		}
+		return &sysEchoComponent{}, nil
+	})
+	t.Cleanup(func() { agentruntime.SetDefaultFactory(origFactory) })
+
+	cv := &entity.UserCanvas{
+		ID: "c1",
+		DSL: map[string]any{
+			"components": map[string]any{
+				"probe": map[string]any{
+					"obj": map[string]any{
+						"component_name": "Probe",
+						"params":         map[string]any{},
+					},
+				},
+			},
+		},
+	}
+	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
+
+	body := `{"params":{"sys.query":{"value":"hello sys"},"sys.tenant_id":{"value":"attacker-tenant"}}}`
+	c, w := componentCtx(t, "POST", "/api/v1/agents/c1/components/probe/debug", body)
+	c.Params = gin.Params{
+		{Key: "canvas_id", Value: "c1"},
+		{Key: "component_id", Value: "probe"},
+	}
+	h.DebugComponent(c)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, w.Body.String())
+	}
+	if env.Data["tenant_id"] != "u-1" {
+		t.Fatalf("data.tenant_id = %v, want u-1", env.Data["tenant_id"])
 	}
 }
 

@@ -28,6 +28,7 @@ class _DummyManager:
     def route(self, *_args, **_kwargs):
         def decorator(func):
             return func
+
         return decorator
 
 
@@ -218,6 +219,7 @@ def document_rest_api_module(monkeypatch):
     document_api_service_mod = ModuleType("api.apps.services.document_api_service")
     document_api_service_mod.validate_document_update_fields = lambda *_args, **_kwargs: (None, None)
     document_api_service_mod.map_doc_keys = lambda doc: doc.to_dict() if hasattr(doc, "to_dict") else doc
+
     def _map_doc_keys_with_run_status(doc, run_status="0"):
         payload = doc if isinstance(doc, dict) else doc.to_dict()
         return {**payload, "run": run_status}

@@ -31,9 +31,7 @@ def ensure_authed(
         email, password = seeded_user_credentials
     else:
         email = os.getenv("SEEDED_USER_EMAIL") or os.getenv("E2E_ADMIN_EMAIL")
-        password = os.getenv("SEEDED_USER_PASSWORD") or os.getenv(
-            "E2E_ADMIN_PASSWORD"
-        )
+        password = os.getenv("SEEDED_USER_PASSWORD") or os.getenv("E2E_ADMIN_PASSWORD")
     if not email or not password:
         pytest.skip("SEEDED_USER_EMAIL/SEEDED_USER_PASSWORD not set.")
 
@@ -58,25 +56,17 @@ def ensure_authed(
         return
 
     form, _ = active_auth_context()
-    email_input = form.locator(
-        "input[data-testid='auth-email'], [data-testid='auth-email'] input"
-    )
-    password_input = form.locator(
-        "input[data-testid='auth-password'], [data-testid='auth-password'] input"
-    )
+    email_input = form.locator("input[data-testid='auth-email'], [data-testid='auth-email'] input")
+    password_input = form.locator("input[data-testid='auth-password'], [data-testid='auth-password'] input")
     expect(email_input).to_have_count(1)
     expect(password_input).to_have_count(1)
     email_input.fill(email)
     password_input.fill(password)
     password_input.blur()
 
-    submit_button = form.locator(
-        "button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']"
-    )
+    submit_button = form.locator("button[data-testid='auth-submit'], [data-testid='auth-submit'] button, [data-testid='auth-submit']")
     expect(submit_button).to_have_count(1)
     auth_click(submit_button, "submit_login")
 
     _wait_for_login_complete(page, timeout_ms=timeout_ms)
-    expect(page.locator("form[data-testid='auth-form'][data-active='true']")).to_have_count(
-        0, timeout=timeout_ms
-    )
+    expect(page.locator("form[data-testid='auth-form'][data-active='true']")).to_have_count(0, timeout=timeout_ms)

@@ -151,7 +151,7 @@ class TestAliyunCodeInterpreterIntegration:
 """,
                 language="python",
                 timeout=30,
-                arguments={"name": "World", "count": 2}
+                arguments={"name": "World", "count": 2},
             )
 
             assert result.exit_code == 0
@@ -211,7 +211,7 @@ class TestAliyunCodeInterpreterIntegration:
 }""",
                 language="javascript",
                 timeout=30,
-                arguments={"name": "World", "count": 2}
+                arguments={"name": "World", "count": 2},
             )
 
             assert result.exit_code == 0

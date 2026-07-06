@@ -1,5 +1,6 @@
 {
   "name": "CoHere",
+  "rank": 990,
   "url": {
     "default": "https://api.cohere.com"
   },
