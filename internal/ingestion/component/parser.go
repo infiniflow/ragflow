@@ -84,6 +84,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/utility"
 )
 
 const ComponentNameParser = "Parser"
@@ -293,6 +294,11 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 
 	dispatched := dispatchParse(fileTypeExt, filename, binary, c.Param.Setups)
 	dispatched = hydrateEmptyDispatchPayload(dispatched, binary)
+	// Known/supported families must fail loudly when dispatch or
+	// parsing breaks. Only unknown families keep the raw-text fallback.
+	if dispatched.Err != nil && fileTypeExt != utility.FileTypeOTHER {
+		return nil, dispatched.Err
+	}
 
 	// 3. Build the legacy `pages` slice. When the dispatch path
 	//    produced a JSON payload, we re-shape it into the page

@@ -108,7 +108,11 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 // tell the difference between "explicit OCR" and "default DeepDOC"
 // without re-reading setups.
 func resolveLibType(fileType utility.FileType, setups map[string]schema.ParserSetup) (libType, parseMethod string) {
-	setup, ok := setups[string(fileType)]
+	family := pythonFamilyName(string(fileType))
+	if family == "" {
+		family = string(fileType)
+	}
+	setup, ok := setups[family]
 	if !ok {
 		return "", ""
 	}

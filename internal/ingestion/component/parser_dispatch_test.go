@@ -31,6 +31,7 @@ import (
 	"testing"
 
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/utility"
 )
 
 // TestDispatch_OutputFormatValidation_Allowed is the happy-path
@@ -130,22 +131,23 @@ func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 	}
 }
 
-// TestDispatch_TextPageMode_PDFInput pins the current text-page
-// behavior when PDF bytes are not successfully parsed into a
-// structured payload in this test environment.
-func TestDispatch_TextPageMode_PDFInput(t *testing.T) {
+// TestDispatch_SupportedFamilyFailure_HardErrors pins the agreed
+// migration rule: once a supported family is identified, parser
+// resolution/execution failures must surface as errors instead of
+// silently degrading to text-page mode.
+func TestDispatch_SupportedFamilyFailure_HardErrors(t *testing.T) {
 	param := schema.ParserParam{}.Defaults()
 	c := &ParserComponent{Param: param}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(context.Background(), map[string]any{
 		"binary":    []byte("PDF payload as bytes (not a real PDF — stub test)\n"),
 		"file_type": "pdf",
 	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
+	if err == nil {
+		t.Fatal("Invoke: want error for supported family parse failure, got nil")
 	}
-	if got, want := out["output_format"], "text"; got != want {
-		t.Errorf("output_format = %v, want %v (PDF input stayed in text-page mode)", got, want)
+	if !strings.Contains(err.Error(), "pdf") {
+		t.Errorf("error %q must mention pdf", err.Error())
 	}
 }
 
@@ -247,6 +249,43 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveLibType_UsesOwningFamilySetup(t *testing.T) {
+	setups := schema.ParserParam{}.Defaults().Setups
+	setups["slides"]["lib_type"] = "office_oxide"
+	setups["slides"]["parse_method"] = "deepdoc"
+	setups["spreadsheet"]["lib_type"] = "office_oxide"
+	setups["spreadsheet"]["parse_method"] = "deepdoc"
+
+	cases := []struct {
+		name            string
+		fileType        utility.FileType
+		wantLibType     string
+		wantParseMethod string
+	}{
+		{
+			name:            "pptx resolves from slides family",
+			fileType:        utility.FileTypePPTX,
+			wantLibType:     "office_oxide",
+			wantParseMethod: "deepdoc",
+		},
+		{
+			name:            "xlsx resolves from spreadsheet family",
+			fileType:        utility.FileTypeXLSX,
+			wantLibType:     "office_oxide",
+			wantParseMethod: "deepdoc",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotLibType, gotParseMethod := resolveLibType(tc.fileType, setups)
+			if gotLibType != tc.wantLibType || gotParseMethod != tc.wantParseMethod {
+				t.Fatalf("resolveLibType(%q) = (%q, %q), want (%q, %q)",
+					tc.fileType, gotLibType, gotParseMethod, tc.wantLibType, tc.wantParseMethod)
 			}
 		})
 	}
