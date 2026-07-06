@@ -2,7 +2,7 @@
 
 ## 1. Prepare dependencies
 
-### 1.1 Install CMake and build RAGFlow
+### 1.1 Install CMake and build RAGFlow on Ubuntu 24.04
 
 ```shell
 sudo apt update
@@ -13,7 +13,7 @@ sudo apt update
 test -f /usr/share/doc/kitware-archive-keyring/copyright || sudo rm /usr/share/keyrings/kitware-archive-keyring.gpg
 sudo apt install -y kitware-archive-keyring
 sudo apt update
-sudo apt install  -y cmake 
+sudo apt install -y cmake 
 ```
 
 ### 1.2 Install clang-20
