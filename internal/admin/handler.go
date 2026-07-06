@@ -868,6 +868,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 
 		if !*user.IsSuperuser {
 			common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "Permission denied")
+			c.Abort()
 			return
 		}
 
