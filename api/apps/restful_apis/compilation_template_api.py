@@ -52,3 +52,21 @@ def list_builtin_templates() -> Response:
         return get_json_result(data=templates)
     except Exception as exc:
         return server_error_response(exc)
+
+
+@manager.route("/compilation_templates/wiki_presets", methods=["GET"])  # noqa: F821
+@login_required
+def list_wiki_presets() -> Response:
+    """Wiki page-structure presets loaded from
+    ``api/db/init_data/compilation_templates/wiki/*.yaml``.
+
+    Each entry carries ``id`` (filename stem) + ``topic`` +
+    ``instruction`` + ``page_example`` so the artifact-template editor
+    can pre-fill its "Page-structure example" / "Global rules" fields
+    from a canned skeleton. Filesystem-fresh per request; no DB seed.
+    """
+    try:
+        presets = CompilationTemplateService.load_wiki_presets_from_files()
+        return get_json_result(data=presets)
+    except Exception as exc:
+        return server_error_response(exc)

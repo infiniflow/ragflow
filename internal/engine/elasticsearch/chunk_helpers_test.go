@@ -4,7 +4,36 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"ragflow/internal/engine/types"
 )
+
+func TestBuildQueryStringQueryMapsSkillFieldsToTokenFields(t *testing.T) {
+	query := buildQueryStringQuery(&types.MatchTextExpr{
+		MatchingText: "test",
+		Fields:       []string{"name^10", "tags^5", "description^3", "content^1"},
+	}, 0, true, false)
+
+	queryString, ok := query["query_string"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query_string missing from %#v", query)
+	}
+	assertEqual(t, queryString["fields"], []string{"name_tks^10", "tags_tks^5", "description_tks^3", "content_tks^1"})
+	assertEqual(t, queryString["query"], "test")
+}
+
+func TestBuildQueryStringQueryKeepsDocumentFieldsUnchanged(t *testing.T) {
+	query := buildQueryStringQuery(&types.MatchTextExpr{
+		MatchingText: "test",
+		Fields:       []string{"name^10"},
+	}, 0, false, false)
+
+	queryString, ok := query["query_string"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query_string missing from %#v", query)
+	}
+	assertEqual(t, queryString["fields"], []string{"name^10"})
+}
 
 func TestElasticsearchGetFieldsFiltersAndUsesIDFallback(t *testing.T) {
 	engine := &elasticsearchEngine{}
