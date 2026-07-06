@@ -92,12 +92,12 @@ class Switch(ComponentBase, ABC):
         self.set_output("_next", self._param.end_cpn_ids)
 
     def process_operator(self, input: Any, operator: str, value: Any) -> bool:
-        # Guard against None upstream variable (Issue #16315)
-        if input is None or value is None:
-            return False
         if operator in ("contains", "not contains", "start with", "end with"):
-            input = "" if input is None else str(input)
-            value = "" if value is None else str(value)
+            # Guard against None upstream variable (Issue #16315)
+            if input is None or value is None:
+                return False
+            input = str(input)
+            value = str(value)
         if operator == "contains":
             return True if value.lower() in input.lower() else False
         elif operator == "not contains":
