@@ -692,15 +692,15 @@ func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
-	if resp["code"] != float64(common.CodeSuccess) {
-		t.Fatalf("expected success for partial upload, got %v", resp)
+	if resp["code"] != float64(common.CodeServerError) {
+		t.Fatalf("expected server error code for partial upload, got %v", resp)
 	}
-	data := resp["data"].(map[string]interface{})
-	if len(data["documents"].([]interface{})) != 1 {
-		t.Fatalf("expected one successful document, got %v", data["documents"])
+	data := resp["data"].([]interface{})
+	if len(data) != 1 {
+		t.Fatalf("expected one successful document, got %v", data)
 	}
-	if len(data["errors"].([]interface{})) != 1 {
-		t.Fatalf("expected one file error, got %v", data["errors"])
+	if !strings.Contains(resp["message"].(string), "bad.exe") {
+		t.Fatalf("expected failed file in message, got %v", resp["message"])
 	}
 }
 
