@@ -69,7 +69,7 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 	}
 	dialogID := c.Param("dialog_id")
 	if dialogID == "" {
-		jsonError(c, common.CodeArgumentError, "`dialog_id` is required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`dialog_id` is required.")
 		return
 	}
 	title, avatar, prologue, llmID, hasTavily, ec, err := h.botService.ChatbotInfo(
@@ -103,7 +103,7 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 	}
 	agentID := c.Param("agent_id")
 	if agentID == "" {
-		jsonError(c, common.CodeArgumentError, "`agent_id` is required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`agent_id` is required.")
 		return
 	}
 	title, avatar, prologue, mode, inputs, ec, err := h.botService.AgentbotInputs(
@@ -143,7 +143,7 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 	}
 	agentID := c.Param("agent_id")
 	if agentID == "" {
-		jsonError(c, common.CodeArgumentError, "`agent_id` is required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`agent_id` is required.")
 		return
 	}
 	var body service.AgentbotCompletionRequest
@@ -153,7 +153,8 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 	// then ran with empty inputs.
 	if c.Request.ContentLength != 0 {
 		if err := c.ShouldBindJSON(&body); err != nil {
-			jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+				"Invalid request: "+err.Error())
 			return
 		}
 	}
@@ -226,7 +227,7 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 	}
 	dialogID := c.Param("dialog_id")
 	if dialogID == "" {
-		jsonError(c, common.CodeArgumentError, "`dialog_id` is required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`dialog_id` is required.")
 		return
 	}
 	var body service.ChatbotCompletionRequest
@@ -236,7 +237,8 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 	// then ran with empty session_id/question.
 	if c.Request.ContentLength != 0 {
 		if err := c.ShouldBindJSON(&body); err != nil {
-			jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+				"Invalid request: "+err.Error())
 			return
 		}
 	}
@@ -287,12 +289,12 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 	agentID, _ := c.Get("agent_id")
 	agentIDStr, _ := agentID.(string)
 	if agentIDStr == "" {
-		jsonError(c, common.CodeDataError, "API token is not bound to an agent.")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "API token is not bound to an agent.")
 		return
 	}
 	messageID := c.Param("message_id")
 	if messageID == "" {
-		jsonError(c, common.CodeArgumentError, "message_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "message_id is required")
 		return
 	}
 	key := fmt.Sprintf("%s-%s-logs", agentIDStr, messageID)
@@ -303,13 +305,13 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 	// real outages and corrupted payloads from operators (PR review
 	// round 5, Major #6).
 	if rerr != nil {
-		jsonError(c, common.CodeServerError, "failed to read agent logs")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "failed to read agent logs")
 		return
 	}
 	data := map[string]interface{}{}
 	if payload != "" {
 		if uerr := json.Unmarshal([]byte(payload), &data); uerr != nil {
-			jsonError(c, common.CodeServerError, "failed to decode agent logs")
+			common.ResponseWithCodeData(c, common.CodeServerError, nil, "failed to decode agent logs")
 			return
 		}
 	}

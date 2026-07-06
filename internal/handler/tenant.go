@@ -81,11 +81,7 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 	}
 
 	if wrapModels {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"message": "success",
-			"data":    map[string]interface{}{"models": []service.ModelItem{}},
-		})
+		common.SuccessWithData(c, map[string]interface{}{"models": []service.ModelItem{}}, "success")
 		return
 	}
 
@@ -117,11 +113,7 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 	if defaultModels == nil {
 		defaultModels = []service.ModelItem{}
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    map[string]interface{}{"models": defaultModels},
-	})
+	common.SuccessWithData(c, map[string]interface{}{"models": defaultModels}, "success")
 }
 
 // TenantInfo get tenant information
@@ -147,19 +139,11 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 	}
 
 	if tenantInfo == nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": "Tenant not found!",
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeDataError, false, "Tenant not found!")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    tenantInfo,
-	})
+	common.SuccessWithData(c, tenantInfo, "success")
 }
 
 // TenantList get tenant list for current user
@@ -184,11 +168,7 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    tenantList,
-	})
+	common.SuccessWithData(c, tenantList, "success")
 }
 
 // CreateMetadataStore handles the create metadata store request
@@ -272,13 +252,13 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 
 	var req CreateChunkTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
 	// Check authorization - user must have access to this kb
 	if !h.datasetService.Accessible(req.KBID, user.ID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
 		return
 	}
 
@@ -319,13 +299,13 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 
 	var req DeleteChunkTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
 	// Check authorization
 	if !h.datasetService.Accessible(req.KBID, user.ID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
 		return
 	}
 
@@ -361,10 +341,7 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 
 	var req InsertChunksFromFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
@@ -398,7 +375,7 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 		Chunks          []map[string]interface{} `json:"chunks"`
 	}
 
-	if err := json.Unmarshal(data, &debugFormat); err != nil || debugFormat.Chunks == nil {
+	if err = json.Unmarshal(data, &debugFormat); err != nil || debugFormat.Chunks == nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "invalid JSON format: expected {\"index_name\"/\"table_name\": ..., \"knowledgebase_id\": ..., \"chunks\": [...]}",
@@ -457,10 +434,7 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 
 	var req InsertMetadataFromFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
@@ -491,7 +465,7 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 		Chunks []map[string]interface{} `json:"chunks"`
 	}
 
-	if err := json.Unmarshal(data, &inputFormat); err != nil || inputFormat.Chunks == nil {
+	if err = json.Unmarshal(data, &inputFormat); err != nil || inputFormat.Chunks == nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "invalid JSON format: expected {\"chunks\": [...]}",
@@ -545,7 +519,7 @@ func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 
 	members, code, err := h.tenantService.ListMembers(user.ID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": err.Error()})
+		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": members, "message": "success"})
@@ -580,7 +554,7 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 
 	resp, code, err := h.tenantService.AddMember(user.ID, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": err.Error()})
+		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": resp, "message": "success"})
@@ -617,7 +591,7 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 
 	code, err := h.tenantService.RemoveMember(user.ID, tenantID, body.UserID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": err.Error()})
+		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, true, "success")
@@ -644,7 +618,7 @@ func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 
 	code, err := h.tenantService.AcceptInvite(user.ID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": err.Error()})
+		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, true, "success")

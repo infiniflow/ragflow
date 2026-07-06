@@ -497,13 +497,13 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeAuthenticationError, "user id is required")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "user id is required")
 		return
 	}
 
 	memoryID := strings.TrimSpace(c.Param("memory_id"))
 	if memoryID == "" {
-		jsonError(c, common.CodeArgumentError, "memory_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "memory_id is required")
 		return
 	}
 
@@ -522,16 +522,16 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 	keywords := strings.TrimSpace(c.DefaultQuery("keywords", ""))
 	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if err != nil || page <= 0 {
-		jsonError(c, common.CodeArgumentError, "page must be a positive integer")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "page must be a positive integer")
 		return
 	}
 	pageSize, err := strconv.Atoi(c.DefaultQuery("page_size", "50"))
 	if err != nil || pageSize <= 0 {
-		jsonError(c, common.CodeArgumentError, "page_size must be a positive integer")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "page_size must be a positive integer")
 		return
 	}
 	if pageSize > 100 {
-		jsonError(c, common.CodeArgumentError, "page_size must be less than or equal to 100")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "page_size must be less than or equal to 100")
 		return
 	}
 
@@ -541,15 +541,11 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 			jsonError(c, common.CodeNotFound, err.Error())
 			return
 		}
-		jsonError(c, common.CodeServerError, "Internal server error")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Internal server error")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": true,
-		"data":    data,
-	})
+	common.SuccessWithData(c, data, true)
 }
 
 type messageMemoryIDs []string
@@ -604,17 +600,17 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 
 	currentUserID := strings.TrimSpace(user.ID)
 	if currentUserID == "" {
-		jsonError(c, common.CodeArgumentError, "user_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "user_id is required")
 		return
 	}
 
 	var reqBody AddMessageRequest
 	if err := c.ShouldBindJSON(&reqBody); err != nil {
-		jsonError(c, common.CodeArgumentError, "body arguments is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "body arguments is required")
 		return
 	}
 	if len(reqBody.MemoryIDs) == 0 {
-		jsonError(c, common.CodeArgumentError, "memory_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "memory_id is required")
 		return
 	}
 
@@ -623,7 +619,8 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 		if authViaAPIToken, ok := v.(bool); authViaAPIToken && ok {
 			effectiveUserID = strings.TrimSpace(reqBody.UserID)
 			if effectiveUserID == "" {
-				jsonError(c, common.CodeArgumentError, "user_id is required")
+				common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+					"user_id is required")
 				return
 			}
 		}
@@ -758,7 +755,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeAuthenticationError, "user id is required")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "user id is required")
 		return
 	}
 
@@ -773,10 +770,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 
 	var req map[string]interface{}
 	if err = json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeArgumentError), err.Error())
 		return
 	}
 
@@ -836,7 +830,7 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeAuthenticationError, "user id is required")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "user id is required")
 		return
 	}
 
@@ -855,15 +849,11 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 			jsonError(c, common.CodeNotFound, err.Error())
 			return
 		}
-		jsonError(c, common.CodeServerError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": true,
-		"data":    data,
-	})
+	common.SuccessWithData(c, data, true)
 }
 
 // SearchMessage handles GET request for searching messages
@@ -892,7 +882,7 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeAuthenticationError, "user id is required")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "user id is required")
 		return
 	}
 
@@ -965,7 +955,7 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeAuthenticationError, "user id is required")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "user id is required")
 		return
 	}
 
@@ -985,7 +975,7 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 	sessionID := c.DefaultQuery("session_id", "")
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
 	if len(memoryIDs) == 0 {
-		jsonError(c, common.CodeArgumentError, "memory_ids is required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "memory_ids is required.")
 		return
 	}
 
@@ -995,11 +985,7 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": true,
-		"data":    data,
-	})
+	common.SuccessWithData(c, data, true)
 }
 
 // isArgumentError determines if an error message is an argument error

@@ -63,7 +63,7 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 
 	var req CreateChatChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Invalid request: "+err.Error())
 		return
 	}
 
@@ -75,7 +75,7 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 		req.ChatID,
 	)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, row, "success")
@@ -91,7 +91,7 @@ func (h *ChatChannelHandler) ListChatChannel(c *gin.Context) {
 
 	rows, err := h.chatChannelService.List(user.ID)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, rows, "success")
@@ -107,13 +107,13 @@ func (h *ChatChannelHandler) GetChatChannel(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeArgumentError, "user_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "user_id is required")
 		return
 	}
 
 	channelID := strings.TrimSpace(c.Param("channel_id"))
 	if channelID == "" {
-		jsonError(c, common.CodeArgumentError, "channel_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "channel_id is required")
 		return
 	}
 
@@ -140,19 +140,19 @@ func (h *ChatChannelHandler) UpdateChatChannel(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeArgumentError, "user_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "user_id is required")
 		return
 	}
 
 	channelID := strings.TrimSpace(c.Param("channel_id"))
 	if channelID == "" {
-		jsonError(c, common.CodeArgumentError, "channel_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "channel_id is required")
 		return
 	}
 
 	var request map[string]interface{}
 	if err := c.ShouldBindJSON(&request); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -175,13 +175,13 @@ func (h *ChatChannelHandler) DeleteChatChannel(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeArgumentError, "user_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "user_id is required")
 		return
 	}
 
 	channelID := strings.TrimSpace(c.Param("channel_id"))
 	if channelID == "" {
-		jsonError(c, common.CodeArgumentError, "channel_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "channel_id is required")
 		return
 	}
 

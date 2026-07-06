@@ -17,7 +17,6 @@
 package handler
 
 import (
-	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/service"
 	"strconv"
@@ -60,38 +59,24 @@ func (h *ModelHandler) ListAllModels(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    models,
-	})
-
+	common.SuccessWithData(c, models, "success")
 	return
 }
 
 func (h *ModelHandler) ShowModel(c *gin.Context) {
 	encodedModelName := c.Param("model_name")
 	if encodedModelName == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": "Encoded model name is empty",
-		})
+		common.ErrorWithCode(c, 400, "Encoded model name is empty")
 		return
 	}
 
 	decodedModelName, err := common.DecodeFromBase64(encodedModelName)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if decodedModelName == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": "Decoded model name is empty",
-		})
+		common.ErrorWithCode(c, 400, "Decoded model name is empty")
 		return
 	}
 
@@ -102,9 +87,5 @@ func (h *ModelHandler) ShowModel(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    model,
-	})
+	common.SuccessWithData(c, model, "success")
 }

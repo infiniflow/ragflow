@@ -17,8 +17,6 @@
 package handler
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
@@ -76,11 +74,7 @@ func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    llms,
-	})
+	common.SuccessWithData(c, llms, "success")
 }
 
 // SetAPIKey set API key for a LLM factory

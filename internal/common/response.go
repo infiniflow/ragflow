@@ -24,18 +24,18 @@ import (
 
 type response struct {
 	Code    int         `json:"code"`
-	Message string      `json:"message"`
+	Message interface{} `json:"message"`
 	Data    interface{} `json:"data"`
 }
 
 // errorResponse error response
 type errorResponse struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int         `json:"code"`
+	Message interface{} `json:"message"`
 }
 
 // SuccessWithData returns success response with data
-func SuccessWithData(c *gin.Context, data interface{}, message string) {
+func SuccessWithData(c *gin.Context, data interface{}, message interface{}) {
 	c.JSON(http.StatusOK, response{
 		Code:    int(CodeSuccess),
 		Message: message,
@@ -57,6 +57,14 @@ func SuccessNoData(c *gin.Context, message string) {
 		Code:    int(CodeSuccess),
 		Message: message,
 		Data:    nil,
+	})
+}
+
+// SuccessOnlyMessage returns success response with message only
+func SuccessOnlyMessage(c *gin.Context, message string) {
+	c.JSON(http.StatusOK, response{
+		Code:    int(CodeSuccess),
+		Message: message,
 	})
 }
 

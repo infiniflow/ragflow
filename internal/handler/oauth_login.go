@@ -55,10 +55,7 @@ const oauthAuthCookie = "ragflow_auth"
 func (h *UserHandler) OAuthLogin(c *gin.Context) {
 	channel := c.Param("channel")
 	if channel == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": "channel is required",
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), "channel is required")
 		return
 	}
 

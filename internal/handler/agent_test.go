@@ -337,10 +337,10 @@ func (h *agentHandlerTestable) listAgents(c *gin.Context) {
 	}
 	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "", nil)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": code, "data": false, "message": err.Error()})
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": result, "message": "success"})
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
@@ -350,7 +350,7 @@ func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
 	}
 	templates, err := h.svc.ListTemplates()
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
 	if templates == nil {

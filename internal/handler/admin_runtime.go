@@ -74,13 +74,13 @@ func (h *AdminRuntimeHandler) SetTenantRuntime(c *gin.Context) {
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
-		jsonError(c, common.CodeArgumentError, "tenant_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "tenant_id is required")
 		return
 	}
 
 	var req setRuntimeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeArgumentError, "Invalid request body: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -95,7 +95,7 @@ func (h *AdminRuntimeHandler) SetTenantRuntime(c *gin.Context) {
 	}
 
 	if err := h.selector.Set(c.Request.Context(), tenantID, mode); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 

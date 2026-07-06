@@ -63,10 +63,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	// Get chat_id from query parameter
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "chat_id is required",
-		})
+		common.ErrorWithCode(c, 400, "chat_id is required")
 		return
 	}
 
@@ -82,10 +79,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
@@ -136,18 +130,18 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 
 	var rawBody map[string]interface{}
 	if err := c.ShouldBindJSON(&rawBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
 	var req ChatCompletionsRequest
 	b, err := json.Marshal(rawBody)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
-	if err := json.Unmarshal(b, &req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+	if err = json.Unmarshal(b, &req); err != nil {
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
@@ -243,17 +237,10 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 			false, nil,
 		)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    500,
-				"message": err.Error(),
-			})
+			common.ErrorWithCode(c, 500, err.Error())
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"code":    0,
-			"data":    result,
-			"message": "",
-		})
+		common.SuccessWithData(c, result, "")
 	}
 }
 
@@ -300,7 +287,7 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 		if errors.Is(err, io.EOF) {
 			req = map[string]interface{}{}
 		} else {
-			jsonError(c, common.CodeArgumentError, err.Error())
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 			return
 		}
 	}
@@ -346,7 +333,7 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 		if errors.Is(err, io.EOF) {
 			req = map[string]interface{}{}
 		} else {
-			jsonError(c, common.CodeArgumentError, err.Error())
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 			return
 		}
 	}
@@ -380,14 +367,15 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 	req := map[string]any{}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		if errors.Is(err, io.EOF) {
-			jsonError(c, common.CodeArgumentError, "Request body cannot be empty")
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+				"Request body cannot be empty")
 			return
 		}
-		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	if len(req) == 0 {
-		jsonError(c, common.CodeArgumentError, "Request body cannot be empty")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Request body cannot be empty")
 		return
 	}
 
@@ -433,14 +421,15 @@ func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 	req := map[string]interface{}{}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		if errors.Is(err, io.EOF) {
-			jsonError(c, common.CodeArgumentError, "Request body cannot be empty")
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+				"Request body cannot be empty")
 			return
 		}
-		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	if len(req) == 0 {
-		jsonError(c, common.CodeArgumentError, "Request body cannot be empty")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Request body cannot be empty")
 		return
 	}
 

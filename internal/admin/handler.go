@@ -75,10 +75,7 @@ func (h *Handler) Ping(c *gin.Context) {
 func (h *Handler) Login(c *gin.Context) {
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 
@@ -86,10 +83,7 @@ func (h *Handler) Login(c *gin.Context) {
 	// This allows default admin account to log in admin system
 	user, code, err := h.userService.LoginByEmail(&req)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
@@ -874,10 +868,7 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 
 	result, err := h.service.TestSandboxConnection(req.ProviderType, req.Config)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": "Invalid access token",
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), "Invalid access token")
 		return
 	}
 
@@ -922,10 +913,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 
 // HandleNoRoute handle undefined routes
 func (h *Handler) HandleNoRoute(c *gin.Context) {
-	c.JSON(http.StatusNotFound, ErrorResponse{
-		Code:    404,
-		Message: "The requested resource was not found",
-	})
+	common.ErrorWithCode(c, 404, "The requested resource was not found")
 }
 
 // GetLogLevel returns the current log level
@@ -1216,10 +1204,7 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 func (h *Handler) Reports(c *gin.Context) {
 	var req common.BaseMessage
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": "Invalid request body: " + err.Error(),
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 

@@ -18,7 +18,6 @@ package admin
 
 import (
 	"errors"
-	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"strconv"
@@ -327,10 +326,7 @@ func (h *Handler) AddModelProvider(c *gin.Context) {
 func (h *Handler) ShowProvider(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 
@@ -339,11 +335,7 @@ func (h *Handler) ShowProvider(c *gin.Context) {
 		common.ErrorWithCode(c, int(common.CodeNotFound), err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    provider,
-	})
+	common.SuccessWithData(c, provider, "success")
 }
 
 type DeleteProviderRequest struct {
@@ -353,10 +345,7 @@ type DeleteProviderRequest struct {
 func (h *Handler) DeleteModelProvider(c *gin.Context) {
 	var req DeleteProviderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 
@@ -374,10 +363,7 @@ func (h *Handler) DeleteModelProvider(c *gin.Context) {
 func (h *Handler) ListModels(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 	models, err := dao.GetModelProviderManager().ListModels(providerName)
@@ -385,28 +371,19 @@ func (h *Handler) ListModels(c *gin.Context) {
 		common.ErrorWithCode(c, int(common.CodeNotFound), err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    models,
-	})
+
+	common.SuccessWithData(c, models, "success")
 }
 
 func (h *Handler) ShowProviderModel(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 	modelName := c.Param("model_name")
 	if modelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Model name is required",
-		})
+		common.ErrorWithCode(c, 400, "Model name is required")
 		return
 	}
 	model, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
@@ -414,20 +391,13 @@ func (h *Handler) ShowProviderModel(c *gin.Context) {
 		common.ErrorWithCode(c, int(common.CodeNotFound), err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    model,
-	})
+	common.SuccessWithData(c, model, "success")
 }
 
 func (h *Handler) ListModelInstances(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 
@@ -445,18 +415,12 @@ func (h *Handler) ListModelInstances(c *gin.Context) {
 func (h *Handler) ShowProviderInstance(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
+		common.ErrorWithCode(c, 400, "Instance name is required")
 		return
 	}
 	userID := c.GetString("user_id")
@@ -473,18 +437,12 @@ func (h *Handler) ShowProviderInstance(c *gin.Context) {
 func (h *Handler) ShowProviderInstanceBalance(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
+		common.ErrorWithCode(c, 400, "Instance name is required")
 		return
 	}
 	userID := c.GetString("user_id")
@@ -501,18 +459,12 @@ func (h *Handler) ShowProviderInstanceBalance(c *gin.Context) {
 func (h *Handler) CheckInstanceConnection(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
+		common.ErrorWithCode(c, 400, "Instance name is required")
 		return
 	}
 	userID := c.GetString("user_id")
@@ -535,19 +487,13 @@ type CheckConnectionRequest struct {
 func (h *Handler) CheckProviderConnection(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 
 	var req CheckConnectionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
@@ -570,37 +516,25 @@ type AlterProviderInstanceRequest struct {
 func (h *Handler) AlterProviderInstance(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
+		common.ErrorWithCode(c, 400, "Instance name is required")
 		return
 	}
 
 	var req AlterProviderInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 
 	userID := c.GetString("user_id")
 	if userID == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeUnauthorized,
-			"message": "Unauthorized",
-		})
+		common.ErrorWithCode(c, int(common.CodeUnauthorized), "Unauthorized")
 		return
 	}
 
@@ -626,10 +560,7 @@ func (h *Handler) AddModelInstance(c *gin.Context) {
 
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 
@@ -651,19 +582,13 @@ type DropModelInstanceRequest struct {
 func (h *Handler) DeleteModelInstance(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 
 	var req DropModelInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 
@@ -681,19 +606,13 @@ func (h *Handler) DeleteModelInstance(c *gin.Context) {
 func (h *Handler) ListInstanceModels(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
+		common.ErrorWithCode(c, 400, "Instance name is required")
 		return
 	}
 
@@ -716,29 +635,20 @@ type EnableOrDisableModelRequest struct {
 func (h *Handler) EnableOrDisableModel(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
+		common.ErrorWithCode(c, 400, "Instance name is required")
 		return
 	}
 
 	var req EnableOrDisableModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 
@@ -746,10 +656,7 @@ func (h *Handler) EnableOrDisableModel(c *gin.Context) {
 	modelName := strings.TrimPrefix(c.Param("model_name"), "/")
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" && modelID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": "model_name or model_id is required",
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), "model_name or model_id is required")
 		return
 	}
 
@@ -777,19 +684,13 @@ func (h *Handler) AddModels(c *gin.Context) {
 
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
+		common.ErrorWithCode(c, 400, "Instance name is required")
 		return
 	}
 
@@ -811,28 +712,19 @@ type DropModelsRequest struct {
 func (h *Handler) DeleteModels(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
+		common.ErrorWithCode(c, 400, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
+		common.ErrorWithCode(c, 400, "Instance name is required")
 		return
 	}
 
 	var req DropModelsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 
@@ -867,10 +759,7 @@ func (h *Handler) SetSystemLicense(c *gin.Context) {
 	var req SetSystemLicenseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 
@@ -911,10 +800,7 @@ func (h *Handler) UpdateSystemLicenseConfig(c *gin.Context) {
 	var req SetSystemLicenseConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 	result, err := h.service.UpdateSystemLicenseConfig(req.TimeRecordSaveInterval, req.TimeRecordTaskDuration)
@@ -935,10 +821,7 @@ func (h *Handler) ShowUserActivity(c *gin.Context) {
 	var req ShowUserActivityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 	userActivity, err := h.service.ShowUserActivity(req.Email, req.Days)
@@ -963,10 +846,7 @@ func (h *Handler) ShowUserDatasetSummary(c *gin.Context) {
 	var req ShowUserDatasetSummaryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 
@@ -1416,10 +1296,7 @@ func (h *Handler) ShowUsersActivity(c *gin.Context) {
 	var req ShowUsersActivityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 	usersActivity, err := h.service.ShowUsersActivity(req.Days, req.Window)
@@ -1446,10 +1323,7 @@ func (h *Handler) ListUsersReports(c *gin.Context) {
 	var req ListUsersReportsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 
@@ -1629,10 +1503,7 @@ func (h *Handler) ListUsersQuota(c *gin.Context) {
 	var request ListUsersQuotaRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 
@@ -1791,10 +1662,7 @@ func (h *Handler) PurgeOrphanData(c *gin.Context) {
 	var request PurgeOrphanDataRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 	result, err := h.service.PurgeOrphanData(request.Preview)
@@ -1819,10 +1687,7 @@ func (h *Handler) PurgeUserData(c *gin.Context) {
 	var request PurgeUserDataRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 	encodedUsername := c.Param("username")
@@ -1861,10 +1726,7 @@ func (h *Handler) PurgeUsersData(c *gin.Context) {
 	var request PurgeUsersDataRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
 		return
 	}
 

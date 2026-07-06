@@ -124,7 +124,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) || errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
-			jsonError(c, common.CodeDataError, "Canvas not found.")
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Canvas not found.")
 			return
 		}
 		jsonInternalError(c, err)
@@ -133,7 +133,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 
 	// 2. Reject DataFlow.
 	if cv.CanvasCategory == "DataFlow" {
-		jsonError(c, common.CodeDataError, "Dataflow can not be triggered by webhook.")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Dataflow can not be triggered by webhook.")
 		return
 	}
 
@@ -148,7 +148,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	// 4. Find Begin component with mode=="Webhook".
 	webhookCfg := findWebhookBegin(dsl)
 	if webhookCfg == nil {
-		jsonError(c, common.CodeDataError, "Webhook not configured for this agent.")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Webhook not configured for this agent.")
 		return
 	}
 
@@ -162,7 +162,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	// 6. Security gate (strict; surfaces all errors as 102).
 	securityCfg := stringMap(webhookCfg["security"])
 	if err := validateWebhookSecurity(securityCfg, c, canvasID); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -200,10 +200,10 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 			})
 			return
 		case errors.Is(parseErr, ErrWebhookContentTypeMismatch):
-			jsonError(c, common.CodeDataError, parseErr.Error())
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, parseErr.Error())
 			return
 		default:
-			jsonError(c, common.CodeDataError, parseErr.Error())
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, parseErr.Error())
 			return
 		}
 	}
@@ -212,7 +212,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	schema, _ := webhookCfg["schema"].(map[string]any)
 	clean, schemaErr := applyWebhookSchema(parsed, schema)
 	if schemaErr != nil {
-		jsonError(c, common.CodeDataError, schemaErr.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, schemaErr.Error())
 		return
 	}
 
@@ -224,7 +224,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	if mode == "Immediately" {
 		status, contentType, payload, perr := renderImmediatelyResponse(stringMap(webhookCfg["response"]))
 		if perr != nil {
-			jsonError(c, common.CodeDataError, perr.Error())
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, perr.Error())
 			return
 		}
 		// Detached background run — does NOT inherit c.Request.Context()

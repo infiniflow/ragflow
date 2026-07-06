@@ -186,13 +186,13 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": errorCode, "data": nil, "message": errorMessage})
+		common.ResponseWithCodeData(c, errorCode, nil, errorMessage)
 		return
 	}
 
 	var req SearchBotRetrievalTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": err.Error()})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -206,14 +206,14 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	req.KbIDs = filtered
 
 	if len(req.KbIDs) == 0 || req.Question == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "kb_id and question are required"})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_id and question are required")
 		return
 	}
 
 	applyRetrievalDefaults(&req)
 
 	if req.TopK != nil && *req.TopK <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "top_k must be greater than 0"})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "top_k must be greater than 0")
 		return
 	}
 
@@ -221,12 +221,12 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 
 	result, err := h.chunkSvc.RetrievalTest(svcReq, user.ID)
 	if err != nil {
-		common.Warn("searchbot retrieval test failed", zap.String("error", err.Error()))
-		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": "retrieval test failed"})
+		common.Warn("search bot retrieval test failed", zap.String("error", err.Error()))
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "retrieval test failed")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": int(common.CodeSuccess), "data": result, "message": "success"})
+	common.SuccessWithData(c, result, "success")
 }
 
 // Ask performs a retrieval-augmented Q&A with streaming SSE response.
@@ -247,7 +247,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 
 	var req SearchBotAskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": err.Error()})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -260,7 +260,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		filtered = append(filtered, id)
 	}
 	if len(filtered) == 0 || strings.TrimSpace(req.Question) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "kb_ids and question are required"})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 
@@ -338,7 +338,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 
 	var req SearchBotMindMapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": err.Error()})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -349,7 +349,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 		}
 	}
 	if len(filtered) == 0 || strings.TrimSpace(req.Question) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "kb_ids and question are required"})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 	if h.chunkSvc == nil {
@@ -400,7 +400,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 func (h *SearchBotHandler) SearchbotDetail(c *gin.Context) {
 	searchID := strings.TrimSpace(c.Query("search_id"))
 	if searchID == "" {
-		jsonError(c, common.CodeArgumentError, "search_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "search_id is required")
 		return
 	}
 
@@ -417,7 +417,7 @@ func (h *SearchBotHandler) SearchbotDetail(c *gin.Context) {
 		case "has no permission for this operation":
 			jsonError(c, common.CodeOperatingError, "Has no permission for this operation.")
 		case "can't find this Search App!":
-			jsonError(c, common.CodeDataError, "Can't find this Search App!")
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Search App!")
 		default:
 			jsonInternalError(c, err)
 		}

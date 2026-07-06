@@ -76,11 +76,7 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 	// Bind JSON request
 	var req service.RetrievalTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeArgumentError,
-			"data":    nil,
-			"message": err.Error(),
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -156,11 +152,7 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    int(common.CodeSuccess),
-		"data":    resp,
-		"message": "success",
-	})
+	common.SuccessWithData(c, resp, "success")
 }
 
 // Get retrieves a chunk by ID.
@@ -196,10 +188,7 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 
 	resp, err := h.chunkService.Get(req, user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
@@ -256,11 +245,7 @@ func (h *ChunkHandler) Parse(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    code,
-		"data":    data,
-		"message": "success",
-	})
+	common.ResponseWithCodeData(c, code, data, "success")
 }
 
 // ListChunks retrieves chunks for a document from path/query parameters.
@@ -283,18 +268,12 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 
 	page, err := parsePositiveQueryInt(c, "page", 1)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeArgumentError), err.Error())
 		return
 	}
 	size, err := parsePositiveQueryInt(c, "page_size", 30)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeArgumentError), err.Error())
 		return
 	}
 
@@ -307,10 +286,7 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 	}
 	available, ok, err := parseAvailableQuery(c.Query("available"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeArgumentError), err.Error())
 		return
 	}
 	if ok {
@@ -326,11 +302,7 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    int(common.CodeSuccess),
-		"data":    resp,
-		"message": "success",
-	})
+	common.SuccessWithData(c, resp, "success")
 }
 
 func parsePositiveQueryInt(c *gin.Context, name string, defaultValue int) (int, error) {
@@ -367,17 +339,17 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
-		jsonError(c, common.CodeDataError, "dataset_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
 		return
 	}
 
 	var req service.StopParsingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 	if len(req.DocumentIDs) == 0 {
-		jsonError(c, common.CodeDataError, "`document_ids` is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "`document_ids` is required")
 		return
 	}
 
@@ -426,10 +398,7 @@ func (h *ChunkHandler) List(c *gin.Context) {
 	// Bind JSON request
 	var req service.ListChunksRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
@@ -445,10 +414,7 @@ func (h *ChunkHandler) List(c *gin.Context) {
 
 	resp, err := h.chunkService.List(&req, user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
@@ -497,10 +463,7 @@ func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 
 	var rawBody map[string]interface{}
 	if err := json.NewDecoder(c.Request.Body).Decode(&rawBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeArgumentError), err.Error())
 		return
 	}
 
@@ -523,10 +486,7 @@ func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 
 	availableInt, err := parseAvailableBody(rawBody)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeArgumentError), err.Error())
 		return
 	}
 
@@ -711,10 +671,7 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 
 	err := h.chunkService.UpdateChunk(&req, user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
@@ -752,10 +709,7 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 
 	var req service.RemoveChunksRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 
@@ -771,10 +725,7 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 
 	deletedCount, err := h.chunkService.RemoveChunks(&req, user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
@@ -849,38 +800,38 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 
 	var rawBody map[string]json.RawMessage
 	if err := json.NewDecoder(c.Request.Body).Decode(&rawBody); err != nil {
-		jsonError(c, common.CodeArgumentError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	content, err := addChunkStringField(rawBody, "content")
 	if err != nil {
-		jsonError(c, common.CodeArgumentError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	importantKeywords, err := addChunkStringListField(rawBody, "important_keywords", "`important_keywords` is required to be a list", "`important_keywords` must be a list of strings")
 	if err != nil {
-		jsonError(c, common.CodeArgumentError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	questions, err := addChunkStringListField(rawBody, "questions", "`questions` is required to be a list", "`questions` must be a list of strings")
 	if err != nil {
-		jsonError(c, common.CodeArgumentError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	tagKwd, err := addChunkStringListField(rawBody, "tag_kwd", "`tag_kwd` is required to be a list", "`tag_kwd` must be a list of strings")
 	if err != nil {
-		jsonError(c, common.CodeArgumentError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	imageBase64, err := addChunkStringPtrField(rawBody, "image_base64")
 	if err != nil {
-		jsonError(c, common.CodeArgumentError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	var tagFeas interface{}
 	if raw, ok := rawBody["tag_feas"]; ok {
 		if err := json.Unmarshal(raw, &tagFeas); err != nil {
-			jsonError(c, common.CodeArgumentError, err.Error())
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 			return
 		}
 	}
@@ -902,7 +853,7 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 			jsonError(c, codedErr.Code(), addChunkResponseMessage(codedErr.Code(), err))
 			return
 		}
-		jsonError(c, common.CodeServerError, addChunkResponseMessage(common.CodeServerError, err))
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, addChunkResponseMessage(common.CodeServerError, err))
 		return
 	}
 

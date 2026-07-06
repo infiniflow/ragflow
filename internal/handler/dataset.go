@@ -116,7 +116,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 	if extStr := c.Query("ext"); extStr != "" {
 		var ext listDatasetsExt
 		if err := json.Unmarshal([]byte(extStr), &ext); err != nil {
-			jsonError(c, common.CodeDataError, err.Error())
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 			return
 		}
 		keywords = ext.Keywords
@@ -158,7 +158,7 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 
 	var req service.CreateDatasetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -199,7 +199,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeDataError, "user id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "user id is required")
 		return
 	}
 
@@ -211,7 +211,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 
 	var req service.UpdateDatasetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -255,7 +255,7 @@ func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
 	datasetID := c.Param("dataset_id")
 	var req service.MetadataConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -300,7 +300,8 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	if pageStr := c.Query("page"); pageStr != "" {
 		p, err := strconv.Atoi(pageStr)
 		if err != nil {
-			jsonError(c, common.CodeArgumentError, "page must be an integer")
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+				"page must be an integer")
 			return
 		}
 		page = p
@@ -310,7 +311,8 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
 		ps, err := strconv.Atoi(pageSizeStr)
 		if err != nil {
-			jsonError(c, common.CodeArgumentError, "page_size must be an integer")
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+				"page_size must be an integer")
 			return
 		}
 		pageSize = ps
@@ -367,7 +369,7 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	}
 	if c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			jsonError(c, common.CodeDataError, err.Error())
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 			return
 		}
 	}
@@ -396,7 +398,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		jsonError(c, common.CodeDataError, "dataset_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
 		return
 	}
 
@@ -408,13 +410,13 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 
 	tenantID, _ := dataset["tenant_id"].(string)
 	if tenantID == "" {
-		jsonError(c, common.CodeDataError, "tenant_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "tenant_id is required")
 		return
 	}
 
 	docEngine := engine.Get()
 	if docEngine == nil {
-		jsonError(c, common.CodeServerError, "Document engine is not initialized")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Document engine is not initialized")
 		return
 	}
 
@@ -526,24 +528,24 @@ func (h *DatasetsHandler) RenameTag(c *gin.Context) {
 
 	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		jsonError(c, common.CodeDataError, "Lack of from_tag or to_tag in request body")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Lack of from_tag or to_tag in request body")
 		return
 	}
 	fromTagValue, hasFrom := payload["from_tag"]
 	toTagValue, hasTo := payload["to_tag"]
 	if !hasFrom || !hasTo {
-		jsonError(c, common.CodeDataError, "Lack of from_tag or to_tag in request body")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Lack of from_tag or to_tag in request body")
 		return
 	}
 	fromTag, okFrom := fromTagValue.(string)
 	toTag, okTo := toTagValue.(string)
 	if !okFrom || !okTo {
-		jsonError(c, common.CodeArgumentError, "from_tag and to_tag must be strings")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "from_tag and to_tag must be strings")
 		return
 	}
 	req := renameTagRequest{FromTag: fromTag, ToTag: toTag}
 	if strings.TrimSpace(req.FromTag) == "" || strings.TrimSpace(req.ToTag) == "" {
-		jsonError(c, common.CodeArgumentError, "from_tag and to_tag must not be empty")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "from_tag and to_tag must not be empty")
 		return
 	}
 
@@ -566,7 +568,7 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		jsonError(c, common.CodeDataError, "dataset_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
 		return
 	}
 
@@ -578,13 +580,13 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 
 	tenantID, _ := dataset["tenant_id"].(string)
 	if tenantID == "" {
-		jsonError(c, common.CodeDataError, "tenant_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "tenant_id is required")
 		return
 	}
 
 	docEngine := engine.Get()
 	if docEngine == nil {
-		jsonError(c, common.CodeServerError, "Document engine is not initialized")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Document engine is not initialized")
 		return
 	}
 
@@ -620,7 +622,7 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		jsonError(c, common.CodeDataError, "dataset_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
 		return
 	}
 
@@ -632,7 +634,7 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 
 	tenantID, _ := dataset["tenant_id"].(string)
 	if tenantID == "" {
-		jsonError(c, common.CodeDataError, "tenant_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "tenant_id is required")
 		return
 	}
 
@@ -640,14 +642,14 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 		Tags []string `json:"tags" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	docEngine := engine.Get()
 	if docEngine == nil {
-		jsonError(c, common.CodeServerError, "Document engine is not initialized")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Document engine is not initialized")
 		return
 	}
 
@@ -662,7 +664,7 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 			},
 		}
 		if err := docEngine.UpdateChunks(c.Request.Context(), condition, newValue, indexName, datasetID); err != nil {
-			jsonError(c, common.CodeServerError, "Failed to remove tag: "+err.Error())
+			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to remove tag: "+err.Error())
 			return
 		}
 	}
@@ -680,13 +682,13 @@ func (h *DatasetsHandler) RunEmbedding(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeAuthenticationError, "user_id is required")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "user_id is required")
 		return
 	}
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		jsonError(c, common.CodeDataError, "dataset_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
 		return
 	}
 
@@ -710,23 +712,23 @@ func (h *DatasetsHandler) CheckEmbedding(c *gin.Context) {
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		jsonError(c, common.CodeDataError, "dataset_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeDataError, "user_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "user_id is required")
 		return
 	}
 
 	var req service.CheckEmbeddingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 	if strings.TrimSpace(req.EmbeddingID) == "" {
-		jsonError(c, common.CodeDataError, "`embd_id` is required.")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "`embd_id` is required.")
 		return
 	}
 
@@ -768,7 +770,7 @@ func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
 		}
 	}
 	if len(datasetIDs) == 0 {
-		jsonError(c, common.CodeDataError, "Lack of dataset_ids in query parameters")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Lack of dataset_ids in query parameters")
 		return
 	}
 
@@ -790,13 +792,13 @@ func (h *DatasetsHandler) RunIndex(c *gin.Context) {
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		jsonError(c, common.CodeDataError, "dataset_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeDataError, "user_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "user_id is required")
 		return
 	}
 
@@ -820,13 +822,13 @@ func (h *DatasetsHandler) TraceIndex(c *gin.Context) {
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		jsonError(c, common.CodeDataError, "dataset_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeDataError, "user_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "user_id is required")
 		return
 	}
 
@@ -854,13 +856,13 @@ func (h *DatasetsHandler) DeleteIndex(c *gin.Context) {
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		jsonError(c, common.CodeDataError, "dataset_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeDataError, "user_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "user_id is required")
 		return
 	}
 
@@ -903,7 +905,7 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 
 	datasetIDsStr := c.Query("dataset_ids")
 	if datasetIDsStr == "" {
-		jsonError(c, common.CodeDataError, "dataset_ids is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_ids is required")
 		return
 	}
 
@@ -916,21 +918,21 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 		}
 	}
 	if len(datasetIDs) == 0 {
-		jsonError(c, common.CodeDataError, "dataset_ids is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_ids is required")
 		return
 	}
 
 	// Check access for each dataset
 	for _, datasetID := range datasetIDs {
 		if !h.datasetsService.Accessible(datasetID, user.ID) {
-			jsonError(c, common.CodeAuthenticationError, "No authorization for dataset: "+datasetID)
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization for dataset: "+datasetID)
 			return
 		}
 	}
 
 	flattenedMeta, err := h.metadataService.GetFlattedMetaByKBs(datasetIDs)
 	if err != nil {
-		jsonError(c, common.CodeServerError, "Failed to get metadata: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to get metadata: "+err.Error())
 		return
 	}
 
@@ -946,23 +948,23 @@ func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		jsonError(c, common.CodeArgumentError, "dataset_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_id is required")
 		return
 	}
 	documentID := strings.TrimSpace(c.Param("document_id"))
 	if documentID == "" {
-		jsonError(c, common.CodeArgumentError, "document_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "document_id is required")
 		return
 	}
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeArgumentError, "user_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "user_id is required")
 		return
 	}
 
 	var req map[string]interface{}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -972,11 +974,7 @@ func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    code,
-		"data":    data,
-		"message": "success",
-	})
+	common.ResponseWithCodeData(c, code, data, "success")
 }
 
 // SearchDatasets searches chunks across datasets based on a question
@@ -997,7 +995,7 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 
 	var req service.SearchDatasetsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeArgumentError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -1020,20 +1018,20 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 
 	req.Question = strings.TrimSpace(req.Question)
 	if req.Question == "" {
-		jsonError(c, common.CodeArgumentError, "question is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
 		return
 	}
 	if req.DatasetIDs == nil {
-		jsonError(c, common.CodeArgumentError, "kb_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_id is required")
 		return
 	}
 
 	if len(req.DatasetIDs) == 0 {
-		jsonError(c, common.CodeArgumentError, "kb_id array cannot be empty")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_id array cannot be empty")
 		return
 	}
 	if err := validateSearchDatasetsRequest(&req); err != nil {
-		jsonError(c, common.CodeArgumentError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -1042,20 +1040,17 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		searchService = h.datasetsService
 	}
 	if searchService == nil {
-		jsonError(c, common.CodeDataError, "dataset service is not initialized")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset service is not initialized")
 		return
 	}
 
 	resp, err := searchService.SearchDatasets(&req, user.ID)
 	if err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data": resp,
-	})
+	common.SuccessNoMessage(c, resp)
 }
 
 // SearchDataset searches chunks within a single dataset based on a question.
@@ -1077,22 +1072,22 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
-		jsonError(c, common.CodeDataError, "dataset_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
 		return
 	}
 
 	var req service.SearchDatasetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeArgumentError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	req.Question = strings.TrimSpace(req.Question)
 	if req.Question == "" {
-		jsonError(c, common.CodeArgumentError, "question is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
 		return
 	}
 	if err := validateSearchDatasetRequest(&req); err != nil {
-		jsonError(c, common.CodeArgumentError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -1101,20 +1096,17 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		searchService = h.datasetsService
 	}
 	if searchService == nil {
-		jsonError(c, common.CodeDataError, "dataset service is not initialized")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset service is not initialized")
 		return
 	}
 
 	resp, err := searchService.SearchDataset(datasetID, user.ID, &req)
 	if err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data": resp,
-	})
+	common.SuccessNoMessage(c, resp)
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {

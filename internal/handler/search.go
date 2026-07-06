@@ -133,10 +133,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	// List search apps with filtering
 	result, err := h.searchService.ListSearches(userID, keywords, page, pageSize, orderby, desc, ownerIDs)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
@@ -175,11 +172,7 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 	}
 
 	if err := common.ValidateName(req.Name); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    nil,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
 		return
 	}
 
@@ -236,11 +229,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 			return
 		}
 		// Not found error
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    nil,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
 		return
 	}
 
@@ -298,19 +287,11 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	if err != nil {
 		// Check if it's an authorization error
 		if err.Error() == "no authorization" {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeAuthenticationError,
-				"data":    false,
-				"message": "No authorization.",
-			})
+			common.ResponseWithCodeData(c, common.CodeDataError, false, "No authorization")
 			return
 		}
 		// Delete failed error
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    nil,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
 		return
 	}
 
@@ -357,11 +338,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 
 	// Validate name (same as Python validation)
 	if err := common.ValidateName(req.Name); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    nil,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
 		return
 	}
 
@@ -371,11 +348,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 		errMsg := err.Error()
 		switch errMsg {
 		case "no authorization":
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeAuthenticationError,
-				"data":    false,
-				"message": "No authorization.",
-			})
+			common.ResponseWithCodeData(c, common.CodeDataError, false, "No authorization")
 		case "duplicated search name":
 			c.JSON(http.StatusOK, gin.H{
 				"code":    common.CodeDataError,
@@ -431,7 +404,8 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 
 	var req service.SearchCompletionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeArgumentError, "question is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+			"question is required")
 		return
 	}
 
@@ -458,7 +432,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		return
 	}
 	if plan == nil {
-		jsonError(c, common.CodeServerError, "completion plan is nil")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "completion plan is nil")
 		return
 	}
 

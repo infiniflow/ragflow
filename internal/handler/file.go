@@ -506,7 +506,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 	// Get storage
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
-		jsonError(c, common.CodeServerError, "storage not initialized")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "storage not initialized")
 		return
 	}
 
@@ -521,7 +521,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 	if len(blob) == 0 {
 		storageAddr, err := h.fileService.GetStorageAddress(fileID)
 		if err != nil {
-			jsonError(c, common.CodeServerError, "Failed to get file storage address: "+err.Error())
+			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to get file storage address: "+err.Error())
 			return
 		}
 		blob, getErr = storageImpl.Get(storageAddr.Bucket, storageAddr.Name)
@@ -533,7 +533,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 		if getErr != nil {
 			errMsg += ": " + getErr.Error()
 		}
-		jsonError(c, common.CodeServerError, errMsg)
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, errMsg)
 		return
 	}
 
@@ -592,7 +592,7 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		missing = append(missing, "kb_ids")
 	}
 	if len(missing) > 0 {
-		jsonError(c, common.CodeArgumentError, fmt.Sprintf("required argument are missing: %s; ", strings.Join(missing, ",")))
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("required argument are missing: %s; ", strings.Join(missing, ",")))
 		return
 	}
 

@@ -422,11 +422,7 @@ func (h *UserHandler) Setting(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    true,
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // ChangePassword change user password
@@ -563,19 +559,11 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 
 	code, err := h.userService.SetTenantInfo(user.ID, &req)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    true,
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 func joinStrings(values []string) string {

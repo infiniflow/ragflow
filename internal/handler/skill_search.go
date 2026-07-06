@@ -94,7 +94,7 @@ func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 
 	var req service.UpdateConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -128,7 +128,7 @@ func (h *SkillSearchHandler) Search(c *gin.Context) {
 
 	var req service.SearchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -169,7 +169,7 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 
 	var req IndexSkillsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -183,7 +183,7 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 		}
 		val, ok := config["embd_id"].(string)
 		if !ok || val == "" {
-			jsonError(c, common.CodeDataError, "no embedding model configured in skill search config")
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, "no embedding model configured in skill search config")
 			return
 		}
 		embdID = val
@@ -244,7 +244,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 
 	var req ReindexRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -258,7 +258,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 		}
 		val, ok := config["embd_id"].(string)
 		if !ok || val == "" {
-			jsonError(c, common.CodeDataError, "no embedding model configured in skill search config")
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, "no embedding model configured in skill search config")
 			return
 		}
 		embdID = val
@@ -294,7 +294,7 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 	skillID := c.Query("skill_id")
 	spaceID := c.Query("space_id")
 	if skillID == "" {
-		jsonError(c, common.CodeDataError, "skill_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "skill_id is required")
 		return
 	}
 
@@ -328,7 +328,7 @@ func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
 	embdID := c.Query("embd_id")
 	spaceID := c.Query("space_id")
 	if embdID == "" {
-		jsonError(c, common.CodeDataError, "embd_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "embd_id is required")
 		return
 	}
 
@@ -394,7 +394,7 @@ func (h *SkillSearchHandler) CreateSpace(c *gin.Context) {
 
 	var req CreateSpaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -432,7 +432,7 @@ func (h *SkillSearchHandler) GetSpace(c *gin.Context) {
 
 	spaceID := c.Param("space_id")
 	if spaceID == "" {
-		jsonError(c, common.CodeDataError, "space_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "space_id is required")
 		return
 	}
 
@@ -474,13 +474,13 @@ func (h *SkillSearchHandler) UpdateSpace(c *gin.Context) {
 
 	spaceID := c.Param("space_id")
 	if spaceID == "" {
-		jsonError(c, common.CodeDataError, "space_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "space_id is required")
 		return
 	}
 
 	var req UpdateSpaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -518,7 +518,7 @@ func (h *SkillSearchHandler) DeleteSpace(c *gin.Context) {
 
 	spaceID := c.Param("space_id")
 	if spaceID == "" {
-		jsonError(c, common.CodeDataError, "space_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "space_id is required")
 		return
 	}
 
@@ -555,7 +555,7 @@ func (h *SkillSearchHandler) GetSpaceByFolder(c *gin.Context) {
 
 	folderID := c.Query("folder_id")
 	if folderID == "" {
-		jsonError(c, common.CodeDataError, "folder_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "folder_id is required")
 		return
 	}
 

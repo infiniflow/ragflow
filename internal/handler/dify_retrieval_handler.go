@@ -162,14 +162,14 @@ func NewDifyRetrievalHandler(
 func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	user, errCode, errMsg := GetUser(c)
 	if errCode != common.CodeSuccess {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": errCode, "message": errMsg})
+		common.ErrorWithCode(c, int(errCode), errMsg)
 		return
 	}
 
 	var req difyRetrievalRequest
 	if c.Request.Method == http.MethodGet {
 		if err := c.ShouldBindQuery(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "message": "invalid query parameters"})
+			common.ErrorWithCode(c, int(common.CodeArgumentError), "Invalid query parameters")
 			return
 		}
 		// Manually extract top_k and score_threshold from query (flat params, not nested)
@@ -191,28 +191,28 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		}
 	} else {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "message": "invalid request body"})
+			common.ErrorWithCode(c, int(common.CodeArgumentError), "Invalid request body")
 			return
 		}
 	}
 
 	if req.KnowledgeID == "" || req.Query == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "message": "knowledge_id and query are required"})
+		common.ErrorWithCode(c, int(common.CodeArgumentError), "knowledge_id and query are required")
 		return
 	}
 
 	kb, err := h.kbSvc.GetByID(req.KnowledgeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": common.CodeNotFound, "message": "Knowledgebase not found!"})
+			common.ErrorWithCode(c, int(common.CodeNotFound), "Knowledge base not found!")
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "message": "failed to query knowledgebase"})
+			common.ErrorWithCode(c, int(common.CodeServerError), "failed to query knowledge base")
 		}
 		return
 	}
 
 	if !h.kbSvc.Accessible(req.KnowledgeID, user.ID) {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": common.CodeAuthenticationError, "message": "No authorization."})
+		common.ErrorWithCode(c, int(common.CodeAuthenticationError), "No authorization")
 		return
 	}
 
@@ -233,7 +233,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	// Get embedding model
 	embModel, err := h.modelSvc.GetEmbeddingModel(kb.TenantID, kb.EmbdID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "message": fmt.Sprintf("failed to get embedding model: %v", err)})
+		common.ErrorWithCode(c, int(common.CodeServerError), fmt.Sprintf("failed to get embedding model: %v", err))
 		return
 	}
 
@@ -275,10 +275,10 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	result, err := h.retrievalSvc.Retrieval(c.Request.Context(), sr)
 	if err != nil {
 		if strings.Contains(err.Error(), "not_found") {
-			c.JSON(http.StatusNotFound, gin.H{"code": common.CodeNotFound, "message": "No chunk found! Check the chunk status please!"})
+			common.ErrorWithCode(c, int(common.CodeNotFound), "No chunk found! Check the chunk status please!")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "message": err.Error()})
+		common.ErrorWithCode(c, int(common.CodeServerError), err.Error())
 		return
 	}
 
@@ -323,7 +323,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	if len(allDocIDs) > 0 {
 		docs, err := h.docDAO.GetByIDs(allDocIDs)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "message": fmt.Sprintf("failed to load documents: %v", err)})
+			common.ErrorWithCode(c, int(common.CodeServerError), fmt.Sprintf("failed to load documents: %v", err))
 			return
 		}
 		for _, d := range docs {
@@ -367,7 +367,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"records": records})
 }
 
-// HealthCheck returns a simple health check response.
+// HealthCheck Health check returns a simple health check response.
 func (h *DifyRetrievalHandler) HealthCheck(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": true})
+	common.SuccessNoMessage(c, true)
 }

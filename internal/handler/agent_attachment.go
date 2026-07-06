@@ -55,7 +55,7 @@ func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 	}
 	attachmentID := c.Param("attachment_id")
 	if attachmentID == "" {
-		jsonError(c, common.CodeArgumentError, "`attachment_id` is required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`attachment_id` is required.")
 		return
 	}
 	// Note (review F9): the plan explicitly defers attachment-id
@@ -70,7 +70,7 @@ func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 	// never crosses the service boundary.
 	safe := filepath.Base(attachmentID)
 	if safe == "" || safe == "." || safe == "/" || strings.ContainsAny(safe, "\r\n\"") {
-		jsonError(c, common.CodeArgumentError, "invalid attachment id.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "invalid attachment id.")
 		return
 	}
 
@@ -91,7 +91,7 @@ func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 	// endpoint relies on the storage bucket's tenant scoping for
 	// authorisation. The Go port preserves that shape.
 	if h.fileService == nil {
-		jsonError(c, common.CodeServerError, "file service not configured")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "file service not configured")
 		return
 	}
 	blob, err := h.fileService.DownloadAgentFile(user.ID, attachmentID)
@@ -99,7 +99,7 @@ func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 		// Mirror agent_download.go error mapping — DAO/transport
 		// errors collapse to a generic 102 so we don't leak storage
 		// internals in the response body.
-		jsonError(c, common.CodeDataError, "Attachment not found!")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Attachment not found!")
 		return
 	}
 

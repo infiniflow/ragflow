@@ -227,10 +227,7 @@ func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 func (h *SystemHandler) ListVariables(c *gin.Context) {
 	variables, err := h.systemService.ListAllVariables()
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
@@ -252,41 +249,26 @@ type SetVariableHTTPRequest struct {
 func (h *SystemHandler) SetVariable(c *gin.Context) {
 	var req SetVariableHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": "Var name is required",
-		})
+		common.ErrorWithCode(c, 400, "Var name is required")
 		return
 	}
 
 	if req.VarName == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": "Var name is required",
-		})
+		common.ErrorWithCode(c, 400, "Var name is required")
 		return
 	}
 
 	if req.VarValue == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": "Var value is required",
-		})
+		common.ErrorWithCode(c, 400, "Var value is required")
 		return
 	}
 
 	if err := h.systemService.SetVariable(req.VarName, req.VarValue); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "SUCCESS",
-	})
+	common.SuccessNoData(c, "SUCCESS")
 }
 
 func (h *SystemHandler) ShowVariable(c *gin.Context) {
@@ -294,50 +276,30 @@ func (h *SystemHandler) ShowVariable(c *gin.Context) {
 
 	varName, err := common.DecodeFromBase64(encodedVarName)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 400, err.Error())
 		return
 	}
 	if varName == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": "Var name is required",
-		})
+		common.ErrorWithCode(c, 400, "Var name is required")
 		return
 	}
 
 	variable, err := h.systemService.ShowVariable(varName)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "SUCCESS",
-		"data":    variable,
-	})
+	common.SuccessWithData(c, variable, "SUCCESS")
 }
 
 // ListEnvironments handle list environments
 func (h *SystemHandler) ListEnvironments(c *gin.Context) {
 	environments, err := h.systemService.ListEnvironments()
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, 500, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    environments,
-	})
+	common.SuccessWithData(c, environments, "SUCCESS")
 }

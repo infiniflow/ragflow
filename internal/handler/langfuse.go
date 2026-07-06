@@ -65,7 +65,7 @@ func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
 
 	var req SetLangfuseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Invalid request: "+err.Error())
 		return
 	}
 
