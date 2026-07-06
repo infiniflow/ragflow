@@ -548,7 +548,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
             else:
                 d.update(stored)
             formatted_text = "\n".join([f"- {field}: {value}" for field, value in text_fields]) if text_fields else ""
-            tokenize(d, formatted_text, eng)
+            tokenize(d, formatted_text, eng, language=lang)
             if _debug_row_idx == 1:
                 logger.debug(f"[TABLE_PARSER_DEBUG] Chunk content_with_weight length: {len(d.get('content_with_weight', '') or '')}")
                 _cd = d.get("chunk_data")
@@ -559,7 +559,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
             res.append(d)
     if tbls:
         doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
-        res.extend(tokenize_table(tbls, doc, is_english))
+        res.extend(tokenize_table(tbls, doc, is_english, language=lang))
     callback(0.35, "")
 
     return res
