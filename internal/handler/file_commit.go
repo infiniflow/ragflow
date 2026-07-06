@@ -77,13 +77,13 @@ func CommitFolderResolver(h *FileCommitHandler, entityType, urlParam string) gin
 	return func(c *gin.Context) {
 		id := c.Param(urlParam)
 		if id == "" {
-			jsonError(c, common.CodeParamError, fmt.Sprintf("%s is required", urlParam))
+			common.ResponseWithCodeData(c, common.CodeParamError, nil, fmt.Sprintf("%s is required", urlParam))
 			c.Abort()
 			return
 		}
 		folderID, err := h.ResolveFolderID(entityType, id)
 		if err != nil {
-			jsonError(c, common.CodeNotFound, fmt.Sprintf("%s folder not found", entityType))
+			common.ResponseWithCodeData(c, common.CodeNotFound, nil, fmt.Sprintf("%s folder not found", entityType))
 			c.Abort()
 			return
 		}
@@ -131,7 +131,7 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 
 	folderID := c.Param("folder_id")
 	if folderID == "" {
-		jsonError(c, common.CodeParamError, "folder_id is required")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "folder_id is required")
 		return
 	}
 
@@ -190,7 +190,7 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 
 	folderID := c.Param("folder_id")
 	if folderID == "" {
-		jsonError(c, common.CodeParamError, "folder_id is required")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "folder_id is required")
 		return
 	}
 
@@ -272,18 +272,18 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 	folderID := c.Param("folder_id")
 	commitID := c.Param("commit_id")
 	if commitID == "" {
-		jsonError(c, common.CodeParamError, "commit_id is required")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "commit_id is required")
 		return
 	}
 
 	commit, err := h.commitService.GetCommit(commitID)
 	if err != nil {
-		jsonError(c, common.CodeNotFound, "Commit not found")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found")
 		return
 	}
 
 	if commit.FolderID != folderID {
-		jsonError(c, common.CodeNotFound, "Commit not found in workspace")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found in workspace")
 		return
 	}
 
@@ -333,17 +333,17 @@ func (h *FileCommitHandler) ListCommitFiles(c *gin.Context) {
 	folderID := c.Param("folder_id")
 	commitID := c.Param("commit_id")
 	if commitID == "" {
-		jsonError(c, common.CodeParamError, "commit_id is required")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "commit_id is required")
 		return
 	}
 
 	commit, err := h.commitService.GetCommit(commitID)
 	if err != nil {
-		jsonError(c, common.CodeNotFound, "Commit not found")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found")
 		return
 	}
 	if commit.FolderID != folderID {
-		jsonError(c, common.CodeNotFound, "Commit not found in workspace")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found in workspace")
 		return
 	}
 
@@ -382,22 +382,22 @@ func (h *FileCommitHandler) DiffCommits(c *gin.Context) {
 	fromID := c.Query("from")
 	toID := c.Query("to")
 	if fromID == "" || toID == "" {
-		jsonError(c, common.CodeParamError, "'from' and 'to' query parameters are required")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "'from' and 'to' query parameters are required")
 		return
 	}
 
 	fromCommit, err := h.commitService.GetCommit(fromID)
 	if err != nil {
-		jsonError(c, common.CodeNotFound, "Commit not found")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found")
 		return
 	}
 	toCommit, err := h.commitService.GetCommit(toID)
 	if err != nil {
-		jsonError(c, common.CodeNotFound, "Commit not found")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found")
 		return
 	}
 	if fromCommit.FolderID != folderID || toCommit.FolderID != folderID {
-		jsonError(c, common.CodeNotFound, "Commit not found in workspace")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found in workspace")
 		return
 	}
 
@@ -432,7 +432,7 @@ func (h *FileCommitHandler) GetUncommittedChanges(c *gin.Context) {
 
 	folderID := c.Param("folder_id")
 	if folderID == "" {
-		jsonError(c, common.CodeParamError, "folder_id is required")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "folder_id is required")
 		return
 	}
 
@@ -469,17 +469,17 @@ func (h *FileCommitHandler) GetCommitTree(c *gin.Context) {
 	folderID := c.Param("folder_id")
 	commitID := c.Param("commit_id")
 	if commitID == "" {
-		jsonError(c, common.CodeParamError, "commit_id is required")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "commit_id is required")
 		return
 	}
 
 	commit, err := h.commitService.GetCommit(commitID)
 	if err != nil {
-		jsonError(c, common.CodeNotFound, "Commit not found")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found")
 		return
 	}
 	if commit.FolderID != folderID {
-		jsonError(c, common.CodeNotFound, "Commit not found in workspace")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found in workspace")
 		return
 	}
 
@@ -519,23 +519,23 @@ func (h *FileCommitHandler) GetCommitFileContent(c *gin.Context) {
 	fileID := c.Param("file_id")
 
 	if folderID == "" || commitID == "" || fileID == "" {
-		jsonError(c, common.CodeParamError, "folder_id, commit_id, and file_id are required")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "folder_id, commit_id, and file_id are required")
 		return
 	}
 
 	commit, err := h.commitService.GetCommit(commitID)
 	if err != nil {
-		jsonError(c, common.CodeNotFound, "Commit not found")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found")
 		return
 	}
 	if commit.FolderID != folderID {
-		jsonError(c, common.CodeNotFound, "Commit not found in workspace")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found in workspace")
 		return
 	}
 
 	content, err := h.commitService.GetCommitFileContent(folderID, commitID, fileID)
 	if err != nil {
-		jsonError(c, common.CodeNotFound, err.Error())
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, err.Error())
 		return
 	}
 
@@ -566,7 +566,7 @@ func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
 
 	fileID := c.Param("id")
 	if fileID == "" {
-		jsonError(c, common.CodeParamError, "file_id is required")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "file_id is required")
 		return
 	}
 

@@ -77,7 +77,7 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		}
 
 		if auth == "" {
-			jsonError(c, common.CodeUnauthorized, "Authorization required")
+			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "Authorization required")
 			c.Abort()
 			return
 		}
@@ -117,7 +117,7 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		jsonError(c, common.CodeUnauthorized, "Invalid auth credentials")
+		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "Invalid auth credentials")
 		c.Abort()
 	}
 }

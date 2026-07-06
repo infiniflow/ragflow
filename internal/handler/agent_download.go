@@ -44,13 +44,13 @@ import (
 func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	fileID := c.Query("id")
 	if fileID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, 
-		"`id` is required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+			"`id` is required.")
 		return
 	}
 
@@ -76,8 +76,8 @@ func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
 	// value.
 	safe := filepath.Base(fileID)
 	if safe == "" || safe == "." || safe == "/" || strings.ContainsAny(safe, "\r\n\"") {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, 
-		"invalid file id.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+			"invalid file id.")
 		return
 	}
 	c.Header("Content-Disposition", fmt.Sprintf(

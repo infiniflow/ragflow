@@ -78,7 +78,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 		if p, err := strconv.Atoi(pageStr); err == nil && p >= 1 {
 			page = p
 		} else if err != nil {
-			jsonError(c, common.CodeParamError, "Invalid page parameter: must be a positive integer")
+			common.ResponseWithCodeData(c, common.CodeParamError, nil, "Invalid page parameter: must be a positive integer")
 			return
 		}
 	}
@@ -87,7 +87,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
 		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
 			if ps < 1 {
-				jsonError(c, common.CodeParamError, "Invalid page_size parameter: must be at least 1")
+				common.ResponseWithCodeData(c, common.CodeParamError, nil, "Invalid page_size parameter: must be at least 1")
 				return
 			}
 			if ps > 100 {
@@ -95,7 +95,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 			}
 			pageSize = ps
 		} else {
-			jsonError(c, common.CodeParamError, "Invalid page_size parameter: must be a positive integer")
+			common.ResponseWithCodeData(c, common.CodeParamError, nil, "Invalid page_size parameter: must be a positive integer")
 			return
 		}
 	}
@@ -169,7 +169,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	// Get file_id from query
 	fileID := c.Query("file_id")
 	if fileID == "" {
-		jsonError(c, common.CodeBadRequest, "file_id is required")
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "file_id is required")
 		return
 	}
 
@@ -207,7 +207,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 	// Get file_id from query
 	fileID := c.Query("file_id")
 	if fileID == "" {
-		jsonError(c, common.CodeBadRequest, "file_id is required")
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "file_id is required")
 		return
 	}
 
@@ -244,7 +244,7 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 
 	fileID := c.Param("id")
 	if fileID == "" {
-		jsonError(c, common.CodeBadRequest, "file id is required")
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "file id is required")
 		return
 	}
 
@@ -292,13 +292,13 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 	if strings.Contains(contentType, "multipart/form-data") {
 		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
-			jsonError(c, common.CodeBadRequest, "Failed to parse multipart form: "+err.Error())
+			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Failed to parse multipart form: "+err.Error())
 			return
 		}
 
 		form := c.Request.MultipartForm
 		if form == nil {
-			jsonError(c, common.CodeBadRequest, "No file part!")
+			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "No file part!")
 			return
 		}
 		parentID := c.PostForm("parent_id")
@@ -313,13 +313,13 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 		files := form.File["file"]
 		if len(files) == 0 {
-			jsonError(c, common.CodeBadRequest, "No file selected!")
+			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "No file selected!")
 			return
 		}
 
 		for _, fileHeader := range files {
 			if fileHeader.Filename == "" {
-				jsonError(c, common.CodeBadRequest, "No file selected!")
+				common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "No file selected!")
 				return
 			}
 		}
@@ -372,7 +372,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		return
 	}
 
-	jsonError(c, common.CodeBadRequest, "Unsupported content type")
+	common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Unsupported content type")
 	return
 }
 
@@ -404,7 +404,7 @@ func (h *FileHandler) DeleteFiles(c *gin.Context) {
 
 	success, message := h.fileService.DeleteFiles(c.Request.Context(), user.ID, req.IDs)
 	if !success {
-		jsonError(c, common.CodeBadRequest, message)
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, message)
 		return
 	}
 
@@ -450,19 +450,19 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 
 	// Validate: at least one of dest_file_id or new_name must be provided
 	if req.DestFileID == "" && req.NewName == "" {
-		jsonError(c, common.CodeParamError, "At least one of dest_file_id or new_name must be provided")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "At least one of dest_file_id or new_name must be provided")
 		return
 	}
 
 	// Validate: new_name can only be used with a single file
 	if req.NewName != "" && len(req.SrcFileIDs) > 1 {
-		jsonError(c, common.CodeParamError, "new_name can only be used with a single file")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "new_name can only be used with a single file")
 		return
 	}
 
 	success, message := h.fileService.MoveFiles(user.ID, req.SrcFileIDs, req.DestFileID, req.NewName)
 	if !success {
-		jsonError(c, common.CodeBadRequest, message)
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, message)
 		return
 	}
 
@@ -492,14 +492,14 @@ func (h *FileHandler) Download(c *gin.Context) {
 
 	fileID := c.Param("id")
 	if fileID == "" {
-		jsonError(c, common.CodeParamError, "id is required")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "id is required")
 		return
 	}
 
 	// Get file metadata and check permission
 	file, err := h.fileService.GetFileContent(userID, fileID)
 	if err != nil {
-		jsonError(c, common.CodeUnauthorized, err.Error())
+		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, err.Error())
 		return
 	}
 
@@ -597,7 +597,7 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 	}
 
 	if err := h.file2DocumentService.LinkToDatasets(user.ID, &req); err != nil {
-		jsonError(c, linkToDatasetsErrorCode(err), err.Error())
+		common.ResponseWithCodeData(c, linkToDatasetsErrorCode(err), nil, err.Error())
 		return
 	}
 

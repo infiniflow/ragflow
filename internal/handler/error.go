@@ -33,7 +33,7 @@ func jsonInternalError(c *gin.Context, err error) {
 		zap.String("method", c.Request.Method),
 		zap.String("path", c.Request.URL.Path),
 	)
-	jsonError(c, common.CodeServerError, common.CodeServerError.Message())
+	common.ResponseWithCodeData(c, common.CodeServerError, nil, common.CodeServerError.Message())
 }
 
 // HandleNoRoute handles requests to undefined routes

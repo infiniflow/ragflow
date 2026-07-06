@@ -178,7 +178,7 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 	if embdID == "" {
 		config, code, err := h.searchService.GetConfig(user.ID, req.SpaceID, "")
 		if err != nil {
-			jsonError(c, code, "failed to get skill search config: "+err.Error())
+			common.ResponseWithCodeData(c, code, nil, "failed to get skill search config: "+err.Error())
 			return
 		}
 		val, ok := config["embd_id"].(string)
@@ -198,14 +198,14 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 
 	if h.docEngine.GetType() == "elasticsearch" {
 		if err := h.indexerService.EnsureIndex(c.Request.Context(), user.ID, req.SpaceID, h.docEngine, embdID); err != nil {
-			jsonError(c, common.CodeOperatingError, err.Error())
+			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 			return
 		}
 	}
 
 	if err := h.indexerService.BatchIndexSkills(c.Request.Context(), user.ID, req.SpaceID, req.Skills, h.docEngine, embdID); err != nil {
 		common.Error(fmt.Sprintf("Failed to batch index skills: tenantID=%s, spaceID=%s, error=%v", user.ID, req.SpaceID, err), err)
-		jsonError(c, common.CodeOperatingError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 
@@ -253,7 +253,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 	if embdID == "" {
 		config, code, err := h.searchService.GetConfig(user.ID, req.SpaceID, "")
 		if err != nil {
-			jsonError(c, code, "failed to get skill search config: "+err.Error())
+			common.ResponseWithCodeData(c, code, nil, "failed to get skill search config: "+err.Error())
 			return
 		}
 		val, ok := config["embd_id"].(string)
@@ -266,7 +266,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 
 	result, err := h.indexerService.ReindexAll(c.Request.Context(), user.ID, req.SpaceID, h.docEngine, embdID)
 	if err != nil {
-		jsonError(c, common.CodeOperatingError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 
@@ -300,7 +300,7 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 
 	err := h.indexerService.DeleteSkillIndex(c.Request.Context(), user.ID, spaceID, skillID, h.docEngine)
 	if err != nil {
-		jsonError(c, common.CodeOperatingError, "failed to delete skill index")
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "failed to delete skill index")
 		return
 	}
 
@@ -333,7 +333,7 @@ func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
 	}
 
 	if err := h.indexerService.InitializeIndex(c.Request.Context(), user.ID, spaceID, h.docEngine, embdID); err != nil {
-		jsonError(c, common.CodeOperatingError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 

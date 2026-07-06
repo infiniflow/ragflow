@@ -111,7 +111,7 @@ func (h *ProviderHandler) AddProvider(c *gin.Context) {
 		return
 	}
 
-	common.SuccessOnlyMessage(c, "success")
+	common.SuccessWithMessage(c, "success")
 }
 
 func (h *ProviderHandler) DeleteProvider(c *gin.Context) {
@@ -129,7 +129,7 @@ func (h *ProviderHandler) DeleteProvider(c *gin.Context) {
 		return
 	}
 
-	common.SuccessOnlyMessage(c, "success")
+	common.SuccessWithMessage(c, "success")
 }
 
 func (h *ProviderHandler) ShowProvider(c *gin.Context) {
@@ -209,7 +209,7 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 		return
 	}
 
-	common.SuccessOnlyMessage(c, "success")
+	common.SuccessWithMessage(c, "success")
 }
 
 func (h *ProviderHandler) ListProviderInstances(c *gin.Context) {
@@ -300,7 +300,7 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 		return
 	}
 
-	common.SuccessOnlyMessage(c, "success")
+	common.SuccessWithMessage(c, "success")
 }
 
 func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
@@ -335,7 +335,7 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 		return
 	}
 
-	common.SuccessOnlyMessage(c, "success")
+	common.SuccessWithMessage(c, "success")
 }
 
 func (h *ProviderHandler) ListTasks(c *gin.Context) {
@@ -430,7 +430,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	common.SuccessOnlyMessage(c, "success")
+	common.SuccessWithMessage(c, "success")
 }
 
 type DropProviderInstanceRequest struct {
@@ -457,7 +457,7 @@ func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
 		return
 	}
 
-	common.SuccessOnlyMessage(c, "success")
+	common.SuccessWithMessage(c, "success")
 }
 
 func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
@@ -546,7 +546,7 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 		return
 	}
 
-	common.SuccessOnlyMessage(c, "success")
+	common.SuccessWithMessage(c, "success")
 }
 
 func prepareProviderInstance(providerName, instanceName, reqProviderName, reqInstanceName string) error {
@@ -652,7 +652,7 @@ func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 		return
 	}
 
-	common.SuccessOnlyMessage(c, "success")
+	common.SuccessWithMessage(c, "success")
 }
 
 type ChatToModelRequest struct {

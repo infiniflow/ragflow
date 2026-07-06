@@ -272,13 +272,13 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeBadRequest, "user_id is required")
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "user_id is required")
 		return
 	}
 
 	chatID := strings.TrimSpace(c.Param("chat_id"))
 	if chatID == "" {
-		jsonError(c, common.CodeBadRequest, "chat_id is required")
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
 
@@ -318,13 +318,13 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 
 	chatID := strings.TrimSpace(c.Param("chat_id"))
 	if chatID == "" {
-		jsonError(c, common.CodeBadRequest, "chat_id is required")
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		jsonError(c, common.CodeBadRequest, "user_id is required")
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "user_id is required")
 		return
 	}
 

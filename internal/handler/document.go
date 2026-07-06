@@ -151,23 +151,17 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 
 	id := c.Param("id")
 	if id == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid document id",
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid document id"})
 		return
 	}
 
 	document, err := h.documentService.GetDocumentByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "document not found",
-		})
+		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"data": document,
-	})
+	common.SuccessNoMessage(c, document)
 }
 
 // GetThumbnail Get thumbnails for documents.
@@ -249,7 +243,7 @@ func documentImageContentType(imageID string, data []byte) string {
 func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	filename := c.Param("filename")
@@ -287,7 +281,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 	docID := c.Param("id")
 
 	if docID == "" {
-		jsonError(c, common.CodeParamError, "id is required")
+		common.ResponseWithCodeData(c, common.CodeParamError, nil, "id is required")
 		return
 	}
 
@@ -468,7 +462,7 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 	user, code, errorMessage := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, errorMessage)
+		common.ResponseWithCodeData(c, code, nil, errorMessage)
 		return
 	}
 
@@ -1000,11 +994,6 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 	common.SuccessNoMessage(c, mapDocKeysWithRunStatus(data))
 }
 
-// jsonSuccess writes the standard {code:0,message:"success",data} envelope.
-func jsonSuccess(c *gin.Context, data interface{}) {
-	common.SuccessWithData(c, data, "success")
-}
-
 // mapDocKeysWithRunStatus renames a freshly-created document's raw keys to the
 // public response shape (chunk_num→chunk_count, token_num→token_count,
 // kb_id→dataset_id, parser_id→chunk_method) and reports run as a label.
@@ -1497,7 +1486,7 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 
 	parseResult, err = h.documentService.ListIngestionTasks(userID, req.DatasetID, 0, 0)
 	if err != nil {
-		jsonError(c, common.CodeExceptionError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return
 	}
 
@@ -1529,7 +1518,7 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 
 	parseResult, err := h.documentService.IngestDocuments(req.DatasetID, userID, req.Documents)
 	if err != nil {
-		jsonError(c, common.CodeExceptionError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return
 	}
 
@@ -1555,7 +1544,7 @@ func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
 
 	parseResult, err := h.documentService.StopIngestionTasks(req.Tasks, userID)
 	if err != nil {
-		jsonError(c, common.CodeExceptionError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -1588,7 +1577,7 @@ func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 
 	deletedTasks, err := h.documentService.RemoveIngestionTasks(req.Tasks, userID)
 	if err != nil {
-		jsonError(c, common.CodeExceptionError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -1620,7 +1609,7 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 
 	parseResult, err := h.documentService.ParseDocuments(datasetID, userID, req.Documents)
 	if err != nil {
-		jsonError(c, common.CodeExceptionError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -1660,7 +1649,7 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 
 	result, err := h.documentService.StopParseDocuments(datasetID, req.DocumentIDs)
 	if err != nil {
-		jsonError(c, common.CodeExceptionError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

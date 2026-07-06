@@ -46,7 +46,7 @@ import (
 func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
@@ -59,7 +59,7 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
 		if err == dao.ErrUserCanvasNotFound {
-			jsonError(c, common.CodeOperatingError, canvasNoAccessMessage)
+			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
@@ -123,7 +123,7 @@ func (h *AgentHandler) componentInputForm(ctx context.Context, dslMap map[string
 func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
@@ -148,7 +148,7 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
 		if err == dao.ErrUserCanvasNotFound {
-			jsonError(c, common.CodeOperatingError, canvasNoAccessMessage)
+			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())

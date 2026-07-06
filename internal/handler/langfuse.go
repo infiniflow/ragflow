@@ -94,7 +94,7 @@ func (h *LangfuseHandler) GetAPIKey(c *gin.Context) {
 
 	data, code, message, err := h.langfuseService.GetAPIKey(user.ID)
 	if err != nil {
-		jsonError(c, code, message)
+		common.ResponseWithCodeData(c, code, nil, message)
 		return
 	}
 	common.ResponseWithCodeData(c, code, data, message)
@@ -110,7 +110,7 @@ func (h *LangfuseHandler) DeleteAPIKey(c *gin.Context) {
 
 	ok, code, message, err := h.langfuseService.DeleteAPIKey(user.ID)
 	if err != nil {
-		jsonError(c, code, message)
+		common.ResponseWithCodeData(c, code, nil, message)
 		return
 	}
 	// No record: mirror get_json_result(message=...) with data=nil.

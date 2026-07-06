@@ -850,7 +850,7 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 	resp, err := h.chunkService.AddChunk(&req, userID)
 	if err != nil {
 		if codedErr, ok := err.(service.ErrorCoder); ok {
-			jsonError(c, codedErr.Code(), addChunkResponseMessage(codedErr.Code(), err))
+			common.ResponseWithCodeData(c, codedErr.Code(), nil, addChunkResponseMessage(codedErr.Code(), err))
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, addChunkResponseMessage(common.CodeServerError, err))

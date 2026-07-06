@@ -407,7 +407,7 @@ func (h *SearchBotHandler) SearchbotDetail(c *gin.Context) {
 	userSvc := service.NewUserService()
 	user, code, err := userSvc.GetUserByBetaAPIToken(c.GetHeader("Authorization"))
 	if err != nil {
-		jsonError(c, code, "Authentication error: API key is invalid!")
+		common.ResponseWithCodeData(c, code, nil, "Authentication error: API key is invalid!")
 		return
 	}
 
@@ -415,7 +415,7 @@ func (h *SearchBotHandler) SearchbotDetail(c *gin.Context) {
 	if err != nil {
 		switch err.Error() {
 		case "has no permission for this operation":
-			jsonError(c, common.CodeOperatingError, "Has no permission for this operation.")
+			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "Has no permission for this operation.")
 		case "can't find this Search App!":
 			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Search App!")
 		default:

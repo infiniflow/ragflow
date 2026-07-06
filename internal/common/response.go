@@ -60,8 +60,8 @@ func SuccessNoData(c *gin.Context, message string) {
 	})
 }
 
-// SuccessOnlyMessage returns success response with message only
-func SuccessOnlyMessage(c *gin.Context, message string) {
+// SuccessWithMessage returns success response with message only
+func SuccessWithMessage(c *gin.Context, message string) {
 	c.JSON(http.StatusOK, response{
 		Code:    int(CodeSuccess),
 		Message: message,

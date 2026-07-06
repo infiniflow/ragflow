@@ -104,7 +104,7 @@ type canvasLoader interface {
 func (h *AgentHandler) Webhook(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 
@@ -154,8 +154,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 
 	// 5. Method gate.
 	if !methodAllowed(webhookCfg["methods"], c.Request.Method) {
-		jsonError(c, common.CodeDataError,
-			fmt.Sprintf("HTTP method '%s' not allowed for this webhook.", c.Request.Method))
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("HTTP method '%s' not allowed for this webhook.", c.Request.Method))
 		return
 	}
 

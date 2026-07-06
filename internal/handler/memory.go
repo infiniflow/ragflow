@@ -538,7 +538,7 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 	data, err := h.memoryService.GetMemoryMessages(c.Request.Context(), userID, memoryID, agentIDs, keywords, page, pageSize)
 	if err != nil {
 		if isMemoryServiceNotFound(err) {
-			jsonError(c, common.CodeNotFound, err.Error())
+			common.ResponseWithCodeData(c, common.CodeNotFound, nil, err.Error())
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Internal server error")
@@ -846,7 +846,7 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 	data, err := h.memoryService.GetMessageContent(c.Request.Context(), userID, memoryID, messageID)
 	if err != nil {
 		if _, ok := err.(*service.ResourceNotFoundError); ok {
-			jsonError(c, common.CodeNotFound, err.Error())
+			common.ResponseWithCodeData(c, common.CodeNotFound, nil, err.Error())
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())

@@ -77,13 +77,13 @@ func attachmentRequestMeta(c *gin.Context) attachmentRequestMetadata {
 // _stream_agent_attachment().
 func (h *AgentHandler) streamAgentAttachment(c *gin.Context, tenantID, attachmentID string, inline bool) {
 	if h.fileService == nil {
-		jsonError(c, common.CodeServerError, "file service not configured")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "file service not configured")
 		return
 	}
 
 	blob, err := h.fileService.DownloadAgentFile(tenantID, attachmentID)
 	if err != nil {
-		jsonError(c, common.CodeDataError, "Attachment not found!")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Attachment not found!")
 		return
 	}
 
@@ -109,7 +109,7 @@ func (h *AgentHandler) streamAgentAttachment(c *gin.Context, tenantID, attachmen
 func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	attachmentID := c.Param("attachment_id")
@@ -148,7 +148,7 @@ func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 func (h *AgentHandler) PreviewAttachment(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	attachmentID := c.Param("attachment_id")

@@ -513,7 +513,7 @@ func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "tenant_id is required"})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
 
@@ -542,7 +542,7 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "tenant_id is required"})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
 
@@ -577,7 +577,7 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "tenant_id is required"})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
 
@@ -612,7 +612,7 @@ func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "tenant_id is required"})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
 

@@ -555,7 +555,7 @@ func TestAgentHandler_NotFoundOnUnknownCanvas(t *testing.T) {
 	r2.Use(setUser())
 	g2 := r2.Group("/api/v1/agents")
 	g2.GET("/:canvas_id", func(c *gin.Context) {
-		jsonError(c, common.CodeNotFound, "agent unknown: not found")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "agent unknown: not found")
 	})
 
 	w := httptest.NewRecorder()

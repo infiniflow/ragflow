@@ -52,7 +52,7 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 

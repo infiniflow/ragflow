@@ -68,7 +68,7 @@ var ErrSelectorNotConfigured = errors.New("admin runtime: selector not configure
 // this endpoint publicly.
 func (h *AdminRuntimeHandler) SetTenantRuntime(c *gin.Context) {
 	if h.selector == nil {
-		jsonError(c, common.CodeExceptionError, ErrSelectorNotConfigured.Error())
+		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, ErrSelectorNotConfigured.Error())
 		return
 	}
 
@@ -89,8 +89,7 @@ func (h *AdminRuntimeHandler) SetTenantRuntime(c *gin.Context) {
 	case runtime.RuntimeGo, runtime.RuntimePython, runtime.RuntimeAuto:
 		// allowed
 	default:
-		jsonError(c, common.CodeArgumentError,
-			"runtime must be one of: go, python, auto")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "runtime must be one of: go, python, auto")
 		return
 	}
 

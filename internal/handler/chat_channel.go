@@ -210,7 +210,7 @@ func writeChatChannelError(c *gin.Context, code common.ErrorCode, message string
 		})
 		return
 	}
-	jsonError(c, code, message)
+	common.ResponseWithCodeData(c, code, nil, message)
 }
 
 func chatChannelErrMsg(code common.ErrorCode, err error) string {

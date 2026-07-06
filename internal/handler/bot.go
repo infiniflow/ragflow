@@ -64,7 +64,7 @@ func NewBotHandler(svc *service.BotService) *BotHandler {
 func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	dialogID := c.Param("dialog_id")
@@ -75,7 +75,7 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 	title, avatar, prologue, llmID, hasTavily, ec, err := h.botService.ChatbotInfo(
 		c.Request.Context(), user.ID, dialogID)
 	if err != nil {
-		jsonError(c, ec, err.Error())
+		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}
 	c.JSON(200, gin.H{
@@ -98,7 +98,7 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	agentID := c.Param("agent_id")
@@ -109,7 +109,7 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 	title, avatar, prologue, mode, inputs, ec, err := h.botService.AgentbotInputs(
 		c.Request.Context(), user.ID, agentID)
 	if err != nil {
-		jsonError(c, ec, err.Error())
+		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}
 	c.JSON(200, gin.H{
@@ -138,7 +138,7 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	agentID := c.Param("agent_id")
@@ -161,7 +161,7 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 	events, ec, err := h.botService.AgentbotCompletion(
 		c.Request.Context(), user.ID, agentID, body)
 	if err != nil {
-		jsonError(c, ec, err.Error())
+		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -222,7 +222,7 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	dialogID := c.Param("dialog_id")
@@ -245,7 +245,7 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 	frames, ec, err := h.botService.ChatbotCompletion(
 		c.Request.Context(), user.ID, dialogID, body)
 	if err != nil {
-		jsonError(c, ec, err.Error())
+		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -283,7 +283,7 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 // read another agent's logs.
 func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 	if _, code, msg := GetUser(c); code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	agentID, _ := c.Get("agent_id")

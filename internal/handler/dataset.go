@@ -40,15 +40,6 @@ type DatasetsHandler struct {
 	searchDatasetService  searchDatasetService
 }
 
-// jsonError sends a JSON error response
-func jsonError(c *gin.Context, code common.ErrorCode, message string) {
-	c.JSON(http.StatusOK, gin.H{
-		"code":    code,
-		"data":    nil,
-		"message": message,
-	})
-}
-
 type searchDatasetsService interface {
 	SearchDatasets(req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
 }
@@ -205,7 +196,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		jsonError(c, common.CodeBadRequest, "dataset id is required")
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "dataset id is required")
 		return
 	}
 
@@ -221,7 +212,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 		return
 	}
 	if code != common.CodeSuccess {
-		jsonError(c, code, "dataset updated failed")
+		common.ResponseWithCodeData(c, code, nil, "dataset updated failed")
 		return
 	}
 
@@ -694,7 +685,7 @@ func (h *DatasetsHandler) RunEmbedding(c *gin.Context) {
 
 	result, errorCode, err := h.datasetsService.RunEmbedding(userID, datasetID)
 	if err != nil {
-		jsonError(c, errorCode, err.Error())
+		common.ResponseWithCodeData(c, errorCode, nil, err.Error())
 		return
 	}
 

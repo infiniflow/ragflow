@@ -412,7 +412,7 @@ func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
 
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		jsonError(c, common.CodeBadRequest, "chat_id is required")
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
 
