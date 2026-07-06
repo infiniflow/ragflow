@@ -127,7 +127,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any) (map[string]a
 	runCtx = canvas.WithComponentTimeoutOverride(runCtx, stageTimeout())
 
 	current := cloneMapOrEmpty(inputs)
-	out, err := compiled.Workflow.Invoke(runCtx, current)
+	out, err := compiled.Graph.Invoke(runCtx, current)
 	if err != nil {
 		return current, fmt.Errorf("pipeline: run canvas workflow: %w", err)
 	}
@@ -135,7 +135,12 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any) (map[string]a
 		current["state"] = runState.Snapshot()
 		return current, nil
 	}
-	merged := mergeInto(current, out)
+	outMap, ok := out.(map[string]any)
+	if !ok {
+		current["state"] = runState.Snapshot()
+		return current, nil
+	}
+	merged := mergeInto(current, outMap)
 	merged["state"] = runState.Snapshot()
 	return merged, nil
 }

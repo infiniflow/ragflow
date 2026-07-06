@@ -81,12 +81,12 @@ func TestPipelineRunHappyPath(t *testing.T) {
 	if got := out["name"]; got != "doc-canvas" {
 		t.Fatalf("name = %v, want doc-canvas", got)
 	}
-	gotB, ok := out["b"].(map[string]any)
+	gotB, ok := out["b"].(int)
 	if !ok {
-		t.Fatalf("b = %T, want map[string]any", out["b"])
+		t.Fatalf("b = %T, want int", out["b"])
 	}
-	if got := gotB["b"]; got != 2 {
-		t.Fatalf("b.b = %v, want 2", got)
+	if gotB != 2 {
+		t.Fatalf("b = %v, want 2", gotB)
 	}
 }
 
