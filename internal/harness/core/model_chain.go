@@ -23,7 +23,9 @@ func (w *eventSenderModelWrapper[M]) Generate(ctx context.Context, msgs []M, opt
 		return w.inner.Generate(ctx, msgs, opts...)
 	}
 	resp, err := w.inner.Generate(ctx, msgs, opts...)
-	if err != nil { return resp, err }
+	if err != nil {
+		return resp, err
+	}
 	if w.execCtx != nil && w.execCtx.generator != nil && !isNilMessage(resp) {
 		w.execCtx.send(typedModelOutputEvent(resp, nil))
 	}
@@ -32,7 +34,9 @@ func (w *eventSenderModelWrapper[M]) Generate(ctx context.Context, msgs []M, opt
 
 func (w *eventSenderModelWrapper[M]) Stream(ctx context.Context, msgs []M, opts ...ModelOption) (*schema.StreamReader[M], error) {
 	s, err := w.inner.Stream(ctx, msgs, opts...)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	if w.execCtx != nil && w.execCtx.suppressEventSend {
 		return s, nil
 	}
@@ -43,8 +47,13 @@ func (w *eventSenderModelWrapper[M]) Stream(ctx context.Context, msgs []M, opts 
 		var chunks []M
 		for {
 			c, err := s.Recv()
-			if err == io.EOF { break }
-			if err != nil { r.Send(c, err); return }
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				r.Send(c, err)
+				return
+			}
 			chunks = append(chunks, c)
 			r.Send(c, nil)
 		}
@@ -57,7 +66,9 @@ func (w *eventSenderModelWrapper[M]) Stream(ctx context.Context, msgs []M, opts 
 	return r, nil
 }
 
-func (w *eventSenderModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error { return w.inner.BindTools(tools) }
+func (w *eventSenderModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error {
+	return w.inner.BindTools(tools)
+}
 
 // ---- CallbackInjectionModelWrapper (for tracing/monitoring) ----
 
@@ -74,17 +85,23 @@ func (w *callbackModelWrapper[M]) Generate(ctx context.Context, msgs []M, opts .
 			switch any(msgs[0]).(type) {
 			case *schema.Message:
 				msgSlice := make([]Message, len(msgs))
-				for i, m := range msgs { msgSlice[i] = any(m).(*schema.Message) }
+				for i, m := range msgs {
+					msgSlice[i] = any(m).(*schema.Message)
+				}
 				input.Input = &AgentInput{Messages: msgSlice}
 			}
 		}
-		for _, cb := range cbs { cb.onStart(ctx, input) }
+		for _, cb := range cbs {
+			cb.onStart(ctx, input)
+		}
 	}
 	resp, err := w.inner.Generate(ctx, msgs, opts...)
 	if len(cbs) > 0 {
 		if err != nil {
 			for _, cb := range cbs {
-				if cb.onError != nil { cb.onError(ctx, err) }
+				if cb.onError != nil {
+					cb.onError(ctx, err)
+				}
 			}
 		}
 		evIter, evGen := NewAsyncIteratorPair[*AgentEvent]()
@@ -97,7 +114,9 @@ func (w *callbackModelWrapper[M]) Generate(ctx context.Context, msgs []M, opts .
 		}
 		evGen.Close()
 		output := &AgentCallbackOutput{Events: evIter}
-		for _, cb := range cbs { cb.onEnd(ctx, output) }
+		for _, cb := range cbs {
+			cb.onEnd(ctx, output)
+		}
 	}
 	return resp, err
 }
@@ -109,23 +128,31 @@ func (w *callbackModelWrapper[M]) Stream(ctx context.Context, msgs []M, opts ...
 			switch any(msgs[0]).(type) {
 			case *schema.Message:
 				msgSlice := make([]Message, len(msgs))
-				for i, m := range msgs { msgSlice[i] = any(m).(*schema.Message) }
+				for i, m := range msgs {
+					msgSlice[i] = any(m).(*schema.Message)
+				}
 				input.Input = &AgentInput{Messages: msgSlice}
 			}
 		}
-		for _, cb := range cbs { cb.onStart(ctx, input) }
+		for _, cb := range cbs {
+			cb.onStart(ctx, input)
+		}
 	}
 	s, err := w.inner.Stream(ctx, msgs, opts...)
 	if err != nil {
 		if len(cbs) > 0 {
 			for _, cb := range cbs {
-				if cb.onError != nil { cb.onError(ctx, err) }
+				if cb.onError != nil {
+					cb.onError(ctx, err)
+				}
 			}
 			evIter, evGen := NewAsyncIteratorPair[*AgentEvent]()
 			evGen.Send(&AgentEvent{Err: err})
 			evGen.Close()
 			output := &AgentCallbackOutput{Events: evIter}
-			for _, cb := range cbs { cb.onEnd(ctx, output) }
+			for _, cb := range cbs {
+				cb.onEnd(ctx, output)
+			}
 		}
 		return nil, err
 	}
@@ -137,8 +164,13 @@ func (w *callbackModelWrapper[M]) Stream(ctx context.Context, msgs []M, opts ...
 		var allChunks []M
 		for {
 			c, e := s.Recv()
-			if e == io.EOF { break }
-			if e != nil { r.Send(c, e); return }
+			if e == io.EOF {
+				break
+			}
+			if e != nil {
+				r.Send(c, e)
+				return
+			}
 			allChunks = append(allChunks, c)
 			r.Send(c, nil)
 		}
@@ -150,12 +182,16 @@ func (w *callbackModelWrapper[M]) Stream(ctx context.Context, msgs []M, opts ...
 			})
 			evGen.Close()
 			output := &AgentCallbackOutput{Events: evIter}
-			for _, cb := range cbs { cb.onEnd(ctx, output) }
+			for _, cb := range cbs {
+				cb.onEnd(ctx, output)
+			}
 		}
 	}()
 	return r, nil
 }
-func (w *callbackModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error { return w.inner.BindTools(tools) }
+func (w *callbackModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error {
+	return w.inner.BindTools(tools)
+}
 
 // ---- Model Wrapper Chain Builder ----
 
@@ -164,7 +200,8 @@ func (w *callbackModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error { re
 //	base → failover → retry → eventSender → user wrappers → callback
 //
 // The chain is built from innermost (closest to model) to outermost.
-func BuildModelWrapperChain[M MessageType](base Model[M], ec *reActExecCtx, cfg *ReActConfig[M]) Model[M] {
+// allToolInfos contains the merged tool infos from config.Tools + ToolContributor middlewares.
+func BuildModelWrapperChain[M MessageType](base Model[M], ec *reActExecCtx, cfg *ReActConfig[M], allToolInfos []*schema.ToolInfo) Model[M] {
 	model := base
 
 	// 1. Event sender (skip if user middlewares provide their own to avoid duplicates)
@@ -185,19 +222,25 @@ func BuildModelWrapperChain[M MessageType](base Model[M], ec *reActExecCtx, cfg 
 
 	// 4. User middleware wrappers (outermost)
 	for _, mw := range cfg.Middlewares {
-		if mw == nil { continue }
+		if mw == nil {
+			continue
+		}
 		mc := &TypedModelContext[M]{
-			Tools: toolsToInfosTyped[M](cfg.Tools),
+			Tools:               allToolInfos,
 			ModelRetryConfig:    cfg.RetryConfig,
 			ModelFailoverConfig: cfg.FailoverConfig,
 		}
 		wrapped, err := mw.WrapModel(context.Background(), model, mc)
-		if err == nil && wrapped != nil { model = wrapped }
+		if err == nil && wrapped != nil {
+			model = wrapped
+		}
 	}
 
 	// 5. State wrapper: message deep copy + ID injection + cancel check (guards against middleware side-effects)
 	var cancelCtx *cancelContext
-	if ec != nil { cancelCtx = ec.cancelCtx }
+	if ec != nil {
+		cancelCtx = ec.cancelCtx
+	}
 	model = newTypedStateModelWrapper(model, cancelCtx)
 
 	// 6. Callback injection (outermost — wraps everything)

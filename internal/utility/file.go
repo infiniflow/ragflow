@@ -17,6 +17,9 @@
 package utility
 
 import (
+	"fmt"
+	"net/http"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -34,6 +37,7 @@ const (
 	FileTypeXLSX     FileType = "xlsx"
 	FileTypeHTML     FileType = "html"
 	FileTypeMarkdown FileType = "md"
+	FileTypeTXT      FileType = "txt"
 	FileTypeVISUAL   FileType = "visual"
 	FileTypeAURAL    FileType = "aural"
 	FileTypeFOLDER   FileType = "folder"
@@ -88,6 +92,8 @@ func GetFileType(filename string) FileType {
 		return FileTypeHTML
 	case "md":
 		return FileTypeMarkdown
+	case "txt":
+		return FileTypeTXT
 	default:
 		return FileTypeOTHER
 	}
@@ -263,13 +269,22 @@ var FORCE_ATTACHMENT_CONTENT_TYPES = map[string]bool{
 	"multipart/related":     true,
 }
 
+// stripContentTypeParams strips "; charset=..." and similar parameters
+// from a content type string.  Mirrors Python's .split(";")[0].strip().
+func stripContentTypeParams(ct string) string {
+	if before, _, found := strings.Cut(ct, ";"); found {
+		return strings.TrimSpace(before)
+	}
+	return strings.TrimSpace(ct)
+}
+
 // ShouldForceAttachment determines if the file should be forced as attachment
 func ShouldForceAttachment(ext string, contentType string) bool {
 	normalizedExt := strings.ToLower(strings.TrimPrefix(ext, "."))
 	if normalizedExt != "" && FORCE_ATTACHMENT_EXTENSIONS[normalizedExt] {
 		return true
 	}
-	normalizedType := strings.ToLower(contentType)
+	normalizedType := strings.ToLower(stripContentTypeParams(contentType))
 	return FORCE_ATTACHMENT_CONTENT_TYPES[normalizedType]
 }
 
@@ -288,4 +303,130 @@ func GetContentType(ext string, fileType string) string {
 		fallbackPrefix = "image"
 	}
 	return fallbackPrefix + "/" + normalizedExt
+}
+
+// SanitizeContentDispositionFilename sanitizes a filename for use in
+// Content-Disposition headers. Strips non-ASCII, path separators,
+// control characters, and quotes/percent signs. Falls back to "file"
+// when the result is empty. Mirrors Python file_response.py:
+// sanitize_content_disposition_filename().
+func SanitizeContentDispositionFilename(filename string) string {
+	if filename == "" {
+		return "file"
+	}
+	// Strip non-ASCII.
+	var asciiOnly strings.Builder
+	for _, r := range filename {
+		if r < 0x80 {
+			asciiOnly.WriteRune(r)
+		}
+	}
+	sanitized := asciiOnly.String()
+
+	// Replace path separators, special chars.
+	sanitized = strings.ReplaceAll(sanitized, "/", "_")
+	sanitized = strings.ReplaceAll(sanitized, "\\", "_")
+	sanitized = strings.ReplaceAll(sanitized, ":", "_")
+	sanitized = strings.ReplaceAll(sanitized, "\"", "")
+	sanitized = strings.ReplaceAll(sanitized, "'", "")
+	sanitized = strings.ReplaceAll(sanitized, "%", "")
+
+	// Strip remaining control characters.
+	ctrlRe := regexp.MustCompile(`[\x00-\x1f\x7f]`)
+	sanitized = ctrlRe.ReplaceAllString(sanitized, "")
+
+	sanitized = strings.TrimSpace(sanitized)
+	if sanitized == "" {
+		return "file"
+	}
+	return sanitized
+}
+
+// ResolveAttachmentContentType resolves a content type and extension from
+// query-parameter values. When mimeType is non-empty it is preferred and
+// reverse-looked up in CONTENT_TYPE_MAP to also resolve the extension;
+// otherwise the extension is looked up in CONTENT_TYPE_MAP, falling back
+// to "application/<ext>". Returns (contentType, ext). Mirrors Python
+// file_response.py: resolve_attachment_content_type().
+func ResolveAttachmentContentType(ext string, mimeType string) (string, string) {
+	ext = strings.ToLower(strings.TrimSpace(ext))
+	ext = strings.TrimPrefix(ext, ".")
+	mimeType = strings.TrimSpace(mimeType)
+
+	contentType := ""
+	if mimeType != "" {
+		normalizedType := strings.ToLower(stripContentTypeParams(mimeType))
+		contentType = normalizedType
+		// Reverse-lookup extension from CONTENT_TYPE_MAP only when
+		// no explicit ext was provided. Never overwrite a caller-
+		// supplied extension (e.g. ext=svg&mime_type=image/png must
+		// stay ext=svg for the force-attachment check).
+		if ext == "" {
+			for knownExt, knownType := range CONTENT_TYPE_MAP {
+				if knownType == normalizedType {
+					ext = knownExt
+					break
+				}
+			}
+		}
+	} else if ext != "" {
+		if ct, ok := CONTENT_TYPE_MAP[ext]; ok {
+			contentType = ct
+		} else {
+			contentType = "application/" + ext
+		}
+	}
+	return contentType, ext
+}
+
+// SetPreviewFileResponseHeaders sets response headers for inline file
+// preview. For force-attachment types (HTML, SVG, XML) it falls back to
+// attachment disposition with nosniff. Mirrors Python file_response.py:
+// apply_preview_file_response_headers().
+func SetPreviewFileResponseHeaders(h http.Header, contentType, ext, filename string) {
+	if contentType != "" {
+		h.Set("Content-Type", contentType)
+	}
+	if ShouldForceAttachment(ext, contentType) {
+		h.Set("Content-Disposition", "attachment")
+		h.Set("X-Content-Type-Options", "nosniff")
+	} else {
+		safe := SanitizeContentDispositionFilename(filename)
+		h.Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, safe))
+	}
+}
+
+// SetDownloadFileResponseHeaders sets response headers for file download
+// (always attachment disposition). Mirrors Python file_response.py:
+// apply_download_file_response_headers().
+func SetDownloadFileResponseHeaders(h http.Header, contentType, ext, filename string) {
+	if contentType != "" {
+		h.Set("Content-Type", contentType)
+	}
+	if ShouldForceAttachment(ext, contentType) {
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Content-Disposition", "attachment")
+		return
+	}
+	safe := SanitizeContentDispositionFilename(filename)
+	h.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, safe))
+}
+
+// AgentAttachmentPreviewPath builds the preview URL path for an agent
+// attachment. Query parameters ext and mime_type are URL-encoded when
+// provided. Mirrors Python file_response.py:
+// agent_attachment_preview_path().
+func AgentAttachmentPreviewPath(attachmentID, ext, mimeType string) string {
+	path := "/api/v1/agents/attachments/" + attachmentID + "/preview"
+	params := url.Values{}
+	if ext != "" {
+		params.Set("ext", ext)
+	}
+	if mimeType != "" {
+		params.Set("mime_type", mimeType)
+	}
+	if qs := params.Encode(); qs != "" {
+		return path + "?" + qs
+	}
+	return path
 }

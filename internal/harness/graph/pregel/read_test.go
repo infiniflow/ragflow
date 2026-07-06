@@ -45,7 +45,7 @@ func TestChannelRead_Read(t *testing.T) {
 	reg := channels.NewRegistry()
 	ch := channels.NewLastValue("")
 	ch.SetKey("greeting")
-	ch.Update([]interface{}{"hello"})
+	ch.Update([]any{"hello"})
 	reg.Register("greeting", ch)
 
 	cr := NewChannelRead(reg)
@@ -78,10 +78,10 @@ func TestAllChannelsSelector(t *testing.T) {
 	reg := channels.NewRegistry()
 	ch1 := channels.NewLastValue("")
 	ch1.SetKey("a")
-	ch1.Update([]interface{}{1})
+	ch1.Update([]any{1})
 	ch2 := channels.NewLastValue("")
 	ch2.SetKey("b")
-	ch2.Update([]interface{}{2})
+	ch2.Update([]any{2})
 
 	reg.Register("a", ch1)
 	reg.Register("b", ch2)
@@ -101,7 +101,7 @@ func TestSpecificChannelsSelector(t *testing.T) {
 	reg := channels.NewRegistry()
 	ch1 := channels.NewLastValue("")
 	ch1.SetKey("target")
-	ch1.Update([]interface{}{"data"})
+	ch1.Update([]any{"data"})
 	ch2 := channels.NewLastValue("")
 	ch2.SetKey("other")
 
@@ -123,7 +123,7 @@ func TestAvailableChannelsSelector(t *testing.T) {
 	reg := channels.NewRegistry()
 	ch := channels.NewLastValue("")
 	ch.SetKey("active")
-	ch.Update([]interface{}{"data"})
+	ch.Update([]any{"data"})
 
 	reg.Register("active", ch)
 
@@ -142,7 +142,7 @@ func TestPrefixChannelsSelector(t *testing.T) {
 	reg := channels.NewRegistry()
 	ch := channels.NewLastValue("")
 	ch.SetKey("pre_alpha")
-	ch.Update([]interface{}{1})
+	ch.Update([]any{1})
 
 	reg.Register("pre_alpha", ch)
 
@@ -161,7 +161,7 @@ func TestPrefixChannelsSelector(t *testing.T) {
 // TestIdentityTransformer verifies passthrough behavior.
 func TestIdentityTransformer(t *testing.T) {
 	tf := &IdentityTransformer{}
-	input := map[string]interface{}{"key": "value"}
+	input := map[string]any{"key": "value"}
 	result, err := tf.Transform(input)
 	if err != nil {
 		t.Fatalf("Transform: %v", err)
@@ -174,7 +174,7 @@ func TestIdentityTransformer(t *testing.T) {
 // TestMappingTransformer verifies key mapping.
 func TestMappingTransformer(t *testing.T) {
 	tf := NewMappingTransformer(map[string]string{"old": "new"})
-	input := map[string]interface{}{"old": "data"}
+	input := map[string]any{"old": "data"}
 	result, err := tf.Transform(input)
 	if err != nil {
 		t.Fatalf("Transform: %v", err)
@@ -187,7 +187,7 @@ func TestMappingTransformer(t *testing.T) {
 // TestFilterTransformer verifies filtering.
 func TestFilterTransformer(t *testing.T) {
 	tf := NewFilterTransformer("keep")
-	input := map[string]interface{}{"keep": "val", "remove": "ignored"}
+	input := map[string]any{"keep": "val", "remove": "ignored"}
 	result, err := tf.Transform(input)
 	if err != nil {
 		t.Fatalf("Transform: %v", err)

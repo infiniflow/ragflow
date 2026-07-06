@@ -67,8 +67,11 @@ export default function SearchList() {
   return (
     <>
       {list?.data?.search_apps?.length || searchString ? (
-        <article className="size-full flex flex-col" data-testid="search-list">
-          <header className="px-5 pt-8 mb-4">
+        <article
+          className="size-full min-w-0 flex flex-col"
+          data-testid="search-list"
+        >
+          <header className="mb-4 min-w-0 px-5 pt-8">
             <ListFilterBar
               icon="searches"
               title={t('searchApps')}

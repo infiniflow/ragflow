@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -232,6 +233,10 @@ func (c *LangfuseClient) post(ctx context.Context, envelope []byte) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", auth)
+	// per tenant by an operator (see entity.TenantLangfuse), not by
+	// the requesting user. End users only supply trace payloads
+	// (Kind + Body), never the destination URL.
+	// codeql[go/request-forgery] False positive: c.Host is configured
 	res, err := c.HTTP.Do(req)
 	if err != nil {
 		return
@@ -255,4 +260,92 @@ func (c *LangfuseClient) Shutdown(ctx context.Context) error {
 
 func basicAuth(public, secret string) string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(public+":"+secret))
+}
+
+// ErrLangfuseUnauthorized indicates the Langfuse credentials were rejected
+var ErrLangfuseUnauthorized = errors.New("langfuse: unauthorized")
+
+type LangfuseAPIError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *LangfuseAPIError) Error() string {
+	if e.Body == "" {
+		return fmt.Sprintf("langfuse: unexpected status %d", e.StatusCode)
+	}
+	return fmt.Sprintf("langfuse: unexpected status %d: %s", e.StatusCode, e.Body)
+}
+
+func IsLangfuseAPIError(err error) bool {
+	var apiErr *LangfuseAPIError
+	return errors.As(err, &apiErr)
+}
+
+// langfuseProjectsResponse mirrors the body of GET /api/public/projects.
+type langfuseProjectsResponse struct {
+	Data []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"data"`
+}
+
+// GetProject calls GET {host}/api/public/projects and returns the first
+// project's id and name.
+func (c *LangfuseClient) GetProject(ctx context.Context) (string, string, error) {
+	if c == nil {
+		return "", "", fmt.Errorf("nil langfuse client")
+	}
+
+	url := strings.TrimRight(c.Host, "/") + "/api/public/projects"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Authorization", basicAuth(c.PublicKey, c.SecretKey))
+
+	// per tenant by an operator (see entity.TenantLangfuse), not by
+	// the requesting user.
+	// codeql[go/request-forgery] False positive: c.Host is configured
+	res, err := c.HTTP.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
+		return "", "", ErrLangfuseUnauthorized
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(res.Body)
+		return "", "", &LangfuseAPIError{StatusCode: res.StatusCode, Body: string(body)}
+	}
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return "", "", err
+	}
+
+	var parsed langfuseProjectsResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return "", "", err
+	}
+	if len(parsed.Data) == 0 {
+		return "", "", fmt.Errorf("langfuse: no project found")
+	}
+	return parsed.Data[0].ID, parsed.Data[0].Name, nil
+}
+
+// AuthCheck verifies the credentials are valid, mirroring the Python langfuse
+// SDK's auth_check(). It returns (false, nil) when the credentials are
+// rejected, and (false, err) for transport/remote errors.
+func (c *LangfuseClient) AuthCheck(ctx context.Context) (bool, error) {
+	_, _, err := c.GetProject(ctx)
+	if err != nil {
+		if errors.Is(err, ErrLangfuseUnauthorized) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }

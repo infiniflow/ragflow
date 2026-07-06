@@ -149,7 +149,8 @@ func New(cfg *Config) *core.ReActAgent[*schema.Message] {
 		saMW := subagent.New(cfg.SubAgentSpecs, saCfg)
 		middlewares = append(middlewares, saMW)
 
-		// Build react config with BindToConfig.
+		// Build react config — Init() prepares the sub-agent for middleware
+		// inheritance, while ToolContributor handles automatic tool injection.
 		reactCfg := &core.ReActConfig[*schema.Message]{
 			Model:         cfg.Model,
 			Instruction:   instruction,
@@ -157,7 +158,7 @@ func New(cfg *Config) *core.ReActAgent[*schema.Message] {
 			Middlewares:   middlewares,
 			Tools:         cfg.Tools,
 		}
-		saMW.BindToConfig(context.Background(), reactCfg)
+		saMW.Init(context.Background(), reactCfg)
 		return core.NewReActAgent(reactCfg)
 	}
 
@@ -259,8 +260,8 @@ func (b *localShellBackend) Execute(command string) (string, error) {
 
 type execTool struct{}
 
-func (t *execTool) Name() string             { return "_bootstrap_tool" }
-func (t *execTool) Description() string       { return "Internal bootstrap tool" }
+func (t *execTool) Name() string        { return "_bootstrap_tool" }
+func (t *execTool) Description() string { return "Internal bootstrap tool" }
 func (t *execTool) Invoke(ctx context.Context, args string, opts ...core.ToolOption) (string, error) {
 	return "", nil
 }

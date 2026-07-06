@@ -38,8 +38,8 @@ type WillRetryError struct {
 	err          error
 }
 
-func (e *WillRetryError) Error() string { return e.ErrStr }
-func (e *WillRetryError) Unwrap() error { return e.err }
+func (e *WillRetryError) Error() string     { return e.ErrStr }
+func (e *WillRetryError) Unwrap() error     { return e.err }
 func (e *WillRetryError) RejectReason() any { return e.rejectReason }
 
 func init() {
@@ -110,19 +110,31 @@ func (r *typedRetryModelWrapper[M]) Generate(ctx context.Context, input []M, opt
 
 func (r *typedRetryModelWrapper[M]) generateLegacy(ctx context.Context, input []M, opts ...ModelOption) (zero M, _ error) {
 	isRetryAble := r.config.IsRetryAble
-	if isRetryAble == nil { isRetryAble = defaultIsRetryAble }
+	if isRetryAble == nil {
+		isRetryAble = defaultIsRetryAble
+	}
 	backoff := r.config.BackoffFunc
-	if backoff == nil { backoff = defaultBackoff }
+	if backoff == nil {
+		backoff = defaultBackoff
+	}
 
 	var lastErr error
 	for attempt := 0; attempt <= r.config.MaxRetries; attempt++ {
 		out, err := r.inner.Generate(ctx, input, opts...)
-		if err == nil { return out, nil }
-		if errors.Is(err, ErrStreamCanceled) { return zero, err }
-		if !isRetryAble(ctx, err) { return zero, err }
+		if err == nil {
+			return out, nil
+		}
+		if errors.Is(err, ErrStreamCanceled) {
+			return zero, err
+		}
+		if !isRetryAble(ctx, err) {
+			return zero, err
+		}
 		lastErr = err
 		if attempt < r.config.MaxRetries {
-			if err := contextAwareSleep(ctx, backoff(ctx, attempt+1)); err != nil { return zero, err }
+			if err := contextAwareSleep(ctx, backoff(ctx, attempt+1)); err != nil {
+				return zero, err
+			}
 		}
 	}
 	return zero, &RetryExhaustedError{LastErr: lastErr, TotalRetries: r.config.MaxRetries}
@@ -130,7 +142,9 @@ func (r *typedRetryModelWrapper[M]) generateLegacy(ctx context.Context, input []
 
 func (r *typedRetryModelWrapper[M]) generateWithShouldRetry(ctx context.Context, input []M, opts ...ModelOption) (M, error) {
 	backoff := r.config.BackoffFunc
-	if backoff == nil { backoff = defaultBackoff }
+	if backoff == nil {
+		backoff = defaultBackoff
+	}
 	execCtx := getReActExecCtx[M](ctx)
 	currentInput := input
 	currentOpts := opts
@@ -138,22 +152,34 @@ func (r *typedRetryModelWrapper[M]) generateWithShouldRetry(ctx context.Context,
 	var zero M
 
 	for attempt := 0; attempt <= r.config.MaxRetries; attempt++ {
-		if execCtx != nil { execCtx.suppressEventSend = true }
+		if execCtx != nil {
+			execCtx.suppressEventSend = true
+		}
 		out, err := r.inner.Generate(ctx, currentInput, currentOpts...)
-		if execCtx != nil { execCtx.suppressEventSend = false }
+		if execCtx != nil {
+			execCtx.suppressEventSend = false
+		}
 
-		if errors.Is(err, ErrStreamCanceled) { return zero, err }
+		if errors.Is(err, ErrStreamCanceled) {
+			return zero, err
+		}
 
 		retryCtx := &TypedRetryContext[M]{
 			RetryAttempt: attempt + 1, InputMessages: currentInput,
 			OutputMessage: out, Err: err,
 		}
 		decision := r.config.ShouldRetry(ctx, retryCtx)
-		if decision == nil { decision = &TypedRetryDecision[M]{} }
+		if decision == nil {
+			decision = &TypedRetryDecision[M]{}
+		}
 
 		if !decision.Retry {
-			if decision.RewriteError != nil { return zero, decision.RewriteError }
-			if err != nil { return zero, err }
+			if decision.RewriteError != nil {
+				return zero, decision.RewriteError
+			}
+			if err != nil {
+				return zero, err
+			}
 			if execCtx != nil && execCtx.generator != nil && !isNilMessage(out) {
 				execCtx.send(typedModelOutputEvent(out, nil))
 			}
@@ -161,8 +187,12 @@ func (r *typedRetryModelWrapper[M]) generateWithShouldRetry(ctx context.Context,
 		}
 
 		lastErr = err
-		if lastErr == nil { lastErr = fmt.Errorf("model output rejected by ShouldRetry at attempt %d", attempt+1) }
-		if attempt >= r.config.MaxRetries { break }
+		if lastErr == nil {
+			lastErr = fmt.Errorf("model output rejected by ShouldRetry at attempt %d", attempt+1)
+		}
+		if attempt >= r.config.MaxRetries {
+			break
+		}
 
 		// Emit WillRetryError event before sleeping
 		if execCtx != nil && execCtx.generator != nil {
@@ -171,8 +201,12 @@ func (r *typedRetryModelWrapper[M]) generateWithShouldRetry(ctx context.Context,
 		}
 		applyRetryDecision(&currentInput, &currentOpts, decision)
 		delay := decision.Backoff
-		if delay == 0 { delay = backoff(ctx, attempt+1) }
-		if err := contextAwareSleep(ctx, delay); err != nil { return zero, err }
+		if delay == 0 {
+			delay = backoff(ctx, attempt+1)
+		}
+		if err := contextAwareSleep(ctx, delay); err != nil {
+			return zero, err
+		}
 	}
 	return zero, &RetryExhaustedError{LastErr: lastErr, TotalRetries: r.config.MaxRetries}
 }
@@ -186,32 +220,47 @@ func (r *typedRetryModelWrapper[M]) Stream(ctx context.Context, input []M, opts 
 
 func (r *typedRetryModelWrapper[M]) streamLegacy(ctx context.Context, input []M, opts ...ModelOption) (*schema.StreamReader[M], error) {
 	isRetryAble := r.config.IsRetryAble
-	if isRetryAble == nil { isRetryAble = defaultIsRetryAble }
+	if isRetryAble == nil {
+		isRetryAble = defaultIsRetryAble
+	}
 	backoff := r.config.BackoffFunc
-	if backoff == nil { backoff = defaultBackoff }
+	if backoff == nil {
+		backoff = defaultBackoff
+	}
 
 	var lastErr error
 	for attempt := 0; attempt <= r.config.MaxRetries; attempt++ {
 		stream, err := r.inner.Stream(ctx, input, opts...)
 		if err != nil {
-			if errors.Is(err, ErrStreamCanceled) { return nil, err }
-			if !isRetryAble(ctx, err) { return nil, err }
+			if errors.Is(err, ErrStreamCanceled) {
+				return nil, err
+			}
+			if !isRetryAble(ctx, err) {
+				return nil, err
+			}
 			lastErr = err
 			if attempt < r.config.MaxRetries {
-				if err := contextAwareSleep(ctx, backoff(ctx, attempt+1)); err != nil { return nil, err }
+				if err := contextAwareSleep(ctx, backoff(ctx, attempt+1)); err != nil {
+					return nil, err
+				}
 			}
 			continue
 		}
 		// Verify the stream is healthy by reading one chunk
 		chunk, streamErr := stream.Recv()
 		if streamErr == nil {
-				outStream := schema.NewStreamReader[M]()
+			outStream := schema.NewStreamReader[M]()
 			go func() {
 				outStream.Send(chunk, nil)
 				for {
 					c, e := stream.Recv()
-					if e == io.EOF { break }
-					if e != nil { outStream.Send(c, e); return }
+					if e == io.EOF {
+						break
+					}
+					if e != nil {
+						outStream.Send(c, e)
+						return
+					}
 					select {
 					case <-ctx.Done():
 						outStream.Send(c, ctx.Err())
@@ -225,11 +274,17 @@ func (r *typedRetryModelWrapper[M]) streamLegacy(ctx context.Context, input []M,
 			return outStream, nil
 		}
 		stream.Close()
-		if errors.Is(streamErr, ErrStreamCanceled) { return nil, streamErr }
-		if !isRetryAble(ctx, streamErr) { return nil, streamErr }
+		if errors.Is(streamErr, ErrStreamCanceled) {
+			return nil, streamErr
+		}
+		if !isRetryAble(ctx, streamErr) {
+			return nil, streamErr
+		}
 		lastErr = streamErr
 		if attempt < r.config.MaxRetries {
-			if err := contextAwareSleep(ctx, backoff(ctx, attempt+1)); err != nil { return nil, err }
+			if err := contextAwareSleep(ctx, backoff(ctx, attempt+1)); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return nil, &RetryExhaustedError{LastErr: lastErr, TotalRetries: r.config.MaxRetries}
@@ -237,7 +292,9 @@ func (r *typedRetryModelWrapper[M]) streamLegacy(ctx context.Context, input []M,
 
 func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, input []M, opts ...ModelOption) (*schema.StreamReader[M], error) {
 	backoff := r.config.BackoffFunc
-	if backoff == nil { backoff = defaultBackoff }
+	if backoff == nil {
+		backoff = defaultBackoff
+	}
 	execCtx := getReActExecCtx[M](ctx)
 	currentInput := input
 	currentOpts := opts
@@ -251,14 +308,20 @@ func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, i
 	for attempt := 0; attempt <= r.config.MaxRetries; attempt++ {
 		stream, err := r.inner.Stream(ctx, currentInput, currentOpts...)
 		if err != nil {
-			if errors.Is(err, ErrStreamCanceled) { return nil, err }
+			if errors.Is(err, ErrStreamCanceled) {
+				return nil, err
+			}
 			retryCtx := &TypedRetryContext[M]{
 				RetryAttempt: attempt + 1, InputMessages: currentInput, Err: err,
 			}
 			decision := r.config.ShouldRetry(ctx, retryCtx)
-			if decision == nil { decision = &TypedRetryDecision[M]{} }
+			if decision == nil {
+				decision = &TypedRetryDecision[M]{}
+			}
 			if !decision.Retry {
-				if decision.RewriteError != nil { return nil, decision.RewriteError }
+				if decision.RewriteError != nil {
+					return nil, decision.RewriteError
+				}
 				return nil, err
 			}
 			lastErr = err
@@ -268,8 +331,12 @@ func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, i
 				}
 				applyRetryDecision(&currentInput, &currentOpts, decision)
 				delay := decision.Backoff
-				if delay == 0 { delay = backoff(ctx, attempt+1) }
-				if err := contextAwareSleep(ctx, delay); err != nil { return nil, err }
+				if delay == 0 {
+					delay = backoff(ctx, attempt+1)
+				}
+				if err := contextAwareSleep(ctx, delay); err != nil {
+					return nil, err
+				}
 			}
 			continue
 		}
@@ -282,21 +349,32 @@ func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, i
 				RetryAttempt: attempt + 1, InputMessages: currentInput, Err: streamErr,
 			}
 			decision := r.config.ShouldRetry(ctx, retryCtx)
-			if decision == nil { decision = &TypedRetryDecision[M]{} }
+			if decision == nil {
+				decision = &TypedRetryDecision[M]{}
+			}
 			if !decision.Retry {
-				if decision.RewriteError != nil { return nil, decision.RewriteError }
+				if decision.RewriteError != nil {
+					return nil, decision.RewriteError
+				}
 				return nil, streamErr
 			}
 			lastErr = streamErr
-			select { case sig.ch <- streamRetryVerdict{WillRetry: true, Err: streamErr, RejectReason: decision.RejectReason}: default: }
+			select {
+			case sig.ch <- streamRetryVerdict{WillRetry: true, Err: streamErr, RejectReason: decision.RejectReason}:
+			default:
+			}
 			if attempt < r.config.MaxRetries {
 				if execCtx != nil && execCtx.generator != nil {
 					execCtx.send(&TypedAgentEvent[M]{Err: &WillRetryError{ErrStr: lastErr.Error(), RetryAttempt: attempt + 1, rejectReason: decision.RejectReason, err: lastErr}})
 				}
 				applyRetryDecision(&currentInput, &currentOpts, decision)
 				delay := decision.Backoff
-				if delay == 0 { delay = backoff(ctx, attempt+1) }
-				if err := contextAwareSleep(ctx, delay); err != nil { return nil, err }
+				if delay == 0 {
+					delay = backoff(ctx, attempt+1)
+				}
+				if err := contextAwareSleep(ctx, delay); err != nil {
+					return nil, err
+				}
 			}
 			continue
 		}
@@ -308,11 +386,18 @@ func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, i
 		}
 		callerCh := schema.NewStreamReader[M]()
 		go func() {
-			if len(allChunks) > 0 { callerCh.Send(allChunks[0], nil) }
+			if len(allChunks) > 0 {
+				callerCh.Send(allChunks[0], nil)
+			}
 			for {
 				c, e := stream.Recv()
-				if e == io.EOF { break }
-				if e != nil { callerCh.Send(c, e); return }
+				if e == io.EOF {
+					break
+				}
+				if e != nil {
+					callerCh.Send(c, e)
+					return
+				}
 				allChunks = append(allChunks, c)
 				callerCh.Send(c, nil)
 			}
@@ -324,13 +409,18 @@ func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, i
 			}
 			callerCh.Close()
 		}()
-		select { case sig.ch <- streamRetryVerdict{WillRetry: false}: default: }
+		select {
+		case sig.ch <- streamRetryVerdict{WillRetry: false}:
+		default:
+		}
 		return callerCh, nil
 	}
 	return nil, &RetryExhaustedError{LastErr: lastErr, TotalRetries: r.config.MaxRetries}
 }
 
-func (r *typedRetryModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error { return r.inner.BindTools(tools) }
+func (r *typedRetryModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error {
+	return r.inner.BindTools(tools)
+}
 
 // WithModelRetry wraps a Model with retry logic.
 // When cfg.ShouldRetry is set but MaxRetries is 0, the loop runs exactly once
@@ -338,7 +428,9 @@ func (r *typedRetryModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error { 
 // with RetryExhaustedError{TotalRetries: 0}. Set MaxRetries >= 1 to allow
 // ShouldRetry-driven retries to actually retry.
 func WithModelRetry[M MessageType](inner Model[M], cfg *TypedModelRetryConfig[M]) Model[M] {
-	if cfg == nil || (cfg.MaxRetries <= 0 && cfg.ShouldRetry == nil) { return inner }
+	if cfg == nil || (cfg.MaxRetries <= 0 && cfg.ShouldRetry == nil) {
+		return inner
+	}
 	return newTypedRetryModelWrapper(inner, cfg)
 }
 
@@ -358,24 +450,34 @@ func applyRetryDecision[M MessageType](input *[]M, opts *[]ModelOption, decision
 }
 
 func contextAwareSleep(ctx context.Context, delay time.Duration) error {
-	if delay <= 0 { return nil }
+	if delay <= 0 {
+		return nil
+	}
 	select {
-	case <-ctx.Done(): return ctx.Err()
-	case <-time.After(delay): return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(delay):
+		return nil
 	}
 }
 
 func mergeChunks[M MessageType](chunks []M) (M, error) {
 	var zero M
-	if len(chunks) == 0 { return zero, nil }
+	if len(chunks) == 0 {
+		return zero, nil
+	}
 	switch c := any(chunks).(type) {
 	case []*schema.Message:
 		merged, err := schema.ConcatMessages(c)
-		if err != nil { return zero, err }
+		if err != nil {
+			return zero, err
+		}
 		return any(merged).(M), nil
 	case []*schema.AgenticMessage:
 		merged, err := schema.ConcatAgenticMessages(c)
-		if err != nil { return zero, err }
+		if err != nil {
+			return zero, err
+		}
 		return any(merged).(M), nil
 	}
 	return chunks[0], nil
@@ -393,10 +495,14 @@ type retrySignal struct {
 }
 
 func (rs *retrySignal) consume() streamRetryVerdict {
-	if rs == nil { return streamRetryVerdict{} }
+	if rs == nil {
+		return streamRetryVerdict{}
+	}
 	select {
-	case v := <-rs.ch: return v
-	default: return streamRetryVerdict{}
+	case v := <-rs.ch:
+		return v
+	default:
+		return streamRetryVerdict{}
 	}
 }
 
@@ -404,4 +510,3 @@ func (rs *retrySignal) consume() streamRetryVerdict {
 func WithRetry[M MessageType](cfg *TypedModelRetryConfig[M]) ModelOption {
 	return &typedModelOption[M]{f: func(o *modelOptions[M]) { o.RetryConfig = cfg }}
 }
-

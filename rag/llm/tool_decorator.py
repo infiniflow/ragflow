@@ -188,9 +188,7 @@ class FunctionToolSession:
         self.tools_map: dict[str, Callable[..., Any]] = {}
         for fn in tools:
             if not is_tool(fn):
-                raise TypeError(
-                    f"{getattr(fn, '__name__', fn)!r} is not a @tool-decorated callable"
-                )
+                raise TypeError(f"{getattr(fn, '__name__', fn)!r} is not a @tool-decorated callable")
             self.tools_map[fn.openai_schema["function"]["name"]] = fn
 
     @property
@@ -204,9 +202,7 @@ class FunctionToolSession:
         if name not in self.tools_map:
             raise KeyError(f"Tool {name!r} is not registered")
         if not isinstance(arguments, Mapping):
-            raise TypeError(
-                f"Tool arguments for {name} must be an object, got {type(arguments).__name__}"
-            )
+            raise TypeError(f"Tool arguments for {name} must be an object, got {type(arguments).__name__}")
         fn = self.tools_map[name]
         logging.info(f"[FunctionTool] invoke name={name} args={str(arguments)[:200]}")
         if asyncio.iscoroutinefunction(fn):

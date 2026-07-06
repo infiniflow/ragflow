@@ -18,7 +18,6 @@ from abc import ABC, abstractmethod
 
 
 class QueryBase(ABC):
-
     @staticmethod
     def is_chinese(line):
         arr = re.split(r"[ \t]+", line)
@@ -46,7 +45,8 @@ class QueryBase(ABC):
             (r"(^| )(what|who|how|which|where|why)('re|'s)? ", " "),
             (
                 r"(^| )('s|'re|is|are|were|was|do|does|did|don't|doesn't|didn't|has|have|be|there|you|me|your|my|mine|just|please|may|i|should|would|wouldn't|will|won't|done|go|for|with|so|the|a|an|by|i'm|it's|he's|she's|they|they're|you're|as|by|on|in|at|up|out|down|of|to|or|and|if) ",
-                " ")
+                " ",
+            ),
         ]
         otxt = txt
         for r, p in patts:
@@ -58,12 +58,12 @@ class QueryBase(ABC):
     @staticmethod
     def add_space_between_eng_zh(txt):
         # (ENG/ENG+NUM) + ZH
-        txt = re.sub(r'([A-Za-z]+[0-9]+)([\u4e00-\u9fa5]+)', r'\1 \2', txt)
+        txt = re.sub(r"([A-Za-z]+[0-9]+)([\u4e00-\u9fa5]+)", r"\1 \2", txt)
         # ENG + ZH
-        txt = re.sub(r'([A-Za-z])([\u4e00-\u9fa5]+)', r'\1 \2', txt)
+        txt = re.sub(r"([A-Za-z])([\u4e00-\u9fa5]+)", r"\1 \2", txt)
         # ZH + (ENG/ENG+NUM)
-        txt = re.sub(r'([\u4e00-\u9fa5]+)([A-Za-z]+[0-9]+)', r'\1 \2', txt)
-        txt = re.sub(r'([\u4e00-\u9fa5]+)([A-Za-z])', r'\1 \2', txt)
+        txt = re.sub(r"([\u4e00-\u9fa5]+)([A-Za-z]+[0-9]+)", r"\1 \2", txt)
+        txt = re.sub(r"([\u4e00-\u9fa5]+)([A-Za-z])", r"\1 \2", txt)
         return txt
 
     @abstractmethod

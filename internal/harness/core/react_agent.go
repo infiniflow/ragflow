@@ -3,13 +3,13 @@ package core
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/harness/graph/checkpoint"
 	"strings"
 	"sync"
 	"sync/atomic"
 
-	"ragflow/internal/harness/core/schema"
 	"ragflow/internal/harness/core/internal"
-	"ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/core/schema"
 )
 
 // ReActConfig holds configuration for TypedReActAgent.
@@ -35,7 +35,7 @@ type ReActConfig[M MessageType] struct {
 	// GraphReActCheckpointer is the checkpointer used when GraphReAct is enabled.
 	// If nil, no checkpointing is performed (but interrupt is still available
 	// via WithInterrupts).
-	GraphReActCheckpointer graph.Checkpointer
+	GraphReActCheckpointer checkpoint.BaseCheckpointer
 	// GraphReActInterruptBefore lists node names to interrupt before.
 	// Default: ["execute_tools"] (pause before tool execution for human approval).
 	GraphReActInterruptBefore []string
@@ -62,9 +62,9 @@ type ReActAgentResumeData struct {
 //   - ResumeWithData / HistoryModifier for resume customization
 //   - gob encodability check on SetRunLocalValue
 type ReActAgent[M MessageType] struct {
-	name        string
-	desc        string
-	config      *ReActConfig[M]
+	name   string
+	desc   string
+	config *ReActConfig[M]
 
 	once   sync.Once
 	frozen uint32
@@ -92,28 +92,34 @@ func defaultGenModelInput(ctx context.Context, instruction string, input *AgentI
 
 func resolveTemplate(tmpl string, ctx context.Context) string {
 	s := getSession(ctx)
-	if s == nil { return tmpl }
+	if s == nil {
+		return tmpl
+	}
 	result := tmpl
 	for k, v := range s.Values {
 		repl := fmt.Sprintf("{%s}", k)
-		if sv, ok := v.(string); ok { result = strings.ReplaceAll(result, repl, sv) }
+		if sv, ok := v.(string); ok {
+			result = strings.ReplaceAll(result, repl, sv)
+		}
 	}
 	return result
 }
 
 func NewReActAgent[M MessageType](cfg *ReActConfig[M]) *ReActAgent[M] {
-	if cfg == nil { cfg = DefaultReActConfig[M]() }
+	if cfg == nil {
+		cfg = DefaultReActConfig[M]()
+	}
 	a := &ReActAgent[M]{name: "react_agent", desc: "ReAct agent using a chat model", config: cfg}
 	if cfg.ToolsConfig == nil && len(cfg.Tools) > 0 {
 		cfg.ToolsConfig = &ToolsNodeConfig{Tools: cfg.Tools, ReturnDirectly: cfg.ReturnDirectly}
 	}
 	return a
 }
-func (a *ReActAgent[M]) WithName(n string) *ReActAgent[M] { a.name = n; return a }
+func (a *ReActAgent[M]) WithName(n string) *ReActAgent[M]        { a.name = n; return a }
 func (a *ReActAgent[M]) WithDescription(d string) *ReActAgent[M] { a.desc = d; return a }
-func (a *ReActAgent[M]) Name(_ context.Context) string              { return a.name }
-func (a *ReActAgent[M]) Description(_ context.Context) string       { return a.desc }
-func (a *ReActAgent[M]) GetType() string                           { return "ReActAgent" }
+func (a *ReActAgent[M]) Name(_ context.Context) string           { return a.name }
+func (a *ReActAgent[M]) Description(_ context.Context) string    { return a.desc }
+func (a *ReActAgent[M]) GetType() string                         { return "ReActAgent" }
 
 // ---- Freeze mechanism ----
 
@@ -127,7 +133,9 @@ func (a *ReActAgent[M]) Run(ctx context.Context, input *TypedAgentInput[M], opts
 	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
 	go func() {
 		defer func() {
-			if r := recover(); r != nil { gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("panic: %v", r)}) }
+			if r := recover(); r != nil {
+				gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("panic: %v", r)})
+			}
 			gen.Close()
 		}()
 		runFunc := a.buildRunFunc(ctx)
@@ -141,14 +149,20 @@ func (a *ReActAgent[M]) Resume(ctx context.Context, info *ResumeInfo, opts ...Ru
 	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
 	go func() {
 		defer func() {
-			if r := recover(); r != nil { gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("panic: %v", r)}) }
+			if r := recover(); r != nil {
+				gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("panic: %v", r)})
+			}
 			gen.Close()
 		}()
 		if info.WasInterrupted {
 			if s, ok := info.InterruptState.(*TypedReActAgentState[M]); ok {
 				runFunc := a.buildRunFunc(ctx)
 				params := &typedRunParams[M]{input: &TypedAgentInput[M]{Messages: s.Messages, EnableStreaming: info.EnableStreaming}, generator: gen, interruptState: s, resumeInfo: info}
-				if info.ResumeData != nil { if rd, ok := info.ResumeData.(*ReActAgentResumeData); ok && rd.HistoryModifier != nil { params.historyModifier = rd.HistoryModifier } }
+				if info.ResumeData != nil {
+					if rd, ok := info.ResumeData.(*ReActAgentResumeData); ok && rd.HistoryModifier != nil {
+						params.historyModifier = rd.HistoryModifier
+					}
+				}
 				runFunc(ctx, params)
 				a.freeze()
 				return
@@ -164,38 +178,45 @@ func (a *ReActAgent[M]) Resume(ctx context.Context, info *ResumeInfo, opts ...Ru
 type typedRunFunc[M MessageType] func(ctx context.Context, p *typedRunParams[M])
 
 type typedRunParams[M MessageType] struct {
-	input            *TypedAgentInput[M]
-	generator        *AsyncGenerator[*TypedAgentEvent[M]]
-	interruptState    *TypedReActAgentState[M]
-	resumeInfo       *ResumeInfo
-	historyModifier  func(context.Context, []Message) []Message
+	input              *TypedAgentInput[M]
+	generator          *AsyncGenerator[*TypedAgentEvent[M]]
+	interruptState     *TypedReActAgentState[M]
+	resumeInfo         *ResumeInfo
+	historyModifier    func(context.Context, []Message) []Message
 	afterToolCallsHook func(ctx context.Context) error
 }
 
 // reActExecCtx carries per-execution state for event sending, cancellation,
 // retry signal propagation, and after-tool-calls hooks.
 type reActExecCtx struct {
-	generator         *AsyncGenerator[*TypedAgentEvent[*schema.Message]]
-	cancelCtx         *cancelContext
-	suppressEventSend bool
-	retrySignal       *retrySignal
-	failoverLastModel Model[*schema.Message]
+	generator          *AsyncGenerator[*TypedAgentEvent[*schema.Message]]
+	cancelCtx          *cancelContext
+	suppressEventSend  bool
+	retrySignal        *retrySignal
+	failoverLastModel  Model[*schema.Message]
 	afterToolCallsHook func(ctx context.Context) error
 }
 
 func (ec *reActExecCtx) send(ev any) {
 	if ec != nil && ec.generator != nil {
-		if te, ok := ev.(*TypedAgentEvent[*schema.Message]); ok { ec.generator.Send(te) }
+		if te, ok := ev.(*TypedAgentEvent[*schema.Message]); ok {
+			ec.generator.Send(te)
+		}
 	}
 }
 
 type execContext struct {
-	instruction       string
-	returnDirectly    map[string]bool
-	toolInfos         []*schema.ToolInfo
-	deferredToolInfos []*schema.ToolInfo
-	toolSearchTool    *schema.ToolInfo
+	instruction        string
+	returnDirectly     map[string]bool
+	toolInfos          []*schema.ToolInfo // from config.Tools + contributor ToolInfos
+	deferredToolInfos  []*schema.ToolInfo
+	toolSearchTool     *schema.ToolInfo
 	emitInternalEvents bool
+
+	// ToolContributor results (collected once in once.Do).
+	contribTools          []Tool
+	contribToolInfos      []*schema.ToolInfo
+	contribReturnDirectly map[string]bool
 }
 
 // ---- Run function builder ----
@@ -204,9 +225,16 @@ func (a *ReActAgent[M]) buildRunFunc(ctx context.Context) typedRunFunc[M] {
 	var onceRun typedRunFunc[M]
 	a.once.Do(func() {
 		ec, err := a.prepareExecContext(ctx)
-		if err != nil { onceRun = func(_ context.Context, _ *typedRunParams[M]) {}; a.run = onceRun; return }
+		if err != nil {
+			onceRun = func(_ context.Context, _ *typedRunParams[M]) {}
+			a.run = onceRun
+			return
+		}
 		a.exeCtx = ec
-		hasTools := len(a.config.Tools) > 0 || (a.config.ToolsConfig != nil && len(a.config.ToolsConfig.Tools) > 0)
+		// Check for tools: config.Tools + ToolContributor tools
+		hasTools := len(a.config.Tools) > 0 ||
+			(a.config.ToolsConfig != nil && len(a.config.ToolsConfig.Tools) > 0) ||
+			len(ec.contribTools) > 0
 		if !hasTools {
 			onceRun = a.buildNoToolsRunFunc()
 		} else if a.config.GraphReAct {
@@ -219,45 +247,104 @@ func (a *ReActAgent[M]) buildRunFunc(ctx context.Context) typedRunFunc[M] {
 	return a.run
 }
 
-func (a *ReActAgent[M]) prepareExecContext(_ context.Context) (*execContext, error) {
+func (a *ReActAgent[M]) prepareExecContext(ctx context.Context) (*execContext, error) {
 	instruction := a.config.Instruction
-	if instruction == "" { instruction = internal.DefaultSystemPrompt }
+	if instruction == "" {
+		instruction = internal.DefaultSystemPrompt
+	}
 	rd := a.config.ReturnDirectly
-	if rd == nil { rd = make(map[string]bool) }
-	return &execContext{instruction: instruction, returnDirectly: rd, toolInfos: toolsToInfosTyped[M](a.config.Tools), emitInternalEvents: a.config.EmitInternalEvents}, nil
+	if rd == nil {
+		rd = make(map[string]bool)
+	}
+
+	// Collect from ToolContributor middlewares.
+	contribTools := collectContributorTools(ctx, a.config.Middlewares)
+	contribInfos := collectContributorToolInfos(ctx, a.config.Middlewares)
+	contribRD := collectContributorReturnDirectly(ctx, a.config.Middlewares)
+
+	// Merge return-directly.
+	mergedRD := make(map[string]bool, len(rd)+len(contribRD))
+	for k, v := range rd {
+		mergedRD[k] = v
+	}
+	for k, v := range contribRD {
+		mergedRD[k] = v
+	}
+
+	// Merge tool infos from a single source to avoid duplicates:
+	// when ToolsConfig is nil, NewReActAgent populates ToolsConfig.Tools with a.config.Tools,
+	// so building from both sources would produce duplicate entries.
+	var baseInfos []*schema.ToolInfo
+	if a.config.ToolsConfig != nil && len(a.config.ToolsConfig.Tools) > 0 {
+		baseInfos = toolsToInfosTyped[M](a.config.ToolsConfig.Tools)
+	} else {
+		baseInfos = toolsToInfosTyped[M](a.config.Tools)
+	}
+	allInfos := make([]*schema.ToolInfo, 0, len(baseInfos)+len(contribInfos))
+	allInfos = append(allInfos, baseInfos...)
+	allInfos = append(allInfos, contribInfos...)
+
+	return &execContext{
+		instruction:           instruction,
+		returnDirectly:        mergedRD,
+		toolInfos:             allInfos,
+		contribTools:          contribTools,
+		contribToolInfos:      contribInfos,
+		contribReturnDirectly: contribRD,
+		emitInternalEvents:    a.config.EmitInternalEvents,
+	}, nil
 }
 
 // ---- No-tools run function ----
 
 func (a *ReActAgent[M]) buildNoToolsRunFunc() typedRunFunc[M] {
 	return func(ctx context.Context, p *typedRunParams[M]) {
-		// BeforeAgent middleware
-		rc := &ReActAgentContext{Instruction: a.exeCtx.instruction, Tools: a.config.Tools, ReturnDirectly: a.exeCtx.returnDirectly}
-		if err := a.runBeforeAgent(&ctx, rc, p.generator); err != nil { return }
+		// Build allTools: config.Tools + contribTools
+		allTools := make([]Tool, 0, len(a.config.Tools)+len(a.exeCtx.contribTools))
+		allTools = append(allTools, a.config.Tools...)
+		allTools = append(allTools, a.exeCtx.contribTools...)
 
-		model := BuildModelWrapperChain(a.config.Model, nil, a.config)
+		// BeforeAgent middleware
+		rc := &ReActAgentContext{Instruction: a.exeCtx.instruction, Tools: allTools, ReturnDirectly: a.exeCtx.returnDirectly}
+		if err := a.runBeforeAgent(&ctx, rc, p.generator); err != nil {
+			return
+		}
+
+		model := BuildModelWrapperChain(a.config.Model, nil, a.config, a.exeCtx.toolInfos)
 		state := NewReActAgentState(p.input.Messages, a.exeCtx.toolInfos, a.config.MaxIterations)
 
 		// BeforeModelRewrite middleware
 		mc := &TypedModelContext[M]{Tools: state.ToolInfos, ModelRetryConfig: a.config.RetryConfig, ModelFailoverConfig: a.config.FailoverConfig}
-		if err := a.runBeforeModelRewrite(&ctx, &state, mc, p.generator); err != nil { return }
+		if err := a.runBeforeModelRewrite(&ctx, &state, mc, p.generator); err != nil {
+			return
+		}
 
 		if a.config.StateModifier != nil {
 			var err error
 			state, err = a.config.StateModifier(ctx, state)
-			if err != nil { p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("StateModifier: %w", err)}); return }
+			if err != nil {
+				p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("StateModifier: %w", err)})
+				return
+			}
 		}
 
 		modelMsgs := buildModelInputFromState[M](state.Messages, rc.Instruction)
 		resp, err := model.Generate(ctx, modelMsgs)
-		if err != nil { p.generator.Send(&TypedAgentEvent[M]{Err: err}); return }
+		if err != nil {
+			p.generator.Send(&TypedAgentEvent[M]{Err: err})
+			return
+		}
 		p.generator.Send(typedModelOutputEvent(resp, nil))
 		state.Messages = append(state.Messages, resp)
 
 		// AfterModelRewrite middleware
-		if err := a.runAfterModelRewrite(&ctx, &state, mc, p.generator); err != nil { return }
+		if err := a.runAfterModelRewrite(&ctx, &state, mc, p.generator); err != nil {
+			return
+		}
 
-		if a.config.OutputKey != "" && !isNilMessage(resp) { setOutputToSession(ctx, resp, a.config.OutputKey) }
+		if a.config.OutputKey != "" && !isNilMessage(resp) {
+			setOutputToSession(ctx, resp, a.config.OutputKey)
+		}
 
 		// AfterAgent middleware
 		a.runAfterAgent(&ctx, state, p.generator)
@@ -268,7 +355,9 @@ func (a *ReActAgent[M]) buildNoToolsRunFunc() typedRunFunc[M] {
 // Returns a non-nil error if any middleware signals termination.
 func (a *ReActAgent[M]) runBeforeAgent(ctx *context.Context, rc *ReActAgentContext, gen *AsyncGenerator[*TypedAgentEvent[M]]) error {
 	for _, mw := range a.config.Middlewares {
-		if mw == nil { continue }
+		if mw == nil {
+			continue
+		}
 		var err error
 		*ctx, rc, err = mw.BeforeAgent(*ctx, rc)
 		if err != nil {
@@ -282,7 +371,9 @@ func (a *ReActAgent[M]) runBeforeAgent(ctx *context.Context, rc *ReActAgentConte
 // runBeforeModelRewrite executes the BeforeModelRewrite middleware chain.
 func (a *ReActAgent[M]) runBeforeModelRewrite(ctx *context.Context, state **TypedReActAgentState[M], mc *TypedModelContext[M], gen *AsyncGenerator[*TypedAgentEvent[M]]) error {
 	for _, mw := range a.config.Middlewares {
-		if mw == nil { continue }
+		if mw == nil {
+			continue
+		}
 		var err error
 		*ctx, *state, err = mw.BeforeModelRewrite(*ctx, *state, mc)
 		if err != nil {
@@ -296,7 +387,9 @@ func (a *ReActAgent[M]) runBeforeModelRewrite(ctx *context.Context, state **Type
 // runAfterModelRewrite executes the AfterModelRewrite middleware chain.
 func (a *ReActAgent[M]) runAfterModelRewrite(ctx *context.Context, state **TypedReActAgentState[M], mc *TypedModelContext[M], gen *AsyncGenerator[*TypedAgentEvent[M]]) error {
 	for _, mw := range a.config.Middlewares {
-		if mw == nil { continue }
+		if mw == nil {
+			continue
+		}
 		var err error
 		*ctx, *state, err = mw.AfterModelRewrite(*ctx, *state, mc)
 		if err != nil {
@@ -310,7 +403,9 @@ func (a *ReActAgent[M]) runAfterModelRewrite(ctx *context.Context, state **Typed
 // runAfterAgent executes the AfterAgent middleware chain.
 func (a *ReActAgent[M]) runAfterAgent(ctx *context.Context, state *TypedReActAgentState[M], gen *AsyncGenerator[*TypedAgentEvent[M]]) {
 	for _, mw := range a.config.Middlewares {
-		if mw == nil { continue }
+		if mw == nil {
+			continue
+		}
 		var err error
 		*ctx, err = mw.AfterAgent(*ctx, state)
 		if err != nil {
@@ -324,15 +419,21 @@ func (a *ReActAgent[M]) runAfterAgent(ctx *context.Context, state *TypedReActAge
 
 func buildModelInputFromState[M MessageType](messages []M, instruction string) []M {
 	var msgs []M
-	if instruction != "" { msgs = append(msgs, any(schema.SystemMessage(instruction)).(M)) }
-	for _, m := range messages { msgs = append(msgs, m) }
+	if instruction != "" {
+		msgs = append(msgs, any(schema.SystemMessage(instruction)).(M))
+	}
+	for _, m := range messages {
+		msgs = append(msgs, m)
+	}
 	return msgs
 }
 
 func setOutputToSession[M MessageType](ctx context.Context, msg M, key string) {
 	if !isNilMessage(msg) {
 		s := getSession(ctx)
-		if s != nil { s.Values[key] = extractTextContent(msg) }
+		if s != nil {
+			s.Values[key] = extractTextContent(msg)
+		}
 	}
 }
 
@@ -350,19 +451,27 @@ func toolsToInfosTyped[M MessageType](tools []Tool) []*schema.ToolInfo {
 
 func extractTextContent[M MessageType](msg M) string {
 	switch v := any(msg).(type) {
-	case *schema.Message: return v.Content
+	case *schema.Message:
+		return v.Content
 	case *schema.AgenticMessage:
 		var texts []string
-		for _, b := range v.ContentBlocks { if b.Type == "text" { texts = append(texts, b.Text) } }
+		for _, b := range v.ContentBlocks {
+			if b.Type == "text" {
+				texts = append(texts, b.Text)
+			}
+		}
 		return strings.Join(texts, "\n")
-	default: return ""
+	default:
+		return ""
 	}
 }
 
 // findTool finds a tool by name from a list of tools.
 func findTool(tools []Tool, name string) Tool {
 	for _, t := range tools {
-		if t.Name() == name { return t }
+		if t.Name() == name {
+			return t
+		}
 	}
 	return nil
 }
@@ -372,13 +481,15 @@ func findTool(tools []Tool, name string) Tool {
 func extractToolCalls[M MessageType](resp M) []schema.ToolCall {
 	switch v := any(resp).(type) {
 	case *schema.Message:
-		if len(v.ToolCalls) > 0 { return v.ToolCalls }
+		if len(v.ToolCalls) > 0 {
+			return v.ToolCalls
+		}
 	case *schema.AgenticMessage:
 		var tc []schema.ToolCall
 		for _, b := range v.ContentBlocks {
 			if b.Type == "tool_use" && b.ToolCall != nil && b.ToolCall.ID != "" && b.ToolCall.Name != "" {
 				tc = append(tc, schema.ToolCall{
-					ID: b.ToolCall.ID,
+					ID:       b.ToolCall.ID,
 					Function: schema.ToolCallFunction{Name: b.ToolCall.Name, Arguments: b.ToolCall.Arguments},
 				})
 			}
@@ -390,7 +501,9 @@ func extractToolCalls[M MessageType](resp M) []schema.ToolCall {
 
 // streamWithCancel wraps a streaming model call with cancel detection.
 func streamWithCancel[M MessageType](s *schema.StreamReader[M], cc *cancelContext) *schema.StreamReader[M] {
-	if cc == nil { return s }
+	if cc == nil {
+		return s
+	}
 	select {
 	case <-cc.immediateChan:
 		s.Close()
@@ -405,7 +518,10 @@ func streamWithCancel[M MessageType](s *schema.StreamReader[M], cc *cancelContex
 	go func() {
 		defer r.Close()
 		defer s.Close()
-		ch := make(chan struct{ Data M; Err error }, 64)
+		ch := make(chan struct {
+			Data M
+			Err  error
+		}, 64)
 		go func() {
 			defer close(ch)
 			for {
@@ -421,7 +537,10 @@ func streamWithCancel[M MessageType](s *schema.StreamReader[M], cc *cancelContex
 				default:
 				}
 				select {
-				case ch <- struct{ Data M; Err error }{d, e}:
+				case ch <- struct {
+					Data M
+					Err  error
+				}{d, e}:
 				case <-cc.immediateChan:
 					return
 				}
@@ -450,9 +569,13 @@ func streamWithCancel[M MessageType](s *schema.StreamReader[M], cc *cancelContex
 // getChatModelExecCtx retrieves the chat model execution context from context.
 func getChatModelExecCtx(ctx context.Context) *reActExecCtx {
 	rc := getRunCtx(ctx)
-	if rc == nil { return nil }
+	if rc == nil {
+		return nil
+	}
 	// The exec ctx is stored on the run session or passed via context value
-	if ec, ok := rc.Session.Values["__exec_ctx"].(*reActExecCtx); ok { return ec }
+	if ec, ok := rc.Session.Values["__exec_ctx"].(*reActExecCtx); ok {
+		return ec
+	}
 	return nil
 }
 
@@ -478,7 +601,7 @@ func preprocessCheckpointData(data any) any { return data }
 //	cfg := DefaultReActConfig[*schema.Message]()
 //	cfg.GraphReAct = true
 //	cfg.GraphReActCheckpointer = checkpoint.NewMemorySaver()  // optional
-func WithGraphReAct[M MessageType](cfg *ReActConfig[M], cptr graph.Checkpointer) {
+func WithGraphReAct[M MessageType](cfg *ReActConfig[M], cptr checkpoint.BaseCheckpointer) {
 	cfg.GraphReAct = true
 	cfg.GraphReActCheckpointer = cptr
 }
@@ -524,7 +647,7 @@ func (a *ReActAgent[M]) buildGraphReActRunFunc() typedRunFunc[M] {
 			return
 		}
 
-		rg, err := NewReActGraph(msgAgent, graphCfg)
+		rg, err := NewReActGraph(msgAgent, graphCfg, a.exeCtx.toolInfos)
 		if err != nil {
 			p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("NewReActGraph: %w", err)})
 			return

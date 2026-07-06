@@ -32,7 +32,7 @@ The Unix installer:
 
 - detects `linux` or `darwin`
 - detects `amd64` or `arm64`
-- downloads `ragflow_cli-{VERSION}-{OS}-{ARCH}`
+- downloads `ragflow-cli-{VERSION}-{OS}-{ARCH}`
 - verifies the file with the release `SHA256SUMS`
 - installs to `/usr/local/bin` by default
 
@@ -59,7 +59,7 @@ Install to a custom directory:
 The Windows installer:
 
 - detects `windows/amd64` or `windows/arm64`
-- downloads `ragflow_cli-{VERSION}-windows-{ARCH}.exe`
+- downloads `ragflow-cli-{VERSION}-windows-{ARCH}.exe`
 - verifies the file with the release `SHA256SUMS`
 - installs to `$env:LOCALAPPDATA\Programs\RAGFlow` by default
 - adds the install directory to the user `PATH`
@@ -69,12 +69,12 @@ The Windows installer:
 The install scripts expect these names:
 
 ```text
-ragflow_cli-v1.0.0-linux-amd64
-ragflow_cli-v1.0.0-linux-arm64
-ragflow_cli-v1.0.0-darwin-amd64
-ragflow_cli-v1.0.0-darwin-arm64
-ragflow_cli-v1.0.0-windows-amd64.exe
-ragflow_cli-v1.0.0-windows-arm64.exe
+ragflow-cli-v1.0.0-linux-amd64
+ragflow-cli-v1.0.0-linux-arm64
+ragflow-cli-v1.0.0-darwin-amd64
+ragflow-cli-v1.0.0-darwin-arm64
+ragflow-cli-v1.0.0-windows-amd64.exe
+ragflow-cli-v1.0.0-windows-arm64.exe
 SHA256SUMS
 install.sh
 install.ps1

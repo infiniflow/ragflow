@@ -6652,14 +6652,20 @@
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-4-flash-250414",
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-4-long",
@@ -6709,7 +6715,10 @@
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-4.5-x",
@@ -6731,6 +6740,9 @@
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -23989,18 +24001,14 @@
     },
     {
       "name": "paddleocr/paddleocr-vl-0.9b",
-      "alias": [
-        "paddleocr-vl-1.5"
-      ],
+      "alias": [],
       "model_types": [
         "ocr"
       ]
     },
     {
       "name": "paddleocr/pp-ocrv5",
-      "alias": [
-        "PP-OCRv5"
-      ],
+      "alias": [],
       "model_types": [
         "ocr"
       ],
@@ -24008,9 +24016,7 @@
     },
     {
       "name": "paddleocr/pp-structurev3",
-      "alias": [
-        "PP-StructureV3"
-      ],
+      "alias": [],
       "model_types": [
         "ocr"
       ],
@@ -24031,9 +24037,7 @@
     },
     {
       "name": "paddlepaddle/paddleocr-vl",
-      "alias": [
-        "paddleocr-vl"
-      ],
+      "alias": [],
       "max_tokens": 16384,
       "max_completion_tokens": 16384,
       "model_types": [
@@ -25049,7 +25053,9 @@
     },
     {
       "name": "qwen/qwen3.5-plus-20260420",
-      "alias": [],
+      "alias": [
+        "qwen3.5-plus-2026-04-20"
+      ],
       "model_types": [
         "chat",
         "vision",
@@ -31028,7 +31034,8 @@
     {
       "name": "qwen/qwen-turbo-2024-09-19",
       "alias": [
-        "qwen-turbo-2024-09-19"
+        "qwen-turbo-2024-09-19",
+        "qwen-turbo-0919"
       ],
       "model_types": [
         "chat"
@@ -31181,7 +31188,8 @@
     {
       "name": "qwen/qwen-1_8b",
       "alias": [
-        "qwen-1_8b"
+        "qwen-1_8b",
+        "qwen-1.8b-chat"
       ],
       "model_types": [
         "chat"
@@ -37357,6 +37365,9 @@
         "glm-5.2",
         "glm-5-2"
       ],
+      "tools": {
+        "support": true
+      },
       "model_types": [
         "chat"
       ]
@@ -37371,6 +37382,9 @@
         "Z-AI/GLM 5.1",
         "GLM 5.1 FP4"
       ],
+      "tools": {
+        "support": true
+      },
       "model_types": [
         "chat"
       ],
@@ -39171,6 +39185,252 @@
         "default_value": true,
         "clear_thinking": true
       }
+    },
+    {
+      "name": "qwen/qwen-image-2.0-pro-2026-06-22",
+      "alias": [
+        "qwen-image-2.0-pro-2026-06-22"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation",
+        "image"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-2.0-pro-2026-04-22",
+      "alias": [
+        "qwen-image-2.0-pro-2026-04-22"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation",
+        "image"
+      ]
+    },
+    {
+      "name": "qwen/qwen3.5-ocr",
+      "alias": [
+        "qwen3.5-ocr"
+      ],
+      "model_types": [
+        "ocr",
+        "image2text",
+        "vision"
+      ],
+      "max_tokens": 32768
+    },
+    {
+      "name": "qwen/qwen3.7-max-2026-05-17",
+      "alias": [
+        "qwen3.7-max-2026-05-17"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "max_tokens": 1000000,
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-livetranslate-flash-realtime-2026-05-19",
+      "alias": [
+        "qwen3.5-livetranslate-flash-realtime-2026-05-19"
+      ],
+      "model_types": [
+        "speech_translation",
+        "audio2text",
+        "speech2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3.5-livetranslate-flash-realtime",
+      "alias": [
+        "qwen3.5-livetranslate-flash-realtime"
+      ],
+      "model_types": [
+        "speech_translation",
+        "audio2text",
+        "speech2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen-deep-research-2025-12-15",
+      "alias": [
+        "qwen-deep-research-2025-12-15"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 1000000
+    },
+    {
+      "name": "qwen/qwen-flash-character-2026-02-26",
+      "alias": [
+        "qwen-flash-character-2026-02-26"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 1000000
+    },
+    {
+      "name": "qwen/qwen3.5-omni-plus-realtime-2026-03-15",
+      "alias": [
+        "qwen3.5-omni-plus-realtime-2026-03-15"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-omni-plus-realtime",
+      "alias": [
+        "qwen3.5-omni-plus-realtime"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-omni-flash-realtime-2026-03-15",
+      "alias": [
+        "qwen3.5-omni-flash-realtime-2026-03-15"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-omni-flash-realtime",
+      "alias": [
+        "qwen3.5-omni-flash-realtime"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen-plus-2025-11-05",
+      "alias": [
+        "qwen-plus-2025-11-05"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 1000000,
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen-deep-search-planning",
+      "alias": [
+        "qwen-deep-search-planning"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 131072
+    },
+    {
+      "name": "qwen/qwen3-s2s-flash-realtime-2025-09-22",
+      "alias": [
+        "qwen3-s2s-flash-realtime-2025-09-22"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen-max-1201",
+      "alias": [
+        "qwen-max-1201"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 131072
+    },
+    {
+      "name": "qwen/qwen-max-longcontext",
+      "alias": [
+        "qwen-max-longcontext"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 32768
+    },
+    {
+      "name": "qwen/qwen-max-0107",
+      "alias": [
+        "qwen-max-0107"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 131072
+    },
+    {
+      "name": "qwen/qwen-1.8b-longcontext-chat",
+      "alias": [
+        "qwen-1.8b-longcontext-chat"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 32768
     }
   ]
 }

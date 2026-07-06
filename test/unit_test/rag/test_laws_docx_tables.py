@@ -16,6 +16,7 @@
 
 import sys
 import types
+from importlib import import_module, reload
 from io import BytesIO
 
 import pytest
@@ -37,12 +38,32 @@ class _DummyBase:
         pass
 
 
-_stub("deepdoc.parser", PdfParser=_DummyBase, DocxParser=_DummyBase, HtmlParser=_DummyBase)
-_stub("deepdoc.parser.utils", get_text=lambda *a, **k: "")
-_stub("rag.app.naive", by_plaintext=lambda *a, **k: ([], [], None), PARSERS={})
-_stub("common.parser_config_utils", normalize_layout_recognizer=lambda x: (x, None))
+@pytest.fixture(scope="module")
+def docx_chunker():
+    original_modules = {
+        name: sys.modules.get(name)
+        for name in (
+            "deepdoc.parser",
+            "deepdoc.parser.utils",
+            "rag.app.naive",
+            "common.parser_config_utils",
+        )
+    }
 
-from rag.app.laws import Docx  # noqa: E402
+    try:
+        _stub("deepdoc.parser", PdfParser=_DummyBase, DocxParser=_DummyBase, HtmlParser=_DummyBase)
+        _stub("deepdoc.parser.utils", get_text=lambda *a, **k: "")
+        _stub("rag.app.naive", by_plaintext=lambda *a, **k: ([], [], None), PARSERS={})
+        _stub("common.parser_config_utils", normalize_layout_recognizer=lambda x: (x, None))
+        module = import_module("rag.app.laws")
+        module = reload(module)
+        yield module.Docx
+    finally:
+        for name, original in original_modules.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
 
 
 def _build_docx(builder):
@@ -54,7 +75,7 @@ def _build_docx(builder):
 
 
 @pytest.mark.p2
-def test_laws_docx_preserves_table():
+def test_laws_docx_preserves_table(docx_chunker):
     """Regression for #16008: the laws DOCX parser dropped tables entirely."""
 
     def builder(d):
@@ -67,7 +88,7 @@ def test_laws_docx_preserves_table():
         t.cell(1, 0).text = "Registration"
         t.cell(1, 1).text = "100"
 
-    chunks = Docx()("law.docx", _build_docx(builder))
+    chunks = docx_chunker()("law.docx", _build_docx(builder))
 
     assert any("<table>" in c for c in chunks)
     table_chunk = next(c for c in chunks if "<table>" in c)
@@ -78,7 +99,7 @@ def test_laws_docx_preserves_table():
 
 
 @pytest.mark.p2
-def test_laws_docx_merged_cells_use_colspan():
+def test_laws_docx_merged_cells_use_colspan(docx_chunker):
     def builder(d):
         d.add_heading("Heading", level=1)
         t = d.add_table(rows=1, cols=3)
@@ -87,20 +108,20 @@ def test_laws_docx_merged_cells_use_colspan():
         t.cell(0, 1).text = "Merged"
         t.cell(0, 2).text = "Other"
 
-    chunks = Docx()("law.docx", _build_docx(builder))
+    chunks = docx_chunker()("law.docx", _build_docx(builder))
     table_chunk = next(c for c in chunks if "<table>" in c)
     assert "colspan='2'" in table_chunk
     assert "<td>Other</td>" in table_chunk
 
 
 @pytest.mark.p2
-def test_laws_docx_escapes_cell_html():
+def test_laws_docx_escapes_cell_html(docx_chunker):
     def builder(d):
         d.add_heading("Heading", level=1)
         t = d.add_table(rows=1, cols=1)
         t.cell(0, 0).text = "a < b & c > d"
 
-    chunks = Docx()("law.docx", _build_docx(builder))
+    chunks = docx_chunker()("law.docx", _build_docx(builder))
     table_chunk = next(c for c in chunks if "<table>" in c)
     # Special characters are HTML-escaped so the table markup stays well-formed.
     assert "a &lt; b &amp; c &gt; d" in table_chunk
@@ -108,17 +129,17 @@ def test_laws_docx_escapes_cell_html():
 
 
 @pytest.mark.p2
-def test_laws_docx_tables_only_does_not_crash():
+def test_laws_docx_tables_only_does_not_crash(docx_chunker):
     def builder(d):
         t = d.add_table(rows=1, cols=2)
         t.cell(0, 0).text = "a"
         t.cell(0, 1).text = "b"
 
-    chunks = Docx()("law.docx", _build_docx(builder))
+    chunks = docx_chunker()("law.docx", _build_docx(builder))
     assert any("<table>" in c for c in chunks)
 
 
 @pytest.mark.p2
-def test_laws_docx_empty_doc_returns_empty():
-    chunks = Docx()("law.docx", _build_docx(lambda d: None))
+def test_laws_docx_empty_doc_returns_empty(docx_chunker):
+    chunks = docx_chunker()("law.docx", _build_docx(lambda d: None))
     assert chunks == []

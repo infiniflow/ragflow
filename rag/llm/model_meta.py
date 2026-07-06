@@ -77,10 +77,11 @@ class VolcEngine(Base):
         serving_model = [model for model in raw_model_list["data"] if model.get("status", "") != "Shutdown"]
         res = []
         for model in serving_model:
-
             model_types = []
 
             if model.get("domain", "") == "Embedding":
+                model_types.append(LLMType.EMBEDDING.value)
+            elif set(model.get("task_type", [])) & {"TextEmbedding", "ImageEmbedding"}:
                 model_types.append(LLMType.EMBEDDING.value)
             else:
                 modalities = model.get("modalities", {})
@@ -107,13 +108,9 @@ class VolcEngine(Base):
             if model.get("token_limits", {}).get("max_reasoning_token_length", 0) > 0:
                 features.append("thinking")
 
-            res.append({
-                "name": model["id"],
-                "model_types": model_types,
-                "features": features,
-                "max_tokens": model.get("token_limits", {}).get("max_input_token_length", 8192),
-                "status": model.get("status")
-            })
+            res.append(
+                {"name": model["id"], "model_types": model_types, "features": features, "max_tokens": model.get("token_limits", {}).get("max_input_token_length", 8192), "status": model.get("status")}
+            )
         return res
 
 
@@ -467,3 +464,16 @@ class VLLM(OpenAIAPICompatible):
 
 class LMStudio(OpenAIAPICompatible):
     _FACTORY_NAME = "LM-Studio"
+
+
+class NewAPI(OpenAIAPICompatible):
+    _FACTORY_NAME = "New API"
+
+    def _get_api_key(self):
+        try:
+            parsed = json.loads(self.api_key)
+            if isinstance(parsed, dict):
+                return parsed.get("api_key", self.api_key)
+        except (JSONDecodeError, TypeError):
+            pass
+        return self.api_key

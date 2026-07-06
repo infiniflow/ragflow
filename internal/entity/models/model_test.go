@@ -346,8 +346,8 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if provider.ModelDriver.Name() != "siliconflow" {
 		t.Errorf("ModelDriver.Name()=%q", provider.ModelDriver.Name())
 	}
-	if len(provider.Models) != 12 {
-		t.Fatalf("SiliconFlow model count=%d, want 12", len(provider.Models))
+	if len(provider.Models) != 13 {
+		t.Fatalf("SiliconFlow model count=%d, want 13", len(provider.Models))
 	}
 
 	deepSeekV4Pro, err := pm.GetModelByName("SiliconFlow", "Pro/deepseek-ai/DeepSeek-V4-Pro")

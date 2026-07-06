@@ -17,6 +17,7 @@ from abc import ABC
 import pandas as pd
 import requests
 from agent.component.base import ComponentBase, ComponentParamBase
+from common.http_client import DEFAULT_TIMEOUT
 
 
 class QWeatherParam(ComponentParamBase):
@@ -29,7 +30,7 @@ class QWeatherParam(ComponentParamBase):
         self.web_apikey = "xxx"
         self.lang = "zh"
         self.type = "weather"
-        self.user_type = 'free'
+        self.user_type = "free"
         self.error_code = {
             "204": "The request was successful, but the region you are querying does not have the data you need at this time.",
             "400": "Request error, may contain incorrect request parameters or missing mandatory request parameters.",
@@ -38,20 +39,53 @@ class QWeatherParam(ComponentParamBase):
             "403": "No access, may be the binding PackageName, BundleID, domain IP address is inconsistent, or the data that requires additional payment.",
             "404": "The queried data or region does not exist.",
             "429": "Exceeded the limited QPM (number of accesses per minute), please refer to the QPM description",
-            "500": "No response or timeout, interface service abnormality please contact us"
-            }
+            "500": "No response or timeout, interface service abnormality please contact us",
+        }
         # Weather
-        self.time_period = 'now'
+        self.time_period = "now"
 
     def check(self):
         self.check_empty(self.web_apikey, "BaiduFanyi APPID")
         self.check_valid_value(self.type, "Type", ["weather", "indices", "airquality"])
         self.check_valid_value(self.user_type, "Free subscription or paid subscription", ["free", "paid"])
-        self.check_valid_value(self.lang, "Use language",
-                               ['zh', 'zh-hant', 'en', 'de', 'es', 'fr', 'it', 'ja', 'ko', 'ru', 'hi', 'th', 'ar', 'pt',
-                                'bn', 'ms', 'nl', 'el', 'la', 'sv', 'id', 'pl', 'tr', 'cs', 'et', 'vi', 'fil', 'fi',
-                                'he', 'is', 'nb'])
-        self.check_valid_value(self.time_period, "Time period", ['now', '3d', '7d', '10d', '15d', '30d'])
+        self.check_valid_value(
+            self.lang,
+            "Use language",
+            [
+                "zh",
+                "zh-hant",
+                "en",
+                "de",
+                "es",
+                "fr",
+                "it",
+                "ja",
+                "ko",
+                "ru",
+                "hi",
+                "th",
+                "ar",
+                "pt",
+                "bn",
+                "ms",
+                "nl",
+                "el",
+                "la",
+                "sv",
+                "id",
+                "pl",
+                "tr",
+                "cs",
+                "et",
+                "vi",
+                "fil",
+                "fi",
+                "he",
+                "is",
+                "nb",
+            ],
+        )
+        self.check_valid_value(self.time_period, "Time period", ["now", "3d", "7d", "10d", "15d", "30d"])
 
 
 class QWeather(ComponentBase, ABC):
@@ -70,8 +104,7 @@ class QWeather(ComponentBase, ABC):
             if self.check_if_canceled("Qweather processing"):
                 return
 
-            response = requests.get(
-                url="https://geoapi.qweather.com/v2/city/lookup?location=" + ans + "&key=" + self._param.web_apikey).json()
+            response = requests.get(url="https://geoapi.qweather.com/v2/city/lookup?location=" + ans + "&key=" + self._param.web_apikey, timeout=DEFAULT_TIMEOUT).json()
             if response["code"] == "200":
                 location_id = response["location"][0]["id"]
             else:
@@ -80,11 +113,11 @@ class QWeather(ComponentBase, ABC):
             if self.check_if_canceled("Qweather processing"):
                 return
 
-            base_url = "https://api.qweather.com/v7/" if self._param.user_type == 'paid' else "https://devapi.qweather.com/v7/"
+            base_url = "https://api.qweather.com/v7/" if self._param.user_type == "paid" else "https://devapi.qweather.com/v7/"
 
             if self._param.type == "weather":
                 url = base_url + "weather/" + self._param.time_period + "?location=" + location_id + "&key=" + self._param.web_apikey + "&lang=" + self._param.lang
-                response = requests.get(url=url).json()
+                response = requests.get(url=url, timeout=DEFAULT_TIMEOUT).json()
                 if self.check_if_canceled("Qweather processing"):
                     return
                 if response["code"] == "200":
@@ -104,12 +137,11 @@ class QWeather(ComponentBase, ABC):
 
             elif self._param.type == "indices":
                 url = base_url + "indices/1d?type=0&location=" + location_id + "&key=" + self._param.web_apikey + "&lang=" + self._param.lang
-                response = requests.get(url=url).json()
+                response = requests.get(url=url, timeout=DEFAULT_TIMEOUT).json()
                 if self.check_if_canceled("Qweather processing"):
                     return
                 if response["code"] == "200":
-                    indices_res = response["daily"][0]["date"] + "\n" + "\n".join(
-                        [i["name"] + ": " + i["category"] + ", " + i["text"] for i in response["daily"]])
+                    indices_res = response["daily"][0]["date"] + "\n" + "\n".join([i["name"] + ": " + i["category"] + ", " + i["text"] for i in response["daily"]])
                     return QWeather.be_output(indices_res)
 
                 else:
@@ -117,7 +149,7 @@ class QWeather(ComponentBase, ABC):
 
             elif self._param.type == "airquality":
                 url = base_url + "air/now?location=" + location_id + "&key=" + self._param.web_apikey + "&lang=" + self._param.lang
-                response = requests.get(url=url).json()
+                response = requests.get(url=url, timeout=DEFAULT_TIMEOUT).json()
                 if self.check_if_canceled("Qweather processing"):
                     return
                 if response["code"] == "200":

@@ -319,7 +319,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		chatKwargs["doc_ids"] = docIDsStr
 	}
 
-	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
+	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, userID, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
 	if asyncErr != nil {
 		s.writeDataError(c, asyncErr.Error())
 		return
@@ -644,16 +644,16 @@ func formatChunks(chunks []map[string]interface{}) []FormattedChunk {
 	for _, chunk := range chunks {
 		out = append(out, FormattedChunk{
 			ID:               strVal(getValue(chunk, "chunk_id", "id")),
-			Content:          strVal(getValue(chunk, "content", "content_with_weight")),
+			Content:          strVal(getValue(chunk, "content_with_weight", "content")),
 			DocumentID:       strVal(getValue(chunk, "doc_id", "document_id")),
 			DocumentName:     strVal(getValue(chunk, "docnm_kwd", "document_name")),
 			DatasetID:        strVal(getValue(chunk, "kb_id", "dataset_id")),
 			ImageID:          strVal(getValue(chunk, "image_id", "img_id")),
 			Positions:        getValue(chunk, "positions", "position_int"),
 			URL:              chunk["url"],
-			Similarity:       chunk["similarity"],
-			VectorSimilarity: chunk["vector_similarity"],
-			TermSimilarity:   chunk["term_similarity"],
+			Similarity:       sanitizeJSONFloats(chunk["similarity"]),
+			VectorSimilarity: sanitizeJSONFloats(chunk["vector_similarity"]),
+			TermSimilarity:   sanitizeJSONFloats(chunk["term_similarity"]),
 			RowID:            chunk["row_id"],
 			DocType:          getValue(chunk, "doc_type_kwd", "doc_type"),
 			DocumentMetadata: chunk["document_metadata"],

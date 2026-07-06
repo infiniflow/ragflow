@@ -24,11 +24,12 @@ from typing import List
 
 class Colors:
     """ANSI color codes for terminal output"""
-    RED = '\033[0;31m'
-    GREEN = '\033[0;32m'
-    YELLOW = '\033[1;33m'
-    BLUE = '\033[0;34m'
-    NC = '\033[0m'  # No Color
+
+    RED = "\033[0;31m"
+    GREEN = "\033[0;32m"
+    YELLOW = "\033[1;33m"
+    BLUE = "\033[0;34m"
+    NC = "\033[0m"  # No Color
 
 
 class TestRunner:
@@ -36,7 +37,7 @@ class TestRunner:
 
     def __init__(self):
         self.project_root = Path(__file__).parent.resolve()
-        self.ut_dir = Path(self.project_root / 'test' / 'unit_test')
+        self.ut_dir = Path(self.project_root / "test" / "unit_test")
         # Default options
         self.coverage = False
         self.parallel = False
@@ -84,7 +85,7 @@ EXAMPLES:
 
     # Run in parallel
     python run_tests.py --parallel
-    
+
     # Run tests with "-W ignore::SyntaxWarning" option
     python run_tests.py --ignore
 
@@ -127,17 +128,14 @@ EXAMPLES:
         if self.coverage:
             # Relative path from test directory to source code
             source_path = str(self.project_root / "common")
-            cmd.extend([
-                "--cov", source_path,
-                "--cov-report", "html",
-                "--cov-report", "term"
-            ])
+            cmd.extend(["--cov", source_path, "--cov-report", "html", "--cov-report", "term"])
 
         # Add parallel execution
         if self.parallel:
             # Try to get number of CPU cores
             try:
                 import multiprocessing
+
                 cpu_count = multiprocessing.cpu_count()
                 cmd.extend(["-n", str(cpu_count)])
             except ImportError:
@@ -223,53 +221,22 @@ Examples:
   python run_tests.py --test services/test_dialog_service.py  # Run specific test
   python run_tests.py --markers "unit"   # Run only unit tests
   python run_tests.py --ignore           # Run with "-W ignore::SyntaxWarning" option
-"""
+""",
         )
 
-        parser.add_argument(
-            "-c", "--coverage",
-            action="store_true",
-            help="Run tests with coverage report"
-        )
+        parser.add_argument("-c", "--coverage", action="store_true", help="Run tests with coverage report")
 
-        parser.add_argument(
-            "-p", "--parallel",
-            action="store_true",
-            help="Run tests in parallel (requires pytest-xdist)"
-        )
+        parser.add_argument("-p", "--parallel", action="store_true", help="Run tests in parallel (requires pytest-xdist)")
 
-        parser.add_argument(
-            "-i", "--ignore",
-            action="store_true",
-            help="Run tests with '-W ignore::SyntaxWarning' "
-        )
+        parser.add_argument("-i", "--ignore", action="store_true", help="Run tests with '-W ignore::SyntaxWarning' ")
 
-        parser.add_argument(
-            "-v", "--verbose",
-            action="store_true",
-            help="Verbose output"
-        )
+        parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
-        parser.add_argument(
-            "-t", "--test",
-            type=str,
-            default="",
-            help="Run specific test file or directory"
-        )
+        parser.add_argument("-t", "--test", type=str, default="", help="Run specific test file or directory")
 
-        parser.add_argument(
-            "-k", "--keyword",
-            type=str,
-            default="",
-            help="Run tests matching keyword expression (pytest -k)"
-        )
+        parser.add_argument("-k", "--keyword", type=str, default="", help="Run tests matching keyword expression (pytest -k)")
 
-        parser.add_argument(
-            "-m", "--markers",
-            type=str,
-            default="",
-            help="Run tests with specific markers (e.g., 'unit', 'integration')"
-        )
+        parser.add_argument("-m", "--markers", type=str, default="", help="Run tests with specific markers (e.g., 'unit', 'integration')")
 
         try:
             args = parser.parse_args()

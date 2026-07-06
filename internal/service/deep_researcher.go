@@ -31,7 +31,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/service/kg"
+	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 
@@ -266,6 +266,10 @@ func (dr *DeepResearcher) _research(
 
 	if suff.IsSufficient {
 		if callback != nil {
+			// string-emitting function (SSE delta to the chat client),
+			// not SQL or a shell. The single-quotes here are typographic
+			// punctuation, not string delimiters in a structured sink.
+			// codeql[go/unsafe-quoting] False positive: callback is a
 			callback(fmt.Sprintf("Yes, the retrieved information is sufficient for '%s'.", question))
 		}
 		return retContent, nil
@@ -382,7 +386,7 @@ func (dr *DeepResearcher) _retrieve_information(ctx context.Context, query strin
 
 	// 3. Knowledge graph retrieval
 	if useKG, _ := dr.PromptConfig["use_kg"].(bool); useKG && dr.ChatModel != nil && len(dr.KbIDs) > 0 {
-		kgPipeline := kg.NewPipeline(dr.DocEngine, dr.KbIDs, dr.TenantIDs, query)
+		kgPipeline := graph.NewPipeline(dr.DocEngine, dr.KbIDs, dr.TenantIDs, query)
 		kgPipeline.SetChatModel(dr.ChatModel)
 		if dr.EmbModel != nil {
 			kgPipeline.SetEmbModel(dr.EmbModel)

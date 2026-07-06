@@ -124,7 +124,7 @@ class TestAsExtraDict:
 
     def test_returns_empty_dict_for_non_dict_json(self):
         """Test that non-dict JSON returns empty dict."""
-        input_str = '[1, 2, 3]'
+        input_str = "[1, 2, 3]"
         result = _as_extra_dict(input_str)
         assert result == {}
 
@@ -208,32 +208,19 @@ class TestCollectRaptorMethods:
 
     def test_collects_methods_from_raptor_chunks(self):
         """Test that methods are collected from RAPTOR chunks."""
-        field_map = {
-            "chunk_1": {
-                "raptor_kwd": "raptor",
-                "extra": {"raptor_method": PSI_TREE_BUILDER}
-            }
-        }
+        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": PSI_TREE_BUILDER}}}
         result = collect_raptor_methods(field_map)
         assert result == {PSI_TREE_BUILDER}
 
     def test_skips_non_raptor_chunks(self):
         """Test that non-RAPTOR chunks are skipped."""
-        field_map = {
-            "chunk_1": {
-                "raptor_kwd": "other",
-                "extra": {"raptor_method": PSI_TREE_BUILDER}
-            }
-        }
+        field_map = {"chunk_1": {"raptor_kwd": "other", "extra": {"raptor_method": PSI_TREE_BUILDER}}}
         result = collect_raptor_methods(field_map)
         assert result == set()
 
     def test_collects_multiple_methods(self):
         """Test that multiple methods are collected."""
-        field_map = {
-            "chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}},
-            "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}}
-        }
+        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}, "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}}}
         result = collect_raptor_methods(field_map)
         assert result == {RAPTOR_TREE_BUILDER, PSI_TREE_BUILDER}
 
@@ -248,28 +235,19 @@ class TestCollectRaptorChunkIds:
 
     def test_collects_ids_of_raptor_chunks(self):
         """Test that IDs of RAPTOR chunks are collected."""
-        field_map = {
-            "chunk_1": {"raptor_kwd": "raptor"},
-            "chunk_2": {"raptor_kwd": "raptor"}
-        }
+        field_map = {"chunk_1": {"raptor_kwd": "raptor"}, "chunk_2": {"raptor_kwd": "raptor"}}
         result = collect_raptor_chunk_ids(field_map)
         assert result == {"chunk_1", "chunk_2"}
 
     def test_excludes_specified_methods(self):
         """Test that specified methods are excluded."""
-        field_map = {
-            "chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}},
-            "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}}
-        }
+        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}, "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}}}
         result = collect_raptor_chunk_ids(field_map, exclude_methods={"raptor"})
         assert result == {"chunk_2"}
 
     def test_skips_non_raptor_chunks(self):
         """Test that non-RAPTOR chunks are skipped."""
-        field_map = {
-            "chunk_1": {"raptor_kwd": "raptor"},
-            "chunk_2": {"raptor_kwd": "other"}
-        }
+        field_map = {"chunk_1": {"raptor_kwd": "raptor"}, "chunk_2": {"raptor_kwd": "other"}}
         result = collect_raptor_chunk_ids(field_map)
         assert result == {"chunk_1"}
 
@@ -400,17 +378,11 @@ class TestShouldSkipRaptor:
 
     def test_respects_auto_disable_config_false(self):
         """Test that auto_disable_for_structured_data=False disables skipping."""
-        assert should_skip_raptor(
-            file_type=".xlsx",
-            raptor_config={"auto_disable_for_structured_data": False}
-        ) is False
+        assert should_skip_raptor(file_type=".xlsx", raptor_config={"auto_disable_for_structured_data": False}) is False
 
     def test_respects_auto_disable_config_true(self):
         """Test that auto_disable_for_structured_data=True enables skipping."""
-        assert should_skip_raptor(
-            file_type=".xlsx",
-            raptor_config={"auto_disable_for_structured_data": True}
-        ) is True
+        assert should_skip_raptor(file_type=".xlsx", raptor_config={"auto_disable_for_structured_data": True}) is True
 
     def test_default_auto_disable_is_true(self):
         """Test that default auto_disable is True."""
