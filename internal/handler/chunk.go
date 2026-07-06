@@ -582,6 +582,21 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 
 	err := h.chunkService.UpdateChunk(&req, user.ID)
 	if err != nil {
+		var coded interface {
+			Code() common.ErrorCode
+		}
+		if errors.As(err, &coded) {
+			switch coded.Code() {
+			case common.CodeArgumentError, common.CodeBadRequest, common.CodeDataError:
+				common.ResponseWithHttpCodeData(c, http.StatusBadRequest, coded.Code(), nil, err.Error())
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    coded.Code(),
+					"message": err.Error(),
+				})
+				return
+			}
+		}
+
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
