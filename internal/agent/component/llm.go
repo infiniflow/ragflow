@@ -1153,11 +1153,7 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		p.MaxTokens = &i
 	}
 	if v, ok := stringFrom(inputs, "thinking"); ok {
-		// Only allow the two known sentinels through; an arbitrary
-		// string from the DSL is dropped to avoid surprising the LLM
-		// driver. Mirrors python llm.py:78-79 which gates on the
-		// same {"enabled","disabled"} set.
-		if v == "enabled" || v == "disabled" {
+		if v != "" && v != "default" {
 			p.Thinking = v
 		}
 	}
