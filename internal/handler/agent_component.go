@@ -47,23 +47,23 @@ import (
 func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	componentID := c.Param("component_id")
 	if canvasID == "" || componentID == "" {
-		jsonError(c, common.CodeArgumentError, "`canvas_id` and `component_id` are required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`canvas_id` and `component_id` are required.")
 		return
 	}
 
 	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
 		if err == dao.ErrUserCanvasNotFound {
-			jsonError(c, common.CodeOperatingError, canvasNoAccessMessage)
+			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
 			return
 		}
-		jsonError(c, common.CodeServerError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
 
@@ -124,13 +124,13 @@ func (h *AgentHandler) componentInputForm(ctx context.Context, dslMap map[string
 func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	componentID := c.Param("component_id")
 	if canvasID == "" || componentID == "" {
-		jsonError(c, common.CodeArgumentError, "`canvas_id` and `component_id` are required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`canvas_id` and `component_id` are required.")
 		return
 	}
 
@@ -138,21 +138,21 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 		Params map[string]map[string]any `json:"params"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	if body.Params == nil {
-		jsonError(c, common.CodeArgumentError, "`params` is required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`params` is required.")
 		return
 	}
 
 	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
 		if err == dao.ErrUserCanvasNotFound {
-			jsonError(c, common.CodeOperatingError, canvasNoAccessMessage)
+			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
 			return
 		}
-		jsonError(c, common.CodeServerError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
 
@@ -175,12 +175,14 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	inputs := make(map[string]any, len(body.Params))
 	for k, v := range body.Params {
 		if v == nil {
-			jsonError(c, common.CodeArgumentError, "`params."+k+".value` is required.")
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+				"`params."+k+".value` is required.")
 			return
 		}
 		value, ok := v["value"]
 		if !ok {
-			jsonError(c, common.CodeArgumentError, "`params."+k+".value` is required.")
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+				"`params."+k+".value` is required.")
 			return
 		}
 		inputs[k] = value
@@ -188,12 +190,12 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 
 	factory := runtime.DefaultFactory()
 	if factory == nil {
-		jsonError(c, common.CodeServerError, "component factory not initialised")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "component factory not initialised")
 		return
 	}
 	comp, err := factory(name, dslParams)
 	if err != nil {
-		jsonError(c, common.CodeDataError, "component factory: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "component factory: "+err.Error())
 		return
 	}
 
@@ -221,7 +223,7 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 
 	outputs, err := comp.Invoke(invokeCtx, inputs)
 	if err != nil {
-		jsonError(c, common.CodeServerError, "invoke: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "invoke: "+err.Error())
 		return
 	}
 
@@ -240,12 +242,12 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 func mapDSLError(c *gin.Context, componentID string, err error) {
 	switch {
 	case errors.Is(err, dsl.ErrComponentNotFound):
-		jsonError(c, common.CodeDataError, "component not found: "+componentID)
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "component not found: "+componentID)
 	case errors.Is(err, dsl.ErrMissingInputForm):
-		jsonError(c, common.CodeDataError, "component has no input_form: "+componentID)
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "component has no input_form: "+componentID)
 	case errors.Is(err, dsl.ErrMalformedDSL):
-		jsonError(c, common.CodeDataError, "malformed dsl: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "malformed dsl: "+err.Error())
 	default:
-		jsonError(c, common.CodeServerError, "internal: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "internal: "+err.Error())
 	}
 }

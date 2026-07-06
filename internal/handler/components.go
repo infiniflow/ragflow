@@ -27,6 +27,7 @@ package handler
 
 import (
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -67,29 +68,17 @@ func (h *ComponentsHandler) Get(c *gin.Context) {
 	raw := c.Query("category")
 	cats, err := parseCategories(raw)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
 		return
 	}
 
 	out, err := h.svc.List(cats...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    out,
-	})
+	common.SuccessWithData(c, out, "success")
 }
 
 // parseCategories splits a comma-separated category query string into

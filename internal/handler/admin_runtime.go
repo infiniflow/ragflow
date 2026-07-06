@@ -68,19 +68,19 @@ var ErrSelectorNotConfigured = errors.New("admin runtime: selector not configure
 // this endpoint publicly.
 func (h *AdminRuntimeHandler) SetTenantRuntime(c *gin.Context) {
 	if h.selector == nil {
-		jsonError(c, common.CodeExceptionError, ErrSelectorNotConfigured.Error())
+		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, ErrSelectorNotConfigured.Error())
 		return
 	}
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
-		jsonError(c, common.CodeArgumentError, "tenant_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "tenant_id is required")
 		return
 	}
 
 	var req setRuntimeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeArgumentError, "Invalid request body: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -89,13 +89,12 @@ func (h *AdminRuntimeHandler) SetTenantRuntime(c *gin.Context) {
 	case runtime.RuntimeGo, runtime.RuntimePython, runtime.RuntimeAuto:
 		// allowed
 	default:
-		jsonError(c, common.CodeArgumentError,
-			"runtime must be one of: go, python, auto")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "runtime must be one of: go, python, auto")
 		return
 	}
 
 	if err := h.selector.Set(c.Request.Context(), tenantID, mode); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
