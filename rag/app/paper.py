@@ -188,7 +188,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     eng = lang.lower() == "english"  # pdf_parser.is_english
     logging.debug("It's English.....{}".format(eng))
 
-    res = tokenize_table(paper["tables"], doc, eng)
+    res = tokenize_table(paper["tables"], doc, eng, language=lang)
 
     if paper["abstract"]:
         d = copy.deepcopy(doc)
@@ -197,7 +197,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         d["important_tks"] = " ".join(d["important_kwd"])
         d["image"], poss = pdf_parser.crop(paper["abstract"], need_position=True)
         add_positions(d, poss)
-        tokenize(d, txt, eng)
+        tokenize(d, txt, eng, language=lang)
         res.append(d)
 
     sorted_sections = paper["sections"]
@@ -223,7 +223,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 continue
         chunks.append(txt)
         last_sid = sec_id
-    res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
+    res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser, language=lang))
     table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
     image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
     if table_ctx or image_ctx:
@@ -264,7 +264,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             txt += "\n" + pdf_parser.remove_tag(p)
             d["image"], poss = pdf_parser.crop(p, need_position=True)
             add_positions(d, poss)
-            tokenize(d, txt, eng)
+            tokenize(d, txt, eng, language=lang)
             res.append(d)
 
     i = 0
@@ -274,7 +274,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         nonlocal chunk, res, doc, pdf_parser, tk_cnt
         d = copy.deepcopy(doc)
         ck = "\n".join(chunk)
-        tokenize(d, pdf_parser.remove_tag(ck), pdf_parser.is_english)
+        tokenize(d, pdf_parser.remove_tag(ck), pdf_parser.is_english, language=lang)
         d["image"], poss = pdf_parser.crop(ck, need_position=True)
         add_positions(d, poss)
         res.append(d)
