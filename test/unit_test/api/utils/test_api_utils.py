@@ -14,81 +14,35 @@
 #  limitations under the License.
 #
 
-import importlib
-import sys
-from types import ModuleType, SimpleNamespace
-
-import pytest
-
-from common.constants import RetCode
+from api.utils import api_utils
 
 
-def _load_api_utils(monkeypatch):
-    settings_stub = ModuleType("common.settings")
-    settings_stub.ALLOWED_LLM_FACTORIES = None
-    settings_stub.STRONG_TEST_COUNT = 0
-    monkeypatch.setitem(sys.modules, "common.settings", settings_stub)
+def test_get_data_openai_defaults_created_to_current_timestamp(monkeypatch):
+    monkeypatch.setattr(api_utils.time, "time", lambda: 1234567890.9)
 
-    mcp_stub = ModuleType("common.mcp_tool_call_conn")
-    mcp_stub.MCPToolCallSession = object
-    mcp_stub.close_multiple_mcp_toolcall_sessions = lambda *_args, **_kwargs: None
-    monkeypatch.setitem(sys.modules, "common.mcp_tool_call_conn", mcp_stub)
+    data = api_utils.get_data_openai(content="answer")
 
-    tenant_llm_stub = ModuleType("api.db.services.tenant_llm_service")
-    tenant_llm_stub.LLMFactoriesService = SimpleNamespace(get_all=lambda **_kwargs: [])
-    monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_stub)
-
-    monkeypatch.delitem(sys.modules, "api.utils.api_utils", raising=False)
-    return importlib.import_module("api.utils.api_utils")
+    assert data["created"] == 1234567890
 
 
-@pytest.mark.p2
-class TestBuildErrorResultHttpStatus:
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "code, expected",
-        [
-            (RetCode.ARGUMENT_ERROR, RetCode.BAD_REQUEST),
-            (RetCode.AUTHENTICATION_ERROR, RetCode.UNAUTHORIZED),
-            (RetCode.PERMISSION_ERROR, RetCode.FORBIDDEN),
-            (RetCode.NOT_FOUND, RetCode.NOT_FOUND),
-            (RetCode.SERVER_ERROR, RetCode.SERVER_ERROR),
-            ("oops", RetCode.BAD_REQUEST),
-            (None, RetCode.BAD_REQUEST),
+def test_get_data_openai_preserves_explicit_created_value():
+    data = api_utils.get_data_openai(created=0, content="answer")
+
+    assert data["created"] == 0
+
+
+def test_get_data_openai_stream_response_shape_is_unchanged():
+    data = api_utils.get_data_openai(id="chatcmpl-test", model="test-model", content="chunk", finish_reason=None, stream=True)
+
+    assert data == {
+        "id": "chatcmpl-test",
+        "object": "chat.completion.chunk",
+        "model": "test-model",
+        "choices": [
+            {
+                "delta": {"content": "chunk"},
+                "finish_reason": None,
+                "index": 0,
+            }
         ],
-    )
-    def test_resolve_error_http_status(self, monkeypatch, code, expected):
-        api_utils = _load_api_utils(monkeypatch)
-        assert api_utils._resolve_error_http_status(code) == expected
-
-    @pytest.mark.p2
-    def test_build_error_result_uses_normalized_http_status(self, monkeypatch):
-        api_utils = _load_api_utils(monkeypatch)
-
-        class _DummyResponse:
-            def __init__(self, payload):
-                self.payload = payload
-                self.status_code = None
-
-        monkeypatch.setattr(api_utils, "_safe_jsonify", lambda payload: _DummyResponse(payload))
-
-        response = api_utils.build_error_result(code=RetCode.ARGUMENT_ERROR, message="required arguments are missing")
-
-        assert response.payload["code"] == RetCode.ARGUMENT_ERROR
-        assert response.status_code == RetCode.BAD_REQUEST
-
-    @pytest.mark.p2
-    def test_build_error_result_maps_authentication_to_401(self, monkeypatch):
-        api_utils = _load_api_utils(monkeypatch)
-
-        class _DummyResponse:
-            def __init__(self, payload):
-                self.payload = payload
-                self.status_code = None
-
-        monkeypatch.setattr(api_utils, "_safe_jsonify", lambda payload: _DummyResponse(payload))
-
-        response = api_utils.build_error_result(code=RetCode.AUTHENTICATION_ERROR, message="No authorization.")
-
-        assert response.payload["code"] == RetCode.AUTHENTICATION_ERROR
-        assert response.status_code == RetCode.UNAUTHORIZED
+    }

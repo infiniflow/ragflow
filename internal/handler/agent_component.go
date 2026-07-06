@@ -29,7 +29,10 @@
 package handler
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -44,27 +47,27 @@ import (
 func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	componentID := c.Param("component_id")
 	if canvasID == "" || componentID == "" {
-		jsonError(c, common.CodeArgumentError, "`canvas_id` and `component_id` are required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`canvas_id` and `component_id` are required.")
 		return
 	}
 
 	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
 		if err == dao.ErrUserCanvasNotFound {
-			jsonError(c, common.CodeOperatingError, canvasNoAccessMessage)
+			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
 			return
 		}
-		jsonError(c, common.CodeServerError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
 
-	form, err := dsl.ExtractComponentInputForm(cv.DSL, componentID)
+	form, err := h.componentInputForm(c.Request.Context(), cv.DSL, componentID, user.ID)
 	if err != nil {
 		mapDSLError(c, componentID, err)
 		return
@@ -74,6 +77,41 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 		"data":    form,
 		"message": "success",
 	})
+}
+
+// componentInputForm returns the input-form schema for a single component.
+// It first tries the static input_form stored in the DSL; if the component
+// does not define one (e.g. Agent components that generate it dynamically),
+// it instantiates the runtime component and calls its GetInputForm method.
+// This mirrors Python's Canvas.get_component_input_form which invokes the
+// component's own get_input_form when the static field is absent.
+func (h *AgentHandler) componentInputForm(ctx context.Context, dslMap map[string]any, componentID, userID string) (map[string]any, error) {
+	form, err := dsl.ExtractComponentInputForm(dslMap, componentID)
+	if err == nil {
+		return form, nil
+	}
+	if !errors.Is(err, dsl.ErrMissingInputForm) {
+		return nil, err
+	}
+
+	name, err := dsl.ExtractComponentName(dslMap, componentID)
+	if err != nil {
+		return nil, err
+	}
+	params, _ := dsl.ExtractComponentParams(dslMap, componentID)
+	comp, err := runtime.DefaultFactory()(name, params)
+	if err != nil {
+		return nil, fmt.Errorf("%w: component factory: %v", dsl.ErrMalformedDSL, err)
+	}
+	getter, ok := comp.(interface{ GetInputForm() map[string]any })
+	if !ok {
+		return nil, dsl.ErrMissingInputForm
+	}
+	form = getter.GetInputForm()
+	if form == nil {
+		form = map[string]any{}
+	}
+	return form, nil
 }
 
 // DebugComponent POST /api/v1/agents/:canvas_id/components/:component_id/debug
@@ -86,13 +124,13 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	componentID := c.Param("component_id")
 	if canvasID == "" || componentID == "" {
-		jsonError(c, common.CodeArgumentError, "`canvas_id` and `component_id` are required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`canvas_id` and `component_id` are required.")
 		return
 	}
 
@@ -100,21 +138,21 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 		Params map[string]map[string]any `json:"params"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	if body.Params == nil {
-		jsonError(c, common.CodeArgumentError, "`params` is required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`params` is required.")
 		return
 	}
 
 	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
 		if err == dao.ErrUserCanvasNotFound {
-			jsonError(c, common.CodeOperatingError, canvasNoAccessMessage)
+			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
 			return
 		}
-		jsonError(c, common.CodeServerError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
 
@@ -137,12 +175,14 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	inputs := make(map[string]any, len(body.Params))
 	for k, v := range body.Params {
 		if v == nil {
-			jsonError(c, common.CodeArgumentError, "`params."+k+".value` is required.")
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+				"`params."+k+".value` is required.")
 			return
 		}
 		value, ok := v["value"]
 		if !ok {
-			jsonError(c, common.CodeArgumentError, "`params."+k+".value` is required.")
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+				"`params."+k+".value` is required.")
 			return
 		}
 		inputs[k] = value
@@ -150,12 +190,12 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 
 	factory := runtime.DefaultFactory()
 	if factory == nil {
-		jsonError(c, common.CodeServerError, "component factory not initialised")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "component factory not initialised")
 		return
 	}
 	comp, err := factory(name, dslParams)
 	if err != nil {
-		jsonError(c, common.CodeDataError, "component factory: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "component factory: "+err.Error())
 		return
 	}
 
@@ -166,11 +206,24 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	// from the request context. We attach a fresh one here so
 	// debug works on a single component without standing up the
 	// full canvas compile.
-	invokeCtx := runtime.WithState(c.Request.Context(), canvas.NewCanvasState("debug-"+componentID, "debug-task"))
+	//
+	// Seed state.Sys["tenant_id"] with the canvas owner so that
+	// components which resolve LLM credentials from the tenant
+	// tables (e.g. AgentComponent) can find the API key in single-
+	// component debug mode. Mirrors Python's @add_tenant_id_to_kwargs
+	// decorator for the debug endpoint.
+	debugState := canvas.NewCanvasState("debug-"+componentID, "debug-task")
+	debugState.Sys["tenant_id"] = user.ID
+	for key, value := range inputs {
+		if strings.HasPrefix(key, "sys.") && key != "sys.tenant_id" {
+			debugState.Sys[strings.TrimPrefix(key, "sys.")] = value
+		}
+	}
+	invokeCtx := runtime.WithState(c.Request.Context(), debugState)
 
 	outputs, err := comp.Invoke(invokeCtx, inputs)
 	if err != nil {
-		jsonError(c, common.CodeServerError, "invoke: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "invoke: "+err.Error())
 		return
 	}
 
@@ -189,12 +242,12 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 func mapDSLError(c *gin.Context, componentID string, err error) {
 	switch {
 	case errors.Is(err, dsl.ErrComponentNotFound):
-		jsonError(c, common.CodeDataError, "component not found: "+componentID)
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "component not found: "+componentID)
 	case errors.Is(err, dsl.ErrMissingInputForm):
-		jsonError(c, common.CodeDataError, "component has no input_form: "+componentID)
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "component has no input_form: "+componentID)
 	case errors.Is(err, dsl.ErrMalformedDSL):
-		jsonError(c, common.CodeDataError, "malformed dsl: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "malformed dsl: "+err.Error())
 	default:
-		jsonError(c, common.CodeServerError, "internal: "+err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "internal: "+err.Error())
 	}
 }

@@ -55,6 +55,30 @@ type parserDispatchResult struct {
 	Err          error
 }
 
+type parserSetupConfigurer interface {
+	ConfigureFromSetup(setup map[string]any)
+}
+
+func resolveParserFamily(fileType utility.FileType) string {
+	if family := pythonFamilyName(string(fileType)); family != "" {
+		return family
+	}
+	return string(fileType)
+}
+
+func configureParserFromSetups(p any, fileType utility.FileType, setups map[string]schema.ParserSetup) {
+	cfg, ok := p.(parserSetupConfigurer)
+	if !ok {
+		return
+	}
+	family := resolveParserFamily(fileType)
+	setup, ok := setups[family]
+	if !ok {
+		return
+	}
+	cfg.ConfigureFromSetup(map[string]any(setup))
+}
+
 // resolveOutputFormat picks the wire format for this run. The
 // Python side asks the setup, then checks the value is in
 // allowed_output_format[fileType]. We mirror that exact sequence:
@@ -108,7 +132,8 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 // tell the difference between "explicit OCR" and "default DeepDOC"
 // without re-reading setups.
 func resolveLibType(fileType utility.FileType, setups map[string]schema.ParserSetup) (libType, parseMethod string) {
-	setup, ok := setups[string(fileType)]
+	family := resolveParserFamily(fileType)
+	setup, ok := setups[family]
 	if !ok {
 		return "", ""
 	}
@@ -149,6 +174,7 @@ func dispatchParse(fileType utility.FileType, filename string, data []byte, setu
 	if err != nil {
 		return parserDispatchResult{Err: fmt.Errorf("Parser: resolve %q: %w", fileType, err)}
 	}
+	configureParserFromSetups(p, fileType, setups)
 
 	res := p.ParseWithResult(filename, data)
 	if res.Err != nil {

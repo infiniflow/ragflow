@@ -334,6 +334,19 @@ func (b *BrowserComponent) Inputs() map[string]string {
 	}
 }
 
+func (b *BrowserComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"prompts": map[string]any{
+			"type": "text",
+			"name": "Prompts",
+		},
+		"upload_sources": map[string]any{
+			"type": "line",
+			"name": "Upload sources",
+		},
+	}
+}
+
 // Outputs returns the response surface.
 func (b *BrowserComponent) Outputs() map[string]string {
 	return map[string]string{

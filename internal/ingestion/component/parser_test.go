@@ -450,3 +450,30 @@ func TestParserComponent_Invoke_PageSizeHint(t *testing.T) {
 		}
 	}
 }
+
+// TestParseBatch_IsFormatAgnostic pins the batching contract:
+// parseBatch does not resolve parsers or inspect file families. It
+// only wraps already-prepared page bytes into schema.Page items.
+func TestParseBatch_IsFormatAgnostic(t *testing.T) {
+	got, err := parseBatch(context.Background(), [][]byte{
+		[]byte("first page from dispatch"),
+		[]byte("<table>second page from html dispatch</table>"),
+	})
+	if err != nil {
+		t.Fatalf("parseBatch: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+	if got[0]["text"] != "first page from dispatch" {
+		t.Fatalf("got[0][text] = %v, want first page from dispatch", got[0]["text"])
+	}
+	if got[1]["text"] != "<table>second page from html dispatch</table>" {
+		t.Fatalf("got[1][text] = %v, want HTML payload preserved verbatim", got[1]["text"])
+	}
+	for i := range got {
+		if got[i]["doc_type_kwd"] != "text" {
+			t.Fatalf("got[%d][doc_type_kwd] = %v, want text", i, got[i]["doc_type_kwd"])
+		}
+	}
+}
