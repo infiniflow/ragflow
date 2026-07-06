@@ -286,7 +286,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         ...other_config
       } = search_config;
       const llmSetting = {
-        // llm_id: llm_setting.llm_id,
         parameter: llm_setting.parameter,
         temperature: llm_setting.temperature,
         top_p: llm_setting.top_p,
@@ -513,10 +512,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               )}
             />
             {aiSummaryDisabled && (
-              // <LlmSettingFieldItems
-              //   prefix="search_config.llm_setting"
-              //   options={aiSummeryModelOptions}
-              // ></LlmSettingFieldItems>
               <LlmSettingFieldItems
                 prefix="search_config.llm_setting"
                 showFields={[
