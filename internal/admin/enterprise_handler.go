@@ -18,6 +18,7 @@ package admin
 
 import (
 	"errors"
+	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"strconv"
@@ -245,8 +246,7 @@ func (h *Handler) SetRoleDefaultModel(c *gin.Context) {
 
 	var request SetRoleDefaultModelRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
-		return
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 	}
 
 	result, err := h.service.SetRoleDefaultModel(roleName, request.ModelID, request.ModelType)
@@ -270,7 +270,7 @@ func (h *Handler) ResetRoleDefaultModel(c *gin.Context) {
 
 	var request ResetRoleDefaultModelRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -326,7 +326,7 @@ func (h *Handler) AddModelProvider(c *gin.Context) {
 func (h *Handler) ShowProvider(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
@@ -345,7 +345,7 @@ type DeleteProviderRequest struct {
 func (h *Handler) DeleteModelProvider(c *gin.Context) {
 	var req DeleteProviderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
@@ -363,7 +363,7 @@ func (h *Handler) DeleteModelProvider(c *gin.Context) {
 func (h *Handler) ListModels(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 	models, err := dao.GetModelProviderManager().ListModels(providerName)
@@ -378,12 +378,12 @@ func (h *Handler) ListModels(c *gin.Context) {
 func (h *Handler) ShowProviderModel(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 	modelName := c.Param("model_name")
 	if modelName == "" {
-		common.ErrorWithCode(c, 400, "Model name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Model name is required")
 		return
 	}
 	model, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
@@ -397,7 +397,7 @@ func (h *Handler) ShowProviderModel(c *gin.Context) {
 func (h *Handler) ListModelInstances(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
@@ -415,12 +415,12 @@ func (h *Handler) ListModelInstances(c *gin.Context) {
 func (h *Handler) ShowProviderInstance(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		common.ErrorWithCode(c, 400, "Instance name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 	userID := c.GetString("user_id")
@@ -437,12 +437,12 @@ func (h *Handler) ShowProviderInstance(c *gin.Context) {
 func (h *Handler) ShowProviderInstanceBalance(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		common.ErrorWithCode(c, 400, "Instance name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 	userID := c.GetString("user_id")
@@ -459,12 +459,12 @@ func (h *Handler) ShowProviderInstanceBalance(c *gin.Context) {
 func (h *Handler) CheckInstanceConnection(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		common.ErrorWithCode(c, 400, "Instance name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 	userID := c.GetString("user_id")
@@ -487,13 +487,13 @@ type CheckConnectionRequest struct {
 func (h *Handler) CheckProviderConnection(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	var req CheckConnectionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
 		return
 	}
 
@@ -516,13 +516,13 @@ type AlterProviderInstanceRequest struct {
 func (h *Handler) AlterProviderInstance(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		common.ErrorWithCode(c, 400, "Instance name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 
@@ -560,7 +560,7 @@ func (h *Handler) AddModelInstance(c *gin.Context) {
 
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
@@ -582,7 +582,7 @@ type DropModelInstanceRequest struct {
 func (h *Handler) DeleteModelInstance(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
@@ -606,13 +606,13 @@ func (h *Handler) DeleteModelInstance(c *gin.Context) {
 func (h *Handler) ListInstanceModels(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		common.ErrorWithCode(c, 400, "Instance name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 
@@ -635,13 +635,13 @@ type EnableOrDisableModelRequest struct {
 func (h *Handler) EnableOrDisableModel(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		common.ErrorWithCode(c, 400, "Instance name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 
@@ -656,7 +656,7 @@ func (h *Handler) EnableOrDisableModel(c *gin.Context) {
 	modelName := strings.TrimPrefix(c.Param("model_name"), "/")
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" && modelID == "" {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), "model_name or model_id is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "model_name or model_id is required")
 		return
 	}
 
@@ -684,13 +684,13 @@ func (h *Handler) AddModels(c *gin.Context) {
 
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		common.ErrorWithCode(c, 400, "Instance name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 
@@ -712,13 +712,13 @@ type DropModelsRequest struct {
 func (h *Handler) DeleteModels(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
-		common.ErrorWithCode(c, 400, "Provider name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
-		common.ErrorWithCode(c, 400, "Instance name is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 
