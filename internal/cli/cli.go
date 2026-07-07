@@ -78,6 +78,7 @@ type CommandLineConfig struct {
 	ShowHelp          bool
 	Verbose           bool
 	Interactive       bool
+	TestCaseFile      *string
 	OutputFormat      OutputFormat
 	Command           *string
 }
@@ -146,6 +147,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 
 	var commandArgs []string
 	var foundCommand bool
+	var testCaseFile string
 
 	switch commandLineConfig.CLIMode {
 	case APIMode:
@@ -215,6 +217,18 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 						absPath, err := filepath.Abs(configFile)
 						if err == nil {
 							configFile = absPath
+						}
+					}
+					i++
+				}
+			case "-c", "--case":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					testCaseFile = args[i+1]
+					// Convert to absolute path immediately
+					if !filepath.IsAbs(testCaseFile) {
+						absPath, err := filepath.Abs(testCaseFile)
+						if err == nil {
+							testCaseFile = absPath
 						}
 					}
 					i++
@@ -350,6 +364,18 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					AdminConfig.AdminPassword = &args[i+1]
 					i++
 				}
+			case "-c", "--case":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					testCaseFile = args[i+1]
+					// Convert to absolute path immediately
+					if !filepath.IsAbs(testCaseFile) {
+						absPath, err := filepath.Abs(testCaseFile)
+						if err == nil {
+							testCaseFile = absPath
+						}
+					}
+					i++
+				}
 			default:
 				// Non-flag argument (command)
 				if !strings.HasPrefix(arg, "-") {
@@ -359,6 +385,10 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			}
 		}
 		commandLineConfig.AdminClientConfig = AdminConfig
+	}
+
+	if testCaseFile != "" {
+		commandLineConfig.TestCaseFile = &testCaseFile
 	}
 
 	commandArgsLen := len(commandArgs)
@@ -921,6 +951,54 @@ func (c *CLI) GetPublicKeyPEM() ([]byte, error) {
 		return []byte(""), fmt.Errorf("failed to read public key: %w", err)
 	}
 	return publicKeyPEM, nil
+}
+
+// RunTests executes test cases from a file or directory
+func (c *CLI) RunTests(testCasePath *string) error {
+	info, err := os.Stat(*testCasePath)
+	if err != nil {
+		return fmt.Errorf("failed to stat test case path %q: %w", *testCasePath, err)
+	}
+
+	if info.IsDir() {
+		var entries []os.DirEntry
+		entries, err = os.ReadDir(*testCasePath)
+		if err != nil {
+			return fmt.Errorf("failed to read test case directory %q: %w", *testCasePath, err)
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			if !strings.HasSuffix(entry.Name(), ".yaml") && !strings.HasSuffix(entry.Name(), ".yml") {
+				continue
+			}
+			filePath := filepath.Join(*testCasePath, entry.Name())
+			if err = c.RunTest(&filePath); err != nil {
+				return fmt.Errorf("test case %q failed: %w", filePath, err)
+			}
+		}
+		return nil
+	}
+
+	return c.RunTest(testCasePath)
+}
+
+// RunTest reads, parses, and prints a single YAML test case file
+func (c *CLI) RunTest(testCaseFile *string) error {
+	data, err := os.ReadFile(*testCaseFile)
+	if err != nil {
+		return fmt.Errorf("failed to read test case file %q: %w", *testCaseFile, err)
+	}
+
+	var parsed interface{}
+	if err = yaml.Unmarshal(data, &parsed); err != nil {
+		return fmt.Errorf("failed to parse YAML test case file %q: %w", *testCaseFile, err)
+	}
+
+	fmt.Printf("=== Test Case: %s ===\n", filepath.Base(*testCaseFile))
+	fmt.Println(string(data))
+	return nil
 }
 
 // printSearchHelp prints help for the search command

@@ -64,6 +64,15 @@ func main() {
 		os.Exit(0)
 	}()
 
+	if arguments.TestCaseFile != nil {
+		err = client.RunTests(arguments.TestCaseFile)
+		if err != nil {
+			fmt.Printf("Test execution failed: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	if arguments.Command != nil {
 		if err = client.RunSingleCommand(arguments.Command); err != nil {
 			fmt.Printf("Command execution failed: %v\n", err)
