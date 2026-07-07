@@ -288,9 +288,6 @@ func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int,
 	}
 	if canvasCategory != "" {
 		query = query.Where("canvas_category = ?", canvasCategory)
-	} else {
-		// Default to agent category
-		query = query.Where("canvas_category = ?", "agent_canvas")
 	}
 
 	if canvasType != "" {
@@ -385,8 +382,6 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page
 
 	if canvasCategory != "" {
 		base = base.Where("user_canvas.canvas_category = ?", canvasCategory)
-	} else {
-		base = base.Where("user_canvas.canvas_category = ?", "agent_canvas")
 	}
 
 	if canvasType != "" {
