@@ -23,11 +23,10 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
-	"strings"
+	"ragflow/internal/utility"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -122,7 +121,7 @@ func (s *SkillSpaceService) getSkillsFolderID(tenantID string) (string, error) {
 
 	// Skills folder not found, create it
 	common.Info("Creating skills folder", zap.String("tenant_id", tenantID))
-	folderID := generateSpaceID()
+	folderID := utility.GenerateUUID()
 	folder := &entity.File{
 		ID:         folderID,
 		ParentID:   rootFolder.ID,
@@ -205,8 +204,8 @@ func (s *SkillSpaceService) CreateSpace(req *CreateSpaceRequest) (map[string]int
 	}
 
 	// Generate space ID and folder ID
-	spaceID := generateSpaceID()
-	folderID := generateSpaceID()
+	spaceID := utility.GenerateUUID()
+	folderID := utility.GenerateUUID()
 
 	// Create folder for the space under skills folder
 	folder := &entity.File{
@@ -544,9 +543,4 @@ func (s *SkillSpaceService) GetSpaceByFolderID(folderID, tenantID string) (map[s
 	}
 
 	return space.ToMap(), common.CodeSuccess, nil
-}
-
-// generateSpaceID generates a unique ID for space
-func generateSpaceID() string {
-	return strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
 }

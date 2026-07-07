@@ -18,9 +18,6 @@ package dao
 
 import (
 	"ragflow/internal/entity"
-	"strings"
-
-	"github.com/google/uuid"
 )
 
 // FileCommitDAO file commit data access object
@@ -145,10 +142,4 @@ func (dao *FileCommitItemDAO) GetByCommitIDAndFileID(commitID, fileID string) (*
 		return nil, err
 	}
 	return &item, nil
-}
-
-// generateCommitUUID generates a UUID for commit/commit_item IDs
-func generateCommitUUID() string {
-	id := uuid.New().String()
-	return strings.ReplaceAll(id, "-", "")
 }

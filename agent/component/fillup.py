@@ -76,7 +76,13 @@ class UserFillUp(ComponentBase):
             return FileService.get_files(files, layout_recognize=layout_recognize)
 
         if isinstance(value, dict):
-            return value.get("value")
+            raw = value.get("value")
+            if value.get("type") == "object" and isinstance(raw, str) and raw.strip():
+                try:
+                    return json.loads(raw)
+                except Exception:
+                    return raw
+            return raw
 
         return value
 

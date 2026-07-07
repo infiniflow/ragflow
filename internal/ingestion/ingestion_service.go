@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/utility"
 	"sync"
 	"time"
 
@@ -87,7 +88,7 @@ type TaskContext struct {
 
 func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
 	ctx, cancel := context.WithCancel(context.Background())
-	id := common.GenerateUUID()
+	id := utility.GenerateUUID()
 	return &Ingestor{
 		id:                     id,
 		name:                   name,
