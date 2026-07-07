@@ -29,6 +29,7 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -218,8 +219,9 @@ func renderTips(template string, fields map[string]any) string {
 // resolveFieldValue converts one form-field payload into the value
 // that should appear in the component's output map.
 //
-// Rules (mirroring fillup.py:69-79):
+// Rules (mirroring fillup.py:69-87):
 //   - dict with type starting with "file" → "<file:key>" stub
+//   - dict with type=="object" and string value → parsed JSON
 //   - dict with optional=true and value==nil → nil
 //   - dict with a `value` field → the inner value
 //   - anything else → pass through unchanged
@@ -236,6 +238,15 @@ func resolveFieldValue(key string, raw any) any {
 			return nil
 		}
 	}
+	if isObjectType(m) {
+		if rawStr, ok := m["value"].(string); ok && strings.TrimSpace(rawStr) != "" {
+			var parsed any
+			if err := json.Unmarshal([]byte(rawStr), &parsed); err != nil {
+				return rawStr
+			}
+			return parsed
+		}
+	}
 	if v, present := m["value"]; present {
 		return v
 	}
@@ -248,6 +259,14 @@ func resolveFieldValue(key string, raw any) any {
 func isFileType(m map[string]any) bool {
 	t, _ := m["type"].(string)
 	return strings.HasPrefix(strings.ToLower(t), "file")
+}
+
+// isObjectType reports whether the form-field payload's `type` field
+// equals "object". Matches fillup.py's
+// `value.get("type") == "object"` test.
+func isObjectType(m map[string]any) bool {
+	t, _ := m["type"].(string)
+	return t == "object"
 }
 
 // fieldValueToString is the tips-substitution variant of
