@@ -44,7 +44,7 @@ func TestParseAddModelWithDimensions(t *testing.T) {
 			expected: &Command{
 				Type: "api_add_custom_model",
 				Params: map[string]interface{}{
-					"provider_name": "vllm",
+					"provider_name": "VLLM",
 					"instance_name": "test",
 					"models": []map[string]interface{}{
 						{
