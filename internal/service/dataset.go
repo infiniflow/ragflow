@@ -224,7 +224,7 @@ func (d *DatasetService) newRaptorOrGraphRagTask(sampleDoc *entity.Document, tas
 		_, _ = hasher.Write([]byte{0})
 	}
 
-	taskID := strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
+	taskID := utility.GenerateToken32()
 	beginAt := time.Now().Truncate(time.Second)
 	progressMsg := beginAt.Format("15:04:05") + " created task " + taskType
 

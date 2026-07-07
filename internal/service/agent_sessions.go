@@ -20,12 +20,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/utility"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
@@ -736,7 +736,7 @@ func (s *AgentService) CreateAgentSession(req *CreateAgentSessionRequest) (*enti
 		sourcePtr = &req.Source
 	}
 
-	id := strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
+	id := utility.GenerateToken32()
 
 	// CreateTime / UpdateTime / CreateDate / UpdateDate are filled in
 	// by entity.BaseModel.BeforeCreate when the DAO Create() call runs,

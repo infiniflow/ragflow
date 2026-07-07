@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/utility"
 	"strings"
 	"sync"
 	"time"
@@ -41,14 +42,6 @@ import (
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
-
-// genID32 returns a 32-char UUID-derived primary key suitable for the
-// user_canvas and user_canvas_version tables. The format matches Python
-// uuid.uuid4().hex used by the original DAO and keeps existing rows
-// joinable across Python and Go writers.
-func genID32() string {
-	return strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
-}
 
 // webhookPayloadKey is the unexported context key RunAgent reads to
 // inject root["webhook_payload"]. Only the AgentService.RunAgentWithWebhook
@@ -355,7 +348,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 	// no-op when graph.nodes is already non-empty.
 	req.DSL = dslpkg.NormalizeForCanvas(req.DSL)
 	row := &entity.UserCanvas{
-		ID:             genID32(),
+		ID:             utility.GenerateToken32(),
 		UserID:         req.UserID,
 		Title:          req.Title,
 		Description:    req.Description,
@@ -558,7 +551,7 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 		}
 	}
 	row := &entity.UserCanvasVersion{
-		ID:           genID32(),
+		ID:           utility.GenerateToken32(),
 		UserCanvasID: canvasID,
 		Title:        title,
 		Description:  description,

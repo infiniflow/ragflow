@@ -45,7 +45,7 @@ func (s *SystemService) ListAPIKeys(tenantID string) ([]*APIKeyResponse, error) 
 	for i, key := range keys {
 		beta := key.Beta
 		if beta == nil || *beta == "" {
-			generatedBeta := utility.GenerateBetaAPIToken(utility.GenerateAPIToken())
+			generatedBeta := utility.GenerateBetaAPIToken()
 			if err = dao.DB.Model(&entity.APIToken{}).
 				Where("tenant_id = ? AND token = ?", tenantID, key.Token).
 				Updates(map[string]interface{}{
@@ -84,7 +84,7 @@ func (s *SystemService) CreateAPIKey(tenantID string, req *CreateAPIKeyRequest) 
 	// key: "ragflow-" + secrets.token_urlsafe(32)
 	APIToken := utility.GenerateAPIToken()
 	// beta: generate_confirmation_token().replace("ragflow-", "")[:32]
-	betaAPIKey := utility.GenerateBetaAPIToken(utility.GenerateAPIToken())
+	betaAPIKey := utility.GenerateBetaAPIToken()
 
 	APIKeyData := &entity.APIToken{
 		TenantID: tenantID,

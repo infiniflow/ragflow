@@ -20,6 +20,7 @@ import (
 	"errors"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"time"
 
 	"gorm.io/gorm"
@@ -323,7 +324,7 @@ func createRebuildSyncLog(tx *gorm.DB, connectorID, kbID, taskType string, reind
 	}
 	now := time.Now().Local()
 	return tx.Create(&entity.SyncLogs{
-		ID:               generateUUID(),
+		ID:               utility.GenerateToken(),
 		ConnectorID:      connectorID,
 		KbID:             kbID,
 		TaskType:         taskType,
@@ -368,7 +369,7 @@ func scheduleConnectorTask(tx *gorm.DB, connectorID, kbID, taskType string, rein
 	}
 	now := time.Now().Local()
 	return tx.Create(&entity.SyncLogs{
-		ID:               generateUUID(),
+		ID:               utility.GenerateToken(),
 		ConnectorID:      connectorID,
 		KbID:             kbID,
 		TaskType:         taskType,

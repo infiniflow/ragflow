@@ -37,8 +37,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // FileService file service
@@ -199,7 +197,7 @@ func (s *FileService) initSkillsFolder(rootID, tenantID string) error {
 	}
 
 	folder := &entity.File{
-		ID:         s.generateUUID(),
+		ID:         utility.GenerateToken(),
 		ParentID:   rootID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
@@ -433,7 +431,7 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 		uniqueName := s.getUniqueFilename(fileObjNames[len(fileObjNames)-1], lastFolder.ID, tenantID)
 
 		fileRecord := &entity.File{
-			ID:         s.generateUUID(),
+			ID:         utility.GenerateToken(),
 			ParentID:   lastFolder.ID,
 			TenantID:   tenantID,
 			CreatedBy:  tenantID,
@@ -549,11 +547,6 @@ func (s *FileService) getUniqueFilename(name, parentID, tenantID string) string 
 		}
 		counter++
 	}
-}
-
-func (s *FileService) generateUUID() string {
-	id := uuid.New().String()
-	return strings.ReplaceAll(id, "-", "")
 }
 
 // CreateFolder creates a new folder or virtual file
