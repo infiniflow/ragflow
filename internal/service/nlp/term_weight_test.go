@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -713,14 +714,7 @@ func TestPretokenWithNumbers(t *testing.T) {
 	t.Run("num=false filters single digits", func(t *testing.T) {
 		result := d.Pretoken("5", false, true)
 		// Single digit should be filtered when num=false
-		found := false
-		for _, r := range result {
-			if r == "5" {
-				found = true
-				break
-			}
-		}
-		if found {
+		if slices.Contains(result, "5") {
 			t.Error("Single digit should be filtered when num=false")
 		}
 	})

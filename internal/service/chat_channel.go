@@ -17,6 +17,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"ragflow/internal/utility"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -42,7 +43,7 @@ func (s *ChatChannelService) Insert(channel *entity.ChatChannel) error {
 		return errors.New("channel is nil")
 	}
 	if channel.ID == "" {
-		channel.ID = common.GenerateUUID()
+		channel.ID = utility.GenerateUUID()
 	}
 	if channel.Status == 0 {
 		channel.Status = 1
@@ -75,7 +76,7 @@ func (s *ChatChannelService) CreateChatChannel(tenantID, name, channelType strin
 		}
 	}
 	row := &entity.ChatChannel{
-		ID:       common.GenerateUUID(),
+		ID:       utility.GenerateUUID(),
 		TenantID: tenantID,
 		Name:     name,
 		Channel:  channelType,

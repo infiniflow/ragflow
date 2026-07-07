@@ -25,11 +25,10 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 	"sort"
-	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -65,7 +64,7 @@ func (s *FileCommitService) CreateCommit(folderID, authorID, message string, cha
 	}
 
 	// 3. Create commit record
-	commitID := generateCommitUUID()
+	commitID := utility.GenerateUUID()
 	nowMs := time.Now().UnixMilli()
 
 	commit := &entity.FileCommit{
@@ -105,7 +104,7 @@ func (s *FileCommitService) CreateCommit(folderID, authorID, message string, cha
 
 		for _, change := range changes {
 			item := &entity.FileCommitItem{
-				ID:        generateCommitUUID(),
+				ID:        utility.GenerateUUID(),
 				CommitID:  commitID,
 				FileID:    change.FileID,
 				Operation: change.Operation,
@@ -628,10 +627,4 @@ func computeLiveFileHash(folderID, fileID string, file *entity.File) string {
 
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:])
-}
-
-// generateCommitUUID generates a UUID without dashes
-func generateCommitUUID() string {
-	id := uuid.New().String()
-	return strings.ReplaceAll(id, "-", "")
 }
