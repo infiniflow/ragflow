@@ -150,7 +150,9 @@ class MemoryService(CommonService):
         if "memory_type" in update_dict and isinstance(update_dict["memory_type"], list):
             update_dict["memory_type"] = calculate_memory_type(update_dict["memory_type"])
         if "name" in update_dict:
-            update_dict["name"] = duplicate_name(cls.query, name=update_dict["name"], tenant_id=tenant_id)
+            existing = cls.model.select().where((cls.model.id == memory_id) & (cls.model.tenant_id == tenant_id)).first()
+            if not existing or existing.name != update_dict["name"]:
+                update_dict["name"] = duplicate_name(cls.query, name=update_dict["name"], tenant_id=tenant_id)
         update_dict.update({"update_time": current_timestamp(), "update_date": get_format_time()})
 
         return cls.model.update(update_dict).where(cls.model.id == memory_id).execute()
