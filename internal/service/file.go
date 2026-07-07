@@ -1323,7 +1323,7 @@ func (s *FileService) checkUploadInfoHealth(userID, filename string) error {
 }
 
 func (s *FileService) storeUploadInfoBlob(storageImpl storage.Storage, userID, filename, contentType string, data []byte) (map[string]interface{}, error) {
-	location := common.GenerateUUID()
+	location := utility.GenerateUUID()
 	bucket := fmt.Sprintf("%s-downloads", userID)
 	if err := storageImpl.Put(bucket, location, data); err != nil {
 		return nil, fmt.Errorf("failed to store file: %w", err)

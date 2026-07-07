@@ -285,12 +285,12 @@ func main() {
 		}
 	case "ingestor":
 		if serverName == "" {
-			uuid := common.GenerateUUID()
+			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
 		}
 	case "syncer":
 		if serverName == "" {
-			uuid := common.GenerateUUID()
+			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
 	default:

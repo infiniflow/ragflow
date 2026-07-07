@@ -736,7 +736,7 @@ func (s *AgentService) CreateAgentSession(req *CreateAgentSessionRequest) (*enti
 		sourcePtr = &req.Source
 	}
 
-	id := utility.GenerateToken32()
+	id := utility.GenerateUUID()
 
 	// CreateTime / UpdateTime / CreateDate / UpdateDate are filled in
 	// by entity.BaseModel.BeforeCreate when the DAO Create() call runs,

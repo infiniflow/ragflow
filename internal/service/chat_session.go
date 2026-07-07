@@ -154,7 +154,7 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 	referenceJSON, _ := json.Marshal([]interface{}{})
 
 	session := &entity.ChatSession{
-		ID:        common.GenerateUUID(),
+		ID:        utility.GenerateUUID(),
 		DialogID:  req.DialogID,
 		Name:      &name,
 		Message:   messagesJSON,
@@ -356,7 +356,7 @@ func (s *ChatSessionService) CreateSession(userID, chatID string, req map[string
 	referenceJSON, _ := json.Marshal([]interface{}{})
 
 	conv := &entity.ChatSession{
-		ID:        common.GenerateUUID(),
+		ID:        utility.GenerateUUID(),
 		DialogID:  chatID,
 		Name:      &name,
 		Message:   messagesJSON,
@@ -1782,7 +1782,7 @@ func (s *ChatSessionService) buildDefaultCompletionDialog(tenantID string) *enti
 
 // createSessionForCompletion mirrors Python _create_session_for_completion.
 func (s *ChatSessionService) createSessionForCompletion(chatID string, dialog *entity.Chat, userID string) (*entity.ChatSession, error) {
-	newID := common.GenerateUUID()
+	newID := utility.GenerateUUID()
 	name := "New session"
 
 	prologue := "Hi! I'm your assistant. What can I do for you?"

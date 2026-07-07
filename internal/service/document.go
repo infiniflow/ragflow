@@ -559,7 +559,7 @@ func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDo
 // CreateDocument create document
 func (s *DocumentService) CreateDocument(req *CreateDocumentRequest) (*entity.Document, error) {
 	document := &entity.Document{
-		ID:           common.GenerateUUID(),
+		ID:           utility.GenerateUUID(),
 		Name:         &req.Name,
 		KbID:         req.KbID,
 		ParserID:     req.ParserID,
@@ -1565,7 +1565,7 @@ func (s *DocumentService) newDocumentParseTask(doc *entity.Document, fromPage, t
 	digest := documentParseTaskDigest(doc, fromPage, toPage)
 	chunkIDs := ""
 	return &entity.Task{
-		ID:          common.GenerateUUID(),
+		ID:          utility.GenerateUUID(),
 		DocID:       doc.ID,
 		FromPage:    fromPage,
 		ToPage:      toPage,

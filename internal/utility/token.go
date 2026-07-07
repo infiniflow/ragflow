@@ -141,7 +141,15 @@ func GenerateSecretKey() (string, error) {
 func GenerateToken() string {
 	return strings.ReplaceAll(uuid.New().String(), "-", "")
 }
-func GenerateToken32() string { return strings.ReplaceAll(uuid.New().String(), "-", "")[:32] }
+
+// GenerateUUID generates a UUID without dashes
+func GenerateUUID() string {
+	newID := strings.ReplaceAll(uuid.New().String(), "-", "")
+	if len(newID) > 32 {
+		newID = newID[:32]
+	}
+	return newID
+}
 
 // GenerateAPIToken generates secure random access key
 func GenerateAPIToken() string {
@@ -157,5 +165,5 @@ func GenerateAPIToken() string {
 
 // GenerateBetaAPIToken generates a beta access key
 func GenerateBetaAPIToken() string {
-	return GenerateToken32()
+	return GenerateUUID()
 }

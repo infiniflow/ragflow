@@ -18,7 +18,6 @@ package dao
 
 import (
 	"errors"
-	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 	"time"
@@ -122,7 +121,7 @@ func (dao *ConnectorDAO) LinkDatasetConnectors(kbID string, connectors []Dataset
 			}
 
 			if err := tx.Create(&entity.Connector2Kb{
-				ID:          common.GenerateUUID(),
+				ID:          utility.GenerateUUID(),
 				ConnectorID: connector.ID,
 				KbID:        kbID,
 				AutoParse:   autoParse,
