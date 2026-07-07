@@ -33,20 +33,71 @@ import (
 )
 
 // parseModelName parses a composite model name in format "model@instance@provider" or "model@provider"
-// Returns modelName, instanceName, providerName separately
+// Returns modelName, instanceName, providerName separately.
+//
+// The composite key is right-anchored: providerName is always the *last*
+// '@'-separated field, instanceName is the second-to-last (when present),
+// and everything to the left is the bare model name. Some model names
+// legitimately contain '@' characters themselves (e.g. LM Studio embedding
+// model IDs such as `text-embedding-nomic-embed-text-v1.5@q8_0`), which
+// produces composite keys like
+// `text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio`. When the
+// split yields more than 3 fields we rejoin the leading fields back into the
+// modelName so any embedded '@' characters are preserved verbatim.
 func parseModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
 	parts := strings.Split(compositeName, "@")
-	if len(parts) == 3 {
+	switch len(parts) {
+	case 3:
 		// Format: model@instance@provider
 		return parts[0], parts[1], parts[2], nil
-	} else if len(parts) == 2 {
+	case 2:
 		// Format: model@provider -> instance defaults to "default"
 		return parts[0], "default", parts[1], nil
-	} else if len(parts) == 1 {
+	case 1:
 		return parts[0], "", "", fmt.Errorf("provider name missing in model name: %s", compositeName)
 	}
+	// len(parts) > 3: any '@' characters embedded in the leftmost modelName
+	// component must be preserved in that component instead of being dropped
+	// or assigned to the instance/provider fields.
+	n := len(parts)
+	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
+}
 
-	return "", "", "", fmt.Errorf("invalid model name format: %s", compositeName)
+// splitRightAnchoredModelName is a bare-name-tolerant variant of
+// parseModelName used by the Builtin / TEI short-circuit branches in
+// GetModelConfigFromProviderInstance.
+//
+// Those branches must accept a bare model name (no provider suffix) where
+// parseModelName would return an error, while still preserving any '@'
+// characters embedded in the modelName portion of a multi-segment key.
+// Returns the modelName, instanceName ("default" for the 2-segment form),
+// and providerName ("" for the 1-segment form).
+func splitRightAnchoredModelName(compositeName string) (modelName, instanceName, providerName string) {
+	parts := strings.Split(compositeName, "@")
+	switch len(parts) {
+	case 3:
+		return parts[0], parts[1], parts[2]
+	case 2:
+		// The 2-segment form "model@X" is ambiguous: X could be a provider
+		// suffix (only "Builtin" is recognised by the TEI / Builtin
+		// short-circuits that consume this helper) or part of the model
+		// name itself (e.g. a quantization tag like "q8_0" in
+		// "text-embedding-nomic-embed-text-v1.5@q8_0"). Treat the last
+		// token as a provider only when it actually is one; otherwise
+		// the whole string is the bare model name and the caller falls
+		// through to its non-short-circuit path. The TEI short-circuit's
+		// `modelName == teiModel` exact-match fast path already covers
+		// the bare-default case where the embedded '@' happens to match
+		// the TEI model identifier verbatim.
+		if parts[1] == "Builtin" {
+			return parts[0], "default", parts[1]
+		}
+		return compositeName, "", ""
+	case 1:
+		return parts[0], "", ""
+	}
+	n := len(parts)
+	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1]
 }
 
 func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {
@@ -2304,21 +2355,28 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 
 	// TEI builtin embedding short-circuit
 	if modelType == entity.ModelTypeEmbedding && strings.Contains(os.Getenv("COMPOSE_PROFILES"), "tei-") {
-		parts := strings.Split(modelName, "@")
-		teiPure := parts[0]
-		teiProvider := ""
-		switch len(parts) {
-		case 2:
-			teiProvider = parts[1]
-		case 3:
-			teiProvider = parts[2]
+		teiModel := os.Getenv("TEI_MODEL")
+		teiBaseURL := os.Getenv("TEI_BASE_URL")
+	
+		// First try exact match: handles bare model IDs like "model@q8_0"
+		// where '@' is part of the model name itself.
+		if modelName == teiModel {
+			builtinDriver := modelModule.GetBuiltinEmbeddingModel(modelName)
+			if builtinDriver == nil {
+				return nil, "", nil, 0, fmt.Errorf("builtin (TEI) embedding model %q not found", modelName)
+			}
+			apiConfig := &modelModule.APIConfig{ApiKey: nil, Region: nil, BaseURL: &teiBaseURL}
+			return builtinDriver, modelName, apiConfig, 0, nil
 		}
-		if teiPure == os.Getenv("TEI_MODEL") && (teiProvider == "Builtin" || teiProvider == "") {
+		
+		// Then try right-anchored parsing for explicit "model@Builtin" or
+		// "model@instance@Builtin" composite keys.
+		teiPure, _, teiProvider := splitRightAnchoredModelName(modelName)
+		if teiPure == teiModel && (teiProvider == "Builtin" || teiProvider == "") {
 			builtinDriver := modelModule.GetBuiltinEmbeddingModel(teiPure)
 			if builtinDriver == nil {
 				return nil, "", nil, 0, fmt.Errorf("builtin (TEI) embedding model %q not found", teiPure)
 			}
-			teiBaseURL := os.Getenv("TEI_BASE_URL")
 			apiConfig := &modelModule.APIConfig{ApiKey: nil, Region: nil, BaseURL: &teiBaseURL}
 			return builtinDriver, teiPure, apiConfig, 0, nil
 		}
@@ -2335,25 +2393,39 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 	// request that names a Builtin provider must fall through to the standard
 	// branch, which surfaces an accurate "provider not found" instead of
 	// handing back an embedding-only driver.
-	parts := strings.Split(modelName, "@")
-	if modelType == entity.ModelTypeEmbedding && len(parts) >= 2 && parts[len(parts)-1] == "Builtin" {
-		pureModelName := parts[0]
-		builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName)
-		if builtinDriver == nil {
-			return nil, "", nil, 0, fmt.Errorf("builtin embedding model %q not found", pureModelName)
+	if modelType == entity.ModelTypeEmbedding {
+		// The Builtin provider is a local service, not a tenant-enrolled
+		// provider. Extract the model name by looking for the @Builtin
+		// suffix explicitly so model names with embedded '@' characters
+		// (e.g. `model@q8_0@Builtin` or bare `model@q8_0` without any
+		// provider suffix) are handled correctly.
+		var pureModelName string
+		switch {
+		case strings.HasSuffix(modelName, "@default@Builtin"):
+			pureModelName = modelName[:len(modelName)-len("@default@Builtin")]
+		case strings.HasSuffix(modelName, "@Builtin"):
+			pureModelName = modelName[:len(modelName)-len("@Builtin")]
+		default:
+			pureModelName = ""
 		}
-		apiKey := ""
-		region := ""
-		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
-		maxTokens := 0
-		if mi, _ := dao.GetModelProviderManager().GetModelByName("Builtin", pureModelName); mi != nil {
-			if mi.MaxTokens == nil {
-				maxTokens = 0
-			} else {
-				maxTokens = *mi.MaxTokens
+		if pureModelName != "" {
+			builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName)
+			if builtinDriver == nil {
+				return nil, "", nil, 0, fmt.Errorf("builtin embedding model %q not found", pureModelName)
 			}
+			apiKey := ""
+			region := ""
+			apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
+			maxTokens := 0
+			if mi, _ := dao.GetModelProviderManager().GetModelByName("Builtin", pureModelName); mi != nil {
+				if mi.MaxTokens == nil {
+					maxTokens = 0
+				} else {
+					maxTokens = *mi.MaxTokens
+				}
+			}
+			return builtinDriver, pureModelName, apiConfig, maxTokens, nil
 		}
-		return builtinDriver, pureModelName, apiConfig, maxTokens, nil
 	}
 
 	pureModelName, instanceName, providerName, err := parseModelName(modelName)
