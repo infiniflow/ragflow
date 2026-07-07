@@ -121,6 +121,15 @@ func (c *bgptComponent) Inputs() map[string]string {
 	}
 }
 
+func (c *bgptComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
 func (c *bgptComponent) Outputs() map[string]string {
 	return map[string]string{
 		"formalized_content": "Rendered scientific paper evidence for downstream LLM prompts.",

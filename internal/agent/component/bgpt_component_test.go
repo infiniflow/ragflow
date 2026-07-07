@@ -44,6 +44,18 @@ func TestBGPT_RegisteredFactory(t *testing.T) {
 	if got := c.Name(); got != "BGPT" {
 		t.Fatalf("Name() = %q, want BGPT", got)
 	}
+	formGetter, ok := c.(interface{ GetInputForm() map[string]any })
+	if !ok {
+		t.Fatal("BGPT component does not expose GetInputForm")
+	}
+	form := formGetter.GetInputForm()
+	query, ok := form["query"].(map[string]any)
+	if !ok {
+		t.Fatalf("GetInputForm()[query] has type %T, want map", form["query"])
+	}
+	if query["type"] != "line" {
+		t.Fatalf("GetInputForm()[query][type] = %v, want line", query["type"])
+	}
 	if _, ok := c.Outputs()["formalized_content"]; !ok {
 		t.Fatal("Outputs() missing formalized_content")
 	}
