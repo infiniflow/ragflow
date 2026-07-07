@@ -74,20 +74,96 @@ func (c *tavilySearchComponent) Inputs() map[string]string {
 func (c *tavilySearchComponent) Outputs() map[string]string {
 	return map[string]string{
 		"formalized_content": "Rendered search results for downstream LLM prompts.",
-		"results":            "Raw result list (url, title, content).",
+		"json":               "Raw result list (url, title, content, score).",
+	}
+}
+
+func (c *tavilySearchComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
 	}
 }
 
 func (c *tavilySearchComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	if strings.TrimSpace(stringParam(inputs["query"])) == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
 	argsJSON, _ := json.Marshal(inputs)
 	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
 	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
 		return nil, fmt.Errorf("canvas: TavilySearch: %w", err)
 	}
-	return parseToolEnvelope(out), nil
+	results := anySlice(decoded["results"])
+	return map[string]any{
+		"formalized_content": renderTavilySearchResults(results),
+		"json":               results,
+	}, nil
 }
 
 func (c *tavilySearchComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+// tavilyExtractComponent delegates to internal/agent/tool/TavilyExtractTool.
+type tavilyExtractComponent struct {
+	inner *agenttool.TavilyExtractTool
+}
+
+func newTavilyExtractComponent(_ map[string]any) (Component, error) {
+	return &tavilyExtractComponent{inner: agenttool.NewTavilyExtractTool()}, nil
+}
+
+func (c *tavilyExtractComponent) Name() string { return "TavilyExtract" }
+
+func (c *tavilyExtractComponent) Inputs() map[string]string {
+	return map[string]string{
+		"urls":          "URLs to extract content from. Accepts a comma-separated string or array.",
+		"api_key":       "Tavily API key (overrides TAVILY_API_KEY env var).",
+		"extract_depth": "\"basic\" (default) or \"advanced\".",
+		"format":        "\"markdown\" (default) or \"text\".",
+	}
+}
+
+func (c *tavilyExtractComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"urls": map[string]any{
+			"name": "URLs",
+			"type": "line",
+		},
+	}
+}
+
+func (c *tavilyExtractComponent) Outputs() map[string]string {
+	return map[string]string{
+		"json": "Raw Tavily Extract results.",
+	}
+}
+
+func (c *tavilyExtractComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	argsJSON, _ := json.Marshal(inputs)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{"json": []any{}, "_ERROR": decoded["_ERROR"]}, nil
+		}
+		return nil, fmt.Errorf("canvas: TavilyExtract: %w", err)
+	}
+	return map[string]any{"json": anySlice(decoded["results"])}, nil
+}
+
+func (c *tavilyExtractComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
 }
 
@@ -200,6 +276,38 @@ func anySlice(v any) []any {
 	default:
 		return []any{}
 	}
+}
+
+func renderTavilySearchResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		title := strings.TrimSpace(fmt.Sprint(m["title"]))
+		url := strings.TrimSpace(fmt.Sprint(m["url"]))
+		content := strings.TrimSpace(fmt.Sprint(m["raw_content"]))
+		if content == "" || content == "<nil>" {
+			content = strings.TrimSpace(fmt.Sprint(m["content"]))
+		}
+		if content == "" || content == "<nil>" {
+			continue
+		}
+		lines := []string{}
+		if title != "" && title != "<nil>" {
+			lines = append(lines, fmt.Sprintf("Title: %s", title))
+		}
+		if url != "" && url != "<nil>" {
+			lines = append(lines, fmt.Sprintf("URL: %s", url))
+		}
+		lines = append(lines, content)
+		blocks = append(blocks, strings.Join(lines, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
 }
 
 func renderBGPTResults(results []any) string {
@@ -1049,6 +1157,7 @@ func (c *yahooFinanceComponent) Stream(_ context.Context, _ map[string]any) (<-c
 var (
 	_ Component = (*retrievalComponent)(nil)
 	_ Component = (*tavilySearchComponent)(nil)
+	_ Component = (*tavilyExtractComponent)(nil)
 	_ Component = (*exesqlComponent)(nil)
 	_ Component = (*codeExecComponent)(nil)
 	_ Component = (*yahooFinanceComponent)(nil)
@@ -1057,4 +1166,5 @@ var (
 // Compile-time check that the eino InvokableTool methods we call
 // are reachable (catches a future refactor that renames them).
 var _ einotool.InvokableTool = (*agenttool.TavilyTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.TavilyExtractTool)(nil)
 var _ einotool.InvokableTool = (*agenttool.YahooFinanceTool)(nil)
