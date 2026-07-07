@@ -2719,6 +2719,7 @@ This process aggregates variables from multiple branches into a single variable 
       file: 'File upload',
       integer: 'Number',
       boolean: 'Boolean',
+      object: 'JSON object',
 
       logTimeline: {
         begin: 'Ready to begin',

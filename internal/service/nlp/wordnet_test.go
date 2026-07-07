@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 )
@@ -122,14 +123,7 @@ func TestSynsets(t *testing.T) {
 				names[i] = s.Name
 			}
 			for _, expectedName := range tt.checkNames {
-				found := false
-				for _, name := range names {
-					if name == expectedName {
-						found = true
-						break
-					}
-				}
-				if !found {
+				if !slices.Contains(names, expectedName) {
 					t.Errorf("Synsets(%q, %q) did not contain expected synset %q, got %v",
 						tt.lemma, tt.pos, expectedName, names)
 				}

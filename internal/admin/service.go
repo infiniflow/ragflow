@@ -972,7 +972,7 @@ func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{},
 
 	// 3. Generate API token
 	key := utility.GenerateAPIToken()
-	beta := utility.GenerateBetaAPIToken(key)
+	beta := utility.GenerateBetaAPIToken()
 
 	apiToken := &entity.APIToken{
 		TenantID: tenantID,

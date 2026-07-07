@@ -584,9 +584,15 @@ func setupAgentSessionServiceTest(t *testing.T) {
 	t.Helper()
 
 	testDB := setupServiceTestDB(t)
+	sqlDB, err := testDB.DB()
+	if err != nil {
+		t.Fatalf("failed to access sqlite handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	if err := testDB.AutoMigrate(
 		&entity.User{},
 		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
 		&entity.API4Conversation{},
 	); err != nil {
@@ -1269,6 +1275,134 @@ func TestUpdateAgentPersistsDSLAsJSONMap(t *testing.T) {
 	}
 	if _, ok := persisted.DSL["graph"]; !ok {
 		t.Fatalf("DSL graph was not persisted: %#v", persisted.DSL)
+	}
+}
+
+func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-version-draft",
+		UserID:         "user-1",
+		Title:          sptr("Draft Agent"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	patch := map[string]interface{}{
+		"title": "Draft Agent",
+		"dsl": map[string]interface{}{
+			"graph": map[string]interface{}{
+				"nodes": []interface{}{map[string]interface{}{"id": "begin"}},
+				"edges": []interface{}{},
+			},
+			"components": map[string]interface{}{
+				"begin": map[string]interface{}{
+					"obj": map[string]interface{}{"component_name": "Begin"},
+				},
+			},
+		},
+	}
+	if err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-version-draft", patch); err != nil {
+		t.Fatalf("first UpdateAgent failed: %v", err)
+	}
+	secondPatch := map[string]interface{}{
+		"title": "Renamed Agent",
+		"dsl":   patch["dsl"],
+	}
+	if err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-version-draft", secondPatch); err != nil {
+		t.Fatalf("second UpdateAgent failed: %v", err)
+	}
+
+	versions, err := dao.NewUserCanvasVersionDAO().ListByCanvasID("canvas-version-draft")
+	if err != nil {
+		t.Fatalf("failed to list versions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("expected same DSL to replace latest draft, got %d versions", len(versions))
+	}
+	if versions[0].Title == nil || !strings.HasPrefix(*versions[0].Title, "owner_Renamed Agent_") {
+		t.Fatalf("unexpected version title: %v", versions[0].Title)
+	}
+	var release bool
+	if err := dao.DB.Table("user_canvas_version").Select("release").Where("id = ?", versions[0].ID).Scan(&release).Error; err != nil {
+		t.Fatalf("failed to read release flag: %v", err)
+	}
+	if release {
+		t.Fatal("draft update saved a released version")
+	}
+}
+
+func TestUpdateAgentDSLDoesNotOverwriteLatestReleasedVersion(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	dsl := entity.JSONMap{
+		"graph": map[string]any{
+			"nodes": []any{map[string]any{"id": "begin"}},
+			"edges": []any{},
+		},
+		"components": map[string]any{
+			"begin": map[string]any{
+				"obj": map[string]any{"component_name": "Begin"},
+			},
+		},
+	}
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-released-latest",
+		UserID:         "user-1",
+		Title:          sptr("Released Agent"),
+		CanvasCategory: "agent_canvas",
+		DSL:            dsl,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+	releasedAt := time.Now().Add(-time.Minute)
+	if err := dao.DB.Create(&entity.UserCanvasVersion{
+		ID:           "released-version",
+		UserCanvasID: "canvas-released-latest",
+		Title:        sptr("released"),
+		Release:      true,
+		DSL:          dsl,
+		BaseModel: entity.BaseModel{
+			CreateTime: ptr(releasedAt.UnixMilli()),
+			UpdateTime: ptr(releasedAt.UnixMilli()),
+		},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed released version: %v", err)
+	}
+
+	if err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-released-latest", map[string]interface{}{"dsl": map[string]interface{}(dsl)}); err != nil {
+		t.Fatalf("UpdateAgent failed: %v", err)
+	}
+
+	versions, err := dao.NewUserCanvasVersionDAO().ListByCanvasID("canvas-released-latest")
+	if err != nil {
+		t.Fatalf("failed to list versions: %v", err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("expected draft save to create a new version beside the released one, got %d", len(versions))
+	}
+	var releasedCount int64
+	if err := dao.DB.Table("user_canvas_version").Where("user_canvas_id = ? AND release = ?", "canvas-released-latest", true).Count(&releasedCount).Error; err != nil {
+		t.Fatalf("failed to count released versions: %v", err)
+	}
+	if releasedCount != 1 {
+		t.Fatalf("released version count = %d, want 1", releasedCount)
+	}
+	var draftCount int64
+	if err := dao.DB.Table("user_canvas_version").Where("user_canvas_id = ? AND release = ?", "canvas-released-latest", false).Count(&draftCount).Error; err != nil {
+		t.Fatalf("failed to count draft versions: %v", err)
+	}
+	if draftCount != 1 {
+		t.Fatalf("draft version count = %d, want 1", draftCount)
 	}
 }
 

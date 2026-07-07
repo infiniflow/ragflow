@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"slices"
 	"time"
 )
 
@@ -60,14 +61,7 @@ func (f EventFilter) Matches(e *Event) bool {
 		return false
 	}
 	if len(f.Types) > 0 {
-		matched := false
-		for _, t := range f.Types {
-			if e.Type == t {
-				matched = true
-				break
-			}
-		}
-		if !matched {
+		if !slices.Contains(f.Types, e.Type) {
 			return false
 		}
 	}
