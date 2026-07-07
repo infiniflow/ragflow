@@ -62,6 +62,7 @@ type serverArgs struct {
 	helpFlag      bool
 	versionFlag   bool
 	debugLog      bool
+	migrateDB     bool
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
 	port          *int    // Used by admin, api
@@ -81,6 +82,8 @@ func parseArgs() (*serverArgs, error) {
 		case "--admin":
 			serverMode = "admin"
 			args.mode = &serverMode
+		case "--migrate":
+			args.migrateDB = true
 		case "--ingestor":
 			serverMode = "ingestor"
 			args.mode = &serverMode
@@ -285,12 +288,12 @@ func main() {
 		}
 	case "ingestor":
 		if serverName == "" {
-			uuid := common.GenerateUUID()
+			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
 		}
 	case "syncer":
 		if serverName == "" {
-			uuid := common.GenerateUUID()
+			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
 	default:
@@ -335,7 +338,7 @@ func main() {
 	server.PrintAll()
 
 	// Initialize database
-	if err = dao.InitDB(); err != nil {
+	if err = dao.InitDB(arguments.migrateDB); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
 

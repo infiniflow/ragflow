@@ -97,11 +97,13 @@ export const useMessageAction = () => {
           message_id: selectedMessageInfo.message_id,
           status: enable || false,
         })
-        .then(() => {
-          message.success(t('message.updated'));
-          queryClient.invalidateQueries({
-            queryKey: [MemoryApiAction.FetchMemoryMessage],
-          });
+        .then((data: any) => {
+          if (data.data.code === 0) {
+            message.success(t('message.updated'));
+            queryClient.invalidateQueries({
+              queryKey: [MemoryApiAction.FetchMemoryMessage],
+            });
+          }
         });
       setShowDeleteDialog(false);
     },

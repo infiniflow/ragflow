@@ -40,6 +40,7 @@ export default {
       bulgarian: 'Bulgarian',
       arabic: 'Arabic',
       turkish: 'Turkish',
+      dutch: 'Dutch',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -2718,6 +2719,7 @@ This process aggregates variables from multiple branches into a single variable 
       file: 'File upload',
       integer: 'Number',
       boolean: 'Boolean',
+      object: 'JSON object',
 
       logTimeline: {
         begin: 'Ready to begin',
@@ -3064,6 +3066,7 @@ Important structured information may include: names, dates, locations, events, k
       bulgarian: 'Bulgarian',
       arabic: 'Arabic',
       turkish: 'Turkish',
+      dutch: 'Dutch',
     },
     pagination: {
       total: 'Total {{total}}',

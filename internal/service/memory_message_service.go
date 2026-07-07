@@ -56,9 +56,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/utility"
 	"time"
 
-	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	redisengine "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
@@ -316,7 +316,7 @@ func (s *MemoryMessageService) insertTask(_ context.Context, row map[string]any)
 // generator later without changing call sites. Avoids an
 // import-cycle with internal/uuid at the package boundary.
 func newUUIDString() string {
-	return common.GenerateUUID()
+	return utility.GenerateUUID()
 }
 
 func taskFromRow(row map[string]any) *entity.Task {

@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
@@ -396,7 +397,7 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 	memoryTypeInt := dao.CalculateMemoryType(uniqueMemoryTypes)
 	systemPrompt := PromptAssembler{}.AssembleSystemPrompt(uniqueMemoryTypes)
 
-	newID := common.GenerateUUID()
+	newID := utility.GenerateUUID()
 
 	memory := &entity.Memory{
 		ID:               newID,

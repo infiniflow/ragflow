@@ -20,9 +20,8 @@ import (
 	"fmt"
 	"log"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strings"
-
-	"github.com/google/uuid"
 )
 
 // FileDAO file data access object
@@ -92,7 +91,7 @@ func (dao *FileDAO) GetRootFolder(tenantID string) (*entity.File, error) {
 	}
 
 	// Create root folder if not exists
-	fileID := generateUUID()
+	fileID := utility.GenerateToken()
 	file = entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
@@ -285,7 +284,7 @@ func (dao *FileDAO) GetIDListByID(id string, names []string, count int, res []st
 // CreateFolder creates a folder in the database
 func (dao *FileDAO) CreateFolder(parentID, tenantID, name, fileType string) (*entity.File, error) {
 	file := &entity.File{
-		ID:         generateUUID(),
+		ID:         utility.GenerateToken(),
 		ParentID:   parentID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
@@ -361,12 +360,6 @@ func (dao *FileDAO) GetDatasetIDByFileID(fileID string) ([]string, error) {
 	}
 
 	return datasetIDs, nil
-}
-
-// generateUUID generates a UUID
-func generateUUID() string {
-	id := uuid.New().String()
-	return strings.ReplaceAll(id, "-", "")
 }
 
 // reparentAndDeleteFolder safely removes a duplicate folder by first
@@ -477,7 +470,7 @@ func (dao *FileDAO) newAFileFromDataset(tenantID, name, parentID string) (*entit
 		return existingFiles[0], nil
 	}
 
-	fileID := generateUUID()
+	fileID := utility.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   parentID,
@@ -519,7 +512,7 @@ func (dao *FileDAO) addFileFromKB(doc *entity.Document, datasetFolderID, tenantI
 		docLocation = *doc.Location
 	}
 
-	fileID := generateUUID()
+	fileID := utility.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   datasetFolderID,
@@ -536,7 +529,7 @@ func (dao *FileDAO) addFileFromKB(doc *entity.Document, datasetFolderID, tenantI
 		return err
 	}
 
-	f2dID := generateUUID()
+	f2dID := utility.GenerateToken()
 	f2d := &entity.File2Document{
 		ID:         f2dID,
 		FileID:     &fileID,
