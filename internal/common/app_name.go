@@ -21,8 +21,6 @@ import (
 	"path"
 	"regexp"
 	"strings"
-
-	"github.com/google/uuid"
 )
 
 // splitNameCounter splits a filename into base name and counter
@@ -113,13 +111,4 @@ func ValidateName(name string) error {
 	}
 
 	return nil
-}
-
-// GenerateUUID generates a UUID without dashes
-func GenerateUUID() string {
-	newID := strings.ReplaceAll(uuid.New().String(), "-", "")
-	if len(newID) > 32 {
-		newID = newID[:32]
-	}
-	return newID
 }

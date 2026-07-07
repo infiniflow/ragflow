@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strings"
 	"unicode/utf8"
 
@@ -415,7 +416,7 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 	}
 
 	chat := &entity.Chat{
-		ID:                     common.GenerateUUID(),
+		ID:                     utility.GenerateUUID(),
 		TenantID:               tenantID,
 		Name:                   &name,
 		Description:            &description,

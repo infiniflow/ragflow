@@ -31,7 +31,6 @@ import (
 	"ragflow/internal/utility"
 	"strings"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -742,11 +741,6 @@ func sortResults(results []entity.SkillSearchResult) {
 			}
 		}
 	}
-}
-
-// GenerateID generates a unique ID
-func generateID() string {
-	return strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
 }
 
 // CalculateContentHash calculates SHA256 hash of skill content

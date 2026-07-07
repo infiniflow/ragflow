@@ -200,7 +200,7 @@ func (s *File2DocumentService) convertFiles(fileIDs, kbIDs []string, userID stri
 			parserID := selectUploadParser(utility.FileType(file.Type), file.Name, kb.ParserID)
 			suffix := strings.TrimPrefix(filepath.Ext(file.Name), ".")
 			doc := &entity.Document{
-				ID:           common.GenerateUUID(),
+				ID:           utility.GenerateUUID(),
 				KbID:         kb.ID,
 				ParserID:     parserID,
 				ParserConfig: kb.ParserConfig,
@@ -226,7 +226,7 @@ func (s *File2DocumentService) convertFiles(fileIDs, kbIDs []string, userID stri
 			}
 
 			mapping := &entity.File2Document{
-				ID:         common.GenerateUUID(),
+				ID:         utility.GenerateUUID(),
 				FileID:     &fileID,
 				DocumentID: &doc.ID,
 			}
