@@ -237,7 +237,9 @@ class TaskHandler:
                 return
 
             # Route to appropriate handler
-            if task_type == "graphrag":
+            if task_type == "raptor":
+                await self._run_raptor(embedding_model, vector_size)
+            elif task_type == "graphrag":
                 await self._run_graphrag(embedding_model)
             elif task_type == "mindmap":
                 ctx.progress_cb(1, "place holder")
