@@ -17,6 +17,8 @@
 package dao
 
 import (
+	"context"
+
 	"ragflow/internal/entity"
 )
 
@@ -50,6 +52,17 @@ func (dao *UserDAO) GetByTenantID(tenantID string) (*entity.User, error) {
 		return nil, err
 	}
 	return &user, nil
+}
+
+// GetNicknameByID returns a user's nickname by string id.
+func (dao *UserDAO) GetNicknameByID(ctx context.Context, id string) (string, error) {
+	var nickname string
+	err := DB.WithContext(ctx).
+		Model(&entity.User{}).
+		Where("id = ?", id).
+		Select("nickname").
+		Scan(&nickname).Error
+	return nickname, err
 }
 
 // GetByEmail get user by email
