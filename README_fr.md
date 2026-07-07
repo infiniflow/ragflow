@@ -1,6 +1,6 @@
 <div align="center">
 <a href="https://cloud.ragflow.io/">
-<img src="web/src/assets/logo-with-text.svg" width="520" alt="ragflow logo">
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow/main/web/src/assets/logo-with-text.svg" width="520" alt="ragflow logo">
 </a>
 </div>
 
@@ -25,10 +25,10 @@
         <img alt="Badge statique" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.3">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.26.4">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
-        <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Dernière%20version" alt="Dernière version">
+        <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Derniere%20version" alt="Dernière version">
     </a>
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="licence">
@@ -190,12 +190,12 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 > Toutes les images Docker sont construites pour les plateformes x86. Nous ne proposons pas actuellement d'images Docker pour ARM64.
 > Si vous êtes sur une plateforme ARM64, suivez [ce guide](https://ragflow.io/docs/dev/build_docker_image) pour construire une image Docker compatible avec votre système.
 
-> La commande ci-dessous télécharge l'édition `v0.26.3` de l'image Docker RAGFlow. Consultez le tableau suivant pour les descriptions des différentes éditions de RAGFlow. Pour télécharger une édition de RAGFlow différente de `v0.26.3`, mettez à jour la variable `RAGFLOW_IMAGE` dans **docker/.env** avant d'utiliser `docker compose` pour démarrer le serveur.
+> La commande ci-dessous télécharge l'édition `v0.26.4` de l'image Docker RAGFlow. Consultez le tableau suivant pour les descriptions des différentes éditions de RAGFlow. Pour télécharger une édition de RAGFlow différente de `v0.26.4`, mettez à jour la variable `RAGFLOW_IMAGE` dans **docker/.env** avant d'utiliser `docker compose` pour démarrer le serveur.
 
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.26.3
+   # git checkout v0.26.4
    # Optionnel : utiliser un tag stable (voir les versions : https://github.com/infiniflow/ragflow/releases)
    # Cette étape garantit que le fichier **entrypoint.sh** dans le code correspond à la version de l'image Docker.
 

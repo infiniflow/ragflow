@@ -300,7 +300,10 @@ export const useSendAgentMessage = ({
       beginInputs?: BeginQuery[];
       exploreSessionId?: string;
     }) => {
-      const params: Record<string, unknown> = { agent_id: agentId };
+      const params: Record<string, unknown> = {
+        agent_id: agentId,
+        stream: true,
+      };
 
       params.running_hint_text = i18n.t('flow.runningHintText', {
         defaultValue: 'is running...🕞',
@@ -375,6 +378,7 @@ export const useSendAgentMessage = ({
       await send({
         ...body,
         ...(isShared ? {} : { agent_id: agentId }),
+        stream: true,
         session_id: sessionId,
         ...(releaseMode ? { release: releaseMode } : {}),
       });
