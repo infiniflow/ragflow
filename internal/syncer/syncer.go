@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"sync"
 	"time"
 
@@ -48,7 +49,7 @@ type Syncer struct {
 func NewSyncer(maxConcurrency int, pollInterval time.Duration) *Syncer {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Syncer{
-		id:             common.GenerateUUID(),
+		id:             utility.GenerateUUID(),
 		maxConcurrency: maxConcurrency,
 		pollInterval:   pollInterval,
 		ctx:            ctx,

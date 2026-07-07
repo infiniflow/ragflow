@@ -218,9 +218,6 @@ export const useUpdateMemory = () => {
         queryKey: ['memoryDetail', variables.id],
       });
     },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
-    },
   });
 
   const updateMemory = useCallback(
