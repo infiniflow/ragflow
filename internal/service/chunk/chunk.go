@@ -795,7 +795,7 @@ func (s *ChunkService) buildParseTasks(doc *entity.Document, bucket, objectName 
 	}
 	tasks := make([]*entity.Task, 0, len(ranges))
 	for _, pageRange := range ranges {
-		taskID := common.GenerateUUID()
+		taskID := utility.GenerateUUID()
 		progressMsg := ""
 		digest := s.parseTaskDigest(doc, pageRange.from, pageRange.to)
 		chunkIDs := ""
