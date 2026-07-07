@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -125,6 +126,7 @@ var ErrAgentStorageError = errors.New("agent storage error")
 type AgentService struct {
 	canvasDAO           *dao.UserCanvasDAO
 	canvasTemplateDAO   *dao.CanvasTemplateDAO
+	userDAO             *dao.UserDAO
 	userTenantDAO       *dao.UserTenantDAO
 	versionDAO          *dao.UserCanvasVersionDAO
 	api4ConversationDAO *dao.API4ConversationDAO
@@ -181,6 +183,7 @@ func NewAgentServiceWithOptions(
 	return &AgentService{
 		canvasDAO:           dao.NewUserCanvasDAO(),
 		canvasTemplateDAO:   dao.NewCanvasTemplateDAO(),
+		userDAO:             dao.NewUserDAO(),
 		userTenantDAO:       dao.NewUserTenantDAO(),
 		versionDAO:          dao.NewUserCanvasVersionDAO(),
 		api4ConversationDAO: dao.NewAPI4ConversationDAO(),
@@ -422,7 +425,8 @@ func (s *AgentService) GetAgent(ctx context.Context, userID, canvasID string) (*
 // UpdateAgent applies a draft patch to user_canvas. Settings updates may omit
 // dsl; in that case the existing draft DSL must be preserved.
 func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string, patch map[string]interface{}) error {
-	if _, err := s.loadCanvasForUser(ctx, userID, canvasID); err != nil {
+	canvasInstance, err := s.loadCanvasForUser(ctx, userID, canvasID)
+	if err != nil {
 		return err
 	}
 
@@ -451,9 +455,24 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(entity.JSONMap(dslMap)))
 	}
 
-	_, err := s.canvasDAO.UpdateFields(canvasID, updates)
+	_, err = s.canvasDAO.UpdateFields(canvasID, updates)
 	if err != nil {
 		return fmt.Errorf("update agent %s: %w", canvasID, err)
+	}
+	if dslValue, ok := updates["dsl"]; ok {
+		dsl, ok := dslValue.(entity.JSONMap)
+		if !ok {
+			return fmt.Errorf("update agent %s: normalized dsl must be an object", canvasID)
+		}
+		title := ""
+		if value, ok := updates["title"]; ok {
+			title, _ = value.(string)
+		} else if canvasInstance.Title != nil {
+			title = *canvasInstance.Title
+		}
+		if _, err := s.saveOrReplaceVersion(ctx, userID, canvasID, dsl, title, nil, false); err != nil {
+			return fmt.Errorf("update agent %s: save version: %w", canvasID, err)
+		}
 	}
 	return nil
 }
@@ -466,11 +485,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 // returned so the caller can render it back to the client without an
 // extra GET.
 //
-// Reset does NOT create a new user_canvas_version row — that mirrors
-// the Python behavior and UpdateAgent: versions are owned by
-// PublishAgent. It also does NOT touch the in-flight run state of any
-// currently executing canvas session; that is owned by the Python task
-// executor and is out of scope for the Go port.
+// Reset does NOT create a new user_canvas_version row. It also does NOT touch
+// the in-flight run state of any currently executing canvas session; that is
+// owned by the Python task executor and is out of scope for the Go port.
 //
 // Errors propagate the same way as GetAgent: a missing canvas, or a
 // canvas that the user has no access to, surfaces as
@@ -580,6 +597,41 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 		return nil, err
 	}
 	return row, nil
+}
+
+func (s *AgentService) saveOrReplaceVersion(ctx context.Context, userID, canvasID string, dsl entity.JSONMap, title string, description *string, release bool) (*entity.UserCanvasVersion, error) {
+	nickname, err := s.userDAO.GetNicknameByID(ctx, userID)
+	if err != nil || strings.TrimSpace(nickname) == "" {
+		nickname = userID
+	}
+	versionTitle := buildVersionTitle(nickname, title, time.Now())
+	return s.versionDAO.SaveOrReplaceLatest(dao.SaveOrReplaceLatestVersionOptions{
+		NewID:           genID32(),
+		UserCanvasID:    canvasID,
+		Title:           &versionTitle,
+		Description:     description,
+		DSL:             dsl,
+		Release:         release,
+		KeepUnpublished: 20,
+		SameDSL: func(latestDSL entity.JSONMap) bool {
+			return reflect.DeepEqual(
+				entity.JSONMap(dslpkg.NormalizeForCanvas(latestDSL)),
+				dsl,
+			)
+		},
+	})
+}
+
+func buildVersionTitle(userNickname, agentTitle string, ts time.Time) string {
+	tenant := strings.TrimSpace(userNickname)
+	if tenant == "" {
+		tenant = "tenant"
+	}
+	title := strings.TrimSpace(agentTitle)
+	if title == "" {
+		title = "agent"
+	}
+	return fmt.Sprintf("%s_%s_%s", tenant, title, ts.Format("2006-01-02 15:04:05"))
 }
 
 // ListVersions returns every version for a canvas the user can see,
