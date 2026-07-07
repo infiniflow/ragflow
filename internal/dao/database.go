@@ -171,6 +171,13 @@ func InitDB() error {
 		return fmt.Errorf("failed to run manual migrations: %w", err)
 	}
 
+	// Seed built-in agent templates so the Go backend can serve the
+	// "create agent from template" catalogue without relying on Python-side
+	// initialization.
+	if err = SeedCanvasTemplates(); err != nil {
+		common.Warn("Failed to seed canvas templates", zap.Error(err))
+	}
+
 	common.Info("Database connected and migrated successfully")
 
 	err = models.InitProviderManager("conf/models")

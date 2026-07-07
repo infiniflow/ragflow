@@ -13,7 +13,9 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -160,7 +162,13 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	}
 
 	input := []*schema.Message{schema.UserMessage(p.UserPrompt)}
-	return agent.Generate(ctx, input)
+	opt, future := react.WithMessageFuture()
+	ctx = setArtifactCollector(ctx, future)
+	msg, err := agent.Generate(ctx, input, opt)
+	if err != nil {
+		return nil, err
+	}
+	return msg, nil
 }
 
 // addToolCallMemory summarizes the tool calls observed in msg via
@@ -275,17 +283,16 @@ func chunksFromState(ctx context.Context) []prompts.CitationSource {
 	return out
 }
 
-// GetInputForm aggregates the Agent's own meta-schema with each
-// sub-tool's input form. Mirrors Python's `Agent.get_input_form`.
+// GetInputForm aggregates the Agent's own user-callable parameters with each
+// sub-tool's input form. Mirrors Python's `Agent.get_input_form`, which
+// returns a flat field-definition map keyed by input name.
 //
 // Today the sub-tool input forms are aggregated via an optional
 // `InputForm() map[string]any` method on the eino tool (when tools
 // implement it); tools that don't expose a structured input form
 // are skipped silently.
 func (c *AgentComponent) GetInputForm() map[string]any {
-	out := map[string]any{
-		"self": c.param.Meta,
-	}
+	out := extractAgentPromptInputForm(c.param.SystemPrompt, c.param.UserPrompt)
 	tools, err := buildAgentTools(c.param)
 	if err != nil {
 		return out
@@ -305,6 +312,41 @@ func (c *AgentComponent) GetInputForm() map[string]any {
 		}
 	}
 	return out
+}
+
+func extractAgentPromptInputForm(systemPrompt, userPrompt string) map[string]any {
+	out := map[string]any{}
+	seen := map[string]struct{}{}
+	matches := append(runtime.VarRefPattern.FindAllStringSubmatch(systemPrompt, -1), runtime.VarRefPattern.FindAllStringSubmatch(userPrompt, -1)...)
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		key := strings.TrimSpace(match[1])
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out[key] = map[string]any{
+			"type":     "line",
+			"name":     key,
+			"optional": false,
+		}
+	}
+	return out
+}
+
+func sortedAgentPromptInputKeys(systemPrompt, userPrompt string) []string {
+	form := extractAgentPromptInputForm(systemPrompt, userPrompt)
+	keys := make([]string, 0, len(form))
+	for key := range form {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // Reset calls Reset on every sub-tool that implements the Resetter
@@ -530,7 +572,7 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 			}
 		}
 	}
-	artifacts := collectArtifactsFromToolCalls(msg)
+	artifacts := collectArtifactsFromToolCalls(ctx, msg)
 	artifactMD := formatArtifactMarkdown(artifacts, content)
 	out := map[string]any{
 		"content":    content + artifactMD,
@@ -653,22 +695,130 @@ type artifactEntry struct {
 	URL  string `json:"url"`
 }
 
-// collectArtifactsFromToolCalls extracts artifact entries from a
-// ReAct final message. Today, eino's react.Agent.Generate returns only
-// the final message — the tool-response state lives inside the agent
-// runtime and is not directly accessible. So this v1 returns an empty
-// slice; the wiring lives in a follow-up that hoists the eino state
-// into a place AgentComponent can read.
-//
-// When the tool response state becomes accessible (a future phase),
-// the entry point to wire it is here: scan the eino conversation
-// messages for entries whose `Extra["_ARTIFACTS"]` carries the
-// per-tool artifact metadata, decode the JSON, and append to the
-// returned slice. The shape expected from each tool is:
-//
-//	{ "name": "report.pdf", "url": "https://..." }
-func collectArtifactsFromToolCalls(_ *schema.Message) []artifactEntry {
+// artifactCollectorKey is the context key used to stash the
+// MessageFuture from react.WithMessageFuture() so the AgentComponent
+// can collect artifacts after the ReAct loop finishes. The collector
+// is created per-invocation in runEinoReActAgent.
+type artifactCollectorKey struct{}
+
+// setArtifactCollector registers the MessageFuture for this agent run
+// in the context. It is called from runEinoReActAgent after
+// react.WithMessageFuture() returns a future.
+func setArtifactCollector(ctx context.Context, future react.MessageFuture) context.Context {
+	return context.WithValue(ctx, artifactCollectorKey{}, future)
+}
+
+// getArtifactCollector retrieves the MessageFuture registered for the
+// current agent run. Returns nil when no collector was registered
+// (e.g., tests that stub agentRunner).
+func getArtifactCollector(ctx context.Context) react.MessageFuture {
+	v := ctx.Value(artifactCollectorKey{})
+	if v == nil {
+		return nil
+	}
+	if f, ok := v.(react.MessageFuture); ok {
+		return f
+	}
 	return nil
+}
+
+// collectArtifactsFromToolCalls drains the MessageFuture stored in
+// ctx (if any) and extracts artifact entries from every tool response
+// message that carries a `_ARTIFACTS` payload in its Extra field.
+// The final message is ignored because it is an assistant message and
+// does not contain tool results. Returns a de-duplicated list ordered
+// by first appearance.
+//
+// The expected payload shape in each tool response is:
+//
+//	{ "_ARTIFACTS": [{ "name": "report.pdf", "url": "https://..." }, ...] }
+func collectArtifactsFromToolCalls(ctx context.Context, _ *schema.Message) []artifactEntry {
+	future := getArtifactCollector(ctx)
+	if future == nil {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	var out []artifactEntry
+
+	iter := future.GetMessages()
+	for {
+		msg, ok, err := iter.Next()
+		if err != nil {
+			common.Debug("agent: artifact collection iterator error", zap.Error(err))
+			break
+		}
+		if !ok {
+			break
+		}
+		if msg == nil || msg.Role != schema.Tool {
+			continue
+		}
+		rawArtifacts := extractArtifactsFromToolMessage(msg)
+		for _, a := range rawArtifacts {
+			if a.URL == "" || a.Name == "" {
+				continue
+			}
+			if _, exists := seen[a.URL]; exists {
+				continue
+			}
+			seen[a.URL] = struct{}{}
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// extractArtifactsFromToolMessage parses the JSON payload of a tool
+// response message and returns the `_ARTIFACTS` list. The payload is
+// read from msg.Content when it is non-empty; otherwise the first text
+// element of msg.UserInputMultiContent is used. This matches the eino
+// tool contract where tool results are delivered as a string.
+func extractArtifactsFromToolMessage(msg *schema.Message) []artifactEntry {
+	payload := msg.Content
+	if payload == "" && len(msg.UserInputMultiContent) > 0 {
+		payload = toolMessageTextContent(msg)
+	}
+	if payload == "" {
+		return nil
+	}
+
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(payload), &envelope); err != nil {
+		return nil
+	}
+
+	raw, ok := envelope["_ARTIFACTS"].([]any)
+	if !ok {
+		return nil
+	}
+
+	out := make([]artifactEntry, 0, len(raw))
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := m["name"].(string)
+		url, _ := m["url"].(string)
+		if name == "" || url == "" {
+			continue
+		}
+		out = append(out, artifactEntry{Name: name, URL: url})
+	}
+	return out
+}
+
+// toolMessageTextContent returns the first text content part of a tool
+// message, or an empty string if no text part is found.
+func toolMessageTextContent(msg *schema.Message) string {
+	for i := range msg.UserInputMultiContent {
+		part := &msg.UserInputMultiContent[i]
+		if part.Type == schema.ChatMessagePartTypeText && part.Text != "" {
+			return part.Text
+		}
+	}
+	return ""
 }
 
 // formatArtifactMarkdown renders a slice of artifacts as markdown

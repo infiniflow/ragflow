@@ -56,8 +56,13 @@ func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, p
 			user.nickname,
 			user.avatar as tenant_avatar
 		`).
-		Joins("LEFT JOIN user ON search.tenant_id = user.id").
-		Where("(search.tenant_id IN ? OR search.tenant_id = ?) AND search.status = ?", tenantIDs, userID, "1")
+		Joins("LEFT JOIN user ON search.tenant_id = user.id")
+
+	if len(tenantIDs) > 0 {
+		query = query.Where("(search.tenant_id IN ? OR search.tenant_id = ?) AND search.status = ?", tenantIDs, userID, "1")
+	} else {
+		query = query.Where("search.tenant_id = ? AND search.status = ?", userID, "1")
+	}
 
 	// Apply keyword filter
 	if keywords != "" {

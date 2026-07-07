@@ -12,9 +12,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 
 # Build directories
-CPP_DIR="$PROJECT_ROOT/internal/cpp"
+CPP_DIR="$PROJECT_ROOT/internal/binding/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
-RAGFLOW_MAIN_BINARY="$PROJECT_ROOT/bin/ragflow_main"
+RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/ragflow_server"
 RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 
 # Strip symbols from Go binaries (set via --strip / -s)
@@ -118,7 +118,7 @@ check_cpp_deps() {
     print_section "Checking c++ dependencies"
 
     command -v cmake >/dev/null 2>&1 || { echo -e "${RED}Error: cmake is required but not installed.${NC}"; exit 1; }
-    command -v g++ >/dev/null 2>&1 || { echo -e "${RED}Error: g++ is required but not installed.${NC}"; exit 1; }
+    command -v clang++ >/dev/null 2>&1 || { echo -e "${RED}Error: clang++ is required but not installed.${NC}"; exit 1; }
 
     if check_pcre2; then
         echo "✓ pcre2 library found"
@@ -159,7 +159,7 @@ check_office_oxide_deps() {
 
     echo -e "${RED}Error: office_oxide native library not found${NC}"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run ragflow_deps/download_deps.py"
+    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
     echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
     exit 1
 }
@@ -176,7 +176,7 @@ check_pdfium_deps() {
 
     echo "  pdfium (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run ragflow_deps/download_deps.py"
+    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
     echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/pdfium-linux-x64-static.tgz | tar xz -C ${PDFIUM_STATIC_PREFIX}"
     return 1
 }
@@ -213,7 +213,7 @@ check_pdf_oxide_deps() {
 
     echo "  pdf_oxide (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run ragflow_deps/download_deps.py"
+    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
     echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz | tar xz -C ${PDF_OXIDE_PREFIX}"
     return 1
 }
@@ -301,20 +301,20 @@ build_go() {
     local strip_flags=()
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
-    echo "Building RAGFlow binary: $RAGFLOW_MAIN_BINARY, and $RAGFLOW_CLI_BINARY"
+    echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, and $RAGFLOW_CLI_BINARY"
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build "${strip_flags[@]}" -o "$RAGFLOW_MAIN_BINARY" cmd/ragflow_main.go
+        go build "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" cmd/ragflow_server.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
-    if [ ! -f "$RAGFLOW_MAIN_BINARY" ]; then
+    if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
         echo -e "${RED}Error: Failed to build RAGFlow main binary${NC}"
         exit 1
     fi
 
-    echo -e "${GREEN}✓ Go ragflow_main built successfully: $RAGFLOW_MAIN_BINARY${NC}"
+    echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
     echo -e "${GREEN}✓ Go ragflow-cli built successfully: $RAGFLOW_CLI_BINARY${NC}"
 }
 
@@ -384,8 +384,8 @@ setup_cgo_env() {
     echo "CGO_LDFLAGS:  $CGO_LDFLAGS"
 }
 
-# Run Go unit tests with the same CGO env as `build_go`. Pass any extra args
-# to `go test`, e.g. `./build.sh --test -run TestFoo ./internal/admin/...`.
+# Run Go unit tests with the same CGO env as `build_go`. Any extra args are
+# forwarded to `go test`, e.g. `./build.sh --test -run TestFoo ./internal/admin/...`.
 run_go_tests() {
     print_section "Running Go tests"
 
@@ -405,7 +405,7 @@ clean() {
     print_section "Cleaning build artifacts"
 
     rm -rf "$BUILD_DIR"
-    rm -f "$RAGFLOW_MAIN_BINARY"
+    rm -f "$RAGFLOW_SERVER_BINARY"
     rm -f "$RAGFLOW_CLI_BINARY"
 
     echo -e "${GREEN}✓ Build artifacts cleaned${NC}"
@@ -413,8 +413,8 @@ clean() {
 
 # Run the server
 run() {
-    if [ ! -f "$RAGFLOW_MAIN_BINARY" ]; then
-        echo -e "${RED}Error: $RAGFLOW_MAIN_BINARY not found. Build first with --all or --go${NC}"
+    if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
+        echo -e "${RED}Error: $RAGFLOW_SERVER_BINARY not found. Build first with --all or --go${NC}"
         exit 1
     fi
 
@@ -423,7 +423,7 @@ run() {
     # admin_server must be running before ragflow_server, otherwise ragflow_server's
     # heartbeats to admin will error out (see internal/development.md).
     print_section "Starting admin server (background)"
-    "$RAGFLOW_MAIN_BINARY" --admin &
+    "$RAGFLOW_SERVER_BINARY" --admin &
     ADMIN_PID=$!
     trap 'kill "$ADMIN_PID" 2>/dev/null || true' EXIT INT TERM
 
@@ -432,13 +432,13 @@ run() {
     sleep 1
 
     print_section "Starting ingestor (background)"
-    "$RAGFLOW_MAIN_BINARY" --ingestor &
+    "$RAGFLOW_SERVER_BINARY" --ingestor &
     INGESTOR_PID=$!
     trap 'kill "$INGESTOR_PID" 2>/dev/null || true' EXIT INT TERM
     sleep 1
 
     print_section "Starting RAGFlow server (foreground)"
-    "$RAGFLOW_MAIN_BINARY" -- api
+    "$RAGFLOW_SERVER_BINARY" -- api
 }
 
 # Show help
@@ -456,8 +456,8 @@ OPTIONS:
     --cpp-test      Build C++ test executable (requires --cpp first)
     --go, -g        Build only Go server (requires C++ library to be built)
     --test, -t      Run Go unit tests (sets up CGO env for office_oxide).
-                    Pass extra args after `--` to forward to `go test`, e.g.
-                    `$0 --test -- -run TestFoo ./internal/admin/...`
+                    Any extra args are forwarded to `go test`, e.g.
+                    `$0 --test -run TestFoo ./internal/admin/...`
     --clean, -C     Clean all build artifacts
     --run, -r       Build and run the server
     --strip, -s     Strip debug symbols from Go binaries (-ldflags="-s -w")
@@ -470,7 +470,7 @@ EXAMPLES:
     $0 --go         # Build only Go server
     $0 --cpp-test   # Build C++ test executable
     $0 --test       # Run all Go tests
-    $0 --test -- -run TestFoo ./internal/admin/...   # Targeted Go tests
+    $0 --test -run TestFoo ./internal/admin/...      # Targeted Go tests
     $0 --run        # Build and run
     $0 --clean      # Clean build artifacts
 
@@ -478,7 +478,7 @@ DEPENDENCIES:
     - cmake >= 4.0
     - go >= 1.24
     - g++ with C++17/23 support
-    - office_oxide native library (download with: uv run ragflow_deps/download_deps.py)
+    - office_oxide native library (download with: uv run python3 ragflow_deps/download_deps.py)
     - lld (Linux only): sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
     - pcre2 development files
         - Debian/Ubuntu: libpcre2-dev
@@ -513,12 +513,10 @@ main() {
             ;;
         --test|-t)
             check_go_deps
-            # Forward any args after `--` to `go test`.
-            if [ "${2:-}" = "--" ]; then
-                shift 2
-                run_go_tests "$@"
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests "${args[@]:2}"
             else
-                run_go_tests
+                run_go_tests "${args[@]:1}"
             fi
             ;;
         --clean|-C)
@@ -540,7 +538,7 @@ main() {
             build_cpp
             build_go
             echo -e "\n${GREEN}=== Build completed successfully! ===${NC}"
-            echo "Binary: $RAGFLOW_MAIN_BINARY, $RAGFLOW_CLI_BINARY"
+            echo "Binary: $RAGFLOW_SERVER_BINARY, $RAGFLOW_CLI_BINARY"
             ;;
         *)
             echo -e "${RED}Unknown option: $1${NC}"

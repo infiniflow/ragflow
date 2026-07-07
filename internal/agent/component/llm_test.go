@@ -15,6 +15,7 @@ package component
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -178,14 +179,7 @@ func TestLLM_Invoke_InvokerError(t *testing.T) {
 
 func TestLLM_Registered(t *testing.T) {
 	names := RegisteredNames()
-	found := false
-	for _, n := range names {
-		if n == "llm" {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.Contains(names, "llm") {
 		t.Fatalf("LLM not registered; names=%v", names)
 	}
 	// And a factory round-trip.
@@ -199,14 +193,12 @@ func TestLLM_Registered(t *testing.T) {
 }
 
 // TestLLM_ThinkingFieldRoundTrip guards the agent-component
-// portion of PR #15446 (thinking switch). The agent component
-// accepts `thinking` from the DSL params (whitelisted to the
-// two known sentinels) and threads it through LLMParam and the
-// ChatInvokeRequest so the default invoker (or a stub) can
-// translate it into the provider-specific request body
-// (Qwen `enable_thinking`, Kimi/GLM `thinking.type`). Provider
-// policy itself lives in internal/llm and is a separate porting
-// stream.
+// portion of PR #15446 (thinking switch) and PR #16640 (gen_conf
+// forwarding). The agent component accepts `thinking` from the DSL
+// params (any non-empty, non-"default" value) and threads it through
+// LLMParam and the ChatInvokeRequest. Downstream (einoChatInvoker)
+// only acts on "enabled" / "disabled" and silently ignores other
+// values, so lenient forwarding is safe.
 func TestLLM_ThinkingFieldRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -231,7 +223,7 @@ func TestLLM_ThinkingFieldRoundTrip(t *testing.T) {
 		t.Errorf("Thinking = %q, want disabled", disabled.Thinking)
 	}
 
-	// Case 3: empty / system-default value is preserved (no defaulting).
+	// Case 3: empty / missing value → empty (system default).
 	defaulted := mergeLLMParam(LLMParam{}, map[string]any{
 		"model_id":    "glm-4.6",
 		"user_prompt": "u",
@@ -240,16 +232,27 @@ func TestLLM_ThinkingFieldRoundTrip(t *testing.T) {
 		t.Errorf("Thinking = %q, want empty (system default)", defaulted.Thinking)
 	}
 
-	// Case 4: arbitrary string is REJECTED (DSL safety — the LLM
-	// driver should not see unvalidated values). Mirrors the
-	// python llm.py:78-79 `if get_attr("thinking") in {"enabled",
-	// "disabled"}` gate.
-	arbitrary := mergeLLMParam(LLMParam{}, map[string]any{
-		"thinking":    "yes please",
+	// Case 4: "default" is explicitly rejected, matching Python's
+	// `self.thinking != "default"` gate in gen_conf().
+	defaultStr := mergeLLMParam(LLMParam{}, map[string]any{
+		"thinking":    "default",
 		"model_id":    "glm-4.6",
 		"user_prompt": "u",
 	})
-	if arbitrary.Thinking != "" {
-		t.Errorf("arbitrary thinking = %q, want empty (rejected)", arbitrary.Thinking)
+	if defaultStr.Thinking != "" {
+		t.Errorf(`Thinking = %q, want empty ("default" rejected)`, defaultStr.Thinking)
+	}
+
+	// Case 5: arbitrary / unknown values are leniently forwarded
+	// (matches Python gen_conf() which passes through any truthy
+	// non-"default" string). Downstream einoChatInvoker ignores
+	// unknown values, so this is safe.
+	arbitrary := mergeLLMParam(LLMParam{}, map[string]any{
+		"thinking":    "auto",
+		"model_id":    "glm-4.6",
+		"user_prompt": "u",
+	})
+	if arbitrary.Thinking != "auto" {
+		t.Errorf("arbitrary thinking = %q, want auto (lenient forwarding)", arbitrary.Thinking)
 	}
 }

@@ -55,10 +55,7 @@ const oauthAuthCookie = "ragflow_auth"
 func (h *UserHandler) OAuthLogin(c *gin.Context) {
 	channel := c.Param("channel")
 	if channel == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": "channel is required",
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "channel is required")
 		return
 	}
 
@@ -68,17 +65,10 @@ func (h *UserHandler) OAuthLogin(c *gin.Context) {
 		// server_error_response, which replies HTTP 200 with code 100 and
 		// the exception's repr() as the message (no short error code).
 		if errors.Is(err, service.ErrOAuthInvalidChannel) {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeExceptionError,
-				"data":    nil,
-				"message": fmt.Sprintf("ValueError('Invalid channel name: %s')", channel),
-			})
+			common.ResponseWithCodeData(c, common.CodeExceptionError, nil, fmt.Sprintf("ValueError('Invalid channel name: %s')", channel))
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, code, nil, err.Error())
 		return
 	}
 

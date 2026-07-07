@@ -332,7 +332,6 @@ from common.exceptions import TaskCanceledException  # noqa: E402
 from common.misc_utils import thread_pool_exec  # noqa: E402
 from common.token_utils import num_tokens_from_string  # noqa: E402
 from rag.nlp import search  # noqa: E402
-from api.apps.restful_apis.chunk_api import _compilation_template_kind  # noqa: E402
 from api.db.services.document_service import DocumentService  # noqa: E402
 from api.db.services.compilation_template_service import (  # noqa: E402
     CompilationTemplateService,
@@ -375,9 +374,6 @@ STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S = 120.0
 
 
 # ----- parser_config helpers -----------------------------------------
-# Duplicated from ``task_handler`` so this module stays free of a
-# reverse import (task_handler → this module via dispatch; the other
-# direction would be circular).
 
 
 def _parser_config_compilation_template_group_ids(parser_config) -> list[str]:
@@ -913,7 +909,14 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
     ``handler._load_chunks_for_doc``) and fans each batch out to every
     configured non-artifact template, flushing accumulators through
     ``merge_compiled_structures`` at :data:`DOC_STRUCTURE_MERGE_MAX_DOCS`.
+
+    After extract+merge, if any template has ``synthesis.enabled``,
+    runs ``wiki_plan_from_reduction`` + ``wiki_refine_from_plan`` to
+    generate synthesis output (wiki pages, essence paragraphs, etc.).
+    Compile_kwd and REFINE prompt are read from the template config.
     """
+    from api.apps.restful_apis.chunk_api import _compilation_template_kind
+
     ctx = handler._task_context
     template_ids = _parser_config_compilation_template_ids(ctx.parser_config, ctx.tenant_id)
     if not template_ids:
@@ -1079,13 +1082,90 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
                 progress_cb(msg=f"  merge flush ({len(accumulators[template_id])} docs) for template ({idx + 1}/{total})")
                 await _flush(template_id)
 
-    for idx, (template_id, _parser_cfg) in enumerate(active_templates):
+    for idx, (template_id, parser_cfg) in enumerate(active_templates):
         if ctx.has_canceled_func(ctx.id):
             raise TaskCanceledException(f"Task {ctx.id} was cancelled during document knowledge compilation")
         await _flush(template_id)
         agg = agg_infos[template_id]
         ctx.recording_context.record(f"document_structure_compile:{template_id}", agg)
         progress_cb(msg=f"Document knowledge compilation done ({idx + 1}/{total}): {agg}")
+
+        # ── Synthesis phase ──────────────────────────────────────────────
+        # If the template has synthesis.enabled, run wiki PLAN+REFINE
+        # to generate output (wiki page, essence paragraph, etc.).
+        synthesis_cfg = (parser_cfg or {}).get("synthesis") or {}
+        if synthesis_cfg.get("enabled"):
+            example = synthesis_cfg.get("example")
+            compile_kwd = synthesis_cfg.get("compile_kwd", "artifact_page")
+            plan_cfg = synthesis_cfg.get("plan") or {}
+
+            # Reserved for future wiki_plan_from_reduction extension:
+            # entity_type_filter, mention_count_threshold, top_n
+            if plan_cfg:
+                logging.debug(
+                    "synthesis: template %s plan config %r reserved for future use",
+                    template_id, plan_cfg,
+                )
+
+            if ctx.has_canceled_func(ctx.id):
+                raise TaskCanceledException(
+                    f"Task {ctx.id} was cancelled before synthesis PLAN"
+                )
+
+            if not example:
+                logging.warning(
+                    "synthesis: template %s has synthesis.enabled but no example; skipping",
+                    template_id,
+                )
+            else:
+                try:
+                    from rag.advanced_rag.knowlege_compile.wiki import (
+                        wiki_plan_from_reduction,
+                        wiki_refine_from_plan,
+                    )
+
+                    progress_cb(
+                        msg=f"Synthesis PLAN for template {template_id} (kind={compile_kwd}) ..."
+                    )
+                    plan = await wiki_plan_from_reduction(
+                        chat_mdl=chat_mdl_by_tid[template_id],
+                        embd_mdl=embedding_model,
+                        tenant_id=ctx.tenant_id,
+                        kb_id=ctx.kb_id,
+                        callback=progress_cb,
+                    )
+                    if ctx.has_canceled_func(ctx.id):
+                        raise TaskCanceledException(
+                            f"Task {ctx.id} was cancelled after synthesis PLAN"
+                        )
+
+                    if not plan or not plan.get("pages"):
+                        progress_cb(
+                            msg=f"Synthesis: no pages planned for template {template_id}."
+                        )
+                    else:
+                        progress_cb(
+                            msg=f"Synthesis REFINE for template {template_id} ({len(plan['pages'])} page(s)) ..."
+                        )
+                        pages = await wiki_refine_from_plan(
+                            chat_mdl=chat_mdl_by_tid[template_id],
+                            embd_mdl=embedding_model,
+                            tenant_id=ctx.tenant_id,
+                            kb_id=ctx.kb_id,
+                            callback=progress_cb,
+                            example=example,
+                        )
+                        # Overwrite compile_kwd on every output page so the
+                        # synthesis type is tracked correctly in ES.
+                        for p in pages or []:
+                            p["compile_kwd"] = compile_kwd
+                        progress_cb(
+                            msg=f"Synthesis done: {len(pages or [])} {compile_kwd} page(s) written."
+                        )
+                except Exception:
+                    logging.exception(
+                        "synthesis: failed for template %s", template_id,
+                    )
 
 
 async def run_document_post_chunking_if_last(
@@ -1143,7 +1223,7 @@ async def run_document_post_chunking_if_last(
 
     async def _maybe_run_raptor():
         raptor_cfg = (ctx.parser_config or {}).get("raptor") or {}
-        if not raptor_cfg.get("use_raptor"):
+        if not raptor_cfg.get("do_raptor"):
             return
         try:
             ok_doc, doc_obj = DocumentService.get_by_id(task_doc_id)

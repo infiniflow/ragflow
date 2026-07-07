@@ -13,6 +13,7 @@ from xml.sax.saxutils import escape
 
 from agent.component.base import ComponentParamBase
 from api.utils.api_utils import timeout
+from api.utils.file_response import agent_attachment_preview_path
 from common import settings
 from common.misc_utils import get_uuid
 from .message import Message
@@ -136,6 +137,7 @@ class DocGenerator(Message, ABC):
                     "mime_type": mime_type,
                     "size": file_size,
                     "base64": file_base64,
+                    "preview_url": agent_attachment_preview_path(doc_id, ext=output_format, mime_type=mime_type),
                     "include_download_info_in_content": self._param.include_download_info_in_content,
                 }
                 self.set_output("doc_id", doc_id)
@@ -187,7 +189,7 @@ class DocGenerator(Message, ABC):
                 flags=re.DOTALL,
             )
 
-        return content
+        return self._strip_thinking(content)
 
     def _get_output_directory(self) -> str:
         os.makedirs(self._default_output_directory, exist_ok=True)
