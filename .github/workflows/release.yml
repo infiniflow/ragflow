@@ -424,6 +424,7 @@ jobs:
           output="${DIST_DIR}/${CLI_NAME}-${RELEASE_TAG}-${{ matrix.goos }}-${{ matrix.goarch }}"
           echo "Building ${{ matrix.goos }}/${{ matrix.goarch }} -> ${output}"
 
+          CGO_ENABLED=0 \
           GOOS="${{ matrix.goos }}" \
           GOARCH="${{ matrix.goarch }}" \
           go build \
@@ -458,6 +459,7 @@ jobs:
             exit 1
           }
 
+          $env:CGO_ENABLED = "0"
           $env:CC = $cc
           $env:GOOS = "${{ matrix.goos }}"
           $env:GOARCH = "${{ matrix.goarch }}"
