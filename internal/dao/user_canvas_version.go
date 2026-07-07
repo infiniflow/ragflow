@@ -21,6 +21,7 @@ import (
 	"reflect"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"ragflow/internal/entity"
 )
@@ -149,9 +150,20 @@ func (dao *UserCanvasVersionDAO) SaveOrReplaceLatest(opts SaveOrReplaceLatestVer
 	}
 	var saved *entity.UserCanvasVersion
 	if err := DB.Transaction(func(tx *gorm.DB) error {
+		var parent struct {
+			ID string
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Table((&entity.UserCanvas{}).TableName()).
+			Select("id").
+			Where("id = ?", opts.UserCanvasID).
+			Take(&parent).Error; err != nil {
+			return err
+		}
+
 		var latest entity.UserCanvasVersion
 		err := tx.Where("user_canvas_id = ?", opts.UserCanvasID).
-			Order("create_time DESC").
+			Order("create_time DESC, id DESC").
 			First(&latest).Error
 		if err != nil {
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
