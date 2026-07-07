@@ -600,7 +600,6 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 }
 
 func (s *AgentService) saveOrReplaceVersion(ctx context.Context, userID, canvasID string, dsl entity.JSONMap, title string, description *string, release bool) (*entity.UserCanvasVersion, error) {
-	normalizedDSL := entity.JSONMap(dslpkg.NormalizeForCanvas(dsl))
 	nickname, err := s.userDAO.GetNicknameByID(ctx, userID)
 	if err != nil || strings.TrimSpace(nickname) == "" {
 		nickname = userID
@@ -611,13 +610,13 @@ func (s *AgentService) saveOrReplaceVersion(ctx context.Context, userID, canvasI
 		UserCanvasID:    canvasID,
 		Title:           &versionTitle,
 		Description:     description,
-		DSL:             normalizedDSL,
+		DSL:             dsl,
 		Release:         release,
 		KeepUnpublished: 20,
 		SameDSL: func(latestDSL entity.JSONMap) bool {
 			return reflect.DeepEqual(
 				entity.JSONMap(dslpkg.NormalizeForCanvas(latestDSL)),
-				normalizedDSL,
+				dsl,
 			)
 		},
 	})

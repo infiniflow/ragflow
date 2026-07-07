@@ -132,15 +132,6 @@ func (dao *UserCanvasVersionDAO) CreateTx(tx *gorm.DB, v *entity.UserCanvasVersi
 	return tx.Create(v).Error
 }
 
-func (dao *UserCanvasVersionDAO) getReleaseByIDTx(tx *gorm.DB, id string) (bool, error) {
-	var release bool
-	err := tx.Table((&entity.UserCanvasVersion{}).TableName()).
-		Select("`release`").
-		Where("id = ?", id).
-		Scan(&release).Error
-	return release, err
-}
-
 // SaveOrReplaceLatest inserts a new version or refreshes the latest matching
 // draft in place. If the latest matching version is released and the current
 // save is a draft, it creates a new draft to preserve the released snapshot.
@@ -170,11 +161,7 @@ func (dao *UserCanvasVersionDAO) SaveOrReplaceLatest(opts SaveOrReplaceLatestVer
 				return err
 			}
 		} else if opts.sameDSL(latest.DSL) {
-			latestReleased, err := dao.getReleaseByIDTx(tx, latest.ID)
-			if err != nil {
-				return err
-			}
-			if !latestReleased || opts.Release {
+			if !latest.Release || opts.Release {
 				updates := map[string]interface{}{
 					"dsl":     opts.DSL,
 					"release": opts.Release,
@@ -188,6 +175,7 @@ func (dao *UserCanvasVersionDAO) SaveOrReplaceLatest(opts SaveOrReplaceLatestVer
 					return err
 				}
 				latest.DSL = opts.DSL
+				latest.Release = opts.Release
 				if opts.Description != nil {
 					latest.Description = opts.Description
 				}
@@ -200,12 +188,10 @@ func (dao *UserCanvasVersionDAO) SaveOrReplaceLatest(opts SaveOrReplaceLatestVer
 			UserCanvasID: opts.UserCanvasID,
 			Title:        opts.Title,
 			Description:  opts.Description,
+			Release:      opts.Release,
 			DSL:          opts.DSL,
 		}
 		if err := tx.Create(row).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&entity.UserCanvasVersion{}).Where("id = ?", row.ID).Update("release", opts.Release).Error; err != nil {
 			return err
 		}
 		saved = row

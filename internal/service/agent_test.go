@@ -25,8 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
-
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -600,18 +598,10 @@ func setupAgentSessionServiceTest(t *testing.T) {
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
-	ensureUserCanvasVersionReleaseColumn(t, testDB)
 
 	orig := dao.DB
 	dao.DB = testDB
 	t.Cleanup(func() { dao.DB = orig })
-}
-
-func ensureUserCanvasVersionReleaseColumn(t *testing.T, db *gorm.DB) {
-	t.Helper()
-	if err := db.Exec("ALTER TABLE user_canvas_version ADD COLUMN release boolean DEFAULT false").Error; err != nil && !strings.Contains(err.Error(), "duplicate column") {
-		t.Fatalf("failed to add user_canvas_version.release: %v", err)
-	}
 }
 
 func createAgentSessionTestCanvas(t *testing.T, id, userID string) {
