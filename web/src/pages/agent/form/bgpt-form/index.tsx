@@ -81,7 +81,7 @@ function BGPTForm({ node }: INextOperatorForm) {
     resolver: zodResolver(FormSchema),
   });
 
-  useWatchFormChange(form);
+  useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>

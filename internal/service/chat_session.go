@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
@@ -33,7 +34,6 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"github.com/google/uuid"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
@@ -154,7 +154,7 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 	referenceJSON, _ := json.Marshal([]interface{}{})
 
 	session := &entity.ChatSession{
-		ID:        common.GenerateUUID(),
+		ID:        utility.GenerateUUID(),
 		DialogID:  req.DialogID,
 		Name:      &name,
 		Message:   messagesJSON,
@@ -356,7 +356,7 @@ func (s *ChatSessionService) CreateSession(userID, chatID string, req map[string
 	referenceJSON, _ := json.Marshal([]interface{}{})
 
 	conv := &entity.ChatSession{
-		ID:        common.GenerateUUID(),
+		ID:        utility.GenerateUUID(),
 		DialogID:  chatID,
 		Name:      &name,
 		Message:   messagesJSON,
@@ -1740,7 +1740,7 @@ func (s *ChatSessionService) normalizeCompletionMessages(
 	if id, ok := lastUserMsg["id"].(string); ok && id != "" {
 		messageID = id
 	} else {
-		messageID = strings.ReplaceAll(uuid.New().String(), "-", "")
+		messageID = utility.GenerateToken()
 		lastUserMsg["id"] = messageID
 		for i := len(requestMessages) - 1; i >= 0; i-- {
 			if role, _ := requestMessages[i]["role"].(string); role == "user" {
@@ -1782,7 +1782,7 @@ func (s *ChatSessionService) buildDefaultCompletionDialog(tenantID string) *enti
 
 // createSessionForCompletion mirrors Python _create_session_for_completion.
 func (s *ChatSessionService) createSessionForCompletion(chatID string, dialog *entity.Chat, userID string) (*entity.ChatSession, error) {
-	newID := common.GenerateUUID()
+	newID := utility.GenerateUUID()
 	name := "New session"
 
 	prologue := "Hi! I'm your assistant. What can I do for you?"

@@ -219,3 +219,147 @@ func TestModelProviderServiceUpdateModelStatusRejectsWrongScopedModelID(t *testi
 		t.Fatalf("code = %v, want %v", code, common.CodeNotFound)
 	}
 }
+
+func TestParseModelName(t *testing.T) {
+	tests := []struct {
+		name         string
+		composite    string
+		wantModel    string
+		wantInstance string
+		wantProvider string
+		wantErr      bool
+	}{
+		{
+			name:         "three parts: model@instance@provider",
+			composite:    "text-embedding-3-small@primary@OpenAI",
+			wantModel:    "text-embedding-3-small",
+			wantInstance: "primary",
+			wantProvider: "OpenAI",
+		},
+		{
+			name:         "two parts: model@provider defaults instance",
+			composite:    "BAAI/bge-m3@Builtin",
+			wantModel:    "BAAI/bge-m3",
+			wantInstance: "default",
+			wantProvider: "Builtin",
+		},
+		{
+			name:      "single part bare name returns error",
+			composite: "BAAI/bge-m3",
+			wantErr:   true,
+		},
+		{
+			name:         "embedded @ in modelName preserved (four parts)",
+			composite:    "text-embedding-nomic-embed-text-v1.5@q8_0@default@LM-Studio",
+			wantModel:    "text-embedding-nomic-embed-text-v1.5@q8_0",
+			wantInstance: "default",
+			wantProvider: "LM-Studio",
+		},
+		{
+			name:         "multiple embedded @ in modelName preserved (five parts)",
+			composite:    "org/repo@tag@1.0@default@Ollama",
+			wantModel:    "org/repo@tag@1.0",
+			wantInstance: "default",
+			wantProvider: "Ollama",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model, instance, provider, err := parseModelName(tt.composite)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseModelName(%q) error = nil, want error", tt.composite)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseModelName(%q) unexpected error: %v", tt.composite, err)
+			}
+			if model != tt.wantModel {
+				t.Errorf("parseModelName(%q) model = %q, want %q", tt.composite, model, tt.wantModel)
+			}
+			if instance != tt.wantInstance {
+				t.Errorf("parseModelName(%q) instance = %q, want %q", tt.composite, instance, tt.wantInstance)
+			}
+			if provider != tt.wantProvider {
+				t.Errorf("parseModelName(%q) provider = %q, want %q", tt.composite, provider, tt.wantProvider)
+			}
+		})
+	}
+}
+
+func TestSplitRightAnchoredModelName(t *testing.T) {
+	tests := []struct {
+		name         string
+		composite    string
+		wantModel    string
+		wantInstance string
+		wantProvider string
+	}{
+		{
+			name:         "three parts: model@instance@provider",
+			composite:    "text-embedding-3-small@primary@OpenAI",
+			wantModel:    "text-embedding-3-small",
+			wantInstance: "primary",
+			wantProvider: "OpenAI",
+		},
+		{
+			name:         "two parts: model@provider defaults instance",
+			composite:    "BAAI/bge-m3@Builtin",
+			wantModel:    "BAAI/bge-m3",
+			wantInstance: "default",
+			wantProvider: "Builtin",
+		},
+		{
+			name:         "single part bare name returns empty provider and instance",
+			composite:    "BAAI/bge-m3",
+			wantModel:    "BAAI/bge-m3",
+			wantInstance: "",
+			wantProvider: "",
+		},
+		{
+			// Regression for the CodeRabbit "Major" comment on PR #16468:
+			// a 2-segment key whose '@' is part of the model name (not a
+			// provider separator) must stay bare. Without this branch the
+			// helper would return ("text-embedding-nomic-embed-text-v1.5",
+			// "default", "q8_0"), mis-classifying the quantization tag as a
+			// provider and missing the TEI fast path's `modelName == teiModel`
+			// match when TEI_MODEL is the full embedded string.
+			name:         "two parts bare default with embedded '@' stays bare",
+			composite:    "text-embedding-nomic-embed-text-v1.5@q8_0",
+			wantModel:    "text-embedding-nomic-embed-text-v1.5@q8_0",
+			wantInstance: "",
+			wantProvider: "",
+		},
+		{
+			name:         "embedded @ in modelName preserved (four parts)",
+			composite:    "text-embedding-nomic-embed-text-v1.5@q8_0@default@LM-Studio",
+			wantModel:    "text-embedding-nomic-embed-text-v1.5@q8_0",
+			wantInstance: "default",
+			wantProvider: "LM-Studio",
+		},
+		{
+			name:         "multiple embedded @ in modelName preserved (five parts)",
+			composite:    "org/repo@tag@1.0@default@Ollama",
+			wantModel:    "org/repo@tag@1.0",
+			wantInstance: "default",
+			wantProvider: "Ollama",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model, instance, provider := splitRightAnchoredModelName(tt.composite)
+			if model != tt.wantModel {
+				t.Errorf("splitRightAnchoredModelName(%q) model = %q, want %q", tt.composite, model, tt.wantModel)
+			}
+			if instance != tt.wantInstance {
+				t.Errorf("splitRightAnchoredModelName(%q) instance = %q, want %q", tt.composite, instance, tt.wantInstance)
+			}
+			if provider != tt.wantProvider {
+				t.Errorf("splitRightAnchoredModelName(%q) provider = %q, want %q", tt.composite, provider, tt.wantProvider)
+			}
+		})
+	}
+}

@@ -52,7 +52,7 @@ def validate_version(version: str) -> bool:
 
 
 def version_to_dirname(version: str) -> str:
-    """Convert version string to valid directory name (e.g., 'v0.26.3' -> 'v0_26_3')"""
+    """Convert version string to valid directory name (e.g., 'v0.26.4' -> 'v0_26_4')"""
     return version.replace(".", "_")
 
 
@@ -838,19 +838,19 @@ def main():
         epilog="""
 Examples:
   # List all migrations
-  python db_schema_sync.py --list --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.26.3
+  python db_schema_sync.py --list --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.26.4
 
   # Create migration from model changes
-  python db_schema_sync.py --create --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.26.3
+  python db_schema_sync.py --create --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.26.4
 
   # Create migration including dropped fields (destructive!)
-  python db_schema_sync.py --create --drop --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.26.3
+  python db_schema_sync.py --create --drop --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.26.4
 
   # Run all pending migrations
-  python db_schema_sync.py --migrate --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.26.3
+  python db_schema_sync.py --migrate --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.26.4
 
   # Show schema differences
-  python db_schema_sync.py --diff --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.26.3
+  python db_schema_sync.py --diff --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.26.4
 """,
     )
 
@@ -862,7 +862,7 @@ Examples:
     parser.add_argument("--database", type=str, required=True, help="MySQL database name")
 
     # Version option
-    parser.add_argument("--version", "-v", type=str, required=True, help="Version number in format vxx.xx.xx (e.g., v0.26.3)")
+    parser.add_argument("--version", "-v", type=str, required=True, help="Version number in format vxx.xx.xx (e.g., v0.26.4)")
 
     # Action options
     parser.add_argument("--list", "-l", action="store_true", help="List all migrations")
@@ -878,7 +878,7 @@ Examples:
 
     # Validate version format
     if not validate_version(args.version):
-        logger.error(f"Invalid version format: {args.version}. Expected format: vxx.xx.xx (e.g., v0.26.3)")
+        logger.error(f"Invalid version format: {args.version}. Expected format: vxx.xx.xx (e.g., v0.26.4)")
         sys.exit(1)
 
     # Validate at least one action is specified
