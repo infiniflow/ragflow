@@ -118,7 +118,7 @@ check_cpp_deps() {
     print_section "Checking c++ dependencies"
 
     command -v cmake >/dev/null 2>&1 || { echo -e "${RED}Error: cmake is required but not installed.${NC}"; exit 1; }
-    command -v g++ >/dev/null 2>&1 || { echo -e "${RED}Error: g++ is required but not installed.${NC}"; exit 1; }
+    command -v clang++ >/dev/null 2>&1 || { echo -e "${RED}Error: clang++ is required but not installed.${NC}"; exit 1; }
 
     if check_pcre2; then
         echo "✓ pcre2 library found"
