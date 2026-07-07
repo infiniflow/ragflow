@@ -189,7 +189,7 @@ class DocGenerator(Message, ABC):
                 flags=re.DOTALL,
             )
 
-        return content
+        return self._strip_thinking(content)
 
     def _get_output_directory(self) -> str:
         os.makedirs(self._default_output_directory, exist_ok=True)

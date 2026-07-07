@@ -20,6 +20,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -40,12 +41,7 @@ func IsCompositeModelName(modelName string) bool {
 	if len(parts) != 3 {
 		return false
 	}
-	for _, p := range parts {
-		if p == "" {
-			return false
-		}
-	}
-	return true
+	return !slices.Contains(parts, "")
 }
 
 func IsUUID(uuid string) bool {
@@ -68,10 +64,8 @@ func ExtractCompositeName(modelName string) (string, string, string, error) {
 	if len(parts) != 3 {
 		return "", "", "", fmt.Errorf("invalid model name format")
 	}
-	for _, p := range parts {
-		if p == "" {
-			return "", "", "", fmt.Errorf("invalid model name format")
-		}
+	if slices.Contains(parts, "") {
+		return "", "", "", fmt.Errorf("invalid model name format")
 	}
 	return parts[0], parts[1], parts[2], nil
 }
