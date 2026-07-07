@@ -91,6 +91,156 @@ func (c *tavilySearchComponent) Stream(_ context.Context, _ map[string]any) (<-c
 	return nil, nil
 }
 
+// bgptInvoker is the subset of BGPTTool used by the canvas wrapper.
+type bgptInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
+// bgptComponent delegates to internal/agent/tool/BGPTTool and adapts
+// the tool envelope to the BGPT canvas output contract.
+type bgptComponent struct {
+	inner bgptInvoker
+}
+
+func newBGPTComponent(_ map[string]any) (Component, error) {
+	return newBGPTComponentWithInvoker(agenttool.NewBGPTTool()), nil
+}
+
+func newBGPTComponentWithInvoker(inner bgptInvoker) Component {
+	return &bgptComponent{inner: inner}
+}
+
+func (c *bgptComponent) Name() string { return "BGPT" }
+
+func (c *bgptComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query":     "Scientific search query.",
+		"api_key":   "Optional BGPT API key.",
+		"days_back": "Optional recency filter in days.",
+		"top_n":     "Maximum number of results.",
+	}
+}
+
+func (c *bgptComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered scientific paper evidence for downstream LLM prompts.",
+		"json":               "Raw BGPT result list.",
+	}
+}
+
+func (c *bgptComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	args := map[string]any{
+		"query": query,
+	}
+	if apiKey := strings.TrimSpace(stringParam(inputs["api_key"])); apiKey != "" {
+		args["api_key"] = apiKey
+	}
+	if daysBack := toIntParam(inputs["days_back"]); daysBack > 0 {
+		args["days_back"] = daysBack
+	}
+	if topN := toIntParam(inputs["top_n"]); topN > 0 {
+		args["num_results"] = topN
+	}
+
+	argsJSON, _ := json.Marshal(args)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: BGPT: %w", err)
+	}
+
+	results := anySlice(decoded["results"])
+	return map[string]any{
+		"formalized_content": renderBGPTResults(results),
+		"json":               results,
+	}, nil
+}
+
+func (c *bgptComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func stringParam(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func anySlice(v any) []any {
+	switch x := v.(type) {
+	case []any:
+		return x
+	case []map[string]any:
+		out := make([]any, 0, len(x))
+		for _, item := range x {
+			out = append(out, item)
+		}
+		return out
+	default:
+		return []any{}
+	}
+}
+
+func renderBGPTResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		bgptField := func(key string) string {
+			v, ok := m[key]
+			if !ok || v == nil {
+				return "-"
+			}
+			switch vv := v.(type) {
+			case string:
+				if text := strings.TrimSpace(vv); text != "" {
+					return text
+				}
+			default:
+				if text := strings.TrimSpace(fmt.Sprintf("%v", vv)); text != "" {
+					return text
+				}
+			}
+			return "-"
+		}
+		lines := []string{
+			fmt.Sprintf("Title: %s", bgptField("title")),
+			fmt.Sprintf("Authors: %s", bgptField("authors")),
+			fmt.Sprintf("Journal: %s", bgptField("journal")),
+			fmt.Sprintf("Year: %s", bgptField("year")),
+			fmt.Sprintf("DOI: %s", bgptField("doi")),
+			fmt.Sprintf("Abstract: %s", bgptField("abstract")),
+			fmt.Sprintf("Methods: %s", bgptField("methods")),
+			fmt.Sprintf("Sample size / population: %s", bgptField("sample_size")),
+			fmt.Sprintf("Results: %s", bgptField("results")),
+			fmt.Sprintf("Limitations: %s", bgptField("limitations")),
+			fmt.Sprintf("Conflicts of interest: %s", bgptField("conflict_of_interest")),
+			fmt.Sprintf("Data availability: %s", bgptField("data_availability")),
+			fmt.Sprintf("Blind spots: %s", bgptField("blind_spots")),
+			fmt.Sprintf("How to falsify: %s", bgptField("falsify")),
+		}
+		blocks = append(blocks, strings.Join(lines, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
+}
+
 // retrievalParams mirrors the Python RetrievalParam shape: the
 // values the canvas node declares at build time, applied as
 // defaults to the per-invocation RetrievalRequest. The fields are
