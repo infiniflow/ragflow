@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/types"
@@ -398,14 +399,7 @@ func (f *MessagesFilter) Filter(msgs []*Message) []*Message {
 	for _, msg := range msgs {
 		// Check role filter
 		if len(f.roles) > 0 {
-			match := false
-			for _, role := range f.roles {
-				if msg.Role == role {
-					match = true
-					break
-				}
-			}
-			if !match {
+			if !slices.Contains(f.roles, msg.Role) {
 				continue
 			}
 		}
