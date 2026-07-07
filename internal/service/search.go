@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strings"
 
 	"gorm.io/gorm"
@@ -209,7 +210,7 @@ type CreateSearchResponse struct {
 // 7. Return {search_id: id} on success
 func (s *SearchService) CreateSearch(userID string, name string, description *string) (*CreateSearchResponse, error) {
 	// Generate UUID for search ID (same as Python get_uuid())
-	searchID := common.GenerateUUID()
+	searchID := utility.GenerateUUID()
 
 	// Generate unique name (same as Python duplicate_name)
 	uniqueName, err := common.DuplicateName(func(name string, tid string) bool {

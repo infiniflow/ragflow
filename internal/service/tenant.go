@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strings"
 )
 
@@ -835,14 +836,14 @@ func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest
 
 	status := "1"
 	ut := &entity.UserTenant{
-		ID:        common.GenerateUUID(),
+		ID:        utility.GenerateUUID(),
 		UserID:    invitee.ID,
 		TenantID:  tenantID,
 		Role:      TenantRoleInvite,
 		InvitedBy: userID,
 		Status:    &status,
 	}
-	if err := s.userTenantDAO.Create(ut); err != nil {
+	if err = s.userTenantDAO.Create(ut); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create invitation: %w", err)
 	}
 

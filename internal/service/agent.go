@@ -21,13 +21,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/utility"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/compose"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
@@ -42,14 +42,6 @@ import (
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
-
-// genID32 returns a 32-char UUID-derived primary key suitable for the
-// user_canvas and user_canvas_version tables. The format matches Python
-// uuid.uuid4().hex used by the original DAO and keeps existing rows
-// joinable across Python and Go writers.
-func genID32() string {
-	return strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
-}
 
 // webhookPayloadKey is the unexported context key RunAgent reads to
 // inject root["webhook_payload"]. Only the AgentService.RunAgentWithWebhook
@@ -358,7 +350,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 	// no-op when graph.nodes is already non-empty.
 	req.DSL = dslpkg.NormalizeForCanvas(req.DSL)
 	row := &entity.UserCanvas{
-		ID:             genID32(),
+		ID:             utility.GenerateUUID(),
 		UserID:         req.UserID,
 		Title:          req.Title,
 		Description:    req.Description,
@@ -607,7 +599,7 @@ func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, 
 	}
 	versionTitle := buildVersionTitle(nickname, title, time.Now())
 	return dao.SaveOrReplaceLatestVersionOptions{
-		NewID:           genID32(),
+		NewID:           utility.GenerateUUID(),
 		UserCanvasID:    canvasID,
 		Title:           &versionTitle,
 		Description:     description,
@@ -714,7 +706,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		return nil, err
 	}
 	if sessionID == "" {
-		sessionID = strings.ReplaceAll(uuid.New().String(), "-", "")
+		sessionID = utility.GenerateToken()
 	}
 
 	// Load the version row up front so the run is bound to a real DSL.
@@ -1257,7 +1249,7 @@ func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID stri
 	messages := parseAgentSessionMessages(session.Message)
 	now := time.Now().Unix()
 	if text := stringifyAgentUserInput(userInput); text != "" {
-		messages = append(messages, map[string]interface{}{"role": "user", "content": text, "id": strings.ReplaceAll(uuid.New().String(), "-", ""), "created_at": now})
+		messages = append(messages, map[string]interface{}{"role": "user", "content": text, "id": utility.GenerateToken(), "created_at": now})
 	}
 	messages = append(messages, map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": now})
 	if raw, err := json.Marshal(messages); err == nil {

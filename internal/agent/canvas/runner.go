@@ -52,12 +52,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/utility"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/runtime"
@@ -250,13 +249,13 @@ func (r *Runner) Run(
 	// message_id is generated per-run so the front-end can correlate
 	// all events for a single user turn. task_id is the published
 	// version id (if available) or a per-run UUID.
-	messageID := strings.ReplaceAll(uuid.New().String(), "-", "")
+	messageID := utility.GenerateToken()
 	taskID := ""
 	if v, ok := root["version_id"].(string); ok && v != "" {
 		taskID = v
 	}
 	if taskID == "" {
-		taskID = strings.ReplaceAll(uuid.New().String(), "-", "")
+		taskID = utility.GenerateToken()
 	}
 
 	// Inject the output channel + metadata so the RunFunc can emit
