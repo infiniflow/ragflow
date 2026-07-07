@@ -441,10 +441,11 @@ class Canvas(Graph):
         attrs_token = langfuse_run_attrs.set(_lf_attrs)
         # Forward the originating session/user to upstream LLM providers (as the
         # OpenAI `user` field) for the duration of this run, and reset afterwards so
-        # the value never leaks to later calls in the same task.
+        # the value never leaks to later calls in the same task. Reuse the same
+        # session/user already derived above so both integrations stay consistent.
         _req_ctx_token = set_llm_request_context(
-            session_id=kwargs.get("session_id"),
-            user_id=kwargs.get("user_id"),
+            session_id=_session_id,
+            user_id=_user_id,
         )
         try:
             async for ev in self._run_impl(**kwargs):
