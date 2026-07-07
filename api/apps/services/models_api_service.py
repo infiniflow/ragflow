@@ -13,16 +13,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import os
 import logging
+import os
 
-from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, ensure_paddleocr_from_env, ensure_opendataloader_from_env
-from common.constants import ActiveStatusEnum, LLMType
-from common.settings import FACTORY_LLM_INFOS
-from api.db.services.tenant_model_provider_service import TenantModelProviderService
+from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, ensure_opendataloader_from_env, ensure_paddleocr_from_env
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
+from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_service import TenantModelService
 from api.db.services.user_service import TenantService
+from common.constants import ActiveStatusEnum, LLMType
+from common.settings import FACTORY_LLM_INFOS
 
 # Mapping from model_type string to Tenant model field name
 MODEL_TYPE_TO_FIELD = {
@@ -70,19 +70,20 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     if not default_model:
         return None
 
-    parts = default_model.split("@")
+    # The composite key is right-anchored: provider_name is always the *last*
+    # '@'-separated field. Use rsplit so a model_name that itself contains '@'
+    # (e.g. LM Studio IDs like `text-embedding-nomic-embed-text-v1.5@q8_0`)
+    # remains intact in the leftmost field instead of being truncated.
+    parts = default_model.rsplit("@", 2)
     if len(parts) == 3:
         model_name, instance_name, provider_name = parts
     elif len(parts) == 2:
         model_name, provider_name = parts
         instance_name = "default"
-    elif len(parts) == 1:
+    else:
         model_name = parts[0]
         provider_name = ""
         instance_name = "default"
-    else:
-        logging.warning(f"Invalid model string: {default_model}")
-        return None
 
     model_type = MODEL_TAG_TO_TYPE.get(model_type, model_type)
     # Special case: OCR with infiniflow@default@deepdoc is always enabled
@@ -324,7 +325,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str = None):
     target_type_records = [record for record in model_records if record.model_type == model_type_filter] if model_type_filter else model_records
     model_record_map = {}
     for model in target_type_records:
-        instance_model_key = f"{model.provider_id}@{model.instance_id}@{model.model_name}"
+        instance_model_key = f"{model.provider_id}|{model.instance_id}|{model.model_name}"
         if model_record_map.get(instance_model_key):
             model_record_map[instance_model_key].append(model)
         else:
@@ -346,7 +347,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str = None):
                 continue
 
             for factory_instance in factory_instances:
-                model_record_key = f"{factory_instance.provider_id}@{factory_instance.id}@{llm['llm_name']}"
+                model_record_key = f"{factory_instance.provider_id}|{factory_instance.id}|{llm['llm_name']}"
                 model_key_in_factory.append(model_record_key)
                 manual_modified_models = model_record_map.get(model_record_key, [])
                 active_model_types = [manual_model.model_type for manual_model in manual_modified_models if manual_model.status == ActiveStatusEnum.ACTIVE.value]
@@ -374,7 +375,13 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str = None):
             model_records = model_record_map.get(model_record_key, [])
             if not model_records:
                 continue
-            provider_id, instance_id, model_name = model_record_key.split("@")
+            # The internal key uses '|' as separator (UUID|UUID|model_name)
+            # since model_name may contain '@' characters.
+            try:
+                provider_id, instance_id, model_name = model_record_key.split("|", 2)
+            except ValueError:
+                logging.warning(f"Skipping malformed manual model record key: {model_record_key!r}")
+                continue
             model_types = [model.model_type for model in model_records if model.status == ActiveStatusEnum.ACTIVE.value]
             if not model_types:
                 continue
