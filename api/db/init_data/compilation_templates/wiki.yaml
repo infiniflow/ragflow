@@ -1,0 +1,136 @@
+kind: artifacts
+display_name: Artifacts — Graph-based wiki
+config:
+  kind: artifacts
+  example: |
+      - Each page must be a proper encyclopedic article, NOT a flat bullet list:
+      - 1. Opening paragraph (2-4 sentences defining what this is). No heading.
+      - 2. Sections with H2 headings, each starting with prose before sub-bullets.
+      - 3. Bold key terms on first use; link them with [[ ]] wikilinks.
+      - 4. Examples or implications where the source provides them.
+      - 5. ## See also section at the end with wikilinks to highly related pages(less than 12).\n
+      - Page structure could be as following: (Not provided)
+  entity:
+    description: >-
+      You are a robust graph entity extractor for knowledge graphs.
+    fields:
+      - type: person
+        description: A natural person (individual human).
+        rule: |
+          - Full name preferred (e.g., "Elon Musk", not "Musk" alone if ambiguous).
+          - Include titles only if integral to identity (e.g., "Dr. Smith").
+          - Max length: 60 characters.
+      - type: org
+        description: Organization, company, institution, agency, or any collective group.
+        rule: |
+          - Use the official name when possible (e.g., "United Nations").
+          - Abbreviations accepted if widely known (e.g., "UN", "NASA").
+          - Max length: 80 characters.
+      - type: product
+        description: Tangible or intangible product, service, software, or offering.
+        rule: |
+          - Include version numbers if relevant (e.g., "iPhone 14").
+          - Generic categories (e.g., "smartphone") only if no specific name is given.
+          - Max length: 100 characters.
+      - type: regulation
+        description: Law, policy, standard, guideline, or regulatory document.
+        rule: |
+          - Use official title or identifier (e.g., "GDPR", "OSHA standard 1910").
+          - Include jurisdiction if known (e.g., "EU GDPR").
+          - Max length: 120 characters.
+      - type: location
+        description: Geographic place (country, city, address, region, natural feature).
+        rule: |
+          - Hierarchical format allowed (e.g., "Paris, France").
+          - Avoid overly vague terms (e.g., "there") unless resolved.
+          - Max length: 80 characters.
+      - type: system
+        description: Technical system, platform, framework, or infrastructure.
+        rule: |
+          - Distinct from product: system implies integrated environment
+            (e.g., "Linux OS", "power grid").
+          - Use proper naming.
+          - Max length: 100 characters.
+      - type: equipment
+        description: Physical device, machinery, hardware, or tool.
+        rule: |
+          - Specific model preferred (e.g., "Boeing 737").
+          - Generic allowed only if precise type (e.g., "drill press").
+          - Max length: 80 characters.
+      - type: other
+        description: Entities that do not fit any above category.
+        rule: |
+          - Use sparingly; prefer mapping to a defined type when possible.
+          - Still provide a meaningful label.
+          - Max length: 80 characters.
+  relation:
+    description: >-
+      You are an expert in extracting semantic relations between entities.
+    fields:
+      - type: owns
+        description: Ownership or possession (legal or de facto).
+        rule: |
+          - Direction from owner to owned: (A owns B).
+          - Example: "Company A owns product B".
+      - type: part_of
+        description: Mereological relation — component to whole.
+        rule: |
+          - Direction from part to whole: (A part_of B).
+          - Example: "Engine part_of car".
+      - type: caused_by
+        description: Causal relation — event, action, or state leads to another.
+        rule: |
+          - Direction from effect to cause: (A caused_by B) meaning B causes A.
+          - Example: "Accident caused_by brake failure".
+      - type: regulates
+        description: Regulatory or governing relation (law/standard controls entity).
+        rule: |
+          - Direction from regulator to regulated: (A regulates B).
+          - Example: "GDPR regulates data processing".
+      - type: uses
+        description: Utilization — an entity employs or consumes another entity.
+        rule: |
+          - Direction from user to used: (A uses B).
+          - Example: "System uses equipment".
+      - type: located_in
+        description: Spatial containment — entity situated inside a location.
+        rule: |
+          - Direction from located entity to containing location: (A located_in B).
+          - Example: "Office located_in city".
+      - type: other
+        description: Any meaningful relation not covered by the above types.
+        rule: |
+          - Provide an explicit label in a "relation_label" field.
+          - Direction must be clear.
+  claim:
+    fields:
+      - statement: >-
+          A complete factual sentence stated in the source. Any sentence of the form
+          'X is Y', 'X has Y', 'X does Y', 'X was founded in Y', 'X is located in Y',
+          'X reported Y', etc. is a claim. Aim for at least 1-3 claims per entity per
+          chunk that mentions it.
+        subject: >-
+          Entity/concept this claim is about (must match one of the entity/concept
+          names extracted above).
+  concept:
+    fields:
+      - term: >-
+          Concept name OR a thematic section topic (prefer the source's heading
+          wording when coherent).
+        definition_excerpt: >-
+          Verbatim or near-verbatim defining phrase from the chunk.
+  global_rules: |
+    - Each relation links two entities (subject → object) with a predicate type.
+    - Format: {"subject_id": "<entity_id>", "predicate": "<type>",
+      "object_id": "<entity_id>", "chunk_id": "<chunk_ID>"}.
+    - Both subject and object must be previously extracted entities.
+    - If ambiguous direction, choose the most logical default
+      (e.g., "part_of" always from part to whole).
+    - When multiple relations appear in a chunk, list all in order of appearance.
+    - Keep language consistent; relation type is always English (the given type name).
+    - Every extracted entity must have exactly one type from the list.
+    - Entity label (the text representing the entity) is required, non-empty.
+    - Format: {"entity_id": "<unique_id>", "type": "<type>", "label": "<label>",
+      "chunk_id": "<chunk_ID>"}.
+    - If no entity in a chunk, output no entity for that chunk.
+    - Keep the chunks' original language (Chinese/English etc.) for entities and relations.

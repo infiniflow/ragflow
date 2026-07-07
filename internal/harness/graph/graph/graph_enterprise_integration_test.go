@@ -266,6 +266,7 @@ func TestEnterprise_NestedSubGraph(t *testing.T) {
 
 // TestEnterprise_ConditionalEdge_MultiWay verifies a 3-way conditional edge.
 func TestEnterprise_ConditionalEdge_MultiWay(t *testing.T) {
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	b := NewStateGraph(map[string]any{})
 
 	b.AddNode("router", func(ctx context.Context, state any) (any, error) {
@@ -538,6 +539,7 @@ func TestEnterprise_MapReduceChain(t *testing.T) {
 // TestEnterprise_DAGWithConditionalEdge verifies DAG AllPredecessor mode
 // combined with conditional routing.
 func TestEnterprise_DAGWithConditionalEdge(t *testing.T) {
+	t.Skip("requires Pregel engine - see pregel/ for equivalent tests")
 	b := NewStateGraph(map[string]any{})
 	b.AddNode("prep", func(ctx context.Context, state any) (any, error) {
 		m := state.(map[string]any)

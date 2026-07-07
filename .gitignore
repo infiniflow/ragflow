@@ -22,6 +22,7 @@ Cargo.lock
 .idea/
 .vscode/
 .cursor/settings.json
+.opencode/
 
 # Exclude Mac generated files
 .DS_Store
@@ -225,9 +226,9 @@ uv-aarch64-unknown-linux-gnu.tar.gz
 docker/launch_backend_service_windows.sh
 
 # C++ build directories
-internal/cpp/build/
-internal/cpp/cmake-build-release/
-internal/cpp/cmake-build-debug/
+internal/binding/cpp/build/
+internal/binding/cpp/cmake-build-release/
+internal/binding/cpp/cmake-build-debug/
 
 # Trae IDE config
 .trae/
@@ -245,5 +246,11 @@ bin/*
 # Parser test fixtures and python tools
 internal/deepdoc/parser/pdf/testdata/
 internal/deepdoc/parser/pdf/tools-py/
+
+# IDE tooling artifacts
+.codebuddy/
+
+# Local build output
+build/
 internal/deepdoc/parser/docx/testdata/
 internal/deepdoc/parser/docx/tool/

@@ -365,10 +365,31 @@ class Message(ComponentBase):
 
         return None
 
+    @staticmethod
+    def _strip_thinking(content: str) -> str:
+        """Remove <think>...</think> reasoning blocks before document export.
+
+        Reasoning models (e.g. DeepSeek-R1, OpenAI o1) embed chain-of-thought
+        inside ``<think>`` tags. These blocks must not leak into exported
+        Word/PDF/Excel documents.
+        """
+        if not isinstance(content, str) or not content:
+            return content
+        # Remove complete think blocks (DOTALL so newlines are matched)
+        cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+        # Remove any dangling unclosed <think> opening tag + trailing content
+        cleaned = re.sub(r"<think>.*$", "", cleaned, flags=re.DOTALL)
+        # Remove leftover standalone tags
+        cleaned = re.sub(r"</?think>", "", cleaned)
+        # Collapse 3+ consecutive newlines left behind by removed blocks
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned.strip()
+
     def _convert_content(self, content):
         if not self._param.output_format:
             return
 
+        content = self._strip_thinking(content)
         import pypandoc
 
         doc_id = get_uuid()

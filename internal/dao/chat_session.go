@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -197,7 +198,13 @@ func (dao *ChatSessionDAO) ListAgentSessions(params ListAgentSessionsParams) (in
 	}
 
 	if params.Keywords != "" {
-		query = query.Where("LOWER(message) LIKE ?", "%"+strings.ToLower(params.Keywords)+"%")
+		keywords := strings.ToLower(params.Keywords)
+		escapedKeywords := strings.Trim(strconv.QuoteToASCII(keywords), `"`)
+		if escapedKeywords == keywords {
+			query = query.Where("LOWER(message) LIKE ?", "%"+keywords+"%")
+		} else {
+			query = query.Where("(LOWER(message) LIKE ? OR LOWER(message) LIKE ?)", "%"+keywords+"%", "%"+escapedKeywords+"%")
+		}
 	}
 
 	dateColumn := "create_date"
