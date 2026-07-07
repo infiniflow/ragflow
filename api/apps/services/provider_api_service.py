@@ -201,7 +201,7 @@ async def list_provider_models(provider_id_or_name: str, api_key: str = None, ba
     static_llms = [
         {
             "name": _factory_llm_name(llm),
-            "max_tokens": llm["max_tokens"],
+            "max_tokens": llm.get("max_tokens", 8192),
             "model_types": _factory_model_types(llm),
             "features": (llm.get("features") if llm.get("features") is not None else ((["is_tools"] if llm.get("is_tools") else []) + (["thinking"] if llm.get("thinking") else []))),
         }
