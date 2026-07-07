@@ -1,0 +1,25 @@
+# dataset.test.yaml
+suite: dataset.tests
+
+tear_up:
+  - command: login user 'aaa@aaa.com' password 'aaa'
+tear_down:
+  - command: logout
+
+tests:
+  # case 1: List datasets
+  - test: List datasets
+    command: list datasets
+    expect:
+      status: success
+      data:
+        id: $document_id
+        name: sample.pdf
+
+  # case 2: show dataset
+  - test: show dataset
+    run: show dataset 'aaa';
+    expect:
+      status: success
+      expect:
+        id: $document_id

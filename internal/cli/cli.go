@@ -760,7 +760,7 @@ func (c *CLI) Run() error {
 			c.line.AppendHistory(input)
 		}
 
-		if err = c.execute(input); err != nil {
+		if _, err = c.execute(input, true); err != nil {
 			// err.Error() can include user-controlled input (e.g. dataset
 			// names, file paths) via fmt.Errorf("... %s ...", userInput) in
 			// the command handlers. Don't echo that back to the operator
@@ -773,29 +773,29 @@ func (c *CLI) Run() error {
 	return nil
 }
 
-func (c *CLI) execute(input string) error {
+func (c *CLI) execute(input string, printOut bool) (ResponseIf, error) {
 	p := NewParser(input)
 	cmd, err := p.Parse(c.Config.CLIMode)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if cmd == nil {
-		return nil
+		return nil, nil
 	}
 
 	// Handle meta commands
 	if cmd.Type == "meta" {
-		return c.handleMetaCommand(cmd)
+		return nil, c.handleMetaCommand(cmd)
 	}
 
 	// Execute the command using the client
 	var result ResponseIf
 	result, err = c.ExecuteCommand(cmd)
-	if result != nil {
+	if result != nil && printOut {
 		result.PrintOut()
 	}
-	return err
+	return result, err
 }
 
 func (c *CLI) handleMetaCommand(cmd *Command) error {
@@ -906,7 +906,7 @@ func (c *CLI) RunSingleCommand(command *string) error {
 	defer c.Cleanup()
 
 	// Execute the command
-	if err := c.execute(*command); err != nil {
+	if _, err := c.execute(*command, true); err != nil {
 		return err
 	}
 	return nil
@@ -991,13 +991,15 @@ func (c *CLI) RunTest(testCaseFile *string) error {
 		return fmt.Errorf("failed to read test case file %q: %w", *testCaseFile, err)
 	}
 
-	var parsed interface{}
-	if err = yaml.Unmarshal(data, &parsed); err != nil {
+	var testSuite TestSuite
+	if err = yaml.Unmarshal(data, &testSuite); err != nil {
 		return fmt.Errorf("failed to parse YAML test case file %q: %w", *testCaseFile, err)
 	}
 
-	fmt.Printf("=== Test Case: %s ===\n", filepath.Base(*testCaseFile))
-	fmt.Println(string(data))
+	if err = c.RunTestSuite(&testSuite); err != nil {
+		return err
+	}
+
 	return nil
 }
 
