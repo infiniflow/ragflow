@@ -1311,7 +1311,11 @@ func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
 	if err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-version-draft", patch); err != nil {
 		t.Fatalf("first UpdateAgent failed: %v", err)
 	}
-	if err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-version-draft", patch); err != nil {
+	secondPatch := map[string]interface{}{
+		"title": "Renamed Agent",
+		"dsl":   patch["dsl"],
+	}
+	if err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-version-draft", secondPatch); err != nil {
 		t.Fatalf("second UpdateAgent failed: %v", err)
 	}
 
@@ -1322,7 +1326,7 @@ func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
 	if len(versions) != 1 {
 		t.Fatalf("expected same DSL to replace latest draft, got %d versions", len(versions))
 	}
-	if versions[0].Title == nil || !strings.HasPrefix(*versions[0].Title, "owner_Draft Agent_") {
+	if versions[0].Title == nil || !strings.HasPrefix(*versions[0].Title, "owner_Renamed Agent_") {
 		t.Fatalf("unexpected version title: %v", versions[0].Title)
 	}
 	var release bool
@@ -1337,6 +1341,9 @@ func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
 func TestUpdateAgentDSLDoesNotOverwriteLatestReleasedVersion(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
 	dsl := entity.JSONMap{
 		"graph": map[string]any{
 			"nodes": []any{map[string]any{"id": "begin"}},
@@ -1362,6 +1369,7 @@ func TestUpdateAgentDSLDoesNotOverwriteLatestReleasedVersion(t *testing.T) {
 		ID:           "released-version",
 		UserCanvasID: "canvas-released-latest",
 		Title:        sptr("released"),
+		Release:      true,
 		DSL:          dsl,
 		BaseModel: entity.BaseModel{
 			CreateTime: ptr(releasedAt.UnixMilli()),
@@ -1369,9 +1377,6 @@ func TestUpdateAgentDSLDoesNotOverwriteLatestReleasedVersion(t *testing.T) {
 		},
 	}).Error; err != nil {
 		t.Fatalf("failed to seed released version: %v", err)
-	}
-	if err := dao.DB.Table("user_canvas_version").Where("id = ?", "released-version").Update("release", true).Error; err != nil {
-		t.Fatalf("failed to mark version released: %v", err)
 	}
 
 	if err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-released-latest", map[string]interface{}{"dsl": map[string]interface{}(dsl)}); err != nil {

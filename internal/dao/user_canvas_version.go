@@ -166,6 +166,9 @@ func (dao *UserCanvasVersionDAO) SaveOrReplaceLatest(opts SaveOrReplaceLatestVer
 					"dsl":     opts.DSL,
 					"release": opts.Release,
 				}
+				if opts.Title != nil {
+					updates["title"] = opts.Title
+				}
 				if opts.Description != nil {
 					updates["description"] = opts.Description
 				}
@@ -176,6 +179,9 @@ func (dao *UserCanvasVersionDAO) SaveOrReplaceLatest(opts SaveOrReplaceLatestVer
 				}
 				latest.DSL = opts.DSL
 				latest.Release = opts.Release
+				if opts.Title != nil {
+					latest.Title = opts.Title
+				}
 				if opts.Description != nil {
 					latest.Description = opts.Description
 				}
@@ -221,8 +227,8 @@ func (dao *UserCanvasVersionDAO) deleteAllUnpublishedExcessTx(tx *gorm.DB, canva
 		keep = 0
 	}
 	var ids []string
-	if err := tx.Table((&entity.UserCanvasVersion{}).TableName()).
-		Where("user_canvas_id = ? AND (`release` = ? OR `release` IS NULL)", canvasID, false).
+	if err := tx.Model(&entity.UserCanvasVersion{}).
+		Where(map[string]interface{}{"user_canvas_id": canvasID, "release": false}).
 		Order("create_time DESC").
 		Pluck("id", &ids).Error; err != nil {
 		return err
