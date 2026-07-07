@@ -44,6 +44,7 @@ export enum PromptRole {
 }
 
 import {
+  Braces,
   CloudUpload,
   ListOrdered,
   OptionIcon,
@@ -804,6 +805,7 @@ export enum BeginQueryType {
   File = 'file',
   Integer = 'integer',
   Boolean = 'boolean',
+  Object = 'object',
 }
 
 export const BeginQueryTypeIconMap = {
@@ -813,6 +815,7 @@ export const BeginQueryTypeIconMap = {
   [BeginQueryType.File]: CloudUpload,
   [BeginQueryType.Integer]: ListOrdered,
   [BeginQueryType.Boolean]: ToggleLeft,
+  [BeginQueryType.Object]: Braces,
 };
 
 export const NoDebugOperatorsList = [
@@ -1091,6 +1094,7 @@ export enum WebhookRequestParameters {
   String = TypesWithArray.String,
   Number = TypesWithArray.Number,
   Boolean = TypesWithArray.Boolean,
+  Object = TypesWithArray.Object,
 }
 
 export enum WebhookStatus {
@@ -1107,6 +1111,7 @@ export const BeginQueryTypeMap = {
   [BeginQueryType.File]: 'File',
   [BeginQueryType.Integer]: TypesWithArray.Number,
   [BeginQueryType.Boolean]: TypesWithArray.Boolean,
+  [BeginQueryType.Object]: TypesWithArray.Object,
 };
 
 export const VariableRegex = /{([^{}]*)}/g;
