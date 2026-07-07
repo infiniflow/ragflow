@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"ragflow/internal/harness/core/schema"
+	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/graph"
 )
@@ -16,6 +17,7 @@ func TestSubAgentNode_Simple(t *testing.T) {
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("worker")
 
 	sg := graph.NewStateGraph(map[string]interface{}{"Messages": []interface{}{}})
+	sg.AddChannel("Messages", channels.NewLastValue([]interface{}{}))
 	node := NewSubAgentNode(agent)
 	sg.AddNode("worker", node)
 	sg.AddEdge(constants.Start, "worker")
@@ -47,6 +49,7 @@ func TestSubAgentNode_SequentialChain(t *testing.T) {
 	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("agent_b")
 
 	sg := graph.NewStateGraph(map[string]interface{}{"Messages": []interface{}{}})
+	sg.AddChannel("Messages", channels.NewLastValue([]interface{}{}))
 	sg.AddNode("agent_a", NewSubAgentNode(a1))
 	sg.AddNode("agent_b", NewSubAgentNode(a2))
 	sg.AddEdge(constants.Start, "agent_a")
@@ -74,6 +77,9 @@ func TestSubAgentNode_WithFieldMapping(t *testing.T) {
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("projector")
 
 	sg := graph.NewStateGraph(map[string]interface{}{"query": "", "response": "", "Messages": []interface{}{}})
+	sg.AddChannel("Messages", channels.NewLastValue([]interface{}{}))
+	sg.AddChannel("query", channels.NewLastValue(""))
+	sg.AddChannel("response", channels.NewLastValue(""))
 	node := NewSubAgentNode(agent,
 		WithSubAgentInput("query", "input"),
 		WithSubAgentOutput("response", "response"),
@@ -134,6 +140,7 @@ func TestSubAgentNode_WithSubAgentName(t *testing.T) {
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("original_name")
 
 	sg := graph.NewStateGraph(map[string]interface{}{"Messages": []interface{}{}})
+	sg.AddChannel("Messages", channels.NewLastValue([]interface{}{}))
 	node := NewSubAgentNode(agent, WithSubAgentName("custom_name"))
 	sg.AddNode("custom_name", node)
 	sg.AddEdge(constants.Start, "custom_name")
@@ -160,6 +167,8 @@ func TestSubAgentNode_CustomExtractor(t *testing.T) {
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("extractor_test")
 
 	sg := graph.NewStateGraph(map[string]interface{}{"data": "", "Messages": []interface{}{}})
+	sg.AddChannel("Messages", channels.NewLastValue([]interface{}{}))
+	sg.AddChannel("data", channels.NewLastValue(""))
 	node := NewSubAgentNode(agent,
 		WithSubAgentExtractor(func(ctx context.Context, state interface{}) (*AgentInput, error) {
 			return &AgentInput{

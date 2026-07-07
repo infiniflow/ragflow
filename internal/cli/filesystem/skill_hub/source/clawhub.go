@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,7 +47,7 @@ func (l *progressLogger) error(format string, args ...interface{}) {
 	fmt.Printf("  ✗ "+format+"\n", args...)
 }
 
-func (l *progressLogger) success(format string, args ...interface{}) {
+func (l *progressLogger) SuccessWithData(format string, args ...interface{}) {
 	fmt.Printf("  ✓ "+format+"\n", args...)
 }
 
@@ -176,7 +177,7 @@ func (s *ClawHubSource) Fetch(identifier string) (*SkillBundle, error) {
 		s.logger.error("Cannot find skill '%s' on ClawHub: %v", slug, err)
 		return nil, fmt.Errorf("skill '%s' not found on ClawHub: %w", slug, err)
 	}
-	s.logger.success("Found skill: %s", skillData.DisplayName)
+	s.logger.SuccessWithData("Found skill: %s", skillData.DisplayName)
 
 	// Determine version to download
 	var version string
@@ -195,7 +196,7 @@ func (s *ClawHubSource) Fetch(identifier string) (*SkillBundle, error) {
 			s.logger.error("No versions available for skill '%s'", slug)
 			return nil, fmt.Errorf("no version found for skill %s", slug)
 		}
-		s.logger.success("Latest version: %s", version)
+		s.logger.SuccessWithData("Latest version: %s", version)
 	}
 
 	// Try to get files from version metadata endpoint first (avoids rate-limited /download)
@@ -205,7 +206,7 @@ func (s *ClawHubSource) Fetch(identifier string) (*SkillBundle, error) {
 	if err == nil {
 		files = s.extractFiles(versionData)
 		if len(files) > 0 {
-			s.logger.success("Fetched %d files from metadata", len(files))
+			s.logger.SuccessWithData("Fetched %d files from metadata", len(files))
 		}
 	}
 
@@ -220,7 +221,7 @@ func (s *ClawHubSource) Fetch(identifier string) (*SkillBundle, error) {
 			return nil, fmt.Errorf("failed to download skill '%s': %w", slug, err2)
 		}
 		files = zipFiles
-		s.logger.success("Downloaded %d files via ZIP", len(files))
+		s.logger.SuccessWithData("Downloaded %d files via ZIP", len(files))
 	}
 
 	// Validate: must have SKILL.md
@@ -905,24 +906,13 @@ func isSafePath(path string) bool {
 
 	// Check for parent directory references
 	parts := strings.Split(clean, string(filepath.Separator))
-	for _, part := range parts {
-		if part == ".." {
-			return false
-		}
-	}
-
-	return true
+	return !slices.Contains(parts, "..")
 }
 
 // isTextContent checks if content appears to be text (not binary)
 func isTextContent(data []byte) bool {
 	// Check for null bytes (indicates binary)
-	for _, b := range data {
-		if b == 0 {
-			return false
-		}
-	}
-	return true
+	return !slices.Contains(data, 0)
 }
 
 func min(a, b int) int {

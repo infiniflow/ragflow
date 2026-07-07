@@ -17,8 +17,6 @@
 package handler
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
@@ -49,13 +47,9 @@ func NewPluginHandler(pluginService *service.PluginService) *PluginHandler {
 // @Router   /v1/plugin/tools [get]
 func (h *PluginHandler) ListLLMTools(c *gin.Context) {
 	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, int(errorCode), errorMessage)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    h.pluginService.ListLLMTools(),
-	})
+	common.SuccessWithData(c, h.pluginService.ListLLMTools(), "SUCCESS")
 }
