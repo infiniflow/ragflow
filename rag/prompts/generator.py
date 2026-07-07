@@ -129,15 +129,15 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
     knowledges = [get_value(ck, "content", "content_with_weight") for ck in kbinfos["chunks"]]
     kwlg_len = len(knowledges)
     used_token_count = 0
-    chunks_num = 0
-    for i, c in enumerate(knowledges):
+    accepted_chunks = []
+    for c, ck in zip(knowledges, kbinfos["chunks"]):
         if not c:
             continue
         used_token_count += num_tokens_from_string(c)
         if max_tokens * 0.97 < used_token_count:
-            logging.warning(f"Not all the retrieval into prompt: {chunks_num}/{kwlg_len}")
+            logging.warning(f"Not all the retrieval into prompt: {len(accepted_chunks)}/{kwlg_len}")
             break
-        chunks_num += 1
+        accepted_chunks.append(ck)
 
     def draw_node(k, line):
         if line is not None and not isinstance(line, str):
@@ -147,7 +147,7 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
         return f"\n├── {k}: " + re.sub(r"\n+", " ", line, flags=re.DOTALL)
 
     knowledges = []
-    for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
+    for i, ck in enumerate(accepted_chunks):
         cnt = "\nID: {}".format(i if not hash_id else hash_str2int(get_value(ck, "id", "chunk_id"), 500))
         cnt += draw_node("Title", get_value(ck, "docnm_kwd", "document_name"))
         cnt += draw_node("URL", ck.get('url', ''))
