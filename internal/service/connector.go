@@ -30,6 +30,7 @@ import (
 	"net/url"
 	"os"
 	"ragflow/internal/engine/redis"
+	"ragflow/internal/utility"
 	"strings"
 	"time"
 
@@ -252,7 +253,7 @@ func (s *ConnectorService) CreateConnector(userID string, req *CreateConnectorRe
 	}
 
 	connector := &entity.Connector{
-		ID:          common.GenerateUUID(),
+		ID:          utility.GenerateUUID(),
 		TenantID:    userID,
 		Name:        req.Name,
 		Source:      req.Source,
@@ -443,7 +444,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(userID, source string, req *Start
 		return nil, common.CodeServerError, err
 	}
 
-	flowID := common.GenerateUUID()
+	flowID := utility.GenerateUUID()
 	authorizationURL, err := buildGoogleAuthorizationURL(authURI, clientID, redirectURI, flowID, googleOAuthScopesForSource(source), codeChallenge)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("Failed to initialize Google OAuth flow. Please verify the uploaded client configuration.")
@@ -1050,7 +1051,7 @@ func (s *ConnectorService) StartBoxWebOAuth(userID string, req *StartBoxWebOAuth
 		redirectURI = defaultBoxWebOAuthRedirectURI()
 	}
 
-	flowID := common.GenerateUUID()
+	flowID := utility.GenerateUUID()
 	authorizationURL, err := buildBoxAuthorizationURL(clientID, redirectURI, flowID)
 	if err != nil {
 		return nil, common.CodeServerError, err

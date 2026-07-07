@@ -2012,18 +2012,11 @@ func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 
 	// Add id and empty count if needed
 	// For skill index, use skill_id instead of id
-	hasID := false
 	idField := "id"
 	if skillIndex {
 		idField = "skill_id"
 	}
-	for _, f := range result {
-		if f == idField {
-			hasID = true
-			break
-		}
-	}
-	if !hasID {
+	if !slices.Contains(result, idField) {
 		result = append([]string{idField}, result...)
 	}
 
