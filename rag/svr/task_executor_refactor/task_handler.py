@@ -67,48 +67,15 @@ from rag.prompts.generator import run_toc_from_text
 from common import settings
 
 
-def _parser_config_compilation_template_group_ids(parser_config) -> list[str]:
-    """Read template-group ids from a doc's parser_config.
-
-    Templates were previously referenced as a list
-    (``compilation_template_ids``); after the template-group refactor
-    a doc instead points at one or more groups, and the orchestrator
-    resolves each group's child templates at runtime. Old
-    ``compilation_template_ids`` data is intentionally ignored per
-    the migration spec.
-    """
-
-    def _normalize(raw) -> list[str]:
-        if isinstance(raw, str):
-            raw = [raw]
-        if not isinstance(raw, list):
-            return []
-        ids: list[str] = []
-        seen: set[str] = set()
-        for gid in raw:
-            if not isinstance(gid, str):
-                continue
-            gid = gid.strip()
-            if gid and gid not in seen:
-                seen.add(gid)
-                ids.append(gid)
-        return ids
-
-    if not isinstance(parser_config, dict):
-        return []
-    if "compilation_template_group_id" in parser_config:
-        return _normalize(parser_config.get("compilation_template_group_id"))
-    ext = parser_config.get("ext")
-    if isinstance(ext, dict):
-        return _normalize(ext.get("compilation_template_group_id"))
-    return []
-
-
 def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> list[str]:
     """Resolve a doc's parser_config to compile-template ids by
     looking up configured groups. Returns ``[]`` if the doc has no
     group set or no group can be resolved.
     """
+    from rag.svr.task_executor_refactor.chunk_post_processor import (
+        _parser_config_compilation_template_group_ids,
+    )
+
     template_ids: list[str] = []
     seen: set[str] = set()
     for group_id in _parser_config_compilation_template_group_ids(parser_config):

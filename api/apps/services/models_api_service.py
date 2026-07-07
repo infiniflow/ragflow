@@ -13,17 +13,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import os
 import logging
+import os
 
-from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, ensure_paddleocr_from_env, ensure_opendataloader_from_env
-from common.constants import ActiveStatusEnum, LLMType
-from common.settings import FACTORY_LLM_INFOS
-from api.db.services.tenant_model_provider_service import TenantModelProviderService
+from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, ensure_opendataloader_from_env, ensure_paddleocr_from_env
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
+from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_service import TenantModelService
 from api.db.services.user_service import TenantService
 from api.utils.model_utils import get_model_type_human, calculate_model_type
+from common.constants import ActiveStatusEnum, LLMType
+from common.settings import FACTORY_LLM_INFOS
 
 # Mapping from model_type string to Tenant model field name
 MODEL_TYPE_TO_FIELD = {
@@ -71,19 +71,20 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     if not default_model:
         return None
 
-    parts = default_model.split("@")
+    # The composite key is right-anchored: provider_name is always the *last*
+    # '@'-separated field. Use rsplit so a model_name that itself contains '@'
+    # (e.g. LM Studio IDs like `text-embedding-nomic-embed-text-v1.5@q8_0`)
+    # remains intact in the leftmost field instead of being truncated.
+    parts = default_model.rsplit("@", 2)
     if len(parts) == 3:
         model_name, instance_name, provider_name = parts
     elif len(parts) == 2:
         model_name, provider_name = parts
         instance_name = "default"
-    elif len(parts) == 1:
+    else:
         model_name = parts[0]
         provider_name = ""
         instance_name = "default"
-    else:
-        logging.warning(f"Invalid model string: {default_model}")
-        return None
 
     model_type = MODEL_TAG_TO_TYPE.get(model_type, model_type)
     # Special case: OCR with infiniflow@default@deepdoc is always enabled
