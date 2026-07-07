@@ -238,11 +238,11 @@ class RAGFlowConnector:
         else:
             page_size = min(page_size, self._REST_API_MAX_PAGE_SIZE)
             res_json = await self._fetch_datasets_page(api_key=api_key, page=page, page_size=page_size, orderby=orderby, desc=desc, id=id, name=name)
-            datasets = res_json["data"]
+            datasets = res_json.get("data", [])
 
         result_list = []
         for data in datasets:
-            d = {"description": data["description"], "id": data["id"]}
+            d = {"description": data.get("description", ""), "id": data.get("id", "")}
             result_list.append(json.dumps(d, ensure_ascii=False))
         return "\n".join(result_list)
 
@@ -739,7 +739,10 @@ def create_starlette_app():
         sse = SseServerTransport("/messages/")
 
         async def handle_sse(request):
-            async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+            send = getattr(request, "_send", None)
+            if send is None:
+                return Response("Internal Server Error", status_code=500)
+            async with sse.connect_sse(request.scope, request.receive, send) as streams:
                 await app.run(streams[0], streams[1], app.create_initialization_options(experimental_capabilities={"headers": dict(request.headers)}))
             return Response()
 

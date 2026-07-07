@@ -900,7 +900,11 @@ async def debug_agent_component(agent_id, component_id, tenant_id):
         from agent.canvas import Canvas
         from agent.component import LLM
 
-        _, user_canvas = UserCanvasService.get_by_id(agent_id)
+        from api.utils.api_utils import get_error_data_result
+
+        exists, user_canvas = UserCanvasService.get_by_id(agent_id)
+        if not exists or not user_canvas:
+            return get_error_data_result(message="agent canvas not found.")
         canvas = Canvas(json.dumps(user_canvas.dsl), tenant_id, canvas_id=user_canvas.id)
         canvas.reset()
         canvas.message_id = get_uuid()
@@ -1805,13 +1809,18 @@ async def _webhook_impl(agent_id: str, is_test: bool):
         if not whitelist:
             return
 
-        client_ip = request.remote_addr
+        client_ip = request.remote_addr or ""
+        # Handle proxy chains: take the first IP only when behind reverse proxy
+        client_ip = client_ip.split(",")[0].strip()
 
         for rule in whitelist:
             if "/" in rule:
                 # CIDR notation
-                if ipaddress.ip_address(client_ip) in ipaddress.ip_network(rule, strict=False):
-                    return
+                try:
+                    if ipaddress.ip_address(client_ip) in ipaddress.ip_network(rule, strict=False):
+                        return
+                except ValueError:
+                    continue
             else:
                 # Single IP
                 if client_ip == rule:
@@ -2259,7 +2268,7 @@ async def _webhook_impl(agent_id: str, is_test: bool):
                     )
 
                 cvs.dsl = json.loads(str(canvas))
-                UserCanvasService.update_by_id(cvs.user_id, cvs.to_dict())
+                UserCanvasService.update_by_id(cvs.id, cvs.to_dict())
 
             except Exception as e:
                 logging.exception("Webhook background run failed")
@@ -2304,15 +2313,17 @@ async def _webhook_impl(agent_id: str, is_test: bool):
                     webhook_payload=clean_request,
                 ):
                     if ans["event"] == "message":
-                        content = ans["data"]["content"]
-                        if ans["data"].get("start_to_think", False):
+                        data = ans.get("data") or {}
+                        content = data.get("content", "")
+                        if data.get("start_to_think", False):
                             content = "<think>"
-                        elif ans["data"].get("end_to_think", False):
+                        elif data.get("end_to_think", False):
                             content = "</think>"
                         if content:
                             contents.append(content)
                     if ans["event"] == "message_end":
-                        status = int(ans["data"].get("status", status))
+                        data = ans.get("data") or {}
+                        status = int(data.get("status", status))
                     if is_test:
                         append_webhook_trace(agent_id, start_ts, ans)
                 if is_test:

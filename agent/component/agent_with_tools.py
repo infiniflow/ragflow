@@ -83,6 +83,8 @@ class Agent(LLM, ToolBase):
             indexed_name = f"{original_name}_{idx}"
             self.tools[indexed_name] = cpn
         model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
+        if not model_types:
+            raise ValueError(f"LLM ID '{self._param.llm_id}' has no available model types")
         model_type = "chat" if "chat" in model_types else model_types[0]
         chat_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
         self.chat_mdl = LLMBundle(

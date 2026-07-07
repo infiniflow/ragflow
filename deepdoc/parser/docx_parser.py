@@ -176,7 +176,11 @@ class RAGFlowDocxParser:
                 if "lastRenderedPageBreak" in run._element.xml:
                     pn += 1
 
-            secs.append(("".join(runs_within_single_paragraph), p.style.name if hasattr(p.style, "name") else ""))  # then concat run.text as part of the paragraph
+            try:
+                style_name = p.style.name if p.style is not None else ""
+            except Exception:
+                style_name = ""
+            secs.append(("".join(runs_within_single_paragraph), style_name))
 
         tbls = [self.__extract_table_content(tb) for tb in self.doc.tables]
         return secs, tbls

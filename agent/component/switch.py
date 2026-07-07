@@ -76,7 +76,10 @@ class Switch(ComponentBase, ABC):
                 self.set_input_value(item["cpn_id"], cpn_v)
                 operatee = item.get("value", "")
                 if isinstance(cpn_v, numbers.Number):
-                    operatee = float(operatee)
+                    try:
+                        operatee = float(operatee or "0")
+                    except ValueError:
+                        operatee = 0
                 res.append(self.process_operator(cpn_v, item["operator"], operatee))
                 if cond["logical_operator"] != "and" and any(res):
                     self.set_output("next", [self._canvas.get_component_name(cpn_id) for cpn_id in cond["to"]])
