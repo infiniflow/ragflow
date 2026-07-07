@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -69,7 +70,7 @@ func AssertURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
 	}
 
 	scheme := strings.ToLower(parsed.Scheme)
-	if !schemeAllowed(scheme) {
+	if !slices.Contains(AllowedURLSchemes, scheme) {
 		sorted := append([]string(nil), AllowedURLSchemes...)
 		sort.Strings(sorted)
 		return "", "", fmt.Errorf("disallowed URL scheme: '%s'. Only %v are allowed", scheme, sorted)
@@ -102,15 +103,6 @@ func AssertURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
 		}
 	}
 	return hostname, resolvedIP, nil
-}
-
-func schemeAllowed(scheme string) bool {
-	for _, s := range AllowedURLSchemes {
-		if s == scheme {
-			return true
-		}
-	}
-	return false
 }
 
 // effectiveIP unwraps IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1) so

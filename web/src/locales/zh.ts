@@ -1781,6 +1781,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       file: '文件',
       integer: '数字',
       boolean: '布尔值',
+      object: 'JSON 对象',
       name: '名称',
       singleLineText: '单行文本',
       variableSettings: '变量设置',

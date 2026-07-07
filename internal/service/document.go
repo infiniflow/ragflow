@@ -52,7 +52,6 @@ import (
 	"ragflow/internal/utility"
 
 	"github.com/cespare/xxhash/v2"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -560,7 +559,7 @@ func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDo
 // CreateDocument create document
 func (s *DocumentService) CreateDocument(req *CreateDocumentRequest) (*entity.Document, error) {
 	document := &entity.Document{
-		ID:           common.GenerateUUID(),
+		ID:           utility.GenerateUUID(),
 		Name:         &req.Name,
 		KbID:         req.KbID,
 		ParserID:     req.ParserID,
@@ -1566,7 +1565,7 @@ func (s *DocumentService) newDocumentParseTask(doc *entity.Document, fromPage, t
 	digest := documentParseTaskDigest(doc, fromPage, toPage)
 	chunkIDs := ""
 	return &entity.Task{
-		ID:          common.GenerateUUID(),
+		ID:          utility.GenerateUUID(),
 		DocID:       doc.ID,
 		FromPage:    fromPage,
 		ToPage:      toPage,
@@ -3330,7 +3329,7 @@ func (s *DocumentService) newAFileFromKB(tenantID, name, parentID string) (*enti
 	}
 	loc := ""
 	folder := &entity.File{
-		ID:         strings.ReplaceAll(uuid.New().String(), "-", ""),
+		ID:         utility.GenerateToken(),
 		ParentID:   parentID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
@@ -3361,7 +3360,7 @@ func (s *DocumentService) addFileFromKB(doc *entity.Document, kbFolderID, tenant
 	if doc.Location != nil {
 		loc = *doc.Location
 	}
-	fileID := strings.ReplaceAll(uuid.New().String(), "-", "")
+	fileID := utility.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   kbFolderID,
@@ -3378,7 +3377,7 @@ func (s *DocumentService) addFileFromKB(doc *entity.Document, kbFolderID, tenant
 	}
 	docID := doc.ID
 	if err := s.file2DocumentDAO.Create(&entity.File2Document{
-		ID:         strings.ReplaceAll(uuid.New().String(), "-", ""),
+		ID:         utility.GenerateToken(),
 		FileID:     &fileID,
 		DocumentID: &docID,
 	}); err != nil {
@@ -3465,7 +3464,7 @@ func normalizeWebDocumentName(name, contentType string, blob []byte) string {
 // newDatasetDocument builds a Document row for an upload, deriving parser_id,
 // suffix and content hash. blob may be nil for the empty/virtual document.
 func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID, filename, location, filetype string, parserConfig entity.JSONMap, src string, size int64, blob []byte) *entity.Document {
-	docID := strings.ReplaceAll(uuid.New().String(), "-", "")
+	docID := utility.GenerateToken()
 	run := "0"
 	status := "1"
 	suffix := ""
