@@ -15,6 +15,7 @@ package component
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -178,14 +179,7 @@ func TestLLM_Invoke_InvokerError(t *testing.T) {
 
 func TestLLM_Registered(t *testing.T) {
 	names := RegisteredNames()
-	found := false
-	for _, n := range names {
-		if n == "llm" {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.Contains(names, "llm") {
 		t.Fatalf("LLM not registered; names=%v", names)
 	}
 	// And a factory round-trip.
