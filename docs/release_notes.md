@@ -15,7 +15,7 @@ Released on July 7, 2026.
 
 ### New features
 
-- NLP/Tokenization: Adds native Spanish BM25 tokenization support to improve text processing accuracy for Spanish documents. [#14140](https://github.com/infiniflow/ragflow/pull/14140)
+- NLP/Tokenization: Adds a language-aware Snowball stemmer supporting 16 languages, integrates the dataset language parameter across the tokenization pipeline, and adds Dutch to the frontend. [#14140](https://github.com/infiniflow/ragflow/pull/14140)
 
 ### Bug fixes
 
