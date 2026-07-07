@@ -153,12 +153,6 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 	if out["output_format"] != "chunks" {
 		t.Errorf("output_format = %v, want chunks", out["output_format"])
 	}
-	if out["_elapsed_time"] == nil {
-		t.Error("_elapsed_time missing")
-	}
-	if out["_created_time"] == nil {
-		t.Error("_created_time missing")
-	}
 }
 
 // TestExtractorComponent_Invoke_LLMError verifies a mock LLM

@@ -5,106 +5,77 @@ import (
 	"image"
 	"log/slog"
 	"math"
-	"sort"
 
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
-// enrichWithDeepDoc runs DLA+TSR via docAnalyzer and returns detected tables.
-// pageImages optionally provides pre-rendered page images to avoid re-rendering.
-func (p *Parser) enrichWithDeepDoc(ctx context.Context, result *pdf.ParseResult, engine pdf.PDFEngine, boxes []pdf.TextBox, pageImages map[int]image.Image, docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder) []pdf.TableItem {
-	if !docAnalyzer.Health() {
-		return nil
+// enrichOnePageWithDeepDoc runs DLA+TSR for a single page and returns
+// worker-local artifacts. Boxes may be empty (image-only pages); the
+// function still runs DLA/TSR if pageImg is available so a page can
+// contribute tables and debug payloads even when no embedded text exists.
+//
+// Parameters:
+//   - pageImg: the page bitmap DLA/TSR run against (rendered at the DLA
+//     DPI); also the source image for table cropping.
+//   - pageBoxes: line/word-level []pdf.TextBox (NOT per-rune) from
+//     processPageBoxes, in PDF-point space. DLA/TSR annotations are
+//     written back onto a shallow copy of this slice (see Returns).
+//   - pg: page number (0-based), stamped onto tables and debug payloads.
+//   - renderErr: non-nil short-circuits to (pageBoxes, nil, nil, nil).
+//   - docAnalyzer: the DLA/OCR/Tensor backend used for region inference
+//     and TSR.
+//   - tb: table builder used to group TSR cells into a grid.
+//   - scale: the points-to-pixels multiplier of pageImg. DLA returns
+//     region coordinates in image-pixel space while box coordinates are in
+//     PDF-point space, so scale bridges the two when matching tables and
+//     writing annotations. Typically pdf.DlaScale (base render) or
+//     retryDPI/72 (retry-zoom render) so annotation stays consistent with
+//     the image that produced it.
+//
+// Returns:
+//   - annotated: page boxes after DLA/TSR annotation write-back (LayoutType,
+//     LayoutNo, R/C/H/SP fields) — same length as input pageBoxes.
+//   - tables:    table candidates detected on this page.
+//   - dlaRegions: page-local DLA regions payload.
+func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
+	pageImg image.Image, pageBoxes []pdf.TextBox, pg int, renderErr error,
+	docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder, scale float64,
+) (annotated []pdf.TextBox, tables []pdf.TableItem,
+	dlaRegions []pdf.DLAPageRegions,
+) {
+	if !docAnalyzer.Health() || renderErr != nil || pageImg == nil {
+		return pageBoxes, nil, nil
 	}
-	// Group boxes by page for annotation write-back.
-	byPage := make(map[int][]int)
-	for i, b := range boxes {
-		byPage[b.PageNumber] = append(byPage[b.PageNumber], i)
-	}
-
-	// Collect all pages that have images (from pageImages) or boxes.
-	// This matches Python's __images__ which processes every page regardless
-	// of embedded chars — image-only PDFs still get DLA+TSR.
-	allPages := make(map[int]bool)
-	for pg := range pageImages {
-		allPages[pg] = true
-	}
-	for pg := range byPage {
-		allPages[pg] = true
-	}
-	pageKeys := make([]int, 0, len(allPages))
-	for pg := range allPages {
-		pageKeys = append(pageKeys, pg)
-	}
-	sort.Ints(pageKeys)
-
-	var tableItems []pdf.TableItem
-	for _, pg := range pageKeys {
-		if err := ctx.Err(); err != nil {
-			return tableItems
-		}
-		indices := byPage[pg]
-		pageBoxes := make([]pdf.TextBox, len(indices))
-		for i, idx := range indices {
-			pageBoxes[i] = boxes[idx]
-		}
-		tables := p.extractTableBoxes(ctx, result, pageBoxes, engine, pg, pageImages, len(tableItems), docAnalyzer, tb)
-		tableItems = append(tableItems, tables...)
-		// Write back DLA and TSR annotations (R/C/H/SP) to the original boxes.
-		for i, idx := range indices {
-			if pageBoxes[i].LayoutType != "" {
-				boxes[idx].LayoutType = pageBoxes[i].LayoutType
-				boxes[idx].LayoutNo = pageBoxes[i].LayoutNo
-			}
-			tbl.CopyBoxAnnotations(&boxes[idx], &pageBoxes[i])
-		}
-
-	}
-	return tableItems
-}
-
-func (p *Parser) extractTableBoxes(ctx context.Context, result *pdf.ParseResult, boxes []pdf.TextBox, engine pdf.PDFEngine, pageNum int, pageImages map[int]image.Image, tableBaseIdx int, docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder) []pdf.TableItem {
-	pageImg, ok := pageImages[pageNum]
-	if !ok {
-		var err error
-		pageImg, err = RenderPageToImage(engine, pageNum)
-		if err != nil {
-			slog.Warn("render page for DeepDoc failed", "page", pageNum, "err", err)
-			return nil
-		}
-	}
-	return p.extractTableBoxesFromImage(ctx, result, boxes, pageImg, pageNum, tableBaseIdx, docAnalyzer, tb)
-}
-
-func (p *Parser) extractTableBoxesFromImage(ctx context.Context, result *pdf.ParseResult, boxes []pdf.TextBox, pageImg image.Image, pageNum int, tableBaseIdx int, docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder) []pdf.TableItem {
-	regions, err := docAnalyzer.DLA(ctx, pageImg)
+	regions, err := p.inferDLA(ctx, docAnalyzer, pageImg)
 	if err != nil {
-		slog.Warn("DLA failed", "page", pageNum, "err", err)
-		return nil
+		slog.Warn("DLA failed", "page", pg, "err", err)
+		return pageBoxes, nil, nil
 	}
-	// Collect DLA debug intermediates.
-	if result != nil {
-		result.DLADebug = append(result.DLADebug, pdf.DLAPageRegions{Page: pageNum, Regions: regions})
-	}
-	// Annotate boxes with DLA layout types (title, text, figure, table, ...).
-	scale := pdf.DlaScale
-	boxes = tbl.AnnotateBoxLayouts(boxes, regions, scale, float64(pageImg.Bounds().Dy()))
+	dlaRegions = []pdf.DLAPageRegions{{Page: pg, Regions: regions}}
 
-	tableMatches := tbl.MatchTableRegions(boxes, regions, scale)
+	// Copy page boxes so DLA annotation can append synthetic figure boxes
+	// without mutating the caller's slice. The annotated copy is what the
+	// caller should use downstream for layout/text-merge.
+	annotated = append([]pdf.TextBox(nil), pageBoxes...)
+	annotated = tbl.AnnotateBoxLayouts(annotated, regions, scale, float64(pageImg.Bounds().Dy()))
+
+	tableMatches := tbl.MatchTableRegions(annotated, regions, scale)
 	var items []pdf.TableItem
 	for _, tm := range tableMatches {
-		item := p.processOneTable(ctx, result, boxes, pageImg, pageNum, docAnalyzer, tb, tm, scale, tableBaseIdx+len(items))
+		item := p.processOneTable(ctx, pageImg, annotated, pg, docAnalyzer, tb, tm, scale)
 		if item.ImageB64 != "" || len(item.Cells) > 0 || len(item.Positions) > 0 {
 			items = append(items, item)
 		}
 	}
-	return items
+	return annotated, items, dlaRegions
 }
 
 // processOneTable handles DLA+TSR+OCR for a single table region match.
-func (p *Parser) processOneTable(ctx context.Context, result *pdf.ParseResult, boxes []pdf.TextBox, pageImg image.Image, pageNum int, docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder, tm tbl.TableMatch, scale float64, tableIdx int) pdf.TableItem {
+// It mutates `boxes` in place to write back R/C/H/SP annotations. The
+// function is page-local and never touches the document-wide ParseResult.
+func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes []pdf.TextBox, pageNum int, docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder, tm tbl.TableMatch, scale float64) pdf.TableItem {
 	cropped, cropErr := util.CropImageRegion(pageImg, tm.Region)
 	if cropErr != nil {
 		return pdf.TableItem{}
@@ -122,17 +93,9 @@ func (p *Parser) processOneTable(ctx context.Context, result *pdf.ParseResult, b
 	if encErr != nil {
 		slog.Warn("table PNG encode failed", "page", pageNum, "err", encErr)
 	}
-	cells, tsrErr := tb.DetectCells(ctx, tsrImg)
+	cells, tsrErr := p.inferTSR(ctx, tb, tsrImg)
 	if tsrErr != nil {
 		slog.Warn("TSR failed", "page", pageNum, "err", tsrErr)
-	}
-	if tsrErr == nil && result != nil {
-		for _, c := range cells {
-			result.TSRDebug = append(result.TSRDebug, pdf.TSRRawCell{
-				TableIndex: tableIdx, Page: pageNum,
-				Label: c.Label, X0: c.X0, Y0: c.Y0, X1: c.X1, Y1: c.Y1, Text: c.Text,
-			})
-		}
 	}
 	w := tm.Region.X1 - tm.Region.X0
 	h := tm.Region.Y1 - tm.Region.Y0
@@ -142,7 +105,7 @@ func (p *Parser) processOneTable(ctx context.Context, result *pdf.ParseResult, b
 	if tsrErr == nil && len(cells) > 0 {
 		if bestAngle != 0 {
 			if !p.Config.SkipOCR {
-				ocrTableCells(ctx, cells, tsrImg, docAnalyzer)
+				p.ocrTableCells(ctx, cells, tsrImg, docAnalyzer)
 			}
 			for i := range cells {
 				cells[i].X0, cells[i].Y0 = util.MapRotatedPointToOriginal(cells[i].X0, cells[i].Y0, bestAngle, origW, origH)
@@ -189,7 +152,7 @@ func (p *Parser) processOneTable(ctx context.Context, result *pdf.ParseResult, b
 				}
 			}
 			if bestAngle == 0 && !p.Config.SkipOCR {
-				ocrTableCells(ctx, flat, tsrImg, docAnalyzer)
+				p.ocrTableCells(ctx, flat, tsrImg, docAnalyzer)
 				idx = 0
 				for ri := range grid {
 					for ci := range grid[ri] {

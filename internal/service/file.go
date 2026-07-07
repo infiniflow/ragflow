@@ -1128,9 +1128,7 @@ func parseFileContent(filename string, data []byte) string {
 	if fileType == utility.FileTypeOTHER {
 		return string(data)
 	}
-	// Parser config — office_oxide for MS Office formats; other parsers ignore it.
-	parserCfg := map[string]string{"lib_type": "office_oxide"}
-	fp, err := parser.GetParser(fileType, parserCfg)
+	fp, err := parser.GetParser(fileType)
 	if err != nil {
 		return string(data)
 	}
