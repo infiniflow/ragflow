@@ -647,8 +647,8 @@ async def clear_wiki(tenant_id, dataset_id):
     """Wipe every artifact-related row from ES for this KB.
 
     DELETE /api/v1/datasets/<dataset_id>/artifacts
-    Removes the five ``compile_kwd`` row types written by the artifact
-    pipeline (MAP extracts / REDUCE results / PLAN / page drafts / pages).
+    Removes the artifact ``compile_kwd`` row types written by the artifact
+    pipeline (MAP extracts / REDUCE results / PLAN / drafts / pages / topics / graph rows).
     Success: {"code": 0, "data": {"deleted": {kwd: result}}}
     """
     try:
