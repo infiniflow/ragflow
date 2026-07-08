@@ -820,7 +820,7 @@ class Parser(ProcessBase):
             spreadsheet_parser = ExcelParser()
             if conf.get("output_format") == "html":
                 htmls = spreadsheet_parser.html(blob, 1000000000)
-                self.set_output("html", htmls[0])
+                self.set_output("html", "\n".join([html for html in htmls if html]))
             elif conf.get("output_format") == "json":
                 self.set_output("json", [{"text": txt, "doc_type_kwd": "text"} for txt in spreadsheet_parser(blob) if txt])
             elif conf.get("output_format") == "markdown":
