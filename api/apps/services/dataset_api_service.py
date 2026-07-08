@@ -1501,6 +1501,7 @@ async def search_datasets(tenant_id: str, req: dict):
 # ---------------------------------------------------------------------------
 
 _WIKI_COMPILE_KWD = "artifact_page"
+_WIKI_TOPIC_COMPILE_KWD = "artifact_page_topic"
 _SKILL_COMPILE_KWD = "skill"
 _SKILL_ALL_COMPILE_KWD = "skill_all"
 
@@ -1568,6 +1569,7 @@ async def list_wiki_pages(
     page: int = 1,
     page_size: int = 200,
     page_type: str | None = None,
+    topic: str | None = None,
 ):
     """List artifact pages for the left-hand 2-column list.
 
@@ -1589,10 +1591,14 @@ async def list_wiki_pages(
     page = max(1, int(page or 1))
     page_size = max(1, min(int(page_size or 200), 1000))
     offset = (page - 1) * page_size
+    page_type = page_type.strip() if isinstance(page_type, str) else page_type
+    topic = topic.strip() if isinstance(topic, str) else topic
 
     condition: dict = {"compile_kwd": [_WIKI_COMPILE_KWD]}
     if page_type:
         condition["page_type_kwd"] = [page_type]
+    if topic:
+        condition["topic_kwd"] = [topic]
 
     order_by = OrderByExpr()
     try:
@@ -1643,6 +1649,74 @@ async def list_wiki_pages(
                 "page_type": row.get("page_type_kwd") or "concept",
                 "topic": row.get("topic_kwd") or "",
                 "summary": row.get("summary_with_weight") or "",
+            }
+        )
+
+    return True, {"total": int(total or 0), "items": items}
+
+
+async def list_wiki_topics(
+    dataset_id: str,
+    tenant_id: str,
+    page: int = 1,
+    page_size: int = 200,
+):
+    """List wiki topics for the dataset Artifact tab."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"total": 0, "items": []}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 200), 1000))
+    offset = (page - 1) * page_size
+
+    order_by = OrderByExpr()
+    try:
+        order_by.asc("title_kwd")
+    except Exception:
+        order_by = OrderByExpr()
+
+    select_fields = [
+        "id",
+        "topic_kwd",
+        "title_kwd",
+        "slug_kwd",
+    ]
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=select_fields,
+            highlight_fields=[],
+            condition={"compile_kwd": [_WIKI_TOPIC_COMPILE_KWD]},
+            match_expressions=[],
+            order_by=order_by,
+            offset=offset,
+            limit=page_size,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, select_fields)
+    except Exception:
+        logging.exception("list_wiki_topics: docStore search failed for kb=%s", dataset_id)
+        return True, {"total": 0, "items": []}
+
+    total = settings.docStoreConn.get_total(res)
+    items = []
+    for row in (field_map or {}).values():
+        topic = row.get("topic_kwd")
+        if not isinstance(topic, str) or not topic:
+            continue
+        items.append(
+            {
+                "topic": topic,
+                "title": row.get("title_kwd") or topic,
+                "slug": row.get("slug_kwd") or topic,
             }
         )
 
@@ -2046,7 +2120,7 @@ _WIKI_COMPILE_KWDS = (
     "artifact_compilation_plan",
     "artifact_page_draft",
     "artifact_page",
-    "artifact_page_topic",
+    _WIKI_TOPIC_COMPILE_KWD,
     "artifact_entity",
     "artifact_relation",
 )

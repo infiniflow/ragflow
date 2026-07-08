@@ -109,7 +109,14 @@ class DataflowService:
             dataflow_id = corrected_id
 
             # Run pipeline
-            pipeline = Pipeline(dsl, tenant_id=ctx.tenant_id, doc_id=doc_id, task_id=task_id, flow_id=dataflow_id)
+            pipeline = Pipeline(
+                dsl,
+                tenant_id=ctx.tenant_id,
+                doc_id=doc_id,
+                task_id=task_id,
+                flow_id=dataflow_id,
+                language=ctx.language,
+            )
             chunks = await pipeline.run(file=ctx.file) if ctx.file else await pipeline.run()
 
             if doc_id == CANVAS_DEBUG_DOC_ID:

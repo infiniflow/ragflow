@@ -322,6 +322,8 @@ async def run_structure_compile_over_batches(
                         for p in pages or []:
                             p["compile_kwd"] = compile_kwd
                         progress_cb(msg=f"Synthesis done: {len(pages or [])} {compile_kwd} page(s) written.")
+                except TaskCanceledException:
+                    raise
                 except Exception:
                     logging.exception("synthesis: failed for template %s", template_id)
 

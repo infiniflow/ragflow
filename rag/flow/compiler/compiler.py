@@ -64,6 +64,17 @@ class Compiler(ProcessBase, LLM):
         """
         self.callback(prog, msg)
 
+    def _compile_language(self, kwargs: dict) -> str:
+        language = kwargs.get("language") or getattr(self._canvas, "_language", None)
+        if isinstance(language, str):
+            language = language.strip()
+        if not language and getattr(self._canvas, "_doc_id", None):
+            config = DocumentService.get_chunking_config(self._canvas._doc_id) or {}
+            language = config.get("language")
+            if isinstance(language, str):
+                language = language.strip()
+        return language or "English"
+
     async def _invoke(self, **kwargs):
         self.set_output("output_format", "chunks")
         self.callback(random.randint(1, 5) / 100.0, "Start knowledge compilation.")
@@ -79,6 +90,7 @@ class Compiler(ProcessBase, LLM):
         tenant_id = self._canvas.get_tenant_id()
         doc_id = self._canvas._doc_id
         kb_id = getattr(self._canvas, "_kb_id", None) or DocumentService.get_knowledgebase_id(doc_id)
+        language = self._compile_language(kwargs)
 
         if not chunks:
             self.set_output("chunks", chunks)
@@ -102,6 +114,7 @@ class Compiler(ProcessBase, LLM):
         llm_bundle_cache: dict[str, LLMBundle] = {}
         chat_mdl_by_tid: dict[str, LLMBundle] = {}
         filtered_templates: list[tuple[str, dict]] = []
+        default_chat_mdl = None
         for template_id, parser_cfg in active_templates:
             tpl_llm_id = parser_cfg.get("llm_id") if isinstance(parser_cfg, dict) else None
             if isinstance(tpl_llm_id, str) and tpl_llm_id.strip():
@@ -112,6 +125,7 @@ class Compiler(ProcessBase, LLM):
                         llm_bundle_cache[chat_llm_id] = LLMBundle(
                             tenant_id,
                             cfg,
+                            lang=language,
                             max_retries=self._param.max_retries,
                             retry_interval=self._param.delay_after_error,
                         )
@@ -124,7 +138,15 @@ class Compiler(ProcessBase, LLM):
                         continue
                 chat_mdl_by_tid[template_id] = llm_bundle_cache[chat_llm_id]
             else:
-                chat_mdl_by_tid[template_id] = self.chat_mdl
+                if default_chat_mdl is None:
+                    default_chat_mdl = LLMBundle(
+                        tenant_id,
+                        self.chat_mdl.model_config,
+                        lang=language,
+                        max_retries=self._param.max_retries,
+                        retry_interval=self._param.delay_after_error,
+                    )
+                chat_mdl_by_tid[template_id] = default_chat_mdl
             filtered_templates.append((template_id, parser_cfg))
 
         if not filtered_templates:
@@ -135,6 +157,7 @@ class Compiler(ProcessBase, LLM):
         embedding_model = LLMBundle(
             tenant_id,
             LLMType.EMBEDDING,
+            lang=language,
             max_retries=self._param.max_retries,
             retry_interval=self._param.delay_after_error,
         )
@@ -167,7 +190,7 @@ class Compiler(ProcessBase, LLM):
                 tenant_id=tenant_id,
                 kb_id=kb_id,
                 doc_id=doc_id,
-                language="en",
+                language=language,
                 chunk_batches=_chunk_batches(),
                 progress_cb=self._compile_progress,
                 cancel_check=_cancelled,
