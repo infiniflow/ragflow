@@ -147,6 +147,12 @@ func ProcessChunksForDataflow(
 
 		if _, exists := ck["id"]; !exists {
 			text := MustGetChunkTextString(ck, "ProcessChunksForDataflow")
+			if text == "" {
+				// Fallback: use content_with_weight if text is missing or malformed
+				if cwt, ok := ck["content_with_weight"].(string); ok && cwt != "" {
+					text = cwt
+				}
+			}
 			ck["id"] = ChunkID(text, docID)
 		}
 

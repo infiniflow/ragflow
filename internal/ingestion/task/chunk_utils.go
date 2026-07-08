@@ -123,24 +123,34 @@ func PrepareTextsForDataflowEmbedding(chunks []map[string]any) []string {
 	return texts
 }
 
-// MustGetChunkTextString returns chunk["text"] when it is a string.
-// Missing text is allowed and returns empty string.
-// FIXME: remove panic before production; current panic is intentional for dev/test
-// so list-shaped text payloads are surfaced immediately instead of being written
-// as silent bad data.
-func MustGetChunkTextString(chunk map[string]any, where string) string {
+// GetChunkTextString returns chunk["text"] when it is a string.
+// Missing text is allowed and returns ("", nil).
+// Non-string values (e.g. []string from malformed pipeline output) return
+// ("", error) so callers can decide how to handle degraded data.
+func GetChunkTextString(chunk map[string]any, where string) (string, error) {
 	val, exists := chunk["text"]
 	if !exists || val == nil {
-		return ""
+		return "", nil
 	}
 	text, ok := val.(string)
 	if ok {
-		return text
+		return text, nil
 	}
 
 	msg := fmt.Sprintf("%s: invalid chunk text type %T, expected string, chunk=%v", where, val, chunk)
 	common.Error(msg, nil)
-	panic(msg)
+	return "", fmt.Errorf(msg)
+}
+
+// MustGetChunkTextString is the convenience wrapper that logs non-string text
+// and returns empty string. Use GetChunkTextString if the caller needs to
+// distinguish "missing text" from "malformed text".
+func MustGetChunkTextString(chunk map[string]any, where string) string {
+	text, err := GetChunkTextString(chunk, where)
+	if err != nil {
+		return ""
+	}
+	return text
 }
 
 // AttachVectors attaches embedding vectors to chunks in-place.
