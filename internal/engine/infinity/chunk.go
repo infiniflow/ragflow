@@ -1030,7 +1030,11 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 					safeQuery := strings.ReplaceAll(questionText, "'", "''")
 					safeFields := strings.ReplaceAll(fieldsStr, "'", "''")
 					filterFulltext := fmt.Sprintf("filter_fulltext('%s', '%s')", safeFields, safeQuery)
-					denseFilterStr = fmt.Sprintf("(%s) AND %s", denseFilterStr, filterFulltext)
+					if denseFilterStr != "" {
+						denseFilterStr = fmt.Sprintf("(%s) AND %s", denseFilterStr, filterFulltext)
+					} else {
+						denseFilterStr = filterFulltext
+					}
 				}
 				threshold := "0.0"
 				if matchDense != nil && matchDense.ExtraOptions != nil {
