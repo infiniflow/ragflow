@@ -6,8 +6,18 @@ export const getDocumentStructureGraph = (
   documentId: string,
 ) => request.get(api.documentStructureGraph(datasetId, documentId));
 
+export const deleteDocumentStructureGraph = (
+  datasetId: string,
+  documentId: string,
+  templateId: string,
+) =>
+  request.delete(api.documentStructureGraph(datasetId, documentId), {
+    data: { template_id: templateId },
+  });
+
 const documentStructureService = {
   getDocumentStructureGraph,
+  deleteDocumentStructureGraph,
 };
 
 export default documentStructureService;

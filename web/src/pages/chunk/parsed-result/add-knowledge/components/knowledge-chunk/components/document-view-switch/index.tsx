@@ -1,6 +1,6 @@
 import DocumentPreview from '@/components/document-preview';
 import DocumentHeader from '@/components/document-preview/document-header';
-import { Segmented } from '@/components/ui/segmented';
+import { Segmented, type SegmentedValue } from '@/components/ui/segmented';
 import Representation, {
   type ClickableNode,
 } from '@/pages/chunk/representation';
@@ -9,7 +9,10 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IHighlight } from 'react-pdf-highlighter';
 
-type ViewMode = 'preview' | 'representations';
+enum ViewMode {
+  Preview = 'preview',
+  Representations = 'representations',
+}
 
 interface DocumentViewSwitchProps {
   documentInfo?: {
@@ -33,7 +36,7 @@ export default function DocumentViewSwitch({
   onChunkIdsChange,
 }: DocumentViewSwitchProps) {
   const { t } = useTranslation();
-  const [viewMode, setViewMode] = useState<ViewMode>('preview');
+  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Preview);
 
   const handleNodeClick = useCallback(
     (node: ClickableNode) => {
@@ -42,9 +45,19 @@ export default function DocumentViewSwitch({
     [onChunkIdsChange],
   );
 
+  const handleViewModeChange = useCallback(
+    (value: SegmentedValue) => {
+      setViewMode(value as ViewMode);
+      if (value === ViewMode.Preview && viewMode !== ViewMode.Preview) {
+        onChunkIdsChange?.([]);
+      }
+    },
+    [onChunkIdsChange, viewMode],
+  );
+
   const options = [
     {
-      value: 'preview',
+      value: ViewMode.Preview,
       label: (
         <div className="flex items-center gap-1">
           <File className="h-4 w-4" />
@@ -53,7 +66,7 @@ export default function DocumentViewSwitch({
       ),
     },
     {
-      value: 'representations',
+      value: ViewMode.Representations,
       label: (
         <div className="flex items-center gap-1">
           <LayoutList className="h-4 w-4" />
@@ -75,12 +88,12 @@ export default function DocumentViewSwitch({
         <Segmented
           options={options}
           value={viewMode}
-          onChange={(value) => setViewMode(value as ViewMode)}
+          onChange={handleViewModeChange}
         />
       </DocumentHeader>
 
       <div className="flex-1 h-0 min-h-0 overflow-hidden p-5 pt-2.5 [&>section]:h-full [&>section]:min-h-0">
-        {viewMode === 'preview' ? (
+        {viewMode === ViewMode.Preview ? (
           <DocumentPreview
             className="h-full min-h-0 overflow-auto [&_img]:max-w-full [&_img]:h-auto"
             fileType={fileType}

@@ -63,6 +63,7 @@ export const enum DocumentApiAction {
 
 export const enum DocumentStructureApiAction {
   FetchDocumentStructureGraph = 'fetchDocumentStructureGraph',
+  DeleteDocumentStructureGraph = 'deleteDocumentStructureGraph',
 }
 
 const DocumentKeys = {
@@ -639,4 +640,34 @@ export function useFetchDocumentStructureGraph() {
     });
 
   return { data, loading };
+}
+
+export function useDeleteDocumentStructureGraph() {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentStructureApiAction.DeleteDocumentStructureGraph],
+    mutationFn: async (templateId: string) => {
+      const { data } =
+        await documentStructureService.deleteDocumentStructureGraph(
+          datasetId,
+          documentId,
+          templateId,
+        );
+      if (data.code === 0) {
+        message.success(i18n.t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: DocumentStructureKeys.graph(datasetId, documentId),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { deleteDocumentStructureGraph: mutateAsync, loading, data };
 }

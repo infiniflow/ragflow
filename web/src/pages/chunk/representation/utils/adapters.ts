@@ -76,6 +76,37 @@ export function adaptTreeToTreeData(
   return buildTreeDataItems(template.entities, template.relations, ['child']);
 }
 
+function filterTreeDataItems(
+  items: TreeDataItem[],
+  keyword: string,
+): TreeDataItem[] {
+  const lowerKeyword = keyword.toLowerCase();
+
+  return items.reduce<TreeDataItem[]>((acc, item) => {
+    const children = item.children
+      ? filterTreeDataItems(item.children, keyword)
+      : [];
+    const matches = item.name.toLowerCase().includes(lowerKeyword);
+
+    if (matches || children.length > 0) {
+      acc.push({
+        ...item,
+        children: children.length > 0 ? children : item.children,
+      });
+    }
+
+    return acc;
+  }, []);
+}
+
+export function filterTreeDataByKeyword(
+  data: TreeDataItem[],
+  keyword: string,
+): TreeDataItem[] {
+  if (!keyword.trim()) return data;
+  return filterTreeDataItems(data, keyword);
+}
+
 export function adaptKnowledgeGraphToForceGraph(
   template: IStructureGraphTemplate,
 ): IArtifactGraph {
@@ -120,6 +151,83 @@ function treeDataItemToG6TreeData(item: TreeDataItem): TreeData {
   }
 
   return node;
+}
+
+export interface TimelineX6NodeData {
+  id: string;
+  shape: 'rect' | 'circle';
+  width: number;
+  height: number;
+  label: string;
+  data?: IStructureGraphEntity;
+  attrs?: Record<string, unknown>;
+}
+
+export interface TimelineX6EdgeData {
+  id: string;
+  shape: 'edge';
+  source: string;
+  target: string;
+  attrs?: Record<string, unknown>;
+}
+
+export function adaptTimelineToX6Data(template: IStructureGraphTemplate): {
+  nodes: TimelineX6NodeData[];
+  edges: TimelineX6EdgeData[];
+} {
+  const normalized = template.entities
+    .map(normalizeEntity)
+    .filter((entity) => entity.id);
+  const entityIds = new Set(normalized.map((entity) => entity.id));
+
+  const nodes = normalized.map((entity) => {
+    const isTimestamp = entity.type === 'timestamp';
+    return {
+      id: entity.id,
+      shape: isTimestamp ? ('circle' as const) : ('rect' as const),
+      width: isTimestamp ? 96 : 200,
+      height: isTimestamp ? 96 : 80,
+      label: entity.name,
+      data: entity,
+      attrs: {
+        body: {
+          fill: isTimestamp ? '#e6f7ff' : '#fff7e6',
+          stroke: isTimestamp ? '#1890ff' : '#fa8c16',
+          rx: isTimestamp ? 48 : 8,
+          ry: isTimestamp ? 48 : 8,
+        },
+        label: {
+          fill: '#262626',
+          fontSize: 12,
+          textWrap: {
+            width: isTimestamp ? 80 : 180,
+            height: isTimestamp ? 80 : 64,
+            ellipsis: true,
+          },
+        },
+      },
+    };
+  });
+
+  const edges = template.relations
+    .filter(
+      (relation) => entityIds.has(relation.from) && entityIds.has(relation.to),
+    )
+    .map((relation, index) => ({
+      id: `timeline-edge-${index}`,
+      shape: 'edge' as const,
+      source: relation.from,
+      target: relation.to,
+      attrs: {
+        line: {
+          stroke: '#8c8c8c',
+          strokeWidth: 1,
+          targetMarker: 'classic',
+        },
+      },
+    }));
+
+  return { nodes, edges };
 }
 
 export function adaptMindMapToIndentedTree(

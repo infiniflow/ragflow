@@ -1,5 +1,4 @@
 import ArtifactForceGraph from '@/components/artifact-force-graph';
-import { IndentedTree } from '@/components/indented-tree/indented-tree';
 import { TreeView, type TreeDataItem } from '@/components/ui/tree-view';
 import { CompilationTemplateKind } from '@/constants/compilation';
 import { type IArtifactGraphEntity } from '@/interfaces/database/dataset';
@@ -7,15 +6,16 @@ import {
   type IStructureGraphTemplate,
   type StructureTemplateKind,
 } from '@/interfaces/database/document-structure';
-import { Graph as G6Graph } from '@antv/g6';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   adaptKnowledgeGraphToForceGraph,
-  adaptMindMapToIndentedTree,
   adaptPageIndexToTreeData,
+  adaptTimelineToX6Data,
   adaptTreeToTreeData,
+  filterTreeDataByKeyword,
 } from '../utils/adapters';
+import TimelineX6Graph from './timeline-x6-graph';
 
 export interface ClickableNode {
   id: string;
@@ -25,6 +25,7 @@ export interface ClickableNode {
 
 interface RepresentationRendererProps {
   template?: IStructureGraphTemplate;
+  searchKeyword?: string;
   onNodeClick?: (node: ClickableNode) => void;
 }
 
@@ -43,6 +44,7 @@ function UnsupportedPlaceholder({ kind }: { kind: StructureTemplateKind }) {
 
 export function RepresentationRenderer({
   template,
+  searchKeyword = '',
   onNodeClick,
 }: RepresentationRendererProps) {
   const handleTreeItemClick = useCallback(
@@ -71,32 +73,36 @@ export function RepresentationRenderer({
     [onNodeClick],
   );
 
-  const handleMindMapNodeClick = useCallback(
-    (evt: any) => {
-      const model = evt.target?.getModel?.() || evt.item?.getModel?.();
-      const chunkIds = model?.source_chunk_ids;
-      if (chunkIds?.length) {
-        onNodeClick?.({
-          id: model.id,
-          name: model.id,
-          source_chunk_ids: chunkIds,
-        });
+  const handleTimelineNodeClick = useCallback(
+    (node: { id: string; name: string; source_chunk_ids?: string[] }) => {
+      if (node.source_chunk_ids?.length) {
+        onNodeClick?.(node);
       }
     },
     [onNodeClick],
-  );
-
-  const handleMindMapRender = useCallback(
-    (graph: G6Graph) => {
-      graph.on('node:click', handleMindMapNodeClick);
-    },
-    [handleMindMapNodeClick],
   );
 
   const getArtifactNodeName = useCallback(
     (node: IArtifactGraphEntity) => node.name,
     [],
   );
+
+  const filteredTreeData = useMemo<TreeDataItem[]>(() => {
+    if (!template) return [];
+    if (template.kind === CompilationTemplateKind.PageIndex) {
+      const data = adaptPageIndexToTreeData(template);
+      return searchKeyword.trim()
+        ? filterTreeDataByKeyword(data, searchKeyword)
+        : data;
+    }
+    if (template.kind === CompilationTemplateKind.Tree) {
+      const data = adaptTreeToTreeData(template);
+      return searchKeyword.trim()
+        ? filterTreeDataByKeyword(data, searchKeyword)
+        : data;
+    }
+    return [];
+  }, [template, searchKeyword]);
 
   if (!template) {
     return null;
@@ -107,7 +113,7 @@ export function RepresentationRenderer({
       return (
         <div className="mt-6 overflow-auto scrollbar-auto">
           <TreeView
-            data={adaptPageIndexToTreeData(template)}
+            data={filteredTreeData}
             expandAll
             onSelectChange={handleTreeItemClick}
           />
@@ -117,7 +123,7 @@ export function RepresentationRenderer({
       return (
         <div className="mt-6 overflow-auto scrollbar-auto">
           <TreeView
-            data={adaptTreeToTreeData(template)}
+            data={filteredTreeData}
             expandAll
             onSelectChange={handleTreeItemClick}
           />
@@ -134,12 +140,24 @@ export function RepresentationRenderer({
           />
         </div>
       );
+    case CompilationTemplateKind.Timeline:
+      return (
+        <div className="mt-6 flex-1 min-h-0">
+          <TimelineX6Graph
+            data={adaptTimelineToX6Data(template)}
+            show
+            onNodeClick={handleTimelineNodeClick}
+          />
+        </div>
+      );
     case CompilationTemplateKind.MindMap:
       return (
         <div className="mt-6 flex-1 min-h-0">
-          <IndentedTree
-            data={adaptMindMapToIndentedTree(template)}
-            onRender={handleMindMapRender}
+          <ArtifactForceGraph
+            data={adaptKnowledgeGraphToForceGraph(template)}
+            show
+            getNodeId={getArtifactNodeName}
+            onNodeClick={handleArtifactNodeClick}
           />
         </div>
       );

@@ -103,6 +103,16 @@ function Chunk() {
     [],
   );
 
+  const handleChunkIdsChange = useCallback(
+    (chunkIds: string[]) => {
+      setFilterChunkIds(chunkIds);
+      if (chunkIds.length === 0) {
+        pagination.onChange?.(1, pagination.pageSize);
+      }
+    },
+    [pagination],
+  );
+
   const showSelectedChunkWarning = useCallback(() => {
     message.warning(t('message.pleaseSelectChunk'));
   }, [t]);
@@ -194,7 +204,7 @@ function Chunk() {
               highlights={highlights}
               setWidthAndHeight={setWidthAndHeight}
               url={fileUrl}
-              onChunkIdsChange={setFilterChunkIds}
+              onChunkIdsChange={handleChunkIdsChange}
             />
           </article>
 

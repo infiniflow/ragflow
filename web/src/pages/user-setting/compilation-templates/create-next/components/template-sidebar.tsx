@@ -81,7 +81,9 @@ function TemplateSidebarItem({
       )}
     >
       <div className="flex items-center min-w-0 flex-1">
-        <span className="truncate">{`${t('setting.template')} #${index + 1}`}</span>
+        <span className="truncate">
+          {template?.name || `${t('setting.template')} #${index + 1}`}
+        </span>
         {template?.kind && (
           <span className="ml-2 shrink-0 text-text-secondary">
             {t(`knowledgeCompilation.kind.${template.kind}`)}

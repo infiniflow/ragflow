@@ -1,7 +1,12 @@
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import { ExpandableSearchInput } from '@/components/expandable-search-input';
 import { Button } from '@/components/ui/button';
-import { useFetchDocumentStructureGraph } from '@/hooks/use-document-request';
-import { Search } from 'lucide-react';
-import { memo, useCallback } from 'react';
+import {
+  useDeleteDocumentStructureGraph,
+  useFetchDocumentStructureGraph,
+} from '@/hooks/use-document-request';
+import { Trash2 } from 'lucide-react';
+import { memo, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   type ClickableNode,
@@ -17,13 +22,21 @@ interface RepresentationProps {
 function Representation({ onNodeClick }: RepresentationProps) {
   const { t } = useTranslation();
   const { data, loading } = useFetchDocumentStructureGraph();
+  const { deleteDocumentStructureGraph, loading: deleting } =
+    useDeleteDocumentStructureGraph();
   const templates = data?.templates ?? [];
   const { selectedTemplateId, setSelectedTemplateId, selectedTemplate } =
     useSelectedTemplate(templates);
+  const [searchKeyword, setSearchKeyword] = useState('');
 
-  const handleSearch = useCallback(() => {
-    // TODO: implement search or refetch
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchKeyword(value);
   }, []);
+
+  const handleDelete = useCallback(async () => {
+    if (!selectedTemplateId) return;
+    await deleteDocumentStructureGraph(selectedTemplateId);
+  }, [deleteDocumentStructureGraph, selectedTemplateId]);
 
   const handleNodeClick = useCallback(
     (node: ClickableNode) => {
@@ -41,15 +54,27 @@ function Representation({ onNodeClick }: RepresentationProps) {
           value={selectedTemplateId}
           onChange={setSelectedTemplateId}
         />
-        <Button
-          variant="ghost"
-          size="icon"
-          type="button"
-          onClick={handleSearch}
-          aria-label={t('chunk.search', 'Search')}
-        >
-          <Search className="h-5 w-5" />
-        </Button>
+        <div className="relative flex items-center gap-2">
+          <ExpandableSearchInput
+            value={searchKeyword}
+            onChange={handleSearchChange}
+            placeholder={t('chunk.search', 'Search')}
+          />
+          {templates.length > 0 && (
+            <ConfirmDeleteDialog onOk={handleDelete}>
+              <Button
+                variant="ghost"
+                size="icon"
+                type="button"
+                disabled={deleting}
+                aria-label={t('common.delete', 'Delete')}
+                className="absolute top-9 right-0"
+              >
+                <Trash2 className="h-5 w-5" />
+              </Button>
+            </ConfirmDeleteDialog>
+          )}
+        </div>
       </div>
       {loading && (
         <div className="mt-6 text-text-secondary">
@@ -67,6 +92,7 @@ function Representation({ onNodeClick }: RepresentationProps) {
       {!loading && templates.length > 0 && (
         <RepresentationRenderer
           template={selectedTemplate}
+          searchKeyword={searchKeyword}
           onNodeClick={handleNodeClick}
         />
       )}

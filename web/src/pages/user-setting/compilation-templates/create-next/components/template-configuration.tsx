@@ -22,10 +22,12 @@ import { useAvailableKindOptions } from '../hooks/use-available-kind-options';
 import { useBuiltinTemplate } from '../hooks/use-builtin-template';
 import { useFieldArrayHandlers } from '../hooks/use-field-array-handlers';
 import { useFieldModal } from '../hooks/use-field-modal';
+import { useTemplatePreviewSheets } from '../hooks/use-template-preview-sheets';
 import { useTemplateSectionData } from '../hooks/use-template-section-data';
 
 import { AddFieldModal } from './add-field-modal';
 import { SectionFieldGrid } from './section-field-grid';
+import { TemplatePreviewHeader } from './template-preview-header';
 
 type TemplateConfigurationProps = {
   form: UseFormReturn<FormSchemaType>;
@@ -33,7 +35,9 @@ type TemplateConfigurationProps = {
   kindOptions: { label: string; value: string }[];
   selectedTemplateIndex: number;
   onNext: () => void;
+  onBack: () => void;
   isArtifacts?: boolean;
+  isLoading?: boolean;
 };
 
 export function TemplateConfiguration({
@@ -42,7 +46,9 @@ export function TemplateConfiguration({
   kindOptions,
   selectedTemplateIndex,
   onNext,
+  onBack,
   isArtifacts = false,
+  isLoading = false,
 }: TemplateConfigurationProps) {
   const { t } = useTranslation();
 
@@ -67,6 +73,15 @@ export function TemplateConfiguration({
   );
 
   const { builtinTemplate, sectionNames } = useBuiltinTemplate(builtins, kind);
+
+  const {
+    jsonSheetOpen,
+    setJsonSheetOpen,
+    workflowSheetOpen,
+    setWorkflowSheetOpen,
+    allFormValues,
+    templateName,
+  } = useTemplatePreviewSheets(form, selectedTemplateIndex);
 
   const { activeSectionTab, setActiveSectionTab } =
     useActiveSectionTab(sectionNames);
@@ -119,6 +134,14 @@ export function TemplateConfiguration({
 
   return (
     <>
+      <TemplatePreviewHeader
+        templateName={templateName}
+        jsonSheetOpen={jsonSheetOpen}
+        onJsonSheetOpenChange={setJsonSheetOpen}
+        workflowSheetOpen={workflowSheetOpen}
+        onWorkflowSheetOpenChange={setWorkflowSheetOpen}
+        allFormValues={allFormValues}
+      />
       <div className="flex-1 min-h-0 overflow-y-auto p-5">
         <div className="max-w-4xl mx-auto space-y-6">
           <RAGFlowFormItem
@@ -210,8 +233,11 @@ export function TemplateConfiguration({
         </div>
       </div>
 
-      <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-end">
-        <Button type="button" onClick={onNext}>
+      <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-between">
+        <Button type="button" variant="outline" onClick={onBack}>
+          {t('common.back')}
+        </Button>
+        <Button type="button" loading={isLoading} onClick={onNext}>
           {isArtifacts ? t('common.next') : t('common.save')}
         </Button>
       </footer>

@@ -98,36 +98,38 @@ export function BlueprintsStep({
           />
         </div>
 
-        <div className="flex-1 min-h-0 flex flex-col p-5 gap-4 overflow-y-auto">
-          <RAGFlowFormItem
-            name={instructionPath}
-            label={t('setting.instruction')}
-          >
-            <Textarea rows={6} />
-          </RAGFlowFormItem>
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 min-h-0 flex flex-col p-5 gap-4 overflow-y-auto">
+            <RAGFlowFormItem
+              name={instructionPath}
+              label={t('setting.instruction')}
+            >
+              <Textarea rows={6} />
+            </RAGFlowFormItem>
 
-          <div className="flex-1 min-h-0 flex flex-col">
-            <MarkdownEditor
-              content={String(pageExample ?? '')}
-              onChange={handlePageExampleChange}
-            />
+            <div className="flex-1 min-h-0 flex flex-col">
+              <MarkdownEditor
+                content={String(pageExample ?? '')}
+                onChange={handlePageExampleChange}
+              />
+            </div>
           </div>
+
+          <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-between">
+            <Button type="button" variant="outline" onClick={onBack}>
+              {t('common.back')}
+            </Button>
+            <Button
+              type="button"
+              onClick={onSave}
+              loading={isLoading}
+              disabled={isLoading}
+            >
+              {t('common.save')}
+            </Button>
+          </footer>
         </div>
       </div>
-
-      <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-between">
-        <Button type="button" variant="outline" onClick={onBack}>
-          {t('common.back')}
-        </Button>
-        <Button
-          type="button"
-          onClick={onSave}
-          loading={isLoading}
-          disabled={isLoading}
-        >
-          {t('common.save')}
-        </Button>
-      </footer>
     </section>
   );
 }

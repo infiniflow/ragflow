@@ -79,6 +79,10 @@ export default function CreateNextCompilationTemplate() {
     }
   }, [activeStep, form, isArtifacts, onSubmit, selectedTemplateIndex]);
 
+  const handleBack = useCallback(() => {
+    setActiveStep(1);
+  }, []);
+
   return (
     <section className="h-full flex flex-col bg-bg-base">
       <header className="shrink-0 px-5 py-4 border-b border-border-button flex flex-col items-start gap-2">
@@ -129,7 +133,9 @@ export default function CreateNextCompilationTemplate() {
                   kindOptions={kindOptions}
                   selectedTemplateIndex={selectedTemplateIndex}
                   onNext={handleNext}
+                  onBack={handleBack}
                   isArtifacts={isArtifacts}
+                  isLoading={isLoading}
                 />
               </ResizablePanel>
             </ResizablePanelGroup>
