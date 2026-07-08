@@ -1958,9 +1958,14 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 			driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.GetModelConfigFromProviderInstance(
 				embdTenantID, entity.ModelTypeEmbedding, kbs[0].EmbdID,
 			)
-			if err == nil {
-				embModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+			if err != nil {
+				common.Warn("Failed to get embedding model for chat retrieval",
+					zap.String("embdID", kbs[0].EmbdID),
+					zap.String("tenantID", embdTenantID),
+					zap.Error(err))
+				return nil, nil, nil, nil, nil, fmt.Errorf("failed to get embedding model: %w", err)
 			}
+			embModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
 		}
 	}
 
