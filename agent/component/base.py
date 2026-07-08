@@ -412,7 +412,7 @@ class ComponentBase(ABC):
         self.set_output("_created_time", time.perf_counter())
         try:
             if self.check_if_canceled("Component processing"):
-                return
+                return self.output()
 
             fn_async = getattr(self, "_invoke_async", None)
             if fn_async and asyncio.iscoroutinefunction(fn_async):

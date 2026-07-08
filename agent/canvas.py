@@ -187,14 +187,23 @@ class Graph:
     def get_component(self, cpn_id) -> Union[None, dict[str, Any]]:
         return self.components.get(cpn_id)
 
-    def get_component_obj(self, cpn_id) -> ComponentBase:
-        return self.components.get(cpn_id)["obj"]
+    def get_component_obj(self, cpn_id) -> ComponentBase | None:
+        cpn = self.components.get(cpn_id)
+        if cpn is None:
+            return None
+        return cpn["obj"]
 
     def get_component_type(self, cpn_id) -> str:
-        return self.components.get(cpn_id)["obj"].component_name
+        cpn = self.components.get(cpn_id)
+        if cpn is None:
+            return ""
+        return cpn["obj"].component_name
 
     def get_component_input_form(self, cpn_id) -> dict:
-        return self.components.get(cpn_id)["obj"].get_input_form()
+        cpn = self.components.get(cpn_id)
+        if cpn is None:
+            return {}
+        return cpn["obj"].get_input_form()
 
     def get_tenant_id(self):
         return self._tenant_id
@@ -995,4 +1004,7 @@ class Canvas(Graph):
         return self.memory
 
     def get_component_thoughts(self, cpn_id) -> str:
-        return self.components.get(cpn_id)["obj"].thoughts()
+        cpn = self.components.get(cpn_id)
+        if cpn is None:
+            return ""
+        return cpn["obj"].thoughts()

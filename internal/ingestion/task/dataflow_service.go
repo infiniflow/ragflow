@@ -53,6 +53,19 @@ func (e *embedder) Encode(texts []string) ([][]float64, error) {
 	return vecs, nil
 }
 
+// init sets the package-level EncodeFunc once, avoiding the per-task
+// save/restore pattern that previously caused data races when multiple
+// workers ran pipelines concurrently (see defaultRunPipeline).
+func init() {
+	componentpkg.EncodeFunc = func(tenantID, embdID string) componentpkg.Embedder {
+		model, err := service.NewModelProviderService().GetEmbeddingModel(tenantID, embdID)
+		if err != nil {
+			return nil
+		}
+		return &embedder{model: model}
+	}
+}
+
 type ProgressFunc func(prog float64, msg string)
 
 type docService interface {
@@ -280,6 +293,14 @@ func (s *PipelineExecutor) RunDataflow(ctx context.Context, pipelineOutput map[s
 		}
 	}
 
+	// Generate embeddings before indexing — this was missing in the initial
+	// Go migration and caused all chunks to be inserted without vector
+	// embeddings, making semantic/vector search completely inoperable.
+	chunks, embeddingTokenConsumption, err := s.embedChunks(ctx, chunks, embeddingTokenConsumption)
+	if err != nil {
+		return err
+	}
+
 	indexStart := time.Now()
 	s.progress(0.82, "[DOC Engine]:\nStart to index...")
 	if err := s.insertChunks(ctx, chunks); err != nil {
@@ -500,16 +521,6 @@ func (s *PipelineExecutor) defaultRunPipeline(ctx context.Context, dsl string) (
 	if s == nil || s.taskCtx == nil {
 		return nil, dsl, fmt.Errorf("dataflow service: nil task context")
 	}
-
-	prevEncode := componentpkg.EncodeFunc
-	componentpkg.EncodeFunc = func(tenantID, embdID string) componentpkg.Embedder {
-		model, err := s.getEmbeddingModelFunc(tenantID, embdID)
-		if err != nil {
-			return nil
-		}
-		return &embedder{model: model}
-	}
-	defer func() { componentpkg.EncodeFunc = prevEncode }()
 
 	// Use doc ID as pipeline ID if available, otherwise a placeholder
 	pipelineID := "pipeline_" + s.taskCtx.Doc.ID
