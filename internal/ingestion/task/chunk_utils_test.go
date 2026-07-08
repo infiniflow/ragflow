@@ -310,26 +310,30 @@ func TestPrepareTexts_MissingTextKey(t *testing.T) {
 	}
 }
 
-func TestPrepareTexts_PanicOnListText(t *testing.T) {
+func TestPrepareTexts_NonStringTextReturnsEmpty(t *testing.T) {
 	chunks := []map[string]any{
 		{"text": []any{"bad-shape"}},
 	}
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic for list-shaped text")
-		}
-	}()
-	_ = PrepareTextsForDataflowEmbedding(chunks)
+	result := PrepareTextsForDataflowEmbedding(chunks)
+	if result[0] != "" {
+		t.Errorf("expected empty string for non-string text, got %q", result[0])
+	}
 }
 
-func TestMustGetChunkTextString_PanicOnStringSlice(t *testing.T) {
+func TestMustGetChunkTextString_NonStringReturnsEmpty(t *testing.T) {
 	chunk := map[string]any{"text": []string{"bad-shape"}}
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic for []string text")
-		}
-	}()
-	_ = MustGetChunkTextString(chunk, "unit-test")
+	result := MustGetChunkTextString(chunk, "unit-test")
+	if result != "" {
+		t.Errorf("expected empty string for non-string text, got %q", result)
+	}
+}
+
+func TestGetChunkTextString_NonStringReturnsError(t *testing.T) {
+	chunk := map[string]any{"text": []string{"bad-shape"}}
+	_, err := GetChunkTextString(chunk, "unit-test")
+	if err == nil {
+		t.Error("expected error for non-string text")
+	}
 }
 
 // =============================================================================
