@@ -996,6 +996,26 @@ func (c *CLI) RunTest(testCaseFile *string) error {
 		return fmt.Errorf("failed to parse YAML test case file %q: %w", *testCaseFile, err)
 	}
 
+	if testSuite.Base != nil {
+		// Get directory of testCaseFile
+		baseDir := filepath.Dir(*testCaseFile)
+		basePath := filepath.Join(baseDir, *testSuite.Base)
+
+		// Load include file
+		var baseFile []byte
+		baseFile, err = os.ReadFile(basePath)
+		if err != nil {
+			return fmt.Errorf("failed to read include file %q: %w", basePath, err)
+		}
+		// Unmarshal include data
+		var testBase TestBase
+		if err = yaml.Unmarshal(baseFile, &testBase); err != nil {
+			return fmt.Errorf("failed to parse include YAML test case file %q: %w", basePath, err)
+		}
+		// Merge include test suite with current test suite
+		testSuite.TestBase = testBase
+	}
+
 	if err = c.RunTestSuite(&testSuite); err != nil {
 		return err
 	}
