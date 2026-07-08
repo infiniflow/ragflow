@@ -53,9 +53,7 @@ func (e *embedder) Encode(texts []string) ([][]float64, error) {
 	return vecs, nil
 }
 
-// init sets the package-level EncodeFunc once, avoiding the per-task
-// save/restore pattern that previously caused data races when multiple
-// workers ran pipelines concurrently (see defaultRunPipeline).
+// init configures the package-level EncodeFunc used by dataflow pipelines.
 func init() {
 	componentpkg.EncodeFunc = func(tenantID, embdID string) componentpkg.Embedder {
 		model, err := service.NewModelProviderService().GetEmbeddingModel(tenantID, embdID)
@@ -293,9 +291,8 @@ func (s *PipelineExecutor) RunDataflow(ctx context.Context, pipelineOutput map[s
 		}
 	}
 
-	// Generate embeddings before indexing — this was missing in the initial
-	// Go migration and caused all chunks to be inserted without vector
-	// embeddings, making semantic/vector search completely inoperable.
+	// Generate embeddings before indexing so chunks are inserted with vectors
+	// for semantic/vector search.
 	chunks, embeddingTokenConsumption, err := s.embedChunks(ctx, chunks, embeddingTokenConsumption)
 	if err != nil {
 		return err

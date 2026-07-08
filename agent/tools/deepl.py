@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 from agent.component.base import ComponentBase, ComponentParamBase
 import deepl
@@ -100,5 +101,6 @@ class DeepL(ComponentBase, ABC):
         except Exception as e:
             if self.check_if_canceled("DeepL processing"):
                 return
+            logging.exception(f"DeepL error: {e}")
             self.set_output("_ERROR", str(e))
             return
