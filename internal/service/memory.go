@@ -414,16 +414,12 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 		SystemPrompt:     &systemPrompt,
 	}
 
-	// Convert tenant model IDs from string to int64 for database
+	// Attach tenant model IDs (string form) to memory
 	if req.TenantEmbdID != nil {
-		if embdID, err := strconv.ParseInt(*req.TenantEmbdID, 10, 64); err == nil {
-			memory.TenantEmbdID = &embdID
-		}
+		memory.TenantEmbdID = req.TenantEmbdID
 	}
 	if req.TenantLLMID != nil {
-		if llmID, err := strconv.ParseInt(*req.TenantLLMID, 10, 64); err == nil {
-			memory.TenantLLMID = &llmID
-		}
+		memory.TenantLLMID = req.TenantLLMID
 	}
 	if err := s.memoryDAO.Create(memory); err != nil {
 		return nil, errors.New("could not create new memory")
@@ -488,15 +484,11 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 	}
 
 	if req.TenantLLMID != nil {
-		if llmID, err := strconv.ParseInt(*req.TenantLLMID, 10, 64); err == nil {
-			updateDict["tenant_llm_id"] = llmID
-		}
+		updateDict["tenant_llm_id"] = *req.TenantLLMID
 	}
 
 	if req.TenantEmbdID != nil {
-		if embdID, err := strconv.ParseInt(*req.TenantEmbdID, 10, 64); err == nil {
-			updateDict["tenant_embd_id"] = embdID
-		}
+		updateDict["tenant_embd_id"] = *req.TenantEmbdID
 	}
 
 	if req.MemoryType != nil && len(req.MemoryType) > 0 {
@@ -600,11 +592,11 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 				filteredUpdateDict[field] = value
 			}
 		case "tenant_llm_id":
-			if currentMemory.TenantLLMID == nil || *currentMemory.TenantLLMID != value.(int64) {
+			if currentMemory.TenantLLMID == nil || *currentMemory.TenantLLMID != fmt.Sprint(value) {
 				filteredUpdateDict[field] = value
 			}
 		case "tenant_embd_id":
-			if currentMemory.TenantEmbdID == nil || *currentMemory.TenantEmbdID != value.(int64) {
+			if currentMemory.TenantEmbdID == nil || *currentMemory.TenantEmbdID != fmt.Sprint(value) {
 				filteredUpdateDict[field] = value
 			}
 		case "memory_type":
