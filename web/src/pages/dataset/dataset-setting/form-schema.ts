@@ -92,6 +92,7 @@ export const formSchema = z
               path: ['entity_types'],
             },
           ),
+        lightgraph: z.boolean().optional(),
         metadata: z.any().optional(),
         built_in_metadata: z
           .array(

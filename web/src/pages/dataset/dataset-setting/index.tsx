@@ -1,5 +1,6 @@
 import { DataFlowSelect } from '@/components/data-pipeline-select';
 import GraphRagItems from '@/components/parse-configuration/graph-rag-form-fields';
+import LightGraphFormField from '@/components/parse-configuration/lightgraph-form-fields';
 import RaptorFormFields from '@/components/parse-configuration/raptor-form-fields';
 import { Button } from '@/components/ui/button';
 import {
@@ -352,6 +353,8 @@ export default function DatasetSettings() {
                         handleDeletePipelineTask(GenerateType.KnowledgeGraph)
                       }
                     ></GraphRagItems>
+                    <Divider />
+                    <LightGraphFormField />
                     <Divider />
                     <RaptorFormFields
                       data={raptorGenerateData as IGenerateLogButtonProps}

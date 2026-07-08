@@ -918,6 +918,21 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
     from api.apps.restful_apis.chunk_api import _compilation_template_kind
 
     ctx = handler._task_context
+
+    # ── LightGraph (spaCy NER-based, no LLM) ─────────────────────
+    # Runs independently of compilation templates.  Must be checked
+    # BEFORE the ``template_ids`` guard below because a KB may have
+    # LightGraph enabled without any compilation templates.
+    if ctx.parser_config.get("lightgraph"):
+        from rag.advanced_rag.knowlege_compile.lightgraph import (
+            run_lightgraph_for_doc,
+        )
+
+        try:
+            await run_lightgraph_for_doc(handler, ctx, embedding_model)
+        except Exception:
+            logging.exception("LightGraph: extraction failed for doc %s", ctx.doc_id)
+
     template_ids = _parser_config_compilation_template_ids(ctx.parser_config, ctx.tenant_id)
     if not template_ids:
         return
