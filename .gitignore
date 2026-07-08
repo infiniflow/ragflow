@@ -254,3 +254,7 @@ internal/deepdoc/parser/pdf/tools-py/
 build/
 internal/deepdoc/parser/docx/testdata/
 internal/deepdoc/parser/docx/tool/
+
+# test data compare tool
+internal/ingestion/task/tool/generate_dataflow_golden.py
+internal/ingestion/task/tool/README.md
