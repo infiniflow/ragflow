@@ -21,8 +21,8 @@ import (
 	"errors"
 	"time"
 
-	"ragflow/internal/entity"
 	doctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/entity"
 )
 
 // ──────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ func (m *MockStorage) Remove(bucket, fnm string, tenantID ...string) error { ret
 
 func (m *MockStorage) ObjExist(bucket, fnm string, tenantID ...string) bool { return true }
 
-func (m *MockStorage) GetPresignedURL(bucket, fnm string, expiry time.Duration, tenantID ...string) (string, error) {
+func (m *MockStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
 
@@ -140,9 +140,19 @@ func (m *MockStorage) BucketExists(bucket string) bool { return true }
 
 func (m *MockStorage) RemoveBucket(bucket string) error { return nil }
 
-func (m *MockStorage) Copy(srcBucket, srcPath, dstBucket, dstPath string) bool { return true }
+func (m *MockStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool { return true }
 
-func (m *MockStorage) Move(srcBucket, srcPath, dstBucket, dstPath string) bool { return true }
+func (m *MockStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool { return true }
+
+func (m *MockStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+	var objects []string
+	for key := range m.Data {
+		objects = append(objects, key)
+	}
+	return objects, nil
+}
+
+func (m *MockStorage) Close() error { return nil }
 
 // ──────────────────────────────────────────────────────────
 // Mock PDF Parser Implementation
