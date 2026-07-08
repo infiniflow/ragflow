@@ -439,7 +439,7 @@ run() {
     sleep 1
 
     print_section "Starting RAGFlow server (foreground)"
-    "$RAGFLOW_SERVER_BINARY" -- api
+    "$RAGFLOW_SERVER_BINARY" --api
 }
 
 # Show help
