@@ -55,6 +55,7 @@ from rag.svr.task_executor_refactor.chunk_post_processor import (
     extract_keywords,
     generate_questions,
     generate_metadata,
+    apply_built_in_metadata,
     apply_tags,
 )
 
@@ -159,6 +160,7 @@ class ChunkService:
 
         if ctx.parser_config.get("enable_metadata", False) and (ctx.parser_config.get("metadata") or ctx.parser_config.get("built_in_metadata")):
             await generate_metadata(docs, ctx)
+            apply_built_in_metadata(ctx)
         metadata_list = [d for d in docs if d.get("metadata_obj")]
         self._task_context.recording_context.record("metadata_list_generated", metadata_list)
 
