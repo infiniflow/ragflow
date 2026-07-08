@@ -376,7 +376,14 @@ class Recognizer:
             class_keep_boxes = iou_filter(class_boxes, class_scores, 0.2)
             indices.extend(class_indices[class_keep_boxes])
 
-        return [{"type": self.label_list[class_ids[i]].lower(), "bbox": [float(t) for t in boxes[i].tolist()], "score": float(scores[i])} for i in indices]
+        # An out-of-range class id (e.g. more score columns than labels) would
+        # crash the whole page task here; drop such boxes — mirroring the guard
+        # in the `scale_factor` branch above.
+        n_labels = len(self.label_list)
+        valid = [i for i in indices if 0 <= class_ids[i] < n_labels]
+        if len(valid) != len(indices):
+            logging.warning("Recognizer.postprocess dropped %d box(es) with out-of-range class id", len(indices) - len(valid))
+        return [{"type": self.label_list[class_ids[i]].lower(), "bbox": [float(t) for t in boxes[i].tolist()], "score": float(scores[i])} for i in valid]
 
     def close(self):
         logging.info("Close recognizer.")
