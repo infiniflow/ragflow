@@ -306,7 +306,10 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
 }
 
-// FIXME: should remove
+// getPipelineID loads the default ingestion pipeline template and creates a
+// new canvas ID. This is the fallback path used when a document does not
+// already have a pipeline assigned (e.g. when the knowledge-base default
+// pipeline is not yet configured).
 func (e *Ingestor) getPipelineID(tenantID string) (string, error) {
 	_, file, _, ok := goruntime.Caller(0)
 	if !ok {
@@ -386,8 +389,13 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 		return fmt.Errorf("load task context for %s: %w", ingestionTask.ID, err)
 	}
 
-	if docTaskCtx.PipelineID, err = e.getPipelineID(docTaskCtx.Tenant.ID); err != nil {
-		return fmt.Errorf("get pipeline ID for %s: %w", ingestionTask.ID, err)
+	// Use the document's pipeline if one was already assigned (e.g. from
+	// the knowledge-base configuration in the UI); otherwise create a
+	// default pipeline from the ingestion template as a fallback.
+	if docTaskCtx.PipelineID == "" {
+		if docTaskCtx.PipelineID, err = e.getPipelineID(docTaskCtx.Tenant.ID); err != nil {
+			return fmt.Errorf("get pipeline ID for %s: %w", ingestionTask.ID, err)
+		}
 	}
 
 	return taskpkg.NewTaskHandler(docTaskCtx).Handle()
