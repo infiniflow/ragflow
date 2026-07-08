@@ -78,7 +78,7 @@ func TestHydrateChunkVectors_NoDim(t *testing.T) {
 }
 
 func TestKnowledgebaseEmbeddingKey(t *testing.T) {
-	tenantEmbdID := int64(42)
+	tenantEmbdID := "42"
 
 	tests := []struct {
 		name     string
@@ -111,7 +111,7 @@ func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 			name: "ignores non-positive tenant embedding id",
 			kb: &entity.Knowledgebase{
 				EmbdID:       "shared-model",
-				TenantEmbdID: new(int64),
+				TenantEmbdID: func() *string { s := ""; return &s }(),
 			},
 			want: "embd:shared-model",
 		},
