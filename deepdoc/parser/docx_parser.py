@@ -178,7 +178,7 @@ class RAGFlowDocxParser:
 
             try:
                 style_name = p.style.name if p.style is not None else ""
-            except Exception as e:
+            except (AttributeError, KeyError) as e:
                 logging.debug(f"Failed to get paragraph style name: {e}")
                 style_name = ""
             secs.append(("".join(runs_within_single_paragraph), style_name))  # then concat run.text as part of the paragraph
