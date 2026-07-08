@@ -288,8 +288,14 @@ class DataflowService:
             return None, token_consumption
 
     @classmethod
-    async def _encode_batch(cls, txts: List[str], embedding_model) -> Tuple[np.ndarray, int]:
-        """Batch encode texts using the embedding model with truncation."""
+    def _encode_batch(cls, txts: List[str], embedding_model) -> Tuple[np.ndarray, int]:
+        """Batch encode texts using the embedding model with truncation.
+
+        Kept synchronous: the body is blocking work (truncate + encode) run in a
+        worker thread via ``thread_pool_exec``. An ``async def`` here would only
+        build a coroutine the executor can't unpack (``cannot unpack non-iterable
+        coroutine object``).
+        """
         truncated = EmbeddingUtils.truncate_texts(txts, embedding_model.max_length)
         return embedding_model.encode(truncated)
 
