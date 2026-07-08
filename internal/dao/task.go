@@ -56,7 +56,7 @@ func (dao *TaskDAO) DeleteIngestionTasksByDocIDs(docIDs []string) (int64, error)
 	if len(docIDs) == 0 {
 		return 0, nil
 	}
-	result := DB.Unscoped().Where("doc_id IN ?", docIDs).Delete(&entity.IngestionTask{})
+	result := DB.Unscoped().Where("document_id IN ?", docIDs).Delete(&entity.IngestionTask{})
 	return result.RowsAffected, result.Error
 }
 
