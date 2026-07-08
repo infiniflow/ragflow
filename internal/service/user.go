@@ -270,11 +270,11 @@ func (s *UserService) getInitTenantLLM(userID string) ([]*entity.TenantLLM, erro
 	}
 
 	modelConfigs := map[string]server.ModelConfig{
-		string(entity.ModelTypeChat):        cfg.UserDefaultLLM.DefaultModels.ChatModel,
-		string(entity.ModelTypeEmbedding):   cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
-		string(entity.ModelTypeSpeech2Text): cfg.UserDefaultLLM.DefaultModels.ASRModel,
-		string(entity.ModelTypeImage2Text):  cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
-		string(entity.ModelTypeRerank):      cfg.UserDefaultLLM.DefaultModels.RerankModel,
+		entity.ModelTypeChat.String():        cfg.UserDefaultLLM.DefaultModels.ChatModel,
+		entity.ModelTypeEmbedding.String():   cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
+		entity.ModelTypeSpeech2Text.String(): cfg.UserDefaultLLM.DefaultModels.ASRModel,
+		entity.ModelTypeImage2Text.String():  cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
+		entity.ModelTypeRerank.String():      cfg.UserDefaultLLM.DefaultModels.RerankModel,
 	}
 
 	seenFactories := make(map[string]bool)
