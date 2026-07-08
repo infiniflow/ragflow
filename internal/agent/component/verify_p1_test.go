@@ -12,9 +12,9 @@ import (
 // at plan completion, plus 7 v1 fixture stubs (Retrieval, TavilySearch,
 // ExeSQL, Generate, Answer, Iteration, IterationItem) registered by
 // v1_stubs.go to keep the dsl-examples e2e suite compiling. The test
-// allows counts between 12 (P0+P1 minus the removed ExitLoop) and 30
-// (the 22 plan components + the 7 v1 stubs + Parallel) to roll
-// forward as subsequent batches land.
+// allows counts between 12 (P0+P1 minus the removed ExitLoop) and 33
+// (the 22 plan components + the v1 stubs/tool wrappers currently
+// registered by fixture_stubs.go) to roll forward as subsequent batches land.
 //
 // Note: ExitLoop is intentionally NOT in the registry anymore. The
 // canvas engine (internal/agent/canvas/canvas.go's legacyNoOpNames)
@@ -44,8 +44,8 @@ func TestVerifyRegistration_P1(t *testing.T) {
 	if len(missing) > 0 {
 		t.Fatalf("missing P0/P1 components: %v (have %d: %v)", missing, len(names), names)
 	}
-	if got := len(names); got < 12 || got > 32 {
-		t.Errorf("expected 12-32 registered (current plan scope + v1 stubs), got %d: %v", got, names)
+	if got := len(names); got < 12 || got > 33 {
+		t.Errorf("expected 12-33 registered (current plan scope + v1 stubs/tool wrappers), got %d: %v", got, names)
 	}
 
 	// ExitLoop must NOT be in the registry (legacy compat lives at
