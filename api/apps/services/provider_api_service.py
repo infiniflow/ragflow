@@ -214,7 +214,7 @@ async def list_provider_models(provider_id_or_name: str, api_key: str = None, ba
         remote_models = await ModelMeta[provider_name](api_key, model_base_url).get_model_list()
 
     if not static_llms and not remote_models:
-        return False, f"No models found for provider '{provider_id_or_name}'"
+        return True, []
 
     # Merge static and remote models, preferring remote_models on name conflicts
     merged = {m["name"]: m for m in static_llms}
