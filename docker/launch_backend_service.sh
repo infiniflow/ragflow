@@ -200,14 +200,7 @@ ensure_db_init() {
 }
 
 run_mysql_migrations() {
-    echo "Running model provider table migrations..."
-    "$PY" tools/scripts/mysql_migration.py \
-        --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
-        --config conf/service_conf.yaml \
-        --execute \
-        --database-version "v0.26.1" \
-        --mark-database-version-on-success
-    echo "Model provider table migrations completed."
+    tools/scripts/run_migrations.sh
 }
 
 prepare_for_go() {
