@@ -59,7 +59,7 @@ type tavilyRequestBody struct {
 	MaxResults               int      `json:"max_results"`
 	SearchDepth              string   `json:"search_depth"`
 	Topic                    string   `json:"topic,omitempty"`
-	Days                     int      `json:"days,omitempty"`
+	Days                     int      `json:"days"`
 	IncludeAnswer            bool     `json:"include_answer"`
 	IncludeRawContent        bool     `json:"include_raw_content"`
 	IncludeImages            bool     `json:"include_images"`
@@ -286,7 +286,7 @@ func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 			fmt.Errorf("tavily: query is required")
 	}
 	if p.MaxResults <= 0 {
-		p.MaxResults = 5
+		p.MaxResults = 6
 	}
 	if p.SearchDepth == "" {
 		p.SearchDepth = "basic"
