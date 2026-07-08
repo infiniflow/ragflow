@@ -422,9 +422,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		return err
 	}
 
-	updates := map[string]interface{}{
-		"release": false,
-	}
+	updates := map[string]interface{}{}
 	for _, key := range []string{"title", "avatar", "description", "permission", "canvas_type", "canvas_category"} {
 		if value, ok := patch[key]; ok && value != nil {
 			if key == "title" {
@@ -543,10 +541,6 @@ type PublishAgentRequest struct {
 	DSL         entity.JSONMap `json:"dsl,omitempty"`
 }
 
-// PublishAgent appends a new user_canvas_version row and marks the parent
-// canvas as released in a single transaction. Existing versions are never
-// overwritten (§2.9); the parent canvas DSL/title/description/release
-// fields are updated atomically with the new version row.
 func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string, req *PublishAgentRequest) (*entity.UserCanvasVersion, error) {
 	canvasInstance, err := s.loadCanvasForUser(ctx, userID, canvasID)
 	if err != nil {
@@ -560,30 +554,33 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 			dsl = dslpkg.NormalizeForCanvas(req.DSL)
 		}
 		if req.Title != nil {
-			title = req.Title
+			trimmed := strings.TrimSpace(*req.Title)
+			title = &trimmed
 		}
 		if req.Description != nil {
 			description = req.Description
 		}
 	}
-	row := &entity.UserCanvasVersion{
-		ID:           utility.GenerateUUID(),
-		UserCanvasID: canvasID,
-		Title:        title,
-		Description:  description,
-		DSL:          dsl,
+
+	canvasInstance.DSL = dsl
+	canvasInstance.Title = title
+	canvasInstance.Description = description
+	canvasInstance.Release = true
+	titleStr := ""
+	if title != nil {
+		titleStr = *title
 	}
+	opts := s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, titleStr, description, true)
+	var row *entity.UserCanvasVersion
 	if err = dao.DB.Transaction(func(tx *gorm.DB) error {
-		if err = s.versionDAO.CreateTx(tx, row); err != nil {
-			return fmt.Errorf("publish agent %s: insert version: %w", canvasID, err)
-		}
-		canvasInstance.DSL = dsl
-		canvasInstance.Title = title
-		canvasInstance.Description = description
-		canvasInstance.Release = true
-		if err = s.canvasDAO.UpdateTx(tx, canvasInstance); err != nil {
+		if err := s.canvasDAO.UpdateTx(tx, canvasInstance); err != nil {
 			return fmt.Errorf("publish agent %s: update parent: %w", canvasID, err)
 		}
+		saved, err := s.versionDAO.SaveOrReplaceLatestTx(tx, opts)
+		if err != nil {
+			return fmt.Errorf("publish agent %s: save version: %w", canvasID, err)
+		}
+		row = saved
 		return nil
 	}); err != nil {
 		return nil, err
@@ -592,12 +589,16 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 }
 
 func (s *AgentService) saveOrReplaceVersion(ctx context.Context, userID, canvasID string, dsl entity.JSONMap, title string, description *string, release bool) (*entity.UserCanvasVersion, error) {
+	return s.versionDAO.SaveOrReplaceLatest(s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, title, description, release))
+}
+
+func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, canvasID string, dsl entity.JSONMap, title string, description *string, release bool) dao.SaveOrReplaceLatestVersionOptions {
 	nickname, err := s.userDAO.GetNicknameByID(ctx, userID)
 	if err != nil || strings.TrimSpace(nickname) == "" {
 		nickname = userID
 	}
 	versionTitle := buildVersionTitle(nickname, title, time.Now())
-	return s.versionDAO.SaveOrReplaceLatest(dao.SaveOrReplaceLatestVersionOptions{
+	return dao.SaveOrReplaceLatestVersionOptions{
 		NewID:           utility.GenerateUUID(),
 		UserCanvasID:    canvasID,
 		Title:           &versionTitle,
@@ -611,7 +612,7 @@ func (s *AgentService) saveOrReplaceVersion(ctx context.Context, userID, canvasI
 				dsl,
 			)
 		},
-	})
+	}
 }
 
 func buildVersionTitle(userNickname, agentTitle string, ts time.Time) string {

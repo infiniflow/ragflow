@@ -390,6 +390,10 @@ func (dao *IngestionTaskLogDAO) Create(ingestionLog *entity.IngestionTaskLog) er
 	return DB.Create(ingestionLog).Error
 }
 
+func (dao *IngestionTaskLogDAO) Update(ingestionLog *entity.IngestionTaskLog) error {
+	return DB.Save(ingestionLog).Error
+}
+
 func (dao *IngestionTaskLogDAO) ListLogsByTaskID(taskID string) ([]*entity.IngestionTaskLog, error) {
 	var tasks []*entity.IngestionTaskLog
 	err := DB.Where("task_id = ?", taskID).Order("create_time DESC").Find(&tasks).Error
@@ -398,14 +402,7 @@ func (dao *IngestionTaskLogDAO) ListLogsByTaskID(taskID string) ([]*entity.Inges
 
 func (dao *IngestionTaskLogDAO) LatestLogByTaskID(taskID string) (*entity.IngestionTaskLog, error) {
 	var task *entity.IngestionTaskLog
-	// Order by `id DESC` (NOT `create_time DESC`) because
-	// create_time has only second-level resolution — multiple
-	// checkpoints written within the same second tie-break
-	// arbitrarily. The `id` is auto-increment, monotonic, and
-	// always reflects write order. The pipeline's resume
-	// algorithm reads the latest row, so the tie-break MUST
-	// be deterministic.
-	err := DB.Where("task_id = ?", taskID).Order("id DESC").First(&task).Error
+	err := DB.Where("task_id = ?", taskID).Order("create_time DESC").First(&task).Error
 	return task, err
 }
 

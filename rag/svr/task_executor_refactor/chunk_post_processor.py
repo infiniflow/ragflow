@@ -28,6 +28,7 @@ import json
 import logging
 import random
 import re
+from datetime import datetime
 from timeit import default_timer as timer
 from typing import Dict, List
 
@@ -219,6 +220,28 @@ async def generate_metadata(docs: List[Dict], ctx: TaskContext) -> None:
             else:
                 DocMetadataService.update_document_metadata(ctx.doc_id, metadata)
         ctx.progress_cb(msg="Metadata generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+
+
+def apply_built_in_metadata(ctx: TaskContext) -> None:
+    built_in_meta_config = ctx.parser_config.get("built_in_metadata", [])
+    if not built_in_meta_config:
+        return
+
+    built_in_meta = {}
+    for item in built_in_meta_config:
+        key = item.get("key", "")
+        if key == "update_time":
+            built_in_meta["update_time"] = str(datetime.now()).replace("T", " ")[:19]
+        elif key == "file_name":
+            built_in_meta["file_name"] = ctx.name
+    if built_in_meta:
+        existing_meta = DocMetadataService.get_document_metadata(ctx.doc_id)
+        existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
+        existing_meta = update_metadata_to(existing_meta, built_in_meta)
+        if ctx.write_interceptor:
+            ctx.write_interceptor.intercept("DocMetadataService.update_document_metadata")
+        else:
+            DocMetadataService.update_document_metadata(ctx.doc_id, existing_meta)
 
 
 async def apply_tags(docs: List[Dict], ctx: TaskContext) -> None:
