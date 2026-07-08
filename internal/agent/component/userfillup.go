@@ -24,11 +24,11 @@
 // so the run keeps flowing while the FileService integration
 // surfaces the actual bytes via the storage layer.
 //
-// Mirrors agent/component/fillup.py.
 package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -39,7 +39,6 @@ import (
 const componentNameUserFillUp = "UserFillUp"
 
 // defaultUserFillUpTips is used when the operator omits the `tips` param.
-// Matches the Python default in fillup.py:28.
 const defaultUserFillUpTips = "Please fill up the form"
 
 // fileStubPrefix is prepended to the form-field key when an input is
@@ -48,15 +47,13 @@ const defaultUserFillUpTips = "Please fill up the form"
 const fileStubPrefix = "<file:"
 
 // tipsPlaceholderPattern matches `{{key}}` placeholders in the tips
-// template. The pattern intentionally only accepts simple identifiers
-// (matching Python's `re.sub(r"\{%s\}"%k, ...)` in fillup.py:62) — the
+// template. The pattern only accepts simple identifiers — the
 // placeholder key is looked up in the form's input map, not the full
 // canvas-state ref grammar (cpn_id@param / sys.x / env.x).
 var tipsPlaceholderPattern = regexp.MustCompile(`\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}`)
 
 // userFillUpParam is the per-instance configuration for UserFillUp.
 //
-// Mirrors UserFillUpParam in fillup.py:24-33 (Python).
 type userFillUpParam struct {
 	EnableTips      bool   `json:"enable_tips"`
 	Tips            string `json:"tips"`
@@ -65,7 +62,7 @@ type userFillUpParam struct {
 
 // Update copies a fresh params map into the receiver, applying defaults
 // for any omitted keys. Returns nil on success (param validation is
-// performed by Check, not here — mirrors Python's two-phase pattern).
+// performed by Check, not here).
 func (p *userFillUpParam) Update(conf map[string]any) error {
 	if conf == nil {
 		conf = map[string]any{}
@@ -88,9 +85,8 @@ func (p *userFillUpParam) Update(conf map[string]any) error {
 }
 
 // Check performs parameter validation. UserFillUp has no required
-// fields — both the Python and Go implementations accept any config and
-// degrade gracefully on missing template data. The method is kept to
-// satisfy the ParamBase contract.
+// fields — any config is accepted and degrades gracefully on missing
+// template data. The method is kept to satisfy the ParamBase contract.
 func (p *userFillUpParam) Check() error { return nil }
 
 // AsDict returns the param as a plain map for serialization / debug.
@@ -120,8 +116,7 @@ func (u *UserFillUpComponent) Name() string { return u.name }
 
 // Invoke renders the tips template (when enable_tips) and emits one
 // output per form field. Inputs are expected under the top-level
-// "inputs" key, mirroring the Python `kwargs.get("inputs", {})`
-// contract in fillup.py:66.
+// "inputs" key.
 func (u *UserFillUpComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	// State is required for the canvas ref grammar, but UserFillUp's
 	// tips substitution uses simple {{key}} placeholders resolved
@@ -180,7 +175,7 @@ func (u *UserFillUpComponent) Outputs() map[string]string {
 
 // formFields extracts the per-field map from the component's input
 // payload. Returns an empty map (not an error) when the key is absent
-// or malformed — mirrors the Python `kwargs.get("inputs", {})` shape.
+// or malformed.
 func formFields(inputs map[string]any) (map[string]any, bool) {
 	raw, ok := inputs["inputs"]
 	if !ok {
@@ -218,8 +213,9 @@ func renderTips(template string, fields map[string]any) string {
 // resolveFieldValue converts one form-field payload into the value
 // that should appear in the component's output map.
 //
-// Rules (mirroring fillup.py:69-79):
+// Rules:
 //   - dict with type starting with "file" → "<file:key>" stub
+//   - dict with type=="object" and string value → parsed JSON
 //   - dict with optional=true and value==nil → nil
 //   - dict with a `value` field → the inner value
 //   - anything else → pass through unchanged
@@ -236,6 +232,15 @@ func resolveFieldValue(key string, raw any) any {
 			return nil
 		}
 	}
+	if isObjectType(m) {
+		if rawStr, ok := m["value"].(string); ok && strings.TrimSpace(rawStr) != "" {
+			var parsed any
+			if err := json.Unmarshal([]byte(rawStr), &parsed); err != nil {
+				return rawStr
+			}
+			return parsed
+		}
+	}
 	if v, present := m["value"]; present {
 		return v
 	}
@@ -243,11 +248,17 @@ func resolveFieldValue(key string, raw any) any {
 }
 
 // isFileType reports whether the form-field payload's `type` field
-// starts with "file" (case-insensitive). Matches fillup.py:69's
-// `v.get("type", "").lower().find("file") >= 0` test.
+// starts with "file" (case-insensitive).
 func isFileType(m map[string]any) bool {
 	t, _ := m["type"].(string)
 	return strings.HasPrefix(strings.ToLower(t), "file")
+}
+
+// isObjectType reports whether the form-field payload's `type` field
+// equals "object".
+func isObjectType(m map[string]any) bool {
+	t, _ := m["type"].(string)
+	return t == "object"
 }
 
 // fieldValueToString is the tips-substitution variant of
