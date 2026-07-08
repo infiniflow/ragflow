@@ -325,8 +325,8 @@ def get_model_config_by_id(tenant_id: str, model_id: str):
     if model_obj.status != ActiveStatusEnum.ACTIVE.value:
         raise LookupError(f"TenantModel id={model_id} is disabled.")
 
-    provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
-    if not provider_obj:
+    ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+    if not ok:
         raise LookupError(f"Provider id={model_obj.provider_id} not found for model id={model_id}.")
 
     # Validate that tenant_id owns the provider or is a joined tenant of the provider's owner.
@@ -336,8 +336,8 @@ def get_model_config_by_id(tenant_id: str, model_id: str):
         if provider_obj.tenant_id not in joined_tenant_ids:
             raise LookupError(f"Tenant {tenant_id} has no access to provider owned by tenant {provider_obj.tenant_id}.")
 
-    instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
-    if not instance_obj:
+    ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+    if not ok:
         raise LookupError(f"Instance id={model_obj.instance_id} not found for model id={model_id}.")
 
     api_key, is_tool, api_key_payload = _decode_api_key_config(instance_obj.api_key)
