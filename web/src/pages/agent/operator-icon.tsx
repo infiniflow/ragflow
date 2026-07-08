@@ -2,6 +2,7 @@ import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { cn } from '@/lib/utils';
 import {
+  Columns3Cog,
   FileCode,
   FileText,
   Globe,
@@ -59,6 +60,7 @@ export const LucideIconMap = {
   [Operator.ExitLoop]: LogOut,
   [Operator.DocGenerator]: FileText,
   [Operator.Browser]: Globe,
+  [Operator.Compilation]: Columns3Cog,
 };
 
 const Empty = () => {

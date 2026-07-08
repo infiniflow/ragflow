@@ -2465,6 +2465,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       extractor: '提取器',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
+      compiler: '汇编',
+      compilerDescription: '使用知识汇编模板将文档块编译为结构化产物。',
       outputFormat: '输出格式',
       fileFormats: '文件类型',
       fileFormatOptions: {

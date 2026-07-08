@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 
 type CompilationTemplateFormFieldProps = {
   horizontal?: boolean;
+  name?: string;
 };
 
 const ScopeTranslationKeyMap: Record<string, string> = {
@@ -94,12 +95,13 @@ function CompilationTemplateMultiSelect({
 
 export function CompilationTemplateFormField({
   horizontal,
+  name = 'parser_config.compilation_template_group_id',
 }: CompilationTemplateFormFieldProps) {
   const { t } = useTranslation();
 
   return (
     <RAGFlowFormItem
-      name="parser_config.compilation_template_group_id"
+      name={name}
       label={t('knowledgeConfiguration.compilationTemplate')}
       className="pb-4"
       horizontal={horizontal}

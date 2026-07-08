@@ -4,6 +4,7 @@ import ArXivForm from '../form/arxiv-form';
 import BeginForm from '../form/begin-form';
 import BingForm from '../form/bing-form';
 import BrowserForm from '../form/browser-use-form';
+import CompilationForm from '../form/compilation-form';
 import CategorizeForm from '../form/categorize-form';
 import CodeForm from '../form/code-form';
 import CrawlerForm from '../form/crawler-form';
@@ -166,6 +167,9 @@ export const FormConfigMap = {
   },
   [Operator.Extractor]: {
     component: ExtractorForm,
+  },
+  [Operator.Compilation]: {
+    component: CompilationForm,
   },
   [Operator.DataOperations]: {
     component: DataOperationsForm,

@@ -1,4 +1,9 @@
-import { DecoratorNode, LexicalNode, NodeKey } from 'lexical';
+import {
+  DecoratorNode,
+  LexicalNode,
+  NodeKey,
+  SerializedLexicalNode,
+} from 'lexical';
 import { ReactNode } from 'react';
 
 export class VariableNode extends DecoratorNode<ReactNode> {
@@ -72,6 +77,19 @@ export class VariableNode extends DecoratorNode<ReactNode> {
 
   getTextContent(): string {
     return `{${this.__value}}`;
+  }
+
+  exportJSON(): SerializedLexicalNode {
+    return {
+      ...super.exportJSON(),
+      type: 'variable',
+      version: 1,
+    };
+  }
+
+  static importJSON(serializedNode: SerializedLexicalNode): VariableNode {
+    void serializedNode;
+    return $createVariableNode('', '');
   }
 }
 

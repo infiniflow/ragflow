@@ -2826,6 +2826,9 @@ This process aggregates variables from multiple branches into a single variable 
       extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
+      compiler: 'Compilation',
+      compilerDescription:
+        'Compiles document chunks using knowledge compilation templates into structured artifacts.',
       outputFormat: 'Output format',
       fileFormats: 'File type',
       fileFormatOptions: {
