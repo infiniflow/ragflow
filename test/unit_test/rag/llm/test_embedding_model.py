@@ -42,6 +42,7 @@ from rag.llm.embedding_model import (
     MistralEmbed,
     NvidiaEmbed,
     OllamaEmbed,
+    OpenAI_APIEmbed,
     OpenAIEmbed,
     ZhipuEmbed,
 )
@@ -381,3 +382,44 @@ class TestBedrockResponseParsing:
         embed.client.invoke_model.return_value = self._body({"embeddings": [[5.0, 6.0]]})
         vector, _ = embed.encode_queries("q")
         np.testing.assert_array_equal(vector, np.array([5.0, 6.0]))
+
+
+# --------------------------------------------------------------------------- #
+# OpenAI-SDK client timeout: without an explicit timeout the SDK waits 600s x 3
+# attempts (~30 min) on a wedged endpoint, blocking a task-executor worker. The
+# clients must carry a bounded, env-tunable timeout so such failures fail fast.
+# --------------------------------------------------------------------------- #
+@pytest.mark.p2
+class TestClientTimeout:
+    def test_openai_family_clients_carry_bounded_timeout(self):
+        import rag.llm.embedding_model as m
+
+        clients = [
+            m.OpenAIEmbed("k", "text-embedding-3-small", base_url="https://example.invalid/v1"),
+            m.OpenAI_APIEmbed("k", "bge-m3", base_url="http://example.invalid:80"),
+            m.LocalAIEmbed("k", "bge-m3", base_url="http://example.invalid:80"),
+        ]
+        for embed in clients:
+            assert embed.client.timeout == m.EMBEDDING_HTTP_TIMEOUT
+            assert embed.client.max_retries == m.EMBEDDING_HTTP_MAX_RETRIES
+        # Bounded well below the SDK's 600s default so a wedged endpoint cannot
+        # tie up a worker for tens of minutes.
+        assert m.EMBEDDING_HTTP_TIMEOUT <= 300
+
+    def test_timeout_is_env_configurable(self):
+        import rag.llm.embedding_model as m
+
+        with patch.object(m, "EMBEDDING_HTTP_TIMEOUT", 12.5), patch.object(m, "EMBEDDING_HTTP_MAX_RETRIES", 0):
+            embed = OpenAI_APIEmbed("k", "bge-m3", base_url="http://example.invalid:80")
+        assert embed.client.timeout == 12.5
+        assert embed.client.max_retries == 0
+
+    def test_invalid_env_falls_back_to_default(self):
+        from rag.llm.embedding_model import _env_or
+
+        with patch.dict("os.environ", {"EMBEDDING_HTTP_TIMEOUT": "not-a-number"}):
+            assert _env_or("EMBEDDING_HTTP_TIMEOUT", 60.0, float) == 60.0
+        with patch.dict("os.environ", {"EMBEDDING_HTTP_TIMEOUT": ""}):
+            assert _env_or("EMBEDDING_HTTP_TIMEOUT", 60.0, float) == 60.0
+        with patch.dict("os.environ", {"EMBEDDING_HTTP_TIMEOUT": "45"}):
+            assert _env_or("EMBEDDING_HTTP_TIMEOUT", 60.0, float) == 45.0

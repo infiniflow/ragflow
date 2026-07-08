@@ -43,6 +43,28 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_TOKENS = 8192
 
 
+def _env_or(name: str, default, cast):
+    raw = os.getenv(name)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        return cast(raw)
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s=%r; falling back to %r", name, raw, default)
+        return default
+
+
+# OpenAI-SDK-based embedding clients otherwise inherit the SDK defaults of a
+# 600s timeout with 2 retries, so a single unresponsive/wedged endpoint (e.g. a
+# local TEI/vLLM server hung under load) blocks a task-executor worker for
+# ~30 minutes (600s x 3 attempts) before the binding probe finally fails. A
+# bounded per-request timeout makes such failures fail fast so the task frees
+# the worker and can be requeued/abandoned instead. Tunable via env without a
+# code change; set a value comfortably above normal batch latency under load.
+EMBEDDING_HTTP_TIMEOUT = _env_or("EMBEDDING_HTTP_TIMEOUT", 60.0, float)
+EMBEDDING_HTTP_MAX_RETRIES = _env_or("EMBEDDING_HTTP_MAX_RETRIES", 2, int)
+
+
 class EmbeddingError(ModelException):
     """Raised when an embedding provider fails to return usable embeddings.
 
@@ -259,7 +281,7 @@ class OpenAIEmbed(Base):
     def __init__(self, key, model_name="text-embedding-ada-002", base_url="https://api.openai.com/v1"):
         if not base_url:
             base_url = "https://api.openai.com/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.client = OpenAI(api_key=key, base_url=base_url, timeout=EMBEDDING_HTTP_TIMEOUT, max_retries=EMBEDDING_HTTP_MAX_RETRIES)
         self.model_name = model_name
 
     def _call(self, batch):
@@ -282,7 +304,7 @@ class LocalAIEmbed(Base):
         if not base_url:
             raise ValueError("Local embedding model url cannot be None")
         base_url = urljoin(base_url, "v1")
-        self.client = OpenAI(api_key="empty", base_url=base_url)
+        self.client = OpenAI(api_key="empty", base_url=base_url, timeout=EMBEDDING_HTTP_TIMEOUT, max_retries=EMBEDDING_HTTP_MAX_RETRIES)
         self.model_name = model_name.split("___")[0]
 
     def _call(self, batch):
@@ -320,7 +342,7 @@ class AzureEmbed(OpenAIEmbed):
         from openai.lib.azure import AzureOpenAI
 
         api_key, api_version = _resolve_azure_credentials(key)
-        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
+        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version, timeout=EMBEDDING_HTTP_TIMEOUT, max_retries=EMBEDDING_HTTP_MAX_RETRIES)
         self.model_name = model_name
 
 
@@ -503,7 +525,7 @@ class XinferenceEmbed(Base):
 
     def __init__(self, key, model_name="", base_url=""):
         base_url = urljoin(base_url, "v1")
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.client = OpenAI(api_key=key, base_url=base_url, timeout=EMBEDDING_HTTP_TIMEOUT, max_retries=EMBEDDING_HTTP_MAX_RETRIES)
         self.model_name = model_name
 
     def _call(self, batch):
@@ -845,7 +867,7 @@ class LmStudioEmbed(LocalAIEmbed):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
         base_url = urljoin(base_url, "v1")
-        self.client = OpenAI(api_key="lm-studio", base_url=base_url)
+        self.client = OpenAI(api_key="lm-studio", base_url=base_url, timeout=EMBEDDING_HTTP_TIMEOUT, max_retries=EMBEDDING_HTTP_MAX_RETRIES)
         self.model_name = model_name
 
 
@@ -856,7 +878,7 @@ class OpenAI_APIEmbed(OpenAIEmbed):
         if not base_url:
             raise ValueError("url cannot be None")
         base_url = urljoin(base_url, "v1")
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.client = OpenAI(api_key=key, base_url=base_url, timeout=EMBEDDING_HTTP_TIMEOUT, max_retries=EMBEDDING_HTTP_MAX_RETRIES)
         self.model_name = model_name.split("___")[0]
 
 
@@ -1149,7 +1171,7 @@ class GPUStackEmbed(OpenAIEmbed):
             raise ValueError("url cannot be None")
         base_url = urljoin(base_url, "v1")
 
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.client = OpenAI(api_key=key, base_url=base_url, timeout=EMBEDDING_HTTP_TIMEOUT, max_retries=EMBEDDING_HTTP_MAX_RETRIES)
         self.model_name = model_name
 
 
@@ -1312,5 +1334,5 @@ class NewAPIEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.client = OpenAI(api_key=key, base_url=base_url, timeout=EMBEDDING_HTTP_TIMEOUT, max_retries=EMBEDDING_HTTP_MAX_RETRIES)
         self.model_name = model_name.split("___")[0]
