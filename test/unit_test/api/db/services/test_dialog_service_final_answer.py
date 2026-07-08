@@ -381,6 +381,7 @@ def _make_dialog(chat_mdl_stub):
         top_n=6,
         top_k=1024,
         rerank_id="",
+        tenant_rerank_id=None
     )
 
 

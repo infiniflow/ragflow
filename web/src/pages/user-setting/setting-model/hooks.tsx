@@ -1,4 +1,19 @@
-import { LLMFactory } from '@/constants/llm';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useAddInstanceModel,
@@ -129,7 +144,9 @@ export const useVerifyConnection = () => {
 };
 
 // ============ Hooks for retained special modals ============
-// Bedrock and SoMark still use custom modal components.
+// Bedrock and SoMark have been migrated to inline instance cards
+// (BedrockInstanceCard / SoMarkInstanceCard); these legacy modal
+// hooks are kept only for backward-compat references.
 
 export const useSubmitBedrock = () => {
   const [saveLoading, setSaveLoading] = useState(false);
@@ -183,108 +200,5 @@ export const useSubmitBedrock = () => {
     bedrockAddingVisible,
     hideBedrockAddingModal,
     showBedrockAddingModal,
-  };
-};
-
-export const useSubmitSoMark = () => {
-  const [saveLoading, setSaveLoading] = useState(false);
-  const submitProviderInstance = useSubmitProviderInstance();
-  const verifyConnection = useVerifyConnection();
-  const {
-    visible: somarkVisible,
-    hideModal: hideSoMarkModal,
-    showModal: showSoMarkModal,
-  } = useSetModalState();
-
-  const onSoMarkOk = useCallback(
-    async (payload: any, isVerify = false) => {
-      if (!isVerify) {
-        setSaveLoading(true);
-      }
-      const req = {
-        instance_name: payload.instance_name,
-        llm_factory: LLMFactory.SoMark,
-        api_key: payload.somark_api_key || '',
-        base_url: payload.somark_base_url,
-        max_tokens: 0,
-        model_info: [
-          {
-            model_name: payload.llm_name,
-            model_type: ['ocr'],
-            max_tokens: 0,
-            extra: {
-              somark_image_format: payload.somark_image_format,
-              somark_formula_format: payload.somark_formula_format,
-              somark_table_format: payload.somark_table_format,
-              somark_cs_format: payload.somark_cs_format,
-              somark_enable_text_cross_page:
-                payload.somark_enable_text_cross_page,
-              somark_enable_table_cross_page:
-                payload.somark_enable_table_cross_page,
-              somark_enable_title_level_recognition:
-                payload.somark_enable_title_level_recognition,
-              somark_enable_inline_image: payload.somark_enable_inline_image,
-              somark_enable_table_image: payload.somark_enable_table_image,
-              somark_enable_image_understanding:
-                payload.somark_enable_image_understanding,
-              somark_keep_header_footer: payload.somark_keep_header_footer,
-            },
-          },
-        ],
-      };
-      try {
-        if (isVerify) {
-          return verifyConnection(
-            LLMFactory.SoMark,
-            req.api_key,
-            req.base_url,
-            undefined,
-            req.model_info as IModelInfo[],
-          );
-        }
-        const ret = await submitProviderInstance(
-          req as IAddProviderInstanceRequestBody,
-          false,
-        );
-        if (ret.code === 0) {
-          hideSoMarkModal();
-          return true;
-        }
-        return false;
-      } finally {
-        if (!isVerify) {
-          setSaveLoading(false);
-        }
-      }
-    },
-    [submitProviderInstance, hideSoMarkModal, setSaveLoading, verifyConnection],
-  );
-
-  return {
-    somarkVisible,
-    hideSoMarkModal,
-    showSoMarkModal,
-    onSoMarkOk,
-    somarkLoading: saveLoading,
-  };
-};
-
-/**
- * Wraps the verify callback: provides a unified call with isVerify=true for the Verify button
- */
-export const useVerifySettings = ({
-  onVerify,
-}: {
-  onVerify: (postBody: any, isVerify?: boolean) => Promise<any>;
-}) => {
-  const onApiKeyVerifying = useCallback(
-    async (postBody: any) => {
-      const res = await onVerify(postBody, true);
-      return res;
-    },
-    [onVerify],
-  );
-  return {
-    onApiKeyVerifying,
   };
 };

@@ -45,7 +45,7 @@ class _AwaitableValue:
 
 
 class _DummyKB:
-    def __init__(self, tenant_id="tenant-1", embd_id="embd-1", tenant_embd_id=1):
+    def __init__(self, tenant_id="tenant-1", embd_id="embd-1", tenant_embd_id="tm-embd-1"):
         self.tenant_id = tenant_id
         self.embd_id = embd_id
         self.tenant_embd_id = tenant_embd_id
@@ -221,7 +221,7 @@ def _load_dify_retrieval_module(monkeypatch):
             }
 
     def _get_model_config_by_id(
-        tenant_model_id: int,
+        tenant_model_id: str,
         allowed_tenant_ids=None,
         requester_tenant_id=None,
     ) -> dict:
