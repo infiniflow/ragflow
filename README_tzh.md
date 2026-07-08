@@ -196,7 +196,7 @@
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.26.4
+   git checkout v0.26.4
    # 可選：使用穩定版標籤（查看發佈：https://github.com/infiniflow/ragflow/releases）
    # 此步驟確保程式碼中的 entrypoint.sh 檔案與 Docker 映像版本一致。
 
