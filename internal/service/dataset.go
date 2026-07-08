@@ -224,7 +224,7 @@ func (d *DatasetService) newRaptorOrGraphRagTask(sampleDoc *entity.Document, tas
 		_, _ = hasher.Write([]byte{0})
 	}
 
-	taskID := strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
+	taskID := utility.GenerateUUID()
 	beginAt := time.Now().Truncate(time.Second)
 	progressMsg := beginAt.Format("15:04:05") + " created task " + taskType
 
@@ -735,7 +735,7 @@ func (d *DatasetService) queueDatasetDataflowTask(kb *entity.Knowledgebase, doc 
 
 	now := time.Now()
 	task := &entity.Task{
-		ID:       common.GenerateUUID(),
+		ID:       utility.GenerateUUID(),
 		DocID:    doc.ID,
 		FromPage: 0,
 		ToPage:   maximumTaskPageNumber,
@@ -808,7 +808,7 @@ func (d *DatasetService) buildDatasetParseTasks(doc *entity.Document, bucket, ob
 		digest := datasetParseTaskDigest(doc, pageRange.from, pageRange.to)
 		chunkIDs := ""
 		tasks = append(tasks, &entity.Task{
-			ID:          common.GenerateUUID(),
+			ID:          utility.GenerateUUID(),
 			DocID:       doc.ID,
 			FromPage:    pageRange.from,
 			ToPage:      pageRange.to,
