@@ -210,12 +210,14 @@ type StorageConfig struct {
 	Minio *MinioConfig `mapstructure:"minio"`
 	S3    *S3Config    `mapstructure:"s3"`
 	OSS   *OSSConfig   `mapstructure:"oss"`
+	GCS   *GCSConfig   `mapstructure:"gcs"`
 }
 
 const (
 	StorageOSS   StorageType = "oss"
 	StorageS3    StorageType = "s3"
 	StorageMinio StorageType = "minio"
+	StorageGCS   StorageType = "gcs"
 )
 
 // OSSConfig holds Aliyun OSS storage configuration
@@ -229,6 +231,12 @@ type OSSConfig struct {
 	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
 	SignatureVersion string `mapstructure:"signature_version"` // Signature version
 	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
+}
+
+type GCSConfig struct {
+	Bucket      string `mapstructure:"bucket"`       // Default bucket (optional)
+	PrefixPath  string `mapstructure:"prefix_path"`  // Path prefix (optional)
+	EndpointURL string `mapstructure:"endpoint_url"` // Custom endpoint (optional)
 }
 
 // MinioConfig holds MinIO storage configuration
@@ -534,6 +542,8 @@ func FromEnvironments() error {
 		globalConfig.StorageEngine.Type = StorageS3
 	case "oss":
 		globalConfig.StorageEngine.Type = StorageOSS
+	case "gcs":
+		globalConfig.StorageEngine.Type = StorageGCS
 	case "":
 		// Default
 		if globalConfig.StorageEngine.Type == "" {
@@ -783,6 +793,19 @@ func FromConfigFile(configPath string) error {
 						Verify:     minioConfig.GetBool("verify"),
 						Region:     minioConfig.GetString("region"),
 						Bucket:     minioConfig.GetString("bucket"),
+					}
+				}
+			}
+		}
+
+		if v.IsSet("gcs") {
+			gcsConfig := v.Sub("gcs")
+			if gcsConfig != nil {
+				if globalConfig.StorageEngine.GCS == nil {
+					globalConfig.StorageEngine.GCS = &GCSConfig{
+						Bucket:      gcsConfig.GetString("bucket"),
+						PrefixPath:  gcsConfig.GetString("prefix_path"),
+						EndpointURL: gcsConfig.GetString("endpoint_url"),
 					}
 				}
 			}
