@@ -823,19 +823,11 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 				filterParts = append(filterParts, fmt.Sprintf("available_int=%v", availInt))
 			} else if status, ok := req.Filter["status"]; ok {
 				filterParts = append(filterParts, fmt.Sprintf("status='%s'", status))
-			} else {
-				if isSkillIndex {
-					filterParts = append(filterParts, "status='1'")
-				} else {
-					filterParts = append(filterParts, "available_int=1")
-				}
-			}
-		} else {
-			if isSkillIndex {
-				filterParts = append(filterParts, "status='1'")
-			} else {
+			} else if !isSkillIndex {
 				filterParts = append(filterParts, "available_int=1")
 			}
+		} else if !isSkillIndex {
+			filterParts = append(filterParts, "available_int=1")
 		}
 	}
 
@@ -1025,12 +1017,8 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 				}
 
 				denseFilterStr := filterStr
-				if denseFilterStr == "" {
-					if isSkillIndex {
-						denseFilterStr = "status='1'"
-					} else {
-						denseFilterStr = "available_int=1"
-					}
+				if denseFilterStr == "" && !isSkillIndex {
+					denseFilterStr = "available_int=1"
 				}
 
 				if hasTextMatch {
@@ -1978,7 +1966,6 @@ func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 		"authors_tks":         "authors",
 		"authors_sm_tks":      "authors",
 		"message_type":        "message_type_kwd",
-		"status":              "status_int",
 	}
 
 	skillIndex := false
