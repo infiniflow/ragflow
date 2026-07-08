@@ -89,7 +89,12 @@ async def _cancel_task(task_id):
         if doc_id and doc_id not in (CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID):
             _, doc = DocumentService.get_by_id(doc_id)
             if doc and str(doc.run) in (TaskStatus.RUNNING.value, TaskStatus.SCHEDULE.value):
-                DocumentService.update_by_id(doc_id, {"run": TaskStatus.CANCEL.value, "progress": 0})
+                cancel_doc_msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task stopped by user."
+                DocumentService.update_by_id(
+                    doc_id,
+                    {"run": TaskStatus.CANCEL.value, "progress": 0, "progress_msg": (doc.progress_msg or "") + cancel_doc_msg},
+                )
+                logging.debug("Appended cancellation marker to progress_msg on task cancel: task_id=%s doc_id=%s", task_id, doc_id)
     except Exception as e:
         logging.warning("Failed to update document run status for task %s: %s", task_id, str(e))
 
