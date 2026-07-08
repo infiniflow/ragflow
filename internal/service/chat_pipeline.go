@@ -245,7 +245,14 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 4: Bind Models (embedding, rerank, chat, TTS) + ToolCall ===
 		common.Info("Phase 4: Bind Models (embedding, rerank, chat, TTS)")
 		timer.Enter(common.PhaseBindModels)
-		kbs, embModel, rerankModel, chatModel, ttsModel := s.getModels(ctx, chat)
+		kbs, embModel, rerankModel, chatModel, ttsModel, err := s.getModels(ctx, chat)
+		if err != nil {
+			out <- AsyncChatResult{
+				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
+				Final:  true,
+			}
+			return
+		}
 
 		// Toolcall binding
 		if toolcallSession, hasSession := kwargs["toolcall_session"]; hasSession && toolcallSession != nil {
@@ -1918,6 +1925,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	*modelModule.RerankModel,
 	*modelModule.ChatModel,
 	*modelModule.ChatModel, // TTS model
+	error,
 ) {
 	kbDAO := dao.NewKnowledgebaseDAO()
 
@@ -1942,26 +1950,16 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Embedding model.
 	var embModel *modelModule.EmbeddingModel
 	if len(kbs) > 0 {
-		// All KBs must share the same embedding model.
-		embdIDs := make(map[string]bool)
-		for _, kb := range kbs {
-			if kb.EmbdID != "" {
-				embdIDs[kb.EmbdID] = true
-			}
+		if err := validateDatasetEmbeddingModels(kbs); err != nil {
+			return nil, nil, nil, nil, nil, err
 		}
-		if len(embdIDs) > 1 {
-			// Multiple embedding models across KBs — error.
-			common.Warn("Knowledge bases use different embedding models")
-		}
-		if len(embdIDs) == 1 {
-			for embdID := range embdIDs {
-				embdTenantID := kbs[0].TenantID
-				driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.GetModelConfigFromProviderInstance(
-					embdTenantID, entity.ModelTypeEmbedding, embdID,
-				)
-				if err == nil {
-					embModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-				}
+		if kbs[0].EmbdID != "" {
+			embdTenantID := kbs[0].TenantID
+			driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.GetModelConfigFromProviderInstance(
+				embdTenantID, entity.ModelTypeEmbedding, kbs[0].EmbdID,
+			)
+			if err == nil {
+				embModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
 			}
 		}
 	}
@@ -1997,7 +1995,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		}
 	}
 
-	return kbs, embModel, rerankModel, chatModel, ttsModel
+	return kbs, embModel, rerankModel, chatModel, ttsModel, nil
 }
 
 // lastUserQuestion returns the content of the most recent user message in

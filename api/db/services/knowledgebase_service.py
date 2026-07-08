@@ -27,6 +27,24 @@ from common.misc_utils import get_uuid
 from common.constants import StatusEnum
 from api.constants import DATASET_NAME_LIMIT
 from api.utils.api_utils import get_parser_config, get_data_error_result
+from api.db.joint_services.tenant_model_service import split_model_name
+
+
+def validate_dataset_embedding_models(kbs):
+    """Validate that all given datasets use the same embedding model (or all use none).
+
+    Returns an error message string on failure, or ``None`` on success.
+    """
+    # Either all datasets have an embedding model, or none do. Mixing is not allowed.
+    embd_ids = [kb.embd_id for kb in kbs if kb.embd_id]
+    has_embd = len(embd_ids) > 0
+    if has_embd and len(embd_ids) != len(kbs):
+        return "Cannot search across datasets where some have embedding models and others do not."
+    if has_embd:
+        embd_nms = list(set([split_model_name(eid)[0] for eid in embd_ids]))
+        if len(embd_nms) > 1:
+            return f"Datasets use different embedding models: {[kb.embd_id for kb in kbs]}"
+    return None
 
 
 class KnowledgebaseService(CommonService):

@@ -102,6 +102,42 @@ const (
 	graphPhaseCommunityDone  = "community_done"
 )
 
+// validateDatasetEmbeddingModels checks that all given datasets use the same
+// embedding model (or all use none). Returns an error on mismatch.
+func validateDatasetEmbeddingModels(kbs []*entity.Knowledgebase) error {
+	embdIDs := make(map[string]struct{})
+	hasEmbd := false
+	noEmbd := false
+	for _, kb := range kbs {
+		if kb.EmbdID != "" {
+			hasEmbd = true
+			baseName := kb.EmbdID
+			if idx := strings.LastIndex(kb.EmbdID, "@"); idx > 0 {
+				baseName = kb.EmbdID[:idx]
+			}
+			embdIDs[baseName] = struct{}{}
+		} else {
+			noEmbd = true
+		}
+	}
+	if hasEmbd && noEmbd {
+		return fmt.Errorf("Cannot search across datasets where some have embedding models and others do not.")
+	}
+	if len(embdIDs) > 1 {
+		return fmt.Errorf("Datasets use different embedding models: %v", getEmbdIDs(kbs))
+	}
+	return nil
+}
+
+// getEmbdIDs extracts embedding IDs from knowledge bases.
+func getEmbdIDs(kbs []*entity.Knowledgebase) []string {
+	ids := make([]string, len(kbs))
+	for i, kb := range kbs {
+		ids[i] = kb.EmbdID
+	}
+	return ids
+}
+
 // DatasetService implements the RESTful dataset APIs from dataset_api.py.
 type DatasetService struct {
 	kbDAO          *dao.KnowledgebaseDAO
@@ -1872,13 +1908,8 @@ func (d *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	}
 
 	// Check if all kbs have the same embedding model
-	if len(kbRecords) > 1 {
-		firstEmbdID := kbRecords[0].EmbdID
-		for i := 1; i < len(kbRecords); i++ {
-			if kbRecords[i].EmbdID != firstEmbdID {
-				return nil, fmt.Errorf("Datasets use different embedding models.")
-			}
-		}
+	if err := validateDatasetEmbeddingModels(kbRecords); err != nil {
+		return nil, err
 	}
 
 	// Override request fields with values from saved search config (if search_id is provided)
@@ -2050,36 +2081,23 @@ func (d *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", embErr)
 		}
 		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	} else {
-		driver, modelName, apiConfig, maxTokens, err := modelProviderSvc.GetTenantDefaultModelByType(tenantIDs[0], entity.ModelTypeEmbedding)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get tenant default embedding model: %w", err)
-		}
-		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+		common.Info("Fetched embedding model for retrieval",
+			zap.String("tenantID", tenantIDs[0]),
+			zap.String("modelName", modelName))
+
 	}
-	modelNameStr := ""
-	if embeddingModel.ModelName != nil {
-		modelNameStr = *embeddingModel.ModelName
-	}
-	common.Info("Fetched embedding model for retrieval",
-		zap.String("tenantID", tenantIDs[0]),
-		zap.String("modelName", modelNameStr))
 
 	// Get rerank model if rerankID is specified
 	var rerankModel *models.RerankModel
-
 	if rerankID != "" {
 		driver, modelName, apiConfig, _, rErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeRerank, rerankID)
 		if rErr != nil {
 			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", rErr)
 		}
 		rerankModel = models.NewRerankModel(driver, &modelName, apiConfig)
-	}
-
-	if rerankModel != nil {
 		common.Info("Fetched rerank model",
 			zap.String("tenantID", tenantIDs[0]),
-			zap.String("modelName", *rerankModel.ModelName))
+			zap.String("modelName", modelName))
 	}
 
 	retrievalReq := &nlp.RetrievalRequest{
