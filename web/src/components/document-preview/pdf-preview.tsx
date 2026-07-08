@@ -14,6 +14,7 @@ import { Authorization } from '@/constants/authorization';
 import { cn } from '@/lib/utils';
 import FileError from '@/pages/document-viewer/file-error';
 import { getAuthorization } from '@/utils/authorization-util';
+import { firstHighlightPerPage } from '@/utils/document-util';
 import { useCatchDocumentError } from './hooks';
 type PdfLoaderProps = React.ComponentProps<typeof PdfLoader> & {
   httpHeaders?: Record<string, string>;
@@ -52,15 +53,14 @@ const PdfPreview = ({
   const resetHash = () => {};
 
   useEffect(() => {
-    let timer = null;
-    if (state?.length && state?.length > 0) {
-      timer = setTimeout(() => {
-        ref?.current(state[0]);
-      }, 100);
-    }
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
+    if (!state?.length) return;
+    // Scroll to the first highlight on each distinct page. `state` is one
+    // IHighlight per `position_int` entry, so a cross-page chunk produces
+    // multiple entries; scrolling only to `state[0]` left the rest off-screen.
+    const timers = firstHighlightPerPage(state).map((h, i) =>
+      setTimeout(() => ref.current(h), 100 * (i + 1)),
+    );
+    return () => timers.forEach(clearTimeout);
   }, [state]);
 
   const httpHeaders = {
