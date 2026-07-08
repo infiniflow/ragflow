@@ -177,7 +177,7 @@
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.26.4
+   git checkout v0.26.4
    # 任意: 安定版タグを利用 (一覧: https://github.com/infiniflow/ragflow/releases)
    # この手順は、コード内の entrypoint.sh ファイルが Docker イメージのバージョンと一致していることを確認します。
 
