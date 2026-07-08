@@ -195,7 +195,7 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.26.4
+   git checkout v0.26.4
    # Optionnel : utiliser un tag stable (voir les versions : https://github.com/infiniflow/ragflow/releases)
    # Cette étape garantit que le fichier **entrypoint.sh** dans le code correspond à la version de l'image Docker.
 
