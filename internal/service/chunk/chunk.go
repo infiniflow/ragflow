@@ -416,12 +416,6 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 		}
 	}
 
-	if rerankModel != nil {
-		common.Info("Fetched rerank model",
-			zap.String("tenantID", tenantIDs[0]),
-			zap.String("rerankCompositeName", rerankCompositeName))
-	}
-
 	retrievalReq := &nlp.RetrievalRequest{
 		TenantIDs:              tenantIDs,
 		Question:               modifiedQuestion,

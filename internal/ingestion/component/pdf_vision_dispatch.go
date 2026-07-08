@@ -332,7 +332,7 @@ func resolveModelConfigFromProviderInstance(tenantID string, modelType entity.Mo
 	baseURL := extra["base_url"]
 
 	modelObj, modelErr := modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
-		provider.ID, instance.ID, string(modelType), pureModelName,
+		provider.ID, instance.ID, int(modelType), pureModelName,
 	)
 	switch {
 	case modelErr == nil:
