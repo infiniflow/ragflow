@@ -755,31 +755,34 @@ class MinerUParser(RAGFlowPdfParser):
 
     def _transfer_to_media_blocks(self, outputs: list[dict[str, Any]], table_enable: bool = True):
         tables = []
+        table_count = 0
+        image_count = 0
         for output in outputs:
             output_type = self._normalize_output_type(output)
             if output_type not in {MinerUContentType.TABLE, MinerUContentType.IMAGE}:
+                self.logger.debug("[MinerU] Skip non-media type=%s", output.get("type"))
                 continue
 
             position_tag = self._line_tag(output) if "page_idx" in output and "bbox" in output else ""
-            positions = [
-                (pages[-1], left, right, top, bottom)
-                for pages, left, right, top, bottom in self.extract_positions(position_tag)
-                if pages
-            ] or [(0, 0.0, 0.0, 0.0, 0.0)]
+            positions = [(pages[-1], left, right, top, bottom) for pages, left, right, top, bottom in self.extract_positions(position_tag) if pages] or [(0, 0.0, 0.0, 0.0, 0.0)]
 
             if output_type == MinerUContentType.TABLE:
                 if not table_enable:
+                    self.logger.debug("[MinerU] Skip table (table_enable=False)")
                     continue
                 table_text = self._build_table_text(output)
                 table_image = self._resolve_output_image(output, position_tag, ("table_img_path", "img_path"))
                 tables.append(((table_image, table_text), positions))
+                table_count += 1
                 continue
 
             if output_type == MinerUContentType.IMAGE:
                 image = self._resolve_output_image(output, position_tag, ("img_path", "table_img_path"))
                 image_texts = self._build_image_texts(output, keep_placeholder=True)
                 tables.append(((image, image_texts), positions))
+                image_count += 1
 
+        self.logger.info("[MinerU] Media blocks produced: %d table(s), %d image(s)", table_count, image_count)
         return tables
 
     def _enhance_images_with_vlm(self, outputs: list[dict[str, Any]], vision_model, callback: Optional[Callable] = None):
