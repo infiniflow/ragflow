@@ -72,6 +72,10 @@ func (f *fakeStorage) BucketExists(bucket string) bool {
 	panic("not implemented in fakeStorage")
 }
 
+func (f *fakeStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+	panic("not implemented in fakeStorage")
+}
+
 func (f *fakeStorage) RemoveBucket(bucket string) error {
 	panic("not implemented in fakeStorage")
 }
@@ -83,6 +87,8 @@ func (f *fakeStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool
 func (f *fakeStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
 	panic("not implemented in fakeStorage")
 }
+
+func (f *fakeStorage) Close() error { return nil }
 
 func setupFileContentPermissionDB(t *testing.T, accessible bool) {
 	t.Helper()

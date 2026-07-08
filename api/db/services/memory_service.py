@@ -109,7 +109,8 @@ class MemoryService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def create_memory(cls, tenant_id: str, name: str, memory_type: List[str], embd_id: str, llm_id: str):
+    def create_memory(cls, tenant_id: str, name: str, memory_type: List[str], embd_id: str, llm_id: str,
+                      tenant_embd_id: str | None = None, tenant_llm_id: str | None = None):
         # Deduplicate name within tenant
         memory_name = duplicate_name(cls.query, name=name, tenant_id=tenant_id)
         if len(memory_name) > MEMORY_NAME_LIMIT:
@@ -124,7 +125,9 @@ class MemoryService(CommonService):
             "memory_type": calculate_memory_type(memory_type),
             "tenant_id": tenant_id,
             "embd_id": embd_id,
+            "tenant_embd_id": tenant_embd_id,
             "llm_id": llm_id,
+            "tenant_llm_id": tenant_llm_id,
             "system_prompt": PromptAssembler.assemble_system_prompt({"memory_type": memory_type}),
             "create_time": timestamp,
             "create_date": format_time,
@@ -151,7 +154,9 @@ class MemoryService(CommonService):
             update_dict["memory_type"] = calculate_memory_type(update_dict["memory_type"])
         if "name" in update_dict:
             existing = cls.model.select().where((cls.model.id == memory_id) & (cls.model.tenant_id == tenant_id)).first()
-            if not existing or existing.name != update_dict["name"]:
+            if existing and existing.name == update_dict["name"]:
+                update_dict.pop("name", None)
+            else:
                 update_dict["name"] = duplicate_name(cls.query, name=update_dict["name"], tenant_id=tenant_id)
         update_dict.update({"update_time": current_timestamp(), "update_date": get_format_time()})
 

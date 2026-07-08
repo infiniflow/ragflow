@@ -295,6 +295,7 @@ def test_async_chat_uses_all_docs_when_no_doc_ids_selected(monkeypatch):
     dialog = SimpleNamespace(
         kb_ids=["kb-1"],
         llm_id="chat-model",
+        tenant_llm_id="",
         tenant_id="tenant-id",
         llm_setting={},
         similarity_threshold=0.1,
