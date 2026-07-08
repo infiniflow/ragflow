@@ -260,12 +260,20 @@ func TestProcessChunksForDataflow_GeneratesID(t *testing.T) {
 }
 
 func TestProcessChunksForDataflow_NonStringTextFallback(t *testing.T) {
-	chunks := []map[string]any{{"text": []any{"bad-shape"}}}
-	// Should not panic — MustGetChunkTextString returns "" and chunk ID
-	// falls back via content_with_weight or uses empty text.
+	// Multiple chunks with non-string text should get unique IDs
+	chunks := []map[string]any{
+		{"text": []any{"bad-shape"}},
+		{"text": []any{"bad-shape"}},
+	}
 	result := ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
 	if result == nil {
 		t.Fatal("expected metadata, got nil")
+	}
+	// Each chunk must have a unique ID — empty-content chunks should not collide
+	id0 := chunks[0]["id"].(string)
+	id1 := chunks[1]["id"].(string)
+	if id0 == id1 {
+		t.Errorf("expected unique chunk IDs for empty-content chunks, got %q and %q", id0, id1)
 	}
 }
 
