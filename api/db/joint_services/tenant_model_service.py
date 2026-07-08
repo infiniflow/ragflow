@@ -437,6 +437,17 @@ def get_api_key(tenant_id: str, model_name: str):
     instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
     return instance_obj.api_key
 
+def get_model_type_by_id(model_id: str):
+    exist, model_obj = TenantModelService.get_by_id(model_id)
+    if not exist:
+        raise LookupError(f"TenantModel id={model_id} not found.")
+    return get_model_type_human(model_obj.model_type)
+
+def resolve_model_type(tenant_id: str, model_ref: str):
+    try:
+        return get_model_type_by_id(model_ref)
+    except LookupError:
+        return get_model_type_by_name(tenant_id, model_ref)
 
 def get_model_type_by_name(tenant_id: str, model_name: str):
     pure_model_name, instance_name, provider_name = split_model_name(model_name)

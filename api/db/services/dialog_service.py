@@ -39,7 +39,7 @@ from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
 )
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config, get_model_type_by_name, get_model_config_by_id
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config, resolve_model_type, get_model_config_by_id
 from common.time_utils import current_timestamp, datetime_format
 from common.text_utils import normalize_arabic_digits
 from rag.advanced_rag.knowlege_compile.mind_map_extractor import MindMapExtractor
@@ -295,19 +295,19 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
     if dialog.llm_id:
         if dialog.tenant_llm_id:
             try:
-                llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+                llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
                 if "chat" in llm_types:
                     model_config = get_model_config_by_id(dialog.tenant_id, dialog.tenant_llm_id)
                 else:
                     model_config = resolve_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
             except LookupError:
-                llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+                llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
                 if "chat" in llm_types:
                     model_config = resolve_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
                 else:
                     model_config = resolve_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
         else:
-            llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+            llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
             if "chat" in llm_types:
                 model_config = resolve_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
             else:
@@ -583,19 +583,19 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     if dialog.llm_id:
         if dialog.tenant_llm_id:
             try:
-                llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+                llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
                 if "chat" in llm_types:
                     llm_model_config = get_model_config_by_id(dialog.tenant_id, dialog.tenant_llm_id)
                 else:
                     llm_model_config = resolve_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
             except LookupError:
-                llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+                llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
                 if "chat" in llm_types:
                     llm_model_config = resolve_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
                 else:
                     llm_model_config = resolve_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
         else:
-            llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+            llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
             if "chat" in llm_types:
                 llm_model_config = resolve_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
             else:

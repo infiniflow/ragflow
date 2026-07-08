@@ -27,7 +27,7 @@ import json_repair
 
 from agent.component.llm import LLM, LLMParam
 from agent.tools.base import LLMToolPluginCallSession, ToolBase, ToolMeta, ToolParamBase
-from api.db.joint_services.tenant_model_service import get_model_type_by_name, resolve_model_config
+from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_type
 from api.db.services.llm_service import LLMBundle
 from api.db.services.mcp_server_service import MCPServerService
 from common.connection_utils import timeout
@@ -82,7 +82,7 @@ class Agent(LLM, ToolBase):
             original_name = cpn.get_meta()["function"]["name"]
             indexed_name = f"{original_name}_{idx}"
             self.tools[indexed_name] = cpn
-        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
+        model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
         model_type = "chat" if "chat" in model_types else model_types[0]
         chat_model_config = resolve_model_config(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
         self.chat_mdl = LLMBundle(

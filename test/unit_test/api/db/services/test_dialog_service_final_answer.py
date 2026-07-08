@@ -400,7 +400,7 @@ def test_async_chat_final_event_carries_decorated_answer(monkeypatch):
     retriever = _StubRetriever()
 
     # Stub out the heavy service/model calls
-    monkeypatch.setattr(dialog_service, "get_model_type_by_name", lambda _tid, _llm_id: ["chat"])
+    monkeypatch.setattr(dialog_service, "resolve_model_type", lambda _tid, _llm_id: ["chat"])
     monkeypatch.setattr(
         dialog_service,
         "get_model_config_from_provider_instance",
@@ -452,7 +452,7 @@ def test_async_chat_langfuse_uses_start_observation(monkeypatch):
     chat_mdl = _StreamingChatModel(llm_answer)
     retriever = _StubRetriever()
 
-    monkeypatch.setattr(dialog_service, "get_model_type_by_name", lambda _tid, _llm_id: ["chat"])
+    monkeypatch.setattr(dialog_service, "resolve_model_type", lambda _tid, _llm_id: ["chat"])
     monkeypatch.setattr(
         dialog_service,
         "get_model_config_from_provider_instance",
@@ -515,7 +515,7 @@ def test_async_chat_langfuse_observation_includes_session_id(monkeypatch):
     chat_mdl = _StreamingChatModel("Session traces should be grouped.")
     retriever = _StubRetriever()
 
-    monkeypatch.setattr(dialog_service, "get_model_type_by_name", lambda _tid, _llm_id: ["chat"])
+    monkeypatch.setattr(dialog_service, "resolve_model_type", lambda _tid, _llm_id: ["chat"])
     monkeypatch.setattr(
         dialog_service,
         "get_model_config_from_provider_instance",
@@ -614,7 +614,7 @@ def test_async_chat_continues_when_langfuse_observation_start_fails(monkeypatch)
     chat_mdl = _StreamingChatModel(llm_answer)
     retriever = _StubRetriever()
 
-    monkeypatch.setattr(dialog_service, "get_model_type_by_name", lambda _tid, _llm_id: ["chat"])
+    monkeypatch.setattr(dialog_service, "resolve_model_type", lambda _tid, _llm_id: ["chat"])
     monkeypatch.setattr(
         dialog_service,
         "get_model_config_from_provider_instance",

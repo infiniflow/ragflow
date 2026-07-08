@@ -33,7 +33,7 @@ from urllib.request import Request, urlopen
 from agent.component.base import ComponentBase
 from agent.component.llm import LLMParam
 from api.db import FileType
-from api.db.joint_services.tenant_model_service import get_model_type_by_name, resolve_model_config
+from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_type
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
 from api.utils.file_utils import filename_type
@@ -402,7 +402,7 @@ class Browser(ComponentBase, ABC):
 
         chat_model_config = resolve_model_config(
             self._canvas.get_tenant_id(),
-            get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id),
+            resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id),
             self._param.llm_id,
         )
         cfg = self._as_model_config_dict(chat_model_config)
