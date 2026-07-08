@@ -53,6 +53,17 @@ func (e *embedder) Encode(texts []string) ([][]float64, error) {
 	return vecs, nil
 }
 
+// init configures the package-level EncodeFunc used by dataflow pipelines.
+func init() {
+	componentpkg.EncodeFunc = func(tenantID, embdID string) componentpkg.Embedder {
+		model, err := service.NewModelProviderService().GetEmbeddingModel(tenantID, embdID)
+		if err != nil {
+			return nil
+		}
+		return &embedder{model: model}
+	}
+}
+
 type ProgressFunc func(prog float64, msg string)
 
 type docService interface {
@@ -280,6 +291,13 @@ func (s *PipelineExecutor) RunDataflow(ctx context.Context, pipelineOutput map[s
 		}
 	}
 
+	// Generate embeddings before indexing so chunks are inserted with vectors
+	// for semantic/vector search.
+	chunks, embeddingTokenConsumption, err := s.embedChunks(ctx, chunks, embeddingTokenConsumption)
+	if err != nil {
+		return err
+	}
+
 	indexStart := time.Now()
 	s.progress(0.82, "[DOC Engine]:\nStart to index...")
 	if err := s.insertChunks(ctx, chunks); err != nil {
@@ -500,16 +518,6 @@ func (s *PipelineExecutor) defaultRunPipeline(ctx context.Context, dsl string) (
 	if s == nil || s.taskCtx == nil {
 		return nil, dsl, fmt.Errorf("dataflow service: nil task context")
 	}
-
-	prevEncode := componentpkg.EncodeFunc
-	componentpkg.EncodeFunc = func(tenantID, embdID string) componentpkg.Embedder {
-		model, err := s.getEmbeddingModelFunc(tenantID, embdID)
-		if err != nil {
-			return nil
-		}
-		return &embedder{model: model}
-	}
-	defer func() { componentpkg.EncodeFunc = prevEncode }()
 
 	// Use doc ID as pipeline ID if available, otherwise a placeholder
 	pipelineID := "pipeline_" + s.taskCtx.Doc.ID

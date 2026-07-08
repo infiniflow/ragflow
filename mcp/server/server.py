@@ -739,7 +739,10 @@ def create_starlette_app():
         sse = SseServerTransport("/messages/")
 
         async def handle_sse(request):
-            async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+            send = getattr(request, "_send", None)
+            if send is None:
+                return Response("Internal Server Error", status_code=500)
+            async with sse.connect_sse(request.scope, request.receive, send) as streams:
                 await app.run(streams[0], streams[1], app.create_initialization_options(experimental_capabilities={"headers": dict(request.headers)}))
             return Response()
 

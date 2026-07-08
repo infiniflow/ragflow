@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 from agent.component.base import ComponentBase, ComponentParamBase
 import deepl
@@ -79,13 +80,14 @@ class DeepLParam(ComponentParamBase):
 class DeepL(ComponentBase, ABC):
     component_name = "DeepL"
 
-    def _run(self, history, **kwargs):
+    def _invoke(self, **kwargs):
         if self.check_if_canceled("DeepL processing"):
             return
         ans = self.get_input()
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not ans:
-            return DeepL.be_output("")
+            self.set_output("content", "")
+            return
 
         if self.check_if_canceled("DeepL processing"):
             return
@@ -94,8 +96,11 @@ class DeepL(ComponentBase, ABC):
             translator = deepl.Translator(self._param.auth_key)
             result = translator.translate_text(ans, source_lang=self._param.source_lang, target_lang=self._param.target_lang)
 
-            return DeepL.be_output(result.text)
+            self.set_output("content", result.text)
+            return
         except Exception as e:
             if self.check_if_canceled("DeepL processing"):
                 return
-            return DeepL.be_output("**Error**:" + str(e))
+            logging.exception(f"DeepL error: {e}")
+            self.set_output("_ERROR", str(e))
+            return

@@ -138,7 +138,7 @@ func ProcessChunksForDataflow(
 	timeStr := now.Format("2006-01-02 15:04:05")
 	timestamp := float64(now.UnixMicro()) / 1e6
 
-	for _, ck := range chunks {
+	for i, ck := range chunks {
 		ck["doc_id"] = docID
 		ck["kb_id"] = []string{kbID}
 		ck["docnm_kwd"] = docName
@@ -147,6 +147,17 @@ func ProcessChunksForDataflow(
 
 		if _, exists := ck["id"]; !exists {
 			text := MustGetChunkTextString(ck, "ProcessChunksForDataflow")
+			if text == "" {
+				// Fallback: use content_with_weight if text is missing or malformed
+				if cwt, ok := ck["content_with_weight"].(string); ok && cwt != "" {
+					text = cwt
+				}
+			}
+			if text == "" {
+				// Avoid duplicate IDs: multiple empty-content chunks
+				// would produce the same ChunkID("", docID).
+				text = fmt.Sprintf("position_%d", i)
+			}
 			ck["id"] = ChunkID(text, docID)
 		}
 

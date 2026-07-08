@@ -65,6 +65,16 @@ In addition to MEDLINE, PubMed provides access to:
 class PubMed(ToolBase, ABC):
     component_name = "PubMed"
 
+    @staticmethod
+    def _safe_find(child, path):
+        """Safely navigate XML ElementTree paths with None guarding."""
+        node = child
+        for p in path.split("/"):
+            if node is None:
+                return None
+            node = node.find(p)
+        return node.text if node is not None and node.text else None
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("PubMed processing"):
@@ -93,8 +103,8 @@ class PubMed(ToolBase, ABC):
 
                 self._retrieve_chunks(
                     pubmedcnt.findall("PubmedArticle"),
-                    get_title=lambda child: child.find("MedlineCitation").find("Article").find("ArticleTitle").text,
-                    get_url=lambda child: "https://pubmed.ncbi.nlm.nih.gov/" + child.find("MedlineCitation").find("PMID").text,
+                    get_title=lambda child: self._safe_find(child, "MedlineCitation/Article/ArticleTitle") or "Untitled",
+                    get_url=lambda child: "https://pubmed.ncbi.nlm.nih.gov/" + (self._safe_find(child, "MedlineCitation/PMID") or ""),
                     get_content=lambda child: self._format_pubmed_content(child),
                 )
                 return self.output("formalized_content")
@@ -115,26 +125,18 @@ class PubMed(ToolBase, ABC):
     def _format_pubmed_content(self, child):
         """Extract structured reference info from PubMed XML"""
 
-        def safe_find(path, base=None):
-            node = child if base is None else base
-            for p in path.split("/"):
-                if node is None:
-                    return None
-                node = node.find(p)
-            return node.text if node is not None and node.text else None
-
-        title = safe_find("MedlineCitation/Article/ArticleTitle") or "No title"
-        abstract = safe_find("MedlineCitation/Article/Abstract/AbstractText") or "No abstract available"
-        journal = safe_find("MedlineCitation/Article/Journal/Title") or "Unknown Journal"
-        volume = safe_find("MedlineCitation/Article/Journal/JournalIssue/Volume") or "-"
-        issue = safe_find("MedlineCitation/Article/Journal/JournalIssue/Issue") or "-"
-        pages = safe_find("MedlineCitation/Article/Pagination/MedlinePgn") or "-"
+        title = self._safe_find(child, "MedlineCitation/Article/ArticleTitle") or "No title"
+        abstract = self._safe_find(child, "MedlineCitation/Article/Abstract/AbstractText") or "No abstract available"
+        journal = self._safe_find(child, "MedlineCitation/Article/Journal/Title") or "Unknown Journal"
+        volume = self._safe_find(child, "MedlineCitation/Article/Journal/JournalIssue/Volume") or "-"
+        issue = self._safe_find(child, "MedlineCitation/Article/Journal/JournalIssue/Issue") or "-"
+        pages = self._safe_find(child, "MedlineCitation/Article/Pagination/MedlinePgn") or "-"
 
         # Authors
         authors = []
         for author in child.findall(".//AuthorList/Author"):
-            lastname = safe_find("LastName", author) or ""
-            forename = safe_find("ForeName", author) or ""
+            lastname = self._safe_find(author, "LastName") or ""
+            forename = self._safe_find(author, "ForeName") or ""
             fullname = f"{forename} {lastname}".strip()
             if fullname:
                 authors.append(fullname)
