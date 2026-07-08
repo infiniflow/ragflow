@@ -1289,15 +1289,12 @@ type documentParsePageRange struct {
 }
 
 func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (common.ErrorCode, error) {
-	common.Warn(fmt.Sprintf("go side, ingest, delete: %t", req.Delete))
 	run := fmt.Sprint(req.Run)
-	common.Warn("go side, ingest:run " + run)
 
 	docs, err := s.documentDAO.GetByIDs(req.DocIDs)
 	if err != nil {
 		return common.CodeExceptionError, fmt.Errorf("fail to get documents: %s", err.Error())
 	}
-	common.Warn("go side, ingest for doc " + docs[0].ID)
 
 	docsByID := make(map[string]*entity.Document, len(docs))
 	for _, doc := range docs {
@@ -1309,7 +1306,6 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 	tableDoneCountByKB := make(map[string]int64)
 
 	for _, docID := range req.DocIDs {
-		common.Warn(fmt.Sprintf("go side, start to process %s", docID))
 		doc := docsByID[docID]
 		if doc == nil {
 			return common.CodeDataError, fmt.Errorf("document not found")
@@ -1397,14 +1393,12 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 				}
 			}
 			if doc.PipelineID != nil && strings.TrimSpace(*doc.PipelineID) != "" {
-				common.Warn(fmt.Sprintf("go side, doc %s, PipelineID %s", docID, *doc.PipelineID))
 				if err := s.queueDocumentDataflowTask(kb, doc, strings.TrimSpace(*doc.PipelineID), 0); err != nil {
 					return common.CodeExceptionError, err
 				}
 				continue
 			}
 			if doc.ParserID == string(entity.ParserTypeTable) {
-				common.Warn(fmt.Sprintf("go side, doc %s, ParserID %s", docID, doc.ParserID))
 				doneCount, ok := tableDoneCountByKB[doc.KbID]
 				if !ok {
 					count, err := s.countDoneDocuments(doc.KbID)
@@ -2100,7 +2094,6 @@ func (s *DocumentService) cancelDocParse(doc *entity.Document) error {
 			break
 		}
 	}
-	common.Warn(fmt.Sprintf("doc %s, hasUnfinishedTask:%t", doc.ID, hasUnfinishedTask))
 
 	canCancel := false
 	if doc.Run != nil {
@@ -2112,7 +2105,6 @@ func (s *DocumentService) cancelDocParse(doc *entity.Document) error {
 		canCancel = true
 	}
 	if !canCancel {
-		common.Warn(fmt.Sprintf("doc %s, hasUnfinishedTask:%t, canCancel:%t", doc.ID, hasUnfinishedTask, canCancel))
 		return fmt.Errorf("can't stop parsing document that has not started or already completed")
 	}
 
