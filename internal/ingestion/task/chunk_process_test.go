@@ -259,14 +259,34 @@ func TestProcessChunksForDataflow_GeneratesID(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForDataflow_PanicOnListText(t *testing.T) {
-	chunks := []map[string]any{{"text": []any{"bad-shape"}}}
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic for list-shaped text")
-		}
-	}()
+func TestProcessChunksForDataflow_NonStringTextFallback(t *testing.T) {
+	// Multiple chunks with non-string text should get unique IDs
+	chunks := []map[string]any{
+		{"text": []any{"bad-shape"}},
+		{"text": []any{"bad-shape"}},
+	}
+	result := ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	if result == nil {
+		t.Fatal("expected metadata, got nil")
+	}
+	// Each chunk must have a unique ID — empty-content chunks should not collide
+	id0 := chunks[0]["id"].(string)
+	id1 := chunks[1]["id"].(string)
+	if id0 == id1 {
+		t.Errorf("expected unique chunk IDs for empty-content chunks, got %q and %q", id0, id1)
+	}
+}
+
+func TestProcessChunksForDataflow_ContentWithWeightFallbackForID(t *testing.T) {
+	// When text is missing but content_with_weight is present, use it for chunk ID
+	chunks := []map[string]any{{
+		"text":                "",
+		"content_with_weight": "fallback-content",
+	}}
 	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	if id, ok := chunks[0]["id"].(string); !ok || id == "" {
+		t.Errorf("expected non-empty chunk ID from content_with_weight fallback, got %q", id)
+	}
 }
 
 func TestProcessChunksForDataflow_RemovesInternalPipelineFields(t *testing.T) {
