@@ -301,6 +301,60 @@ def by_paddleocr(
     return None, None, None
 
 
+def by_somark(
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=MAXIMUM_PAGE_NUMBER,
+    lang="Chinese",
+    callback=None,
+    pdf_cls=None,
+    parse_method: str = "raw",
+    somark_llm_name: str | None = None,
+    tenant_id: str | None = None,
+    **kwargs,
+):
+    pdf_parser = None
+    if tenant_id:
+        if not somark_llm_name:
+            try:
+                from api.db.joint_services.tenant_model_service import ensure_somark_from_env
+
+                somark_llm_name = ensure_somark_from_env(tenant_id)
+            except Exception as e:
+                logging.warning(f"fallback to env somark: {e}")
+
+        if somark_llm_name:
+            try:
+                try:
+                    ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, somark_llm_name)
+                except Exception:
+                    if "@" in somark_llm_name:
+                        raise
+                    from api.db.services.tenant_llm_service import TenantLLMService
+
+                    ocr_model_config = TenantLLMService.get_model_config(tenant_id, LLMType.OCR.value, somark_llm_name)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
+                pdf_parser = ocr_model.mdl
+                sections, tables = pdf_parser.parse_pdf(
+                    filepath=filename,
+                    binary=binary,
+                    callback=callback,
+                    parse_method=parse_method,
+                    **kwargs,
+                )
+                return sections, tables, pdf_parser
+            except Exception as e:
+                logging.error(f"Failed to parse pdf via LLMBundle SoMark ({somark_llm_name}): {e}")
+                if callback:
+                    callback(-1, f"Failed to parse pdf via SoMark ({somark_llm_name}): {e}")
+                return None, None, None
+
+    if callback:
+        callback(-1, "SoMark not found.")
+    return None, None, None
+
+
 def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None, **kwargs):
     layout_recognizer = (kwargs.get("layout_recognizer") or "").strip()
     if (not layout_recognizer) or (layout_recognizer == "Plain Text"):
@@ -328,6 +382,7 @@ PARSERS = {
     "opendataloader": by_opendataloader,
     "tcadp parser": by_tcadp,
     "paddleocr": by_paddleocr,
+    "somark": by_somark,
     "plaintext": by_plaintext,  # default
 }
 
@@ -781,6 +836,7 @@ class Markdown(MarkdownParser):
         return images, cache
 
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
+        """Parse markdown into text sections and optional standalone table chunks."""
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
@@ -789,10 +845,9 @@ class Markdown(MarkdownParser):
                 txt = f.read()
 
         remainder, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
-        # To eliminate duplicate tables in chunking result, uncomment code below and set separate_tables to True in line 410.
-        # extractor = MarkdownElementExtractor(remainder)
-        extractor = MarkdownElementExtractor(txt)
-        image_refs = self.extract_image_urls_with_lines(txt)
+        parsing_text = remainder if separate_tables else txt
+        extractor = MarkdownElementExtractor(parsing_text)
+        image_refs = self.extract_image_urls_with_lines(parsing_text)
         element_sections = extractor.extract_elements(delimiter, include_meta=True)
 
         sections = []
@@ -954,6 +1009,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             mineru_llm_name=parser_model_name,
             paddleocr_llm_name=parser_model_name,
             opendataloader_llm_name=opendataloader_llm_name,
+            somark_llm_name=parser_model_name,
             **kwargs,
         )
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
@@ -964,7 +1020,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if table_context_size or image_context_size:
             tables = append_context2table_image4pdf(sections, tables, image_context_size)
 
-        if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader"]:
+        if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark"]:
             if int(parser_config.get("chunk_token_num", 0)) <= 0:
                 parser_config["chunk_token_num"] = 0
 
@@ -1017,7 +1073,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         sections, tables, section_images = markdown_parser(
             filename,
             binary,
-            separate_tables=False,
+            separate_tables=True,
             delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
             return_section_images=True,
         )

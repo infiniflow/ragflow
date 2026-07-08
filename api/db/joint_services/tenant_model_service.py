@@ -18,7 +18,7 @@ import os
 import enum
 import json
 from common import settings
-from common.constants import ActiveStatusEnum, LLMType, MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS
+from common.constants import ActiveStatusEnum, LLMType, MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS, SOMARK_DEFAULT_CONFIG, SOMARK_ENV_KEYS
 from api.db.services.tenant_llm_service import TenantService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
@@ -178,6 +178,32 @@ def split_model_name(model_name: str):
     return pure_model_name, instance_name, provider_name
 
 
+def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: str):
+    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
+    if instance_obj:
+        return instance_obj
+    if instance_name != "default":
+        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+
+    active_instances = [
+        inst for inst in TenantModelInstanceService.get_all_by_provider_id(provider_obj.id)
+        if inst.status == ActiveStatusEnum.ACTIVE.value
+    ]
+    if len(active_instances) == 1:
+        logger.warning(
+            "Model instance fallback applied for legacy default instance name",
+            extra={
+                "provider_name": provider_obj.provider_name,
+                "requested_instance_name": instance_name,
+                "resolved_instance_name": active_instances[0].instance_name,
+                "model_name": model_name,
+            },
+        )
+        return active_instances[0]
+
+    raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+
+
 def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum, model_name: str):
     pure_model_name, instance_name, provider_name = split_model_name(model_name)
     model_type_val = model_type if isinstance(model_type, str) else model_type.value
@@ -203,29 +229,30 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
-    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
-    if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, pure_model_name)
 
     api_key, is_tool, api_key_payload = _decode_api_key_config(instance_obj.api_key)
     extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
 
     if model_obj:
+        model_extra_fields = json.loads(model_obj.extra) if model_obj.extra else {}
         if model_obj.status == ActiveStatusEnum.INACTIVE.value:
             raise LookupError(f"Model {model_name} is disabled.")
         if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value:
             raise LookupError(f"Model {model_name} cannot be used as {model_type_val} model.")
 
-        model_extra = json.loads(model_obj.extra) if model_obj.extra else {}
         model_config = {
             "llm_factory": provider_obj.provider_name,
             "api_key": api_key,
             "llm_name": model_obj.model_name,
             "api_base": extra_fields.get("base_url", ""),
             "model_type": model_obj.model_type,
-            "is_tools": model_extra.get("is_tools", is_tool),
-            "max_tokens": model_extra.get("max_tokens", 8192),
+            "is_tools": model_extra_fields.get("is_tools", is_tool),
+            "max_tokens": model_extra_fields.get("max_tokens", 8192),
+            # SoMark/OCR factories read parser config (somark_*, parse_method, ...)
+            # from model_config["extra"]; see tenant_llm_service.LLMBundle OCR path.
+            "extra": model_extra_fields.get("ocr_config", model_extra_fields),
         }
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload
@@ -242,7 +269,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
             raise LookupError(f"Model provider config not found: {provider_name}")
         llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
         if not llm_list:
-            raise LookupError(f"Model config not found: {model_name}")
+            raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
         llm_info = llm_list[0]
         if model_type_val not in _factory_model_types(llm_info):
             raise LookupError(f"Model {model_name} is not a {model_type_val} model.")
@@ -268,9 +295,7 @@ def get_api_key(tenant_id: str, model_name: str):
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found.")
-    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
-    if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found.")
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
     return instance_obj.api_key
 
 
@@ -279,9 +304,7 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
-    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
-    if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
     model_objs = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
     types_in_json = []
     if not model_objs:
@@ -315,6 +338,15 @@ def ensure_opendataloader_from_env(tenant_id: str) -> str | None:
         "OpenDataLoader",
         "opendataloader-from-env",
         _collect_env_config(OPENDATALOADER_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG),
+    )
+
+
+def ensure_somark_from_env(tenant_id: str) -> str | None:
+    return _ensure_ocr_provider_from_env(
+        tenant_id,
+        "SoMark",
+        "somark-from-env",
+        _collect_env_config(SOMARK_ENV_KEYS, SOMARK_DEFAULT_CONFIG),
     )
 
 

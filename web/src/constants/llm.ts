@@ -68,10 +68,12 @@ export enum LLMFactory {
   MinerU = 'MinerU',
   PaddleOCR = 'PaddleOCR',
   OpenDataLoader = 'OpenDataLoader',
+  SoMark = 'SoMark',
   N1n = 'n1n',
   Avian = 'Avian',
   RAGcon = 'RAGcon',
   Perplexity = 'Perplexity',
+  NewAPI = 'New API',
 }
 
 // Please lowercase the file name
@@ -143,6 +145,8 @@ export const IconMap = {
   [LLMFactory.Avian]: 'avian',
   [LLMFactory.RAGcon]: 'ragcon',
   [LLMFactory.Perplexity]: 'perplexity',
+  [LLMFactory.SoMark]: 'somark',
+  [LLMFactory.NewAPI]: 'new-api',
 };
 
 export const ModelTypeToField: Record<string, string> = {
@@ -212,6 +216,7 @@ export const APIMapUrl = {
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
   [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.SoMark]: 'https://somark.cn/workbench/apikey',
   [LLMFactory.N1n]: 'https://docs.n1n.ai',
   [LLMFactory.Avian]: 'https://avian.io',
   [LLMFactory.Perplexity]:

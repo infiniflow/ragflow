@@ -7,22 +7,23 @@ import {
   useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
 import { IInstanceModel, IProviderInstance } from '@/interfaces/database/llm';
-import {
+import type {
   IAddProviderInstanceRequestBody,
   IModelInfo,
 } from '@/interfaces/request/llm';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isLocalLlmFactory } from '../utils';
 import SystemSetting from './components/system-setting';
 import { AvailableModels } from './components/un-add-model';
 import { UsedModel } from './components/used-model';
-import { useSubmitBedrock } from './hooks';
+import { useSubmitBedrock, useSubmitSoMark, useVerifySettings } from './hooks';
 import BedrockModal from './modal/bedrock-modal';
 import ProviderModal, { IViewModeOkPayload } from './modal/provider-modal';
+import SoMarkModal from './modal/somark-modal';
 import { splitProviderPayload } from './payload-utils';
 
 const ModelProviders = () => {
-  // 4 retained special modals
+  // Retained special modals
   const {
     bedrockAddingLoading,
     onBedrockAddingOk,
@@ -140,6 +141,12 @@ const ModelProviders = () => {
     [addProviderInstance, addInstanceModel],
   );
 
+  useEffect(() => {
+    if (!providerVisible) {
+      setProviderLoading(false);
+    }
+  }, [providerVisible]);
+
   const handleProviderVerify = useCallback(
     async (params: any) => {
       // ProviderModal's handleVerify flattens verifyArgs onto params
@@ -163,6 +170,14 @@ const ModelProviders = () => {
     },
     [verifyProviderConnection, currentLlmFactory],
   );
+
+  const {
+    somarkVisible,
+    hideSoMarkModal,
+    showSoMarkModal,
+    onSoMarkOk,
+    somarkLoading,
+  } = useSubmitSoMark();
 
   const ModalMap = useMemo(
     () => ({
@@ -207,8 +222,9 @@ const ModelProviders = () => {
         setCurrentLlmFactory(LLMFactory.OpenDataLoader);
         setProviderVisible(true);
       },
+      [LLMFactory.SoMark]: showSoMarkModal,
     }),
-    [showBedrockAddingModal],
+    [showBedrockAddingModal, showSoMarkModal],
   );
 
   const handleAddModel = useCallback(
@@ -341,6 +357,10 @@ const ModelProviders = () => {
     setViewMode(false);
   }, []);
 
+  const { onApiKeyVerifying: onSoMarkVerifying } = useVerifySettings({
+    onVerify: onSoMarkOk,
+  });
+
   return (
     <div className="flex w-full border-[0.5px] border-border-button rounded-lg relative ">
       <Spotlight />
@@ -354,7 +374,6 @@ const ModelProviders = () => {
       <section className="flex flex-col w-2/5 overflow-auto scrollbar-auto">
         <AvailableModels handleAddModel={handleAddModel} />
       </section>
-
       {/* Unified ProviderModal (replaces 9 independent modals) */}
       <ProviderModal
         visible={providerVisible}
@@ -368,7 +387,6 @@ const ModelProviders = () => {
         onVerify={handleProviderVerify}
         onViewModeOk={handleViewModeOk}
       />
-
       <BedrockModal
         visible={bedrockAddingVisible}
         hideModal={hideBedrockAddingModal}
@@ -377,6 +395,13 @@ const ModelProviders = () => {
         llmFactory={LLMFactory.Bedrock}
         onVerify={(payload) => onBedrockAddingOk(payload, true)}
       ></BedrockModal>
+      <SoMarkModal
+        visible={somarkVisible}
+        hideModal={hideSoMarkModal}
+        onOk={onSoMarkOk}
+        loading={somarkLoading}
+        onVerify={onSoMarkVerifying}
+      ></SoMarkModal>
     </div>
   );
 };
