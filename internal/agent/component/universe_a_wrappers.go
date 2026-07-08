@@ -53,11 +53,15 @@ import (
 // The underlying tool makes a real HTTP call; the wrapper is the
 // canvas-facing surface.
 type tavilySearchComponent struct {
-	inner *agenttool.TavilyTool
+	inner  *agenttool.TavilyTool
+	apiKey string
 }
 
-func newTavilySearchComponent(_ map[string]any) (Component, error) {
-	return &tavilySearchComponent{inner: agenttool.NewTavilyTool()}, nil
+func newTavilySearchComponent(params map[string]any) (Component, error) {
+	return &tavilySearchComponent{
+		inner:  agenttool.NewTavilyTool(),
+		apiKey: stringParam(params["api_key"]),
+	}, nil
 }
 
 func (c *tavilySearchComponent) Name() string { return "TavilySearch" }
@@ -88,6 +92,9 @@ func (c *tavilySearchComponent) GetInputForm() map[string]any {
 }
 
 func (c *tavilySearchComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	if c.apiKey != "" && stringParam(inputs["api_key"]) == "" {
+		inputs["api_key"] = c.apiKey
+	}
 	if strings.TrimSpace(stringParam(inputs["query"])) == "" {
 		return map[string]any{"formalized_content": "", "json": []any{}}, nil
 	}
@@ -117,11 +124,15 @@ func (c *tavilySearchComponent) Stream(_ context.Context, _ map[string]any) (<-c
 
 // tavilyExtractComponent delegates to internal/agent/tool/TavilyExtractTool.
 type tavilyExtractComponent struct {
-	inner *agenttool.TavilyExtractTool
+	inner  *agenttool.TavilyExtractTool
+	apiKey string
 }
 
-func newTavilyExtractComponent(_ map[string]any) (Component, error) {
-	return &tavilyExtractComponent{inner: agenttool.NewTavilyExtractTool()}, nil
+func newTavilyExtractComponent(params map[string]any) (Component, error) {
+	return &tavilyExtractComponent{
+		inner:  agenttool.NewTavilyExtractTool(),
+		apiKey: stringParam(params["api_key"]),
+	}, nil
 }
 
 func (c *tavilyExtractComponent) Name() string { return "TavilyExtract" }
@@ -151,6 +162,10 @@ func (c *tavilyExtractComponent) Outputs() map[string]string {
 }
 
 func (c *tavilyExtractComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	if c.apiKey != "" && stringParam(inputs["api_key"]) == "" {
+		inputs["api_key"] = c.apiKey
+	}
+
 	argsJSON, _ := json.Marshal(inputs)
 	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
 	decoded := parseToolEnvelope(out)
@@ -175,15 +190,20 @@ type bgptInvoker interface {
 // bgptComponent delegates to internal/agent/tool/BGPTTool and adapts
 // the tool envelope to the BGPT canvas output contract.
 type bgptComponent struct {
-	inner bgptInvoker
+	inner  bgptInvoker
+	apiKey string
 }
 
-func newBGPTComponent(_ map[string]any) (Component, error) {
-	return newBGPTComponentWithInvoker(agenttool.NewBGPTTool()), nil
+func newBGPTComponent(params map[string]any) (Component, error) {
+	return newBGPTComponentWithInvoker(agenttool.NewBGPTTool(), stringParam(params["api_key"])), nil
 }
 
-func newBGPTComponentWithInvoker(inner bgptInvoker) Component {
-	return &bgptComponent{inner: inner}
+func newBGPTComponentWithInvoker(inner bgptInvoker, apiKey ...string) Component {
+	c := &bgptComponent{inner: inner}
+	if len(apiKey) > 0 {
+		c.apiKey = apiKey[0]
+	}
+	return c
 }
 
 func (c *bgptComponent) Name() string { return "BGPT" }
@@ -214,6 +234,10 @@ func (c *bgptComponent) Outputs() map[string]string {
 }
 
 func (c *bgptComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	if c.apiKey != "" && stringParam(inputs["api_key"]) == "" {
+		inputs["api_key"] = c.apiKey
+	}
+
 	query := strings.TrimSpace(stringParam(inputs["query"]))
 	if query == "" {
 		return map[string]any{"formalized_content": "", "json": []any{}}, nil

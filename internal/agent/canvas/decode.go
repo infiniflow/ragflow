@@ -59,12 +59,14 @@ func DecodeFromDSL(dsl map[string]any) (*Canvas, error) {
 			}
 		}
 	}
+	nodeForms := decodeGraphNodeForms(dsl)
 	for cpnID, raw := range rawComps {
 		comp, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
 		name, params, downstream, upstream := decodeComponentFields(comp)
+		params = mergeNodeFormParams(params, nodeForms[cpnID])
 		if name == "" {
 			return nil, fmt.Errorf("canvas: component %q has empty component_name", cpnID)
 		}
@@ -116,6 +118,65 @@ func decodeComponentFields(comp map[string]any) (name string, params map[string]
 		upstream = us
 	}
 	return
+}
+
+func decodeGraphNodeForms(dsl map[string]any) map[string]map[string]any {
+	graph, ok := dsl["graph"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	nodes, ok := graph["nodes"].([]any)
+	if !ok || len(nodes) == 0 {
+		return nil
+	}
+	forms := make(map[string]map[string]any)
+	for _, raw := range nodes {
+		node, ok := raw.(map[string]any)
+		if !ok || node == nil {
+			continue
+		}
+		id, _ := node["id"].(string)
+		if id == "" {
+			continue
+		}
+		data, _ := node["data"].(map[string]any)
+		form, _ := data["form"].(map[string]any)
+		if len(form) == 0 {
+			continue
+		}
+		forms[id] = form
+	}
+	return forms
+}
+
+func mergeNodeFormParams(params, form map[string]any) map[string]any {
+	if len(form) == 0 {
+		return params
+	}
+	merged := make(map[string]any, len(params)+1)
+	for k, v := range params {
+		merged[k] = v
+	}
+	if shouldFillParamFromForm(merged["api_key"], form["api_key"]) {
+		merged["api_key"] = form["api_key"]
+	}
+	return merged
+}
+
+func shouldFillParamFromForm(current, form any) bool {
+	if form == nil {
+		return false
+	}
+	if current == nil {
+		return true
+	}
+	if s, ok := current.(string); ok && s == "" {
+		if fs, ok := form.(string); ok {
+			return fs != ""
+		}
+		return true
+	}
+	return false
 }
 
 func decodeStringSlice(in []any) []string {
