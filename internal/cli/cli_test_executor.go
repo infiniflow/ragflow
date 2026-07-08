@@ -51,19 +51,14 @@ type TestSuite struct {
 func (c *CLI) RunTestSuite(testSuite *TestSuite) error {
 	fmt.Printf("=== Test Suite: %s ===\n", testSuite.Suite)
 
-	apiServerName := "api"
+	// Add servers
 	apiServerAddress := fmt.Sprintf("%s:%d", testSuite.APIIP, testSuite.APIPort)
-	command := fmt.Sprintf("add api '%s' host '%s'", apiServerName, apiServerAddress)
-	_, err := c.execute(command, false)
-	if err != nil {
-		return fmt.Errorf("failed to add API server: %v", err)
-	}
-
 	adminServerAddress := fmt.Sprintf("%s:%d", testSuite.AdminIP, testSuite.AdminPort)
-	command = fmt.Sprintf("add admin host '%s'", adminServerAddress)
-	_, err = c.execute(command, false)
+
+	// Add API and admin server
+	err := c.addServers(apiServerAddress, adminServerAddress)
 	if err != nil {
-		return fmt.Errorf("failed to add ADMIN server: %v", err)
+		return err
 	}
 
 	// Run tear up commands
@@ -71,7 +66,7 @@ func (c *CLI) RunTestSuite(testSuite *TestSuite) error {
 	for _, cmd := range testSuite.TearUp {
 		// Switch server
 		if cmd.Server == "api" {
-			err = c.SwitchAPIServer(apiServerName)
+			err = c.SwitchAPIServer("api")
 			if err != nil {
 				return err
 			}
@@ -86,6 +81,14 @@ func (c *CLI) RunTestSuite(testSuite *TestSuite) error {
 		_, err = c.execute(cmd.Command, false)
 		if err != nil {
 			return fmt.Errorf("failed to run tear up command: %v", err)
+		}
+	}
+
+	for _, test := range testSuite.Tests {
+		fmt.Printf("=== Test: %s ===\n", test.Test)
+		_, err = c.execute(test.Command, false)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -134,6 +137,24 @@ func (c *CLI) SwitchAdminServer() error {
 	if err != nil {
 		return fmt.Errorf("failed to use ADMIN server: %v", err)
 	}
+	return nil
+}
+
+func (c *CLI) addServers(apiHost, adminHost string) error {
+
+	apiServerName := "api"
+	command := fmt.Sprintf("add api '%s' host '%s'", apiServerName, apiHost)
+	_, err := c.execute(command, false)
+	if err != nil {
+		return fmt.Errorf("failed to add API server: %v", err)
+	}
+
+	command = fmt.Sprintf("add admin host '%s'", adminHost)
+	_, err = c.execute(command, false)
+	if err != nil {
+		return fmt.Errorf("failed to add ADMIN server: %v", err)
+	}
+
 	return nil
 }
 
