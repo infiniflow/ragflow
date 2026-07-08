@@ -538,7 +538,7 @@ async def run_wiki(
     from api.db.services.llm_service import LLMBundle
     from api.db.joint_services.tenant_model_service import (
         get_tenant_default_model_by_type,
-        get_model_config_from_provider_instance,
+        resolve_model_config,
     )
     from api.apps.restful_apis.chunk_api import _compilation_template_kind
 
@@ -598,7 +598,7 @@ async def run_wiki(
             if key == "__tenant_default__":
                 cfg = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
             else:
-                cfg = get_model_config_from_provider_instance(
+                cfg = resolve_model_config(
                     ctx.tenant_id,
                     LLMType.CHAT,
                     key,

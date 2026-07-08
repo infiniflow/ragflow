@@ -19,6 +19,7 @@ from quart import request
 
 from api.apps import login_required
 from api.apps.services import models_api_service
+from api.db.services.user_service import TenantService
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     get_error_argument_result,
@@ -39,6 +40,16 @@ def get_added_models(tenant_id: str):
     security:
       - ApiKeyAuth: []
     parameters:
+      - in: query
+        name: owner_tenant_id
+        type: string
+        required: false
+        description: "If provided, list models from the owner tenant's scope after access validation."
+      - in: query
+        name: type
+        type: string
+        required: false
+        description: "Model type filter (chat, embedding, rerank, asr, vision, tts, ocr)."
       - in: header
         name: Authorization
         type: string
@@ -70,8 +81,18 @@ def get_added_models(tenant_id: str):
                         type: boolean
     """
     model_type_filter = request.args.get("type")
+    owner_tenant_id = request.args.get("owner_tenant_id")
     try:
-        success, result = models_api_service.list_tenant_added_models(tenant_id, model_type_filter)
+        target_tenant_id = tenant_id
+        if owner_tenant_id:
+            if owner_tenant_id != tenant_id:
+                joined_tenants = TenantService.get_joined_tenants_by_user_id(owner_tenant_id)
+                allowed_tenant_ids = {owner_tenant_id, *(tenant["tenant_id"] for tenant in joined_tenants)}
+                if tenant_id not in allowed_tenant_ids:
+                    return get_error_data_result(message="Permission denied")
+            target_tenant_id = owner_tenant_id
+
+        success, result = models_api_service.list_tenant_added_models(target_tenant_id, model_type_filter)
         if success:
             return get_result(data=result)
         else:

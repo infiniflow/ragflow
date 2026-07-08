@@ -300,7 +300,7 @@ if __name__ == "__main__":
     from common.constants import LLMType
     from api.db.services.knowledgebase_service import KnowledgebaseService
     from api.db.services.llm_service import LLMBundle
-    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_model_config_by_id
+    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config, get_model_config_by_id
     from rag.nlp import search
 
     settings.init_settings()
@@ -318,9 +318,9 @@ if __name__ == "__main__":
         try:
             embd_model_config = get_model_config_by_id(args.tenant_id, kb.tenant_embd_id)
         except LookupError:
-            embd_model_config = get_model_config_from_provider_instance(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+            embd_model_config = resolve_model_config(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
     else:
-        embd_model_config = get_model_config_from_provider_instance(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        embd_model_config = resolve_model_config(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
     embed_bdl = LLMBundle(args.tenant_id, embd_model_config)
 
     kg = KGSearch(settings.docStoreConn)

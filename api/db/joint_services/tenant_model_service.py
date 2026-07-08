@@ -198,7 +198,7 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str | enum.Enum
             return get_model_config_by_id(tenant_id, model_id)
         except LookupError:
             logger.warning("tenant_model id=%s not found, falling back to model_name lookup for %s", model_id, model_name)
-    return get_model_config_from_provider_instance(tenant_id, model_type, model_name)
+    return resolve_model_config(tenant_id, model_type, model_name)
 
 
 def split_model_name(model_name: str):
@@ -249,6 +249,11 @@ def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: st
 
     raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
 
+def resolve_model_config(tenant_id, model_type: str | enum.Enum, model_ref: str):
+    try:
+        return get_model_config_by_id(tenant_id, model_ref)
+    except LookupError:
+        return get_model_config_from_provider_instance(tenant_id, model_type, model_ref)
 
 def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.Enum, model_name: str):
     pure_model_name, instance_name, provider_name = split_model_name(model_name)

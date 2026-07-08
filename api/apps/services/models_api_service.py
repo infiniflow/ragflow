@@ -293,6 +293,9 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str = None):
 
     factory_rank_mapping = {factory["name"]: -_to_int(factory.get("rank", "500")) for factory in FACTORY_LLM_INFOS}
     added_models = [{
+        "model_id": model_record.id,
+        "tenant_id": provider_info_map[model_record.provider_id].tenant_id,
+        "tenant_name": tenant.name,
         "model_type": get_model_type_human(model_record.model_type),
         "name": model_record.model_name,
         "provider_id": model_record.provider_id,
@@ -310,6 +313,9 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str = None):
             if not tei_already_added:
                 added_models.append(
                     {
+                        "model_id": "",
+                        "tenant_id": tenant.id,
+                        "tenant_name": tenant.name,
                         "model_type": ["embedding"],
                         "name": tei_model,
                         "provider_id": "",

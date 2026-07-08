@@ -498,7 +498,7 @@ def check_duplicate_ids(ids, id_type="item"):
 
 
 def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, str | None]:
-    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
+    from api.db.joint_services.tenant_model_service import resolve_model_config
 
     """
     Verifies availability of an embedding model for a specific tenant.
@@ -534,7 +534,7 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, s
         (False, {'code': 101, 'message': "Unsupported model: <invalid_model>"})
     """
     try:
-        get_model_config_from_provider_instance(tenant_id, LLMType.EMBEDDING, embd_id)
+        resolve_model_config(tenant_id, LLMType.EMBEDDING, embd_id)
     except LookupError as e:
         return False, str(e)
     except OperationalError as e:

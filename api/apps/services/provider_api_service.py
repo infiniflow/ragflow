@@ -20,7 +20,7 @@ import asyncio
 
 from common.constants import LLMType, ActiveStatusEnum, ModelVerifyStatusEnum
 from common.settings import FACTORY_LLM_INFOS
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, delete_models_by_instance_ids, delete_instances_by_provider_ids, _decode_api_key_config
+from api.db.joint_services.tenant_model_service import resolve_model_config, delete_models_by_instance_ids, delete_instances_by_provider_ids, _decode_api_key_config
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
@@ -1132,7 +1132,7 @@ async def chat_to_model(tenant_id: str, provider_id_or_name: str, instance_id_or
     # Get model config
     composite_name = f"{model_name}@{instance_name}@{provider_name}"
     try:
-        model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, composite_name)
+        model_config = resolve_model_config(tenant_id, LLMType.CHAT, composite_name)
     except LookupError:
         return False, f"Model '{composite_name}' not authorized"
 
