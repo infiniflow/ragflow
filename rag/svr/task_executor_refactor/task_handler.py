@@ -241,7 +241,9 @@ class TaskHandler:
                 return
 
             # Route to appropriate handler
-            if task_type == "graphrag":
+            if task_type == "raptor":
+                await self._run_raptor(embedding_model, vector_size)
+            elif task_type == "graphrag":
                 await self._run_graphrag(embedding_model)
             elif task_type == "mindmap":
                 ctx.progress_cb(1, "place holder")
@@ -319,17 +321,11 @@ class TaskHandler:
         try:
             if ctx.tenant_embd_id:
                 try:
-                    embd_model_config = get_model_config_by_id(
-                        task_tenant_id, ctx.tenant_embd_id
-                    )
+                    embd_model_config = get_model_config_by_id(task_tenant_id, ctx.tenant_embd_id)
                 except LookupError:
-                    embd_model_config = get_model_config_from_provider_instance(
-                        task_tenant_id, LLMType.EMBEDDING, task_embedding_id
-                    )
+                    embd_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
             elif task_embedding_id:
-                embd_model_config = get_model_config_from_provider_instance(
-                    task_tenant_id, LLMType.EMBEDDING, task_embedding_id
-                )
+                embd_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
             else:
                 embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
             embedding_model = LLMBundle(task_tenant_id, embd_model_config, lang=task_language)
@@ -603,6 +599,10 @@ class TaskHandler:
         logging.info(progress_message)
         ctx.progress_cb(msg=progress_message)
 
+        toc_thread = None
+        if ctx.parser_id.lower() == "naive" and ctx.parser_config.get("toc_extraction", False):
+            toc_thread = asyncio.create_task(asyncio.to_thread(self._build_toc, ctx, chunks, ctx.progress_cb))
+
         # Insert chunks
         chunk_count = len(set([chunk["id"] for chunk in chunks]))
         start_ts = timer()
@@ -627,6 +627,11 @@ class TaskHandler:
         await post_processor.process_table_parser_metadata(task_doc_id, chunks)
 
         ctx.progress_cb(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
+
+        toc_chunk = await self._process_toc_thread(toc_thread)
+        if toc_chunk:
+            ctx.recording_context.record("toc_chunk", [toc_chunk])
+            await post_processor.insert_toc_chunk(toc_chunk, chunk_service)
 
         if ctx.has_canceled_func(task_id):
             abort_doc_chunking_counter(task_doc_id)

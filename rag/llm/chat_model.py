@@ -32,6 +32,7 @@ from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
 from common.misc_utils import thread_pool_exec
+from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.llm.key_utils import _normalize_replicate_key
@@ -2181,6 +2182,15 @@ class LiteLLMBase(ABC):
             "num_retries": self.max_retries,
             **kwargs,
         }
+        # Forward the originating session/user as the OpenAI-standard `user` field so
+        # providers (OpenAI, OpenRouter, ...) receive it in the request body and
+        # upstream activity can be correlated back to the session. An explicit
+        # caller-supplied `user` (including an empty string to suppress it) wins, so
+        # check key presence rather than truthiness.
+        if "user" not in completion_args:
+            request_user = current_llm_user()
+            if request_user:
+                completion_args["user"] = request_user
         if stream:
             completion_args.update(
                 {
