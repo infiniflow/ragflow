@@ -17,6 +17,7 @@
 package task
 
 import (
+	"errors"
 	"fmt"
 
 	"ragflow/internal/common"
@@ -137,9 +138,9 @@ func GetChunkTextString(chunk map[string]any, where string) (string, error) {
 		return text, nil
 	}
 
-	msg := fmt.Sprintf("%s: invalid chunk text type %T, expected string, chunk=%v", where, val, chunk)
+	msg := fmt.Sprintf("%s: invalid chunk text type %T, expected string", where, val)
 	common.Error(msg, nil)
-	return "", fmt.Errorf(msg)
+	return "", errors.New(msg)
 }
 
 // MustGetChunkTextString is the convenience wrapper that logs non-string text
