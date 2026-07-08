@@ -24,12 +24,27 @@ import importlib.util
 import logging
 import sys
 from pathlib import Path
+from enum import IntEnum
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 pytestmark = pytest.mark.p2
+
+
+class _StubModelTypeBinary(IntEnum):
+    """Mimics common.constants.ModelTypeBinary for the stubbed environment."""
+    CHAT = 1
+    EMBEDDING = 2
+    SPEECH2TEXT = 4
+    IMAGE2TEXT = 8
+    RERANK = 16
+    TTS = 32
+    OCR = 64
+
+
+_MODEL_TYPE_TO_BIN = {mt.name.lower(): mt.value for mt in _StubModelTypeBinary}
 
 
 def _stub(monkeypatch, name, **attrs):
@@ -120,6 +135,9 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
             get_by_provider_id_and_instance_id_and_model_type_and_model_name=lambda *args: SimpleNamespace(
                 status=1
             ),
+            get_by_provider_id_and_instance_id_and_model_name=lambda *args: SimpleNamespace(
+                status=1
+            ),
         ),
     )
 
@@ -143,6 +161,7 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
         "common.constants",
         ActiveStatusEnum=SimpleNamespace(ACTIVE=SimpleNamespace(value=1), INACTIVE=SimpleNamespace(value=0), UNSUPPORTED=SimpleNamespace(value=2)),
         LLMType=SimpleNamespace(EMBEDDING="embedding"),
+        ModelTypeBinary=_StubModelTypeBinary,
     )
     _stub(
         monkeypatch,
@@ -183,18 +202,21 @@ def _make_model_record(model_name, model_type="embedding", status=1):
 
     Args:
         model_name: Model name; may contain `@` characters.
-        model_type: Model type filter (default `embedding`).
-        status: `ActiveStatusEnum` value (default `1` = ACTIVE).
+        model_type: Model type string (default `embedding`) or int bitmask.
+            String values are automatically converted to the corresponding
+            bitmask so that `record.model_type & filter_bin` works.
+        status: `ActiveStatusEnum` value (default `1` = ACTIVE in stub).
 
     Returns:
         A `SimpleNamespace` with the fields read by
         `list_tenant_added_models`.
     """
+    model_type_bin = _MODEL_TYPE_TO_BIN.get(model_type, model_type) if isinstance(model_type, str) else model_type
     return SimpleNamespace(
         provider_id="provider-1",
         instance_id="instance-1",
         model_name=model_name,
-        model_type=model_type,
+        model_type=model_type_bin,
         status=status,
     )
 

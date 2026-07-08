@@ -79,8 +79,8 @@ async def create_memory(memory_info: dict):
         "memory_type": list[str],
         "embd_id": str,
         "llm_id": str,
-        "tenant_embd_id": str,
-        "tenant_llm_id": str
+        "tenant_embd_id": str | None,
+        "tenant_llm_id": str | None
     }
     """
     # check name length
@@ -98,7 +98,15 @@ async def create_memory(memory_info: dict):
     if invalid_type:
         raise ArgumentException(f"Memory type '{invalid_type}' is not supported.")
     memory_type = list(memory_type)
-    success, res = MemoryService.create_memory(tenant_id=current_user.id, name=memory_name, memory_type=memory_type, embd_id=memory_info["embd_id"], llm_id=memory_info["llm_id"])
+    success, res = MemoryService.create_memory(
+        tenant_id=current_user.id,
+        name=memory_name,
+        memory_type=memory_type,
+        embd_id=memory_info["embd_id"],
+        llm_id=memory_info["llm_id"],
+        tenant_embd_id=memory_info.get("tenant_embd_id"),
+        tenant_llm_id=memory_info.get("tenant_llm_id"),
+    )
     if success:
         return True, format_ret_data_from_memory(res)
     else:

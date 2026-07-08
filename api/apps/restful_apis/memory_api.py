@@ -23,6 +23,7 @@ from common.exceptions import ArgumentException, NotFoundException
 from api.apps import login_required, current_user
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
 from api.apps.services import memory_api_service
+from api.db.joint_services.tenant_model_service import ensure_tenant_model_ids_for_params
 from api.utils.pagination_utils import validate_rest_api_page_size
 
 
@@ -35,7 +36,15 @@ async def create_memory():
     req = await get_request_json()
     t_parsed = time.perf_counter() if timing_enabled else None
     try:
-        memory_info = {"name": req["name"], "memory_type": req["memory_type"], "embd_id": req["embd_id"], "llm_id": req["llm_id"]}
+        # Resolve tenant_model IDs from model names
+        tenant_id = current_user.id
+        memory_info = {
+            "name": req["name"],
+            "memory_type": req["memory_type"],
+            "embd_id": req["embd_id"],
+            "llm_id": req["llm_id"]
+        }
+        ensure_tenant_model_ids_for_params(tenant_id, memory_info)
         success, res = await memory_api_service.create_memory(memory_info)
         if timing_enabled:
             logging.info(
@@ -79,26 +88,12 @@ async def create_memory():
 @login_required
 async def update_memory(memory_id):
     req = await get_request_json()
-    new_settings = {
-        k: req[k]
-        for k in [
-            "name",
-            "permissions",
-            "llm_id",
-            "embd_id",
-            "memory_type",
-            "memory_size",
-            "forgetting_policy",
-            "temperature",
-            "avatar",
-            "description",
-            "system_prompt",
-            "user_prompt",
-            "tenant_llm_id",
-            "tenant_embd_id",
-        ]
-        if k in req
-    }
+    # Resolve tenant_model IDs from model names when name is provided but id is not
+    ensure_tenant_model_ids_for_params(current_user.id, req)
+    new_settings = {k: req[k] for k in [
+        "name", "permissions", "llm_id", "embd_id", "memory_type", "memory_size", "forgetting_policy", "temperature",
+        "avatar", "description", "system_prompt", "user_prompt", "tenant_llm_id", "tenant_embd_id"
+    ] if k in req}
     try:
         success, res = await memory_api_service.update_memory(memory_id, new_settings)
         if success:
