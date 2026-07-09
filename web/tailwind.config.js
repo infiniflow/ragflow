@@ -243,5 +243,6 @@ module.exports = {
     require('@tailwindcss/line-clamp'),
     require('tailwind-scrollbar'),
     require('@tailwindcss/container-queries'),
+    require('@tailwindcss/typography'),
   ],
 };

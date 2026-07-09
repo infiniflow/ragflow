@@ -1,5 +1,3 @@
-//go:build cgo
-
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -15,6 +13,8 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 //
+
+//go:build cgo
 
 package rag_analyzer
 

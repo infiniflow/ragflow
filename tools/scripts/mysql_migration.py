@@ -158,11 +158,7 @@ class MigrationDatabase:
 
     def get_column_type(self, table_name: str, column_name: str) -> str | None:
         """Get the DATA_TYPE of a column from information_schema, returns None if column does not exist"""
-        cursor = self.execute_sql(
-            "SELECT DATA_TYPE FROM information_schema.columns "
-            "WHERE table_schema = %s AND table_name = %s AND column_name = %s",
-            (self.config.database, table_name, column_name)
-        )
+        cursor = self.execute_sql("SELECT DATA_TYPE FROM information_schema.columns WHERE table_schema = %s AND table_name = %s AND column_name = %s", (self.config.database, table_name, column_name))
         row = cursor.fetchone()
         return row[0] if row else None
 
@@ -1304,35 +1300,22 @@ class TenantModelSeedingStage(MigrationStage):
                 instance_extra_include = None
                 instance_extra_exclude = None
             # Query provider for this factory
-            cursor = self.db.execute_sql(
-                "SELECT id FROM tenant_model_provider WHERE provider_name = %s",
-                (provider_name_filter,)
-            )
+            cursor = self.db.execute_sql("SELECT id FROM tenant_model_provider WHERE provider_name = %s", (provider_name_filter,))
             providers = cursor.fetchall()
-            for provider_id, in providers:
+            for (provider_id,) in providers:
                 # Query instances for this provider, with optional extra include/exclude filter
                 if instance_extra_include and instance_extra_exclude:
                     cursor = self.db.execute_sql(
-                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra LIKE %s AND extra NOT LIKE %s",
-                        (provider_id, instance_extra_include, instance_extra_exclude)
+                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra LIKE %s AND extra NOT LIKE %s", (provider_id, instance_extra_include, instance_extra_exclude)
                     )
                 elif instance_extra_include:
-                    cursor = self.db.execute_sql(
-                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra LIKE %s",
-                        (provider_id, instance_extra_include)
-                    )
+                    cursor = self.db.execute_sql("SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra LIKE %s", (provider_id, instance_extra_include))
                 elif instance_extra_exclude:
-                    cursor = self.db.execute_sql(
-                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra NOT LIKE %s",
-                        (provider_id, instance_extra_exclude)
-                    )
+                    cursor = self.db.execute_sql("SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra NOT LIKE %s", (provider_id, instance_extra_exclude))
                 else:
-                    cursor = self.db.execute_sql(
-                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s",
-                        (provider_id,)
-                    )
+                    cursor = self.db.execute_sql("SELECT id FROM tenant_model_instance WHERE provider_id = %s", (provider_id,))
                 instances = cursor.fetchall()
-                for instance_id, in instances:
+                for (instance_id,) in instances:
                     for llm in llm_list:
                         model_name = llm.get("llm_name", "")
                         model_types = llm.get("model_type", "chat")
@@ -1340,9 +1323,7 @@ class TenantModelSeedingStage(MigrationStage):
                             model_types = [model_types]
                         for mt in model_types:
                             cursor = self.db.execute_sql(
-                                "SELECT COUNT(*) FROM tenant_model "
-                                "WHERE provider_id = %s AND instance_id = %s AND model_name = %s AND model_type = %s",
-                                (provider_id, instance_id, model_name, mt)
+                                "SELECT COUNT(*) FROM tenant_model WHERE provider_id = %s AND instance_id = %s AND model_name = %s AND model_type = %s", (provider_id, instance_id, model_name, mt)
                             )
                             if cursor.fetchone()[0] == 0:
                                 total_missing += 1
@@ -1381,9 +1362,7 @@ class TenantModelSeedingStage(MigrationStage):
 
         # Pre-load existing extra values for model_names from tenant_model
         # to reuse non-default extra for same model_name across providers
-        cursor = self.db.execute_sql(
-            "SELECT model_name, extra FROM tenant_model WHERE extra != '{}' AND extra IS NOT NULL"
-        )
+        cursor = self.db.execute_sql("SELECT model_name, extra FROM tenant_model WHERE extra != '{}' AND extra IS NOT NULL")
         existing_extra_map = {}
         for model_name, extra in cursor.fetchall():
             if model_name and extra and extra != "{}":
@@ -1391,9 +1370,7 @@ class TenantModelSeedingStage(MigrationStage):
 
         # Pre-load existing status values for model_names from tenant_model
         # Prefer non-unsupported status when seeding new records for the same model_name
-        cursor = self.db.execute_sql(
-            "SELECT model_name, status FROM tenant_model WHERE status != 'unsupported' AND status IS NOT NULL"
-        )
+        cursor = self.db.execute_sql("SELECT model_name, status FROM tenant_model WHERE status != 'unsupported' AND status IS NOT NULL")
         existing_status_map = {}
         for model_name, status in cursor.fetchall():
             if model_name and status:
@@ -1423,40 +1400,27 @@ class TenantModelSeedingStage(MigrationStage):
                 instance_extra_exclude = None
 
             # Query provider for this factory
-            cursor = self.db.execute_sql(
-                "SELECT id FROM tenant_model_provider WHERE provider_name = %s",
-                (provider_name_filter,)
-            )
+            cursor = self.db.execute_sql("SELECT id FROM tenant_model_provider WHERE provider_name = %s", (provider_name_filter,))
             providers = cursor.fetchall()
 
-            for provider_id, in providers:
+            for (provider_id,) in providers:
                 # Query instances for this provider, with optional extra include/exclude filter
                 if instance_extra_include and instance_extra_exclude:
                     cursor = self.db.execute_sql(
-                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra LIKE %s AND extra NOT LIKE %s",
-                        (provider_id, instance_extra_include, instance_extra_exclude)
+                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra LIKE %s AND extra NOT LIKE %s", (provider_id, instance_extra_include, instance_extra_exclude)
                     )
                 elif instance_extra_include:
-                    cursor = self.db.execute_sql(
-                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra LIKE %s",
-                        (provider_id, instance_extra_include)
-                    )
+                    cursor = self.db.execute_sql("SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra LIKE %s", (provider_id, instance_extra_include))
                 elif instance_extra_exclude:
-                    cursor = self.db.execute_sql(
-                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra NOT LIKE %s",
-                        (provider_id, instance_extra_exclude)
-                    )
+                    cursor = self.db.execute_sql("SELECT id FROM tenant_model_instance WHERE provider_id = %s AND extra NOT LIKE %s", (provider_id, instance_extra_exclude))
                 else:
-                    cursor = self.db.execute_sql(
-                        "SELECT id FROM tenant_model_instance WHERE provider_id = %s",
-                        (provider_id,)
-                    )
+                    cursor = self.db.execute_sql("SELECT id FROM tenant_model_instance WHERE provider_id = %s", (provider_id,))
                 instances = cursor.fetchall()
                 if not instances:
                     logger.warning(f"No instances found for provider '{provider_name_filter}' (id={provider_id}), skipping")
                     continue
 
-                for instance_id, in instances:
+                for (instance_id,) in instances:
                     for llm in llm_list:
                         model_name = llm.get("llm_name", "")
                         if not model_name:
@@ -1484,9 +1448,7 @@ class TenantModelSeedingStage(MigrationStage):
                         for mt in model_types:
                             # Check if record already exists
                             cursor = self.db.execute_sql(
-                                "SELECT COUNT(*) FROM tenant_model "
-                                "WHERE provider_id = %s AND instance_id = %s AND model_name = %s AND model_type = %s",
-                                (provider_id, instance_id, model_name, mt)
+                                "SELECT COUNT(*) FROM tenant_model WHERE provider_id = %s AND instance_id = %s AND model_name = %s AND model_type = %s", (provider_id, instance_id, model_name, mt)
                             )
                             if cursor.fetchone()[0] > 0:
                                 continue
@@ -1501,8 +1463,7 @@ class TenantModelSeedingStage(MigrationStage):
         if self.dry_run:
             logger.info(f"[DRY RUN] Would insert {len(all_records)} records")
             for model_name, provider_id, instance_id, mt, status, extra in all_records[:5]:
-                logger.info(f"  model_name={model_name}, provider_id={provider_id}, "
-                           f"instance_id={instance_id}, model_type={mt}, status={status}, extra={extra}")
+                logger.info(f"  model_name={model_name}, provider_id={provider_id}, instance_id={instance_id}, model_type={mt}, status={status}, extra={extra}")
             if len(all_records) > 5:
                 logger.info(f"  ... and {len(all_records) - 5} more records")
             return len(all_records), self.target_tables
@@ -1510,7 +1471,7 @@ class TenantModelSeedingStage(MigrationStage):
         # Insert records in batches
         batch_size = 100
         for i in range(0, len(all_records), batch_size):
-            batch = all_records[i:i + batch_size]
+            batch = all_records[i : i + batch_size]
             values = []
             for model_name, provider_id, instance_id, mt, status, extra in batch:
                 record_id = self.generate_uuid()
@@ -1518,17 +1479,19 @@ class TenantModelSeedingStage(MigrationStage):
                 mt_escaped = mt.replace("'", "''") if mt else ""
                 extra_escaped = extra.replace("'", "''") if extra else "{}"
                 status_escaped = status.replace("'", "''") if status else "active"
-                values.append(f"('{record_id}', '{model_name_escaped}', '{provider_id}', "
-                            f"'{instance_id}', '{mt_escaped}', '{status_escaped}', "
-                            f"'{extra_escaped}', "
-                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
-                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))")
+                values.append(
+                    f"('{record_id}', '{model_name_escaped}', '{provider_id}', "
+                    f"'{instance_id}', '{mt_escaped}', '{status_escaped}', "
+                    f"'{extra_escaped}', "
+                    f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
+                    f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))"
+                )
 
             insert_sql = f"""
                 INSERT INTO tenant_model
                 (id, model_name, provider_id, instance_id, model_type, status, extra,
                  create_time, create_date, update_time, update_date)
-                VALUES {', '.join(values)}
+                VALUES {", ".join(values)}
             """
             self.db.execute_sql(insert_sql)
             rows_inserted += len(batch)
@@ -1568,13 +1531,13 @@ class ModelTypeMergeStage(MigrationStage):
 
     # Mapping from LLMType string values to ModelTypeBinary integer values
     MODEL_TYPE_STR_TO_INT = {
-        "chat": 1,       # 0b0000001
+        "chat": 1,  # 0b0000001
         "embedding": 2,  # 0b0000010
         "speech2text": 4,  # 0b0000100
         "image2text": 8,  # 0b0001000
-        "rerank": 16,    # 0b0010000
-        "tts": 32,       # 0b0100000
-        "ocr": 64,       # 0b1000000
+        "rerank": 16,  # 0b0010000
+        "tts": 32,  # 0b0100000
+        "ocr": 64,  # 0b1000000
     }
 
     def current_timestamp(self) -> int:
@@ -1616,19 +1579,15 @@ class ModelTypeMergeStage(MigrationStage):
             return 0, self.target_tables
 
         # Load all records from tenant_model
-        cursor = self.db.execute_sql(
-            "SELECT id, model_name, provider_id, instance_id, model_type, status, extra, "
-            "create_time, create_date, update_time, update_date "
-            "FROM tenant_model ORDER BY id"
-        )
+        cursor = self.db.execute_sql("SELECT id, model_name, provider_id, instance_id, model_type, status, extra, create_time, create_date, update_time, update_date FROM tenant_model ORDER BY id")
         all_rows = cursor.fetchall()
 
         # Group by (provider_id, instance_id, model_name)
         from collections import defaultdict
+
         groups = defaultdict(list)
         for row in all_rows:
-            id_, model_name, provider_id, instance_id, model_type_str, status, extra, \
-                create_time, create_date, update_time, update_date = row
+            id_, model_name, provider_id, instance_id, model_type_str, status, extra, create_time, create_date, update_time, update_date = row
             groups[(provider_id, instance_id, model_name)].append(row)
 
         # Merge each group into a single record
@@ -1656,18 +1615,13 @@ class ModelTypeMergeStage(MigrationStage):
             merged_status = first_non_unsupported_status or "active"
 
             # Use first row's values for all other fields, but replace id, model_type, status
-            id_, model_name, provider_id, instance_id, _, _, extra, \
-                create_time, create_date, update_time, update_date = first_row
+            id_, model_name, provider_id, instance_id, _, _, extra, create_time, create_date, update_time, update_date = first_row
 
             # Only include records whose merged status is "active"
             if merged_status != "active":
                 continue
 
-            merged_records.append((
-                self.generate_uuid(), model_name, provider_id, instance_id,
-                merged_type, merged_status, extra,
-                create_time, create_date, update_time, update_date
-            ))
+            merged_records.append((self.generate_uuid(), model_name, provider_id, instance_id, merged_type, merged_status, extra, create_time, create_date, update_time, update_date))
 
         if not merged_records:
             logger.info("No records to merge")
@@ -1676,13 +1630,10 @@ class ModelTypeMergeStage(MigrationStage):
         logger.info(f"Merging {len(all_rows)} rows into {len(merged_records)} rows...")
 
         if self.dry_run:
-            logger.info(f"[DRY RUN] Would insert {len(merged_records)} merged rows, "
-                       f"then rename tables")
+            logger.info(f"[DRY RUN] Would insert {len(merged_records)} merged rows, then rename tables")
             for rec in merged_records[:5]:
                 _, model_name, provider_id, instance_id, merged_type, status, extra, *_ = rec
-                logger.info(f"  model_name={model_name}, provider_id={provider_id}, "
-                           f"instance_id={instance_id}, model_type={merged_type}, "
-                           f"status={status}, extra={extra}")
+                logger.info(f"  model_name={model_name}, provider_id={provider_id}, instance_id={instance_id}, model_type={merged_type}, status={status}, extra={extra}")
             if len(merged_records) > 5:
                 logger.info(f"  ... and {len(merged_records) - 5} more rows")
             return len(merged_records), self.target_tables
@@ -1690,11 +1641,10 @@ class ModelTypeMergeStage(MigrationStage):
         # Insert merged records into temporary table
         batch_size = 100
         for i in range(0, len(merged_records), batch_size):
-            batch = merged_records[i:i + batch_size]
+            batch = merged_records[i : i + batch_size]
             values = []
             for rec in batch:
-                id_, model_name, provider_id, instance_id, merged_type, status, extra, \
-                    create_time, create_date, update_time, update_date = rec
+                id_, model_name, provider_id, instance_id, merged_type, status, extra, create_time, create_date, update_time, update_date = rec
                 model_name_escaped = (model_name.replace("'", "''") if model_name else "") or None
                 extra_escaped = extra.replace("'", "''") if extra else "{}"
                 status_escaped = status.replace("'", "''") if status else "active"
@@ -1703,17 +1653,19 @@ class ModelTypeMergeStage(MigrationStage):
                 update_time_val = update_time if update_time is not None else current_ts * 1000
                 create_date_sql = f"FROM_UNIXTIME({int(create_time_val / 1000)})" if create_time_val else "NULL"
                 update_date_sql = f"FROM_UNIXTIME({int(update_time_val / 1000)})" if update_time_val else "NULL"
-                values.append(f"('{id_}', '{model_name_escaped}', '{provider_id}', "
-                            f"'{instance_id}', {merged_type}, '{status_escaped}', "
-                            f"'{extra_escaped}', "
-                            f"{create_time_val}, {create_date_sql}, "
-                            f"{update_time_val}, {update_date_sql})")
+                values.append(
+                    f"('{id_}', '{model_name_escaped}', '{provider_id}', "
+                    f"'{instance_id}', {merged_type}, '{status_escaped}', "
+                    f"'{extra_escaped}', "
+                    f"{create_time_val}, {create_date_sql}, "
+                    f"{update_time_val}, {update_date_sql})"
+                )
 
             insert_sql = f"""
                 INSERT INTO tenant_model_merge_tmp
                 (id, model_name, provider_id, instance_id, model_type, status, extra,
                  create_time, create_date, update_time, update_date)
-                VALUES {', '.join(values)}
+                VALUES {", ".join(values)}
             """
             self.db.execute_sql(insert_sql)
             rows_inserted += len(batch)
@@ -1825,9 +1777,7 @@ class TenantModelIdMigrationStage(MigrationStage):
                     has_work = True
                     break
                 # Check if there are NULL values that should be populated
-                cursor = self.db.execute_sql(
-                    f"SELECT COUNT(*) FROM `{table_name}` WHERE `{tenant_id_col}` IS NULL OR `{tenant_id_col}` = ''"
-                )
+                cursor = self.db.execute_sql(f"SELECT COUNT(*) FROM `{table_name}` WHERE `{tenant_id_col}` IS NULL OR `{tenant_id_col}` = ''")
                 null_count = cursor.fetchone()[0]
                 if null_count > 0:
                     has_work = True
@@ -1860,18 +1810,14 @@ class TenantModelIdMigrationStage(MigrationStage):
                     # Column does not exist yet — add it as VARCHAR(32)
                     logger.info(f"Adding column {table_name}.{tenant_id_col} as VARCHAR(32) NULL")
                     if not self.dry_run:
-                        self.db.execute_sql(
-                            f"ALTER TABLE `{table_name}` ADD COLUMN `{tenant_id_col}` VARCHAR(32) NULL"
-                        )
+                        self.db.execute_sql(f"ALTER TABLE `{table_name}` ADD COLUMN `{tenant_id_col}` VARCHAR(32) NULL")
                     tables_operated.add(table_name)
                     continue
                 col_type = self.db.get_column_type(table_name, tenant_id_col)
                 if col_type and col_type.lower() in ("int", "bigint", "integer"):
                     logger.info(f"Converting {table_name}.{tenant_id_col} from {col_type} to VARCHAR(32)")
                     if not self.dry_run:
-                        self.db.execute_sql(
-                            f"ALTER TABLE `{table_name}` MODIFY COLUMN `{tenant_id_col}` VARCHAR(32) NULL"
-                        )
+                        self.db.execute_sql(f"ALTER TABLE `{table_name}` MODIFY COLUMN `{tenant_id_col}` VARCHAR(32) NULL")
                     tables_operated.add(table_name)
 
         # Step 2: Build lookup cache from tenant_model joined with provider + instance
@@ -1893,9 +1839,7 @@ class TenantModelIdMigrationStage(MigrationStage):
 
                 # Get rows where tenant_*_id is NULL or empty
                 cursor = self.db.execute_sql(
-                    f"SELECT id, `{legacy_col}` FROM `{table_name}` "
-                    f"WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '') "
-                    f"AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
+                    f"SELECT id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '') AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
                 )
 
                 # Also need tenant_id for model lookup
@@ -1903,9 +1847,7 @@ class TenantModelIdMigrationStage(MigrationStage):
                 # For knowledgebase, dialog, memory we also need tenant_id
                 if table_name == "tenant":
                     cursor = self.db.execute_sql(
-                        f"SELECT id, `{legacy_col}` FROM `{table_name}` "
-                        f"WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '') "
-                        f"AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
+                        f"SELECT id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '') AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
                     )
                     while True:
                         rows = cursor.fetchmany(self.scan_batch_size)
@@ -1930,9 +1872,7 @@ class TenantModelIdMigrationStage(MigrationStage):
                             tables_operated.add(table_name)
                 else:
                     cursor = self.db.execute_sql(
-                        f"SELECT id, tenant_id, `{legacy_col}` FROM `{table_name}` "
-                        f"WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '') "
-                        f"AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
+                        f"SELECT id, tenant_id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '') AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
                     )
                     while True:
                         rows = cursor.fetchmany(self.scan_batch_size)

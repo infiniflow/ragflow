@@ -50,7 +50,7 @@ func (f *FishAudioModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (f *FishAudioModel) Name() string {
-	return "fishaudio"
+	return "Fish Audio"
 }
 
 func (f *FishAudioModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {

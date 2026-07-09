@@ -25,7 +25,7 @@ import numpy as np
 from PIL import Image
 
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_first_provider_model_name, get_model_config_from_provider_instance, ensure_paddleocr_from_env
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_first_provider_model_name, resolve_model_config, ensure_paddleocr_from_env
 from common.constants import LLMType
 from common.parser_config_utils import normalize_layout_recognizer
 from common.string_utils import clean_markdown_block
@@ -124,7 +124,7 @@ def _try_paddleocr_image(filename, binary, tenant_id, parser_config, callback):
         if not paddleocr_llm_name:
             return ""
 
-        ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, paddleocr_llm_name)
+        ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, paddleocr_llm_name)
         ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config)
         pdf_parser = ocr_model.mdl
 
