@@ -8,6 +8,7 @@ Incremental update: entity-level, no full-graph rebuilds, no n_hop/PageRank prec
 import asyncio
 import json
 import logging
+import os
 from typing import AsyncIterator, Callable, Dict, List, Optional, Tuple
 
 import xxhash
@@ -109,11 +110,18 @@ def _extract_ner(doc) -> List[dict]:
     return entities
 
 
-def _mgrank_keywords(doc) -> set:
-    """MGranRAG 3-pass keyword extraction — module-level function from graph_extractor."""
+def _mgrank_keywords(doc, is_chinese: bool = False) -> set:
+    """MGranRAG keyword extraction + spaCy NER union.
+
+    For Chinese text, the 3-pass stacking algorithm is skipped
+    (it relies on uppercase detection and produces fragmented
+    CJK tokens). Only spaCy NER entities are returned.
+    """
     from rag.graphrag.ner.graph_extractor import extract_keywords, get_ner
-    keywords = extract_keywords(doc)
     ner_dict = get_ner(doc)
+    if is_chinese:
+        return set(ner_dict.keys())
+    keywords = extract_keywords(doc)
     return keywords.union(ner_dict.keys())
 
 
@@ -136,9 +144,18 @@ def _normalize_entity_type(ent_type: str, name: str, from_spacy_ner: bool) -> st
 def _is_valid_entity(name: str) -> bool:
     """Reject entity-name noise regardless of extraction source.
 
-    Filters out: short names, markdown/HTML artifacts, truncations.
-    Does NOT filter based on entity type — that's left to
-    ``_normalize_entity_type`` so the graph retains density.
+    Filters out:
+    - Short or single-char names
+    - Markdown/HTML artifacts
+    - Truncation (ends with ``-``)
+    - Bullet symbols (``•``, ``○``, ``●``, ``·``) at start
+    - Bracket remnants: starts with ``(``, ends with ``)``
+    - Unmatched brackets: ``(`` without ``)`` or vice versa
+    - Starts with non-alphanumeric symbols (``;``, ``~``, etc.)
+    - Pure Chinese shorter than 4 characters
+    - Pure numbers / number+dot (section artifacts like ``1.``, ``4.``)
+    - Chinese entities ending with single-char function words
+      (``处``, ``的``, ``了``, ``地``, ``得``, ``着``, ``过``, ``把``, ``被``)
     """
     name = name.strip()
     if len(name) < 2:
@@ -149,9 +166,52 @@ def _is_valid_entity(name: str) -> bool:
         return False
     if name.endswith("-"):
         return False
-    # Single non-letter char (e.g. ``#``, ``1``)
     if len(name) == 1 and not name.isalpha():
         return False
+
+    # Bullet / checkmark prefix
+    if name[0] in "•○●·":
+        return False
+
+    # Bracket edge remnants
+    if name.startswith("(") or name.endswith(")"):
+        return False
+
+    # Unmatched bracket pair
+    if ("(" in name and ")" not in name) or (")" in name and "(" not in name):
+        return False
+
+    # Starts with punctuation / symbol
+    if name[0] in ";:~@#$%&*+=/":
+        return False
+
+    # Pure numbers / number+dot (section artifacts)
+    stripped = name.rstrip(".")
+    if stripped.isdigit():
+        return False
+
+    # Chinese trailing function-word particles
+    # e.g. ``ACTIONS处`` → strip ``处``, then re-validate
+    if len(name) >= 3 and name[-1] in "处的了的地得着过把被":
+        trimmed = name[:-1].strip()
+        if len(trimmed) < 2:
+            return False
+        name = trimmed  # use trimmed name for remaining checks
+
+    # Pure Chinese < 4 chars (rarely meaningful as graph entity)
+    cjk = sum(1 for c in name if "\u4e00" <= c <= "\u9fff")
+    total_alpha = sum(1 for c in name if c.isalpha())
+    if cjk > 0 and cjk == total_alpha and len(name.replace(" ", "")) < 4:
+        return False
+
+    # Mixed Chinese + spacing (MGranRAG splits Chinese across tokens).
+    # Accept if at least two segments are 2+ Chinese chars (meaningful words).
+    if " " in name and cjk > 0:
+        segments = [s for s in name.split() if s]
+        good = sum(1 for s in segments if "\u4e00" <= s[0] <= "\u9fff" and len(s) >= 2)
+        if good < 2:
+            return False
+
     return True
 
 
@@ -174,7 +234,10 @@ def _extract_entities_merged(doc, language: str) -> List[dict]:
             ner_names.add(upper)
 
     # 2. MGranRAG keyword entities (normalize type, filter name-shape noise)
-    kw_names = _mgrank_keywords(doc)
+    # For Chinese text, MGranRAG's 3-pass stacking is disabled (uses
+    # spaCy NER only) because it relies on uppercase detection.
+    is_chinese = (language or "").lower() in ("chinese", "zh", "zh-cn", "zh_cn")
+    kw_names = _mgrank_keywords(doc, is_chinese=is_chinese)
     for name in kw_names:
         upper = name.strip().upper()
         if not upper or upper in ner_names:
@@ -183,6 +246,35 @@ def _extract_entities_merged(doc, language: str) -> List[dict]:
             etype = _normalize_entity_type(_infer_type_from_pos(doc, name), upper, from_spacy_ner=False)
             ner_ents.append({"text": upper, "type": etype, "start_char": -1, "end_char": -1})
             ner_names.add(upper)
+
+    # 3. For Chinese: extract consecutive NOUN/PROPN sequences as entities
+    # (NER coverage is poor, but noun sequences capture meaningful terms)
+    if is_chinese:
+        _CJK_PARTICLES = set("处的了的地得着过把被")
+        tokens = list(doc)
+        i = 0
+        while i < len(tokens):
+            t = tokens[i]
+            if t.pos_ in ("NOUN", "PROPN") and t.is_alpha and t.text not in _CJK_PARTICLES:
+                seq = [t.text]
+                j = i + 1
+                while j < len(tokens) and len(seq) < 4:
+                    tok = tokens[j]
+                    if tok.pos_ in ("NOUN", "PROPN") and tok.is_alpha and tok.text not in _CJK_PARTICLES:
+                        seq.append(tok.text)
+                        j += 1
+                    else:
+                        break
+                if len(seq) >= 2:
+                    name = "".join(seq)
+                    upper = name.upper()
+                    if 4 <= len(name) <= 16 and upper not in ner_names and _is_valid_entity(name):
+                        ner_ents.append({"text": upper, "type": "TOPIC",
+                                         "start_char": -1, "end_char": -1})
+                        ner_names.add(upper)
+                i = j
+            else:
+                i += 1
 
     return ner_ents
 
@@ -366,128 +458,170 @@ def _relation_to_es_doc(rel: dict, doc_id: str, chunk_id: str,
     }
 
 
-# ── Entity-level incremental merge ──────────────────────────────────
+# ── Batch merge helpers ─────────────────────────────────────────────
+
+
+async def _batch_merge(
+    docs: List[dict], kind: str, tenant_id: str, kb_id: str, doc_id: str,
+    progress_cb: Callable, cancel_check: Callable,
+    _BATCH_SIZE: int = 1024,
+) -> dict:
+    """Batch merge entities or relations.
+
+    Steps per batch:
+    1. Single search to find which row_ids already exist in ES.
+    2. New docs → batch insert.
+    3. Existing docs → compute merged fields → concurrent updates.
+
+    The caller passes a ``_build_delta`` callback (set via closure for
+    entities vs relations) that computes the update payload from
+    an existing row and an incoming doc.
+    """
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = search.index_name(tenant_id)
+    total_ins = total_up = 0
+    total = len(docs)
+    BATCH = _BATCH_SIZE
+
+    for offset in range(0, total, BATCH):
+        if cancel_check():
+            raise TaskCanceledException(f"LightGraph {kind} merge cancelled")
+
+        batch = docs[offset:offset + BATCH]
+        id_to_doc = {d["id"]: d for d in batch}
+        all_ids = list(id_to_doc.keys())
+
+        # 1. Batch read: single search for all row_ids
+        existing_map: dict[str, dict] = {}
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id", "source_doc_ids", "source_chunk_ids", "weight_int",
+                 "doc_count_int"],
+                [],
+                {"compile_kwd": ["lightgraph"],
+                 "id": all_ids,
+                 "knowledge_graph_kwd": [kind],
+                 "kb_id": [kb_id]},
+                [], OrderByExpr(), 0, len(all_ids) + 16,
+                index, [kb_id],
+            )
+            rows = settings.docStoreConn.get_fields(res,
+                ["source_doc_ids", "source_chunk_ids", "weight_int", "doc_count_int"])
+            for rid, row in rows.items():
+                if rid in id_to_doc:
+                    existing_map[rid] = row
+        except Exception:
+            logging.exception("LightGraph: batch read failed for %s", kind)
+            # Fall back to per-doc gets for this batch
+            for rid in all_ids:
+                existing = await thread_pool_exec(
+                    settings.docStoreConn.get, rid, index, [kb_id])
+                if existing:
+                    existing_map[rid] = existing
+
+        # 2. Merge existing data into incoming docs, collect IDs to replace
+        delete_ids: list[str] = []
+        all_inserts: list[dict] = []
+
+        for rid, doc in id_to_doc.items():
+            existing = existing_map.get(rid)
+            if existing:
+                existing_ids = _str_to_ids(existing.get("source_doc_ids"))
+                existing_chunks = _str_to_ids(existing.get("source_chunk_ids"))
+                incoming_ids = _str_to_ids(doc.get("source_doc_ids"))
+                incoming_chunks = _str_to_ids(doc.get("source_chunk_ids"))
+
+                merged_ids = list(dict.fromkeys(existing_ids + incoming_ids))
+                merged_chunks = list(dict.fromkeys(existing_chunks + incoming_chunks))
+
+                doc["source_doc_ids"] = _ids_to_str(merged_ids)
+                doc["source_chunk_ids"] = _ids_to_str(merged_chunks)
+                if kind == "entity":
+                    doc["doc_count_int"] = len(merged_ids)
+                else:
+                    old_w = existing.get("weight_int", 1)
+                    doc["weight_int"] = old_w + (1 if doc_id not in existing_ids else 0)
+
+                delete_ids.append(rid)
+
+            all_inserts.append(doc)
+
+        # 3. Delete existing rows (single call) then insert all (single call)
+        if delete_ids:
+            await thread_pool_exec(
+                settings.docStoreConn.delete,
+                {"id": delete_ids, "kb_id": [kb_id]},
+                index, kb_id)
+            total_up += len(delete_ids)
+
+        if all_inserts:
+            await thread_pool_exec(
+                settings.docStoreConn.insert, all_inserts, index, kb_id)
+            total_ins += len(all_inserts) - len(delete_ids)
+
+        if progress_cb and (offset + BATCH) % (BATCH * 4) == 0:
+            pct = min(0.99, (offset + BATCH) / total)
+            progress_cb(prog=pct,
+                msg=f"LightGraph {kind} merge: {total_ins} inserted, {total_up} updated "
+                    f"({min(offset + BATCH, total)}/{total})")
+
+    if progress_cb:
+        progress_cb(msg=f"LightGraph {kind} merge: {total_ins} inserted, {total_up} updated")
+    return {"inserted": total_ins, "updated": total_up}
 
 
 async def _entity_level_merge(
     entity_docs: List[dict], tenant_id: str, kb_id: str, doc_id: str,
     progress_cb: Callable, cancel_check: Callable,
 ):
-    """Entity-level incremental update.
-
-    For each entity: lookup by stable row_id.  If exists, append
-    source_doc_ids / source_chunk_ids and increment doc_count_int.
-    Otherwise insert.
-
-    Infinity stores source_doc_ids/source_chunk_ids as space-joined
-    varchar; Elasticsearch stores them as native lists.  The helper
-    functions ``_str_to_ids`` / ``_ids_to_str`` handle both.
-    """
-    index = search.index_name(tenant_id)
-    inserted = updated = 0
-
-    for edoc in entity_docs:
-        if cancel_check():
-            raise TaskCanceledException("LightGraph entity merge cancelled")
-        row_id = edoc["id"]
-
-        existing = await thread_pool_exec(
-            settings.docStoreConn.get, row_id, index, [kb_id])
-        if existing:
-            existing_ids = _str_to_ids(existing.get("source_doc_ids"))
-            existing_chunks = _str_to_ids(existing.get("source_chunk_ids"))
-            incoming_ids = _str_to_ids(edoc.get("source_doc_ids"))
-            incoming_chunks = _str_to_ids(edoc.get("source_chunk_ids"))
-
-            merged_ids = list(dict.fromkeys(existing_ids + incoming_ids))
-            merged_chunks = list(dict.fromkeys(existing_chunks + incoming_chunks))
-
-            await thread_pool_exec(
-                settings.docStoreConn.update,
-                {"id": row_id},
-                {
-                    "source_doc_ids": _ids_to_str(merged_ids),
-                    "source_chunk_ids": _ids_to_str(merged_chunks),
-                    "doc_count_int": len(merged_ids),
-                },
-                index, kb_id,
-            )
-            updated += 1
-        else:
-            await thread_pool_exec(
-                settings.docStoreConn.insert, [edoc], index, kb_id)
-            inserted += 1
-
-    if progress_cb:
-        progress_cb(msg=f"LightGraph entity merge: {inserted} inserted, {updated} updated")
+    return await _batch_merge(
+        entity_docs, "entity", tenant_id, kb_id, doc_id,
+        progress_cb, cancel_check)
 
 
 async def _relation_level_merge(
     rel_docs: List[dict], tenant_id: str, kb_id: str, doc_id: str,
     progress_cb: Callable, cancel_check: Callable,
 ):
-    """Relation-level incremental update.
-
-    For each relation: lookup by stable row_id.  If exists, increment
-    weight_int and append source_doc_ids.  Otherwise insert.
-    """
-    index = search.index_name(tenant_id)
-    inserted = updated = 0
-
-    for rdoc in rel_docs:
-        if cancel_check():
-            raise TaskCanceledException("LightGraph relation merge cancelled")
-        row_id = rdoc["id"]
-
-        existing = await thread_pool_exec(
-            settings.docStoreConn.get, row_id, index, [kb_id])
-        if existing:
-            existing_ids = _str_to_ids(existing.get("source_doc_ids"))
-            existing_chunks = _str_to_ids(existing.get("source_chunk_ids"))
-            incoming_ids = _str_to_ids(rdoc.get("source_doc_ids"))
-            incoming_chunks = _str_to_ids(rdoc.get("source_chunk_ids"))
-            old_weight = existing.get("weight_int", 1)
-
-            merged_ids = list(dict.fromkeys(existing_ids + incoming_ids))
-            merged_chunks = list(dict.fromkeys(existing_chunks + incoming_chunks))
-            new_weight = old_weight + (1 if doc_id not in existing_ids else 0)
-
-            await thread_pool_exec(
-                settings.docStoreConn.update,
-                {"id": row_id},
-                {
-                    "weight_int": new_weight,
-                    "source_doc_ids": _ids_to_str(merged_ids),
-                    "source_chunk_ids": _ids_to_str(merged_chunks),
-                },
-                index, kb_id,
-            )
-            updated += 1
-        else:
-            await thread_pool_exec(
-                settings.docStoreConn.insert, [rdoc], index, kb_id)
-            inserted += 1
-
-    if progress_cb:
-        progress_cb(msg=f"LightGraph relation merge: {inserted} inserted, {updated} updated")
+    return await _batch_merge(
+        rel_docs, "relation", tenant_id, kb_id, doc_id,
+        progress_cb, cancel_check)
 
 
 # ── Embedding helper ────────────────────────────────────────────────
 
+_EMBED_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", "256"))
+
 
 async def _encode_texts(texts: List[str], embd_mdl) -> List[List[float]]:
+    """Encode texts in batches to avoid overwhelming the embedding model."""
     if not texts:
         return []
-    embeddings, _ = await thread_pool_exec(embd_mdl.encode, texts)
-    vecs = []
-    for emb in embeddings:
-        if hasattr(emb, "tolist"):
-            vecs.append(emb.tolist())
-        elif isinstance(emb, list):
-            vecs.append(emb)
-        else:
-            vecs.append(list(emb))
-    return vecs
+    total = len(texts)
+    all_vecs: List[List[float]] = [None] * total  # type: ignore
+    sem = asyncio.Semaphore(4)
+
+    async def _encode_batch(offset: int):
+        batch = texts[offset:offset + _EMBED_BATCH_SIZE]
+        async with sem:
+            embeddings, _ = await thread_pool_exec(embd_mdl.encode, batch)
+        for i, emb in enumerate(embeddings):
+            idx = offset + i
+            if hasattr(emb, "tolist"):
+                all_vecs[idx] = emb.tolist()
+            elif isinstance(emb, list):
+                all_vecs[idx] = emb
+            else:
+                all_vecs[idx] = list(emb)
+
+    tasks = [
+        asyncio.create_task(_encode_batch(off))
+        for off in range(0, total, _EMBED_BATCH_SIZE)
+    ]
+    await asyncio.gather(*tasks)
+    return [v for v in all_vecs if v is not None]
 
 
 # ── Main entry point ────────────────────────────────────────────────
