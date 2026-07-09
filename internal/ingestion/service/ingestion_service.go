@@ -65,10 +65,8 @@ type Ingestor struct {
 	workerWg  sync.WaitGroup
 	startOnce sync.Once
 
-	ingestionTaskDAO       *dao.IngestionTaskDAO
-	ingestionTaskLogDAO    *dao.IngestionTaskLogDAO
-	ingestionTaskletDAO    *dao.IngestionTaskletDAO
-	ingestionTaskletLogDAO *dao.IngestionTaskletLogDAO
+	ingestionTaskDAO    *dao.IngestionTaskDAO
+	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
 
 	// runDocumentTask dispatches to the migrated task handler path.
 	// Tests may override this to verify branch routing without invoking
@@ -80,20 +78,18 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 	ctx, cancel := context.WithCancel(context.Background())
 	id := utility.GenerateUUID()
 	ingestor := &Ingestor{
-		id:                     id,
-		name:                   name,
-		ctx:                    ctx,
-		cancel:                 cancel,
-		maxConcurrency:         maxConcurrency,
-		supportedDocTypes:      supportedTypes,
-		version:                "1.0.0",
-		currentTasks:           make(map[string]*taskpkg.TaskContext),
-		taskChan:               make(chan *taskpkg.TaskContext, maxConcurrency*2),
-		ShutdownCh:             make(chan struct{}, 1),
-		ingestionTaskDAO:       dao.NewIngestionTaskDAO(),
-		ingestionTaskLogDAO:    dao.NewIngestionTaskLogDAO(),
-		ingestionTaskletDAO:    dao.NewIngestionTaskletDAO(),
-		ingestionTaskletLogDAO: dao.NewIngestionTaskletLogDAO(),
+		id:                  id,
+		name:                name,
+		ctx:                 ctx,
+		cancel:              cancel,
+		maxConcurrency:      maxConcurrency,
+		supportedDocTypes:   supportedTypes,
+		version:             "1.0.0",
+		currentTasks:        make(map[string]*taskpkg.TaskContext),
+		taskChan:            make(chan *taskpkg.TaskContext, maxConcurrency*2),
+		ShutdownCh:          make(chan struct{}, 1),
+		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
+		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	return ingestor
@@ -163,7 +159,7 @@ func (e *Ingestor) Start() error {
 				common.Info(fmt.Sprintf("task %s is already %s", taskMessage.TaskID, task.Status))
 				err = taskHandle.Ack()
 				if err != nil {
-					common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), err)
+					common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), err)
 					return err
 				}
 				continue

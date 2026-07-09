@@ -197,12 +197,14 @@ export interface ModelTreeSelectFormFieldProps extends ModelTreeSelectProps {
   name?: string;
   label?: string;
   tooltip?: string;
+  required?: boolean;
 }
 
 export function ModelTreeSelectFormField({
   name = 'llm_id',
   label,
   tooltip,
+  required,
   ...rest
 }: ModelTreeSelectFormFieldProps) {
   const form = useFormContext();
@@ -214,7 +216,11 @@ export function ModelTreeSelectFormField({
       name={name}
       render={({ field }) => (
         <FormItem>
-          {label && <FormLabel tooltip={tooltip}>{label}</FormLabel>}
+          {label && (
+            <FormLabel required={required} tooltip={tooltip}>
+              {label}
+            </FormLabel>
+          )}
           <FormControl>
             <ModelTreeSelect
               {...rest}
