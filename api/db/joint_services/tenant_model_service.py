@@ -320,8 +320,8 @@ def get_model_config_by_id(tenant_id: str, model_id: str):
     if model_obj.status != ActiveStatusEnum.ACTIVE.value:
         raise LookupError(f"TenantModel id={model_id} is disabled.")
 
-    provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
-    if not provider_obj:
+    provider_exist, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+    if not provider_exist:
         raise LookupError(f"Provider id={model_obj.provider_id} not found for model id={model_id}.")
 
     # Validate that tenant_id owns the provider or is a joined tenant of the provider's owner.
@@ -331,8 +331,8 @@ def get_model_config_by_id(tenant_id: str, model_id: str):
         if provider_obj.tenant_id not in joined_tenant_ids:
             raise LookupError(f"Tenant {tenant_id} has no access to provider owned by tenant {provider_obj.tenant_id}.")
 
-    instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
-    if not instance_obj:
+    instance_exist, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+    if not instance_exist:
         raise LookupError(f"Instance id={model_obj.instance_id} not found for model id={model_id}.")
 
     api_key, is_tool, api_key_payload = _decode_api_key_config(instance_obj.api_key)
@@ -379,9 +379,7 @@ def resolve_model_id(tenant_id: str, model_type: str | enum.Enum, model_name: st
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
 
     instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
-    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
-        provider_obj.id, instance_obj.id, model_type_val, pure_model_name
-    )
+    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, pure_model_name)
     if not model_obj:
         raise LookupError(f"Model {model_name} not found for type {model_type_val}.")
     return model_obj.id
@@ -389,12 +387,12 @@ def resolve_model_id(tenant_id: str, model_type: str | enum.Enum, model_name: st
 
 # Mapping from model-name field → (LLMType, tenant_model id field)
 _MODEL_NAME_TO_ID_FIELD_MAP: dict[str, tuple[str, str]] = {
-    "llm_id":      (LLMType.CHAT,        "tenant_llm_id"),
-    "embd_id":     (LLMType.EMBEDDING,   "tenant_embd_id"),
-    "rerank_id":   (LLMType.RERANK,      "tenant_rerank_id"),
-    "asr_id":      (LLMType.SPEECH2TEXT, "tenant_asr_id"),
-    "img2txt_id":  (LLMType.IMAGE2TEXT,  "tenant_img2txt_id"),
-    "tts_id":      (LLMType.TTS,         "tenant_tts_id"),
+    "llm_id": (LLMType.CHAT, "tenant_llm_id"),
+    "embd_id": (LLMType.EMBEDDING, "tenant_embd_id"),
+    "rerank_id": (LLMType.RERANK, "tenant_rerank_id"),
+    "asr_id": (LLMType.SPEECH2TEXT, "tenant_asr_id"),
+    "img2txt_id": (LLMType.IMAGE2TEXT, "tenant_img2txt_id"),
+    "tts_id": (LLMType.TTS, "tenant_tts_id"),
 }
 
 
