@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -29,7 +30,7 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
-	"golang.org/x/net/html"
+	xhtml "golang.org/x/net/html"
 )
 
 const duckduckgoToolName = "duckduckgo"
@@ -191,7 +192,7 @@ func (d *DuckDuckGoTool) InvokableRun(ctx context.Context, argsJSON string, _ ..
 			fmt.Errorf("duckduckgo: upstream returned %d", resp.StatusCode)
 	}
 
-	results, err := parseDuckDuckGoHTML(resp.Body, channel, topN)
+	results, err := parseDuckDuckGoHTML(resp.Body, topN)
 	if err != nil {
 		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: parse html: %w", err)),
 			fmt.Errorf("duckduckgo: parse html: %w", err)
@@ -233,9 +234,9 @@ func (d *DuckDuckGoTool) runNewsSearch(ctx context.Context, query string, topN i
 		if len(results) >= topN {
 			break
 		}
-		title := normalizeWhitespace(htmlUnescape(item.Title))
+		title := normalizeWhitespace(html.UnescapeString(item.Title))
 		resultURL := strings.TrimSpace(item.URL)
-		body := normalizeWhitespace(htmlUnescape(item.Excerpt))
+		body := normalizeWhitespace(html.UnescapeString(item.Excerpt))
 		if title == "" || resultURL == "" {
 			continue
 		}
@@ -291,31 +292,25 @@ func normalizeDuckDuckGoChannel(channel string) string {
 
 func parseDuckDuckGoHTML(body interface {
 	Read(p []byte) (int, error)
-}, channel string, topN int) ([]duckduckgoResult, error) {
+}, topN int) ([]duckduckgoResult, error) {
 	if topN <= 0 {
 		topN = 10
 	}
-	doc, err := html.Parse(body)
+	doc, err := xhtml.Parse(body)
 	if err != nil {
 		return nil, err
-	}
-	if channel == duckduckgoChannelNews {
-		results := extractDuckDuckGoNewsResults(doc, topN)
-		if len(results) > 0 {
-			return results, nil
-		}
 	}
 	return extractDuckDuckGoGeneralResults(doc, topN), nil
 }
 
-func extractDuckDuckGoGeneralResults(doc *html.Node, topN int) []duckduckgoResult {
+func extractDuckDuckGoGeneralResults(doc *xhtml.Node, topN int) []duckduckgoResult {
 	results := make([]duckduckgoResult, 0, topN)
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
+	var walk func(*xhtml.Node)
+	walk = func(n *xhtml.Node) {
 		if len(results) >= topN {
 			return
 		}
-		if n.Type == html.ElementNode && hasClassToken(n, "result") {
+		if n.Type == xhtml.ElementNode && hasClassToken(n, "result") {
 			if res, ok := extractDuckDuckGoGeneralResult(n); ok {
 				results = append(results, res)
 			}
@@ -328,10 +323,10 @@ func extractDuckDuckGoGeneralResults(doc *html.Node, topN int) []duckduckgoResul
 	return results
 }
 
-func extractDuckDuckGoGeneralResult(card *html.Node) (duckduckgoResult, bool) {
+func extractDuckDuckGoGeneralResult(card *xhtml.Node) (duckduckgoResult, bool) {
 	var out duckduckgoResult
-	titleNode := findFirstNode(card, func(n *html.Node) bool {
-		return n.Type == html.ElementNode && n.Data == "a" && hasClassToken(n, "result__a")
+	titleNode := findFirstNode(card, func(n *xhtml.Node) bool {
+		return n.Type == xhtml.ElementNode && n.Data == "a" && hasClassToken(n, "result__a")
 	})
 	if titleNode == nil {
 		return out, false
@@ -345,68 +340,7 @@ func extractDuckDuckGoGeneralResult(card *html.Node) (duckduckgoResult, bool) {
 	return out, true
 }
 
-func extractDuckDuckGoNewsResults(doc *html.Node, topN int) []duckduckgoResult {
-	results := make([]duckduckgoResult, 0, topN)
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if len(results) >= topN {
-			return
-		}
-		if n.Type == html.ElementNode && (hasClassToken(n, "result") || hasClassToken(n, "module--news")) {
-			if res, ok := extractDuckDuckGoNewsResult(n); ok {
-				results = append(results, res)
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(doc)
-	return dedupeDuckDuckGoResults(results, topN)
-}
-
-func extractDuckDuckGoNewsResult(card *html.Node) (duckduckgoResult, bool) {
-	var out duckduckgoResult
-	titleNode := findFirstNode(card, func(n *html.Node) bool {
-		if n.Type != html.ElementNode || n.Data != "a" {
-			return false
-		}
-		return hasClassToken(n, "result__title") || hasClassToken(n, "result-link") || hasClassToken(n, "result__a")
-	})
-	if titleNode == nil {
-		return out, false
-	}
-	out.Title = normalizeWhitespace(collectText(titleNode))
-	out.URL = normalizeDuckDuckGoLink(attrValue(titleNode, "href"))
-	out.Body = normalizeWhitespace(firstNonEmpty(
-		textByClass(card, "result__snippet"),
-		textByClass(card, "result__body"),
-		textByClass(card, "result__extras"),
-	))
-	if out.Title == "" || out.URL == "" {
-		return duckduckgoResult{}, false
-	}
-	return out, true
-}
-
-func dedupeDuckDuckGoResults(in []duckduckgoResult, topN int) []duckduckgoResult {
-	seen := make(map[string]struct{}, len(in))
-	out := make([]duckduckgoResult, 0, min(topN, len(in)))
-	for _, item := range in {
-		key := item.URL + "\n" + item.Title
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, item)
-		if len(out) >= topN {
-			break
-		}
-	}
-	return out
-}
-
-func findFirstNode(root *html.Node, match func(*html.Node) bool) *html.Node {
+func findFirstNode(root *xhtml.Node, match func(*xhtml.Node) bool) *xhtml.Node {
 	if root == nil {
 		return nil
 	}
@@ -421,9 +355,9 @@ func findFirstNode(root *html.Node, match func(*html.Node) bool) *html.Node {
 	return nil
 }
 
-func textByClass(root *html.Node, className string) string {
-	node := findFirstNode(root, func(n *html.Node) bool {
-		return n.Type == html.ElementNode && hasClassToken(n, className)
+func textByClass(root *xhtml.Node, className string) string {
+	node := findFirstNode(root, func(n *xhtml.Node) bool {
+		return n.Type == xhtml.ElementNode && hasClassToken(n, className)
 	})
 	if node == nil {
 		return ""
@@ -431,8 +365,8 @@ func textByClass(root *html.Node, className string) string {
 	return collectText(node)
 }
 
-func hasClassToken(n *html.Node, want string) bool {
-	if n == nil || n.Type != html.ElementNode || want == "" {
+func hasClassToken(n *xhtml.Node, want string) bool {
+	if n == nil || n.Type != xhtml.ElementNode || want == "" {
 		return false
 	}
 	for _, a := range n.Attr {
@@ -448,7 +382,7 @@ func hasClassToken(n *html.Node, want string) bool {
 	return false
 }
 
-func attrValue(n *html.Node, key string) string {
+func attrValue(n *xhtml.Node, key string) string {
 	if n == nil {
 		return ""
 	}
@@ -489,27 +423,6 @@ func normalizeDuckDuckGoLink(raw string) string {
 
 func normalizeWhitespace(s string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
-}
-
-func htmlUnescape(s string) string {
-	replacer := strings.NewReplacer(
-		"&amp;", "&",
-		"&quot;", `"`,
-		"&#39;", "'",
-		"&#x27;", "'",
-		"&lt;", "<",
-		"&gt;", ">",
-	)
-	return replacer.Replace(s)
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func min(a, b int) int {
