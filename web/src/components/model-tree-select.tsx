@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/form';
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { IAddedModel } from '@/interfaces/database/llm';
-import { getRealModelName } from '@/utils/llm-util';
+import { buildModelValue, getRealModelName } from '@/utils/llm-util';
 import { useCallback, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -62,7 +62,7 @@ export function buildModelTree(
       title: instance,
       children: models.reduce<TreeSelectNode[]>((acc, m) => {
         const modelName = getRealModelName(m.name);
-        const id = `${modelName}@${m.instance_name}@${m.provider_name}`;
+        const id = m.model_id;
         if (seenLeafIds.has(id)) return acc;
         seenLeafIds.add(id);
         const leafNode: TreeSelectNode = {
@@ -106,6 +106,7 @@ export interface ModelTreeSelectProps {
   className?: string;
   renderSelected?: (node: TreeSelectNode | undefined) => React.ReactNode;
   testId?: string;
+  ownerTenantId?: string;
 }
 
 export function ModelTreeSelect({
@@ -119,18 +120,58 @@ export function ModelTreeSelect({
   className,
   renderSelected,
   testId,
+  ownerTenantId,
 }: ModelTreeSelectProps) {
-  const { data: allAddedModels } = useFetchAllAddedModels();
+  const { data: allAddedModels } = useFetchAllAddedModels(
+    undefined,
+    ownerTenantId,
+  );
 
   const treeData = useMemo(
     () => buildModelTree(allAddedModels, modelTypes),
     [allAddedModels, modelTypes],
   );
 
+  // Backward compatibility: map legacy concatenated ids
+  // ("modelName@instanceName@providerName") to new model_id-based ids so
+  // that previously persisted values still display correctly.
+  const legacyIdMap = useMemo(() => {
+    const map = new Map<string, string>();
+    const walk = (nodes: TreeSelectNode[]) => {
+      for (const node of nodes) {
+        if (node.children?.length) {
+          walk(node.children);
+        } else if (node.data) {
+          const legacyId = buildModelValue({
+            model_name: node.data.model_name,
+            model_instance: node.data.instance_name,
+            model_provider: node.data.provider_name,
+          });
+          map.set(legacyId, node.id);
+        }
+      }
+    };
+    walk(treeData);
+    return map;
+  }, [treeData]);
+
+  const normalizedValue = useMemo(() => {
+    if (!value) return value;
+    return legacyIdMap.get(value) ?? value;
+  }, [value, legacyIdMap]);
+
   const defaultRenderSelected = useCallback(
     (node: TreeSelectNode | undefined) => {
-      if (!node?.id) return null;
-      return <LLMLabel value={node.id} />;
+      if (!node?.data) return null;
+      return (
+        <LLMLabel
+          value={buildModelValue({
+            model_name: node.data.model_name,
+            model_instance: node.data.instance_name,
+            model_provider: node.data.provider_name,
+          })}
+        />
+      );
     },
     [],
   );
@@ -138,7 +179,7 @@ export function ModelTreeSelect({
   return (
     <TreeSelect
       data={treeData}
-      value={value}
+      value={normalizedValue}
       onChange={onChange}
       placeholder={placeholder}
       disabled={disabled}
