@@ -329,10 +329,10 @@ def _extract_relations_merged(text: str, entities: List[dict], doc, language: st
             subj = r.subject.text.strip().upper()
             obj = r.obj.text.strip().upper()
             rel_type = r.predicate  # "founded_by", "works_for", "related_to", etc.
-            pair = tuple(sorted([subj, obj]))
-            if pair in seen_pairs:
+            key = (subj, obj, rel_type)
+            if key in seen_pairs:
                 continue
-            seen_pairs.add(pair)
+            seen_pairs.add(key)
             relations.append(
                 {
                     "from_entity": subj,
@@ -359,14 +359,14 @@ def _extract_relations_merged(text: str, entities: List[dict], doc, language: st
                         ents_in.append(e)
             for i in range(len(ents_in)):
                 for j in range(i + 1, len(ents_in)):
-                    pair = tuple(sorted([ents_in[i]["text"].upper(), ents_in[j]["text"].upper()]))
-                    if pair in seen_pairs:
+                    key = (ents_in[i]["text"].upper(), ents_in[j]["text"].upper(), "related_to")
+                    if key in seen_pairs:
                         continue
-                    seen_pairs.add(pair)
+                    seen_pairs.add(key)
                     relations.append(
                         {
-                            "from_entity": pair[0],
-                            "to_entity": pair[1],
+                            "from_entity": ents_in[i]["text"].upper(),
+                            "to_entity": ents_in[j]["text"].upper(),
                             "type": "related_to",
                             "confidence": 0.4,
                             "weight": 1,
@@ -546,14 +546,22 @@ async def _batch_merge(
 
             all_inserts.append(doc)
 
-        # 3. Delete existing rows (single call) then insert all (single call)
-        if delete_ids:
-            await thread_pool_exec(settings.docStoreConn.delete, {"id": delete_ids, "kb_id": [kb_id]}, index, kb_id)
-            total_up += len(delete_ids)
+        # 3. Update existing rows in-place, insert only new rows
+        updates = [(rid, id_to_doc[rid]) for rid in delete_ids]
+        for rid, doc in updates:
+            await thread_pool_exec(
+                settings.docStoreConn.update,
+                {"id": rid},
+                doc,
+                index,
+                kb_id,
+            )
+            total_up += 1
 
-        if all_inserts:
-            await thread_pool_exec(settings.docStoreConn.insert, all_inserts, index, kb_id)
-            total_ins += len(all_inserts) - len(delete_ids)
+        new_docs = [d for rid, d in id_to_doc.items() if rid not in existing_map]
+        if new_docs:
+            await thread_pool_exec(settings.docStoreConn.insert, new_docs, index, kb_id)
+            total_ins += len(new_docs)
 
         if progress_cb and (offset + BATCH) % (BATCH * 4) == 0:
             pct = min(0.99, (offset + BATCH) / total)
@@ -672,8 +680,7 @@ async def run_lightgraph_for_doc(handler, ctx, embedding_model) -> None:
             continue
 
         # ── spaCy batch inference ────────────────────────────────────
-        for spacy_doc in nlp.pipe(texts, batch_size=4):
-            ci = len(all_entity_docs)  # which chunk in this batch
+        for ci, spacy_doc in enumerate(nlp.pipe(texts, batch_size=4)):
             if ci >= len(chunk_ids):
                 break
             chunk_id = chunk_ids[ci]

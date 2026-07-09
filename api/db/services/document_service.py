@@ -556,7 +556,7 @@ class DocumentService(CommonService):
                 # Fetch all matching rows
                 lightgraph_res = settings.docStoreConn.get_fields(
                     settings.docStoreConn.search(
-                        ["id", "source_doc_ids"],
+                        ["id", "source_doc_ids", "knowledge_graph_kwd", "weight_int"],
                         [],
                         lightgraph_condition,
                         [],
@@ -566,7 +566,7 @@ class DocumentService(CommonService):
                         chunk_index_name,
                         [doc.kb_id],
                     ),
-                    ["id", "source_doc_ids"],
+                    ["id", "source_doc_ids", "knowledge_graph_kwd", "weight_int"],
                 )
                 to_purge: list[str] = []
                 for row_id, row in lightgraph_res.items():
@@ -578,9 +578,17 @@ class DocumentService(CommonService):
                     remaining = [x for x in ids if x != doc.id]
                     if remaining:
                         new_val = " ".join(remaining)
+                        update = {"source_doc_ids": new_val, "doc_count_int": len(remaining)}
+                        # For relations, also update weight_int to match
+                        kk = row.get("knowledge_graph_kwd") or ""
+                        if isinstance(kk, list):
+                            kk = kk[0] if kk else ""
+                        if kk == "relation":
+                            old_w = int(row.get("weight_int", 1) or 1)
+                            update["weight_int"] = max(1, old_w - 1)
                         settings.docStoreConn.update(
                             {"id": row_id},
-                            {"source_doc_ids": new_val, "doc_count_int": len(remaining)},
+                            update,
                             chunk_index_name,
                             doc.kb_id,
                         )
