@@ -53,7 +53,7 @@ func (l *LocalAIModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (l *LocalAIModel) Name() string {
-	return "localai"
+	return "LocalAI"
 }
 
 var localAIReasoningFields = []string{"reasoning_content", "reasoning", "thinking"}

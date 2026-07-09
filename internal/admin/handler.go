@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +27,7 @@ import (
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
+	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strconv"
 	"time"
@@ -1249,4 +1251,39 @@ func (h *Handler) ShowModel(c *gin.Context) {
 
 	common.SuccessWithData(c, model, "")
 
+}
+
+func (h *Handler) PingStore(c *gin.Context) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		common.ErrorWithCode(c, int(common.CodeServerError), "storage not initialized")
+		return
+	}
+
+	if storageImpl.Health() {
+		common.SuccessNoMessage(c, "SUCCESS")
+	} else {
+		common.ErrorWithCode(c, int(common.CodeServerError), "storage health check failed")
+	}
+}
+
+func (h *Handler) PingCache(c *gin.Context) {
+	redisClient := redis.Get()
+	if redisClient.Health() {
+		common.SuccessNoMessage(c, "SUCCESS")
+	} else {
+		common.ErrorWithCode(c, int(common.CodeServerError), "cache health check failed")
+	}
+}
+
+func (h *Handler) PingEngine(c *gin.Context) {
+
+	docEngine := engine.Get()
+	ctx := context.Background()
+	if err := docEngine.Ping(ctx); err != nil {
+		common.ErrorWithCode(c, 500, err.Error())
+		return
+	}
+
+	common.SuccessNoMessage(c, "SUCCESS")
 }

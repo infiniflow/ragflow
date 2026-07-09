@@ -22,7 +22,7 @@ type TenantModel struct {
 	ModelName  string `gorm:"column:model_name;size:128" json:"model_name"`
 	ProviderID string `gorm:"column:provider_id;size:32;not null" json:"provider_id"`
 	InstanceID string `gorm:"column:instance_id;size:32;not null;index" json:"instance_id"`
-	ModelType  string `gorm:"column:model_type;size:32;not null" json:"model_type"`
+	ModelType  int    `gorm:"column:model_type;size:32;not null" json:"model_type"`
 	Status     string `gorm:"column:status;size:32;default:'active'" json:"status"`
 	Extra      string `gorm:"column:extra;size:1024;default:'{}'" json:"extra"`
 	BaseModel

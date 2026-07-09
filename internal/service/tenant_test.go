@@ -228,7 +228,7 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 		ModelName:  "gpt-4o",
 		ProviderID: providerID,
 		InstanceID: "instance-dummy",
-		ModelType:  "chat",
+		ModelType:  int(entity.ModelTypeChat),
 		Status:     "active",
 	}).Error
 	if err != nil {
