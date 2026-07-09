@@ -541,6 +541,65 @@ class DocumentService(CommonService):
         except Exception as e:
             logging.warning(f"Failed to cleanup knowledge graph for document {doc.id}: {e}")
 
+        # ── LightGraph entity/relation cleanup ────────────────────────
+        # LightGraph stores doc references in ``source_doc_ids`` (space-
+        # joined varchar).  When a document is deleted, remove its id
+        # from every lightgraph row that references it.  Rows that no
+        # longer reference any document are purged.
+        try:
+            if chunk_index_exists:
+                lightgraph_condition = {
+                    "compile_kwd": ["lightgraph"],
+                    "knowledge_graph_kwd": ["entity", "relation"],
+                    "source_doc_ids": doc.id,
+                }
+                # Fetch all matching rows
+                lightgraph_res = settings.docStoreConn.get_fields(
+                    settings.docStoreConn.search(
+                        ["id", "source_doc_ids"],
+                        [],
+                        lightgraph_condition,
+                        [],
+                        OrderByExpr(),
+                        0,
+                        100000,
+                        chunk_index_name,
+                        [doc.kb_id],
+                    ),
+                    ["id", "source_doc_ids"],
+                )
+                to_purge: list[str] = []
+                for row_id, row in lightgraph_res.items():
+                    raw = row.get("source_doc_ids") or ""
+                    if isinstance(raw, list):
+                        ids = [str(x).strip() for x in raw if x and str(x).strip()]
+                    else:
+                        ids = raw.strip().split() if raw.strip() else []
+                    remaining = [x for x in ids if x != doc.id]
+                    if remaining:
+                        new_val = " ".join(remaining)
+                        settings.docStoreConn.update(
+                            {"id": row_id},
+                            {"source_doc_ids": new_val, "doc_count_int": len(remaining)},
+                            chunk_index_name,
+                            doc.kb_id,
+                        )
+                    else:
+                        to_purge.append(row_id)
+                if to_purge:
+                    settings.docStoreConn.delete(
+                        {"id": to_purge, "kb_id": [doc.kb_id]},
+                        chunk_index_name,
+                        doc.kb_id,
+                    )
+                    logging.info(
+                        "LightGraph: purged %d rows for document %s",
+                        len(to_purge),
+                        doc.id,
+                    )
+        except Exception as e:
+            logging.warning(f"Failed to cleanup LightGraph for document {doc.id}: {e}")
+
         return True
 
     @classmethod
