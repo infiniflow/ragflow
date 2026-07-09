@@ -297,7 +297,7 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
             try:
                 llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
                 if "chat" in llm_types:
-                    model_config = get_model_config_by_id(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.tenant_llm_id)
+                    model_config = get_model_config_by_id(dialog.tenant_id, LLMType.CHAT, dialog.tenant_llm_id)
                 else:
                     model_config = resolve_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
             except LookupError:
@@ -585,7 +585,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             try:
                 llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
                 if "chat" in llm_types:
-                    llm_model_config = get_model_config_by_id(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.tenant_llm_id)
+                    llm_model_config = get_model_config_by_id(dialog.tenant_id, LLMType.CHAT, dialog.tenant_llm_id)
                 else:
                     llm_model_config = resolve_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
             except LookupError:
