@@ -63,8 +63,8 @@ func newAvianForTest(baseURL string) *AvianModel {
 }
 
 func TestAvianName(t *testing.T) {
-	if got := newAvianForTest("http://unused").Name(); got != "avian" {
-		t.Errorf("Name()=%q, want avian", got)
+	if got := newAvianForTest("http://unused").Name(); got != "Avian" {
+		t.Errorf("Name()=%q, want Avian", got)
 	}
 }
 
@@ -303,7 +303,7 @@ func TestAvianListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "deepseek/deepseek-v3.2,moonshotai/kimi-k2.5" {
+	if joinModelNames(models, ",") != "deepseek/deepseek-v3.2,moonshotai/kimi-k2.5" {
 		t.Errorf("models=%v", models)
 	}
 	if err := newAvianForTest(srv.URL).CheckConnection(cfg); err != nil {

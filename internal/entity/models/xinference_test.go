@@ -17,7 +17,7 @@ func newXinferenceForTest(baseURL string) *XinferenceModel {
 			Chat:      "v1/chat/completions",
 			Embedding: "v1/embeddings",
 			Models:    "v1/models",
-      Rerank:    "v1/rerank",
+			Rerank:    "v1/rerank",
 		},
 	)
 }
@@ -33,8 +33,8 @@ func withXinferenceIdleTimeout(t *testing.T, d time.Duration) {
 
 func TestXinferenceName(t *testing.T) {
 	x := newXinferenceForTest("http://unused")
-	if got := x.Name(); got != "xinference" {
-		t.Errorf("Name()=%q, want %q", got, "xinference")
+	if got := x.Name(); got != "Xinference" {
+		t.Errorf("Name()=%q, want %q", got, "Xinference")
 	}
 }
 
@@ -56,12 +56,12 @@ func TestNormalizeXinferenceBaseURL(t *testing.T) {
 }
 
 func TestXinferenceFactoryRoute(t *testing.T) {
-	driver, err := NewModelFactory().CreateModelDriver("xinference", map[string]string{"default": "http://unused"}, URLSuffix{})
+	driver, err := NewModelFactory().CreateModelDriver("Xinference", map[string]string{"default": "http://unused"}, URLSuffix{})
 	if err != nil {
 		t.Fatalf("CreateModelDriver: %v", err)
 	}
-	if driver.Name() != "xinference" {
-		t.Errorf("driver.Name()=%q, want xinference", driver.Name())
+	if driver.Name() != "Xinference" {
+		t.Errorf("driver.Name()=%q, want Xinference", driver.Name())
 	}
 }
 
@@ -266,7 +266,7 @@ func TestXinferenceListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "qwen2.5-instruct,custom-chat" {
+	if joinModelNames(models, ",") != "qwen2.5-instruct,custom-chat" {
 		t.Errorf("models=%v", models)
 	}
 	if err := x.CheckConnection(apiConfig); err != nil {
@@ -481,7 +481,7 @@ func TestXinferenceMissingBaseURLFailsClearly(t *testing.T) {
 	_, err := x.ChatWithMessages("qwen2.5-instruct",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "missing base URL") {
+	if err == nil || !strings.Contains(err.Error(), "base URL") {
 		t.Errorf("expected missing-base-URL error, got %v", err)
 	}
 }
@@ -490,23 +490,21 @@ func TestXinferenceUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	x := newXinferenceForTest("http://unused")
 	model := "qwen2.5-instruct"
 
-	if _, err := x.Rerank(&model, "q", []string{"d"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Rerank: expected no such method, got %v", err)
-  }
-	if _, err := x.Embed(&model, []string{"x"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Embed: expected no such method, got %v", err)
-	}
 	if _, err := x.Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: expected no such method, got %v", err)
 	}
-	if _, err := x.TranscribeAudio(&model, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("TranscribeAudio: expected no such method, got %v", err)
+	// TranscribeAudio IS implemented; it validates inputs after APIConfigCheck.
+	// The test passes nil file, which should yield an input-validation error,
+	// not an api-key error.
+	if _, err := x.TranscribeAudio(&model, nil, &APIConfig{}, nil); err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("TranscribeAudio: expected input validation error (file missing), got %v", err)
 	}
 	if err := x.TranscribeAudioWithSender(&model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudioWithSender: expected no such method, got %v", err)
 	}
-	if _, err := x.AudioSpeech(&model, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("AudioSpeech: expected no such method, got %v", err)
+	// AudioSpeech IS implemented; it validates inputs after APIConfigCheck.
+	if _, err := x.AudioSpeech(&model, nil, &APIConfig{}, nil); err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("AudioSpeech: expected input validation error (text missing), got %v", err)
 	}
 	if err := x.AudioSpeechWithSender(&model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeechWithSender: expected no such method, got %v", err)

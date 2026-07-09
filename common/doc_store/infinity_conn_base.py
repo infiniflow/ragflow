@@ -74,7 +74,10 @@ def _int_env(name: str, default: int) -> int:
         return int(raw)
     except ValueError:
         logging.getLogger(__name__).warning(
-            "Ignoring invalid %s=%r, falling back to %d", name, raw, default,
+            "Ignoring invalid %s=%r, falling back to %d",
+            name,
+            raw,
+            default,
         )
         return default
 
@@ -129,24 +132,29 @@ def _retry_on_meta_contention(
             last_exc = exc
             if attempt == max_attempts - 1:
                 break
-            base = (base_delay_ms / 1000.0) * (2 ** attempt)
+            base = (base_delay_ms / 1000.0) * (2**attempt)
             sleep_for = base + random.uniform(0, base * 0.5)
             log.info(
-                "INFINITY meta contention on %s (attempt %d/%d), "
-                "retrying in %.3fs: %s",
-                op_name, attempt + 1, max_attempts, sleep_for, exc,
+                "INFINITY meta contention on %s (attempt %d/%d), retrying in %.3fs: %s",
+                op_name,
+                attempt + 1,
+                max_attempts,
+                sleep_for,
+                exc,
             )
             time.sleep(sleep_for)
     log.warning(
         "INFINITY meta contention on %s exhausted %d attempts: %s",
-        op_name, max_attempts, last_exc,
+        op_name,
+        max_attempts,
+        last_exc,
     )
     assert last_exc is not None
     raise last_exc
 
 
 class InfinityConnectionBase(DocStoreConnection):
-    def __init__(self, mapping_file_name: str = "infinity_mapping.json", logger_name: str = "ragflow.infinity_conn", table_name_prefix: str="ragflow_"):
+    def __init__(self, mapping_file_name: str = "infinity_mapping.json", logger_name: str = "ragflow.infinity_conn", table_name_prefix: str = "ragflow_"):
         from common.doc_store.infinity_conn_pool import INFINITY_CONN
 
         self.dbName = settings.INFINITY.get("db_name", "default_db")
@@ -545,6 +553,17 @@ class InfinityConnectionBase(DocStoreConnection):
                 self.logger.debug(f"INFINITY created secondary index on kb_id for table {table_name}")
             except Exception as e:
                 self.logger.warning(f"Failed to create index on kb_id for {table_name}: {e}")
+
+            # Create secondary index on meta_fields for metadata filter queries
+            try:
+                inf_table.create_index(
+                    f"idx_{table_name}_meta_fields",
+                    IndexInfo("meta_fields", IndexType.Secondary),
+                    ConflictType.Ignore,
+                )
+                self.logger.debug(f"INFINITY created secondary index on meta_fields for table {table_name}")
+            except Exception as e:
+                self.logger.warning(f"Failed to create index on meta_fields for {table_name}: {e}")
 
             self.logger.debug(f"INFINITY created document metadata table {table_name} with secondary indexes")
             return True

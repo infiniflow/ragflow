@@ -136,16 +136,12 @@ def _load_canvas_runtime(monkeypatch):
     component_pkg.__path__ = [str(repo_root / "agent" / "component")]
     monkeypatch.setitem(sys.modules, "agent.component", component_pkg)
 
-    base_spec = importlib.util.spec_from_file_location(
-        "agent.component.base", repo_root / "agent" / "component" / "base.py"
-    )
+    base_spec = importlib.util.spec_from_file_location("agent.component.base", repo_root / "agent" / "component" / "base.py")
     base_mod = importlib.util.module_from_spec(base_spec)
     monkeypatch.setitem(sys.modules, "agent.component.base", base_mod)
     base_spec.loader.exec_module(base_mod)
 
-    iteration_spec = importlib.util.spec_from_file_location(
-        "agent.component.iteration", repo_root / "agent" / "component" / "iteration.py"
-    )
+    iteration_spec = importlib.util.spec_from_file_location("agent.component.iteration", repo_root / "agent" / "component" / "iteration.py")
     iteration_mod = importlib.util.module_from_spec(iteration_spec)
     monkeypatch.setitem(sys.modules, "agent.component.iteration", iteration_mod)
     iteration_spec.loader.exec_module(iteration_mod)
@@ -189,9 +185,7 @@ def _load_canvas_runtime(monkeypatch):
         def _invoke(self, **kwargs):
             query_text = kwargs.get("query")
             vars_map = self.get_input_elements_from_text(query_text)
-            query = self.string_format(
-                query_text, {key: value["value"] for key, value in vars_map.items()}
-            )
+            query = self.string_format(query_text, {key: value["value"] for key, value in vars_map.items()})
             calls = self._canvas.globals.setdefault("probe.calls", [])
             calls.append(query)
             self.set_output("result", query)
@@ -212,6 +206,54 @@ def _load_canvas_runtime(monkeypatch):
         def thoughts(self):
             return "sink"
 
+    class UserFillUpParam(base_mod.ComponentParamBase):
+        def __init__(self):
+            super().__init__()
+            self.enable_tips = True
+            self.tips = "Please fill"
+            self.inputs = {"value": {"type": "line", "name": "Value"}}
+
+        def get_input_form(self):
+            return self.inputs
+
+        def check(self):
+            return True
+
+    class UserFillUp(base_mod.ComponentBase):
+        component_name = "UserFillUp"
+
+        def _invoke(self, **kwargs):
+            incoming = kwargs.get("inputs", {})
+            if "value" in incoming:
+                raw = incoming["value"]
+                value = raw.get("value") if isinstance(raw, dict) else raw
+                self.set_output("value", value)
+            if self._param.enable_tips:
+                self.set_output("tips", self._param.tips)
+
+        def get_input_elements(self):
+            return self._param.inputs
+
+        def thoughts(self):
+            return "fill"
+
+    class MessageParam(base_mod.ComponentParamBase):
+        def __init__(self):
+            super().__init__()
+            self.content = "{UserFillUp:1@value}"
+
+        def check(self):
+            return True
+
+    class Message(base_mod.ComponentBase):
+        component_name = "Message"
+
+        def _invoke(self, **kwargs):
+            self.set_output("content", self.string_format(self._param.content, {}))
+
+        def thoughts(self):
+            return "message"
+
     class_map = {
         "Begin": Begin,
         "BeginParam": BeginParam,
@@ -223,13 +265,15 @@ def _load_canvas_runtime(monkeypatch):
         "ProbeParam": ProbeParam,
         "Sink": Sink,
         "SinkParam": SinkParam,
+        "UserFillUp": UserFillUp,
+        "UserFillUpParam": UserFillUpParam,
+        "Message": Message,
+        "MessageParam": MessageParam,
     }
 
     component_pkg.component_class = lambda name: class_map[name]
 
-    canvas_spec = importlib.util.spec_from_file_location(
-        "agent.canvas", repo_root / "agent" / "canvas.py"
-    )
+    canvas_spec = importlib.util.spec_from_file_location("agent.canvas", repo_root / "agent" / "canvas.py")
     canvas_mod = importlib.util.module_from_spec(canvas_spec)
     monkeypatch.setitem(sys.modules, "agent.canvas", canvas_mod)
     canvas_spec.loader.exec_module(canvas_mod)
@@ -237,9 +281,9 @@ def _load_canvas_runtime(monkeypatch):
     return canvas_mod
 
 
-async def _collect_events(canvas):
+async def _collect_events(stream):
     events = []
-    async for event in canvas.run():
+    async for event in stream:
         events.append(event)
     return events
 
@@ -308,7 +352,7 @@ def test_iteration_runtime_processes_all_array_items(monkeypatch):
     }
 
     canvas = canvas_mod.Canvas(json.dumps(dsl))
-    events = asyncio.run(_collect_events(canvas))
+    events = asyncio.run(_collect_events(canvas.run()))
 
     assert canvas.globals["probe.calls"] == ["a", "b", "c"]
     assert any(event["event"] == "workflow_finished" for event in events)
@@ -386,6 +430,76 @@ def test_iteration_runtime_supports_bare_iteration_aliases(monkeypatch, query, e
     }
 
     canvas = canvas_mod.Canvas(json.dumps(dsl))
-    asyncio.run(_collect_events(canvas))
+    asyncio.run(_collect_events(canvas.run()))
 
     assert canvas.globals["probe.calls"] == expected_calls
+
+
+@pytest.mark.p2
+def test_canvas_resume_does_not_emit_duplicate_workflow_started(monkeypatch):
+    canvas_mod = _load_canvas_runtime(monkeypatch)
+
+    dsl = {
+        "components": {
+            "begin": {
+                "obj": {"component_name": "Begin", "params": {}},
+                "downstream": ["UserFillUp:1"],
+                "upstream": [],
+            },
+            "UserFillUp:1": {
+                "obj": {
+                    "component_name": "UserFillUp",
+                    "params": {
+                        "enable_tips": True,
+                        "tips": "Enter value",
+                        "inputs": {"value": {"type": "line", "name": "Value"}},
+                    },
+                },
+                "downstream": ["Message:1"],
+                "upstream": ["begin"],
+            },
+            "Message:1": {
+                "obj": {
+                    "component_name": "Message",
+                    "params": {"content": "{UserFillUp:1@value}"},
+                },
+                "downstream": [],
+                "upstream": ["UserFillUp:1"],
+            },
+        },
+        "graph": {
+            "nodes": [
+                {"id": "begin", "data": {"name": "Begin"}},
+                {"id": "UserFillUp:1", "data": {"name": "UserFillUp"}},
+                {"id": "Message:1", "data": {"name": "Message"}},
+            ]
+        },
+        "history": [],
+        "path": [],
+        "retrieval": [],
+        "globals": {
+            "sys.query": "",
+            "sys.user_id": "",
+            "sys.conversation_turns": 0,
+            "sys.files": [],
+            "sys.history": [],
+            "sys.date": "",
+        },
+    }
+
+    canvas = canvas_mod.Canvas(json.dumps(dsl))
+    first_events = asyncio.run(_collect_events(canvas.run()))
+    first_kinds = [event["event"] for event in first_events]
+    assert first_kinds == [
+        "workflow_started",
+        "node_started",
+        "node_finished",
+        "user_inputs",
+    ]
+
+    resumed_events = asyncio.run(_collect_events(canvas.run(query="hello", inputs={"value": {"value": "hello"}})))
+    resumed_kinds = [event["event"] for event in resumed_events]
+    assert resumed_kinds[0] == "node_started"
+    assert "workflow_started" not in resumed_kinds
+    assert "message" in resumed_kinds
+    assert resumed_kinds[-1] == "workflow_finished"

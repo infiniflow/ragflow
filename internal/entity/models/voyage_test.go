@@ -46,8 +46,22 @@ func newVoyageForTest(baseURL string) *VoyageModel {
 }
 
 func TestVoyageName(t *testing.T) {
-	if got := newVoyageForTest("http://unused").Name(); got != "voyage" {
-		t.Errorf("Name()=%q, want %q", got, "voyage")
+	if got := newVoyageForTest("http://unused").Name(); got != "Voyage AI" {
+		t.Errorf("Name()=%q, want %q", got, "Voyage AI")
+	}
+}
+
+func TestVoyageNewModelWithCustomDefaultTransport(t *testing.T) {
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, nil
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+	})
+
+	if model := NewVoyageModel(map[string]string{"default": "http://unused"}, URLSuffix{}); model == nil {
+		t.Fatal("NewVoyageModel returned nil")
 	}
 }
 

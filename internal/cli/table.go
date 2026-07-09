@@ -188,8 +188,7 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 					valueWidth = getStringWidth(value)
 				}
 				// Pad to column width
-				padding := colWidths[col] - valueWidth + len(value)
-				rowParts = append(rowParts, fmt.Sprintf(" %-*s ", padding, value))
+				rowParts = append(rowParts, fmt.Sprintf(" %s ", padCell(value, colWidths[col], false)))
 			}
 			fmt.Println("|" + strings.Join(rowParts, "|") + "|")
 		}
@@ -293,5 +292,3 @@ func isHalfWidth(r rune) bool {
 	}
 	return false
 }
-
-

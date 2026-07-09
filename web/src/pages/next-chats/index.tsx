@@ -6,18 +6,31 @@ import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useFetchChatList } from '@/hooks/use-chat-request';
+import { buildOwnersFilter } from '@/utils/list-filter-util';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 import { ChatCard } from './chat-card';
+import { useCreateChatDialog } from './hooks/use-create-chat';
 import { useRenameChat } from './hooks/use-rename-chat';
 
 export default function ChatList() {
-  const { data, setPagination, pagination, handleInputChange, searchString } =
-    useFetchChatList();
+  const {
+    data,
+    setPagination,
+    pagination,
+    handleInputChange,
+    searchString,
+    filterValue,
+    handleFilterSubmit,
+  } = useFetchChatList();
   const { t } = useTranslation();
+  const { t: tc } = useTranslation('common');
+  const owners = [
+    buildOwnersFilter(data?.chats ?? [], undefined, tc('owner')),
+  ];
   const {
     initialChatName,
     chatRenameVisible,
@@ -26,6 +39,13 @@ export default function ChatList() {
     onChatRenameOk,
     chatRenameLoading,
   } = useRenameChat();
+  const {
+    createChatVisible,
+    showCreateChatModal,
+    hideCreateChatModal,
+    onCreateChatOk,
+    createChatLoading,
+  } = useCreateChatDialog();
 
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {
@@ -35,8 +55,8 @@ export default function ChatList() {
   );
 
   const handleShowCreateModal = useCallback(() => {
-    showChatRenameModal();
-  }, [showChatRenameModal]);
+    showCreateChatModal();
+  }, [showCreateChatModal]);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const isCreate = searchParams.get('isCreate') === 'true';
@@ -48,16 +68,55 @@ export default function ChatList() {
     }
   }, [isCreate, handleShowCreateModal, searchParams, setSearchParams]);
 
+  const renameDialogProps = useMemo(() => {
+    if (chatRenameVisible) {
+      return {
+        hideModal: hideChatRenameModal,
+        onOk: onChatRenameOk,
+        initialName: initialChatName,
+        loading: chatRenameLoading,
+        title: initialChatName,
+      };
+    }
+    if (createChatVisible) {
+      return {
+        hideModal: hideCreateChatModal,
+        onOk: onCreateChatOk,
+        initialName: '',
+        loading: createChatLoading,
+        title: t('chat.createChat'),
+      };
+    }
+    return null;
+  }, [
+    chatRenameVisible,
+    createChatVisible,
+    hideChatRenameModal,
+    onChatRenameOk,
+    initialChatName,
+    chatRenameLoading,
+    hideCreateChatModal,
+    onCreateChatOk,
+    createChatLoading,
+    t,
+  ]);
+
   return (
     <>
       {data.chats?.length || searchString ? (
-        <article className="size-full flex flex-col" data-testid="chats-list">
-          <header className="px-5 pt-8 mb-4">
+        <article
+          className="size-full min-w-0 flex flex-col"
+          data-testid="chats-list"
+        >
+          <header className="mb-4 min-w-0 px-5 pt-8">
             <ListFilterBar
               title={t('chat.chatApps')}
               icon="chats"
               onSearchChange={handleInputChange}
               searchString={searchString}
+              filters={owners}
+              value={filterValue}
+              onChange={handleFilterSubmit}
             >
               <Button data-testid="create-chat" onClick={handleShowCreateModal}>
                 <Plus className="size-[1em]" />
@@ -115,14 +174,8 @@ export default function ChatList() {
         </article>
       )}
 
-      {chatRenameVisible && (
-        <RenameDialog
-          hideModal={hideChatRenameModal}
-          onOk={onChatRenameOk}
-          initialName={initialChatName}
-          loading={chatRenameLoading}
-          title={initialChatName || t('chat.createChat')}
-        ></RenameDialog>
+      {renameDialogProps && (
+        <RenameDialog {...renameDialogProps}></RenameDialog>
       )}
     </>
   );

@@ -18,6 +18,7 @@ import importlib.util
 import inspect
 import json
 import sys
+from contextlib import nullcontext
 from functools import wraps
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -138,6 +139,18 @@ def _set_request_json(monkeypatch, module, payload):
         return payload
 
     monkeypatch.setattr(module, "get_request_json", _request_json)
+
+
+def _stub_url_safety(monkeypatch, module, unsafe_urls=None):
+    unsafe_urls = set(unsafe_urls or [])
+
+    def _assert_url_is_safe(url):
+        if url in unsafe_urls:
+            raise ValueError("blocked unsafe url")
+        return "safe.example", "93.184.216.34"
+
+    monkeypatch.setattr(module, "assert_url_is_safe", _assert_url_is_safe)
+    monkeypatch.setattr(module, "pin_dns_global", lambda *_args, **_kwargs: nullcontext())
 
 
 @pytest.fixture(scope="session")
@@ -338,10 +351,20 @@ def test_create_validation_guards(monkeypatch):
     res = _run(module.create.__wrapped__())
     assert "Invalid url" in res["message"]
 
+    _set_request_json(monkeypatch, module, {"name": "srv", "url": 123, "server_type": "sse"})
+    res = _run(module.create.__wrapped__())
+    assert "Invalid url" in res["message"]
+
+    _set_request_json(monkeypatch, module, {"name": "srv", "url": "http://unsafe", "server_type": "sse"})
+    _stub_url_safety(monkeypatch, module, {"http://unsafe"})
+    res = _run(module.create.__wrapped__())
+    assert "blocked unsafe url" in res["message"]
+
 
 @pytest.mark.p2
 def test_create_service_paths(monkeypatch):
     module = _load_mcp_api(monkeypatch)
+    _stub_url_safety(monkeypatch, module)
 
     base_payload = {
         "name": "srv",
@@ -434,10 +457,20 @@ def test_update_validation_guards(monkeypatch):
     res = _run(module.update("mcp-1"))
     assert "Invalid url" in res["message"]
 
+    _set_request_json(monkeypatch, module, {"mcp_id": "mcp-1", "url": {"raw": "http://a"}})
+    res = _run(module.update("mcp-1"))
+    assert "Invalid url" in res["message"]
+
+    _set_request_json(monkeypatch, module, {"mcp_id": "mcp-1", "url": "http://unsafe"})
+    _stub_url_safety(monkeypatch, module, {"http://unsafe"})
+    res = _run(module.update("mcp-1"))
+    assert "blocked unsafe url" in res["message"]
+
 
 @pytest.mark.p2
 def test_update_service_paths(monkeypatch):
     module = _load_mcp_api(monkeypatch)
+    _stub_url_safety(monkeypatch, module)
 
     existing = _DummyMCPServer(
         id="mcp-1",
@@ -560,6 +593,7 @@ def test_rm_failure_success_and_exception(monkeypatch):
 @pytest.mark.p2
 def test_import_multiple_missing_servers_and_exception(monkeypatch):
     module = _load_mcp_api(monkeypatch)
+    _stub_url_safety(monkeypatch, module)
 
     _set_request_json(monkeypatch, module, {"mcpServers": {}})
     res = _run(module.import_multiple.__wrapped__())
@@ -579,11 +613,15 @@ def test_import_multiple_missing_servers_and_exception(monkeypatch):
 @pytest.mark.p2
 def test_import_multiple_mixed_results(monkeypatch):
     module = _load_mcp_api(monkeypatch)
+    _stub_url_safety(monkeypatch, module, {"http://unsafe"})
 
     payload = {
         "mcpServers": {
             "missing_fields": {"type": "sse"},
             "": {"type": "sse", "url": "http://empty"},
+            "invalid_type": {"type": "invalid", "url": "http://invalid"},
+            "non_string_url": {"type": "sse", "url": True},
+            "unsafe": {"type": "sse", "url": "http://unsafe"},
             "dup": {"type": "sse", "url": "http://dup", "authorization_token": "dup-token"},
             "tool_err": {"type": "sse", "url": "http://err"},
             "insert_fail": {"type": "sse", "url": "http://fail"},
@@ -624,6 +662,12 @@ def test_import_multiple_mixed_results(monkeypatch):
     assert "Missing required fields" in results["missing_fields"]["message"]
     assert results[""]["success"] is False
     assert "Invalid MCP name" in results[""]["message"]
+    assert results["invalid_type"]["success"] is False
+    assert "Unsupported MCP server type" in results["invalid_type"]["message"]
+    assert results["non_string_url"]["success"] is False
+    assert "Invalid url" in results["non_string_url"]["message"]
+    assert results["unsafe"]["success"] is False
+    assert "blocked unsafe url" in results["unsafe"]["message"]
     assert results["tool_err"]["success"] is False
     assert "tool call failed" in results["tool_err"]["message"]
     assert results["insert_fail"]["success"] is False
@@ -693,8 +737,13 @@ def test_detail_download_success_and_exception(monkeypatch):
 @pytest.mark.p2
 def test_test_mcp_route_matrix_unit(monkeypatch):
     module = _load_mcp_api(monkeypatch)
+    _stub_url_safety(monkeypatch, module)
 
     _set_request_json(monkeypatch, module, {"url": "", "server_type": "sse"})
+    res = _run(module.test_mcp("mcp-1"))
+    assert "Invalid MCP url" in res["message"]
+
+    _set_request_json(monkeypatch, module, {"url": ["http://a"], "server_type": "sse"})
     res = _run(module.test_mcp("mcp-1"))
     assert "Invalid MCP url" in res["message"]
 

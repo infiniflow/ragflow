@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Regression tests for `get_agent_session` (api/apps/restful_apis/agent_api.py)."""
+"""Regression tests for agent session GET/DELETE (api/apps/restful_apis/agent_api.py)."""
 
 import importlib.util
 import sys
@@ -36,12 +36,14 @@ def _stub(monkeypatch, name, **attrs):
     return mod
 
 
-def _load_agent_api(monkeypatch, get_by_id_result):
-    """Load api/apps/restful_apis/agent_api.py with the minimum stubs required.
+def _load_agent_api(monkeypatch, get_by_id_result, delete_calls=None):
+    """Load api/apps/restful_apis/agent_api.py with the minimum stubs required."""
+    delete_calls = delete_calls if delete_calls is not None else []
 
-    `get_by_id_result` is the `(exists, conv)` tuple the stub
-    `API4ConversationService.get_by_id` will return for any session_id.
-    """
+    def _delete_by_id(session_id):
+        delete_calls.append(session_id)
+        return True
+
     _stub(monkeypatch, "api.apps", current_user=SimpleNamespace(id="tenant-1"), login_required=lambda func: func)
     _stub(monkeypatch, "api.apps.services.canvas_replica_service", CanvasReplicaService=SimpleNamespace())
     _stub(monkeypatch, "api.db", CanvasCategory=SimpleNamespace())
@@ -49,7 +51,12 @@ def _load_agent_api(monkeypatch, get_by_id_result):
     _stub(
         monkeypatch,
         "api.db.services.api_service",
-        API4ConversationService=SimpleNamespace(get_by_id=lambda _session_id: get_by_id_result, save=lambda **_kwargs: True, delete_by_id=lambda *_args, **_kwargs: True, query=lambda **_kwargs: []),
+        API4ConversationService=SimpleNamespace(
+            get_by_id=lambda _session_id: get_by_id_result,
+            save=lambda **_kwargs: True,
+            delete_by_id=_delete_by_id,
+            query=lambda **_kwargs: [],
+        ),
     )
     _stub(
         monkeypatch,
@@ -70,7 +77,9 @@ def _load_agent_api(monkeypatch, get_by_id_result):
         monkeypatch,
         "api.utils.api_utils",
         add_tenant_id_to_kwargs=lambda func: func,
+        check_duplicate_ids=lambda ids, _kind="item": (ids, []),
         get_data_error_result=lambda message="Sorry": {"code": 102, "message": message, "data": None},
+        get_error_data_result=lambda message="Sorry": {"code": 102, "message": message, "data": None},
         get_json_result=lambda code=0, message="", data=None: {"code": code, "message": message, "data": data},
         get_result=lambda **kwargs: kwargs,
         get_request_json=lambda: {},
@@ -87,24 +96,16 @@ def _load_agent_api(monkeypatch, get_by_id_result):
     module.manager = _PassthroughManager()
     monkeypatch.setitem(sys.modules, "test_get_agent_session_agent_api", module)
     spec.loader.exec_module(module)
-    return module
+    return module, delete_calls
 
 
 @pytest.mark.p1
 class TestGetAgentSession:
-    """Regression for #14989: GET /agents/<id>/sessions/<sid> must not crash
-    with `AttributeError: 'NoneType' object has no attribute 'to_dict'` when
-    the session_id does not exist."""
+    """Regression for missing sessions and IDOR on GET /agents/<id>/sessions/<sid>."""
 
     @pytest.mark.p1
     def test_returns_error_when_session_missing(self, monkeypatch):
-        """Missing session must return a data-error JSON, not raise AttributeError.
-
-        In multi-instance deployments, the session row may not yet be visible
-        on the node servicing the GET. The previous implementation called
-        `conv.to_dict()` on the `None` returned by `get_by_id` and crashed.
-        """
-        module = _load_agent_api(monkeypatch, get_by_id_result=(False, None))
+        module, _ = _load_agent_api(monkeypatch, get_by_id_result=(False, None))
 
         result = module.get_agent_session(agent_id="agent-1", session_id="does-not-exist", tenant_id="tenant-1")
 
@@ -116,9 +117,8 @@ class TestGetAgentSession:
 
     @pytest.mark.p1
     def test_returns_session_dict_when_found(self, monkeypatch):
-        """When the session exists, the route returns its `to_dict()` payload."""
-        conv = SimpleNamespace(to_dict=lambda: {"id": "sess-1", "messages": []})
-        module = _load_agent_api(monkeypatch, get_by_id_result=(True, conv))
+        conv = SimpleNamespace(dialog_id="agent-1", to_dict=lambda: {"id": "sess-1", "messages": []})
+        module, _ = _load_agent_api(monkeypatch, get_by_id_result=(True, conv))
 
         result = module.get_agent_session(agent_id="agent-1", session_id="sess-1", tenant_id="tenant-1")
 
@@ -127,3 +127,38 @@ class TestGetAgentSession:
             "message": "",
             "data": {"id": "sess-1", "messages": []},
         }
+
+    @pytest.mark.p1
+    def test_get_rejects_session_for_different_agent(self, monkeypatch):
+        conv = SimpleNamespace(dialog_id="agent-victim", to_dict=lambda: {"id": "sess-1"})
+        module, _ = _load_agent_api(monkeypatch, get_by_id_result=(True, conv))
+
+        result = module.get_agent_session(agent_id="agent-attacker", session_id="sess-1", tenant_id="tenant-1")
+
+        assert result["message"] == "Session not found!"
+        assert result["data"] is None
+
+
+@pytest.mark.p1
+class TestDeleteAgentSession:
+    """Regression for IDOR on DELETE /agents/<id>/sessions/<sid>."""
+
+    @pytest.mark.p1
+    def test_delete_rejects_session_for_different_agent(self, monkeypatch):
+        conv = SimpleNamespace(dialog_id="agent-victim")
+        module, delete_calls = _load_agent_api(monkeypatch, get_by_id_result=(True, conv))
+
+        result = module.delete_agent_session_item(agent_id="agent-attacker", session_id="sess-1", tenant_id="tenant-1")
+
+        assert result["message"] == "Session not found!"
+        assert delete_calls == []
+
+    @pytest.mark.p1
+    def test_delete_succeeds_when_session_belongs_to_agent(self, monkeypatch):
+        conv = SimpleNamespace(dialog_id="agent-1")
+        module, delete_calls = _load_agent_api(monkeypatch, get_by_id_result=(True, conv))
+
+        result = module.delete_agent_session_item(agent_id="agent-1", session_id="sess-1", tenant_id="tenant-1")
+
+        assert result == {"code": 0, "message": "", "data": True}
+        assert delete_calls == ["sess-1"]

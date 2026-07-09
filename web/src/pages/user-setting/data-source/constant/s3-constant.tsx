@@ -1,6 +1,6 @@
 import { FilterFormField, FormFieldType } from '@/components/dynamic-form';
 import { TFunction } from 'i18next';
-import { BedrockRegionList } from '../../setting-model/constant';
+import { BedrockRegionList } from '../../setting-model/constants';
 
 const awsRegionOptions = BedrockRegionList.map((r) => ({
   label: r,
@@ -19,6 +19,7 @@ export const S3Constant = (t: TFunction) => [
     type: FormFieldType.Select,
     required: false,
     options: awsRegionOptions,
+    allowCustomValue: true,
     customValidate: (val: string, formValues: any) => {
       const credentials = formValues?.config?.credentials || {};
       const bucketType = formValues?.config?.bucket_type || 's3';

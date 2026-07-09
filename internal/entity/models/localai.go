@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -29,110 +28,36 @@ import (
 	"time"
 )
 
-// localAIStreamIdleTimeout bounds how long ChatStreamlyWithSender will
-// wait between SSE chunks before assuming the upstream has stalled and
-// aborting the request. A local LLM normally emits at least one token
-// every few seconds; 60s is generous enough to never break a working
-// stream but tight enough to bound a worst-case mid-body hang.
-//
-// var (not const) so tests can lower it without waiting a real minute.
+// localAIStreamIdleTimeout bounds how long ChatStreamlyWithSender
 var localAIStreamIdleTimeout = 60 * time.Second
 
-// LocalAIModel implements ModelDriver for LocalAI, a self-hosted
-// OpenAI-compatible inference server (https://localai.io).
-//
-// Unlike cloud providers, LocalAI runs on a tenant-supplied base URL
-// (for example http://127.0.0.1:8080/v1). The driver therefore reads
-// the base URL from the per-instance map at call time and does not
-// assume a "default" entry. The API key is optional: LocalAI accepts
-// an empty key by default, and the driver only sets the Authorization
-// header when a non-empty key was supplied.
+// LocalAIModel implements ModelDriver for LocalAI
 type LocalAIModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
-// NewLocalAIModel creates a new LocalAI model instance.
-//
-// We clone http.DefaultTransport so we keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the connection-pool fields we care about.
-//
-// The Client itself has no Timeout. http.Client.Timeout would also
-// cap the time spent reading the response body, which would cut off
-// long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
-// callers wrap each request with context.WithTimeout instead.
+// NewLocalAIModel creates a new LocalAI model instance
 func NewLocalAIModel(baseURL map[string]string, urlSuffix URLSuffix) *LocalAIModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &LocalAIModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
+			httpClient:       NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (l *LocalAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewLocalAIModel(baseURL, l.URLSuffix)
+	return NewLocalAIModel(baseURL, l.baseModel.URLSuffix)
 }
 
 func (l *LocalAIModel) Name() string {
-	return "localai"
+	return "LocalAI"
 }
 
-// resolveBaseURL returns the tenant-supplied base URL for the given
-// region, falling back to the "default" entry, and fails with a clear
-// message when nothing is configured. LocalAI is self-hosted so the
-// driver cannot fall back to a public endpoint.
-func (l *LocalAIModel) resolveBaseURL(region string) (string, error) {
-	if base, ok := l.BaseURL[region]; ok && base != "" {
-		return strings.TrimSuffix(base, "/"), nil
-	}
-	if base, ok := l.BaseURL["default"]; ok && base != "" {
-		return strings.TrimSuffix(base, "/"), nil
-	}
-	return "", fmt.Errorf("localai: missing base URL, configure the local access address (e.g., http://127.0.0.1:8080/v1)")
-}
-
-// setAuth sets the Authorization header only when a non-empty API key
-// is supplied. LocalAI accepts an empty key by default, so sending
-// "Bearer " (with an empty value) would be wrong in both directions:
-// some local proxies reject it, and it leaks the fact that the
-// driver was misconfigured.
-func setLocalAIAuth(req *http.Request, apiConfig *APIConfig) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return
-	}
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-}
-
-// localAIReasoningFields lists the JSON field names that different
-// upstream models put their chain-of-thought into. LocalAI is a proxy
-// that can route to any of these, so the driver tries each in turn:
-//
-//   - reasoning_content: OpenAI o-series, kimi-k2.6, DeepSeek-R1,
-//     magistral when proxied through an OpenAI-shim
-//   - reasoning:         Upstage solar-pro3 (and its proxies)
-//   - thinking:          Qwen3 (Ollama-style) and some local llama-r1
-//     variants exposed through LocalAI's OpenAI shim
-//
-// The first non-empty match wins. Order matters: reasoning_content is
-// the OpenAI-conformant name and the most widely used, so it's tried
-// first.
 var localAIReasoningFields = []string{"reasoning_content", "reasoning", "thinking"}
 
-// extractLocalAIReasoning pulls the chain-of-thought out of a message
-// or delta object regardless of which field name the upstream model
-// chose. Returns "" when no reasoning field is present or non-string.
 func extractLocalAIReasoning(m map[string]interface{}) string {
 	for _, k := range localAIReasoningFields {
 		if v, ok := m[k].(string); ok && v != "" {
@@ -142,17 +67,6 @@ func extractLocalAIReasoning(m map[string]interface{}) string {
 	return ""
 }
 
-// addLocalAIReasoningRequestParams propagates the caller's request-side
-// reasoning intent into the body. Different upstream models behind
-// LocalAI accept different parameters:
-//
-//   - reasoning_effort: OpenAI-compatible reasoning APIs (kimi, magistral,
-//     solar-pro2/pro3, gpt-o-series, R1 proxies)
-//   - enable_thinking:  Qwen3 explicit thinking toggle
-//
-// Both are emitted when the caller opts in, so the request works
-// against whichever family the LocalAI instance routes to. A non-
-// supporting upstream simply ignores the extra field.
 func addLocalAIReasoningRequestParams(reqBody map[string]interface{}, cfg *ChatConfig) {
 	if cfg == nil {
 		return
@@ -167,20 +81,18 @@ func addLocalAIReasoningRequestParams(reqBody map[string]interface{}, cfg *ChatC
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := l.resolveBaseURL(region)
+	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -196,9 +108,6 @@ func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, ap
 		"stream":   false,
 	}
 
-	// Note: do NOT propagate chatModelConfig.Stream into the request body
-	// here. ChatWithMessages parses a single JSON response, so stream must
-	// always be off for this code path.
 	if chatModelConfig != nil {
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
@@ -212,10 +121,6 @@ func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, ap
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
-		// LocalAI is a proxy; emit both reasoning_effort and
-		// enable_thinking so the request works regardless of which
-		// model family the LocalAI instance routes to. See
-		// addLocalAIReasoningRequestParams.
 		addLocalAIReasoningRequestParams(reqBody, chatModelConfig)
 	}
 	jsonData, err := json.Marshal(reqBody)
@@ -232,9 +137,11 @@ func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, ap
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	setLocalAIAuth(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -288,6 +195,10 @@ func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, ap
 // sender function. The LocalAI SSE stream uses the same shape as OpenAI:
 // "data:" lines carrying JSON events, with a final "[DONE]" line.
 func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -296,16 +207,11 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := l.resolveBaseURL(region)
+	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -322,10 +228,6 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	if chatModelConfig != nil {
-		// Refuse to run if the caller explicitly asked for stream=false.
-		// The body of this method only knows how to read SSE, so a
-		// non-SSE JSON response would be parsed as if it were a stream
-		// and produce no chunks. Better to fail clearly.
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
@@ -342,9 +244,6 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
-		// LocalAI is a proxy; emit both reasoning_effort and
-		// enable_thinking so the streaming request works regardless of
-		// which model family the LocalAI instance routes to.
 		addLocalAIReasoningRequestParams(reqBody, chatModelConfig)
 	}
 
@@ -353,15 +252,6 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// SSE streams are long-lived, so we cannot attach a hard deadline:
-	// a legitimate response may take many minutes to finish on a busy
-	// local model. Instead, wrap the request with WithCancel and run
-	// an idle watchdog below that calls cancel() if no new data has
-	// arrived for streamIdleTimeout. That bounds the worst-case stall
-	// to a known finite window without breaking working long streams.
-	//
-	// Threading a real caller-supplied ctx through the ModelDriver
-	// interface remains a wider follow-up; this is the contained fix.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -371,9 +261,11 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	setLocalAIAuth(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -384,12 +276,6 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Idle watchdog: every successful Scan resets lastActive. If
-	// streamIdleTimeout passes without a reset, the watchdog calls
-	// cancel(), which closes the underlying connection. The blocking
-	// scanner.Scan() then returns false with the context error in
-	// scanner.Err(), and we surface it to the caller instead of
-	// hanging the goroutine forever.
 	lastActive := time.Now()
 	var lastActiveMu sync.Mutex
 	done := make(chan struct{})
@@ -413,56 +299,27 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		}
 	}()
 
-	// SSE parsing: bump the scanner buffer from the 64KB default to 1MB
-	// so we never silently truncate a long data: line.
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
+	streamDone, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		lastActiveMu.Lock()
 		lastActive = time.Now()
 		lastActiveMu.Unlock()
 
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		data := strings.TrimSpace(line[5:])
-
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
-		// Reasoning chunk first, content second. When an SSE event
-		// carries both, callers that pipe them to a UI render the
-		// chain-of-thought before the answer for that token, matching
-		// the wire ordering Upstage solar-pro3 and kimi-k2.6 emit.
-		// extractLocalAIReasoning tries reasoning_content, reasoning,
-		// and thinking in that order so this works against whichever
-		// model family LocalAI routes to.
 		if reasoning := extractLocalAIReasoning(delta); reasoning != "" {
 			if err := sender(nil, &reasoning); err != nil {
 				return err
@@ -479,20 +336,16 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		// If the watchdog fired, the context is done; surface that as
-		// a clearer "idle" error instead of leaking the raw
-		// "context canceled" string.
+		return nil
+	})
+	if err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("localai: stream idle for more than %s, aborted", localAIStreamIdleTimeout)
 		}
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !streamDone && !sawTerminal {
 		return fmt.Errorf("localai: stream ended before [DONE] or finish_reason")
 	}
 
@@ -516,10 +369,10 @@ type localAIEmbeddingResponse struct {
 	Object string                 `json:"object"`
 }
 
-// Embed turns a list of texts into embedding vectors using the LocalAI
-// /v1/embeddings endpoint. The output has one vector per input, in the
-// same order the inputs were given.
 func (l *LocalAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -528,16 +381,11 @@ func (l *LocalAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := l.resolveBaseURL(region)
+	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -561,9 +409,11 @@ func (l *LocalAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	setLocalAIAuth(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -583,10 +433,6 @@ func (l *LocalAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Reorder by the reported index so the output always lines up with
-	// the input texts, even if the upstream API ever returns items out
-	// of order. A nil slot at the end indicates the upstream did not
-	// return an embedding for that input.
 	embeddings := make([]EmbeddingData, len(texts))
 	filled := make([]bool, len(texts))
 	for _, item := range parsed.Data {
@@ -594,9 +440,6 @@ func (l *LocalAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 			return nil, fmt.Errorf("localai: response index %d out of range for %d inputs", item.Index, len(texts))
 		}
 		if filled[item.Index] {
-			// A malformed response that repeats the same index would
-			// silently overwrite the earlier vector. Fail loudly so
-			// the caller never uses ambiguous output.
 			return nil, fmt.Errorf("localai: duplicate embedding index %d in response", item.Index)
 		}
 		embeddings[item.Index] = EmbeddingData{
@@ -628,12 +471,10 @@ type localAIRerankResponse struct {
 	} `json:"results"`
 }
 
-// Rerank calculates similarity scores between a query and a list of documents
-// using LocalAI's /v1/rerank endpoint. The response shape is Cohere-style:
-// {results: [{index, relevance_score}]}. The output is copied into the shared
-// RerankResponse{Data: []RerankResult{Index, RelevanceScore}} shape that the
-// rest of the codebase already consumes.
 func (l *LocalAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -641,16 +482,11 @@ func (l *LocalAIModel) Rerank(modelName *string, query string, documents []strin
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := l.resolveBaseURL(region)
+	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 {
@@ -678,9 +514,11 @@ func (l *LocalAIModel) Rerank(modelName *string, query string, documents []strin
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	setLocalAIAuth(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -714,20 +552,16 @@ func (l *LocalAIModel) Rerank(modelName *string, query string, documents []strin
 	return rerankResponse, nil
 }
 
-// ListModels returns the list of model ids the running LocalAI instance has
-// loaded. There is no fixed model list at the SaaS level because LocalAI is
-// self-hosted; the answer depends on what the tenant has configured.
-func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	baseURL, err := l.resolveBaseURL(region)
+	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -737,9 +571,12 @@ func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	setLocalAIAuth(req, apiConfig)
+	req.Header.Set("Content-Type", "application/json")
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -754,40 +591,22 @@ func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
+	if modelList.Models == nil {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0)
-	for _, model := range data {
-		modelMap, ok := model.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		modelName, ok := modelMap["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, modelName)
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
-// Balance is not exposed by LocalAI (it is self-hosted and free), so this
-// returns "no such method".
 func (l *LocalAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
-// CheckConnection runs a lightweight ListModels call to verify the LocalAI
-// base URL is reachable.
 func (l *LocalAIModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := l.ListModels(apiConfig)
 	if err != nil {
@@ -796,10 +615,6 @@ func (l *LocalAIModel) CheckConnection(apiConfig *APIConfig) error {
 	return nil
 }
 
-// TranscribeAudio (ASR): LocalAI can route audio to a Whisper backend
-// when one is loaded, but the wire shape and driver-side plumbing for
-// streaming audio uploads is separate from this PR's scope. Stub here
-// to satisfy the ModelDriver interface; follow-up PR welcome.
 func (l *LocalAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
@@ -817,21 +632,19 @@ func (l *LocalAIModel) AudioSpeechWithSender(modelName *string, audioContent *st
 	return fmt.Errorf("%s, no such method", l.Name())
 }
 
-// OCRFile: LocalAI has no OCR pipeline in its OpenAI-compatible surface;
-// document parsing belongs to a different interface entirely.
 func (l *LocalAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
 // ParseFile parse file
-func (z *LocalAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (l *LocalAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
-func (z *LocalAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (l *LocalAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
-func (z *LocalAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (l *LocalAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
 }

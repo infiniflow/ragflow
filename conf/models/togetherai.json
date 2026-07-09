@@ -57,7 +57,7 @@
     },
     {
       "name": "mixedbread-ai/mxbai-rerank-large-v2",
-      "max_tokens": "16384",
+      "max_tokens": 16384,
       "model_types": [
         "rerank"
       ]
@@ -76,3 +76,4 @@
     }
   ]
 }
+

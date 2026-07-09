@@ -1,5 +1,6 @@
 {
-  "name": "SiliconFlow",
+  "name": "SILICONFLOW",
+  "rank": 980,
   "url": {
     "default": "https://api.siliconflow.cn/v1"
   },
@@ -13,6 +14,51 @@
     "asr": "audio/transcriptions"
   },
   "models": [
+    {
+      "name": "Pro/deepseek-ai/DeepSeek-V4-Pro",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Pro/deepseek-ai/DeepSeek-V4-Flash",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Pro/moonshotai/Kimi-K2.6",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Pro/zai-org/GLM-5.1",
+      "max_tokens": 204800,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
     {
       "name": "qwen/qwen3-8b",
       "max_tokens": 32768,
@@ -47,6 +93,15 @@
       "model_types": [
         "embedding"
       ]
+    },
+    {
+      "name": "BAAI/bge-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ],
+      "max_dimension": 1024,
+      "dimensions": []
     },
     {
       "name": "fnlp/MOSS-TTSD-v0.5",

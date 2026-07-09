@@ -27,6 +27,10 @@ os:
   hosts: 'http://localhost:1201'
   username: 'admin'
   password: 'infini_rag_flow_OS_01'
+  # Optional hybrid (BM25 + KNN) search tuning. The connector self-provisions the
+  # normalization search pipeline on start-up (requires OpenSearch >= 2.10).
+  # hybrid_search_pipeline: 'ragflow_hybrid_pipeline'
+  # hybrid_search_weights: [0.5, 0.5]   # [text/BM25 leg, vector/KNN leg]
 infinity:
   uri: 'localhost:23817'
   postgres_port: 5432
@@ -44,8 +48,14 @@ redis:
   username: ''
   password: 'infini_rag_flow'
   host: 'localhost:6379'
+nats:
+  host: "localhost"
+  port: 4222
 task_executor:
-  message_queue_type: 'redis'
+  message_queue_type: 'nats'
+file_syncer:
+  max_concurrent_syncs: 4
+  sync_interval: 3
 user_default_llm:
   default_models:
     embedding_model:
@@ -53,6 +63,10 @@ user_default_llm:
       factory: 'xxxx'
       api_key: 'xxx'
       base_url: 'http://localhost:6380'
+gcs:
+  bucket: '${GCS_BUCKET:-ragflow}'
+  prefix_path: '${GCS_PREFIX_PATH:-}'
+  endpoint_url: '${GCS_ENDPOINT:-}'
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'

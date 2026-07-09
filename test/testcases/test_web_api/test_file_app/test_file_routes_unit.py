@@ -328,6 +328,22 @@ def test_download_falls_back_to_document_storage(monkeypatch):
 
 
 @pytest.mark.p2
+def test_download_missing_blob_returns_error(monkeypatch):
+    module = _load_file_api_module(monkeypatch)
+    storage_calls = []
+
+    def _get(bucket, location):
+        storage_calls.append((bucket, location))
+        return None
+
+    monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(get=_get))
+    res = _run(module.download("tenant1", "file1"))
+
+    assert storage_calls == [("bucket1", "path1"), ("bucket2", "path2")]
+    assert res["message"] == "This file is empty."
+
+
+@pytest.mark.p2
 def test_parent_and_ancestors_use_new_routes(monkeypatch):
     module = _load_file_api_module(monkeypatch)
 
@@ -338,4 +354,3 @@ def test_parent_and_ancestors_use_new_routes(monkeypatch):
     assert parent_res["data"]["parent_folder"]["id"] == "parent1"
     assert ancestors_res["code"] == 0
     assert ancestors_res["data"]["parent_folders"][0]["id"] == "root"
-

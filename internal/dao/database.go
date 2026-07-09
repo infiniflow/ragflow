@@ -17,18 +17,17 @@
 package dao
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	"strings"
+	"sync"
 	"time"
 
 	"ragflow/internal/server"
-	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 	gormLogger "gorm.io/gorm/logger"
@@ -38,7 +37,8 @@ import (
 )
 
 var DB *gorm.DB
-var modelProviderManager *entity.ProviderManager
+var modelProviderManager *models.ProviderManager
+var modelProviderManagerMu sync.Mutex
 
 // LLMFactoryConfig represents a single LLM factory configuration
 type LLMFactoryConfig struct {
@@ -65,7 +65,7 @@ type LLMFactoriesFile struct {
 }
 
 // InitDB initialize database connection
-func InitDB() error {
+func InitDB(migrateDB bool) error {
 	cfg := server.GetConfig()
 	dbCfg := cfg.Database
 
@@ -110,8 +110,8 @@ func InitDB() error {
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	// Auto migrate all models
-	models := []interface{}{
+	// Auto migrate all dataModels
+	dataModels := []interface{}{
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
@@ -152,26 +152,45 @@ func InitDB() error {
 		&entity.TenantModelGroupMapping{},
 		&entity.TenantModelProvider{},
 		&entity.TenantModelGroup{},
+		&entity.IngestionTask{},
+		&entity.IngestionTaskLog{},
+		&entity.IngestionTasklet{},
+		&entity.IngestionTaskletLog{},
+		&entity.FileCommit{},
+		&entity.FileCommitItem{},
 	}
 
-	for _, m := range models {
-		if err = autoMigrateSafely(DB, m); err != nil {
-			return fmt.Errorf("failed to migrate model %T: %w", m, err)
+	if migrateDB {
+		common.Info("Migrating database schema...")
+		for _, m := range dataModels {
+			if err = autoMigrateSafely(DB, m); err != nil {
+				return fmt.Errorf("failed to migrate model %T: %w", m, err)
+			}
 		}
-	}
 
-	// Run manual migrations for complex schema changes
-	if err = RunMigrations(DB); err != nil {
-		return fmt.Errorf("failed to run manual migrations: %w", err)
+		// Run manual migrations for complex schema changes
+		if err = RunMigrations(DB); err != nil {
+			return fmt.Errorf("failed to run manual migrations: %w", err)
+		}
+		common.Info("Database schema migrated successfully")
+	}
+	// Seed built-in agent templates so the Go backend can serve the
+	// "create agent from template" catalogue without relying on Python-side
+	// initialization.
+	if err = SeedCanvasTemplates(); err != nil {
+		common.Warn("Failed to seed canvas templates", zap.Error(err))
 	}
 
 	common.Info("Database connected and migrated successfully")
 
-	modelProviderManager, err = entity.NewProviderManager("conf/models")
+	err = models.InitProviderManager("conf/models")
 	if err != nil {
-		log.Fatal("Failed to load model providers:", err)
+		common.Fatal("Failed to load model providers", zap.Error(err))
 	}
+
+	modelProviderManager = models.GetProviderManager()
 	common.Info("Model providers loaded successfully")
+
 	return nil
 }
 
@@ -181,13 +200,49 @@ func GetDB() *gorm.DB {
 }
 
 // GetModelProviderManager get database instance
-func GetModelProviderManager() *entity.ProviderManager {
+func GetModelProviderManager() *models.ProviderManager {
+	if modelProviderManager != nil {
+		return modelProviderManager
+	}
+
+	modelProviderManagerMu.Lock()
+	defer modelProviderManagerMu.Unlock()
+	if modelProviderManager != nil {
+		return modelProviderManager
+	}
+	if existing := models.GetProviderManager(); existing != nil {
+		modelProviderManager = existing
+		return modelProviderManager
+	}
+	modelConfigDir, err := findModelConfigDir()
+	if err != nil {
+		common.Fatal("Failed to locate model providers", zap.Error(err))
+	}
+	if err := models.InitProviderManager(modelConfigDir); err != nil {
+		common.Fatal("Failed to load model providers", zap.Error(err))
+	}
+	modelProviderManager = models.GetProviderManager()
 	return modelProviderManager
+}
+
+func findModelConfigDir() (string, error) {
+	candidates := []string{
+		"conf/models",
+		filepath.Join("..", "..", "conf", "models"),
+		filepath.Join("..", "..", "..", "conf", "models"),
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("conf/models not found")
 }
 
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
 // This handles cases where indexes already exist (e.g., created by Python backend)
 func autoMigrateSafely(db *gorm.DB, model interface{}) error {
+	//err := db.Debug().AutoMigrate(model) // to print debug info
 	err := db.AutoMigrate(model)
 	if err == nil {
 		return nil
@@ -196,108 +251,29 @@ func autoMigrateSafely(db *gorm.DB, model interface{}) error {
 	// Check if error is MySQL duplicate index error (Error 1061)
 	errStr := err.Error()
 	if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
-		common.Info("Index already exists, skipping", zap.String("error", errStr))
+		common.Warn("Index already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1060") && strings.Contains(errStr, "Duplicate column name") {
-		common.Info("Column already exists, skipping", zap.String("error", errStr))
+		common.Warn("Column already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1050") && strings.Contains(errStr, "Table") {
-		common.Info("Table already exists, skipping", zap.String("error", errStr))
+		common.Warn("Table already exists, skipping", zap.String("error", errStr))
+		return nil
+	}
+
+	if strings.Contains(errStr, "Error 1091") && strings.Contains(errStr, "Can't DROP") {
+		common.Warn("Index/column already dropped, skipping", zap.String("error", errStr))
+		return nil
+	}
+
+	if strings.Contains(errStr, "Error 1138") && strings.Contains(errStr, "Invalid use of NULL") {
+		common.Warn("NULL value in existing rows, skipping migration change", zap.String("error", errStr))
 		return nil
 	}
 
 	return err
-}
-
-// InitLLMFactory initializes LLM factories and models from JSON file.
-// It reads the llm_factories.json configuration file and populates the database
-// with LLM factory and model information. If a factory or model already exists,
-// it will be updated with the new configuration.
-//
-// Returns:
-//   - error: An error if the initialization fails, nil otherwise.
-func InitLLMFactory() error {
-	configPath := filepath.Join(utility.GetProjectBaseDirectory(), "conf", "llm_factories.json")
-
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to read llm_factories.json: %w", err)
-	}
-
-	var fileData LLMFactoriesFile
-	if err := json.Unmarshal(data, &fileData); err != nil {
-		return fmt.Errorf("failed to parse llm_factories.json: %w", err)
-	}
-
-	db := DB
-
-	for _, factory := range fileData.FactoryLLMInfos {
-		status := factory.Status
-		if status == "" {
-			status = "1"
-		}
-
-		llmFactory := &entity.LLMFactories{
-			Name:   factory.Name,
-			Logo:   utility.StringPtr(factory.Logo),
-			Tags:   factory.Tags,
-			Rank:   utility.ParseInt64(factory.Rank),
-			Status: &status,
-		}
-
-		var existingFactory entity.LLMFactories
-		result := db.Where("name = ?", factory.Name).First(&existingFactory)
-		if result.Error != nil {
-			if err := db.Create(llmFactory).Error; err != nil {
-				log.Printf("Failed to create LLM factory %s: %v", factory.Name, err)
-				continue
-			}
-		} else {
-			if err := db.Model(&entity.LLMFactories{}).Where("name = ?", factory.Name).Updates(map[string]interface{}{
-				"logo":   llmFactory.Logo,
-				"tags":   llmFactory.Tags,
-				"rank":   llmFactory.Rank,
-				"status": llmFactory.Status,
-			}).Error; err != nil {
-				log.Printf("Failed to update LLM factory %s: %v", factory.Name, err)
-			}
-		}
-
-		for _, llm := range factory.LLM {
-			llmStatus := "1"
-			llmModel := &entity.LLM{
-				LLMName:   llm.LLMName,
-				ModelType: llm.ModelType,
-				FID:       factory.Name,
-				MaxTokens: llm.MaxTokens,
-				Tags:      llm.Tags,
-				IsTools:   llm.IsTools,
-				Status:    &llmStatus,
-			}
-
-			var existingLLM entity.LLM
-			result := db.Where("llm_name = ? AND fid = ?", llm.LLMName, factory.Name).First(&existingLLM)
-			if result.Error != nil {
-				if err := db.Create(llmModel).Error; err != nil {
-					log.Printf("Failed to create LLM %s/%s: %v", factory.Name, llm.LLMName, err)
-				}
-			} else {
-				if err := db.Model(&entity.LLM{}).Where("llm_name = ? AND fid = ?", llm.LLMName, factory.Name).Updates(map[string]interface{}{
-					"model_type": llmModel.ModelType,
-					"max_tokens": llmModel.MaxTokens,
-					"tags":       llmModel.Tags,
-					"is_tools":   llmModel.IsTools,
-					"status":     llmModel.Status,
-				}).Error; err != nil {
-					log.Printf("Failed to update LLM %s/%s: %v", factory.Name, llm.LLMName, err)
-				}
-			}
-		}
-	}
-
-	return nil
 }

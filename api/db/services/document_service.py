@@ -16,6 +16,7 @@
 import logging
 import random
 from datetime import datetime
+from time import monotonic
 
 import xxhash
 from peewee import fn, Case, JOIN
@@ -373,10 +374,14 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def list_doc_headers_by_kb_and_source_type(cls, kb_id, source_type, page_size=500):
         fields = [cls.model.id, cls.model.kb_id, cls.model.source_type, cls.model.name]
-        docs = cls.model.select(*fields).where(
-            cls.model.kb_id == kb_id,
-            cls.model.source_type == source_type,
-        ).order_by(cls.model.create_time.asc())
+        docs = (
+            cls.model.select(*fields)
+            .where(
+                cls.model.kb_id == kb_id,
+                cls.model.source_type == source_type,
+            )
+            .order_by(cls.model.create_time.asc())
+        )
         offset = 0
         res = []
         while True:
@@ -402,10 +407,14 @@ class DocumentService(CommonService):
         rows and the resulting map would silently miss entries.
         """
         fields = [cls.model.id, cls.model.content_hash]
-        docs = cls.model.select(*fields).where(
-            cls.model.kb_id == kb_id,
-            cls.model.source_type == source_type,
-        ).order_by(cls.model.create_time.asc())
+        docs = (
+            cls.model.select(*fields)
+            .where(
+                cls.model.kb_id == kb_id,
+                cls.model.source_type == source_type,
+            )
+            .order_by(cls.model.create_time.asc())
+        )
         offset = 0
         result: dict[str, str] = {}
         while True:
@@ -489,6 +498,20 @@ class DocumentService(CommonService):
         except Exception as e:
             logging.error(f"Failed to delete chunks from doc store for document {doc.id}: {e}")
 
+        # Prune this doc's line from the KB's tree-kind navigation
+        # markdown (best-effort — the markdown is a downstream artifact,
+        # and failure here must not block the document delete).
+        try:
+            from rag.advanced_rag.knowlege_compile.dataset_nav import (
+                remove_dataset_nav_doc_sync,
+            )
+
+            remove_dataset_nav_doc_sync(tenant_id, doc.kb_id, doc.id)
+        except Exception as e:
+            logging.warning(
+                f"Failed to prune dataset_nav for document {doc.id}: {e}",
+            )
+
         # Delete document metadata (non-critical, log and continue)
         try:
             DocMetadataService.delete_document_metadata(doc.id, doc.kb_id, tenant_id)
@@ -571,21 +594,20 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_unfinished_docs(cls):
-        fields = [cls.model.id, cls.model.process_begin_at, cls.model.parser_config, cls.model.progress_msg,
-                  cls.model.run, cls.model.parser_id]
-        unfinished_task_query = Task.select(Task.doc_id).where(
-            (Task.progress >= 0) & (Task.progress < 1)
-        )
+        fields = [cls.model.id, cls.model.process_begin_at, cls.model.parser_config, cls.model.progress_msg, cls.model.run, cls.model.parser_id]
+        unfinished_task_query = Task.select(Task.doc_id).where((Task.progress >= 0) & (Task.progress < 1))
         docs_with_non_failed_tasks = Task.select(Task.doc_id).where(Task.progress >= 0).distinct()
 
         docs = cls.model.select(*fields).where(
             cls.model.status == StatusEnum.VALID.value,
             ~(cls.model.type == FileType.VIRTUAL.value),
             ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value)),
-            (((cls.model.progress < 1) & (cls.model.progress > 0)) |
-             (cls.model.id.in_(unfinished_task_query)) |
-             ((cls.model.progress == -1) & (cls.model.run == TaskStatus.FAIL.value) &
-              (cls.model.id.in_(docs_with_non_failed_tasks)))))  # including GraphRAG/RAPTOR/Mindmap; re-sync failed docs
+            (
+                ((cls.model.progress < 1) & (cls.model.progress > 0))
+                | (cls.model.id.in_(unfinished_task_query))
+                | ((cls.model.progress == -1) & (cls.model.run == TaskStatus.FAIL.value) & (cls.model.id.in_(docs_with_non_failed_tasks)))
+            ),
+        )  # including GraphRAG/RAPTOR/Mindmap; re-sync failed docs
         return list(docs.dicts())
 
     @classmethod
@@ -604,8 +626,7 @@ class DocumentService(CommonService):
             )
             if num == 0:
                 logging.error(
-                    "increment_chunk_num: no document matched doc_id=%s kb_id=%s "
-                    "token_num=%s chunk_num=%s duration=%s",
+                    "increment_chunk_num: no document matched doc_id=%s kb_id=%s token_num=%s chunk_num=%s duration=%s",
                     doc_id,
                     kb_id,
                     token_num,
@@ -623,8 +644,7 @@ class DocumentService(CommonService):
             )
             if num == 0:
                 logging.error(
-                    "increment_chunk_num: no knowledgebase matched kb_id=%s for doc_id=%s "
-                    "token_num=%s chunk_num=%s duration=%s",
+                    "increment_chunk_num: no knowledgebase matched kb_id=%s for doc_id=%s token_num=%s chunk_num=%s duration=%s",
                     kb_id,
                     doc_id,
                     token_num,
@@ -660,8 +680,7 @@ class DocumentService(CommonService):
             )
             if num == 0:
                 logging.error(
-                    "decrement_chunk_num: no knowledgebase matched kb_id=%s for doc_id=%s "
-                    "token_num=%s chunk_num=%s duration=%s",
+                    "decrement_chunk_num: no knowledgebase matched kb_id=%s for doc_id=%s token_num=%s chunk_num=%s duration=%s",
                     kb_id,
                     doc_id,
                     token_num,
@@ -936,6 +955,10 @@ class DocumentService(CommonService):
                 doc_progress = doc.progress if doc and doc.progress else 0.0
                 special_task_running = False
                 priority = 0
+                # Count this document's own not-yet-started tasks per priority so
+                # they can be excluded from the "tasks ahead in the queue" figure
+                # for the matching priority queue.
+                own_queued_by_priority = {}
                 for t in tsks:
                     task_type = (t.task_type or "").lower()
                     if task_type in PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES:
@@ -944,8 +967,10 @@ class DocumentService(CommonService):
                         finished = False
                     if t.progress == -1:
                         bad += 1
+                    if (t.progress or 0) == 0:
+                        own_queued_by_priority[t.priority] = own_queued_by_priority.get(t.priority, 0) + 1
                     prg += t.progress if t.progress >= 0 else 0
-                    if t.progress_msg.strip():
+                    if (t.progress_msg or "").strip():
                         msg.append(t.progress_msg)
                     priority = max(priority, t.priority)
                 prg /= len(tsks)
@@ -973,9 +998,14 @@ class DocumentService(CommonService):
                 if msg:
                     info["progress_msg"] = msg
                     if msg.endswith("created task graphrag") or msg.endswith("created task raptor") or msg.endswith("created task mindmap"):
-                        info["progress_msg"] += "\n%d tasks are ahead in the queue..." % get_queue_length(priority)
+                        # Exclude this document's own queued tasks in the same
+                        # priority queue: they are not "ahead" of itself, they
+                        # ARE the work being waited on.
+                        queue_ahead = max(0, get_queue_length(priority) - own_queued_by_priority.get(priority, 0))
+                        info["progress_msg"] += "\n%d tasks are ahead in the queue..." % queue_ahead
                 else:
-                    info["progress_msg"] = "%d tasks are ahead in the queue..." % get_queue_length(priority)
+                    queue_ahead = max(0, get_queue_length(priority) - own_queued_by_priority.get(priority, 0))
+                    info["progress_msg"] = "%d tasks are ahead in the queue..." % queue_ahead
                 info["update_time"] = current_timestamp()
                 info["update_date"] = get_format_time()
                 (cls.model.update(info).where((cls.model.id == d["id"]) & ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value))).execute())
@@ -1071,7 +1101,7 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
     """
     if doc_ids is None:
         doc_ids = []
-    assert ty in ["graphrag", "raptor", "mindmap"], "type should be graphrag, raptor or mindmap"
+    assert ty in ["graphrag", "raptor", "mindmap", "artifact", "skill"], "type should be graphrag, raptor, mindmap, artifact or skill"
 
     chunking_config = DocumentService.get_chunking_config(sample_doc["id"])
     hasher = xxhash.xxh64()
@@ -1098,12 +1128,123 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
 
     task["doc_ids"] = doc_ids
     DocumentService.begin2parse(task["doc_id"], keep_progress=True)
-    assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
+    assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, ty), message=task), "Can't access Redis. Please check the Redis' status."
     return task["id"]
 
 
-def get_queue_length(priority):
-    group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
-    if not group_info:
+def queue_per_doc_raptor_task(doc, priority):
+    """Queue a doc-scoped RAPTOR task.
+
+    Distinct from :func:`queue_raptor_o_graphrag_tasks` (which is KB-scoped
+    and uses ``GRAPH_RAPTOR_FAKE_DOC_ID`` as the task's ``doc_id`` so it
+    fans out across the dataset). Here the task's ``doc_id`` is the real
+    document id, so ``TaskHandler._run_raptor`` runs only on this doc's
+    chunks and the RAPTOR summaries it produces are scoped to this doc.
+
+    Triggered automatically at the tail of standard chunking when the
+    doc's ``parser_config["raptor"]["use_raptor"]`` is true. No
+    cross-task dedup — within one chunking-task execution this helper is
+    called at most once, which is the only invariant the caller needs.
+    """
+    chunking_config = DocumentService.get_chunking_config(doc["id"])
+    hasher = xxhash.xxh64()
+    for field in sorted(chunking_config.keys()):
+        hasher.update(str(chunking_config[field]).encode("utf-8"))
+
+    task = {
+        "id": get_uuid(),
+        "doc_id": doc["id"],
+        "from_page": MAXIMUM_TASK_PAGE_NUMBER,
+        "to_page": MAXIMUM_TASK_PAGE_NUMBER,
+        "task_type": "raptor",
+        "progress_msg": datetime.now().strftime("%H:%M:%S") + " created task raptor",
+        "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    for field in ["doc_id", "from_page", "to_page"]:
+        hasher.update(str(task[field]).encode("utf-8"))
+    hasher.update(b"raptor")
+    task["digest"] = hasher.hexdigest()
+    bulk_insert_into_db(Task, [task], True)
+
+    # Redis message carries ``doc_ids`` for downstream consumers
+    # (TaskHandler._run_raptor reads it). Identical to the fake-doc
+    # path's convention so we don't have to special-case the executor.
+    task["doc_ids"] = [doc["id"]]
+    assert REDIS_CONN.queue_product(
+        settings.get_svr_queue_name(priority, "raptor"),
+        message=task,
+    ), "Can't access Redis. Please check the Redis' status."
+    return task["id"]
+
+
+# Short-lived per-priority cache for the genuine queued-task backlog so the
+# per-document progress sync does not issue a COUNT query for every document
+# each cycle. Keyed by priority (None means "all priorities").
+_PENDING_TASK_COUNT_CACHE = {}
+_PENDING_TASK_COUNT_TTL_SECONDS = 3.0
+
+
+def get_pending_task_count(priority=None):
+    """Count tasks that are genuinely still waiting to be processed.
+
+    A task counts as "waiting" when it has not started yet (progress == 0) and
+    its document is neither cancelled nor failed. We deliberately do NOT require
+    the document to be RUNNING with progress in [0, 1): special tasks (graphrag/
+    raptor/mindmap) are queued via ``begin2parse(keep_progress=True)`` while the
+    document's own progress may already be 1, so requiring RUNNING/progress<1
+    would undercount them and wrongly drop the cap to 0 while Redis lag is still
+    non-zero. Only cancelled documents (run == CANCEL) and failed ones
+    (progress < 0) are excluded, plus soft-deleted (invalid) documents.
+
+    When ``priority`` is given, only tasks queued at that priority are counted,
+    so the figure stays consistent with the per-priority Redis queue it caps.
+
+    Returns None when the count cannot be determined, so callers can fall back
+    to the raw Redis stream lag.
+    """
+    now = monotonic()
+    cached = _PENDING_TASK_COUNT_CACHE.get(priority)
+    if cached and cached.get("expire_at", 0.0) > now:
+        return cached["value"]
+    try:
+        query = (
+            Task.select(fn.COUNT(Task.id))
+            .join(Document, on=(Task.doc_id == Document.id))
+            .where((Task.progress == 0) & ((Document.run.is_null(True)) | (Document.run != TaskStatus.CANCEL.value)) & (Document.progress >= 0) & (Document.status == StatusEnum.VALID.value))
+        )
+        if priority is not None:
+            query = query.where(Task.priority == priority)
+        count = int(query.scalar() or 0)
+    except Exception:
+        logging.exception("get_pending_task_count failed")
+        return None
+    _PENDING_TASK_COUNT_CACHE[priority] = {"value": count, "expire_at": now + _PENDING_TASK_COUNT_TTL_SECONDS}
+    return count
+
+
+def get_queue_length(priority, suffix="common"):
+    """Return how many tasks are ahead in the processing queue.
+
+    The Redis stream consumer-group ``lag`` counts every message that has not
+    yet been delivered to a task executor, including messages whose tasks were
+    already cancelled/stopped. Those messages only stop counting once an
+    executor happens to read them, so after a user stops parsing the lag can
+    stay inflated indefinitely and parsing appears to hang forever
+    ("N tasks are ahead in the queue...").
+
+    To keep the figure honest, the raw lag is capped by the number of tasks
+    that are genuinely still waiting in the database, which self-heals the
+    moment work is cancelled or completes.
+    """
+    group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority, suffix), SVR_CONSUMER_GROUP_NAME)
+    lag = int(group_info.get("lag", 0) or 0) if group_info else 0
+
+    # Nothing queued in Redis: the answer is 0 regardless of the DB backlog, so
+    # short-circuit to avoid a COUNT/JOIN on every progress-sync cycle.
+    if lag <= 0:
         return 0
-    return int(group_info.get("lag", 0) or 0)
+
+    pending = get_pending_task_count(priority)
+    if pending is None:
+        return lag
+    return min(lag, pending)

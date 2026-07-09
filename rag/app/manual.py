@@ -183,7 +183,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
             txt, layoutno, poss = section
             if isinstance(poss, str):
-                poss = (getattr(pdf_parser, "extract_positions", lambda _: [])(poss) or [[0, 0, 0, 0, 0]])
+                poss = getattr(pdf_parser, "extract_positions", lambda _: [])(poss) or [[0, 0, 0, 0, 0]]
                 if poss:
                     first = poss[0]  # tuple: ([pn], x1, x2, y1, y2)
                     pn = first[0]
@@ -261,30 +261,27 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             callback=callback,
             **kwargs,
         )
-        res = tokenize_table(tbls, doc, eng)
-        res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
+        res = tokenize_table(tbls, doc, eng, language=lang)
+        res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser, language=lang))
         table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
         image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
         if table_ctx or image_ctx:
             attach_media_context(res, table_ctx, image_ctx)
         if res and pdf_parser and getattr(pdf_parser, "outlines", None):
-            res[0]["__outline__"] = [
-                {"title": title, "depth": depth}
-                for title, depth, *_ in pdf_parser.outlines
-            ]
+            res[0]["__outline__"] = [{"title": title, "depth": depth} for title, depth, *_ in pdf_parser.outlines]
         return res
 
     elif re.search(r"\.docx?$", filename, re.IGNORECASE):
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
         tbls = vision_figure_parser_docx_wrapper(sections=ti_list, tbls=tbls, callback=callback, **kwargs)
-        res = tokenize_table(tbls, doc, eng)
+        res = tokenize_table(tbls, doc, eng, language=lang)
         for text, image in ti_list:
             d = copy.deepcopy(doc)
             if image:
                 d["image"] = image
                 d["doc_type_kwd"] = "image"
-            tokenize(d, text, eng)
+            tokenize(d, text, eng, language=lang)
             res.append(d)
         table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
         image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))

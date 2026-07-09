@@ -1,12 +1,14 @@
 {
   "name": "VolcEngine",
+  "rank": 986,
   "url": {
     "default": "https://ark.cn-beijing.volces.com/api/v3"
   },
   "url_suffix": {
     "chat": "chat/completions",
     "files": "files",
-    "embedding": "embeddings/multimodal"
+    "embedding": "embeddings/multimodal",
+    "models": "models"
   },
   "class": "volcengine",
   "models": [

@@ -35,8 +35,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         if not ext:
             raise RuntimeError("No extension detected.")
 
-        if ext not in [".da", ".wave", ".wav", ".mp3", ".aac", ".flac", ".ogg", ".aiff", ".au", ".midi", ".wma",
-                       ".realaudio", ".vqf", ".oggvorbis", ".ape"]:
+        if ext not in [".da", ".wave", ".wav", ".mp3", ".aac", ".flac", ".ogg", ".aiff", ".au", ".midi", ".wma", ".realaudio", ".vqf", ".oggvorbis", ".ape"]:
             raise RuntimeError(f"Extension {ext} is not supported yet.")
 
         tmp_path = ""
@@ -51,7 +50,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         ans = seq2txt_mdl.transcription(tmp_path)
         callback(0.8, "Sequence2Txt LLM respond: %s ..." % ans[:32])
 
-        tokenize(doc, ans, is_english)
+        tokenize(doc, ans, is_english, language=lang)
         return [doc]
     except Exception as e:
         callback(prog=-1, msg=str(e))

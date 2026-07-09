@@ -19,7 +19,6 @@ import functools
 import inspect
 import json
 import logging
-import os
 import sys
 import time
 from copy import deepcopy
@@ -32,7 +31,7 @@ from quart import (
     request,
     has_app_context,
 )
-from werkzeug.exceptions import BadRequest as WerkzeugBadRequest, Unauthorized as WerkzeugUnauthorized
+from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
 
 try:
     from quart.exceptions import BadRequest as QuartBadRequest
@@ -41,8 +40,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from peewee import OperationalError
 
-from common.constants import ActiveEnum
-from api.db.db_models import APIToken
+from common.constants import ActiveEnum, LLMType
 from api.utils.json_encode import CustomJSONEncoder
 from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 from api.db.services.tenant_llm_service import LLMFactoriesService
@@ -52,6 +50,7 @@ from common import settings
 from common.misc_utils import thread_pool_exec
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
+
 
 def _safe_jsonify(payload: dict):
     if has_app_context():
@@ -89,8 +88,10 @@ async def _coerce_request_data() -> dict:
     request._cached_payload = payload
     return payload
 
+
 async def get_request_json():
     return await _coerce_request_data()
+
 
 def serialize_for_json(obj):
     """
@@ -146,6 +147,9 @@ def server_error_response(e):
 
     if repr(e).find("index_not_found_exception") >= 0:
         return get_json_result(code=RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
+
+    if "not_found" in str(e):
+        return get_error_data_result(message="No chunk found! Check the chunk status please!")
 
     return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
@@ -210,6 +214,7 @@ def not_allowed_parameters(*params):
             if inspect.iscoroutinefunction(func):
                 return await func(*args, **kwargs)
             return func(*args, **kwargs)
+
         return wrapper
 
     return decorator
@@ -237,38 +242,18 @@ def add_tenant_id_to_kwargs(func):
     @wraps(func)
     async def wrapper(**kwargs):
         from api.apps import current_user
+
         kwargs["tenant_id"] = current_user.id
         if inspect.iscoroutinefunction(func):
             return await func(**kwargs)
         return func(**kwargs)
+
     return wrapper
 
 
 def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=None):
     response = {"code": code, "message": message, "data": data}
     return _safe_jsonify(response)
-
-
-def apikey_required(func):
-    @wraps(func)
-    async def decorated_function(*args, **kwargs):
-        authorization = request.headers.get("Authorization")
-        if not authorization:
-            return build_error_result(message="Authorization header is missing!", code=RetCode.FORBIDDEN)
-        parts = authorization.split()
-        if len(parts) < 2:
-            return build_error_result(message="Please check your authorization format.", code=RetCode.FORBIDDEN)
-        token = parts[1]
-        objs = APIToken.query(token=token)
-        if not objs:
-            return build_error_result(message="API-KEY is invalid!", code=RetCode.FORBIDDEN)
-        kwargs["tenant_id"] = objs[0].tenant_id
-        if inspect.iscoroutinefunction(func):
-            return await func(*args, **kwargs)
-
-        return func(*args, **kwargs)
-
-    return decorated_function
 
 
 def build_error_result(code=RetCode.FORBIDDEN, message="success"):
@@ -283,69 +268,6 @@ def construct_json_result(code: RetCode = RetCode.SUCCESS, message="success", da
     if data is None:
         return _safe_jsonify({"code": code, "message": message})
     return _safe_jsonify({"code": code, "message": message, "data": data})
-
-
-def token_required(func):
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        # Validate the token (API Key)
-        if os.environ.get("DISABLE_SDK"):
-            err = WerkzeugUnauthorized(description="`Authorization` can't be empty")
-            err.code = RetCode.SUCCESS
-            raise err
-
-        authorization_str = request.headers.get("Authorization")
-        if not authorization_str:
-            err = WerkzeugUnauthorized(description="`Authorization` can't be empty")
-            err.code = RetCode.SUCCESS
-            raise err
-
-        authorization_list = authorization_str.split()
-        if len(authorization_list) < 2:
-            err = WerkzeugUnauthorized(description="Please check your authorization format.")
-            err.code = RetCode.AUTHENTICATION_ERROR
-            raise err
-
-        token = authorization_list[1]
-
-        # First try API token (explicit API token authentication)
-        objs = APIToken.query(token=token)
-        if objs:
-            # On success, inject tenant_id into the route function's kwargs
-            kwargs["tenant_id"] = objs[0].tenant_id
-            result = func(*args, **kwargs)
-            if inspect.iscoroutine(result):
-                return await result
-            return result
-
-        # Fallback: try login token (for clients that use login token as API token)
-        # Login tokens are JWT-encoded (URLSafeTimedSerializer), need to decode to get raw access_token
-        from api.db.services.user_service import UserService
-        from common.constants import StatusEnum
-        from common import settings
-        from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
-        try:
-            jwt = Serializer(secret_key=settings.get_secret_key())
-            raw_token = str(jwt.loads(token))
-            user = UserService.query(access_token=raw_token, status=StatusEnum.VALID.value)
-            if user:
-                # On success, inject tenant_id from user's tenant
-                from api.db.services.user_service import UserTenantService
-                tenants = UserTenantService.query(user_id=user[0].id)
-                if tenants:
-                    kwargs["tenant_id"] = tenants[0].tenant_id
-                    result = func(*args, **kwargs)
-                    if inspect.iscoroutine(result):
-                        return await result
-                    return result
-        except Exception:
-            pass
-
-        err = WerkzeugUnauthorized(description="Authentication error: API key is invalid!")
-        err.code = RetCode.AUTHENTICATION_ERROR
-        raise err
-
-    return wrapper
 
 
 def get_result(code=RetCode.SUCCESS, message="", data=None, total=None):
@@ -440,6 +362,15 @@ def get_parser_config(chunk_method, parser_config):
                 ],
                 "method": "light",
                 "batch_chunk_token_size": 4096,
+                "retry_attempts": 2,
+                "retry_backoff_seconds": 2.0,
+                "retry_backoff_max_seconds": 60.0,
+                "build_subgraph_timeout_per_chunk_seconds": 300,
+                "build_subgraph_min_timeout_seconds": 600,
+                "merge_timeout_seconds": 180,
+                "resolution_timeout_seconds": 1800,
+                "community_timeout_seconds": 1800,
+                "lock_acquire_timeout_seconds": 600,
             },
             "parent_child": {
                 "use_parent_child": False,
@@ -513,7 +444,7 @@ def get_data_openai(id=None, created=None, model=None, prompt_tokens=0, completi
     return {
         "id": f"{id}",
         "object": object,
-        "created": int(time.time()) if created else None,
+        "created": created if created is not None else int(time.time()),
         "model": model,
         "param": param,
         "usage": {
@@ -567,8 +498,7 @@ def check_duplicate_ids(ids, id_type="item"):
 
 
 def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, str | None]:
-    from api.db.services.llm_service import LLMService
-    from api.db.services.tenant_llm_service import TenantLLMService
+    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 
     """
     Verifies availability of an embedding model for a specific tenant.
@@ -604,18 +534,9 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, s
         (False, {'code': 101, 'message': "Unsupported model: <invalid_model>"})
     """
     try:
-        llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(embd_id)
-        in_llm_service = bool(LLMService.query(llm_name=llm_name, fid=llm_factory, model_type="embedding"))
-
-        tenant_llms = TenantLLMService.get_my_llms(tenant_id=tenant_id)
-        is_tenant_model = any(llm["llm_name"] == llm_name and llm["llm_factory"] == llm_factory and llm["model_type"] == "embedding" for llm in tenant_llms)
-
-        is_builtin_model = llm_factory == "Builtin"
-        if not (is_builtin_model or is_tenant_model or in_llm_service):
-            return False, f"Unsupported model: <{embd_id}>"
-
-        if not (is_builtin_model or is_tenant_model):
-            return False, f"Unauthorized model: <{embd_id}>"
+        get_model_config_from_provider_instance(tenant_id, LLMType.EMBEDDING, embd_id)
+    except LookupError as e:
+        return False, str(e)
     except OperationalError as e:
         logging.exception(e)
         return False, "Database operation failed"
@@ -743,11 +664,12 @@ def get_mcp_tools(mcp_servers: list, timeout: float | int = 10) -> tuple[dict, s
                 tool_dict["enabled"] = cached_tool.get("enabled", True)
                 results[server_key].append(tool_dict)
 
-        # PERF: blocking call to close sessions — consider moving to background thread or task queue
-        close_multiple_mcp_toolcall_sessions(tool_call_sessions)
         return results, ""
     except Exception as e:
         return {}, str(e)
+    finally:
+        # PERF: blocking call to close sessions — consider moving to background thread or task queue
+        close_multiple_mcp_toolcall_sessions(tool_call_sessions)
 
 
 async def is_strong_enough(chat_model, embedding_model):
@@ -761,24 +683,15 @@ async def is_strong_enough(chat_model, embedding_model):
     async def _is_strong_enough():
         nonlocal chat_model, embedding_model
         if embedding_model:
-            await asyncio.wait_for(
-                thread_pool_exec(embedding_model.encode, ["Are you strong enough!?"]),
-                timeout=10
-            )
+            await asyncio.wait_for(thread_pool_exec(embedding_model.encode, ["Are you strong enough!?"]), timeout=10)
 
         if chat_model:
-            res = await asyncio.wait_for(
-                chat_model.async_chat("Nothing special.", [{"role": "user", "content": "Are you strong enough!?"}]),
-                timeout=30
-            )
+            res = await asyncio.wait_for(chat_model.async_chat("Nothing special.", [{"role": "user", "content": "Are you strong enough!?"}]), timeout=30)
             if "**ERROR**" in res:
                 raise Exception(res)
 
     # Pressure test for GraphRAG task
-    tasks = [
-        asyncio.create_task(_is_strong_enough())
-        for _ in range(count)
-    ]
+    tasks = [asyncio.create_task(_is_strong_enough()) for _ in range(count)]
     try:
         await asyncio.gather(*tasks, return_exceptions=False)
     except Exception as e:

@@ -25,6 +25,7 @@ import {
   useGetChatSearchParams,
   usePatchChat,
 } from '@/hooks/use-chat-request';
+import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IClientConversation } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
@@ -132,6 +133,7 @@ const ChatCard = forwardRef(function ChatCard(
 
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchChat();
+  const findLlmByUuid = useFindLlmByUuid();
 
   useSetDefaultModel(form);
 
@@ -143,15 +145,19 @@ const ChatCard = forwardRef(function ChatCard(
 
   const handleApplyConfig = useCallback(() => {
     const values = form.getValues();
+    const llmId = values.llm_id;
     patchChat({
       chatId: dialogId!,
       params: {
         ...currentDialog,
-        llm_id: values.llm_id,
-        llm_setting: omit(values, 'llm_id'),
+        llm_id: llmId,
+        llm_setting: {
+          ...omit(values, 'llm_id'),
+          model_type: findLlmByUuid(llmId)?.model_type || 'chat',
+        },
       },
     });
-  }, [currentDialog, dialogId, form, patchChat]);
+  }, [currentDialog, dialogId, form, patchChat, findLlmByUuid]);
 
   useImperativeHandle(
     ref,

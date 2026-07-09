@@ -72,6 +72,8 @@ const themeIcons = [
   LLMFactory.Meituan,
   LLMFactory.Longcat,
   LLMFactory.MinerU,
+  LLMFactory.JiekouAI,
+  LLMFactory.Perplexity,
 ];
 
 const svgIcons = [
@@ -86,6 +88,8 @@ const svgIcons = [
   // LLMFactory.DeerAPI,
   LLMFactory.Avian,
   LLMFactory.RAGcon,
+  LLMFactory.SoMark,
+  LLMFactory.NewAPI,
 ];
 
 export const LlmIcon = ({

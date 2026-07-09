@@ -19,6 +19,7 @@ import { Input, NumberInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
+import { LlmModelType } from '@/constants/knowledge';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { get } from 'lodash';
@@ -32,7 +33,6 @@ import {
   NodeHandleId,
   VariableType,
 } from '../../constant';
-import { useSaveOnBlur } from '../../hooks/use-save-on-blur';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { hasSubAgentOrTool, isBottomSubAgent } from '../../utils';
@@ -93,8 +93,6 @@ function AgentForm({ node }: INextOperatorForm) {
   const defaultValues = useValues(node);
 
   const { extraOptions } = useBuildPromptExtraPromptOptions(edges, node?.id);
-
-  const { handleSaveOnBlur } = useSaveOnBlur();
 
   const ExceptionMethodOptions = Object.values(AgentExceptionMethod).map(
     (x) => ({
@@ -161,10 +159,12 @@ function AgentForm({ node }: INextOperatorForm) {
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
-          {findLlmByUuid(llmId)?.tags?.includes('IMAGE2TEXT') && (
+          {findLlmByUuid(llmId)?.model_type?.includes(
+            LlmModelType.Image2text,
+          ) && (
             <QueryVariable
               name="visual_files_var"
-              label="Visual Input File"
+              label={t('flow.visualInputFile')}
               types={[VariableType.File]}
             ></QueryVariable>
           )}
@@ -180,7 +180,6 @@ function AgentForm({ node }: INextOperatorForm) {
                     placeholder={t('flow.messagePlaceholder')}
                     showToolbar={true}
                     extraOptions={extraOptions}
-                    onBlur={handleSaveOnBlur}
                   ></PromptEditor>
                 </FormControl>
               </FormItem>
@@ -198,7 +197,6 @@ function AgentForm({ node }: INextOperatorForm) {
                       <PromptEditor
                         {...field}
                         showToolbar={true}
-                        onBlur={handleSaveOnBlur}
                       ></PromptEditor>
                     </section>
                   </FormControl>
@@ -209,7 +207,7 @@ function AgentForm({ node }: INextOperatorForm) {
           <Separator></Separator>
           <AgentTools></AgentTools>
           <Agents node={node}></Agents>
-          <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
+          <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
             <section className="space-y-5">
               <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
               <FormField

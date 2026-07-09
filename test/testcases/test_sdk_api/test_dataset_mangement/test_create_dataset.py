@@ -51,7 +51,10 @@ class TestCapability:
         for i in range(count):
             payload = {"name": f"dataset_{i}"}
             client.create_dataset(**payload)
-        assert len(client.list_datasets(page_size=2000)) == count
+        datasets = []
+        for page in range(1, (count // 100) + 1):
+            datasets.extend(client.list_datasets(page=page, page_size=100))
+        assert len(datasets) == count
 
     @pytest.mark.p3
     def test_create_dataset_concurrent(self, client):
@@ -181,7 +184,7 @@ class TestDatasetCreate:
         "name, embedding_model",
         [
             ("BAAI/bge-small-en-v1.5@Builtin", "BAAI/bge-small-en-v1.5@Builtin"),
-            ("embedding-3@ZHIPU-AI", "embedding-3@ZHIPU-AI"),
+            ("embedding-3@ZHIPU-AI", "embedding-3@CI@ZHIPU-AI"),
         ],
         ids=["builtin_baai", "tenant_zhipu"],
     )
@@ -194,7 +197,7 @@ class TestDatasetCreate:
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
-            ("unknown_llm_name", "unknown@ZHIPU-AI"),
+            ("unknown_llm_name", "unknown@CI@ZHIPU-AI"),
             ("unknown_llm_factory", "embedding-3@unknown"),
             ("tenant_no_auth_default_tenant_llm", "text-embedding-v3@Tongyi-Qianwen"),
             ("tenant_no_auth", "text-embedding-3-small@OpenAI"),
@@ -205,10 +208,7 @@ class TestDatasetCreate:
         payload = {"name": name, "embedding_model": embedding_model}
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        if "tenant_no_auth" in name:
-            assert str(exception_info.value) == f"Unauthorized model: <{embedding_model}>", str(exception_info.value)
-        else:
-            assert str(exception_info.value) == f"Unsupported model: <{embedding_model}>", str(exception_info.value)
+        assert "not found" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -237,13 +237,13 @@ class TestDatasetCreate:
     def test_embedding_model_unset(self, client):
         payload = {"name": "embedding_model_unset"}
         dataset = client.create_dataset(**payload)
-        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(dataset)
+        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(dataset)
 
     @pytest.mark.p2
     def test_embedding_model_none(self, client):
         payload = {"name": "embedding_model_none", "embedding_model": None}
         dataset = client.create_dataset(**payload)
-        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(dataset)
+        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(dataset)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -306,7 +306,7 @@ class TestDatasetCreate:
             ("qa", "qa"),
             ("table", "table"),
             ("tag", "tag"),
-            ("resume", "resume")
+            ("resume", "resume"),
         ],
         ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"],
     )
@@ -328,7 +328,9 @@ class TestDatasetCreate:
         payload = {"name": name, "chunk_method": chunk_method}
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in str(exception_info.value), str(exception_info.value)
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in str(exception_info.value), str(
+            exception_info.value
+        )
 
     @pytest.mark.p2
     def test_chunk_method_unset(self, client):
