@@ -17,10 +17,13 @@
 package chunk
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/csv"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"image"
 	"image/color"
@@ -1137,7 +1140,85 @@ func estimatePDFPageCount(binary []byte) int64 {
 }
 
 func estimateTableRowCount(name string, binary []byte) int {
-	return utility.CountSpreadsheetRows(name, binary)
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".xlsx":
+		if rows, err := countXLSXRows(binary); err == nil {
+			return rows
+		}
+	case ".csv", ".tsv", ".txt":
+		return countDelimitedRows(name, binary)
+	}
+	return 0
+}
+
+func countDelimitedRows(name string, binary []byte) int {
+	reader := csv.NewReader(bytes.NewReader(binary))
+	reader.FieldsPerRecord = -1
+	reader.ReuseRecord = true
+	if strings.EqualFold(filepath.Ext(name), ".tsv") {
+		reader.Comma = '\t'
+	}
+	rows := 0
+	for {
+		_, err := reader.Read()
+		if err == nil {
+			rows++
+			continue
+		}
+		if err == io.EOF {
+			break
+		}
+		rows += bytes.Count(binary, []byte{'\n'})
+		if len(binary) > 0 && binary[len(binary)-1] != '\n' {
+			rows++
+		}
+		break
+	}
+	return rows
+}
+
+func countXLSXRows(binary []byte) (int, error) {
+	zipReader, err := zip.NewReader(bytes.NewReader(binary), int64(len(binary)))
+	if err != nil {
+		return 0, err
+	}
+	totalRows := 0
+	for _, file := range zipReader.File {
+		if !strings.HasPrefix(file.Name, "xl/worksheets/") || !strings.HasSuffix(file.Name, ".xml") {
+			continue
+		}
+		rows, err := countWorksheetRows(file)
+		if err != nil {
+			return 0, err
+		}
+		totalRows += rows
+	}
+	return totalRows, nil
+}
+
+func countWorksheetRows(file *zip.File) (int, error) {
+	reader, err := file.Open()
+	if err != nil {
+		return 0, err
+	}
+	defer reader.Close()
+
+	decoder := xml.NewDecoder(reader)
+	rows := 0
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
+		start, ok := token.(xml.StartElement)
+		if ok && start.Name.Local == "row" {
+			rows++
+		}
+	}
+	return rows, nil
 }
 
 func docName(doc *entity.Document) string {

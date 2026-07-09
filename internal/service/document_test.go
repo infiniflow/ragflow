@@ -17,6 +17,7 @@
 package service
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -727,6 +728,39 @@ func TestContentHashHex_MatchesPythonXXH128(t *testing.T) {
 		if got := contentHashHex(tt.data); got != tt.want {
 			t.Fatalf("contentHashHex(%q)=%s, want %s", tt.data, got, tt.want)
 		}
+	}
+}
+
+func TestDocumentEstimateTableRowCountSumsAllSheets(t *testing.T) {
+	var buf bytes.Buffer
+	zipWriter := zip.NewWriter(&buf)
+
+	writeSheet := func(name string, rows int) {
+		t.Helper()
+		file, err := zipWriter.Create(name)
+		if err != nil {
+			t.Fatalf("create zip entry %s: %v", name, err)
+		}
+		var sheet bytes.Buffer
+		sheet.WriteString(`<worksheet><sheetData>`)
+		for i := 0; i < rows; i++ {
+			sheet.WriteString(`<row r="1"></row>`)
+		}
+		sheet.WriteString(`</sheetData></worksheet>`)
+		if _, err := file.Write(sheet.Bytes()); err != nil {
+			t.Fatalf("write zip entry %s: %v", name, err)
+		}
+	}
+
+	writeSheet("xl/worksheets/sheet1.xml", 3)
+	writeSheet("xl/worksheets/sheet2.xml", 5)
+
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("close zip writer: %v", err)
+	}
+
+	if got := documentEstimateTableRowCount("book.xlsx", buf.Bytes()); got != 8 {
+		t.Fatalf("documentEstimateTableRowCount() = %d, want 8", got)
 	}
 }
 
