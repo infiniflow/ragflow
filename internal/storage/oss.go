@@ -256,7 +256,27 @@ func (o *OSSStorage) ObjExist(bucket, fnm string, tenantID ...string) bool {
 	return true
 }
 
-// GetPresignedURL generates a presigned URL for accessing an object
+func (o *OSSStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+	ctx := context.Background()
+
+	listInput := &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+	}
+
+	result, err := o.client.ListObjectsV2(ctx, listInput)
+	if err != nil {
+		return nil, err
+	}
+
+	var objects []string
+
+	for _, obj := range result.Contents {
+		objects = append(objects, *obj.Key)
+	}
+
+	return objects, nil
+}
+
 func (o *OSSStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
 
@@ -389,6 +409,8 @@ func (o *OSSStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool 
 	}
 	return false
 }
+
+func (o *OSSStorage) Close() error { return nil }
 
 // Helper functions
 func isOSSNotFound(err error) bool {

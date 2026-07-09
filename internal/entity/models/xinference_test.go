@@ -33,8 +33,8 @@ func withXinferenceIdleTimeout(t *testing.T, d time.Duration) {
 
 func TestXinferenceName(t *testing.T) {
 	x := newXinferenceForTest("http://unused")
-	if got := x.Name(); got != "xinference" {
-		t.Errorf("Name()=%q, want %q", got, "xinference")
+	if got := x.Name(); got != "Xinference" {
+		t.Errorf("Name()=%q, want %q", got, "Xinference")
 	}
 }
 
@@ -56,12 +56,12 @@ func TestNormalizeXinferenceBaseURL(t *testing.T) {
 }
 
 func TestXinferenceFactoryRoute(t *testing.T) {
-	driver, err := NewModelFactory().CreateModelDriver("xinference", map[string]string{"default": "http://unused"}, URLSuffix{})
+	driver, err := NewModelFactory().CreateModelDriver("Xinference", map[string]string{"default": "http://unused"}, URLSuffix{})
 	if err != nil {
 		t.Fatalf("CreateModelDriver: %v", err)
 	}
-	if driver.Name() != "xinference" {
-		t.Errorf("driver.Name()=%q, want xinference", driver.Name())
+	if driver.Name() != "Xinference" {
+		t.Errorf("driver.Name()=%q, want Xinference", driver.Name())
 	}
 }
 

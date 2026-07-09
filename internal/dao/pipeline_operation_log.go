@@ -164,3 +164,8 @@ func (dao *PipelineOperationLogDAO) GetByIDAndKBID(logID, kbID string) (*entity.
 	}
 	return &log, nil
 }
+
+// Create inserts a new pipeline operation log.
+func (dao *PipelineOperationLogDAO) Create(log *entity.PipelineOperationLog) error {
+	return DB.Create(log).Error
+}

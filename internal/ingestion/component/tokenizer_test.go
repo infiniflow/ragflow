@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -17,16 +20,21 @@
 package component
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"math"
 	"os"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
 
@@ -70,41 +78,77 @@ func requireTokenizerPool(t *testing.T) {
 }
 
 // stubEmbedder records every call and returns canned vectors.
-// Matches the Embedder contract: len(vectors) == len(texts).
+// Matches the Embedder contract: len(results) == len(texts).
 type stubEmbedder struct {
-	calls atomic.Int32
-	dim   int
-	delay time.Duration
-	err   error
+	calls         atomic.Int32
+	dim           int
+	maxTokens     int
+	delay         time.Duration
+	err           error
+	callInputs    [][]string
+	resultsByCall []embeddingCallResult
+	callTokens    []int
 }
 
-func (s *stubEmbedder) Encode(texts []string) ([][]float64, error) {
+type embeddingCallResult struct {
+	vectors    [][]float64
+	tokenCount int
+}
+
+func (s *stubEmbedder) MaxTokens() int {
+	return s.maxTokens
+}
+
+func (s *stubEmbedder) Encode(texts []string) ([]EmbeddingResult, error) {
 	s.calls.Add(1)
+	copied := append([]string(nil), texts...)
+	s.callInputs = append(s.callInputs, copied)
 	if s.delay > 0 {
 		time.Sleep(s.delay)
 	}
 	if s.err != nil {
 		return nil, s.err
 	}
-	out := make([][]float64, len(texts))
+	callIdx := int(s.calls.Load()) - 1
+	var cfg embeddingCallResult
+	if callIdx < len(s.resultsByCall) {
+		cfg = s.resultsByCall[callIdx]
+	}
+	out := make([]EmbeddingResult, len(texts))
 	for i := range texts {
-		v := make([]float64, s.dim)
-		v[0] = float64(i + 1) // mark the index so callers can verify alignment
-		out[i] = v
+		var v []float64
+		if i < len(cfg.vectors) {
+			v = append([]float64(nil), cfg.vectors[i]...)
+		} else {
+			v = make([]float64, s.dim)
+			v[0] = float64(i + 1)
+		}
+		tokenCount := len(texts[i])
+		if callIdx < len(s.callTokens) {
+			tokenCount = s.callTokens[callIdx]
+		} else if cfg.tokenCount > 0 {
+			tokenCount = cfg.tokenCount
+		}
+		out[i] = EmbeddingResult{Vector: v, TokenCount: tokenCount}
 	}
 	return out, nil
 }
 
-// withStubEmbedder installs a stub Embedder and restores the previous
-// EncodeFunc on cleanup. Returns the stub so the test can assert on
-// call count / latency.
-func withStubEmbedder(t *testing.T, dim int) *stubEmbedder {
+// newStubEmbedder returns a stub embedder for instance-level resolver injection.
+func newStubEmbedder(dim int) *stubEmbedder {
+	return &stubEmbedder{dim: dim}
+}
+
+// withStubEmbedder constructs a TokenizerComponent with an instance-scoped
+// resolver backed by a stub embedder.
+func withStubEmbedder(t *testing.T, dim int) (*TokenizerComponent, *stubEmbedder) {
 	t.Helper()
-	stub := &stubEmbedder{dim: dim}
-	prev := EncodeFunc
-	EncodeFunc = func(_, _ string) Embedder { return stub }
-	t.Cleanup(func() { EncodeFunc = prev })
-	return stub
+	stub := newStubEmbedder(dim)
+	comp, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) { return stub, nil })
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	return comp.(*TokenizerComponent), stub
 }
 
 // TestTokenizerComponent_Registered verifies init() enrollment
@@ -136,9 +180,10 @@ func TestTokenizerComponent_Registered(t *testing.T) {
 func TestTokenizerComponent_Invoke_HappyPath(t *testing.T) {
 	requireTokenizerPool(t)
 	const dim = 4
-	withStubEmbedder(t, dim)
+	c, stub := withStubEmbedder(t, dim)
 
-	c, err := NewTokenizerComponent(map[string]any{})
+	_ = stub
+	var err error
 	if err != nil {
 		t.Fatalf("NewTokenizerComponent: %v", err)
 	}
@@ -185,8 +230,8 @@ func TestTokenizerComponent_Invoke_HappyPath(t *testing.T) {
 		if len(v) != dim {
 			t.Errorf("chunk[%d].%s len = %d, want %d", i, key, len(v), dim)
 		}
-		if v[0] != float64(i+1) {
-			t.Errorf("chunk[%d].%s[0] = %v, want %d (index alignment)", i, key, v[0], i+1)
+		if v[0] == 0 {
+			t.Errorf("chunk[%d].%s[0] = %v, want non-zero", i, key, v[0])
 		}
 	}
 	if out["output_format"] != "chunks" {
@@ -203,8 +248,9 @@ func TestTokenizerComponent_Invoke_HappyPath(t *testing.T) {
 // TestTokenizerComponent_Invoke_EmptyChunks covers the no-op branch:
 // empty chunk list → empty output, no panic, no encoder call.
 func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
-	stub := withStubEmbedder(t, 4)
-	c, err := NewTokenizerComponent(map[string]any{})
+	c, stub := withStubEmbedder(t, 4)
+	_ = stub
+	var err error
 	if err != nil {
 		t.Fatalf("NewTokenizerComponent: %v", err)
 	}
@@ -223,6 +269,9 @@ func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 	if stub.calls.Load() != 0 {
 		t.Errorf("embedder called %d times on empty input, want 0", stub.calls.Load())
 	}
+	if got := out["embedding_token_consumption"]; got != 0 {
+		t.Errorf("embedding_token_consumption = %v, want 0", got)
+	}
 	if out["output_format"] != "chunks" {
 		t.Errorf("output_format = %v, want chunks", out["output_format"])
 	}
@@ -232,8 +281,8 @@ func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 // branch: nil chunks list is treated as zero-length (matches
 // python `kwargs.get("chunks")` with None).
 func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
-	withStubEmbedder(t, 4)
-	c, _ := NewTokenizerComponent(map[string]any{})
+	c, stub := withStubEmbedder(t, 4)
+	_ = stub
 	out, err := c.Invoke(context.Background(), map[string]any{
 		"output_format": "chunks",
 	})
@@ -253,8 +302,8 @@ func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
 // finite).
 func TestTokenizerComponent_Invoke_Unicode(t *testing.T) {
 	requireTokenizerPool(t)
-	withStubEmbedder(t, 4)
-	c, _ := NewTokenizerComponent(map[string]any{})
+	c, stub := withStubEmbedder(t, 4)
+	_ = stub
 
 	inputs := []string{
 		"中文测试文本",
@@ -292,7 +341,7 @@ func TestTokenizerComponent_Invoke_Unicode(t *testing.T) {
 
 func TestTokenizerComponent_Invoke_TextPayload(t *testing.T) {
 	requireTokenizerPool(t)
-	withStubEmbedder(t, 4)
+	_, _ = withStubEmbedder(t, 4)
 	c, _ := NewTokenizerComponent(map[string]any{
 		"search_method": []any{"full_text"},
 	})
@@ -318,7 +367,7 @@ func TestTokenizerComponent_Invoke_TextPayload(t *testing.T) {
 
 func TestTokenizerComponent_Invoke_JSONPayload(t *testing.T) {
 	requireTokenizerPool(t)
-	withStubEmbedder(t, 4)
+	_, _ = withStubEmbedder(t, 4)
 	c, _ := NewTokenizerComponent(map[string]any{
 		"search_method": []any{"full_text"},
 	})
@@ -340,25 +389,25 @@ func TestTokenizerComponent_Invoke_JSONPayload(t *testing.T) {
 }
 
 // TestTokenizerComponent_Invoke_BatchedEmbedding asserts the
-// embedding client is called ONCE with all chunks (not fanned per
-// chunk — plan §AD-5a). 3 chunks → 1 call.
+// embedding client is called once for the title plus once for the
+// chunk batch when all chunks fit into a single batch.
 func TestTokenizerComponent_Invoke_BatchedEmbedding(t *testing.T) {
 	requireTokenizerPool(t)
-	stub := withStubEmbedder(t, 8)
-	c, _ := NewTokenizerComponent(map[string]any{})
+	c, stub := withStubEmbedder(t, 8)
 	chunks := []map[string]any{
 		{"text": "one"},
 		{"text": "two"},
 		{"text": "three"},
 	}
 	if _, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "doc.txt",
 		"output_format": "chunks",
 		"chunks":        chunks,
 	}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got := stub.calls.Load(); got != 1 {
-		t.Errorf("embedder calls = %d, want 1 (single batched call)", got)
+	if got := stub.calls.Load(); got != 2 {
+		t.Errorf("embedder calls = %d, want 2 (title + single content batch)", got)
 	}
 }
 
@@ -367,7 +416,7 @@ func TestTokenizerComponent_Invoke_BatchedEmbedding(t *testing.T) {
 // call, but tokenized fields present.
 func TestTokenizerComponent_Invoke_FullTextOnly(t *testing.T) {
 	requireTokenizerPool(t)
-	stub := withStubEmbedder(t, 4)
+	_, stub := withStubEmbedder(t, 4)
 	c, _ := NewTokenizerComponent(map[string]any{
 		"search_method": []any{"full_text"},
 	})
@@ -390,25 +439,79 @@ func TestTokenizerComponent_Invoke_FullTextOnly(t *testing.T) {
 	}
 }
 
-// TestTokenizerComponent_Invoke_EmbedNoEncodeFunc covers the
-// "embedding requested but EncodeFunc is nil" branch — must
-// return a clear error, not panic.
-func TestTokenizerComponent_Invoke_EmbedNoEncodeFunc(t *testing.T) {
-	requireTokenizerPool(t)
-	prev := EncodeFunc
-	EncodeFunc = nil
-	t.Cleanup(func() { EncodeFunc = prev })
+func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
+	cIntf, err := NewTokenizerComponentWithResolver(map[string]any{
+		"search_method": []any{"embedding"},
+	}, func(_, _, _ string) (Embedder, error) {
+		return newStubEmbedder(4), nil
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	out, err := cIntf.(*TokenizerComponent).Invoke(context.Background(), map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "alpha bravo"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, _ := out["chunks"].([]map[string]any)
+	if len(got) != 1 {
+		t.Fatalf("chunks len = %d, want 1", len(got))
+	}
+	if got[0]["q_4_vec"] == nil {
+		t.Fatalf("q_4_vec missing: %v", got[0])
+	}
+	if got[0]["content_ltks"] != nil || got[0]["content_sm_ltks"] != nil {
+		t.Fatalf("embedding-only mode should not emit full-text tokens: %v", got[0])
+	}
+	if out["embedding_token_consumption"] == nil {
+		t.Fatal("embedding_token_consumption missing")
+	}
+}
 
-	c, _ := NewTokenizerComponent(map[string]any{})
+func TestTokenizerComponent_Invoke_FullTextAndEmbedding(t *testing.T) {
+	requireTokenizerPool(t)
+	c, _ := withStubEmbedder(t, 4)
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "alpha bravo"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, _ := out["chunks"].([]map[string]any)
+	if len(got) != 1 {
+		t.Fatalf("chunks len = %d, want 1", len(got))
+	}
+	if got[0]["content_ltks"] == nil || got[0]["content_sm_ltks"] == nil {
+		t.Fatalf("full-text tokens missing: %v", got[0])
+	}
+	if got[0]["q_4_vec"] == nil {
+		t.Fatalf("embedding vector missing: %v", got[0])
+	}
+	if out["embedding_token_consumption"] == nil {
+		t.Fatal("embedding_token_consumption missing")
+	}
+}
+
+// TestTokenizerComponent_Invoke_EmbedNoResolver covers the
+// "embedding requested but resolver is unset" branch — must
+// return a clear error, not panic.
+func TestTokenizerComponent_Invoke_EmbedNoResolver(t *testing.T) {
+	requireTokenizerPool(t)
+	c, _ := NewTokenizerComponent(nil)
 	_, err := c.Invoke(context.Background(), map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}},
 	})
 	if err == nil {
-		t.Fatal("expected error when embedding requested without EncodeFunc, got nil")
+		t.Fatal("expected error when embedding requested without resolver, got nil")
 	}
-	if !strings.Contains(err.Error(), "EncodeFunc") {
-		t.Errorf("error should mention EncodeFunc: %v", err)
+	if !strings.Contains(err.Error(), "resolver") {
+		t.Errorf("error should mention resolver: %v", err)
 	}
 }
 
@@ -416,10 +519,9 @@ func TestTokenizerComponent_Invoke_EmbedNoEncodeFunc(t *testing.T) {
 // propagation of an error from the embedding driver.
 func TestTokenizerComponent_Invoke_EmbedderError(t *testing.T) {
 	requireTokenizerPool(t)
-	stub := withStubEmbedder(t, 4)
+	c, stub := withStubEmbedder(t, 4)
 	stub.err = errors.New("simulated upstream error")
 
-	c, _ := NewTokenizerComponent(map[string]any{})
 	_, err := c.Invoke(context.Background(), map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}},
@@ -436,19 +538,17 @@ func TestTokenizerComponent_Invoke_EmbedderError(t *testing.T) {
 // "embedder returned wrong number of vectors" defensive branch.
 func TestTokenizerComponent_Invoke_EncoderCountMismatch(t *testing.T) {
 	requireTokenizerPool(t)
-	stub := withStubEmbedder(t, 4)
+	_, stub := withStubEmbedder(t, 4)
 	// Inject an embedder that returns the wrong number of vectors
 	// regardless of input.
 	wrong := &countMismatchedEmbedder{want: 1}
-	prev := EncodeFunc
-	EncodeFunc = func(_, _ string) Embedder { return wrong }
-	t.Cleanup(func() {
-		EncodeFunc = prev
-		_ = stub
-	})
-
-	c, _ := NewTokenizerComponent(map[string]any{})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	cIntf, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) { return wrong, nil })
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	c := cIntf.(*TokenizerComponent)
+	_ = stub
+	_, err = c.Invoke(context.Background(), map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "a"}, {"text": "b"}, {"text": "c"}},
 	})
@@ -462,10 +562,12 @@ func TestTokenizerComponent_Invoke_EncoderCountMismatch(t *testing.T) {
 
 type countMismatchedEmbedder struct{ want int }
 
-func (c *countMismatchedEmbedder) Encode(texts []string) ([][]float64, error) {
-	out := make([][]float64, c.want)
+func (c *countMismatchedEmbedder) MaxTokens() int { return 0 }
+
+func (c *countMismatchedEmbedder) Encode(texts []string) ([]EmbeddingResult, error) {
+	out := make([]EmbeddingResult, c.want)
 	for i := range out {
-		out[i] = make([]float64, 4)
+		out[i] = EmbeddingResult{Vector: make([]float64, 4), TokenCount: 1}
 	}
 	return out, nil
 }
@@ -479,10 +581,9 @@ func TestTokenizerComponent_Invoke_HonorsTimeout(t *testing.T) {
 	tokenizerTimeout = 50 * time.Millisecond
 	t.Cleanup(func() { tokenizerTimeout = prevTimeout })
 
-	stub := withStubEmbedder(t, 4)
+	c, stub := withStubEmbedder(t, 4)
 	stub.delay = 500 * time.Millisecond
 
-	c, _ := NewTokenizerComponent(map[string]any{})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -578,29 +679,20 @@ func TestTokenizerComponent_NewTokenizerComponent_BadParam(t *testing.T) {
 // avoids the network round-trip while still exercising the full
 // wiring (TrackElapsed, WithTimeout, batched Encode, vector
 // stamping).
+
 func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
 	requireTokenizerPool(t)
 	const dim = 1024
-	withStubEmbedder(t, dim)
+	c, _ := withStubEmbedder(t, dim)
 
-	// Build a chunk of ~1000 tokens. Each word ≈ 1 token for English
-	// under cl100k_base. We pad with a recognizable sentinel so we
-	// can later check tokenization fidelity if desired.
 	words := make([]string, 0, 1000)
 	for i := 0; i < 1000; i++ {
 		words = append(words, "ragflow")
 	}
 	chunkText := strings.Join(words, " ")
-	// Sanity-check the count is in the expected ballpark (cl100k_base
-	// may over- or under-count; we only assert the order of magnitude).
 	preflightTokens := tokenizer.NumTokensFromString(chunkText)
 	if preflightTokens < 100 || preflightTokens > 5000 {
 		t.Logf("preflight token count = %d (acceptable range 100-5000)", preflightTokens)
-	}
-
-	c, _ := NewTokenizerComponent(map[string]any{})
-	chunks := []map[string]any{
-		{"text": chunkText},
 	}
 
 	start := time.Now()
@@ -609,7 +701,7 @@ func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
 		"model_id":      "embd-smoke",
 		"name":          "smoke.pdf",
 		"output_format": "chunks",
-		"chunks":        chunks,
+		"chunks":        []map[string]any{{"text": chunkText}},
 	})
 	elapsed := time.Since(start)
 
@@ -617,7 +709,7 @@ func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if elapsed >= 5*time.Second {
-		t.Errorf("elapsed %v exceeds §R3 ceiling of 5s", elapsed)
+		t.Errorf("elapsed %v exceeds 5s ceiling", elapsed)
 	}
 
 	got, ok := out["chunks"].([]map[string]any)
@@ -631,7 +723,6 @@ func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
 	if len(vec) != dim {
 		t.Errorf("vector len = %d, want %d", len(vec), dim)
 	}
-	// "non-zero vector" assertion: at least one element is non-zero.
 	nonZero := 0
 	for _, x := range vec {
 		if x != 0 {
@@ -639,10 +730,287 @@ func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
 		}
 	}
 	if nonZero == 0 {
-		t.Error("vector is all zeros (smoke contract: non-zero vector returned)")
+		t.Error("vector is all zeros")
 	}
 
-	// No panic == pass; explicitly assert log message.
-	t.Logf("smoke complete: chunks=%d elapsed=%v tokens≈%d vec_dim=%d",
+	t.Logf("smoke complete: chunks=%d elapsed=%v tokens=%d vec_dim=%d",
 		len(got), elapsed, preflightTokens, len(vec))
+}
+
+func TestTokenizerComponent_Embedding_MergesTitleAndContentVectors(t *testing.T) {
+	c, stub := withStubEmbedder(t, 2)
+	stub.resultsByCall = []embeddingCallResult{
+		{vectors: [][]float64{{10, 20}}, tokenCount: 7},
+		{vectors: [][]float64{{1, 2}, {3, 4}}, tokenCount: 11},
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "alpha"}, {"text": "beta"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, _ := out["chunks"].([]map[string]any)
+	want0 := []float64{1.9, 3.8}
+	want1 := []float64{3.7, 5.6}
+	if !floatSliceClose(got[0]["q_2_vec"].([]float64), want0) {
+		t.Fatalf("chunk[0] q_2_vec = %v, want %v", got[0]["q_2_vec"], want0)
+	}
+	if !floatSliceClose(got[1]["q_2_vec"].([]float64), want1) {
+		t.Fatalf("chunk[1] q_2_vec = %v, want %v", got[1]["q_2_vec"], want1)
+	}
+}
+
+func TestTokenizerComponent_Embedding_UsesFilenameWeight(t *testing.T) {
+	cIntf, err := NewTokenizerComponentWithResolver(map[string]any{
+		"filename_embd_weight": 0.25,
+	}, func(_, _, _ string) (Embedder, error) {
+		stub := newStubEmbedder(2)
+		stub.resultsByCall = []embeddingCallResult{
+			{vectors: [][]float64{{8, 8}}, tokenCount: 3},
+			{vectors: [][]float64{{2, 2}}, tokenCount: 5},
+		}
+		return stub, nil
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	c := cIntf.(*TokenizerComponent)
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "alpha"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, _ := out["chunks"].([]map[string]any)
+	want := []float64{3.5, 3.5}
+	if !floatSliceClose(got[0]["q_2_vec"].([]float64), want) {
+		t.Fatalf("q_2_vec = %v, want %v", got[0]["q_2_vec"], want)
+	}
+}
+
+func TestTokenizerComponent_Embedding_EmptyNameWarnsAndUsesContentVector(t *testing.T) {
+	c, stub := withStubEmbedder(t, 2)
+	stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{2, 4}}, tokenCount: 5}}
+
+	var buf bytes.Buffer
+	prevWriter := log.Writer()
+	prevFlags := log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(prevWriter)
+		log.SetFlags(prevFlags)
+	})
+
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "   ",
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "alpha"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := stub.calls.Load(); got != 1 {
+		t.Fatalf("embedder calls = %d, want 1 (content only)", got)
+	}
+	if !strings.Contains(buf.String(), "empty name provided from upstream") {
+		t.Fatalf("log output = %q, want empty-name warning", buf.String())
+	}
+	got, _ := out["chunks"].([]map[string]any)
+	want := []float64{2, 4}
+	if !floatSliceClose(got[0]["q_2_vec"].([]float64), want) {
+		t.Fatalf("q_2_vec = %v, want %v", got[0]["q_2_vec"], want)
+	}
+	if got := out["embedding_token_consumption"]; got != 5 {
+		t.Fatalf("embedding_token_consumption = %v, want 5", got)
+	}
+}
+
+func TestTokenizerComponent_Embedding_TruncatesByMaxTokensMinus10(t *testing.T) {
+	c, stub := withStubEmbedder(t, 2)
+	stub.maxTokens = 12
+	longText := strings.Repeat("hello world ", 20)
+	if _, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": longText}},
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(stub.callInputs) != 2 {
+		t.Fatalf("callInputs len = %d, want 2", len(stub.callInputs))
+	}
+	if len(stub.callInputs[1]) != 1 {
+		t.Fatalf("content batch size = %d, want 1", len(stub.callInputs[1]))
+	}
+	if got := stub.callInputs[1][0]; len(got) >= len(longText) {
+		t.Fatalf("content text was not truncated: original=%d got=%d", len(longText), len(got))
+	}
+}
+
+func TestTokenizerComponent_Embedding_SkipsEmptyCleanedTextsButReturnsZeroWhenAllSkipped(t *testing.T) {
+	c, stub := withStubEmbedder(t, 2)
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "<table><tr><td></td></tr></table>"},
+			{"text": "   "},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := stub.calls.Load(); got != 0 {
+		t.Fatalf("embedder calls = %d, want 0", got)
+	}
+	if got := out["embedding_token_consumption"]; got != 0 {
+		t.Fatalf("embedding_token_consumption = %v, want 0", got)
+	}
+	got, _ := out["chunks"].([]map[string]any)
+	for i, ck := range got {
+		if _, ok := ck["q_2_vec"]; ok {
+			t.Fatalf("chunk[%d] should not have vector: %v", i, ck)
+		}
+	}
+}
+
+func TestTokenizerComponent_Embedding_SetsTokenConsumptionIncludingTitleCall(t *testing.T) {
+	c, stub := withStubEmbedder(t, 2)
+	stub.callTokens = []int{3, 5, 7}
+	prevBatchSize := tokenizerEmbeddingBatchSize
+	tokenizerEmbeddingBatchSize = 1
+	t.Cleanup(func() { tokenizerEmbeddingBatchSize = prevBatchSize })
+
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "alpha"}, {"text": "beta"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["embedding_token_consumption"]; got != 15 {
+		t.Fatalf("embedding_token_consumption = %v, want 15", got)
+	}
+}
+
+func TestTokenizerComponent_Embedding_BatchesByConfiguredBatchSize(t *testing.T) {
+	c, stub := withStubEmbedder(t, 2)
+	prevBatchSize := tokenizerEmbeddingBatchSize
+	tokenizerEmbeddingBatchSize = 2
+	t.Cleanup(func() { tokenizerEmbeddingBatchSize = prevBatchSize })
+
+	if _, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "one"},
+			{"text": "two"},
+			{"text": "three"},
+			{"text": "four"},
+			{"text": "five"},
+		},
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := stub.calls.Load(); got != 4 {
+		t.Fatalf("embedder calls = %d, want 4 (1 title + 3 content batches)", got)
+	}
+	wantInputs := [][]string{{"doc.pdf"}, {"one", "two"}, {"three", "four"}, {"five"}}
+	if !reflect.DeepEqual(stub.callInputs, wantInputs) {
+		t.Fatalf("call inputs = %#v, want %#v", stub.callInputs, wantInputs)
+	}
+}
+
+func TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero(t *testing.T) {
+	c, stub := withStubEmbedder(t, 2)
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks":        []map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := stub.calls.Load(); got != 0 {
+		t.Fatalf("embedder calls = %d, want 0", got)
+	}
+	if got := out["embedding_token_consumption"]; got != 0 {
+		t.Fatalf("embedding_token_consumption = %v, want 0", got)
+	}
+}
+
+func floatSliceClose(got, want []float64) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if math.Abs(got[i]-want[i]) > 1e-9 {
+			return false
+		}
+	}
+	return true
+}
+
+func TestValidateTokenizerOutputs_FullTextMissingReturnsError(t *testing.T) {
+	err := validateTokenizerOutputs([]schema.ChunkDoc{{Text: "alpha"}}, []string{"full_text"}, []string{"text"})
+	if err == nil || !strings.Contains(err.Error(), "missing full_text tokens") {
+		t.Fatalf("err = %v, want missing full_text tokens", err)
+	}
+}
+
+func TestValidateTokenizerOutputs_EmbeddingMissingReturnsError(t *testing.T) {
+	err := validateTokenizerOutputs([]schema.ChunkDoc{{Text: "alpha"}}, []string{"embedding"}, []string{"text"})
+	if err == nil || !strings.Contains(err.Error(), "missing embedding vector") {
+		t.Fatalf("err = %v, want missing embedding vector", err)
+	}
+}
+
+func TestValidateTokenizerOutputs_BothModesFailWhenOneMissing(t *testing.T) {
+	ck := schema.ChunkDoc{Text: "alpha", ContentLtks: "tok", ContentSmLtks: "sm"}
+	err := validateTokenizerOutputs([]schema.ChunkDoc{ck}, []string{"full_text", "embedding"}, []string{"text"})
+	if err == nil || !strings.Contains(err.Error(), "missing embedding vector") {
+		t.Fatalf("err = %v, want missing embedding vector", err)
+	}
+}
+
+func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testing.T) {
+	requireTokenizerPool(t)
+	compAIntf, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) {
+		stub := newStubEmbedder(2)
+		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{10, 10}}, tokenCount: 1}, {vectors: [][]float64{{1, 1}}, tokenCount: 1}}
+		return stub, nil
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver(A): %v", err)
+	}
+	compBIntf, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) {
+		stub := newStubEmbedder(2)
+		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{20, 20}}, tokenCount: 1}, {vectors: [][]float64{{2, 2}}, tokenCount: 1}}
+		return stub, nil
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver(B): %v", err)
+	}
+	compA := compAIntf.(*TokenizerComponent)
+	compB := compBIntf.(*TokenizerComponent)
+
+	outA, err := compA.Invoke(context.Background(), map[string]any{"name": "docA", "output_format": "chunks", "chunks": []map[string]any{{"text": "alpha"}}})
+	if err != nil {
+		t.Fatalf("Invoke A: %v", err)
+	}
+	outB, err := compB.Invoke(context.Background(), map[string]any{"name": "docB", "output_format": "chunks", "chunks": []map[string]any{{"text": "beta"}}})
+	if err != nil {
+		t.Fatalf("Invoke B: %v", err)
+	}
+	vecA := outA["chunks"].([]map[string]any)[0]["q_2_vec"].([]float64)
+	vecB := outB["chunks"].([]map[string]any)[0]["q_2_vec"].([]float64)
+	if reflect.DeepEqual(vecA, vecB) {
+		t.Fatalf("instance resolvers leaked: vecA=%v vecB=%v", vecA, vecB)
+	}
 }

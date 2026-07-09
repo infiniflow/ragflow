@@ -122,12 +122,14 @@ export const useFetchChunk = (
 
 export const useFetchNextChunkList = (
   enabled = true,
+  options?: { chunkIds?: string[] },
 ): ResponseGetType<{
   data: IChunk[];
   total: number;
   documentInfo: IKnowledgeFile;
 }> &
   IChunkListResult => {
+  const chunkIds = options?.chunkIds;
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { documentId, knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
@@ -147,6 +149,7 @@ export const useFetchNextChunkList = (
       pagination.pageSize,
       debouncedSearchString,
       available,
+      chunkIds,
     ],
     placeholderData: (previousData: any) =>
       previousData ?? { data: [], total: 0, documentInfo: {} }, // https://github.com/TanStack/query/issues/8183
@@ -156,10 +159,13 @@ export const useFetchNextChunkList = (
       const { data } = await kbService.chunkList({
         kb_id: knowledgeId,
         doc_id: documentId,
-        page: pagination.current,
-        size: pagination.pageSize,
+        page: chunkIds?.length ? 1 : pagination.current,
+        size: chunkIds?.length
+          ? Math.max(chunkIds.length, 100)
+          : pagination.pageSize,
         available_int: available,
         keywords: searchString,
+        chunk_ids: chunkIds,
       });
       if (data.code === 0) {
         const res = data.data;

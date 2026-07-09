@@ -47,8 +47,8 @@ func withModelScopeIdleTimeout(t *testing.T, d time.Duration) {
 
 func TestModelScopeName(t *testing.T) {
 	m := newModelScopeForTest("http://unused")
-	if got := m.Name(); got != "modelscope" {
-		t.Errorf("Name()=%q, want %q", got, "modelscope")
+	if got := m.Name(); got != "ModelScope" {
+		t.Errorf("Name()=%q, want %q", got, "ModelScope")
 	}
 }
 
@@ -70,12 +70,12 @@ func TestNormalizeModelScopeBaseURL(t *testing.T) {
 }
 
 func TestModelScopeFactoryRoute(t *testing.T) {
-	driver, err := NewModelFactory().CreateModelDriver("modelscope", map[string]string{"default": "http://unused"}, URLSuffix{})
+	driver, err := NewModelFactory().CreateModelDriver("ModelScope", map[string]string{"default": "http://unused"}, URLSuffix{})
 	if err != nil {
 		t.Fatalf("CreateModelDriver: %v", err)
 	}
-	if driver.Name() != "modelscope" {
-		t.Errorf("driver.Name()=%q, want modelscope", driver.Name())
+	if driver.Name() != "ModelScope" {
+		t.Errorf("driver.Name()=%q, want ModelScope", driver.Name())
 	}
 }
 
