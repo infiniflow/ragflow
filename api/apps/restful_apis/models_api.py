@@ -86,9 +86,9 @@ def get_added_models(tenant_id: str):
         target_tenant_id = tenant_id
         if owner_tenant_id:
             if owner_tenant_id != tenant_id:
-                joined_tenants = TenantService.get_joined_tenants_by_user_id(owner_tenant_id)
-                allowed_tenant_ids = {owner_tenant_id, *(tenant["tenant_id"] for tenant in joined_tenants)}
-                if tenant_id not in allowed_tenant_ids:
+                joined_tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+                allowed_tenant_ids = {tenant_id, *(tenant["tenant_id"] for tenant in joined_tenants)}
+                if owner_tenant_id not in allowed_tenant_ids:
                     return get_error_data_result(message="Permission denied")
             target_tenant_id = owner_tenant_id
 
