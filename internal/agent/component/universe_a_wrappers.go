@@ -96,6 +96,10 @@ type bgptInvoker interface {
 	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
 }
 
+type duckDuckGoInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
 // bgptComponent delegates to internal/agent/tool/BGPTTool and adapts
 // the tool envelope to the BGPT canvas output contract.
 type bgptComponent struct {
@@ -178,6 +182,121 @@ func (c *bgptComponent) Invoke(ctx context.Context, inputs map[string]any) (map[
 
 func (c *bgptComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
+}
+
+// duckDuckGoComponent delegates to internal/agent/tool/DuckDuckGoTool.
+type duckDuckGoComponent struct {
+	inner duckDuckGoInvoker
+}
+
+func newDuckDuckGoComponent(_ map[string]any) (Component, error) {
+	return newDuckDuckGoComponentWithInvoker(agenttool.NewDuckDuckGoTool()), nil
+}
+
+func newDuckDuckGoComponentWithInvoker(inner duckDuckGoInvoker) Component {
+	return &duckDuckGoComponent{inner: inner}
+}
+
+func (c *duckDuckGoComponent) Name() string { return "DuckDuckGo" }
+
+func (c *duckDuckGoComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query":   "Search query.",
+		"channel": "Search channel: general or news.",
+		"top_n":   "Maximum number of results.",
+	}
+}
+
+func (c *duckDuckGoComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+		"channel": map[string]any{
+			"name":    "Channel",
+			"type":    "options",
+			"value":   "general",
+			"options": []string{"general", "news"},
+		},
+	}
+}
+
+func (c *duckDuckGoComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered search results for downstream LLM prompts.",
+		"json":               "Raw result list.",
+	}
+}
+
+func (c *duckDuckGoComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	args := map[string]any{
+		"query": query,
+	}
+	if channel := strings.TrimSpace(stringParam(inputs["channel"])); channel != "" {
+		args["channel"] = channel
+	}
+	if topN := toIntParam(inputs["top_n"]); topN > 0 {
+		args["top_n"] = topN
+	}
+
+	argsJSON, _ := json.Marshal(args)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: DuckDuckGo: %w", err)
+	}
+
+	results := anySlice(decoded["results"])
+	return map[string]any{
+		"formalized_content": renderDuckDuckGoResults(results),
+		"json":               results,
+	}, nil
+}
+
+func (c *duckDuckGoComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func renderDuckDuckGoResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		field := func(key string) string {
+			v, ok := m[key]
+			if !ok || v == nil {
+				return "-"
+			}
+			text := strings.TrimSpace(fmt.Sprintf("%v", v))
+			if text == "" {
+				return "-"
+			}
+			return text
+		}
+		blocks = append(blocks, strings.Join([]string{
+			fmt.Sprintf("Title: %s", field("title")),
+			fmt.Sprintf("URL: %s", field("url")),
+			fmt.Sprintf("Body: %s", field("body")),
+		}, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
 }
 
 func stringParam(v any) string {
@@ -1049,6 +1168,7 @@ func (c *yahooFinanceComponent) Stream(_ context.Context, _ map[string]any) (<-c
 var (
 	_ Component = (*retrievalComponent)(nil)
 	_ Component = (*tavilySearchComponent)(nil)
+	_ Component = (*duckDuckGoComponent)(nil)
 	_ Component = (*exesqlComponent)(nil)
 	_ Component = (*codeExecComponent)(nil)
 	_ Component = (*yahooFinanceComponent)(nil)
@@ -1057,4 +1177,5 @@ var (
 // Compile-time check that the eino InvokableTool methods we call
 // are reachable (catches a future refactor that renames them).
 var _ einotool.InvokableTool = (*agenttool.TavilyTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.DuckDuckGoTool)(nil)
 var _ einotool.InvokableTool = (*agenttool.YahooFinanceTool)(nil)
