@@ -23,7 +23,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,7 +31,6 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
-	_ "ragflow/internal/ingestion/component"
 	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
 	"ragflow/internal/storage"
@@ -846,22 +844,6 @@ func attachFixedEmbedderFactory(t *testing.T, pipe *Pipeline) {
 	})
 }
 
-func attachFixedEmbedderFactory(t *testing.T, pipe *Pipeline) {
-	t.Helper()
-	pipe.WithComponentFactory(func(name string, params map[string]any) (runtime.Component, error) {
-		if name == componentpkg.ComponentNameTokenizer {
-			return componentpkg.NewTokenizerComponentWithResolver(params, func(_, _, _ string) (componentpkg.Embedder, error) {
-				return fixedEmbedder{}, nil
-			})
-		}
-		factory, _, _, ok := runtime.DefaultRegistry.Lookup(name)
-		if !ok {
-			return nil, fmt.Errorf("runtime: unknown component %q", name)
-		}
-		return factory(name, params)
-	})
-}
-
 func withRealTemplateDeps(t *testing.T) storage.Storage {
 	t.Helper()
 
@@ -1139,12 +1121,4 @@ func TestTemplateFixtures_AreWrappedTemplates(t *testing.T) {
 	if _, ok := tpl["dsl"].(map[string]any); !ok {
 		t.Fatalf("fixture dsl = %T, want map[string]any", tpl["dsl"])
 	}
-}
-
-func expectedFixedEmbedderFirst(name, text string) float64 {
-	return 0.1*float64(len(name)) + 0.9*float64(len(text))
-}
-
-func approxFloat(got, want float64) bool {
-	return math.Abs(got-want) < 1e-9
 }
