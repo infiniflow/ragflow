@@ -140,7 +140,7 @@ func buildGoogleTool(params map[string]any) (einotool.BaseTool, error) {
 	}
 	for key := range params {
 		switch key {
-		case "api_key", "country", "language", "q", "query", "start", "num", "max_results":
+		case "api_key", "country", "language", "q", "start", "num":
 		default:
 			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "google", key)
 		}
@@ -158,17 +158,11 @@ func buildGoogleTool(params map[string]any) (einotool.BaseTool, error) {
 	if v, ok := stringParam(params, "q"); ok {
 		defaults.Q = v
 	}
-	if v, ok := stringParam(params, "query"); ok {
-		defaults.Query = v
-	}
 	if v, ok := intParam(params, "start"); ok {
 		defaults.Start = v
 	}
 	if v, ok := intParam(params, "num"); ok {
 		defaults.Num = v
-	}
-	if v, ok := intParam(params, "max_results"); ok {
-		defaults.MaxResults = v
 	}
 	return NewGoogleToolWithDefaults(nil, defaults), nil
 }

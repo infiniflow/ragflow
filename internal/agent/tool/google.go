@@ -34,17 +34,13 @@ const googleToolName = "google"
 const googleToolDescription = "Search the web via Google using SerpApi. Returns organic_results[].{title, link, snippet}."
 
 // googleParams is the JSON shape the model or canvas sends into InvokableRun.
-// The primary fields are api_key, q, start, num, country, and language;
-// query and max_results are accepted as Agent-tool aliases.
 type googleParams struct {
-	APIKey     string `json:"api_key"`
-	Q          string `json:"q"`
-	Query      string `json:"query"`
-	Start      int    `json:"start"`
-	Num        int    `json:"num"`
-	MaxResults int    `json:"max_results"`
-	Country    string `json:"country"`
-	Language   string `json:"language"`
+	APIKey   string `json:"api_key"`
+	Q        string `json:"q"`
+	Start    int    `json:"start"`
+	Num      int    `json:"num"`
+	Country  string `json:"country"`
+	Language string `json:"language"`
 }
 
 type googleResult map[string]any
@@ -88,32 +84,17 @@ func (g *GoogleTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"q": {
 				Type:     schema.String,
-				Desc:     "Search query.",
-				Required: true,
-			},
-			"api_key": {
-				Type:     schema.String,
-				Desc:     "SerpApi API key.",
+				Desc:     "The search keywords to execute with Google. The keywords should be the most important words/terms(includes synonyms) from the original request.",
 				Required: true,
 			},
 			"start": {
 				Type:     schema.Integer,
-				Desc:     "Result offset. Defaults to 0.",
+				Desc:     "Parameter defines the result offset. It skips the given number of results. It's used for pagination. (e.g., 0 (default) is the first page of results, 10 is the 2nd page of results, 20 is the 3rd page of results, etc.). Google Local Results only accepts multiples of 20(e.g. 20 for the second page results, 40 for the third page results, etc.) as the start value.",
 				Required: false,
 			},
 			"num": {
 				Type:     schema.Integer,
-				Desc:     "Maximum number of results to return. Defaults to 6.",
-				Required: false,
-			},
-			"country": {
-				Type:     schema.String,
-				Desc:     "Google country code. Defaults to us.",
-				Required: false,
-			},
-			"language": {
-				Type:     schema.String,
-				Desc:     "Google language code. Defaults to en.",
+				Desc:     "Parameter defines the maximum number of results to return. (e.g., 10 (default) returns 10 results, 40 returns 40 results, and 100 returns 100 results). The use of num may introduce latency, and/or prevent the inclusion of specialized result types. It is better to omit this parameter unless it is strictly necessary to increase the number of results per page. Results are not guaranteed to have the number of results specified in num.",
 				Required: false,
 			},
 		}),
@@ -144,13 +125,7 @@ var googleEndpoint = "https://serpapi.com/search.json"
 
 func buildGoogleURL(p googleParams) string {
 	query := strings.TrimSpace(p.Q)
-	if query == "" {
-		query = strings.TrimSpace(p.Query)
-	}
 	num := p.Num
-	if num <= 0 {
-		num = p.MaxResults
-	}
 	if num <= 0 {
 		num = 6
 	}
@@ -182,7 +157,7 @@ func (g *GoogleTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 			fmt.Errorf("google: parse arguments: %w", err)
 	}
 	p = mergeGoogleDefaults(g.defaults, p)
-	if strings.TrimSpace(p.Q) == "" && strings.TrimSpace(p.Query) == "" {
+	if strings.TrimSpace(p.Q) == "" {
 		return googleErrJSON(fmt.Errorf("query is required")),
 			fmt.Errorf("google: query is required")
 	}
@@ -211,30 +186,17 @@ func (g *GoogleTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 }
 
 func mergeGoogleDefaults(defaults, p googleParams) googleParams {
-	if strings.TrimSpace(p.Query) != "" {
-		p.Q = p.Query
-	}
-	if p.MaxResults > 0 {
-		p.Num = p.MaxResults
-	}
-
 	if p.APIKey == "" {
 		p.APIKey = defaults.APIKey
 	}
 	if p.Q == "" {
 		p.Q = defaults.Q
 	}
-	if p.Q == "" {
-		p.Q = defaults.Query
-	}
 	if p.Start == 0 {
 		p.Start = defaults.Start
 	}
 	if p.Num == 0 {
 		p.Num = defaults.Num
-	}
-	if p.Num == 0 {
-		p.Num = defaults.MaxResults
 	}
 	if p.Country == "" {
 		p.Country = defaults.Country

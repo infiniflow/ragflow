@@ -49,7 +49,7 @@ func TestGoogle_BuildURL(t *testing.T) {
 		},
 		{
 			name:     "agent aliases",
-			params:   googleParams{APIKey: "K", Query: "x", MaxResults: 3},
+			params:   googleParams{APIKey: "K", Q: "x", Num: 3},
 			wantNum:  "3",
 			wantHost: "serpapi.com",
 		},
@@ -163,7 +163,7 @@ func TestGoogle_InfoAndInputForm(t *testing.T) {
 	}
 }
 
-func TestGoogle_MergeDefaultsPrefersInputAliases(t *testing.T) {
+func TestGoogle_MergeDefaultsPrefersExplicitInputs(t *testing.T) {
 	t.Parallel()
 
 	got := mergeGoogleDefaults(
@@ -174,8 +174,8 @@ func TestGoogle_MergeDefaultsPrefersInputAliases(t *testing.T) {
 			Country: "us",
 		},
 		googleParams{
-			Query:      "agent query",
-			MaxResults: 10,
+			Q:   "agent query",
+			Num: 10,
 		},
 	)
 
@@ -217,5 +217,20 @@ func TestGoogle_BuildByNameAcceptsNodeParams(t *testing.T) {
 	}
 	if tool.defaults.Num != 12 {
 		t.Fatalf("defaults.Num = %d, want 12", tool.defaults.Num)
+	}
+}
+
+func TestGoogle_BuildByNameRejectsRemovedAliasNodeParams(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildByName("google", map[string]any{
+		"query":       "ragflow",
+		"max_results": 5,
+	})
+	if err == nil {
+		t.Fatal("expected error for removed google alias node params")
+	}
+	if !strings.Contains(err.Error(), "does not accept node-level param") {
+		t.Fatalf("err = %q, want unsupported node-level param error", err.Error())
 	}
 }
