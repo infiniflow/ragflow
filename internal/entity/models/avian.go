@@ -49,7 +49,7 @@ func (a *AvianModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (a *AvianModel) Name() string {
-	return "avian"
+	return "Avian"
 }
 
 func (a *AvianModel) chatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {

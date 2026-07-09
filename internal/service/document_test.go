@@ -70,6 +70,9 @@ func (f *fakeUploadStorage) ObjExist(bucket, fnm string, tenantID ...string) boo
 	_, ok := f.objects[f.key(bucket, fnm)]
 	return ok
 }
+func (f *fakeUploadStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+	return []string{}, nil
+}
 func (f *fakeUploadStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
@@ -90,6 +93,7 @@ func (f *fakeUploadStorage) Move(srcBucket, srcPath, destBucket, destPath string
 	delete(f.objects, f.key(srcBucket, srcPath))
 	return true
 }
+func (f *fakeUploadStorage) Close() error { return nil }
 
 type fakeChatDocEngine struct{}
 

@@ -70,12 +70,30 @@ func (p *Parser) parseAdminLogout() (*Command, error) {
 }
 
 func (p *Parser) parseAdminPingServer() (*Command, error) {
-	cmd := NewCommand("admin_ping_server")
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
+	p.nextToken() // consume PING
+
+	var cmd *Command
+
+	switch p.curToken.Type {
+	case TokenStore:
 		p.nextToken()
+		cmd = NewCommand("admin_ping_store")
+	case TokenEngine:
+		p.nextToken()
+		cmd = NewCommand("admin_ping_engine")
+	case TokenMQ:
+		p.nextToken()
+		cmd = NewCommand("admin_ping_mq")
+	case TokenCache:
+		p.nextToken()
+		cmd = NewCommand("admin_ping_cache")
+	case TokenSemicolon, TokenEOF:
+		p.nextToken()
+		cmd = NewCommand("admin_ping_server")
+	default:
+		return nil, fmt.Errorf("expected semicolon after PING")
 	}
+
 	return cmd, nil
 }
 
