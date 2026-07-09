@@ -27,7 +27,7 @@ from api.db.db_models import Task
 from api.db.services.task_service import TaskService
 from api.db.services.memory_service import MemoryService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_config_by_id
+from api.db.joint_services.tenant_model_service import resolve_model_config, get_model_config_by_id
 from api.utils.memory_utils import get_memory_type_human
 from memory.services.messages import MessageService
 from memory.services.query import MsgTextQuery, get_vector
@@ -169,11 +169,11 @@ async def extract_by_llm(tenant_id: str, tenant_llm_id: str | None, extract_conf
         user_prompts.append({"role": "user", "content": PromptAssembler.assemble_user_prompt(conversation_content, conversation_time, conversation_time)})
     if tenant_llm_id:
         try:
-            llm_config = get_model_config_by_id(tenant_id, tenant_llm_id)
+            llm_config = get_model_config_by_id(tenant_id, LLMType.CHAT, tenant_llm_id)
         except LookupError:
-            llm_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, llm_id)
+            llm_config = resolve_model_config(tenant_id, LLMType.CHAT, llm_id)
     else:
-        llm_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, llm_id)
+        llm_config = resolve_model_config(tenant_id, LLMType.CHAT, llm_id)
     with LLMBundle(tenant_id, llm_config) as llm:
         if task_id:
             TaskService.update_progress(task_id, {"progress": 0.15, "progress_msg": timestamp_to_date(current_timestamp()) + " " + "Prepared prompts and LLM."})
@@ -196,11 +196,11 @@ async def extract_by_llm(tenant_id: str, tenant_llm_id: str | None, extract_conf
 async def embed_and_save(memory, message_list: list[dict], task_id: str=None):
     if memory.tenant_embd_id:
         try:
-            embd_model_config = get_model_config_by_id(memory.tenant_id, memory.tenant_embd_id)
+            embd_model_config = get_model_config_by_id(memory.tenant_id, LLMType.EMBEDDING, memory.tenant_embd_id)
         except LookupError:
-            embd_model_config = get_model_config_from_provider_instance(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
+            embd_model_config = resolve_model_config(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
     else:
-        embd_model_config = get_model_config_from_provider_instance(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
+        embd_model_config = resolve_model_config(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
     with LLMBundle(memory.tenant_id, embd_model_config) as embedding_model:
         if task_id:
             TaskService.update_progress(task_id, {"progress": 0.65, "progress_msg": timestamp_to_date(current_timestamp()) + " " + "Prepared embedding model."})
@@ -270,7 +270,7 @@ def query_message(filter_dict: dict, params: dict):
     question = params["query"]
     question = question.strip()
     memory = memory_list[0]
-    embd_model_config = get_model_config_from_provider_instance(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
+    embd_model_config = resolve_model_config(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
     embd_model = LLMBundle(memory.tenant_id, embd_model_config)
     match_dense = get_vector(question, embd_model, similarity=params["similarity_threshold"])
     match_text, _ = MsgTextQuery().question(question, min_match=params["similarity_threshold"])
