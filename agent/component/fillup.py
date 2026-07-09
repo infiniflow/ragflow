@@ -114,12 +114,24 @@ class UserFillUp(ComponentBase):
             self.set_output("tips", content)
         layout_recognize = self._param.layout_recognize or None
         merged_inputs = self._merge_runtime_inputs(kwargs.get("inputs", {}))
+        if not merged_inputs:
+            # No fresh user answer was supplied on this entry. Clear any values
+            # retained from a previous response so the canvas wait-check treats
+            # the form as unsatisfied and pauses for input again. Without this,
+            # an Await Response node inside a Loop would only pause on the first
+            # iteration and silently reuse the earlier answer afterwards.
+            self._clear_form_values()
         for k, v in merged_inputs.items():
             if self.check_if_canceled("UserFillUp processing"):
                 return
             resolved = self._resolve_input_value(v, layout_recognize)
             self.set_output(k, resolved)
             self.set_input_value(k, resolved)
+
+    def _clear_form_values(self):
+        for field in self.get_input_elements().values():
+            if isinstance(field, dict):
+                field["value"] = None
 
     def thoughts(self) -> str:
         return "Waiting for your input..."

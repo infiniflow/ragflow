@@ -153,3 +153,37 @@ def test_user_fillup_does_not_consume_unmatched_structured_query(monkeypatch):
 
     assert component._param.outputs == {}
     assert component._canvas.globals["sys.__initial_user_input_consumed__"] is False
+
+
+@pytest.mark.p2
+def test_user_fillup_clears_stale_values_on_reentry_without_answer(monkeypatch):
+    # A fresh entry with no user answer (e.g. a new Loop iteration) must clear
+    # any value retained from a previous response so the form is treated as
+    # unsatisfied and the workflow pauses for input again.
+    module = _load_fillup_module(monkeypatch)
+    component = _make_fillup(
+        module,
+        query="",
+        inputs={"demo": {"type": "options", "name": "Demo", "value": "previous answer"}},
+    )
+
+    component._invoke(inputs={})
+
+    assert component._param.inputs["demo"]["value"] is None
+
+
+@pytest.mark.p2
+def test_user_fillup_keeps_values_when_answer_supplied(monkeypatch):
+    # When the user actually answers, the supplied value must be applied and
+    # not cleared.
+    module = _load_fillup_module(monkeypatch)
+    component = _make_fillup(
+        module,
+        query="",
+        inputs={"demo": {"type": "options", "name": "Demo", "value": "previous answer"}},
+    )
+
+    component._invoke(inputs={"demo": {"value": "new answer"}})
+
+    assert component._param.inputs["demo"]["value"] == "new answer"
+    assert component._param.outputs["demo"]["value"] == "new answer"
