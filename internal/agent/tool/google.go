@@ -34,8 +34,8 @@ const googleToolName = "google"
 const googleToolDescription = "Search the web via Google using SerpApi. Returns organic_results[].{title, link, snippet}."
 
 // googleParams is the JSON shape the model or canvas sends into InvokableRun.
-// It mirrors Python's GoogleParam / get_input_form: api_key, q/start/num,
-// country and language. Query/MaxResults are accepted as Agent-tool aliases.
+// The primary fields are api_key, q, start, num, country, and language;
+// query and max_results are accepted as Agent-tool aliases.
 type googleParams struct {
 	APIKey     string `json:"api_key"`
 	Q          string `json:"q"`
@@ -120,8 +120,7 @@ func (g *GoogleTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	}, nil
 }
 
-// InputForm mirrors Python GoogleParam.get_input_form for Agent tool
-// aggregation.
+// InputForm returns the Google fields exposed through Agent tool aggregation.
 func (g *GoogleTool) InputForm() map[string]any {
 	return map[string]any{
 		"q": map[string]any{
@@ -212,14 +211,21 @@ func (g *GoogleTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 }
 
 func mergeGoogleDefaults(defaults, p googleParams) googleParams {
+	if strings.TrimSpace(p.Query) != "" {
+		p.Q = p.Query
+	}
+	if p.MaxResults > 0 {
+		p.Num = p.MaxResults
+	}
+
 	if p.APIKey == "" {
 		p.APIKey = defaults.APIKey
 	}
 	if p.Q == "" {
 		p.Q = defaults.Q
 	}
-	if p.Query == "" {
-		p.Query = defaults.Query
+	if p.Q == "" {
+		p.Q = defaults.Query
 	}
 	if p.Start == 0 {
 		p.Start = defaults.Start
@@ -227,8 +233,8 @@ func mergeGoogleDefaults(defaults, p googleParams) googleParams {
 	if p.Num == 0 {
 		p.Num = defaults.Num
 	}
-	if p.MaxResults == 0 {
-		p.MaxResults = defaults.MaxResults
+	if p.Num == 0 {
+		p.Num = defaults.MaxResults
 	}
 	if p.Country == "" {
 		p.Country = defaults.Country

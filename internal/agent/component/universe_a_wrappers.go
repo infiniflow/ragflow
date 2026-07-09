@@ -91,8 +91,8 @@ func (c *tavilySearchComponent) Stream(_ context.Context, _ map[string]any) (<-c
 	return nil, nil
 }
 
-// googleComponent delegates to internal/agent/tool/GoogleTool and adapts the
-// tool envelope to Python's canvas-facing Google outputs.
+// googleComponent wraps internal/agent/tool/GoogleTool for canvas execution and
+// adapts the tool envelope to the Google component outputs.
 type googleComponent struct {
 	inner  *agenttool.GoogleTool
 	params map[string]any

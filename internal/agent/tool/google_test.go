@@ -163,6 +163,36 @@ func TestGoogle_InfoAndInputForm(t *testing.T) {
 	}
 }
 
+func TestGoogle_MergeDefaultsPrefersInputAliases(t *testing.T) {
+	t.Parallel()
+
+	got := mergeGoogleDefaults(
+		googleParams{
+			APIKey:  "DEFAULT_KEY",
+			Q:       "default query",
+			Num:     6,
+			Country: "us",
+		},
+		googleParams{
+			Query:      "agent query",
+			MaxResults: 10,
+		},
+	)
+
+	if got.APIKey != "DEFAULT_KEY" {
+		t.Fatalf("APIKey = %q, want DEFAULT_KEY", got.APIKey)
+	}
+	if got.Q != "agent query" {
+		t.Fatalf("Q = %q, want agent query", got.Q)
+	}
+	if got.Num != 10 {
+		t.Fatalf("Num = %d, want 10", got.Num)
+	}
+	if got.Country != "us" {
+		t.Fatalf("Country = %q, want us", got.Country)
+	}
+}
+
 func TestGoogle_BuildByNameAcceptsNodeParams(t *testing.T) {
 	t.Parallel()
 
