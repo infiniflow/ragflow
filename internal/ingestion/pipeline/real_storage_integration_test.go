@@ -19,6 +19,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	componentpkg "ragflow/internal/ingestion/component"
+	_ "ragflow/internal/ingestion/component/chunker"
 	"ragflow/internal/server"
 	"ragflow/internal/storage"
 
@@ -30,7 +31,7 @@ import (
 
 func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	prepareTokenizerResourceForIntegration(t)
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
 	cfg := mustLoadRealIntegrationConfig(t)
 	realDB := mustOpenRealMySQL(t, cfg)
@@ -198,25 +199,12 @@ func prepareTokenizerResourceForIntegration(t *testing.T) {
 	if os.Getenv("RAGFLOW_DICT_PATH") != "" {
 		return
 	}
-	srcDir := filepath.Join(repoRootFromPipelineTest(t), ".venv", "lib", "python3.13", "site-packages", "infinity")
-	if _, err := os.Stat(filepath.Join(srcDir, "huqie.txt")); err != nil {
-		t.Skipf("tokenizer resource source not found at %s: %v", srcDir, err)
+	const systemDictPath = "/usr/share/infinity/resource"
+	if _, err := os.Stat(filepath.Join(systemDictPath, "rag", "huqie.txt")); err != nil {
+		t.Skipf("system tokenizer resource not found at %s: %v", systemDictPath, err)
 	}
-	if _, err := os.Stat(filepath.Join(srcDir, "huqie.txt.trie")); err != nil {
-		t.Skipf("tokenizer trie source not found at %s: %v", srcDir, err)
-	}
-	root := t.TempDir()
-	ragDir := filepath.Join(root, "rag")
-	if err := os.MkdirAll(ragDir, 0o755); err != nil {
-		t.Fatalf("mkdir rag tokenizer dir: %v", err)
-	}
-	mustSymlink(t, filepath.Join(srcDir, "huqie.txt"), filepath.Join(ragDir, "huqie.txt"))
-	mustSymlink(t, filepath.Join(srcDir, "huqie.txt.trie"), filepath.Join(ragDir, "huqie.trie"))
-	mustWriteTokenizerPOSDef(t, filepath.Join(srcDir, "huqie.txt"), filepath.Join(ragDir, "pos-id.def"))
-	mustPrepareTokenizerWordNet(t, root)
-	mustPrepareTokenizerOpenCC(t, root)
-	if err := os.Setenv("RAGFLOW_DICT_PATH", root); err != nil {
-		t.Fatalf("set RAGFLOW_DICT_PATH: %v", err)
+	if err := os.Setenv("RAGFLOW_DICT_PATH", systemDictPath); err != nil {
+		t.Fatalf("set RAGFLOW_DICT_PATH=%s: %v", systemDictPath, err)
 	}
 	t.Cleanup(func() {
 		_ = os.Unsetenv("RAGFLOW_DICT_PATH")
