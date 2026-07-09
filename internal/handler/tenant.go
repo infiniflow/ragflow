@@ -331,7 +331,7 @@ type InsertChunksFromFileRequest struct {
 // @Security ApiKeyAuth
 // @Param request body InsertChunksFromFileRequest true "insert chunks request"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/insert_chunks_from_file [post]
+// @Router /v1/tenant/dev_insert_chunks_from_file [post]
 func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -409,7 +409,7 @@ type InsertMetadataFromFileRequest struct {
 // @Security ApiKeyAuth
 // @Param request body InsertMetadataFromFileRequest true "insert metadata request"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/insert_metadata_from_file [post]
+// @Router /v1/tenant/dev_insert_metadata_from_file [post]
 func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
