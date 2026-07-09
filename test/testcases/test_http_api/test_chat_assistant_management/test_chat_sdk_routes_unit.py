@@ -330,6 +330,7 @@ def _load_chat_module(monkeypatch):
             return False, None
 
     kb_service_mod.KnowledgebaseService = _StubKnowledgebaseService
+    kb_service_mod.validate_dataset_embedding_models = lambda _kbs: None
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
 
     tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")

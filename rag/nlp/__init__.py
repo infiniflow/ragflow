@@ -1162,6 +1162,8 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
         sections = [sections]
     if isinstance(sections[0], str):
         sections = [(s, "") for s in sections]
+    # Normalize line endings so delimiter ``\n`` matches ``\r\n`` and standalone ``\r``.
+    sections = [(s.replace("\r\n", "\n").replace("\r", "\n"), pos) for s, pos in sections]
     cks = [""]
     tk_nums = [0]
 

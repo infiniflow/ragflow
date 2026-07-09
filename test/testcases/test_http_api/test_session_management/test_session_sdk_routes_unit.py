@@ -2301,6 +2301,7 @@ def _load_chat_api_module(monkeypatch):
 
     kb_svc_mod = ModuleType("api.db.services.knowledgebase_service")
     kb_svc_mod.KnowledgebaseService = SimpleNamespace(query=lambda **_k: [], accessible=lambda **_k: True)
+    kb_svc_mod.validate_dataset_embedding_models = lambda _kbs: None
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_svc_mod)
 
     class _FakeLLMBundle:

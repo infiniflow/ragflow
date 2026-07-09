@@ -72,7 +72,7 @@ func (x *XinferenceModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (x *XinferenceModel) Name() string {
-	return "xinference"
+	return "Xinference"
 }
 
 func normalizeXinferenceBaseURL(base string) string {

@@ -22,7 +22,7 @@ interface IProps {
 }
 
 function Time({ time }: { time: string | number | undefined }) {
-  return <p className="text-sm whitespace-nowrap">{formatDate(time)}</p>;
+  return <p className="text-sm truncate">{formatDate(time)}</p>;
 }
 export function HomeCard({
   data,
@@ -84,16 +84,20 @@ export function HomeCard({
                 {data.description}
               </div>
               {extra}
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center min-w-0">
                 {showReleaseTime ? (
-                  <section className="text-sm text-text-secondary space-y-1">
-                    <div className="flex items-center gap-2">
-                      {`${t('flow.lastSavedAt')}:`}
+                  <section className="text-sm text-text-secondary space-y-1 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="whitespace-nowrap">
+                        {t('flow.lastSavedAt')}:
+                      </span>
                       <Time time={data.update_time}></Time>
                     </div>
                     {data.release_time && (
-                      <div className="flex items-center gap-2">
-                        {`${t('flow.publishedAt')}:`}
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="whitespace-nowrap">
+                          {t('flow.publishedAt')}:
+                        </span>
                         <Time time={data.release_time}></Time>
                       </div>
                     )}

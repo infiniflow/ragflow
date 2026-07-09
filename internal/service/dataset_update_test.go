@@ -271,7 +271,7 @@ func TestDatasetServiceUpdateDatasetAcceptsProviderInstanceEmbedding(t *testing.
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 	insertDatasetUpdateModelProvider(t, "provider-1", "tenant-1", "ZHIPU-AI")
 	insertDatasetUpdateModelInstance(t, "instance-1", "provider-1", "test")
-	insertDatasetUpdateTenantModel(t, "model-1", "provider-1", "instance-1", "embedding-2", string(entity.ModelTypeEmbedding))
+	insertDatasetUpdateTenantModel(t, "model-1", "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
 
 	embeddingModel := "embedding-2@test@ZHIPU-AI"
 	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
@@ -408,7 +408,7 @@ func insertDatasetUpdateModelInstance(t *testing.T, id, providerID, instanceName
 	}
 }
 
-func insertDatasetUpdateTenantModel(t *testing.T, id, providerID, instanceID, modelName, modelType string) {
+func insertDatasetUpdateTenantModel(t *testing.T, id, providerID, instanceID, modelName string, modelType int) {
 	t.Helper()
 
 	model := &entity.TenantModel{

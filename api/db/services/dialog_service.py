@@ -31,7 +31,7 @@ from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
 from api.db.services.common_service import CommonService
 from api.db.services.doc_metadata_service import DocMetadataService
-from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
@@ -358,16 +358,16 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
 def get_models(dialog, trace_context=None, langfuse_session_id=None):
     embd_mdl, chat_mdl, rerank_mdl, tts_mdl = None, None, None, None
     kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids)
-    embedding_list = list(set([kb.embd_id for kb in kbs]))
-    if len(embedding_list) > 1:
-        raise Exception("**ERROR**: Knowledge bases use different embedding models.")
+    err = validate_dataset_embedding_models(kbs)
+    if err:
+        raise Exception(err)
 
-    if embedding_list:
+    if kbs and kbs[0].embd_id:
         embd_owner_tenant_id = kbs[0].tenant_id
-        embd_model_config = get_model_config_from_provider_instance(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
+        embd_model_config = get_model_config_from_provider_instance(embd_owner_tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
         embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
         if not embd_mdl:
-            raise LookupError("Embedding model(%s) not found" % embedding_list[0])
+            raise LookupError("Embedding model(%s) not found" % kbs[0].embd_id)
 
     if dialog.llm_id:
         if dialog.tenant_llm_id:
@@ -721,8 +721,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 prompt_config,
                 partial(
                     retriever.retrieval,
-                    embd_mdl = embd_mdl,
-                    tenant_ids = tenant_ids,
+                    embd_mdl=embd_mdl,
+                    tenant_ids=tenant_ids,
                     kb_ids=dialog.kb_ids,
                     page=1,
                     page_size=dialog.top_n,

@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"sort"
@@ -938,17 +939,66 @@ func generateTemplatePipelinePDF() ([]byte, error) {
 }
 
 func findTemplatePDFFont() (string, error) {
-	candidates := []string{
-		"/usr/share/fonts/truetype/LiberationSerif-Regular.ttf",
-		"/usr/share/fonts/truetype/DejaVuSerif.ttf",
-		"/usr/share/fonts/truetype/DejaVuSans.ttf",
+	// Option 1: Prefer fc-list (fontconfig) - most elegant approach
+	if fontPath, err := findFontViaFontconfig(); err == nil {
+		return fontPath, nil
 	}
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
+
+	// Option 2: Fallback - search common directories (for systems without fontconfig)
+	candidates := []string{
+		"LiberationSerif-Regular.ttf",
+		"DejaVuSerif.ttf",
+		"DejaVuSans.ttf",
+	}
+	searchDirs := []string{
+		"/usr/share/fonts/truetype",
+		"/usr/share/fonts/truetype/dejavu",
+		"/usr/share/fonts/truetype/liberation",
+		"/usr/share/fonts",
+		"/usr/local/share/fonts",
+	}
+
+	for _, dir := range searchDirs {
+		for _, font := range candidates {
+			candidate := filepath.Join(dir, font)
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
 		}
 	}
+
 	return "", fmt.Errorf("no usable TTF font found for generated PDF fixture")
+}
+
+// findFontViaFontconfig uses fc-list command to find a suitable TTF font
+func findFontViaFontconfig() (string, error) {
+	// Search priority: DejaVu Serif > Liberation Serif > DejaVu Sans
+	fontPatterns := []string{
+		"DejaVu Serif:style=Regular",
+		"Liberation Serif:style=Regular",
+		"DejaVu Sans:style=Regular",
+	}
+
+	for _, pattern := range fontPatterns {
+		cmd := exec.Command("fc-list", "--format=%{file}\n", pattern)
+		output, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			// Verify file exists and is in TTF format
+			if _, err := os.Stat(line); err == nil && strings.HasSuffix(strings.ToLower(line), ".ttf") {
+				return line, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no font found via fontconfig")
 }
 
 func assertMetadataContainsString(t *testing.T, metadata map[string]any, key, want string) {
