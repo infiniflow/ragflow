@@ -49,7 +49,7 @@ func (l *LmStudioModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (l *LmStudioModel) Name() string {
-	return "lmstudio"
+	return "LM-Studio"
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response

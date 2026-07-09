@@ -70,6 +70,17 @@ func (dao *DocumentDAO) UpdateByID(id string, updates map[string]interface{}) er
 	return DB.Model(&entity.Document{}).Where("id = ?", id).Updates(updates).Error
 }
 
+// IncrementCounts atomically increments chunk_num, token_num, and process_duration for a document
+func (dao *DocumentDAO) IncrementCounts(id string, kbID string, chunkNum int64, tokenNum int64, duration float64) error {
+	return DB.Model(&entity.Document{}).
+		Where("id = ? AND kb_id = ?", id, kbID).
+		Updates(map[string]interface{}{
+			"chunk_num":         gorm.Expr("chunk_num + ?", chunkNum),
+			"token_num":         gorm.Expr("token_num + ?", tokenNum),
+			"process_duration":  gorm.Expr("process_duration + ?", duration),
+		}).Error
+}
+
 // Delete hard-deletes document by ID. Returns rows affected.
 func (dao *DocumentDAO) Delete(id string) (int64, error) {
 	result := DB.Where("id = ?", id).Delete(&entity.Document{})

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strings"
 	"unicode/utf8"
 
@@ -305,19 +306,19 @@ func validateCreateLLMID(llmID, tenantID string, llmSetting map[string]interface
 	modelType := entity.ModelTypeChat
 	switch confModelType := llmSetting["model_type"].(type) {
 	case string:
-		if confModelType == string(entity.ModelTypeImage2Text) {
+		if confModelType == entity.ModelTypeImage2Text.String() {
 			modelType = entity.ModelTypeImage2Text
 		}
 	case []interface{}:
 		for _, item := range confModelType {
-			if item == string(entity.ModelTypeImage2Text) {
+			if item == entity.ModelTypeImage2Text.String() {
 				modelType = entity.ModelTypeImage2Text
 				break
 			}
 		}
 	case []string:
 		for _, item := range confModelType {
-			if item == string(entity.ModelTypeImage2Text) {
+			if item == entity.ModelTypeImage2Text.String() {
 				modelType = entity.ModelTypeImage2Text
 				break
 			}
@@ -415,7 +416,7 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 	}
 
 	chat := &entity.Chat{
-		ID:                     common.GenerateUUID(),
+		ID:                     utility.GenerateUUID(),
 		TenantID:               tenantID,
 		Name:                   &name,
 		Description:            &description,
@@ -923,12 +924,12 @@ func (s *ChatService) validateRESTLLMID(llmID, tenantID string, llmSetting map[s
 	if rawModelType, ok := llmSetting["model_type"]; ok {
 		switch typedModelType := rawModelType.(type) {
 		case string:
-			if typedModelType == string(entity.ModelTypeImage2Text) {
+			if typedModelType == entity.ModelTypeImage2Text.String() {
 				modelType = entity.ModelTypeImage2Text
 			}
 		case []interface{}:
 			for _, item := range typedModelType {
-				if fmt.Sprint(item) == string(entity.ModelTypeImage2Text) {
+				if fmt.Sprint(item) == entity.ModelTypeImage2Text.String() {
 					modelType = entity.ModelTypeImage2Text
 					break
 				}

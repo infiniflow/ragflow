@@ -449,10 +449,10 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 			// Determine API key and base URL based on model type
 			var apiKey, apiBase string
 			switch llm.ModelType {
-			case string(entity.ModelTypeChat):
+			case entity.ModelTypeChat.String():
 				apiKey = factoryConfig.APIKey
 				apiBase = factoryConfig.BaseURL
-			case string(entity.ModelTypeEmbedding):
+			case entity.ModelTypeEmbedding.String():
 				apiKey = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.BaseURL
 				if apiKey == "" {
@@ -461,7 +461,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case string(entity.ModelTypeRerank):
+			case entity.ModelTypeRerank.String():
 				apiKey = cfg.UserDefaultLLM.DefaultModels.RerankModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.RerankModel.BaseURL
 				if apiKey == "" {
@@ -470,7 +470,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case string(entity.ModelTypeSpeech2Text):
+			case entity.ModelTypeSpeech2Text.String():
 				apiKey = cfg.UserDefaultLLM.DefaultModels.ASRModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.ASRModel.BaseURL
 				if apiKey == "" {
@@ -479,7 +479,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case string(entity.ModelTypeImage2Text):
+			case entity.ModelTypeImage2Text.String():
 				apiKey = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.BaseURL
 				if apiKey == "" {
@@ -972,7 +972,7 @@ func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{},
 
 	// 3. Generate API token
 	key := utility.GenerateAPIToken()
-	beta := utility.GenerateBetaAPIToken(key)
+	beta := utility.GenerateBetaAPIToken()
 
 	apiToken := &entity.APIToken{
 		TenantID: tenantID,

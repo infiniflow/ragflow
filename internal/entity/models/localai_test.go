@@ -37,8 +37,8 @@ func withLocalAIIdleTimeout(t *testing.T, d time.Duration) {
 
 func TestLocalAIName(t *testing.T) {
 	l := newLocalAIForTest("http://unused")
-	if got := l.Name(); got != "localai" {
-		t.Errorf("Name()=%q, want %q", got, "localai")
+	if got := l.Name(); got != "LocalAI" {
+		t.Errorf("Name()=%q, want %q", got, "LocalAI")
 	}
 }
 

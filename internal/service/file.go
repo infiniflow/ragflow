@@ -37,8 +37,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // FileService file service
@@ -199,7 +197,7 @@ func (s *FileService) initSkillsFolder(rootID, tenantID string) error {
 	}
 
 	folder := &entity.File{
-		ID:         s.generateUUID(),
+		ID:         utility.GenerateToken(),
 		ParentID:   rootID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
@@ -433,7 +431,7 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 		uniqueName := s.getUniqueFilename(fileObjNames[len(fileObjNames)-1], lastFolder.ID, tenantID)
 
 		fileRecord := &entity.File{
-			ID:         s.generateUUID(),
+			ID:         utility.GenerateToken(),
 			ParentID:   lastFolder.ID,
 			TenantID:   tenantID,
 			CreatedBy:  tenantID,
@@ -549,11 +547,6 @@ func (s *FileService) getUniqueFilename(name, parentID, tenantID string) string 
 		}
 		counter++
 	}
-}
-
-func (s *FileService) generateUUID() string {
-	id := uuid.New().String()
-	return strings.ReplaceAll(id, "-", "")
 }
 
 // CreateFolder creates a new folder or virtual file
@@ -1330,7 +1323,7 @@ func (s *FileService) checkUploadInfoHealth(userID, filename string) error {
 }
 
 func (s *FileService) storeUploadInfoBlob(storageImpl storage.Storage, userID, filename, contentType string, data []byte) (map[string]interface{}, error) {
-	location := common.GenerateUUID()
+	location := utility.GenerateUUID()
 	bucket := fmt.Sprintf("%s-downloads", userID)
 	if err := storageImpl.Put(bucket, location, data); err != nil {
 		return nil, fmt.Errorf("failed to store file: %w", err)

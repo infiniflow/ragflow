@@ -79,7 +79,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.file2document_service import File2DocumentService
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_model_config_by_id
 from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, email, tag
@@ -418,6 +418,8 @@ async def build_chunks(task, progress_callback):
 
     # Record docs after MinIO upload
     get_recording_context().record("docs_after_prep", docs)
+
+    rag_tokenizer.tokenizer.set_language(task["language"])
 
     if task["parser_config"].get("auto_keywords", 0):
         st = timer()
@@ -758,7 +760,15 @@ async def run_dataflow(task: dict):
         assert e, "Pipeline log not found."
         dsl = pipeline_log.dsl
         dataflow_id = pipeline_log.pipeline_id
-    pipeline = Pipeline(dsl, tenant_id=task["tenant_id"], doc_id=doc_id, task_id=task_id, flow_id=dataflow_id)
+    pipeline = Pipeline(
+        dsl,
+        tenant_id=task["tenant_id"],
+        doc_id=doc_id,
+        task_id=task_id,
+        flow_id=dataflow_id,
+        language=task.get("language"),
+    )
+    rag_tokenizer.tokenizer.set_language(task.get("language", "English"))
     chunks = await pipeline.run(file=task["file"]) if task.get("file") else await pipeline.run()
     if doc_id == CANVAS_DEBUG_DOC_ID:
         get_recording_context().record("dataflow_debug_result", "canvas_debug_mode")
@@ -808,7 +818,13 @@ async def run_dataflow(task: dict):
             set_progress(task_id, prog=0.82, msg="\n-------------------------------------\nStart to embedding...")
             e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
             embedding_id = kb.embd_id
-            embd_model_config = get_model_config_from_provider_instance(task["tenant_id"], LLMType.EMBEDDING, embedding_id)
+            if kb.tenant_embd_id:
+                try:
+                    embd_model_config = get_model_config_by_id(task["tenant_id"], kb.tenant_embd_id)
+                except LookupError:
+                    embd_model_config = get_model_config_from_provider_instance(task["tenant_id"], LLMType.EMBEDDING, embedding_id)
+            else:
+                embd_model_config = get_model_config_from_provider_instance(task["tenant_id"], LLMType.EMBEDDING, embedding_id)
             embedding_model = LLMBundle(task["tenant_id"], embd_model_config)
 
             @timeout(60)
@@ -1022,6 +1038,8 @@ async def delete_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str, keep_met
 async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_size, callback=None, doc_ids=[]):
     """Generate RAPTOR summaries for selected documents in a knowledge base."""
     fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
+
+    rag_tokenizer.tokenizer.set_language(row.get("language", "English"))
 
     raptor_config = kb_parser_config.get("raptor", {})
     raptor_ext_config = raptor_config.get("ext") or {}
@@ -1385,6 +1403,7 @@ async def do_handle_task(task):
     task_language = task.get("language") or "Chinese"
     if not task.get("language"):
         logging.warning("Task %s has no language set, falling back to Chinese", task_id)
+    rag_tokenizer.tokenizer.set_language(task_language)
     doc_task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
     kb_task_llm_id = task["kb_parser_config"].get("llm_id") or task["llm_id"]
     task["llm_id"] = kb_task_llm_id

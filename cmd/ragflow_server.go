@@ -29,7 +29,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/handler"
-	"ragflow/internal/ingestion"
+	ingestion "ragflow/internal/ingestion/service"
 	"ragflow/internal/mcp"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
@@ -52,7 +52,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
-	_ "ragflow/internal/ingestion/wire" // single owner for ingestion-component registration (File / Parser / Tokenizer / Extractor + 4 Chunker variants)
+	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 )
@@ -62,6 +62,7 @@ type serverArgs struct {
 	helpFlag      bool
 	versionFlag   bool
 	debugLog      bool
+	migrateDB     bool
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
 	port          *int    // Used by admin, api
@@ -81,6 +82,8 @@ func parseArgs() (*serverArgs, error) {
 		case "--admin":
 			serverMode = "admin"
 			args.mode = &serverMode
+		case "--migrate":
+			args.migrateDB = true
 		case "--ingestor":
 			serverMode = "ingestor"
 			args.mode = &serverMode
@@ -285,12 +288,12 @@ func main() {
 		}
 	case "ingestor":
 		if serverName == "" {
-			uuid := common.GenerateUUID()
+			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
 		}
 	case "syncer":
 		if serverName == "" {
-			uuid := common.GenerateUUID()
+			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
 	default:
@@ -335,7 +338,7 @@ func main() {
 	server.PrintAll()
 
 	// Initialize database
-	if err = dao.InitDB(); err != nil {
+	if err = dao.InitDB(arguments.migrateDB); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
 
@@ -352,11 +355,12 @@ func main() {
 	defer redis.Close()
 
 	if err = storage.InitStorageFactory(); err != nil {
-		common.Fatal("Failed to initialize storage factory", zap.Error(err))
+		common.Error("Failed to initialize storage factory", err)
 	}
+	defer storage.CloseStorage()
 
 	if err = engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
-		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
+		common.Error("Failed to initialize message queue engine", err)
 	}
 
 	// Initialize server variables (runtime variables that can change during operation)
@@ -469,6 +473,18 @@ func runAdmin(args *serverArgs) error {
 }
 
 func runIngestor(args *serverArgs) error {
+	// Initialize tokenizer (rag_analyzer)
+	dictPath := os.Getenv("RAGFLOW_DICT_PATH")
+	if dictPath == "" {
+		dictPath = "/usr/share/infinity/resource"
+	}
+	tokenizerCfg := &tokenizer.PoolConfig{
+		DictPath: dictPath,
+	}
+	if err := tokenizer.Init(tokenizerCfg); err != nil {
+		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
+	}
+	defer tokenizer.Close()
 
 	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
 
@@ -798,7 +814,8 @@ func startServer(config *server.Config) {
 		}
 	}
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
-	componentsHandler := handler.NewComponentsHandler(service.NewComponentsService())
+	componentsSvc := service.NewComponentsService()
+	componentsHandler := handler.NewComponentsHandler(componentsSvc)
 
 	// Initialize router
 	r := router.NewRouter(authHandler,

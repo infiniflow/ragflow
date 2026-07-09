@@ -40,7 +40,11 @@ from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import (
+    get_tenant_default_model_by_type,
+    get_model_config_from_provider_instance,
+    get_model_config_by_id,
+)
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, abort_doc_chunking_counter
 from common.constants import LLMType
@@ -237,7 +241,9 @@ class TaskHandler:
                 return
 
             # Route to appropriate handler
-            if task_type == "graphrag":
+            if task_type == "raptor":
+                await self._run_raptor(embedding_model, vector_size)
+            elif task_type == "graphrag":
                 await self._run_graphrag(embedding_model)
             elif task_type == "mindmap":
                 ctx.progress_cb(1, "place holder")
@@ -313,7 +319,12 @@ class TaskHandler:
         task_language = ctx.language
 
         try:
-            if task_embedding_id:
+            if ctx.tenant_embd_id:
+                try:
+                    embd_model_config = get_model_config_by_id(task_tenant_id, ctx.tenant_embd_id)
+                except LookupError:
+                    embd_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+            elif task_embedding_id:
                 embd_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
             else:
                 embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
@@ -588,6 +599,10 @@ class TaskHandler:
         logging.info(progress_message)
         ctx.progress_cb(msg=progress_message)
 
+        toc_thread = None
+        if ctx.parser_id.lower() == "naive" and ctx.parser_config.get("toc_extraction", False):
+            toc_thread = asyncio.create_task(asyncio.to_thread(self._build_toc, ctx, chunks, ctx.progress_cb))
+
         # Insert chunks
         chunk_count = len(set([chunk["id"] for chunk in chunks]))
         start_ts = timer()
@@ -612,6 +627,11 @@ class TaskHandler:
         await post_processor.process_table_parser_metadata(task_doc_id, chunks)
 
         ctx.progress_cb(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
+
+        toc_chunk = await self._process_toc_thread(toc_thread)
+        if toc_chunk:
+            ctx.recording_context.record("toc_chunk", [toc_chunk])
+            await post_processor.insert_toc_chunk(toc_chunk, chunk_service)
 
         if ctx.has_canceled_func(task_id):
             abort_doc_chunking_counter(task_doc_id)

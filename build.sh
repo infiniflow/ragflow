@@ -118,7 +118,7 @@ check_cpp_deps() {
     print_section "Checking c++ dependencies"
 
     command -v cmake >/dev/null 2>&1 || { echo -e "${RED}Error: cmake is required but not installed.${NC}"; exit 1; }
-    command -v g++ >/dev/null 2>&1 || { echo -e "${RED}Error: g++ is required but not installed.${NC}"; exit 1; }
+    command -v clang++ >/dev/null 2>&1 || { echo -e "${RED}Error: clang++ is required but not installed.${NC}"; exit 1; }
 
     if check_pcre2; then
         echo "✓ pcre2 library found"
@@ -301,21 +301,22 @@ build_go() {
     local strip_flags=()
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
-    echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, and $RAGFLOW_CLI_BINARY"
+    echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY and $RAGFLOW_SERVER_BINARY"
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct}
+        go build "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
+
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" cmd/ragflow_server.go
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
-        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
+
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
         echo -e "${RED}Error: Failed to build RAGFlow main binary${NC}"
         exit 1
     fi
 
-    echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
     echo -e "${GREEN}✓ Go ragflow-cli built successfully: $RAGFLOW_CLI_BINARY${NC}"
+    echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
 }
 
 # Configure CGO flags for native libraries (office_oxide, pdfium, pdf_oxide).
@@ -438,7 +439,7 @@ run() {
     sleep 1
 
     print_section "Starting RAGFlow server (foreground)"
-    "$RAGFLOW_SERVER_BINARY" -- api
+    "$RAGFLOW_SERVER_BINARY" --api
 }
 
 # Show help
