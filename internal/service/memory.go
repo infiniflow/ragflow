@@ -452,19 +452,26 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *UpdateMemoryRequest) (*CreateMemoryResponse, error) {
 	updateDict := make(map[string]interface{})
 
+	currentMemory, err := s.memoryDAO.GetByID(memoryID)
+	if err != nil {
+		return nil, fmt.Errorf("memory '%s' not found", memoryID)
+	}
+
 	if req.Name != nil {
 		memoryName := strings.TrimSpace(*req.Name)
 		if err := common.ValidateName(memoryName); err != nil {
 			return nil, err
 		}
-		memoryName, err := common.DuplicateName(func(name string, tid string) bool {
-			existing, _ := s.memoryDAO.GetByNameAndTenant(name, tid)
-			return len(existing) > 0
-		}, memoryName, tenantID)
-		if err != nil {
-			return nil, err
+		if memoryName != strings.TrimSpace(currentMemory.Name) {
+			memoryName, err := common.DuplicateName(func(name string, tid string) bool {
+				existing, _ := s.memoryDAO.GetByNameAndTenant(name, tid)
+				return len(existing) > 0
+			}, memoryName, tenantID)
+			if err != nil {
+				return nil, err
+			}
+			updateDict["name"] = memoryName
 		}
-		updateDict["name"] = memoryName
 	}
 
 	if req.Permissions != nil {
@@ -550,11 +557,6 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 				updateDict["user_prompt"] = *req.UserPrompt
 			}
 		}
-	}
-
-	currentMemory, err := s.memoryDAO.GetByID(memoryID)
-	if err != nil {
-		return nil, fmt.Errorf("memory '%s' not found", memoryID)
 	}
 
 	if len(updateDict) == 0 {

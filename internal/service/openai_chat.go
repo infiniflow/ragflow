@@ -78,7 +78,7 @@ type OpenAICompletionResponse struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
-	Created          int64
+	Created          *int64
 }
 
 // OpenAIStreamEventKind discriminates stream events.
@@ -434,7 +434,6 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		content := strings.TrimSpace(finalResult.Answer)
 		completionTokens := tokenizer.NumTokensFromString(content)
 		resp := &OpenAICompletionResponse{
-			Created:          time.Now().Unix(),
 			Model:            openaiReq.Model,
 			Content:          content,
 			PromptTokens:     promptTokens,
@@ -473,7 +472,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		c.JSON(http.StatusOK, gin.H{
 			"id":      completionID,
 			"object":  "chat.completion",
-			"created": resp.Created,
+			"created": getCreatedOrDefault(resp.Created),
 			"model":   resp.Model,
 			"usage": gin.H{
 				"prompt_tokens":     resp.PromptTokens,
@@ -835,4 +834,11 @@ func (s *OpenAIChatService) writeArgError(c *gin.Context, msg string) {
 // writeDataError writes a 102 JSON error envelope (service failure).
 func (s *OpenAIChatService) writeDataError(c *gin.Context, msg string) {
 	common.ResponseWithCodeData(c, common.CodeDataError, nil, msg)
+}
+
+func getCreatedOrDefault(created *int64) int64 {
+	if created != nil {
+		return *created
+	}
+	return time.Now().Unix()
 }

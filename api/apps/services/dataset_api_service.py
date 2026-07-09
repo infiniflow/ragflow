@@ -1496,11 +1496,12 @@ async def search_datasets(tenant_id: str, req: dict):
 # with ``compile_kwd="artifact_page"`` written by TaskHandler's
 # ``_persist_wiki_pages_to_es``. The schema fields they rely on are:
 #   slug_kwd, title_kwd, page_type_kwd, content_with_weight,
-#   entity_names_kwd, outlinks_kwd, related_kb_pages_kwd,
+#   topic_kwd, entity_names_kwd, outlinks_kwd, related_kb_pages_kwd,
 #   source_chunk_ids, source_doc_ids
 # ---------------------------------------------------------------------------
 
 _WIKI_COMPILE_KWD = "artifact_page"
+_WIKI_TOPIC_COMPILE_KWD = "artifact_page_topic"
 _SKILL_COMPILE_KWD = "skill"
 _SKILL_ALL_COMPILE_KWD = "skill_all"
 
@@ -1568,6 +1569,7 @@ async def list_wiki_pages(
     page: int = 1,
     page_size: int = 200,
     page_type: str | None = None,
+    topic: str | None = None,
 ):
     """List artifact pages for the left-hand 2-column list.
 
@@ -1589,10 +1591,14 @@ async def list_wiki_pages(
     page = max(1, int(page or 1))
     page_size = max(1, min(int(page_size or 200), 1000))
     offset = (page - 1) * page_size
+    page_type = page_type.strip() if isinstance(page_type, str) else page_type
+    topic = topic.strip() if isinstance(topic, str) else topic
 
     condition: dict = {"compile_kwd": [_WIKI_COMPILE_KWD]}
     if page_type:
         condition["page_type_kwd"] = [page_type]
+    if topic:
+        condition["topic_kwd"] = [topic]
 
     order_by = OrderByExpr()
     try:
@@ -1609,6 +1615,7 @@ async def list_wiki_pages(
         "slug_kwd",
         "title_kwd",
         "page_type_kwd",
+        "topic_kwd",
         "outlinks_int",
         "summary_with_weight",
     ]
@@ -1640,7 +1647,76 @@ async def list_wiki_pages(
                 "slug": slug,
                 "title": row.get("title_kwd") or slug,
                 "page_type": row.get("page_type_kwd") or "concept",
+                "topic": row.get("topic_kwd") or "",
                 "summary": row.get("summary_with_weight") or "",
+            }
+        )
+
+    return True, {"total": int(total or 0), "items": items}
+
+
+async def list_wiki_topics(
+    dataset_id: str,
+    tenant_id: str,
+    page: int = 1,
+    page_size: int = 200,
+):
+    """List wiki topics for the dataset Artifact tab."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"total": 0, "items": []}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 200), 1000))
+    offset = (page - 1) * page_size
+
+    order_by = OrderByExpr()
+    try:
+        order_by.asc("title_kwd")
+    except Exception:
+        order_by = OrderByExpr()
+
+    select_fields = [
+        "id",
+        "topic_kwd",
+        "title_kwd",
+        "slug_kwd",
+    ]
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=select_fields,
+            highlight_fields=[],
+            condition={"compile_kwd": [_WIKI_TOPIC_COMPILE_KWD]},
+            match_expressions=[],
+            order_by=order_by,
+            offset=offset,
+            limit=page_size,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, select_fields)
+    except Exception:
+        logging.exception("list_wiki_topics: docStore search failed for kb=%s", dataset_id)
+        return True, {"total": 0, "items": []}
+
+    total = settings.docStoreConn.get_total(res)
+    items = []
+    for row in (field_map or {}).values():
+        topic = row.get("topic_kwd")
+        if not isinstance(topic, str) or not topic:
+            continue
+        items.append(
+            {
+                "topic": topic,
+                "title": row.get("title_kwd") or topic,
+                "slug": row.get("slug_kwd") or topic,
             }
         )
 
@@ -1679,6 +1755,7 @@ async def get_wiki_page(
         "slug_kwd",
         "title_kwd",
         "page_type_kwd",
+        "topic_kwd",
         "content_with_weight",
         "summary_with_weight",
         "entity_names_kwd",
@@ -1722,6 +1799,7 @@ async def get_wiki_page(
         "slug": row.get("slug_kwd") or full_slug,
         "title": row.get("title_kwd") or full_slug,
         "page_type": row.get("page_type_kwd") or page_type,
+        "topic": row.get("topic_kwd") or "",
         "content_md_rendered": content_md,
         "summary": summary,
         "entity_names": row.get("entity_names_kwd") or [],
@@ -2031,7 +2109,7 @@ async def update_wiki_page(
 # :meth:`FileCommitService.get_page_commit_detail`.
 
 
-# All six row types the artifact pipeline writes. Listed in dependency
+# All seven row types the artifact pipeline writes. Listed in dependency
 # order so partial failures of earlier deletes don't leave behind state
 # that downstream phases would silently reuse. ``artifact_page_graph``
 # is the materialized canvas graph derived from the refined pages —
@@ -2042,6 +2120,7 @@ _WIKI_COMPILE_KWDS = (
     "artifact_compilation_plan",
     "artifact_page_draft",
     "artifact_page",
+    _WIKI_TOPIC_COMPILE_KWD,
     "artifact_entity",
     "artifact_relation",
 )
@@ -2470,11 +2549,11 @@ async def get_wiki_graph(
 async def clear_wiki(dataset_id: str, tenant_id: str):
     """Wipe every artifact-related row from ES for this KB.
 
-    Touches all five ``compile_kwd`` row types the artifact pipeline writes
-    (MAP extracts, REDUCE results, PLAN output, page drafts, and the
-    searchable artifact_page rows). After this completes the next "Artifact"
-    run starts from a clean slate — no resume cache to short-circuit MAP, no
-    prior pages to reconcile against in PLAN.
+    Touches all artifact ``compile_kwd`` row types the artifact pipeline writes
+    (MAP extracts, REDUCE results, PLAN output, drafts, pages, topics, and graph
+    rows). After this completes the next "Artifact" run starts from a clean
+    slate: no resume cache to short-circuit MAP, no prior pages to reconcile
+    against in PLAN.
 
     Returns ``(True, {"deleted": {kwd: count_or_True}})`` on success or
     ``(False, str)`` on auth failure.
