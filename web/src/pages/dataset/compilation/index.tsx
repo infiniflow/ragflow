@@ -43,7 +43,6 @@ export default function Compilation() {
     viewMode,
     artifactRunData,
     skillRunData,
-    handleSwitchToGraph,
     handleSwitchToLlmWiki,
     handleSwitchToSkills,
     handleLeftTabChange,
@@ -105,13 +104,6 @@ export default function Compilation() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button
-              variant={viewMode === ViewMode.Graph ? 'default' : 'outline'}
-              size="sm"
-              onClick={handleSwitchToGraph}
-            >
-              {t('knowledgeDetails.graph')}
-            </Button>
             <Button
               variant={viewMode === ViewMode.LlmWiki ? 'default' : 'outline'}
               size="sm"

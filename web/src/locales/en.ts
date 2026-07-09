@@ -1601,6 +1601,10 @@ Example: Virtual Hosted Style`,
       editFieldModalTitle: 'Edit field',
       selectFieldType: 'Select field type',
       blueprintsPlaceholder: 'Blueprints placeholder',
+      blueprintsPlaceholderDescription:
+        "Select or customize a specific structure from the Blueprint library on the left to define your Wiki's content framework and visual presentation.",
+      blueprintsPlaceholderSkip:
+        'If you have no special requirements, feel free to skip this step, and the system will automatically apply the default structure.',
       channelEmptyTip:
         'No chat channels added yet. Select one below to connect.',
       availableChannels: 'Available channels',

@@ -41,9 +41,9 @@ export function WikiLeftPanel({
   });
 
   return (
-    <aside className="size-full flex flex-col">
-      <section className="flex items-center justify-between">
-        <Tabs value={tab} onValueChange={onTabChange} className="p-3">
+    <aside className="size-full flex flex-col p-5">
+      <section className="flex items-center justify-between pb-5">
+        <Tabs value={tab} onValueChange={onTabChange}>
           <TabsList className="grid grid-cols-2 w-80">
             <TabsTrigger value={LeftPanelTab.Contents}>
               {t('knowledgeDetails.contents')}
@@ -62,7 +62,7 @@ export function WikiLeftPanel({
         >
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             disabled={loading}
             data-testid="wiki-clear-trigger"
           >

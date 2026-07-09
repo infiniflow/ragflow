@@ -1328,6 +1328,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       editFieldModalTitle: '编辑字段',
       selectFieldType: '选择字段类型',
       blueprintsPlaceholder: '蓝图占位',
+      blueprintsPlaceholderDescription:
+        '从左侧的 Blueprint 库中选择或自定义特定结构，以定义您的 Wiki 内容框架和视觉呈现。',
+      blueprintsPlaceholderSkip:
+        '如果您没有特殊要求，可以跳过此步骤，系统将自动应用默认结构。',
       channelEmptyTip: '暂未添加任何聊天渠道，请从下方选择一个进行连接。',
       availableChannels: '可用渠道',
       availableChannelsDescription: '选择要添加的聊天渠道',

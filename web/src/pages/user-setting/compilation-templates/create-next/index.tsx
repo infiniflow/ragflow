@@ -85,11 +85,11 @@ export default function CreateNextCompilationTemplate() {
 
   return (
     <section className="h-full flex flex-col bg-bg-base">
-      <header className="shrink-0 px-5 py-4 border-b border-border-button flex flex-col items-start gap-2">
+      <header className="shrink-0 px-5 py-4 border-b border-border-button flex gap-3">
         <BackButton
           to={`${Routes.UserSetting}${Routes.CompilationTemplates}`}
         />
-        <h2 className="text-xl font-medium text-text-primary">
+        <h2 className="font-medium text-text-secondary">
           {isCreate
             ? t('setting.addTemplateGroup')
             : t('setting.editTemplateGroup')}
