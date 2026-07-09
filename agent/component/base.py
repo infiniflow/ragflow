@@ -487,7 +487,7 @@ class ComponentBase(ABC):
                 resolved = self._canvas.get_variable_value(v)
                 self.set_input_value(var, resolved)
                 _logger.debug("[Base]   var '%s': resolved ref '%s' -> %s", var, v, json.dumps(resolved, ensure_ascii=False, default=str)[:200])
-            elif isinstance(v, str) and re.search(self.variable_ref_patt, v):
+            elif isinstance(v, str) and self.variable_ref_patt_re.search(v):
                 elements = self.get_input_elements_from_text(v)
                 kv = {k: e.get("value", "") for k, e in elements.items()}
                 self.set_input_value(var, self.string_format(v, kv))
@@ -523,7 +523,7 @@ class ComponentBase(ABC):
 
     def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
         res = {}
-        for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE | re.DOTALL):
+        for r in self.variable_ref_patt_re.finditer(txt):
             exp = r.group(1)
             # Use maxsplit=1 to be defensive: although `exp` here comes
             # from `variable_ref_patt` (which constrains `var_nm` to
@@ -537,7 +537,7 @@ class ComponentBase(ABC):
                 "_retrieval": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
                 "_cpn_id": cpn_id,
             }
-        for r in re.finditer(self.iteration_alias_patt, txt, flags=re.IGNORECASE | re.DOTALL):
+        for r in self.iteration_alias_patt_re.finditer(txt):
             exp = r.group(1)
             if exp in res:
                 continue
