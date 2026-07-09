@@ -279,8 +279,8 @@ async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
         await thread_pool_exec(
             resolve_model_config,
             tenant_id=tenant_id,
-            model_name=llm_id,
             model_type=model_type,
+            model_ref=llm_id,
         )
     except Exception as e:
         logging.error(f"Fail to get model config for {llm_id}: {e}")

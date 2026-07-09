@@ -1450,7 +1450,7 @@ async def search_datasets(tenant_id: str, req: dict):
     embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     rerank_mdl = None
-    rerank_id = search_config.get("rerank_id") or req.get("rerank_id")
+    rerank_id = req.get("rerank_id") or search_config.get("rerank_id")
     if rerank_id:
         rerank_model_config = resolve_model_config(kb.tenant_id, LLMType.RERANK.value, rerank_id)
         rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)

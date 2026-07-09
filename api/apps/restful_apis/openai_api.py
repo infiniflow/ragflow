@@ -42,7 +42,7 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     try:
         resolve_model_config(
             tenant_id=tenant_id,
-            model_name=llm_id,
+            model_ref=llm_id,
             model_type=model_type,
         )
     except Exception as e:
