@@ -102,6 +102,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 				queue.PUT("/messages", r.handler.PullMessageFromQueue)
 			}
 
+			protected.GET("/store", r.handler.PingStore)
+			protected.GET("/cache", r.handler.PingCache)
+			protected.GET("/engine", r.handler.PingEngine)
+
 			protected.GET("/ingestors", r.handler.ListIngestors)
 			protected.DELETE("/ingestors", r.handler.ShutdownIngestor)
 

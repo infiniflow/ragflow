@@ -32,7 +32,7 @@ from api.db.joint_services.tenant_model_service import (
     ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
     get_first_provider_model_name,
-    get_model_config_from_provider_instance,
+    resolve_model_config,
     get_tenant_default_model_by_type,
 )
 from common import settings
@@ -351,7 +351,7 @@ class Parser(ProcessBase):
             elif lowered.endswith("@somark"):
                 # Keep the full 3-segment ``<llm_name>@<instance_name>@<provider>``
                 # form produced by the new Tenant LLM Provider UI (#14595);
-                # ``get_model_config_from_provider_instance`` -> ``split_model_name``
+                # ``resolve_model_config`` -> ``split_model_name``
                 # downstream requires all three segments.
                 parser_model_name = raw_parse_method
                 parse_method = "SoMark"
@@ -389,7 +389,7 @@ class Parser(ProcessBase):
                 raise RuntimeError("MinerU model not configured. Please add MinerU in Model Providers or set MINERU_* env.")
 
             tenant_id = self._canvas._tenant_id
-            ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, parser_model_name)
+            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
             ocr_model = LLMBundle(tenant_id, ocr_model_config, lang=conf.get("lang", "Chinese"))
             pdf_parser = ocr_model.mdl
 
@@ -476,7 +476,7 @@ class Parser(ProcessBase):
                 raise RuntimeError("OpenDataLoader model not configured. Please add OpenDataLoader in Model Providers.")
 
             tenant_id = self._canvas._tenant_id
-            ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, parser_model_name)
+            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
             ocr_model = LLMBundle(tenant_id, ocr_model_config)
             pdf_parser = ocr_model.mdl
 
@@ -537,14 +537,7 @@ class Parser(ProcessBase):
                 raise RuntimeError("SoMark model not configured. Please add SoMark in Model Providers or set SOMARK_* env.")
 
             tenant_id = self._canvas._tenant_id
-            try:
-                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, parser_model_name)
-            except Exception:
-                if "@" in parser_model_name:
-                    raise
-                from api.db.services.tenant_llm_service import TenantLLMService
-
-                ocr_model_config = TenantLLMService.get_model_config(tenant_id, LLMType.OCR.value, parser_model_name)
+            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
             ocr_model = LLMBundle(tenant_id, ocr_model_config)
             pdf_parser = ocr_model.mdl
 
@@ -628,7 +621,7 @@ class Parser(ProcessBase):
                 raise RuntimeError("PaddleOCR model not configured. Please add PaddleOCR in Model Providers or set PADDLEOCR_* env.")
 
             tenant_id = self._canvas._tenant_id
-            ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, parser_model_name)
+            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
             ocr_model = LLMBundle(tenant_id, ocr_model_config)
             pdf_parser = ocr_model.mdl
 
@@ -658,7 +651,7 @@ class Parser(ProcessBase):
         # Vision parser treats each page as a large image block.
         else:
             if conf.get("parse_method"):
-                vision_model_config = get_model_config_from_provider_instance(self._canvas._tenant_id, LLMType.IMAGE2TEXT, conf["parse_method"])
+                vision_model_config = resolve_model_config(self._canvas._tenant_id, LLMType.IMAGE2TEXT, conf["parse_method"])
             else:
                 vision_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.IMAGE2TEXT)
             vision_model = LLMBundle(self._canvas._tenant_id, vision_model_config, lang=self._param.setups["pdf"].get("lang"))
@@ -1131,7 +1124,7 @@ class Parser(ProcessBase):
         else:
             lang = conf["lang"]
             # use VLM to describe the picture
-            cv_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, conf["parse_method"])
+            cv_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, conf["parse_method"])
             cv_model = LLMBundle(self._canvas.get_tenant_id(), cv_model_config, lang=lang)
             img_binary = io.BytesIO()
             img.save(img_binary, format="JPEG")
@@ -1167,7 +1160,7 @@ class Parser(ProcessBase):
             tmpf.write(blob)
             tmpf.flush()
             tmp_path = os.path.abspath(tmpf.name)
-            seq2txt_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT, vlm["llm_id"])
+            seq2txt_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT, vlm["llm_id"])
             seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), seq2txt_model_config)
             txt = seq2txt_mdl.transcription(tmp_path)
 
@@ -1180,7 +1173,7 @@ class Parser(ProcessBase):
         conf = self._param.setups["video"]
         vlm = conf.get("vlm")
         self.set_output("output_format", conf["output_format"])
-        cv_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, vlm["llm_id"])
+        cv_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, vlm["llm_id"])
         cv_mdl = LLMBundle(self._canvas.get_tenant_id(), cv_model_config)
         video_prompt = str(conf.get("prompt", "") or "")
         txt = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name, video_prompt=video_prompt))

@@ -25,9 +25,13 @@ const DefaultTopK = 'top_k';
 
 interface RerankFormFieldProps {
   name?: string;
+  ownerTenantId?: string;
 }
 
-function RerankFormField({ name = DefaultRerankId }: RerankFormFieldProps) {
+function RerankFormField({
+  name = DefaultRerankId,
+  ownerTenantId,
+}: RerankFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeDetails');
 
@@ -43,6 +47,7 @@ function RerankFormField({ name = DefaultRerankId }: RerankFormFieldProps) {
               modelTypes={['rerank']}
               allowClear
               placeholder={t('rerankPlaceholder')}
+              ownerTenantId={ownerTenantId}
               {...field}
             />
           </FormControl>
@@ -60,9 +65,13 @@ export const rerankFormSchema = {
 
 interface RerankFormFieldsProps {
   prefix?: string;
+  ownerTenantId?: string;
 }
 
-export function RerankFormFields({ prefix = '' }: RerankFormFieldsProps) {
+export function RerankFormFields({
+  prefix = '',
+  ownerTenantId,
+}: RerankFormFieldsProps) {
   const { watch } = useFormContext();
   const { t } = useTranslate('knowledgeDetails');
   const rerankIdName = prefixName(prefix, DefaultRerankId);
@@ -72,7 +81,10 @@ export function RerankFormFields({ prefix = '' }: RerankFormFieldsProps) {
 
   return (
     <>
-      <RerankFormField name={rerankIdName}></RerankFormField>
+      <RerankFormField
+        name={rerankIdName}
+        ownerTenantId={ownerTenantId}
+      ></RerankFormField>
       {rerankId && (
         <SliderInputFormField
           name={topKName}

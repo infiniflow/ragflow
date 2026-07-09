@@ -24,7 +24,7 @@ export const LLMLabel = ({ value }: IProps) => {
       />
       <span className="font-medium truncate">{modelName}</span>
       {instanceName && (
-        <span className="text-slate-400 truncate flex-shrink-0">
+        <span className="text-text-secondary truncate flex-shrink-0">
           {instanceName}
         </span>
       )}
