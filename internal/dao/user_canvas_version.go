@@ -141,71 +141,83 @@ func (dao *UserCanvasVersionDAO) SaveOrReplaceLatest(opts SaveOrReplaceLatestVer
 	}
 	var saved *entity.UserCanvasVersion
 	if err := DB.Transaction(func(tx *gorm.DB) error {
-		var parent struct {
-			ID string
-		}
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Table((&entity.UserCanvas{}).TableName()).
-			Select("id").
-			Where("id = ?", opts.UserCanvasID).
-			Take(&parent).Error; err != nil {
-			return err
-		}
-
-		var latest entity.UserCanvasVersion
-		err := tx.Where("user_canvas_id = ?", opts.UserCanvasID).
-			Order("create_time DESC, id DESC").
-			First(&latest).Error
+		row, err := dao.SaveOrReplaceLatestTx(tx, opts)
 		if err != nil {
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
-		} else if opts.sameDSL(latest.DSL) {
-			if !latest.Release || opts.Release {
-				updates := map[string]interface{}{
-					"dsl":     opts.DSL,
-					"release": opts.Release,
-				}
-				if opts.Title != nil {
-					updates["title"] = opts.Title
-				}
-				if opts.Description != nil {
-					updates["description"] = opts.Description
-				}
-				if err := tx.Model(&entity.UserCanvasVersion{}).
-					Where("id = ?", latest.ID).
-					Updates(updates).Error; err != nil {
-					return err
-				}
-				latest.DSL = opts.DSL
-				latest.Release = opts.Release
-				if opts.Title != nil {
-					latest.Title = opts.Title
-				}
-				if opts.Description != nil {
-					latest.Description = opts.Description
-				}
-				saved = &latest
-				return dao.deleteAllUnpublishedExcessTx(tx, opts.UserCanvasID, opts.KeepUnpublished)
-			}
-		}
-		row := &entity.UserCanvasVersion{
-			ID:           opts.NewID,
-			UserCanvasID: opts.UserCanvasID,
-			Title:        opts.Title,
-			Description:  opts.Description,
-			Release:      opts.Release,
-			DSL:          opts.DSL,
-		}
-		if err := tx.Create(row).Error; err != nil {
 			return err
 		}
 		saved = row
-		return dao.deleteAllUnpublishedExcessTx(tx, opts.UserCanvasID, opts.KeepUnpublished)
+		return nil
 	}); err != nil {
 		return nil, err
 	}
 	return saved, nil
+}
+
+// SaveOrReplaceLatestTx inserts or refreshes a version using the caller's
+// transaction. Its write semantics match SaveOrReplaceLatest exactly.
+func (dao *UserCanvasVersionDAO) SaveOrReplaceLatestTx(tx *gorm.DB, opts SaveOrReplaceLatestVersionOptions) (*entity.UserCanvasVersion, error) {
+	if opts.KeepUnpublished <= 0 {
+		opts.KeepUnpublished = 20
+	}
+	var parent struct {
+		ID string
+	}
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Table((&entity.UserCanvas{}).TableName()).
+		Select("id").
+		Where("id = ?", opts.UserCanvasID).
+		Take(&parent).Error; err != nil {
+		return nil, err
+	}
+
+	var latest entity.UserCanvasVersion
+	err := tx.Where("user_canvas_id = ?", opts.UserCanvasID).
+		Order("create_time DESC, id DESC").
+		First(&latest).Error
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	} else if opts.sameDSL(latest.DSL) {
+		if !latest.Release || opts.Release {
+			updates := map[string]interface{}{
+				"dsl":     opts.DSL,
+				"release": opts.Release,
+			}
+			if opts.Title != nil {
+				updates["title"] = opts.Title
+			}
+			if opts.Description != nil {
+				updates["description"] = opts.Description
+			}
+			if err := tx.Model(&entity.UserCanvasVersion{}).
+				Where("id = ?", latest.ID).
+				Updates(updates).Error; err != nil {
+				return nil, err
+			}
+			latest.DSL = opts.DSL
+			latest.Release = opts.Release
+			if opts.Title != nil {
+				latest.Title = opts.Title
+			}
+			if opts.Description != nil {
+				latest.Description = opts.Description
+			}
+			return &latest, dao.deleteAllUnpublishedExcessTx(tx, opts.UserCanvasID, opts.KeepUnpublished)
+		}
+	}
+	row := &entity.UserCanvasVersion{
+		ID:           opts.NewID,
+		UserCanvasID: opts.UserCanvasID,
+		Title:        opts.Title,
+		Description:  opts.Description,
+		Release:      opts.Release,
+		DSL:          opts.DSL,
+	}
+	if err := tx.Create(row).Error; err != nil {
+		return nil, err
+	}
+	return row, dao.deleteAllUnpublishedExcessTx(tx, opts.UserCanvasID, opts.KeepUnpublished)
 }
 
 func (opts SaveOrReplaceLatestVersionOptions) sameDSL(dsl entity.JSONMap) bool {

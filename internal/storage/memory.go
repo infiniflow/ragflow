@@ -123,6 +123,25 @@ func (m *MemoryStorage) ObjExist(bucket, fnm string, tenantID ...string) bool {
 	return ok
 }
 
+func (m *MemoryStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	bucketMap, ok := m.objects[bucket]
+	if !ok {
+		return nil, fmt.Errorf("memory storage: bucket %q: %w", bucket, ErrMemoryNotFound)
+	}
+
+	var objects []string
+	for k := range bucketMap {
+		objects = append(objects, k)
+	}
+
+	return objects, nil
+}
+
+// ListObjects lists all objects in a bucket
+
 // GetPresignedURL returns a deterministic, non-network URL string for tests.
 // Format: memory://<bucket>/<key>?exp=<unix-seconds>
 func (m *MemoryStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
@@ -201,6 +220,8 @@ func (m *MemoryStorage) Move(srcBucket, srcPath, destBucket, destPath string) bo
 	}
 	return true
 }
+
+func (m *MemoryStorage) Close() error { return nil }
 
 // Inspect returns a stable snapshot of all (bucket, key, size) entries
 // currently held by the backend. Intended for test diagnostics and

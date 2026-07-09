@@ -48,7 +48,7 @@ func (a *AliyunModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (a *AliyunModel) Name() string {
-	return "aliyun"
+	return "Tongyi-Qianwen"
 }
 
 func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {

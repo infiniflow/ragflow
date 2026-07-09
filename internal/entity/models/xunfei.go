@@ -45,7 +45,7 @@ func (x *XunFeiModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (x *XunFeiModel) Name() string {
-	return "xunfei"
+	return "XunFei Spark"
 }
 
 func (x *XunFeiModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
