@@ -80,13 +80,13 @@ func newHunyuanForTest(baseURL string) *HunyuanModel {
 }
 
 func TestHunyuanName(t *testing.T) {
-	if got := newHunyuanForTest("http://unused").Name(); got != "hunyuan" {
-		t.Errorf("Name()=%q, want %q", got, "hunyuan")
+	if got := newHunyuanForTest("http://unused").Name(); got != "Tencent Hunyuan" {
+		t.Errorf("Name()=%q, want %q", got, "Tencent Hunyuan")
 	}
 }
 
 func TestHunyuanFactory(t *testing.T) {
-	driver, err := NewModelFactory().CreateModelDriver("Hunyuan", map[string]string{"default": "http://unused"}, URLSuffix{})
+	driver, err := NewModelFactory().CreateModelDriver("Tencent Hunyuan", map[string]string{"default": "http://unused"}, URLSuffix{})
 	if err != nil {
 		t.Fatalf("CreateModelDriver: %v", err)
 	}

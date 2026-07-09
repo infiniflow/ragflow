@@ -1338,6 +1338,91 @@ func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
 	}
 }
 
+func TestPublishAgentUpdatesCanvasAndReleasedVersion(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	initialDSL := entity.JSONMap{
+		"components": map[string]any{},
+	}
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-publish",
+		UserID:         "user-1",
+		Title:          sptr("Draft Agent"),
+		CanvasCategory: "agent_canvas",
+		DSL:            initialDSL,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	description := "published description"
+	publishTitle := "  Published Agent  "
+	publishDSL := entity.JSONMap{
+		"graph": map[string]any{
+			"nodes": []any{map[string]any{"id": "begin"}},
+			"edges": []any{},
+		},
+		"components": map[string]any{
+			"begin": map[string]any{
+				"obj": map[string]any{"component_name": "Begin"},
+			},
+		},
+	}
+	row, err := NewAgentService().PublishAgent(context.Background(), "user-1", "canvas-publish", &PublishAgentRequest{
+		Title:       &publishTitle,
+		Description: &description,
+		DSL:         publishDSL,
+	})
+	if err != nil {
+		t.Fatalf("PublishAgent failed: %v", err)
+	}
+	if row == nil {
+		t.Fatal("PublishAgent returned nil version")
+	}
+	if !row.Release {
+		t.Fatal("published version release flag is false")
+	}
+	if row.Description == nil || *row.Description != description {
+		t.Fatalf("published version description = %v", row.Description)
+	}
+	if row.Title == nil || !strings.HasPrefix(*row.Title, "owner_Published Agent_") {
+		t.Fatalf("unexpected published version title: %v", row.Title)
+	}
+
+	persisted, err := dao.NewUserCanvasDAO().GetByID("canvas-publish")
+	if err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if !persisted.Release {
+		t.Fatal("publish did not mark canvas released")
+	}
+	if persisted.Title == nil || *persisted.Title != "Published Agent" {
+		t.Fatalf("published canvas title = %v", persisted.Title)
+	}
+	if persisted.Description == nil || *persisted.Description != description {
+		t.Fatalf("published canvas description = %v", persisted.Description)
+	}
+	if _, ok := persisted.DSL["graph"]; !ok {
+		t.Fatalf("published canvas DSL was not persisted: %#v", persisted.DSL)
+	}
+
+	versions, err := dao.NewUserCanvasVersionDAO().ListByCanvasID("canvas-publish")
+	if err != nil {
+		t.Fatalf("failed to list versions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("expected one published version, got %d", len(versions))
+	}
+	if versions[0].ID != row.ID {
+		t.Fatalf("listed version id = %q, want %q", versions[0].ID, row.ID)
+	}
+	if !versions[0].Release {
+		t.Fatal("listed version release flag is false")
+	}
+}
+
 func TestUpdateAgentDSLDoesNotOverwriteLatestReleasedVersion(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 

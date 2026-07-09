@@ -25,7 +25,15 @@ import { cn } from '@/lib/utils';
 import { JsonSchemaDataType } from '@/pages/agent/constant';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { Variable } from 'lucide-react';
-import { forwardRef, ReactNode, useCallback, useEffect, useState } from 'react';
+import {
+  forwardRef,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { EnterKeyPlugin } from './enter-key-plugin';
 import { PasteHandlerPlugin } from './paste-handler-plugin';
@@ -194,14 +202,18 @@ export const PromptEditor = forwardRef(function PromptEditor(
   ref: React.Ref<HTMLDivElement>,
 ) {
   const { t } = useTranslation();
+  const id = useId();
   const [isPathQueryAutoMergeEnabled, setIsPathQueryAutoMergeEnabled] =
     useState(enablePathQueryAutoMerge);
-  const initialConfig: InitialConfigType = {
-    namespace: 'PromptEditor',
-    theme,
-    onError,
-    nodes: Nodes,
-  };
+  const initialConfig: InitialConfigType = useMemo(
+    () => ({
+      namespace: `PromptEditor-${id}`,
+      theme,
+      onError,
+      nodes: Nodes,
+    }),
+    [id],
+  );
 
   useEffect(() => {
     setIsPathQueryAutoMergeEnabled(enablePathQueryAutoMerge);

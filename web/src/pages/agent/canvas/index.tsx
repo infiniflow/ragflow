@@ -55,6 +55,7 @@ import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
 import { ChunkerNode } from './node/chunker-node';
+import { CompilationNode } from './node/compilation-node';
 import { DataOperationsNode } from './node/data-operations-node';
 import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { ExitLoopNode } from './node/exit-loop-node';
@@ -96,6 +97,7 @@ export const nodeTypes: NodeTypes = {
   parserNode: ParserNode,
   tokenizerNode: TokenizerNode,
   chunkerNode: ChunkerNode,
+  compilationNode: CompilationNode,
   contextNode: ExtractorNode,
   dataOperationsNode: DataOperationsNode,
   listOperationsNode: ListOperationsNode,
