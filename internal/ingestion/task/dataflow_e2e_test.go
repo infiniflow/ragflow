@@ -28,7 +28,6 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
-	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
 	"ragflow/internal/server"
 )
@@ -200,20 +199,14 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 			docEngine, cleanupEngine := setupTestDocEngine(t, tc.engineType, tenantID, kbID)
 			defer cleanupEngine()
 
-			// Update task to have dataflow task type
-			var task entity.Task
-			if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
-				t.Fatalf("Failed to get task: %v", err)
-			}
-			task.TaskType = "dataflow"
-			if err := db.Save(&task).Error; err != nil {
-				t.Fatalf("Failed to update task: %v", err)
-			}
-
 			// Load task context
-			taskCtx, err := LoadTaskContext(taskID)
+			ingestionTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
 			if err != nil {
-				t.Fatalf("LoadTaskContext failed: %v", err)
+				t.Fatalf("GetByID failed: %v", err)
+			}
+			taskCtx, err := LoadFromIngestionTask(ingestionTask)
+			if err != nil {
+				t.Fatalf("LoadFromIngestionTask failed: %v", err)
 			}
 
 			// Track what was called

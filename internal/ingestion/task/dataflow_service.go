@@ -228,7 +228,7 @@ func (s *PipelineExecutor) KB() *entity.Knowledgebase { return &s.taskCtx.KB }
 func (s *PipelineExecutor) Doc() *entity.Document     { return &s.taskCtx.Doc }
 func (s *PipelineExecutor) Tenant() *entity.Tenant    { return &s.taskCtx.Tenant }
 
-func (s *PipelineExecutor) Run(ctx context.Context) error {
+func (s *PipelineExecutor) Execute(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -251,7 +251,7 @@ func (s *PipelineExecutor) Run(ctx context.Context) error {
 		return nil
 	}
 
-	if err := s.RunDataflow(ctx, pipelineOutput); err != nil {
+	if err := s.processOutput(ctx, pipelineOutput); err != nil {
 		return err
 	}
 
@@ -261,7 +261,7 @@ func (s *PipelineExecutor) Run(ctx context.Context) error {
 	return nil
 }
 
-func (s *PipelineExecutor) RunDataflow(ctx context.Context, pipelineOutput map[string]any) error {
+func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map[string]any) error {
 	taskStart := time.Now()
 	if pipelineOutput == nil {
 		return nil
@@ -425,30 +425,22 @@ func (s *PipelineExecutor) defaultLoadDSL(ctx context.Context, dataflowID string
 	if dataflowID == "" {
 		return "", "", fmt.Errorf("dataflow service: empty dataflow id")
 	}
-	if strings.HasPrefix(s.taskCtx.TaskType, "dataflow") {
-		canvas, err := dao.NewUserCanvasDAO().GetByID(dataflowID)
-		if err != nil {
-			return "", "", fmt.Errorf("load dataflow canvas %s: %w", dataflowID, err)
-		}
-		raw, err := json.Marshal(canvas.DSL)
-		if err != nil {
-			return "", "", fmt.Errorf("marshal canvas dsl %s: %w", dataflowID, err)
-		}
-		return string(raw), dataflowID, nil
-	}
-	var pipelineLog entity.PipelineOperationLog
-	if err := dao.DB.Where("id = ?", dataflowID).First(&pipelineLog).Error; err != nil {
-		return "", "", fmt.Errorf("load pipeline log %s: %w", dataflowID, err)
-	}
-	raw, err := json.Marshal(pipelineLog.DSL)
+	canvas, err := dao.NewUserCanvasDAO().GetByID(dataflowID)
 	if err != nil {
-		return "", "", fmt.Errorf("marshal pipeline log dsl %s: %w", dataflowID, err)
+		return "", "", fmt.Errorf("load dataflow canvas %s: %w", dataflowID, err)
 	}
-	correctedID := dataflowID
-	if pipelineLog.PipelineID != nil && *pipelineLog.PipelineID != "" {
-		correctedID = *pipelineLog.PipelineID
+
+	canvasTitle := ""
+	if canvas.Title != nil {
+		canvasTitle = *canvas.Title
 	}
-	return string(raw), correctedID, nil
+	common.Info(fmt.Sprintf("load dataflow canvas %s, name %s", dataflowID, canvasTitle))
+
+	raw, err := json.Marshal(canvas.DSL)
+	if err != nil {
+		return "", "", fmt.Errorf("marshal canvas dsl %s: %w", dataflowID, err)
+	}
+	return string(raw), dataflowID, nil
 }
 
 func (s *PipelineExecutor) tokenizerEmbedderResolver() componentpkg.EmbedderResolver {

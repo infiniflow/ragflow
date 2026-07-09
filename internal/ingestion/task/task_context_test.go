@@ -59,3 +59,95 @@ func pushDB(t *testing.T, db *gorm.DB) {
 }
 
 func ptr(s string) *string { return &s }
+
+func TestLoadFromIngestionTask_FallsBackToKnowledgebasePipelineID(t *testing.T) {
+	db := setupTestDB(t)
+	pushDB(t, db)
+
+	if err := db.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		Name:         ptr("doc.pdf"),
+		Status:       ptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+	kbPipelineID := "kb-flow-1"
+	if err := db.Create(&entity.Knowledgebase{
+		ID:           "kb-1",
+		TenantID:     "tenant-1",
+		EmbdID:       "embd-1",
+		PipelineID:   &kbPipelineID,
+		ParserConfig: entity.JSONMap{},
+		Status:       ptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("create knowledgebase: %v", err)
+	}
+	if err := db.Create(&entity.Tenant{
+		ID:     "tenant-1",
+		Status: ptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	ctx, err := LoadFromIngestionTask(&entity.IngestionTask{
+		ID:         "task-1",
+		DocumentID: "doc-1",
+		DatasetID:  "kb-1",
+	})
+	if err != nil {
+		t.Fatalf("LoadFromIngestionTask: %v", err)
+	}
+	if ctx.PipelineID != kbPipelineID {
+		t.Fatalf("PipelineID = %q, want %q", ctx.PipelineID, kbPipelineID)
+	}
+}
+
+func TestLoadFromIngestionTask_PrefersDocumentPipelineID(t *testing.T) {
+	db := setupTestDB(t)
+	pushDB(t, db)
+
+	docPipelineID := "doc-flow-1"
+	if err := db.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		PipelineID:   &docPipelineID,
+		Name:         ptr("doc.pdf"),
+		Status:       ptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+	kbPipelineID := "kb-flow-1"
+	if err := db.Create(&entity.Knowledgebase{
+		ID:           "kb-1",
+		TenantID:     "tenant-1",
+		EmbdID:       "embd-1",
+		PipelineID:   &kbPipelineID,
+		ParserConfig: entity.JSONMap{},
+		Status:       ptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("create knowledgebase: %v", err)
+	}
+	if err := db.Create(&entity.Tenant{
+		ID:     "tenant-1",
+		Status: ptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	ctx, err := LoadFromIngestionTask(&entity.IngestionTask{
+		ID:         "task-1",
+		DocumentID: "doc-1",
+		DatasetID:  "kb-1",
+	})
+	if err != nil {
+		t.Fatalf("LoadFromIngestionTask: %v", err)
+	}
+	if ctx.PipelineID != docPipelineID {
+		t.Fatalf("PipelineID = %q, want %q", ctx.PipelineID, docPipelineID)
+	}
+}

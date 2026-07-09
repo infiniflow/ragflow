@@ -41,7 +41,6 @@ func NewIngestionTaskDAO() *IngestionTaskDAO {
 // failed → created : Retry (back to start)
 // canceled → created : Retry/re-execute (back to start)
 func (dao *IngestionTaskDAO) CheckAndCreate(ingestionTask *entity.IngestionTask) (*entity.IngestionTask, error) {
-
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return nil, tx.Error
@@ -216,8 +215,7 @@ type TaskInfo struct {
 	FilesToDelete []string `json:"files_to_delete"`
 }
 
-func (dao *IngestionTaskDAO) RemoveByAPIServerOrAdminServer(taskID string, userID *string) (*TaskInfo, error) {
-
+func (dao *IngestionTaskDAO) Delete(taskID string, userID *string) (*TaskInfo, error) {
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return nil, tx.Error
@@ -337,9 +335,15 @@ func (dao *IngestionTaskDAO) GetByID(id string) (*entity.IngestionTask, error) {
 }
 
 func (dao *IngestionTaskDAO) GetByDocumentID(documentId string) (*entity.IngestionTask, error) {
-	var task *entity.IngestionTask
-	err := DB.Where("document_id = ?", documentId).First(&task).Error
-	return task, err
+	var tasks []*entity.IngestionTask
+	err := DB.Where("document_id = ?", documentId).Limit(1).Find(&tasks).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+	return tasks[0], nil
 }
 
 type IngestionTaskLogDAO struct{}

@@ -14,9 +14,78 @@
 //  limitations under the License.
 //
 
-// Tokenizer ingestion component. Port of Python
-// `rag/flow/tokenizer/tokenizer.py`, including the title/content
-// embedding merge and token-accounting behavior of `_embedding`.
+// Tokenizer ingestion component (Phase 2.4 of
+// port-rag-flow-pipeline-to-go.md §4). Port of Python
+// `rag/flow/tokenizer/tokenizer.py`. Computes (a) full-text token
+// counts via the Go tokenizer package and (b) embedding vectors via
+// the tenant's embedding model.
+//
+// SCOPE (honest):
+//
+//   - TOKEN COUNTING: matched at the wire level. Each chunk gets
+//     `content_ltks` (tokenized string via `tokenizer.Tokenize`) and
+//     `content_sm_ltks` (fine-grained variant) when `search_method`
+//     includes `full_text`. `title_tks` / `title_sm_tks` mirror the
+//     upstream `name` field. Python uses C++ RAGAnalyzer via
+//     `rag_tokenizer`; the Go side goes through `internal/tokenizer`
+//     which itself calls into the same C++ binding (`internal/binding`).
+//     For non-ASCII (CJK) input, Python's `rag_tokenizer.tokenize`
+//     falls back gracefully; the Go path uses the CGo analyzer
+//     when initialized, otherwise an empty string — see
+//     `internal/tokenizer/tokenizer.go:Tokenize` (Infinity engine
+//     returns input unchanged; otherwise the C++ binding is used).
+//
+//   - CJK CAVEAT (plan §8 Q2): The `NumTokensFromString` helper in
+//     `internal/tokenizer` falls back to `len([]byte(s))` on a
+//     tiktoken-init failure (over-counts CJK). The Python equivalent
+//     returns 0. The Go port KEEPS the Go behaviour — the tokenizer
+//     package is the single source of truth for token counting and
+//     must not be re-implemented here. Test
+//     `TestTokenizerComponent_Invoke_Unicode` asserts only that the
+//     count is finite and non-negative, matching the test
+//     convention in plan §6 (coverage target:
+//     "Tokenizer returns finite token counts for empty / unicode /
+//     mixed-script text").
+//
+//   - EMBEDDING MODEL RESOLUTION: mirrored. Python uses
+//     `LLMBundle(tenant_id, embd_id).encode([...])` from
+//     `rag/flow/tokenizer/tokenizer.py:54-66`; the Go port goes
+//     through `service.ModelProviderService.GetEmbeddingModel`
+//     (callers inject the model bundle, see `EncodeFunc` below).
+//     The component does NOT directly construct a model driver —
+//     the resolution path depends on tenant/DAO context that lives
+//     in `internal/service`, and importing `internal/service` from
+//     `internal/ingestion/component` would invert the dependency
+//     direction (plan §3 import graph: ingestion → agent/runtime
+//     only). The injection point is `EncodeFunc` (package-level
+//     var); production wires it in `main()` (or an analogous
+//     bootstrap step) and tests inject a stub. When `EncodeFunc` is
+//     nil the component short-circuits the embedding branch with
+//     a clear error — the same fail-loud contract the Python side
+//     enforces via `LLMBundle` constructor.
+//
+//   - BATCHED EMBEDDING (plan §AD-5a): matched. The Python path
+//     chunks calls by `settings.EMBEDDING_BATCH_SIZE` (default 16)
+//     and uses an async semaphore (`embed_limiter`). The Go port
+//     issues ONE `Encode([]string)` call with the entire chunk
+//     list (AD-5a calls out "embedding calls batched, not fanned"
+//     and Parallelism=1). Drivers that need to chunk internally
+//     can do so — the wire call is one round-trip.
+//
+//   - TRACKING: WithTimeout (60s, matches python `@timeout(60)` on
+//     `batch_encode`), TrackProgress, TrackElapsed. See
+//     `internal/agent/runtime/helpers.go` (plan §1 Phase 1).
+//
+//   - WHAT IS NOT PORTED:
+//
+//   - The python `finalize_pdf_chunk` post-step — that
+//     normalizes PDF bbox metadata; it lives in
+//     `rag/flow/parser/pdf_chunk_metadata.py` and is the Parser
+//     component's concern (Phase 2.2).
+//
+//   - `rag.flow.tokenizer` `thread_pool_exec` async batching +
+//     `embed_limiter` semaphore — replaced by the single
+//     batched `Encode` call.
 package component
 
 import (
