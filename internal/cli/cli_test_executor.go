@@ -18,6 +18,8 @@ package cli
 
 import (
 	"fmt"
+
+	"github.com/fatih/color"
 )
 
 type TestCase struct {
@@ -41,11 +43,9 @@ type TestBase struct {
 
 type TestSuite struct {
 	TestBase
-	Suite    string        `yaml:"suite"`
-	Base     *string       `yaml:"base"`
-	Tests    []TestCase    `yaml:"tests"`
-	TearUp   []TestCommand `yaml:"tear_up"`
-	TearDown []TestCommand `yaml:"tear_down"`
+	Suite string     `yaml:"suite"`
+	Base  *string    `yaml:"base"`
+	Tests []TestCase `yaml:"tests"`
 }
 
 func (c *CLI) SwitchAdminServer() error {
@@ -133,28 +133,18 @@ func (c *CLI) RunTestSuite(testSuite *TestSuite) error {
 		return err
 	}
 
-	// Run tear up commands
-	fmt.Printf("=== tear up commands ===\n")
-	for _, cmd := range testSuite.TearUp {
-		// Switch server
-		if cmd.Server == "api" {
-			err = c.SwitchAPIServer("api")
-			if err != nil {
-				return err
-			}
-		} else if cmd.Server == "admin" {
-			err = c.SwitchAdminServer()
-			if err != nil {
-				return err
-			}
-		}
+	color.NoColor = false
+	red := color.New(color.FgRed)
+	green := color.New(color.FgGreen)
 
-		// Run command
-		_, err = c.execute(cmd.Command, false)
-		if err != nil {
-			return fmt.Errorf("failed to run tear up command: %v", err)
-		}
-	}
+	//// 方法1：使用 Sprint 返回带颜色的字符串
+	//coloredPart := red.Sprint("错误")
+	//normalPart := "：文件不存在，请检查路径"
+	//
+	//fmt.Println(coloredPart + normalPart)
+
+	var passed int
+	var failed int
 
 	for _, test := range testSuite.Tests {
 		if test.Server != nil {
@@ -170,23 +160,21 @@ func (c *CLI) RunTestSuite(testSuite *TestSuite) error {
 					return err
 				}
 			}
+			color.Green("SWITCH %s", serverName)
 		} else {
-			fmt.Printf("=== Test: %s ===\n", test.Case)
 			_, err = c.execute(test.Command, false)
-			if err != nil {
-				return err
+			if err == nil {
+				fmt.Printf("%s %s\n", green.Sprintf("✓ PASSED"), test.Case)
+				passed++
+			} else {
+				fmt.Printf("%s %s\n", red.Sprintf("✗ FAILED"), test.Case)
+				println(err.Error())
+				failed++
 			}
 		}
 	}
 
-	// Run test down commands
-	fmt.Printf("=== tear down commands ===\n")
-	for _, cmd := range testSuite.TearDown {
-		_, err = c.execute(cmd.Command, false)
-		if err != nil {
-			return fmt.Errorf("failed to run tear down command: %v", err)
-		}
-	}
+	fmt.Printf("Test cases %d, passed: %d, failed: %d\n", passed+failed, passed, failed)
 
 	return nil
 }

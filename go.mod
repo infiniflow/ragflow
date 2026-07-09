@@ -22,6 +22,7 @@ require (
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/elastic/go-elasticsearch/v8 v8.19.1
 	github.com/eric642/e2b-go-sdk v0.1.3
+	github.com/fatih/color v1.14.1
 	github.com/gin-gonic/gin v1.10.1
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-sql-driver/mysql v1.7.0
@@ -150,6 +151,7 @@ require (
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.3 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
