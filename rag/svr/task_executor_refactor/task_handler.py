@@ -321,17 +321,11 @@ class TaskHandler:
         try:
             if ctx.tenant_embd_id:
                 try:
-                    embd_model_config = get_model_config_by_id(
-                        task_tenant_id, ctx.tenant_embd_id
-                    )
+                    embd_model_config = get_model_config_by_id(task_tenant_id, ctx.tenant_embd_id)
                 except LookupError:
-                    embd_model_config = get_model_config_from_provider_instance(
-                        task_tenant_id, LLMType.EMBEDDING, task_embedding_id
-                    )
+                    embd_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
             elif task_embedding_id:
-                embd_model_config = get_model_config_from_provider_instance(
-                    task_tenant_id, LLMType.EMBEDDING, task_embedding_id
-                )
+                embd_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
             else:
                 embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
             embedding_model = LLMBundle(task_tenant_id, embd_model_config, lang=task_language)

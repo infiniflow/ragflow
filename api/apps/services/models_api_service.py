@@ -130,13 +130,7 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
         logging.warning(f"Model '{model_name}' is disabled")
         return None
 
-    return {
-        "model_provider": provider_name,
-        "model_instance": instance_name,
-        "model_name": model_name,
-        "model_type": model_type,
-        "enable": True
-    }
+    return {"model_provider": provider_name, "model_instance": instance_name, "model_name": model_name, "model_type": model_type, "enable": True}
 
 
 def _check_model_available(tenant_id: str, provider_name: str, instance_name: str, model_name: str, model_type: str):
@@ -292,14 +286,23 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str = None):
     target_type_records = [record for record in model_records if record.model_type & model_type_filter_bin] if model_type_filter_bin else model_records
 
     factory_rank_mapping = {factory["name"]: -_to_int(factory.get("rank", "500")) for factory in FACTORY_LLM_INFOS}
-    added_models = [{
-        "model_type": get_model_type_human(model_record.model_type),
-        "name": model_record.model_name,
-        "provider_id": model_record.provider_id,
-        "provider_name": provider_info_map[model_record.provider_id].provider_name,
-        "instance_id": model_record.instance_id,
-        "instance_name": instance_info_map[model_record.instance_id].instance_name
-    } for model_record in target_type_records]
+    model_rank_map: dict = {}
+    for factory in FACTORY_LLM_INFOS:
+        for llm in factory.get("llm", []):
+            model_rank_map[(factory["name"], llm["llm_name"])] = _to_int(llm.get("rank", 500))
+
+    added_models = [
+        {
+            "model_type": get_model_type_human(model_record.model_type),
+            "name": model_record.model_name,
+            "provider_id": model_record.provider_id,
+            "provider_name": provider_info_map[model_record.provider_id].provider_name,
+            "instance_id": model_record.instance_id,
+            "instance_name": instance_info_map[model_record.instance_id].instance_name,
+            "rank": model_rank_map.get((provider_info_map[model_record.provider_id].provider_name, model_record.model_name), 500),
+        }
+        for model_record in target_type_records
+    ]
 
     # Add TEI Builtin embedding model if configured
     compose_profiles = os.getenv("COMPOSE_PROFILES", "")
@@ -316,10 +319,10 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str = None):
                         "provider_name": "Builtin",
                         "instance_id": "",
                         "instance_name": "default",
+                        "rank": model_rank_map.get(("Builtin", tei_model), 500),
                     }
                 )
 
-    added_models.sort(
-        key=lambda x: (factory_rank_mapping.get(x["provider_name"]), x["provider_name"], x["instance_name"]))
+    added_models.sort(key=lambda x: (factory_rank_mapping.get(x["provider_name"]), x["provider_name"], x["instance_name"], -x["rank"], x["name"]))
 
     return True, added_models

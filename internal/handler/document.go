@@ -1260,6 +1260,16 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 	common.SuccessWithData(c, true, "success")
 }
 
+// Ingest handles document ingestion
+// @Summary Ingest Document
+// @Description Ingest a document for processing
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body service.IngestDocumentRequest true "ingestion info"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/documents/ingest [post]
 func (h *DocumentHandler) Ingest(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {

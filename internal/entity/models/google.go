@@ -97,7 +97,7 @@ func (g *GoogleModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (g *GoogleModel) Name() string {
-	return "google"
+	return "Gemini"
 }
 
 func (g *GoogleModel) clientConfig(apiKey string, apiConfig *APIConfig) *genai.ClientConfig {
