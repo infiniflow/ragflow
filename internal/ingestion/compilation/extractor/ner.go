@@ -167,7 +167,7 @@ func (e *Extractor) Extract(text string, extractRelations bool) (*ExtractionResu
 		tokensJSON := tokenizeText(text, e.Lang)
 		if tokensJSON != "" {
 			var rawTokens []string
-			if err := json.Unmarshal([]byte(tokensJSON), &rawTokens); err == nil {
+			if err = json.Unmarshal([]byte(tokensJSON), &rawTokens); err == nil {
 				for i, t := range rawTokens {
 					tokensMeta = append(tokensMeta, map[string]interface{}{
 						"text":  t,
@@ -293,7 +293,7 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 		End        int     `json:"end"`
 		Confidence float64 `json:"confidence"`
 	}
-	if err := json.Unmarshal([]byte(resultJSON), &rawEntities); err != nil {
+	if err = json.Unmarshal([]byte(resultJSON), &rawEntities); err != nil {
 		return nil, fmt.Errorf("failed to parse NER result: %w", err)
 	}
 
@@ -309,7 +309,7 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 		if re.Confidence < e.ConfidenceThreshold {
 			continue
 		}
-		text := re.Text
+		text = re.Text
 		if isCJK {
 			text = strings.ReplaceAll(text, " ", "")
 		}
