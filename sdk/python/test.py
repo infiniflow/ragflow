@@ -42,8 +42,12 @@ from argparse import (
 
     Namespace,
     ArgumentParser)
-from .ragflow_sdk import RAGFlow
+# Add current script directory to Python module search path to locate ragflow_sdk package
 import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ragflow_sdk import RAGFlow
+
 def parse_args()->"Namespace":
     """
     Parse Script Input Parameters
