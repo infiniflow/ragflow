@@ -19,6 +19,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	componentpkg "ragflow/internal/ingestion/component"
+	_ "ragflow/internal/ingestion/component/chunker"
 	"ragflow/internal/server"
 	"ragflow/internal/storage"
 

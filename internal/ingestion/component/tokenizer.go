@@ -23,7 +23,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"ragflow/internal/common"
+	"log"
 	"regexp"
 	"slices"
 	"strings"
@@ -283,7 +283,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, mo
 		hasTitleVec bool
 	)
 	if trimmedName == "" {
-		common.Warn("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
+		log.Printf("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
 	} else {
 		titleResults, err := encodeWithTimeout(ctx, embedder, []string{trimmedName})
 		if err != nil {
