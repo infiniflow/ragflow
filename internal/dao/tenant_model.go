@@ -102,9 +102,11 @@ func (dao *TenantModelDAO) GetModelsByProviderIDAndInstanceIDAndModelName(provid
 	return models, nil
 }
 
-func (dao *TenantModelDAO) GetByProviderIDAndInstanceIDAndModelTypeAndModelName(providerID, instanceID, modelType, modelName string) (*entity.TenantModel, error) {
+func (dao *TenantModelDAO) GetByProviderIDAndInstanceIDAndModelTypeAndModelName(providerID, instanceID string, modelType int, modelName string) (*entity.TenantModel, error) {
 	var model entity.TenantModel
-	err := DB.Where("provider_id = ? AND instance_id = ? AND model_type = ? AND model_name = ?", providerID, instanceID, modelType, modelName).First(&model).Error
+	// Use bitwise AND to match Python's bin_and(model_type) > 0 pattern.
+	// A model_type value of 0 (unknown type) matches no row.
+	err := DB.Where("provider_id = ? AND instance_id = ? AND model_type & ? > 0 AND model_name = ?", providerID, instanceID, modelType, modelName).First(&model).Error
 	if err != nil {
 		return nil, err
 	}

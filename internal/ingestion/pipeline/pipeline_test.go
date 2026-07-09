@@ -18,6 +18,8 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
@@ -150,3 +152,122 @@ func (e *errCanvasStage) Invoke(_ context.Context, _ map[string]any) (map[string
 func (e *errCanvasStage) Parallelism() int           { return 1 }
 func (e *errCanvasStage) Inputs() map[string]string  { return nil }
 func (e *errCanvasStage) Outputs() map[string]string { return nil }
+
+type factorySentinelStage struct {
+	marker string
+}
+
+func (s *factorySentinelStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+	out := cloneMapOrEmpty(inputs)
+	out["marker"] = s.marker
+	return out, nil
+}
+
+func TestPipelineRun_InstanceFactoryOverridesDefaultFactory(t *testing.T) {
+	origFactory := runtime.DefaultFactory()
+	runtime.SetDefaultFactory(func(_ string, _ map[string]any) (runtime.Component, error) {
+		return &factorySentinelStage{marker: "default"}, nil
+	})
+	defer runtime.SetDefaultFactory(origFactory)
+
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["stage"]},
+				"stage": {"obj": {"component_name": "custom-stage", "params": {}}, "upstream": ["begin"]}
+			},
+			"path": ["begin", "stage"],
+			"graph": {"nodes": []}
+		}
+	}`), "task-instance-factory")
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+
+	pipe.WithComponentFactory(func(_ string, _ map[string]any) (runtime.Component, error) {
+		return &factorySentinelStage{marker: "instance"}, nil
+	})
+
+	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	stage, ok := out["stage"].(map[string]any)
+	if !ok {
+		t.Fatalf("stage = %T, want map[string]any", out["stage"])
+	}
+	if got := stage["marker"]; got != "instance" {
+		t.Fatalf("stage.marker = %v, want instance", got)
+	}
+}
+
+func TestPipelineRun_TaskScopedFactoriesDoNotLeakAcrossConcurrentPipelines(t *testing.T) {
+	origFactory := runtime.DefaultFactory()
+	runtime.SetDefaultFactory(func(_ string, _ map[string]any) (runtime.Component, error) {
+		return &factorySentinelStage{marker: "default"}, nil
+	})
+	defer runtime.SetDefaultFactory(origFactory)
+
+	newPipe := func(taskID string) *Pipeline {
+		pipe, err := NewPipelineFromDSL([]byte(`{
+			"dsl": {
+				"components": {
+					"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["stage"]},
+					"stage": {"obj": {"component_name": "custom-stage", "params": {}}, "upstream": ["begin"]}
+				},
+				"path": ["begin", "stage"],
+				"graph": {"nodes": []}
+			}
+		}`), taskID)
+		if err != nil {
+			t.Fatalf("NewPipelineFromDSL(%s): %v", taskID, err)
+		}
+		return pipe
+	}
+
+	pipeA := newPipe("task-A")
+	pipeB := newPipe("task-B")
+	pipeA.WithComponentFactory(func(_ string, _ map[string]any) (runtime.Component, error) {
+		return &factorySentinelStage{marker: "A"}, nil
+	})
+	pipeB.WithComponentFactory(func(_ string, _ map[string]any) (runtime.Component, error) {
+		return &factorySentinelStage{marker: "B"}, nil
+	})
+
+	var wg sync.WaitGroup
+	type result struct {
+		marker string
+		err    error
+	}
+	results := make(chan result, 2)
+	run := func(pipe *Pipeline) {
+		defer wg.Done()
+		out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"})
+		if err != nil {
+			results <- result{err: err}
+			return
+		}
+		stage, ok := out["stage"].(map[string]any)
+		if !ok {
+			results <- result{err: fmt.Errorf("stage = %T", out["stage"])}
+			return
+		}
+		results <- result{marker: stage["marker"].(string)}
+	}
+	wg.Add(2)
+	go run(pipeA)
+	go run(pipeB)
+	wg.Wait()
+	close(results)
+
+	got := map[string]int{}
+	for res := range results {
+		if res.err != nil {
+			t.Fatalf("Run: %v", res.err)
+		}
+		got[res.marker]++
+	}
+	if got["A"] != 1 || got["B"] != 1 {
+		t.Fatalf("markers = %#v, want one A and one B", got)
+	}
+}

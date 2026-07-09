@@ -45,7 +45,7 @@ class _AwaitableValue:
 
 
 class _DummyKB:
-    def __init__(self, tenant_id="tenant-1", embd_id="embd-1", tenant_embd_id=1):
+    def __init__(self, tenant_id="tenant-1", embd_id="embd-1", tenant_embd_id="tm-embd-1"):
         self.tenant_id = tenant_id
         self.embd_id = embd_id
         self.tenant_embd_id = tenant_embd_id
@@ -212,7 +212,7 @@ def _load_dify_retrieval_module(monkeypatch):
                 "id": self.id,
             }
 
-    def _get_model_config_by_id(tenant_model_id: int, allowed_tenant_ids=None, requester_tenant_id=None) -> dict:
+    def _get_model_config_by_id(tenant_model_id: str, allowed_tenant_ids=None, requester_tenant_id=None) -> dict:
         mock_tenant_id = "tenant-1"
         if allowed_tenant_ids is not None:
             if isinstance(allowed_tenant_ids, str):
@@ -239,6 +239,7 @@ def _load_dify_retrieval_module(monkeypatch):
     tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
     tenant_model_service_mod.get_model_config_from_provider_instance = _get_model_config_from_provider_instance
+    tenant_model_service_mod.resolve_model_config = _get_model_config_from_provider_instance
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
     module_name = "test_dify_retrieval_routes_unit_module"

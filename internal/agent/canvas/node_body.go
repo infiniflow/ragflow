@@ -74,7 +74,7 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 // Outputs bucket. UserFillUpNodeBody tags its output itself so the
 // interrupt-driven branch still attributes the resume payload to the
 // right cpn.
-func buildNodeBody(cpnID, name string, params map[string]any) (nodeBodyFn, error) {
+func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]any) (nodeBodyFn, error) {
 	if isLegacyNoOp(name) {
 		return legacyNoOpBody(cpnID), nil
 	}
@@ -89,7 +89,7 @@ func buildNodeBody(cpnID, name string, params map[string]any) (nodeBodyFn, error
 	if strings.EqualFold(name, "UserFillUp") {
 		return UserFillUpNodeBody(cpnID, params), nil
 	}
-	if factory := runtime.DefaultFactory(); factory != nil {
+	if factory := resolveComponentFactory(ctx); factory != nil {
 		comp, err := factory(name, params)
 		if err != nil {
 			return nil, fmt.Errorf("canvas: component %q (%s): factory: %w", cpnID, name, err)
@@ -118,6 +118,14 @@ func buildNodeBody(cpnID, name string, params map[string]any) (nodeBodyFn, error
 // components (legacyNoOpNames). It echoes the input and tags
 // __legacy_noop__ so downstream debuggers can tell the node fired but
 // did nothing.
+
+func resolveComponentFactory(ctx context.Context) runtime.ComponentFactory {
+	if factory := componentFactoryFromContext(ctx); factory != nil {
+		return factory
+	}
+	return runtime.DefaultFactory()
+}
+
 func legacyNoOpBody(cpnID string) nodeBodyFn {
 	return func(_ context.Context, in map[string]any) (map[string]any, error) {
 		out := make(map[string]any, len(in)+2)

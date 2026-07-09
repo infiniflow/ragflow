@@ -289,12 +289,8 @@ func (s *ChatService) validateCreateDatasetIDs(value interface{}, tenantID strin
 		kbs = append(kbs, kb)
 	}
 
-	embedIDs := make(map[string]struct{}, len(kbs))
-	for _, kb := range kbs {
-		embedIDs[s.splitModelNameAndFactory(kb.EmbdID)] = struct{}{}
-	}
-	if len(embedIDs) > 1 {
-		return nil, fmt.Errorf("Datasets use different embedding models: %v", getEmbdIDs(kbs))
+	if err := validateDatasetEmbeddingModels(kbs); err != nil {
+		return nil, err
 	}
 	return normalizedIDs, nil
 }
@@ -306,19 +302,19 @@ func validateCreateLLMID(llmID, tenantID string, llmSetting map[string]interface
 	modelType := entity.ModelTypeChat
 	switch confModelType := llmSetting["model_type"].(type) {
 	case string:
-		if confModelType == string(entity.ModelTypeImage2Text) {
+		if confModelType == entity.ModelTypeImage2Text.String() {
 			modelType = entity.ModelTypeImage2Text
 		}
 	case []interface{}:
 		for _, item := range confModelType {
-			if item == string(entity.ModelTypeImage2Text) {
+			if item == entity.ModelTypeImage2Text.String() {
 				modelType = entity.ModelTypeImage2Text
 				break
 			}
 		}
 	case []string:
 		for _, item := range confModelType {
-			if item == string(entity.ModelTypeImage2Text) {
+			if item == entity.ModelTypeImage2Text.String() {
 				modelType = entity.ModelTypeImage2Text
 				break
 			}
@@ -645,22 +641,19 @@ const (
 	pyDefaultEmptyResponse = "Sorry! No relevant content was found in the knowledge base!"
 )
 
-// splitModelNameAndFactory extracts the base model name (removes vendor suffix)
+// splitModelNameAndFactory extracts the base model name by stripping
+// provider and instance suffixes, matching Python's rsplit("@", 2)[0].
 func (s *ChatService) splitModelNameAndFactory(embdID string) string {
-	// Remove vendor suffix (e.g., "model@openai" -> "model")
 	if idx := strings.LastIndex(embdID, "@"); idx > 0 {
-		return embdID[:idx]
+		// Strip the provider segment.
+		base := embdID[:idx]
+		// Strip the instance segment (second-to-last @).
+		if idx2 := strings.LastIndex(base, "@"); idx2 > 0 {
+			return base[:idx2]
+		}
+		return base
 	}
 	return embdID
-}
-
-// getEmbdIDs extracts embedding IDs from knowledge bases
-func getEmbdIDs(kbs []*entity.Knowledgebase) []string {
-	ids := make([]string, len(kbs))
-	for i, kb := range kbs {
-		ids[i] = kb.EmbdID
-	}
-	return ids
 }
 
 func (s *ChatService) getOwnedValidChat(userID, chatID string) (*entity.Chat, error) {
@@ -924,12 +917,12 @@ func (s *ChatService) validateRESTLLMID(llmID, tenantID string, llmSetting map[s
 	if rawModelType, ok := llmSetting["model_type"]; ok {
 		switch typedModelType := rawModelType.(type) {
 		case string:
-			if typedModelType == string(entity.ModelTypeImage2Text) {
+			if typedModelType == entity.ModelTypeImage2Text.String() {
 				modelType = entity.ModelTypeImage2Text
 			}
 		case []interface{}:
 			for _, item := range typedModelType {
-				if fmt.Sprint(item) == string(entity.ModelTypeImage2Text) {
+				if fmt.Sprint(item) == entity.ModelTypeImage2Text.String() {
 					modelType = entity.ModelTypeImage2Text
 					break
 				}
