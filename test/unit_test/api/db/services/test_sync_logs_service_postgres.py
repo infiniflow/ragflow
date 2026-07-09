@@ -44,28 +44,6 @@ warnings.filterwarnings(
 )
 
 
-class _FakeOrderField:
-    def desc(self):
-        return self
-
-    def asc(self):
-        return self
-
-    def alias(self, _name):
-        return self
-
-
-class _FakeField(_FakeOrderField):
-    def __eq__(self, _other):
-        return self
-
-    def in_(self, _others):
-        return self
-
-    def not_in(self, _others):
-        return self
-
-
 class _FakeQuery:
     """Captures the chain of calls so we can assert what was selected and ordered."""
 
