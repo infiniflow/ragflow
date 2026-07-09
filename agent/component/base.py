@@ -352,10 +352,13 @@ class ComponentBase(ABC):
     component_name: str
     thread_limiter = asyncio.Semaphore(int(os.environ.get("MAX_CONCURRENT_CHATS", 10)))
     # Match `cpn_id@var_nm` / `sys.var_nm` / `env.var_nm` style template refs.
-    # `cpn_id` allows underscores so genuine component ids emitted by the
-    # frontend (e.g. `userfillup_abc`, `retrieval_xyz`) are recognised.
-    variable_ref_patt = r"\{* *\{([a-zA-Z0-9_]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
+    # `cpn_id` allows underscores (frontend ids like `userfillup_abc`,
+    # `retrieval_xyz`) and colons (legacy DSL ids like `UserFillUp:CateInput`,
+    # `Retrieval:KBSearch`).
+    variable_ref_patt = r"\{* *\{([a-zA-Z0-9_:]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
+    variable_ref_patt_re = re.compile(variable_ref_patt, flags=re.IGNORECASE | re.DOTALL)
     iteration_alias_patt = r"\{* *\{(item|index|result)\} *\}*"
+    iteration_alias_patt_re = re.compile(iteration_alias_patt, flags=re.IGNORECASE | re.DOTALL)
 
     def __str__(self):
         """
