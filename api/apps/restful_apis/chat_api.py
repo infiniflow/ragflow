@@ -399,9 +399,11 @@ async def create():
             #     return get_data_error_result(message=err)
 
         req.setdefault("kb_ids", [])
-        req.setdefault("llm_id", tenant.tenant_llm_id)
+        req.setdefault("llm_id", tenant.llm_id)
         if req["llm_id"] is None:
-            req["llm_id"] = tenant.tenant_llm_id
+            req["llm_id"] = tenant.llm_id
+        if tenant.tenant_llm_id and "tenant_llm_id" not in req:
+            req["tenant_llm_id"] = tenant.tenant_llm_id
         req.setdefault("llm_setting", {})
         req.setdefault("description", "A helpful Assistant")
         req.setdefault("top_n", 6)
@@ -551,6 +553,9 @@ async def update_chat(chat_id):
                 return get_data_error_result(message=kb_ids)
             req["kb_ids"] = kb_ids
             req.pop("dataset_ids", None)
+
+        if "llm_id" in req and not req["llm_id"]:
+            req["llm_id"] = tenant.llm_id
 
         if "llm_id" in req:
             err = await _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
