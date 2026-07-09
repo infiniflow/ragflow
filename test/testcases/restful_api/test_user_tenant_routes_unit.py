@@ -1502,6 +1502,7 @@ def _load_chat_routes_unit_module(monkeypatch):
 
     tenant_model_provider_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_provider_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
+    tenant_model_provider_mod.resolve_model_config = lambda *_args, **_kwargs: {}
     tenant_model_provider_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
 
     def _split_model_name(model_name):
