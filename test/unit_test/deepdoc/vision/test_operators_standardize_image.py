@@ -39,61 +39,75 @@ import importlib.util
 import os
 import sys
 from types import ModuleType
-from unittest import mock
+
+import pytest
 
 
-def _load_operators_module():
-    """Load ``deepdoc.vision.operators`` from source while stubbing the only
-    project-internal import (``rag.utils.lazy_image``) so we don't need the
-    full RAGFlow runtime to test the file.
+# Names of the real project-internal modules that the operators.py loader
+# stubs out so we don't need the full RAGFlow runtime. The fixture below
+# records the pre-test value of each entry in ``sys.modules`` and restores
+# it on teardown, so neighbouring tests that legitimately import these
+# modules are never silently handed the stub.
+_STUB_MODULE_NAMES = ("rag", "rag.utils", "rag.utils.lazy_image")
+
+
+@pytest.fixture
+def operators_module():
+    """Load ``deepdoc.vision.operators`` from source with stubbed project
+    imports, and clean the stubs up afterwards.
+
+    The fixture records every ``sys.modules`` entry it touches and restores
+    the pre-test state in the teardown phase, so a later test that imports
+    the real ``rag.utils.lazy_image`` continues to receive the real module
+    rather than the identity-pass-through stub installed here.
     """
-    # Stub rag.utils.lazy_image.ensure_pil_image (identity passthrough).
-    if "rag" not in sys.modules:
-        rag_pkg = ModuleType("rag")
-        rag_pkg.__path__ = [os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "rag")]
-        sys.modules["rag"] = rag_pkg
-    if "rag.utils" not in sys.modules:
-        rag_utils = ModuleType("rag.utils")
-        rag_utils.__path__ = [os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "rag", "utils")]
-        sys.modules["rag.utils"] = rag_utils
-    if "rag.utils.lazy_image" not in sys.modules:
-        lazy_image = ModuleType("rag.utils.lazy_image")
-        lazy_image.ensure_pil_image = lambda im: im
-        sys.modules["rag.utils.lazy_image"] = lazy_image
-
     project_root = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
     )
+
+    # Snapshot the entries we'll mutate so teardown can restore them
+    # exactly, even when some of them were already populated.
+    snapshot = {name: sys.modules.get(name) for name in _STUB_MODULE_NAMES}
+
+    rag_pkg = sys.modules.setdefault(
+        "rag", ModuleType("rag"),
+    )
+    rag_pkg.__path__ = [os.path.join(project_root, "rag")]
+
+    rag_utils = sys.modules.setdefault(
+        "rag.utils", ModuleType("rag.utils"),
+    )
+    rag_utils.__path__ = [os.path.join(project_root, "rag", "utils")]
+
+    lazy_image = ModuleType("rag.utils.lazy_image")
+    lazy_image.ensure_pil_image = lambda im: im
+    sys.modules["rag.utils.lazy_image"] = lazy_image
+
     operators_path = os.path.join(
         project_root, "deepdoc", "vision", "operators.py"
     )
-
     spec = importlib.util.spec_from_file_location(
         "_test_operators_under_test", operators_path
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module
+
+    try:
+        yield module
+    finally:
+        # Restore the exact pre-test state. We delete first so a sibling
+        # module that did ``import rag`` mid-test doesn't get a hidden
+        # half-populated stub left over.
+        for name in _STUB_MODULE_NAMES:
+            if name in sys.modules and sys.modules[name] is snapshot.get(name):
+                continue
+            if snapshot[name] is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = snapshot[name]
 
 
-operators = _load_operators_module()
-
-
-class _FakeImage:
-    """Minimal stand-in for the dict the real DecodeImage step would produce.
-
-    We only need ``np.array(im, dtype=np.float32)`` to round-trip a 3x3 RGB
-    image, and ``im_info`` as a plain dict.
-    """
-
-    def __init__(self, arr):
-        self._arr = arr
-
-    def to_numpy(self):
-        return self._arr
-
-
-def test_standardize_image_class_resolves_by_canonical_name():
+def test_standardize_image_class_resolves_by_canonical_name(operators_module):
     """Regression for #7316.
 
     The recognizer dispatches preprocessing ops by their string ``"type"``
@@ -102,37 +116,37 @@ def test_standardize_image_class_resolves_by_canonical_name():
     importable from ``deepdoc.vision.operators`` under that name so
     ``getattr(operators, "StandardizeImage")`` succeeds.
     """
-    assert hasattr(operators, "StandardizeImage"), (
+    assert hasattr(operators_module, "StandardizeImage"), (
         "deepdoc.vision.operators must expose a 'StandardizeImage' class — "
         "recognizer.py dispatches preprocessing ops by this name; a typo in "
         "the class name causes AttributeError at runtime."
     )
-    assert isinstance(operators.StandardizeImage, type), (
+    assert isinstance(operators_module.StandardizeImage, type), (
         "StandardizeImage must be a class."
     )
 
 
-def test_standardize_image_callable_matches_legacy_alias_name():
+def test_standardize_image_callable_matches_legacy_alias_name(operators_module):
     """The previously-broken alias ``StandardizeImag`` must no longer be
     available — the typo is gone. If a downstream caller ever relied on the
     misnamed class, this test will fail loudly so we can decide whether to
     re-add a compatibility shim.
     """
-    assert not hasattr(operators, "StandardizeImag"), (
+    assert not hasattr(operators_module, "StandardizeImag"), (
         "The misspelled 'StandardizeImag' class name should have been "
         "removed; if something still references it, add a compatibility "
         "shim and revisit this assertion."
     )
 
 
-def test_standardize_image_normalizes_input_with_mean_std_and_is_scale():
+def test_standardize_image_normalizes_input_with_mean_std_and_is_scale(operators_module):
     """End-to-end behavior: with is_scale=True, mean_std, the operator must
     divide by 255 and then subtract mean / divide by std (per the class
     docstring).
     """
     import numpy as np
 
-    op = operators.StandardizeImage(
+    op = operators_module.StandardizeImage(
         mean=[0.5, 0.5, 0.5],
         std=[0.5, 0.5, 0.5],
         is_scale=True,
@@ -154,13 +168,13 @@ def test_standardize_image_normalizes_input_with_mean_std_and_is_scale():
     assert out_info is im_info
 
 
-def test_standardize_image_skips_scaling_when_is_scale_false():
+def test_standardize_image_skips_scaling_when_is_scale_false(operators_module):
     """When is_scale=False, the operator must NOT divide by 255 before
     applying mean/std.
     """
     import numpy as np
 
-    op = operators.StandardizeImage(
+    op = operators_module.StandardizeImage(
         mean=[1.0, 1.0, 1.0],
         std=[2.0, 2.0, 2.0],
         is_scale=False,
@@ -177,13 +191,13 @@ def test_standardize_image_skips_scaling_when_is_scale_false():
     )
 
 
-def test_standardize_image_norm_type_none_passes_image_through():
+def test_standardize_image_norm_type_none_passes_image_through(operators_module):
     """With norm_type='none' the operator must not subtract mean or divide by
     std. is_scale is still applied if True.
     """
     import numpy as np
 
-    op = operators.StandardizeImage(
+    op = operators_module.StandardizeImage(
         mean=[123.0, 456.0, 789.0],  # values that would corrupt the output
         std=[1.0, 1.0, 1.0],
         is_scale=True,
@@ -199,7 +213,7 @@ def test_standardize_image_norm_type_none_passes_image_through():
     )
 
 
-def test_standardize_image_via_module_getattr_dispatch_path():
+def test_standardize_image_via_module_getattr_dispatch_path(operators_module):
     """Mirrors the exact dispatch path used by
     ``deepdoc/vision/recognizer.py:preprocess()``::
 
@@ -222,7 +236,7 @@ def test_standardize_image_via_module_getattr_dispatch_path():
 
     # This is the exact line from recognizer.py; if it raises AttributeError
     # the bug is back.
-    op = getattr(operators, op_type)(**new_op_info)
+    op = getattr(operators_module, op_type)(**new_op_info)
 
     im = np.array([[[255.0, 255.0, 255.0]]], dtype=np.float32)
     out_im, _ = op(im, {})
