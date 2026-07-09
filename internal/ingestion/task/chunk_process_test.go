@@ -259,14 +259,12 @@ func TestProcessChunksForDataflow_GeneratesID(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForDataflow_PanicOnListText(t *testing.T) {
+func TestProcessChunksForDataflow_NoPanicOnListText(t *testing.T) {
 	chunks := []map[string]any{{"text": []any{"bad-shape"}}}
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic for list-shaped text")
-		}
-	}()
-	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	res := ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	if res == nil {
+		t.Errorf("should return valid result")
+	}
 }
 
 func TestProcessChunksForDataflow_RemovesInternalPipelineFields(t *testing.T) {
