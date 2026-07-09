@@ -89,6 +89,7 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
     provider = SimpleNamespace(
         id="provider-1",
         provider_name="LM-Studio",
+        tenant_id="tenant-1",
     )
     instance = SimpleNamespace(
         id="instance-1",
@@ -198,6 +199,7 @@ def _make_model_record(model_name, model_type="embedding", status=1):
     """
     model_type_bin = _MODEL_TYPE_TO_BIN.get(model_type, model_type) if isinstance(model_type, str) else model_type
     return SimpleNamespace(
+        id=f"{model_name}-id",
         provider_id="provider-1",
         instance_id="instance-1",
         model_name=model_name,

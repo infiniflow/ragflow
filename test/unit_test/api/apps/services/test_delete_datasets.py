@@ -104,6 +104,7 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete):
         "api.db.joint_services.tenant_model_service",
         get_model_config_from_provider_instance=MagicMock(),
         resolve_model_config=MagicMock(),
+        resolve_model_id=MagicMock(),
     )
     _stub(
         monkeypatch,
