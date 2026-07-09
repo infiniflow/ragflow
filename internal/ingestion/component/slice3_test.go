@@ -23,6 +23,7 @@ package component
 
 import (
 	"context"
+	pipe "ragflow/internal/ingestion/pipeline"
 	"strings"
 	"testing"
 )
@@ -31,7 +32,7 @@ import (
 // rag/flow/tokenizer.py:111 fallback. A chunk with only
 // content_with_weight (no text) must tokenize the fallback text.
 func TestTokenizer_FallsBackToContentWithWeight(t *testing.T) {
-	requireTokenizerPool(t)
+	pipe.RequireTokenizerPool(t)
 	c := &TokenizerComponent{}
 	c.param.SearchMethod = []string{"full_text"}
 	c.param.Fields = []string{"text"}
@@ -62,7 +63,7 @@ func TestTokenizer_FallsBackToContentWithWeight(t *testing.T) {
 // for the fallback. When both "text" and "content_with_weight"
 // are present, "text" wins.
 func TestTokenizer_DoesNotChangeChunkText(t *testing.T) {
-	requireTokenizerPool(t)
+	pipe.RequireTokenizerPool(t)
 	c := &TokenizerComponent{}
 	c.param.SearchMethod = []string{"full_text"}
 	c.param.Fields = []string{"text"}

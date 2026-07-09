@@ -31,7 +31,7 @@ import (
 
 func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	prepareTokenizerResourceForIntegration(t)
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
 	cfg := mustLoadRealIntegrationConfig(t)
 	realDB := mustOpenRealMySQL(t, cfg)

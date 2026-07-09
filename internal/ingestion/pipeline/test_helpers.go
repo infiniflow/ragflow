@@ -37,7 +37,7 @@ func repoRootFromPipelineTest(t *testing.T) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
 }
 
-func requireTokenizerPool(t *testing.T) {
+func RequireTokenizerPool(t *testing.T) {
 	t.Helper()
 	if tokenizer.IsInitialized() {
 		return
