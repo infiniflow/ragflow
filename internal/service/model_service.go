@@ -2270,9 +2270,9 @@ func (m *ModelProviderService) GetModelTypeByName(tenantID, modelName string) ([
 		targetFactoryName = "siliconflow_intl"
 	}
 	// Use the case-insensitive FindProvider / findModel helpers. The Go's
-	// conf/models/*.json files use mixed case ("SiliconFlow") while the
-	// Python's conf/llm_factories.json uses all-caps ("SILICONFLOW"); a strict
-	// `==` here would fail for any case mismatch. The rest of the Go codebase
+	// conf/models/*.json files now use the same names as the Python's
+	// conf/llm_factories.json (e.g. "SILICONFLOW"); but a strict
+	// `==` here would still fail for any case mismatch. The rest of the Go codebase
 	// uses these helpers too.
 	targetProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
 	if targetProvider == nil {
@@ -2602,9 +2602,9 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 		targetFactoryName = "siliconflow_intl"
 	}
 	// Use the case-insensitive FindProvider / findModel helpers. The Go's
-	// conf/models/*.json files use mixed case ("SiliconFlow") while the
-	// Python's conf/llm_factories.json uses all-caps ("SILICONFLOW"); a strict
-	// `==` here would fail for any case mismatch even though the Python passes
+	// conf/models/*.json files now use the same names as the Python's
+	// conf/llm_factories.json (e.g. "SILICONFLOW"); but a strict
+	// `==` here would still fail for any case mismatch even though the Python passes
 	// (its FACTORY_LLM_INFOS and the parsed provider_name happen to agree on
 	// casing). The rest of the Go codebase uses these helpers too.
 	targetProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)

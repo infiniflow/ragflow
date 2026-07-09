@@ -46,7 +46,7 @@ func (b *BaichuanModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (b *BaichuanModel) Name() string {
-	return "baichuan"
+	return "BaiChuan"
 }
 
 func (b *BaichuanModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {

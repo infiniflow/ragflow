@@ -109,8 +109,7 @@ class MemoryService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def create_memory(cls, tenant_id: str, name: str, memory_type: List[str], embd_id: str, llm_id: str,
-                      tenant_embd_id: str | None = None, tenant_llm_id: str | None = None):
+    def create_memory(cls, tenant_id: str, name: str, memory_type: List[str], embd_id: str, llm_id: str, tenant_embd_id: str | None = None, tenant_llm_id: str | None = None):
         # Deduplicate name within tenant
         memory_name = duplicate_name(cls.query, name=name, tenant_id=tenant_id)
         if len(memory_name) > MEMORY_NAME_LIMIT:

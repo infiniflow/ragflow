@@ -249,7 +249,7 @@ func TestNovitaThinkExtractorLessThanIsNotTagStart(t *testing.T) {
 // ---- driver methods ----
 
 func TestNovitaName(t *testing.T) {
-	if got := newNovitaForTest("http://unused").Name(); got != "novita" {
+	if got := newNovitaForTest("http://unused").Name(); got != "NovitaAI" {
 		t.Errorf("Name()=%q", got)
 	}
 }
