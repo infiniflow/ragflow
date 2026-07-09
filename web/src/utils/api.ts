@@ -153,6 +153,27 @@ export default {
   getMeta: `${restAPIv1}/datasets/metadata/flattened`,
   getKnowledgeBasicInfo: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions/summary`,
+  artifactsList: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts`,
+  artifactsTopicList: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts_topics`,
+  getArtifactPage: (datasetId: string, pageType: string, slug: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/${pageType}/${slug}`,
+  listWikiCommits: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/commits`,
+  getWikiCommit: (datasetId: string, commitId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/commits/${commitId}`,
+  getArtifactGraph: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/graph`,
+  clearWiki: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts`,
+  getDatasetSkillTree: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills`,
+  getDatasetSkillPage: (datasetId: string, skillKwd: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills/${skillKwd
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
   // data pipeline log
   fetchDataPipelineLog: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
@@ -189,6 +210,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks`,
   chunkDetail: (datasetId: string, documentId: string, chunkId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
+  documentStructureGraph: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/graph`,
   retrievalTest: `${restAPIv1}/datasets/search`,
 
   // document
@@ -328,6 +351,15 @@ export default {
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,
 
   // explore
+
+  // compilation templates
+  compilationTemplates: `${restAPIv1}/compilation_templates`,
+  compilationTemplate: (id: string) =>
+    `${restAPIv1}/compilation_templates/${id}`,
+  compilationTemplateGroups: `${restAPIv1}/compilation_template_groups`,
+  compilationTemplateGroup: (id: string) =>
+    `${restAPIv1}/compilation_template_groups/${id}`,
+  wikiPresets: `${restAPIv1}/compilation_templates/wiki_presets`,
 
   // mcp server
   listMcpServer: `${restAPIv1}/mcp/servers`,

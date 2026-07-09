@@ -6,6 +6,7 @@ import { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { useFetchMemoryMessageList } from '../memory-message/hook';
+import { useMemorySettingContext } from './memory-setting-context';
 
 export const memoryModelFormSchema = (t: TFunction) => ({
   embd_id: z.string(),
@@ -30,6 +31,8 @@ export const defaultMemoryModelForm = {
 export const MemoryModelForm = () => {
   const { t } = useTranslation();
   const { data } = useFetchMemoryMessageList();
+  const { data: configData } = useMemorySettingContext();
+  const ownerTenantId = configData?.tenant_id;
   return (
     <>
       <RenderField
@@ -46,6 +49,7 @@ export const MemoryModelForm = () => {
               field={field}
               isEdit={false}
               disabled={data?.messages?.total_count > 0}
+              ownerTenantId={ownerTenantId}
             />
           ),
 
@@ -65,6 +69,7 @@ export const MemoryModelForm = () => {
               value={field.value}
               onChange={field.onChange}
               placeholder={t('memories.selectModel')}
+              ownerTenantId={ownerTenantId}
             />
           ),
           tooltip: t('memories.llmTooltip'),

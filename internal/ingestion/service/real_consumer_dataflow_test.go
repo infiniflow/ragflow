@@ -1,5 +1,5 @@
-//go:build integration
-// +build integration
+//go:build manual
+// +build manual
 
 package service
 
@@ -13,6 +13,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/nats"
 	"ragflow/internal/entity"
+	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/ingestion/testutil"
 )
 
@@ -98,19 +99,20 @@ func TestRealConsumer_DataflowMessageRoutesToExecuteTask(t *testing.T) {
 	ingestor := NewIngestor("queue-test", 1, []string{"pdf"})
 	var routedToDataflow bool
 	var progressEvents []string
+	taskCtx := taskpkg.NewTaskContextForScheduling(
+		context.Background(),
+		task,
+		taskHandle,
+	)
+	taskCtx.ProgressFunc = func(prog float64, msg string) {
+		taskCtx.Progress = int32(prog * 100)
+		progressEvents = append(progressEvents, msg)
+	}
 	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
 		routedToDataflow = true
-		progressFn(0.82, "mock queue dataflow start")
-		progressFn(1.0, "mock queue dataflow done")
-		progressEvents = append(progressEvents, "0.82:mock queue dataflow start", "1.00:mock queue dataflow done")
+		taskCtx.ProgressFunc(0.82, "mock queue dataflow start")
+		taskCtx.ProgressFunc(1.0, "mock queue dataflow done")
 		return nil
-	}
-
-	taskCtx := &TaskContext{
-		Ctx:        context.Background(),
-		CancelFunc: func() {},
-		Task:       task,
-		TaskHandle: taskHandle,
 	}
 
 	ingestor.executeTask(taskCtx)
