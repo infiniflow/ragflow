@@ -78,12 +78,15 @@ export interface IProviderInstance {
   provider_order?: string;
 }
 export interface IAddedModel {
+  model_id: string;
   model_type: string[];
   name: string;
   provider_id: string;
   provider_name: string;
   instance_id: string;
   instance_name: string;
+  tenant_id?: string;
+  tenant_name?: string;
 }
 
 export interface IInstanceModel {

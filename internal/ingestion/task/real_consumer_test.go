@@ -1,3 +1,6 @@
+//go:build manual
+// +build manual
+
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -14,14 +17,13 @@
 //  limitations under the License.
 //
 
-//go:build integration
-// +build integration
-
 package task
 
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -57,7 +59,16 @@ func TestRealProducerConsumer(t *testing.T) {
 	}
 
 	// ── 2. SQLite DB ──
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	db.AutoMigrate(
 		&entity.IngestionTask{}, &entity.Task{},
 		&entity.Document{}, &entity.Knowledgebase{}, &entity.Tenant{},

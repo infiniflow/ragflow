@@ -11,6 +11,64 @@ import (
 	"ragflow/internal/ingestion/testutil"
 )
 
+// TestExecuteTask_CheckpointParseFailureDoesNotKillProcess verifies that checkpoint
+// parse failures do not call fatal exit (which would kill the whole worker process).
+// Instead, the task should be marked as FAILED and return gracefully.
+// This tests the fix for issue 1 from the code review.
+func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, docID, taskID := testutil.SeedTestData(t, db,
+		testutil.WithPipelineID("flow-1"),
+		testutil.WithTenantID("tenant-1"),
+	)
+
+	// Create a task log with invalid checkpoint (current_step is a string instead of number)
+	err := db.Create(&entity.IngestionTaskLog{
+		TaskID: taskID,
+		Checkpoint: entity.JSONMap{
+			"current_step": "not-a-number", // intentionally wrong type
+			"total_step":   5,
+		},
+	}).Error
+	if err != nil {
+		t.Fatalf("create bad task log: %v", err)
+	}
+
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	// Replace runDocumentTask to ensure it doesn't get called
+	var runDocumentTaskCalled bool
+	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
+		runDocumentTaskCalled = true
+		return nil
+	}
+
+	taskCtx := taskpkg.NewTaskContextForScheduling(
+		context.Background(),
+		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
+		nil,
+	)
+
+	// Execute the task - this should NOT panic or fatal exit (this is our main validation!)
+	ingestor.executeTask(taskCtx)
+
+	// Verify runDocumentTask was not called (we returned early due to checkpoint parse failure)
+	if runDocumentTaskCalled {
+		t.Fatal("expected runDocumentTask to not be called due to checkpoint parse failure")
+	}
+
+	// Verify task status was set to FAILED
+	finalTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	if err != nil {
+		t.Fatalf("load final ingestion task: %v", err)
+	}
+	if finalTask.Status != common.FAILED {
+		t.Fatalf("final status = %s, want %s", finalTask.Status, common.FAILED)
+	}
+}
+
 func TestExecuteTask_DataflowRoutesToTaskHandler(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -36,10 +94,6 @@ func TestExecuteTask_DataflowRoutesToTaskHandler(t *testing.T) {
 		wrapped(0.82, "mock dataflow start")
 		wrapped(1.0, "mock dataflow done")
 		return nil
-	}
-	ingestor.storageImpl = testutil.NewMockStorage(map[string][]byte{"/unused": []byte("unused")})
-	ingestor.documentDAO = &testutil.MockDocDAO{
-		Docs: map[string]*entity.Document{"doc-1": testutil.TestDoc("doc-1", "pdf", ".pdf")},
 	}
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(

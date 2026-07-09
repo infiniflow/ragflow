@@ -40,7 +40,7 @@ from rag.svr.task_executor_refactor.task_context import TaskContext
 
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import resolve_model_config
 from rag.prompts.generator import gen_metadata, keyword_extraction, question_proposal, content_tagging
 from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 
@@ -56,7 +56,7 @@ async def extract_keywords(docs: List[Dict], ctx: TaskContext) -> None:
 
     st = timer()
     ctx.progress_cb(msg="Start to generate keywords for every chunk ...")
-    chat_model_config = get_model_config_from_provider_instance(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
+    chat_model_config = resolve_model_config(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
     with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_model:
 
         async def doc_keyword_extraction(chat_mdl, d, topn):
@@ -98,7 +98,7 @@ async def generate_questions(docs: List[Dict], ctx: TaskContext) -> None:
 
     st = timer()
     ctx.progress_cb(msg="Start to generate questions for every chunk ...")
-    chat_model_config = get_model_config_from_provider_instance(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
+    chat_model_config = resolve_model_config(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
     with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_model:
 
         async def doc_question_proposal(chat_mdl, d, topn):
@@ -178,7 +178,7 @@ async def generate_metadata(docs: List[Dict], ctx: TaskContext) -> None:
 
     st = timer()
     ctx.progress_cb(msg="Start to generate meta-data for every chunk ...")
-    chat_model_config = get_model_config_from_provider_instance(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
+    chat_model_config = resolve_model_config(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
     with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_model:
         metadata_conf = build_metadata_config(ctx.parser_config)
 
@@ -266,7 +266,7 @@ async def apply_tags(docs: List[Dict], ctx: TaskContext) -> None:
         set_tags_to_cache(kb_ids, all_tags)
     else:
         all_tags = json.loads(all_tags)
-    chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, ctx.llm_id)
+    chat_model_config = resolve_model_config(tenant_id, LLMType.CHAT, ctx.llm_id)
     with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_model:
         docs_to_tag = []
         for doc in docs:
@@ -955,7 +955,7 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
         chat_llm_id = _resolve_template_chat_llm_id(parser_cfg, ctx)
         if chat_llm_id not in llm_bundle_cache:
             try:
-                cfg = get_model_config_from_provider_instance(
+                cfg = resolve_model_config(
                     ctx.tenant_id,
                     LLMType.CHAT,
                     chat_llm_id,

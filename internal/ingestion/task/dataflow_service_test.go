@@ -3,7 +3,6 @@ package task
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -185,7 +184,6 @@ func TestNewDataflowService_RejectsIncompleteTaskContext(t *testing.T) {
 		{name: "missing kb id", mutate: func(ctx *TaskContext) { ctx.Doc.KbID = "" }},
 		{name: "missing doc name", mutate: func(ctx *TaskContext) { ctx.Doc.Name = nil }},
 		{name: "missing knowledgebase id", mutate: func(ctx *TaskContext) { ctx.KB.ID = "" }},
-		{name: "missing embedding model id", mutate: func(ctx *TaskContext) { ctx.KB.EmbdID = "" }},
 		{name: "missing tenant id", mutate: func(ctx *TaskContext) { ctx.Tenant.ID = "" }},
 	}
 
@@ -253,71 +251,6 @@ func TestDataflowService_ProcessChunks_WrapsProcessChunksForDataflow(t *testing.
 	}
 	if meta != nil {
 		// No need to verify the detailed content of meta as ProcessChunksForDataflow already has comprehensive tests
-	}
-}
-
-// =============================================================================
-// embedChunks — Python: _embed_chunks (line 247)
-// =============================================================================
-
-func TestEmbedChunks_Success(t *testing.T) {
-	stub := &stubDriver{}
-	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0).WithGetEmbeddingModelFunc(
-		func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-			return makeTestEmbeddingModel(stub, 100), nil
-		},
-	)
-	chunks := []map[string]any{
-		{"text": "hello"},
-		{"text": "world"},
-	}
-	result, tc, err := svc.embedChunks(context.Background(), chunks, 5)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result) != 2 {
-		t.Fatalf("len = %d, want 2", len(result))
-	}
-	// vectors should be attached (q_*_vec keys)
-	if result[0]["q_2_vec"] == nil {
-		t.Errorf("expected q_2_vec in chunk[0], got keys: %v", chunkKeys(result[0]))
-	}
-	// token consumption should include initial + new tokens
-	if tc < 5 {
-		t.Errorf("token consumption should be at least the initial 5, got %d", tc)
-	}
-}
-
-func TestEmbedChunks_EmptyChunks(t *testing.T) {
-	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0)
-	result, _, err := svc.embedChunks(context.Background(), nil, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result != nil {
-		t.Errorf("expected nil for empty chunks, got %v", result)
-	}
-}
-
-func TestEmbedChunks_ModelError(t *testing.T) {
-	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0).WithGetEmbeddingModelFunc(
-		func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-			return nil, errors.New("model not found")
-		},
-	)
-	chunks := []map[string]any{{"text": "hello"}}
-	result, tc, err := svc.embedChunks(context.Background(), chunks, 10)
-	if err == nil {
-		t.Fatal("expected error on model error")
-	}
-	if !strings.Contains(err.Error(), "model not found") {
-		t.Errorf("expected error containing 'model not found', got %v", err)
-	}
-	if result != nil {
-		t.Errorf("expected nil result on model error, got %v", result)
-	}
-	if tc != 10 {
-		t.Errorf("token consumption should be preserved on error, got %d", tc)
 	}
 }
 
@@ -695,30 +628,6 @@ func TestDataflowService_Run_MainFlowWithStubs(t *testing.T) {
 	}
 }
 
-func TestEmbedChunks_ReportsIntermediateProgress(t *testing.T) {
-	stub := &stubDriver{}
-	var progressCalls []float64
-	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 1, 0).
-		WithGetEmbeddingModelFunc(func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-			return makeTestEmbeddingModel(stub, 100), nil
-		}).
-		WithProgressFunc(func(prog float64, msg string) {
-			progressCalls = append(progressCalls, prog)
-		})
-
-	chunks := []map[string]any{
-		{"text": "hello"},
-		{"text": "world"},
-	}
-	_, _, err := svc.embedChunks(context.Background(), chunks, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(progressCalls) < 2 {
-		t.Fatalf("expected start and intermediate progress calls, got %v", progressCalls)
-	}
-}
-
 func TestInsertChunks_ReportsBatchProgress(t *testing.T) {
 	var progressCalls []float64
 	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 1).
@@ -739,26 +648,6 @@ func TestInsertChunks_ReportsBatchProgress(t *testing.T) {
 	}
 	if len(progressCalls) == 0 {
 		t.Fatal("expected indexing progress callbacks")
-	}
-}
-
-func TestEmbedChunks_ErrorReportsNegativeProgressAndReturnsError(t *testing.T) {
-	var progressCalls []float64
-	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 1, 0).
-		WithGetEmbeddingModelFunc(func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-			return nil, errors.New("model unavailable")
-		}).
-		WithProgressFunc(func(prog float64, msg string) {
-			progressCalls = append(progressCalls, prog)
-		})
-
-	chunks := []map[string]any{{"text": "hello"}}
-	_, _, err := svc.embedChunks(context.Background(), chunks, 0)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if len(progressCalls) == 0 || progressCalls[len(progressCalls)-1] != -1 {
-		t.Fatalf("expected final error progress -1, got %v", progressCalls)
 	}
 }
 
@@ -824,3 +713,104 @@ var (
 	_ docService   = (*stubDocService)(nil)
 	_ chunkCounter = (*stubChunkCounter)(nil)
 )
+
+func makeEmbeddingModelForResolver() *models.EmbeddingModel {
+	return models.NewEmbeddingModel(&stubDriver{}, strPtr("embed"), &models.APIConfig{}, 128)
+}
+
+func TestPipelineExecutor_ResolveEmbeddingModel_IgnoresModelIDAndUsesDatasetEmbedding(t *testing.T) {
+	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0)
+	var gotTenantID, gotModelID string
+	svc.getEmbeddingModelFunc = func(tenantID, embdID string) (*models.EmbeddingModel, error) {
+		gotTenantID, gotModelID = tenantID, embdID
+		return makeEmbeddingModelForResolver(), nil
+	}
+	model, err := svc.resolveEmbeddingModel("tenant-1", "kb-1", "override-model")
+	if err != nil {
+		t.Fatalf("resolveEmbeddingModel: %v", err)
+	}
+	if model == nil {
+		t.Fatal("expected model")
+	}
+	if gotTenantID != "tenant-1" || gotModelID != "embd-1" {
+		t.Fatalf("resolver args = (%q, %q), want (tenant-1, embd-1)", gotTenantID, gotModelID)
+	}
+}
+
+func TestPipelineExecutor_ResolveEmbeddingModel_KnowledgebaseModel(t *testing.T) {
+	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0)
+	var gotModelID string
+	svc.getEmbeddingModelFunc = func(_ string, embdID string) (*models.EmbeddingModel, error) {
+		gotModelID = embdID
+		return makeEmbeddingModelForResolver(), nil
+	}
+	_, err := svc.resolveEmbeddingModel("tenant-1", "kb-1", "")
+	if err != nil {
+		t.Fatalf("resolveEmbeddingModel: %v", err)
+	}
+	if gotModelID != "embd-1" {
+		t.Fatalf("got model id %q, want embd-1", gotModelID)
+	}
+}
+
+func TestPipelineExecutor_ResolveEmbeddingModel_KnowledgebaseLookupFallback(t *testing.T) {
+	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0)
+	svc.taskCtx.KB.ID = "other-kb"
+	var gotModelID string
+	svc.getEmbeddingModelFunc = func(_ string, embdID string) (*models.EmbeddingModel, error) {
+		gotModelID = embdID
+		return makeEmbeddingModelForResolver(), nil
+	}
+	svc.getKnowledgebaseByIDFunc = func(kbID string) (*entity.Knowledgebase, error) {
+		if kbID != "kb-2" {
+			t.Fatalf("kb lookup id = %q, want kb-2", kbID)
+		}
+		return &entity.Knowledgebase{ID: "kb-2", EmbdID: "lookup-embd"}, nil
+	}
+	_, err := svc.resolveEmbeddingModel("tenant-1", "kb-2", "")
+	if err != nil {
+		t.Fatalf("resolveEmbeddingModel: %v", err)
+	}
+	if gotModelID != "lookup-embd" {
+		t.Fatalf("got model id %q, want lookup-embd", gotModelID)
+	}
+}
+
+func TestPipelineExecutor_ResolveEmbeddingModel_MissingDatasetEmbeddingReturnsError(t *testing.T) {
+	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0)
+	svc.taskCtx.KB.EmbdID = ""
+	svc.getKnowledgebaseByIDFunc = func(string) (*entity.Knowledgebase, error) {
+		return &entity.Knowledgebase{ID: "kb-1", EmbdID: ""}, nil
+	}
+	svc.getEmbeddingModelFunc = func(_ string, _ string) (*models.EmbeddingModel, error) {
+		t.Fatal("knowledgebase resolver should not be called")
+		return nil, nil
+	}
+	_, err := svc.resolveEmbeddingModel("tenant-1", "kb-1", "")
+	if err == nil {
+		t.Fatal("expected error when dataset embd_id is missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "dataset has no embd_id configured") {
+		t.Fatalf("err = %v, want dataset has no embd_id configured", err)
+	}
+}
+
+func TestPipelineExecutor_TokenizerEmbedderResolver_FallsBackToTaskContext(t *testing.T) {
+	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0)
+	var gotTenantID, gotModelID string
+	svc.getEmbeddingModelFunc = func(tenantID, embdID string) (*models.EmbeddingModel, error) {
+		gotTenantID, gotModelID = tenantID, embdID
+		return makeEmbeddingModelForResolver(), nil
+	}
+	resolver := svc.tokenizerEmbedderResolver()
+	emb, err := resolver("", "", "")
+	if err != nil {
+		t.Fatalf("resolver: %v", err)
+	}
+	if emb == nil {
+		t.Fatal("expected embedder")
+	}
+	if gotTenantID != "tenant-1" || gotModelID != "embd-1" {
+		t.Fatalf("resolver args = (%q, %q), want (tenant-1, embd-1)", gotTenantID, gotModelID)
+	}
+}
