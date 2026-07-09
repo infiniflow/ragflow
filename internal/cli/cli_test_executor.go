@@ -18,6 +18,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/fatih/color"
 )
@@ -119,6 +120,87 @@ func (c *CLI) checkCurrentServer(serverMode, serverName string) (bool, error) {
 	return false, nil
 }
 
+func (c *CLI) verifySimpleResponse(simpleResponse *SimpleResponse, expect map[string]interface{}) error {
+	if simpleResponse == nil {
+		return fmt.Errorf("response is nil")
+	}
+
+	status, ok := expect["status"].(string)
+	if !ok {
+		return fmt.Errorf("no status in result")
+	}
+
+	if simpleResponse.Code == 0 && strings.ToLower(status) == "success" {
+		return nil
+	}
+
+	if strings.ToLower(status) == strings.ToLower(simpleResponse.Message) {
+		return nil
+	}
+
+	return fmt.Errorf("status: %s, expected: %s", simpleResponse.Message, status)
+}
+
+func (c *CLI) verifyCommonDataResponse(commonDataResponse *CommonDataResponse, expect map[string]interface{}) error {
+	if commonDataResponse == nil {
+		return fmt.Errorf("response is nil")
+	}
+
+	status, ok := expect["status"].(string)
+	if !ok {
+		return fmt.Errorf("no status in result")
+	}
+
+	if commonDataResponse.Code == 0 && strings.ToLower(status) == "success" {
+		return nil
+	}
+
+	if strings.ToLower(status) == strings.ToLower(commonDataResponse.Message) {
+		return nil
+	}
+
+	return fmt.Errorf("status: %s, expected: %s", commonDataResponse.Message, status)
+}
+
+func (c *CLI) verifyCommonResponse(commonResponse *CommonResponse, expect map[string]interface{}) error {
+	if commonResponse == nil {
+		return fmt.Errorf("response is nil")
+	}
+
+	status, ok := expect["status"].(string)
+	if !ok {
+		return fmt.Errorf("no status in result")
+	}
+
+	if commonResponse.Code == 0 && strings.ToLower(status) == "success" {
+		return nil
+	}
+
+	if strings.ToLower(status) == strings.ToLower(commonResponse.Message) {
+		return nil
+	}
+
+	return fmt.Errorf("status: %s, expected: %s", commonResponse.Message, status)
+}
+
+func (c *CLI) verifyResult(resp ResponseIf, expect map[string]interface{}) error {
+	if resp == nil {
+		return fmt.Errorf("response is nil")
+	}
+
+	switch v := resp.(type) {
+	case *SimpleResponse:
+		return c.verifySimpleResponse(v, expect)
+	case *CommonDataResponse:
+
+		return c.verifyCommonDataResponse(v, expect)
+	case *CommonResponse:
+		return c.verifyCommonResponse(v, expect)
+	default:
+		return fmt.Errorf("response type is not supported")
+	}
+}
+
 // RunTestSuite runs a test suite file
 func (c *CLI) RunTestSuite(testSuite *TestSuite) error {
 	fmt.Printf("=== Test Suite: %s ===\n", testSuite.Suite)
@@ -136,12 +218,6 @@ func (c *CLI) RunTestSuite(testSuite *TestSuite) error {
 	color.NoColor = false
 	red := color.New(color.FgRed)
 	green := color.New(color.FgGreen)
-
-	//// 方法1：使用 Sprint 返回带颜色的字符串
-	//coloredPart := red.Sprint("错误")
-	//normalPart := "：文件不存在，请检查路径"
-	//
-	//fmt.Println(coloredPart + normalPart)
 
 	var passed int
 	var failed int
@@ -162,15 +238,20 @@ func (c *CLI) RunTestSuite(testSuite *TestSuite) error {
 			}
 			color.Green("SWITCH %s", serverName)
 		} else {
-			_, err = c.execute(test.Command, false)
+			var result ResponseIf
+			result, err = c.execute(test.Command, false)
 			if err == nil {
-				fmt.Printf("%s %s\n", green.Sprintf("✓ PASSED"), test.Case)
-				passed++
-			} else {
-				fmt.Printf("%s %s\n", red.Sprintf("✗ FAILED"), test.Case)
-				println(err.Error())
-				failed++
+				err = c.verifyResult(result, test.Expect)
+				if err == nil {
+					fmt.Printf("%s %s\n", green.Sprintf("✓ PASSED"), test.Case)
+					passed++
+					continue
+				}
 			}
+
+			fmt.Printf("%s %s\n", red.Sprintf("✗ FAILED"), test.Case)
+			println(err.Error())
+			failed++
 		}
 	}
 

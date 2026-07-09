@@ -30,8 +30,8 @@ tests:
     command: login user 'aaa@aaa.com' password 'aaa'
     expect:
       status: success
-  # case 1: List datasets
-  - case: List datasets
+  # case 1: list datasets
+  - case: list datasets
     command: list datasets
     expect:
       status: success
