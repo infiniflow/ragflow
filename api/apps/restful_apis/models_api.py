@@ -75,6 +75,8 @@ def get_added_models(tenant_id: str):
                         type: string
                       model_name:
                         type: string
+                      model_id:
+                        type: string
                       model_type:
                         type: string
                       enable:
@@ -190,6 +192,9 @@ async def set_default_models(tenant_id: str):
             model_name:
               type: string
               description: Model name. Required when setting a model; omit to clear.
+            model_id:
+              type: string
+              description: Tenant model id. If provided, it takes precedence over model_provider/model_instance/model_name.
             model_type:
               type: string
               description: "Model type: chat, embedding, rerank, asr, vision, tts, ocr"
@@ -206,10 +211,11 @@ async def set_default_models(tenant_id: str):
     model_provider = data.get("model_provider", "")
     model_instance = data.get("model_instance", "")
     model_name = data.get("model_name", "")
+    model_id = data.get("model_id", "")
     model_type = data["model_type"]
 
     try:
-        success, msg = models_api_service.set_tenant_default_models(tenant_id, model_provider, model_instance, model_name, model_type)
+        success, msg = models_api_service.set_tenant_default_models(tenant_id, model_provider, model_instance, model_name, model_type, model_id)
         if success:
             logging.info(f"success: {success}, msg: {msg}")
             return get_result(message=msg)

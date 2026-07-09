@@ -16,7 +16,7 @@
 import logging
 import os
 
-from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, ensure_opendataloader_from_env, ensure_paddleocr_from_env
+from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, ensure_opendataloader_from_env, ensure_paddleocr_from_env, resolve_model_id
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_service import TenantModelService
@@ -34,6 +34,16 @@ MODEL_TYPE_TO_FIELD = {
     "vision": "img2txt_id",
     "tts": "tts_id",
     "ocr": "ocr_id",
+}
+
+MODEL_TYPE_TO_TENANT_ID_FIELD = {
+    "chat": "tenant_llm_id",
+    "embedding": "tenant_embd_id",
+    "rerank": "tenant_rerank_id",
+    "asr": "tenant_asr_id",
+    "vision": "tenant_img2txt_id",
+    "tts": "tenant_tts_id",
+    "ocr": "tenant_ocr_id",
 }
 
 MODEL_TAG_TO_TYPE = {
@@ -61,7 +71,7 @@ def _factory_model_types(llm: dict) -> list[str]:
     return [model_type] if model_type else []
 
 
-def _get_model_info(tenant_id: str, default_model: str, model_type: str):
+def _get_model_info(tenant_id: str, default_model: str, model_type: str, model_id: str = ""):
     """
     Parse a composite model string (modelName@instanceName@providerName or modelName@providerName)
     and validate that the provider, instance, and model exist.
@@ -90,6 +100,7 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     # Special case: OCR with infiniflow@default@deepdoc is always enabled
     if model_type == "ocr" and provider_name == "infiniflow" and instance_name == "default" and model_name == "deepdoc":
         return {
+            "model_id": model_id,
             "model_provider": provider_name,
             "model_instance": instance_name,
             "model_name": model_name,
@@ -102,6 +113,7 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     tei_model = os.getenv("TEI_MODEL", "")
     if model_type == "embedding" and "tei-" in compose_profiles and tei_model and model_name == tei_model and (not provider_name or provider_name == "Builtin"):
         return {
+            "model_id": model_id,
             "model_provider": "Builtin",
             "model_instance": "default",
             "model_name": model_name,
@@ -130,7 +142,7 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
         logging.warning(f"Model '{model_name}' is disabled")
         return None
 
-    return {"model_provider": provider_name, "model_instance": instance_name, "model_name": model_name, "model_type": model_type, "enable": True}
+    return {"model_id": model_id, "model_provider": provider_name, "model_instance": instance_name, "model_name": model_name, "model_type": model_type, "enable": True}
 
 
 def _check_model_available(tenant_id: str, provider_name: str, instance_name: str, model_name: str, model_type: str):
@@ -200,49 +212,79 @@ def list_tenant_default_models(tenant_id: str):
         default_model = getattr(tenant, field_name, None)
         if not default_model:
             continue
-        model_info = _get_model_info(tenant_id, default_model, model_type)
+        tenant_model_id = getattr(tenant, MODEL_TYPE_TO_TENANT_ID_FIELD[model_type], None)
+        model_info = _get_model_info(tenant_id, default_model, model_type, tenant_model_id)
         if model_info:
             models.append(model_info)
 
     return True, {"models": models}
 
 
-def set_tenant_default_models(tenant_id: str, model_provider: str, model_instance: str, model_name: str, model_type: str):
+def set_tenant_default_models(tenant_id: str, model_provider: str, model_instance: str, model_name: str, model_type: str, model_id: str = ""):
     """
     Set or clear a tenant default model.
 
-    If model_provider, model_instance, and model_name are all provided,
-    validates the model and sets it as the default.
-    If all three are empty, clears the default for the given model type.
+    If model_id is provided, resolves it to provider/instance/name and uses it.
+    Otherwise falls back to the legacy model_provider/model_instance/model_name triplet.
+    If all model selectors are empty, clears the default for the given model type.
 
     :param tenant_id: tenant ID
     :param model_provider: provider name
     :param model_instance: instance name
     :param model_name: model name
     :param model_type: model type (chat, embedding, rerank, asr, vision, tts, ocr)
+    :param model_id: tenant_model id
     :return: (success, result_or_error_message)
     """
     field_name = MODEL_TYPE_TO_FIELD.get(model_type)
     if not field_name:
         return False, f"model type '{model_type}' is invalid"
+    tenant_field_name = MODEL_TYPE_TO_TENANT_ID_FIELD.get(model_type)
 
     e, tenant = TenantService.get_by_id(tenant_id)
     if not e:
         return False, "Tenant not found"
 
-    if not model_provider and not model_instance and not model_name:
-        # Clear the default model
-        default_model = ""
+    tenant_model_id = None
+    if model_id:
+        model_ok, model_obj = TenantModelService.get_by_id(model_id)
+        if not model_ok:
+            return False, f"model_id '{model_id}' not found"
+
+        provider_ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+        if not provider_ok:
+            return False, f"Provider id '{model_obj.provider_id}' not found for model_id '{model_id}'"
+        if provider_obj.tenant_id != tenant_id:
+            return False, "Permission denied"
+
+        instance_ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+        if not instance_ok:
+            return False, f"Instance id '{model_obj.instance_id}' not found for model_id '{model_id}'"
+
+        normalized_model_type = MODEL_TAG_TO_TYPE.get(model_type, model_type)
+        if normalized_model_type not in get_model_type_human(model_obj.model_type):
+            return False, f"Model '{model_obj.model_name}' isn't a {model_type} model"
+        if model_obj.status != ActiveStatusEnum.ACTIVE.value:
+            return False, f"Model '{model_obj.model_name}' isn't available"
+
+        default_model = f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
+        tenant_model_id = model_id
     elif model_provider and model_instance and model_name:
         # Validate and set the default model
         success, msg = _check_model_available(tenant_id, model_provider, model_instance, model_name, model_type)
         if not success:
             return False, msg
         default_model = f"{model_name}@{model_instance}@{model_provider}"
+        tenant_model_id = resolve_model_id(tenant_id, model_type, default_model)
+        if not tenant_model_id:
+            return False, f"Model '{default_model}' not found"
     else:
-        return False, "model_provider, model_instance and model_name must be specified together"
+        # Clear the default model
+        default_model = ""
+        tenant_model_id = None
 
-    TenantService.update_by_id(tenant_id, {field_name: default_model})
+    update_fields = {field_name: default_model, tenant_field_name: tenant_model_id}
+    TenantService.update_by_id(tenant_id, update_fields)
     return True, "success"
 
 

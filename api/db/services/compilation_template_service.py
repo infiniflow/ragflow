@@ -39,7 +39,7 @@ class CompilationTemplateService(CommonService):
             ok, tenant = TenantService.get_by_id(tenant_id)
             if ok and getattr(tenant, "llm_id", None):
                 config = dict(config)
-                config["llm_id"] = tenant.llm_id
+                config["llm_id"] = tenant.tenant_llm_id
         except Exception:
             logging.exception(
                 "compilation_template: llm_id default-fill lookup failed for tenant=%s",
@@ -93,7 +93,7 @@ class CompilationTemplateService(CommonService):
                     ok, tenant = TenantService.get_by_id(tenant_id)
                     if ok and getattr(tenant, "llm_id", None):
                         config = dict(config)
-                        config["llm_id"] = tenant.llm_id
+                        config["llm_id"] = tenant.tenant_llm_id
                 except Exception:
                     logging.exception(
                         "compilation_template: llm_id lazy-fill lookup failed for tenant=%s",
@@ -246,7 +246,11 @@ class CompilationTemplateService(CommonService):
         """
         wiki_dir = os.path.join(
             get_project_base_directory(),
-            "api", "db", "init_data", "compilation_templates", "wiki",
+            "api",
+            "db",
+            "init_data",
+            "compilation_templates",
+            "wiki",
         )
         if not os.path.exists(wiki_dir):
             logging.warning("Missing wiki presets directory: %s", wiki_dir)
@@ -269,10 +273,12 @@ class CompilationTemplateService(CommonService):
                 continue
             # Missing fields degrade to empty strings so the frontend
             # doesn't have to null-check every row.
-            presets.append({
-                "id": os.path.splitext(filename)[0],
-                "topic": str(doc.get("topic") or "").strip(),
-                "instruction": str(doc.get("instruction") or ""),
-                "page_example": str(doc.get("page_example") or ""),
-            })
+            presets.append(
+                {
+                    "id": os.path.splitext(filename)[0],
+                    "topic": str(doc.get("topic") or "").strip(),
+                    "instruction": str(doc.get("instruction") or ""),
+                    "page_example": str(doc.get("page_example") or ""),
+                }
+            )
         return presets
