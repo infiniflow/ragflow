@@ -1,5 +1,5 @@
 import { DatasetSkillKeys } from '@/hooks/use-dataset-skill-request';
-import { artifactKeys } from '@/hooks/use-knowledge-request';
+import { ArtifactKeys, ArtifactTopicKeys } from '@/hooks/use-knowledge-request';
 import { useTraceGenerate } from '@/pages/dataset/dataset/generate-button/hook';
 import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
 import { useQueryClient } from '@tanstack/react-query';
@@ -20,7 +20,10 @@ export function useCompilationView() {
   useEffect(() => {
     if (viewMode === ViewMode.LlmWiki && artifactStatus === 'completed') {
       queryClient.invalidateQueries({
-        queryKey: artifactKeys.listByDataset(id!),
+        queryKey: ArtifactKeys.listByDataset(id!),
+      });
+      queryClient.invalidateQueries({
+        queryKey: ArtifactTopicKeys.listByDataset(id!),
       });
     }
   }, [viewMode, artifactStatus, queryClient, id]);

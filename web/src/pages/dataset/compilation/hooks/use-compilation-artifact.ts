@@ -16,11 +16,17 @@ export function useCompilationArtifact() {
     [clearVersion],
   );
 
+  const clearSelectedArtifact = useCallback(() => {
+    setSelectedArtifact(null);
+    clearVersion();
+  }, [clearVersion]);
+
   return {
     selectedArtifact,
     selectedVersion,
     selectVersion,
     clearVersion,
     handleSelectArtifact,
+    clearSelectedArtifact,
   };
 }

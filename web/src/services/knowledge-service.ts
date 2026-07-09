@@ -1,12 +1,14 @@
 import { IRenameTag } from '@/interfaces/database/dataset';
 import {
   IFetchArtifactListRequestParams,
+  IFetchArtifactTopicListRequestParams,
   IFetchDocumentListRequestBody,
   IFetchKnowledgeListRequestParams,
   IUpdateArtifactPageRequestBody,
 } from '@/interfaces/request/knowledge';
 import { ProcessingType } from '@/pages/dataset/dataset-overview/dataset-common';
 import api from '@/utils/api';
+import nextRequest from '@/utils/next-request';
 import registerServer from '@/utils/register-server';
 import request from '@/utils/request';
 
@@ -393,6 +395,11 @@ export const listArtifacts = (
   params?: IFetchArtifactListRequestParams,
 ) => request.get(api.artifactsList(datasetId), { params });
 
+export const listArtifactTopics = (
+  datasetId: string,
+  params?: IFetchArtifactTopicListRequestParams,
+) => request.get(api.artifactsTopicList(datasetId), { params });
+
 export const getArtifactPage = (
   datasetId: string,
   pageType: string,
@@ -426,6 +433,9 @@ export const listWikiCommits = (
 
 export const getWikiCommit = (datasetId: string, commitId: string) =>
   request.get(api.getWikiCommit(datasetId, commitId));
+
+export const clearWiki = (datasetId: string) =>
+  nextRequest.delete(api.clearWiki(datasetId), {});
 
 export const checkEmbedding = (datasetId: string, data: Record<string, any>) =>
   request.post(api.checkEmbedding(datasetId), { data });

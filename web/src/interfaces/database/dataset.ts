@@ -230,6 +230,12 @@ export interface IArtifact {
   summary?: string;
 }
 
+export interface IArtifactTopic {
+  topic: string;
+  title: string;
+  slug: string;
+}
+
 export interface IArtifactPage {
   slug: string;
   title: string;

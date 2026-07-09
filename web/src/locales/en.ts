@@ -452,6 +452,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       generateToSkills:
         'Builds a hierarchical skill tree from this dataset and stores the generated skill pages for search and reuse.',
       noWikiPages: 'No wiki pages yet',
+      clearWikiTitle: 'Clear wiki',
+      clearWikiDescription:
+        'Are you sure you want to clear all wiki pages in this dataset? This action cannot be undone.',
       noSkills: 'No skills yet',
       generate: 'Generate',
       raptor: 'RAPTOR',
@@ -509,6 +512,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       llmWiki: 'LLM Wiki',
       skills: 'Skills',
       contents: 'Contents',
+      topics: 'Topics',
+      concept: 'Concept',
+      entity: 'Entity',
       createDirectoryFolder: 'Create directory',
       directoryName: 'Name',
       directoryNamePlaceholder: 'Instance name',

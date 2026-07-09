@@ -128,6 +128,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/ingestions/summary`,
   artifactsList: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts`,
+  artifactsTopicList: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts_topics`,
   getArtifactPage: (datasetId: string, pageType: string, slug: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/${pageType}/${slug}`,
   listWikiCommits: (datasetId: string) =>
@@ -136,6 +138,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/commits/${commitId}`,
   getArtifactGraph: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/graph`,
+  clearWiki: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts`,
   getDatasetSkillTree: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/skills`,
   getDatasetSkillPage: (datasetId: string, skillKwd: string) =>

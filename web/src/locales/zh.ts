@@ -404,6 +404,9 @@ export default {
       generateToSkills:
         '从该数据集构建分层技能树，并存储生成的技能页面以供搜索和复用。',
       noWikiPages: '暂无 Wiki 页面',
+      clearWikiTitle: '清空 Wiki',
+      clearWikiDescription:
+        '确定要清空该数据集下的所有 Wiki 页面吗？此操作无法撤销。',
       noSkills: '暂无技能',
       processingType: '处理类型',
       dataPipeline: '切换或配置 ingestion pipeline。',
@@ -456,6 +459,8 @@ export default {
       llmWiki: 'LLM Wiki',
       skills: '技能',
       contents: '目录',
+      topics: '主题',
+      concept: '概念',
       createDirectoryFolder: '创建目录',
       directoryName: '名称',
       directoryNamePlaceholder: '实例名称',

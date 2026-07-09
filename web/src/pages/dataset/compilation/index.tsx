@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/resizable';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
-  useFetchArtifactList,
+  useFetchArtifactTopicList,
   useFetchKnowledgeBaseConfiguration,
   useFetchKnowledgeGraph,
 } from '@/hooks/use-knowledge-request';
@@ -36,7 +36,7 @@ export default function Compilation() {
   const { data: knowledgeBase } = useFetchKnowledgeBaseConfiguration();
   const { data: knowledgeGraph, loading: knowledgeGraphLoading } =
     useFetchKnowledgeGraph();
-  const { artifacts, loading: artifactListLoading } = useFetchArtifactList();
+  const { topics, loading: topicListLoading } = useFetchArtifactTopicList();
 
   const {
     leftTab,
@@ -54,6 +54,7 @@ export default function Compilation() {
     selectedVersion,
     selectVersion,
     handleSelectArtifact,
+    clearSelectedArtifact,
   } = useCompilationArtifact();
 
   const {
@@ -64,11 +65,11 @@ export default function Compilation() {
     skillPage,
   } = useCompilationSkill();
 
-  const isLlmWikiEmpty = artifacts.length === 0 && !artifactListLoading;
+  const isLlmWikiEmpty = topics.length === 0 && !topicListLoading;
   const canGenerate = (knowledgeBase?.chunk_count ?? 0) > 0;
 
   const isGraphLoading = knowledgeGraphLoading && !knowledgeGraph?.graph;
-  const isLlmWikiLoading = artifactListLoading && artifacts.length === 0;
+  const isLlmWikiLoading = topicListLoading && topics.length === 0;
   const isSkillsLoading =
     skillTreeLoading && !skillTree?.skill_with_weight?.length;
   const isSkillsEmpty =
@@ -155,6 +156,7 @@ export default function Compilation() {
                   onTabChange={handleLeftTabChange}
                   selectedArtifact={selectedArtifact}
                   onSelectArtifact={handleSelectArtifact}
+                  onClearWiki={clearSelectedArtifact}
                 />
               </ResizablePanel>
               <ResizableHandle withHandle />

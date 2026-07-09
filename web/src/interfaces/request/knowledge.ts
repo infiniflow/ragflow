@@ -46,6 +46,14 @@ export interface IFetchArtifactListRequestParams {
   page?: number;
   page_size?: number;
   keywords?: string;
+  page_type?: string;
+  topic?: string;
+}
+
+export interface IFetchArtifactTopicListRequestParams {
+  page?: number;
+  page_size?: number;
+  keywords?: string;
 }
 
 export interface IFetchArtifactGraphRequestParams {
