@@ -2,6 +2,7 @@ import { FormLayout } from '@/constants/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
+import { useKnowledgeBaseContext } from '@/pages/dataset/contexts/knowledge-base-context';
 import { LLMModelItem } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import {
   GenerateLogButton,
@@ -145,6 +146,7 @@ const GraphRagItems = ({
       <LLMModelItem
         label={t('globalIndexModel')}
         name={'parser_config.llm_id'}
+        ownerTenantId={useKnowledgeBaseContext().knowledgeBase?.tenant_id}
       />
       <UseGraphRagFormField
         data={data}

@@ -1,5 +1,5 @@
 {
-  "name": "ollama",
+  "name": "Ollama",
   "rank": 978,
   "url_suffix": {
     "chat": "api/chat",

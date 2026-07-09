@@ -105,15 +105,21 @@ export const useFetchAddedProviders = () => {
   return { data, loading };
 };
 
-export const useFetchAllAddedModels = (modelType?: string) => {
+export const useFetchAllAddedModels = (
+  modelType?: string,
+  ownerTenantId?: string,
+) => {
   const { data, isFetching: loading } = useQuery<IAddedModel[]>({
-    queryKey: LlmKeys.allModels(modelType),
+    queryKey: [...LlmKeys.allModels(modelType), ownerTenantId],
     initialData: [],
     gcTime: 0,
     queryFn: async () => {
       const params: IListAllModelsRequestParams = {};
       if (modelType) {
         params.type = modelType;
+      }
+      if (ownerTenantId) {
+        params.owner_tenant_id = ownerTenantId;
       }
       const { data } = await llmService.listAllAddedModels({ params }, true);
 
