@@ -44,8 +44,16 @@ func TestVerifyRegistration_P1(t *testing.T) {
 	if len(missing) > 0 {
 		t.Fatalf("missing P0/P1 components: %v (have %d: %v)", missing, len(names), names)
 	}
+<<<<<<< HEAD
 	if got := len(names); got < 12 || got > 33 {
 		t.Errorf("expected 12-33 registered (current plan scope + v1 stubs/tool wrappers), got %d: %v", got, names)
+||||||| 1430d0e43
+	if got := len(names); got < 12 || got > 32 {
+		t.Errorf("expected 12-32 registered (current plan scope + v1 stubs), got %d: %v", got, names)
+=======
+	if got := len(names); got < 12 || got > 33 {
+		t.Errorf("expected 12-33 registered (current plan scope + v1 wrappers/stubs), got %d: %v", got, names)
+>>>>>>> upstream/main
 	}
 
 	// ExitLoop must NOT be in the registry (legacy compat lives at

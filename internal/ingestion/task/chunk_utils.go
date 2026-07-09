@@ -142,23 +142,3 @@ func MustGetChunkTextString(chunk map[string]any, where string) string {
 	common.Error(msg, nil)
 	panic(msg)
 }
-
-// AttachVectors attaches embedding vectors to chunks in-place.
-// Each chunk gets a key like "q_{dim}_vec" with the vector as []float64.
-// Mirrors Python: EmbeddingUtils.attach_vectors()
-func AttachVectors(chunks []map[string]any, vectors [][]float64) int {
-	if len(chunks) == 0 && len(vectors) == 0 {
-		return 0
-	}
-	if len(vectors) != len(chunks) {
-		panic(fmt.Sprintf("vectors/chunks length mismatch: %d != %d", len(vectors), len(chunks)))
-	}
-	vectorSize := 0
-	for i, doc := range chunks {
-		vec := vectors[i]
-		vectorSize = len(vec)
-		key := fmt.Sprintf("q_%d_vec", vectorSize)
-		doc[key] = vec
-	}
-	return vectorSize
-}

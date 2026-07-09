@@ -29,8 +29,9 @@ import (
 
 // Pipeline is a compiled ingestion canvas plus task-scoped metadata.
 type Pipeline struct {
-	taskID string
-	canvas *canvas.Canvas
+	taskID  string
+	canvas  *canvas.Canvas
+	factory runtime.ComponentFactory
 }
 
 // NewPipelineFromDSL compiles the canonical ingestion canvas DSL.
@@ -53,6 +54,17 @@ func NewPipelineFromDSL(dsl []byte, taskID string) (*Pipeline, error) {
 		taskID: taskID,
 		canvas: cnv,
 	}, nil
+}
+
+// WithComponentFactory installs an instance-scoped factory override for this
+// pipeline. It is used during canvas compilation so one pipeline run can
+// construct task-specific component instances without mutating the process-wide
+// runtime default factory.
+func (p *Pipeline) WithComponentFactory(factory runtime.ComponentFactory) *Pipeline {
+	if p != nil {
+		p.factory = factory
+	}
+	return p
 }
 
 func unwrapCanvasDSL(raw map[string]any) (map[string]any, error) {
@@ -117,7 +129,11 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any) (map[string]a
 		return nil, fmt.Errorf("pipeline: Run: runtime default component factory is not installed")
 	}
 
-	compiled, err := canvas.Compile(ctx, p.canvas)
+	compileCtx := ctx
+	if p.factory != nil {
+		compileCtx = canvas.WithComponentFactory(compileCtx, p.factory)
+	}
+	compiled, err := canvas.Compile(compileCtx, p.canvas)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: Run: compile canvas: %w", err)
 	}

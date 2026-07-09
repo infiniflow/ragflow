@@ -17,6 +17,7 @@ export interface NextInnerLLMSelectProps {
   showSpeech2TextModel?: boolean;
   triggerTestId?: string;
   optionTestIdPrefix?: string;
+  ownerTenantId?: string;
 }
 
 const NextInnerLLMSelect = forwardRef<
@@ -31,6 +32,7 @@ const NextInnerLLMSelect = forwardRef<
       showSpeech2TextModel = false,
       triggerTestId,
       optionTestIdPrefix,
+      ownerTenantId,
     },
     ref,
   ) => {
@@ -72,6 +74,7 @@ const NextInnerLLMSelect = forwardRef<
             <LlmSettingFieldItems
               modelTypes={modelTypes}
               llmOptionTestIdPrefix={optionTestIdPrefix}
+              ownerTenantId={ownerTenantId}
             ></LlmSettingFieldItems>
           </PopoverContent>
         </Popover>

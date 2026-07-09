@@ -51,6 +51,7 @@ var registry = map[string]Factory{
 	"search_my_dateset": noConfig("search_my_dateset", func() einotool.BaseTool { return NewRetrievalTool() }),
 	"searxng":           noConfig("searxng", func() einotool.BaseTool { return NewSearXNGTool() }),
 	"tavily":            noConfig("tavily", func() einotool.BaseTool { return NewTavilyTool() }),
+	"tavily_extract":    noConfig("tavily_extract", func() einotool.BaseTool { return NewTavilyExtractTool() }),
 	"tushare":           noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
 	"wencai":            noConfig("wencai", func() einotool.BaseTool { return NewWencaiTool() }),
 	"web_crawler":       noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
