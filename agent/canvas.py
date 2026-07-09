@@ -475,7 +475,15 @@ class Canvas(Graph):
         path_set = set(self.path)
         for k, cpn in self.components.items():
             if k in path_set:
-                self.components[k]["obj"].reset(True)
+                # Begin is a special case: it has no inputs to clear, and
+                # the webhook payload branch below populates `request`
+                # explicitly. All other path components must clear both
+                # inputs and outputs so the next run resolves refs against
+                # this run's runtime values (e.g. Await-response capture
+                # propagating to a downstream Agent's user_prompt), not
+                # against stale values from the previous canvas run.
+                is_begin = self.components[k]["obj"].component_name.lower() == "begin"
+                self.components[k]["obj"].reset(only_output=is_begin)
 
         if kwargs.get("webhook_payload"):
             for k, cpn in self.components.items():
