@@ -182,12 +182,12 @@ func TestProviderConfigsLoadURLSuffixKeys(t *testing.T) {
 	}
 
 	pm := GetProviderManager()
-	cohere := pm.FindProvider("CoHere")
+	cohere := pm.FindProvider("Cohere")
 	if cohere == nil {
-		t.Fatal("CoHere provider not found")
+		t.Fatal("Cohere provider not found")
 	}
 	if cohere.URLSuffix.Embedding != "v2/embed" {
-		t.Errorf("CoHere embedding suffix=%q", cohere.URLSuffix.Embedding)
+		t.Errorf("Cohere embedding suffix=%q", cohere.URLSuffix.Embedding)
 	}
 
 	xAI := pm.FindProvider("xAI")
@@ -330,9 +330,9 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	}
 
 	pm := GetProviderManager()
-	provider := pm.FindProvider("SiliconFlow")
+	provider := pm.FindProvider("SILICONFLOW")
 	if provider == nil {
-		t.Fatal("SiliconFlow provider not found")
+		t.Fatal("SILICONFLOW provider not found")
 	}
 	if provider.URL["default"] != "https://api.siliconflow.cn/v1" {
 		t.Errorf("default URL=%q", provider.URL["default"])
@@ -343,14 +343,14 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if _, ok := provider.ModelDriver.(*SiliconflowModel); !ok {
 		t.Fatalf("ModelDriver=%T, want *models.SiliconflowModel", provider.ModelDriver)
 	}
-	if provider.ModelDriver.Name() != "siliconflow" {
+	if provider.ModelDriver.Name() != "SILICONFLOW" {
 		t.Errorf("ModelDriver.Name()=%q", provider.ModelDriver.Name())
 	}
 	if len(provider.Models) != 13 {
-		t.Fatalf("SiliconFlow model count=%d, want 13", len(provider.Models))
+		t.Fatalf("SILICONFLOW model count=%d, want 13", len(provider.Models))
 	}
 
-	deepSeekV4Pro, err := pm.GetModelByName("SiliconFlow", "Pro/deepseek-ai/DeepSeek-V4-Pro")
+	deepSeekV4Pro, err := pm.GetModelByName("SILICONFLOW", "Pro/deepseek-ai/DeepSeek-V4-Pro")
 	if err != nil {
 		t.Fatalf("GetModelByName DeepSeek-V4-Pro: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 		t.Errorf("DeepSeek-V4-Pro model types=%v, want chat", deepSeekV4Pro.ModelTypes)
 	}
 
-	kimiK26, err := pm.GetModelByName("SiliconFlow", "Pro/moonshotai/Kimi-K2.6")
+	kimiK26, err := pm.GetModelByName("SILICONFLOW", "Pro/moonshotai/Kimi-K2.6")
 	if err != nil {
 		t.Fatalf("GetModelByName Kimi-K2.6: %v", err)
 	}

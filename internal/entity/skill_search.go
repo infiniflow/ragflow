@@ -53,7 +53,7 @@ type SkillSearchConfig struct {
 	SimilarityThreshold    float64 `gorm:"column:similarity_threshold;default:0.2" json:"similarity_threshold"`
 	FieldConfig            JSONMap `gorm:"column:field_config;type:json" json:"field_config"`
 	RerankID               *string `gorm:"column:rerank_id;size:128" json:"rerank_id,omitempty"`
-	TenantRerankID         *int64  `gorm:"column:tenant_rerank_id" json:"tenant_rerank_id,omitempty"`
+	TenantRerankID         *string `gorm:"column:tenant_rerank_id;size:32" json:"tenant_rerank_id,omitempty"`
 	TopK                   int64   `gorm:"column:top_k;default:10" json:"top_k"`
 	IndexVersion           string  `gorm:"column:index_version;size:32;default:'1.0.0'" json:"index_version"`
 	BaseModel

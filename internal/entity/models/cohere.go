@@ -49,7 +49,7 @@ func NewCoHereModel(baseURL map[string]string, urlSuffix URLSuffix) *CoHereModel
 }
 
 func (c *CoHereModel) Name() string {
-	return "cohere"
+	return "Cohere"
 }
 
 func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {

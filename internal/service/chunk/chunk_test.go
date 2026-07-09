@@ -78,7 +78,7 @@ func TestHydrateChunkVectors_NoDim(t *testing.T) {
 }
 
 func TestKnowledgebaseEmbeddingKey(t *testing.T) {
-	tenantEmbdID := int64(42)
+	tenantEmbdID := "42"
 
 	tests := []struct {
 		name     string
@@ -111,7 +111,7 @@ func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 			name: "ignores non-positive tenant embedding id",
 			kb: &entity.Knowledgebase{
 				EmbdID:       "shared-model",
-				TenantEmbdID: new(int64),
+				TenantEmbdID: func() *string { s := ""; return &s }(),
 			},
 			want: "embd:shared-model",
 		},
@@ -1226,6 +1226,11 @@ func (s *chunkImageStorage) Get(bucket, fnm string, tenantID ...string) ([]byte,
 }
 func (s *chunkImageStorage) Remove(bucket, fnm string, tenantID ...string) error  { return nil }
 func (s *chunkImageStorage) ObjExist(bucket, fnm string, tenantID ...string) bool { return s.exists }
+
+// ListObjects lists all objects in a bucket
+func (s *chunkImageStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+	return []string{}, nil
+}
 func (s *chunkImageStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
@@ -1233,6 +1238,7 @@ func (s *chunkImageStorage) BucketExists(bucket string) bool                    
 func (s *chunkImageStorage) RemoveBucket(bucket string) error                          { return nil }
 func (s *chunkImageStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool { return false }
 func (s *chunkImageStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool { return false }
+func (s *chunkImageStorage) Close() error                                              { return nil }
 
 func mustEncodePNG(t *testing.T, rect image.Rectangle) []byte {
 	t.Helper()

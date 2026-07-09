@@ -47,7 +47,7 @@ func NewBaiduModel(baseURL map[string]string, urlSuffix URLSuffix) *BaiduModel {
 }
 
 func (b *BaiduModel) Name() string {
-	return "baidu"
+	return "BaiduYiyan"
 }
 
 func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
