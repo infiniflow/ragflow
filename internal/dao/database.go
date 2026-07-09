@@ -218,7 +218,7 @@ func GetModelProviderManager() *models.ProviderManager {
 	if err != nil {
 		common.Fatal("Failed to locate model providers", zap.Error(err))
 	}
-	if err := models.InitProviderManager(modelConfigDir); err != nil {
+	if err = models.InitProviderManager(modelConfigDir); err != nil {
 		common.Fatal("Failed to load model providers", zap.Error(err))
 	}
 	modelProviderManager = models.GetProviderManager()

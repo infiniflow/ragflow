@@ -11,6 +11,23 @@ tear_down:
     command: logout
 
 tests:
+  - server: admin
+  - test: login admin
+    command: login admin 'admin@ragflow.io' password 'admin'
+    expect:
+      status: success
+
+  - test: list services
+    command: list services
+    expect:
+      status: success
+      data:
+        id: $service_id
+        name: sample-service
+  - server: api
+  - command: login user 'aaa@aaa.com' password 'aaa'
+    expect:
+      status: success
   # case 1: List datasets
   - test: List datasets
     command: list datasets
@@ -27,3 +44,5 @@ tests:
       status: success
       expect:
         id: $document_id
+
+

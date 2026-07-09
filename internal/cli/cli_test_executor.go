@@ -21,7 +21,8 @@ import (
 )
 
 type TestCase struct {
-	Test    string                 `yaml:"test"`
+	Server  *string                `yaml:"server"`
+	Case    string                 `yaml:"case"`
 	Command string                 `yaml:"command"`
 	Expect  map[string]interface{} `yaml:"expect"`
 }
@@ -45,81 +46,6 @@ type TestSuite struct {
 	Tests    []TestCase    `yaml:"tests"`
 	TearUp   []TestCommand `yaml:"tear_up"`
 	TearDown []TestCommand `yaml:"tear_down"`
-}
-
-// RunTestSuite runs a test suite file
-func (c *CLI) RunTestSuite(testSuite *TestSuite) error {
-	fmt.Printf("=== Test Suite: %s ===\n", testSuite.Suite)
-
-	// Add servers
-	apiServerAddress := fmt.Sprintf("%s:%d", testSuite.APIIP, testSuite.APIPort)
-	adminServerAddress := fmt.Sprintf("%s:%d", testSuite.AdminIP, testSuite.AdminPort)
-
-	// Add API and admin server
-	err := c.addServers(apiServerAddress, adminServerAddress)
-	if err != nil {
-		return err
-	}
-
-	// Run tear up commands
-	fmt.Printf("=== tear up commands ===\n")
-	for _, cmd := range testSuite.TearUp {
-		// Switch server
-		if cmd.Server == "api" {
-			err = c.SwitchAPIServer("api")
-			if err != nil {
-				return err
-			}
-		} else if cmd.Server == "admin" {
-			err = c.SwitchAdminServer()
-			if err != nil {
-				return err
-			}
-		}
-
-		// Run command
-		_, err = c.execute(cmd.Command, false)
-		if err != nil {
-			return fmt.Errorf("failed to run tear up command: %v", err)
-		}
-	}
-
-	for _, test := range testSuite.Tests {
-		fmt.Printf("=== Test: %s ===\n", test.Test)
-		_, err = c.execute(test.Command, false)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Run test down commands
-	fmt.Printf("=== tear down commands ===\n")
-	for _, cmd := range testSuite.TearDown {
-		_, err = c.execute(cmd.Command, false)
-		if err != nil {
-			return fmt.Errorf("failed to run tear down command: %v", err)
-		}
-	}
-
-	return nil
-}
-
-func (c *CLI) SwitchAPIServer(serverName string) error {
-
-	isSame, err := c.checkCurrentServer("api", serverName)
-	if err != nil {
-		return err
-	}
-	if isSame {
-		return nil
-	}
-
-	command := fmt.Sprintf("use api '%s'", serverName)
-	_, err = c.execute(command, false)
-	if err != nil {
-		return fmt.Errorf("failed to use API server: %v", err)
-	}
-	return nil
 }
 
 func (c *CLI) SwitchAdminServer() error {
@@ -191,4 +117,94 @@ func (c *CLI) checkCurrentServer(serverMode, serverName string) (bool, error) {
 		return true, nil
 	}
 	return false, nil
+}
+
+// RunTestSuite runs a test suite file
+func (c *CLI) RunTestSuite(testSuite *TestSuite) error {
+	fmt.Printf("=== Test Suite: %s ===\n", testSuite.Suite)
+
+	// Add servers
+	apiServerAddress := fmt.Sprintf("%s:%d", testSuite.APIIP, testSuite.APIPort)
+	adminServerAddress := fmt.Sprintf("%s:%d", testSuite.AdminIP, testSuite.AdminPort)
+
+	// Add API and admin server
+	err := c.addServers(apiServerAddress, adminServerAddress)
+	if err != nil {
+		return err
+	}
+
+	// Run tear up commands
+	fmt.Printf("=== tear up commands ===\n")
+	for _, cmd := range testSuite.TearUp {
+		// Switch server
+		if cmd.Server == "api" {
+			err = c.SwitchAPIServer("api")
+			if err != nil {
+				return err
+			}
+		} else if cmd.Server == "admin" {
+			err = c.SwitchAdminServer()
+			if err != nil {
+				return err
+			}
+		}
+
+		// Run command
+		_, err = c.execute(cmd.Command, false)
+		if err != nil {
+			return fmt.Errorf("failed to run tear up command: %v", err)
+		}
+	}
+
+	for _, test := range testSuite.Tests {
+		if test.Server != nil {
+			serverName := *test.Server
+			if serverName == "api" {
+				err = c.SwitchAPIServer("api")
+				if err != nil {
+					return err
+				}
+			} else if serverName == "admin" {
+				err = c.SwitchAdminServer()
+				if err != nil {
+					return err
+				}
+			}
+		} else {
+			fmt.Printf("=== Test: %s ===\n", test.Case)
+			_, err = c.execute(test.Command, false)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// Run test down commands
+	fmt.Printf("=== tear down commands ===\n")
+	for _, cmd := range testSuite.TearDown {
+		_, err = c.execute(cmd.Command, false)
+		if err != nil {
+			return fmt.Errorf("failed to run tear down command: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (c *CLI) SwitchAPIServer(serverName string) error {
+
+	isSame, err := c.checkCurrentServer("api", serverName)
+	if err != nil {
+		return err
+	}
+	if isSame {
+		return nil
+	}
+
+	command := fmt.Sprintf("use api '%s'", serverName)
+	_, err = c.execute(command, false)
+	if err != nil {
+		return fmt.Errorf("failed to use API server: %v", err)
+	}
+	return nil
 }
