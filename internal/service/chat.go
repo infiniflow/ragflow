@@ -641,11 +641,17 @@ const (
 	pyDefaultEmptyResponse = "Sorry! No relevant content was found in the knowledge base!"
 )
 
-// splitModelNameAndFactory extracts the base model name (removes vendor suffix)
+// splitModelNameAndFactory extracts the base model name by stripping
+// provider and instance suffixes, matching Python's rsplit("@", 2)[0].
 func (s *ChatService) splitModelNameAndFactory(embdID string) string {
-	// Remove vendor suffix (e.g., "model@openai" -> "model")
 	if idx := strings.LastIndex(embdID, "@"); idx > 0 {
-		return embdID[:idx]
+		// Strip the provider segment.
+		base := embdID[:idx]
+		// Strip the instance segment (second-to-last @).
+		if idx2 := strings.LastIndex(base, "@"); idx2 > 0 {
+			return base[:idx2]
+		}
+		return base
 	}
 	return embdID
 }

@@ -114,6 +114,11 @@ func validateDatasetEmbeddingModels(kbs []*entity.Knowledgebase) error {
 			baseName := kb.EmbdID
 			if idx := strings.LastIndex(kb.EmbdID, "@"); idx > 0 {
 				baseName = kb.EmbdID[:idx]
+				// Strip the second-to-last @-segment too (instance name),
+				// matching Python's _base_model_name which uses rsplit("@", 2).
+				if idx2 := strings.LastIndex(baseName, "@"); idx2 > 0 {
+					baseName = baseName[:idx2]
+				}
 			}
 			embdIDs[baseName] = struct{}{}
 		} else {
