@@ -1313,7 +1313,7 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 
 		kb, err := s.kbDAO.GetByID(doc.KbID)
 		if err != nil {
-			return common.CodeDataError, fmt.Errorf("tenant not found")
+			return common.CodeDataError, fmt.Errorf("dataset not found")
 		}
 
 		if !s.kbDAO.Accessible(kb.ID, userID) {
