@@ -249,11 +249,13 @@ def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: st
 
     raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
 
+
 def resolve_model_config(tenant_id, model_type: str | enum.Enum, model_ref: str):
     try:
         return get_model_config_by_id(tenant_id, model_type, model_ref)
     except LookupError:
         return get_model_config_from_provider_instance(tenant_id, model_type, model_ref)
+
 
 def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.Enum, model_name: str):
     pure_model_name, instance_name, provider_name = split_model_name(model_name)
@@ -390,9 +392,7 @@ def resolve_model_id(tenant_id: str, model_type: str | enum.Enum, model_name: st
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
 
     instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
-    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
-        provider_obj.id, instance_obj.id, model_type_val, pure_model_name
-    )
+    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, pure_model_name)
     if not model_obj:
         raise LookupError(f"Model {model_name} not found for type {model_type_val}.")
     return model_obj.id
@@ -400,12 +400,12 @@ def resolve_model_id(tenant_id: str, model_type: str | enum.Enum, model_name: st
 
 # Mapping from model-name field → (LLMType, tenant_model id field)
 _MODEL_NAME_TO_ID_FIELD_MAP: dict[str, tuple[str, str]] = {
-    "llm_id":      (LLMType.CHAT,        "tenant_llm_id"),
-    "embd_id":     (LLMType.EMBEDDING,   "tenant_embd_id"),
-    "rerank_id":   (LLMType.RERANK,      "tenant_rerank_id"),
-    "asr_id":      (LLMType.SPEECH2TEXT, "tenant_asr_id"),
-    "img2txt_id":  (LLMType.IMAGE2TEXT,  "tenant_img2txt_id"),
-    "tts_id":      (LLMType.TTS,         "tenant_tts_id"),
+    "llm_id": (LLMType.CHAT, "tenant_llm_id"),
+    "embd_id": (LLMType.EMBEDDING, "tenant_embd_id"),
+    "rerank_id": (LLMType.RERANK, "tenant_rerank_id"),
+    "asr_id": (LLMType.SPEECH2TEXT, "tenant_asr_id"),
+    "img2txt_id": (LLMType.IMAGE2TEXT, "tenant_img2txt_id"),
+    "tts_id": (LLMType.TTS, "tenant_tts_id"),
 }
 
 
@@ -443,17 +443,20 @@ def get_api_key(tenant_id: str, model_name: str):
     instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
     return instance_obj.api_key
 
+
 def get_model_type_by_id(model_id: str):
     exist, model_obj = TenantModelService.get_by_id(model_id)
     if not exist:
         raise LookupError(f"TenantModel id={model_id} not found.")
     return get_model_type_human(model_obj.model_type)
 
+
 def resolve_model_type(tenant_id: str, model_ref: str):
     try:
         return get_model_type_by_id(model_ref)
     except LookupError:
         return get_model_type_by_name(tenant_id, model_ref)
+
 
 def get_model_type_by_name(tenant_id: str, model_name: str):
     pure_model_name, instance_name, provider_name = split_model_name(model_name)

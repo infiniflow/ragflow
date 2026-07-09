@@ -246,13 +246,9 @@ class DataflowService:
                 try:
                     embd_model_config = get_model_config_by_id(ctx.tenant_id, LLMType.EMBEDDING, kb.tenant_embd_id)
                 except LookupError:
-                    embd_model_config = resolve_model_config(
-                        ctx.tenant_id, LLMType.EMBEDDING, embedding_id
-                    )
+                    embd_model_config = resolve_model_config(ctx.tenant_id, LLMType.EMBEDDING, embedding_id)
             else:
-                embd_model_config = resolve_model_config(
-                    ctx.tenant_id, LLMType.EMBEDDING, embedding_id
-                )
+                embd_model_config = resolve_model_config(ctx.tenant_id, LLMType.EMBEDDING, embedding_id)
             from api.db.services.llm_service import LLMBundle
 
             with LLMBundle(ctx.tenant_id, embd_model_config) as embedding_model:

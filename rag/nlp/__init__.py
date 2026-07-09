@@ -354,6 +354,7 @@ def is_chinese(text):
 
 def tokenize(d, txt, eng, language="English"):
     from . import rag_tokenizer
+
     rag_tokenizer.tokenizer.set_language(language)
     d["content_with_weight"] = txt
     t = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt)
@@ -483,7 +484,7 @@ def tokenize_table(tbls, doc, eng, batch_size=10, language="English"):
         de = "； " if lang_key in {"chinese", "japanese"} else "; "
         for i in range(0, len(rows), batch_size):
             d = copy.deepcopy(doc)
-            r = de.join(rows[i:i + batch_size])
+            r = de.join(rows[i : i + batch_size])
             tokenize(d, r, eng, language=language)
             d["doc_type_kwd"] = "table"
             if img:

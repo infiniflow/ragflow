@@ -155,8 +155,18 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
     return await embed_and_save(memory, message_list, task_id)
 
 
-async def extract_by_llm(tenant_id: str, tenant_llm_id: str | None, extract_conf: dict, memory_type: List[str], user_input: str,
-                         agent_response: str, system_prompt: str = "", user_prompt: str="", task_id: str=None, llm_id: str = "") -> List[dict]:
+async def extract_by_llm(
+    tenant_id: str,
+    tenant_llm_id: str | None,
+    extract_conf: dict,
+    memory_type: List[str],
+    user_input: str,
+    agent_response: str,
+    system_prompt: str = "",
+    user_prompt: str = "",
+    task_id: str = None,
+    llm_id: str = "",
+) -> List[dict]:
     if not system_prompt:
         system_prompt = PromptAssembler.assemble_system_prompt({"memory_type": memory_type})
     conversation_content = f"User Input: {user_input}\nAgent Response: {agent_response}"
@@ -193,7 +203,7 @@ async def extract_by_llm(tenant_id: str, tenant_llm_id: str | None, extract_conf
         ]
 
 
-async def embed_and_save(memory, message_list: list[dict], task_id: str=None):
+async def embed_and_save(memory, message_list: list[dict], task_id: str = None):
     if memory.tenant_embd_id:
         try:
             embd_model_config = get_model_config_by_id(memory.tenant_id, LLMType.EMBEDDING, memory.tenant_embd_id)

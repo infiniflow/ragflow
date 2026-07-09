@@ -523,14 +523,7 @@ class Parser(ProcessBase):
                 raise RuntimeError("SoMark model not configured. Please add SoMark in Model Providers or set SOMARK_* env.")
 
             tenant_id = self._canvas._tenant_id
-            try:
-                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
-            except Exception:
-                if "@" in parser_model_name:
-                    raise
-                from api.db.services.tenant_llm_service import TenantLLMService
-
-                ocr_model_config = TenantLLMService.get_model_config(tenant_id, LLMType.OCR.value, parser_model_name)
+            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
             ocr_model = LLMBundle(tenant_id, ocr_model_config)
             pdf_parser = ocr_model.mdl
 
