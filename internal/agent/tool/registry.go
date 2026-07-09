@@ -54,7 +54,8 @@ var registry = map[string]Factory{
 	"tushare":           noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
 	"wencai":            noConfig("wencai", func() einotool.BaseTool { return NewWencaiTool() }),
 	"web_crawler":       noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
-	"wikipedia":         noConfig("wikipedia", func() einotool.BaseTool { return NewWikipediaTool() }),
+	"wikipedia":         buildWikipediaTool,
+	"wikipedia_search":  buildWikipediaTool,
 	"yahoo_finance":     noConfig("yahoo_finance", func() einotool.BaseTool { return NewYahooFinanceTool() }),
 }
 
@@ -147,6 +148,32 @@ func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
 		return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param api_key", "keenable")
 	}
 	return NewKeenableToolWithAPIKey(nil, apiKey), nil
+}
+
+func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {
+	topN := defaultWikipediaTopN
+	language := defaultWikipediaLanguage
+	for key := range params {
+		if key != "top_n" && key != "language" {
+			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level params top_n/language", "wikipedia")
+		}
+	}
+	if v, ok := intParam(params, "top_n"); ok {
+		topN = v
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "wikipedia")
+	}
+	if v, ok := stringParam(params, "language"); ok {
+		language = strings.TrimSpace(v)
+	}
+	if language == "" {
+		return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param language", "wikipedia")
+	}
+	if !WikipediaLanguageSupported(language) {
+		return nil, fmt.Errorf("agent tool: tool %q unsupported node-level param language %q", "wikipedia", language)
+	}
+	return NewWikipediaToolWithParams(nil, topN, language), nil
 }
 
 func decodeExeSQLConnParams(params map[string]any) (exesqlConnParams, error) {

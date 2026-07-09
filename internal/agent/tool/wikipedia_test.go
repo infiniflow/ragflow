@@ -80,14 +80,14 @@ func TestWikipedia_BuildURL(t *testing.T) {
 			if q.Get("action") != "query" {
 				t.Errorf("action = %q, want query", q.Get("action"))
 			}
-			if q.Get("list") != "search" {
-				t.Errorf("list = %q, want search", q.Get("list"))
+			if q.Get("generator") != "search" {
+				t.Errorf("generator = %q, want search", q.Get("generator"))
 			}
 			if q.Get("format") != "json" {
 				t.Errorf("format = %q, want json", q.Get("format"))
 			}
-			if q.Get("srsearch") != tc.query {
-				t.Errorf("srsearch = %q, want %q (raw query, not pre-encoded)", q.Get("srsearch"), tc.query)
+			if q.Get("gsrsearch") != tc.query {
+				t.Errorf("gsrsearch = %q, want %q (raw query, not pre-encoded)", q.Get("gsrsearch"), tc.query)
 			}
 		})
 	}
@@ -100,10 +100,10 @@ func TestWikipedia_ParseResults(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"query": {
-				"search": [
-					{"title":"RAG","snippet":"<span>rag</span> is ..."},
-					{"title":"Retrieval-augmented generation","snippet":"<b>RAG</b> is ..."}
-				]
+				"pages": {
+					"11": {"index":2,"title":"Retrieval-augmented generation","extract":"RAG is a generation technique.","fullurl":"https://en.wikipedia.org/wiki/Retrieval-augmented_generation"},
+					"10": {"index":1,"title":"RAG","extract":"RAG is an acronym.","fullurl":"https://en.wikipedia.org/wiki/RAG"}
+				}
 			}
 		}`))
 	}))
@@ -132,6 +132,12 @@ func TestWikipedia_ParseResults(t *testing.T) {
 	}
 	if env.Results[0].Title != "RAG" {
 		t.Errorf("Results[0].Title = %q, want RAG", env.Results[0].Title)
+	}
+	if env.Results[0].Content != "RAG is an acronym." {
+		t.Errorf("Results[0].Content = %q, want summary extract", env.Results[0].Content)
+	}
+	if !strings.Contains(env.FormalizedContent, "RAG is an acronym.") {
+		t.Errorf("FormalizedContent = %q, want rendered summary", env.FormalizedContent)
 	}
 	if !strings.HasPrefix(env.Results[0].URL, "https://en.wikipedia.org/wiki/") {
 		t.Errorf("Results[0].URL = %q, want to start with https://en.wikipedia.org/wiki/", env.Results[0].URL)
@@ -172,8 +178,8 @@ func TestWikipedia_Info(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if info.Name != "wikipedia" {
-		t.Errorf("Name = %q, want wikipedia", info.Name)
+	if info.Name != "wikipedia_search" {
+		t.Errorf("Name = %q, want wikipedia_search", info.Name)
 	}
 	if !strings.Contains(info.Desc, "Wikipedia") {
 		t.Errorf("Desc = %q, want to mention Wikipedia", info.Desc)

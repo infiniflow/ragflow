@@ -506,5 +506,6 @@ func init() {
 	Register(componentNameIteration, NewIterationStub)
 	Register(componentNameIterationItem, NewIterationItemStub)
 	Register("BGPT", newBGPTComponent)
+	Register("Wikipedia", newWikipediaComponent)
 	Register("YahooFinance", newYahooFinanceComponent)
 }

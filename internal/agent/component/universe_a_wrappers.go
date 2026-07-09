@@ -180,6 +180,85 @@ func (c *bgptComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[
 	return nil, nil
 }
 
+// wikipediaComponent delegates to internal/agent/tool/WikipediaTool.
+// Python's canvas component is named "Wikipedia" and stores top_n/language
+// on the node params while accepting query at runtime.
+type wikipediaComponent struct {
+	inner *agenttool.WikipediaTool
+}
+
+func newWikipediaComponent(params map[string]any) (Component, error) {
+	topN := 10
+	if v, ok := params["top_n"]; ok {
+		topN = toIntParam(v)
+	}
+	language := "en"
+	if v, ok := params["language"].(string); ok && strings.TrimSpace(v) != "" {
+		language = strings.TrimSpace(v)
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("canvas: Wikipedia: top_n must be a positive integer")
+	}
+	if !agenttool.WikipediaLanguageSupported(language) {
+		return nil, fmt.Errorf("canvas: Wikipedia: unsupported language %q", language)
+	}
+	return &wikipediaComponent{inner: agenttool.NewWikipediaToolWithParams(nil, topN, language)}, nil
+}
+
+func (c *wikipediaComponent) Name() string { return "Wikipedia" }
+
+func (c *wikipediaComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query": "The search keyword to execute with wikipedia. The keyword MUST be a specific subject that can match the title.",
+	}
+}
+
+func (c *wikipediaComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
+func (c *wikipediaComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered Wikipedia article summaries for downstream LLM prompts.",
+		"json":               "Raw Wikipedia result list.",
+	}
+}
+
+func (c *wikipediaComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	argsJSON, _ := json.Marshal(map[string]any{"query": query})
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if results, ok := decoded["results"]; ok {
+		decoded["json"] = results
+	}
+	if err != nil {
+		if len(decoded) > 0 {
+			if _, ok := decoded["formalized_content"]; !ok {
+				decoded["formalized_content"] = ""
+			}
+			if _, ok := decoded["json"]; !ok {
+				decoded["json"] = []any{}
+			}
+			return decoded, nil
+		}
+		return nil, fmt.Errorf("canvas: Wikipedia: %w", err)
+	}
+	return decoded, nil
+}
+
+func (c *wikipediaComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
 func stringParam(v any) string {
 	if s, ok := v.(string); ok {
 		return s
@@ -1051,10 +1130,12 @@ var (
 	_ Component = (*tavilySearchComponent)(nil)
 	_ Component = (*exesqlComponent)(nil)
 	_ Component = (*codeExecComponent)(nil)
+	_ Component = (*wikipediaComponent)(nil)
 	_ Component = (*yahooFinanceComponent)(nil)
 )
 
 // Compile-time check that the eino InvokableTool methods we call
 // are reachable (catches a future refactor that renames them).
 var _ einotool.InvokableTool = (*agenttool.TavilyTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.WikipediaTool)(nil)
 var _ einotool.InvokableTool = (*agenttool.YahooFinanceTool)(nil)
