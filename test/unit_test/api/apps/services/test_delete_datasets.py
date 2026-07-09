@@ -74,6 +74,7 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete):
             delete_by_id=lambda kb_id: True,
             query=lambda **kwargs: [],
         ),
+        validate_dataset_embedding_models=lambda kbs: None,
     )
     _stub(
         monkeypatch,
@@ -102,6 +103,8 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete):
         monkeypatch,
         "api.db.joint_services.tenant_model_service",
         get_model_config_from_provider_instance=MagicMock(),
+        resolve_model_config=MagicMock(),
+        resolve_model_id=MagicMock(),
     )
     _stub(
         monkeypatch,

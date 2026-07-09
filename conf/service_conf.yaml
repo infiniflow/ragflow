@@ -63,6 +63,10 @@ user_default_llm:
       factory: 'xxxx'
       api_key: 'xxx'
       base_url: 'http://localhost:6380'
+gcs:
+  bucket: '${GCS_BUCKET:-ragflow}'
+  prefix_path: '${GCS_PREFIX_PATH:-}'
+  endpoint_url: '${GCS_ENDPOINT:-}'
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'

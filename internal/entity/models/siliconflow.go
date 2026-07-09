@@ -52,7 +52,7 @@ func (s *SiliconflowModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (s *SiliconflowModel) Name() string {
-	return "siliconflow"
+	return "SILICONFLOW"
 }
 
 // SiliconflowRerankRequest represents SILICONFLOW rerank request
