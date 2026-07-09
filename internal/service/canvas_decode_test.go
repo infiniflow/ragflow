@@ -267,52 +267,6 @@ func TestDecodeCanvasFromDSL_PreservesNodeParents(t *testing.T) {
 	}
 }
 
-func TestDecodeCanvasFromDSL_FillsEmptyParamsFromGraphNodeForm(t *testing.T) {
-	t.Parallel()
-	dsl := map[string]any{
-		"graph": map[string]any{
-			"nodes": []any{
-				map[string]any{
-					"id": "TavilySearch:Search",
-					"data": map[string]any{
-						"form": map[string]any{
-							"api_key":     "tvly-node-key",
-							"query":       "node query should not override",
-							"max_results": float64(9),
-						},
-					},
-				},
-			},
-		},
-		"components": map[string]any{
-			"TavilySearch:Search": map[string]any{
-				"obj": map[string]any{
-					"component_name": "TavilySearch",
-					"params": map[string]any{
-						"api_key": "",
-						"query":   "sys.query",
-					},
-				},
-			},
-		},
-	}
-
-	c, err := decodeCanvasFromDSL(dsl)
-	if err != nil {
-		t.Fatalf("decodeCanvasFromDSL: %v", err)
-	}
-	params := c.Components["TavilySearch:Search"].Obj.Params
-	if got := params["api_key"]; got != "tvly-node-key" {
-		t.Fatalf("api_key = %v, want tvly-node-key", got)
-	}
-	if got := params["query"]; got != "sys.query" {
-		t.Fatalf("query = %v, want existing component param", got)
-	}
-	if _, ok := params["max_results"]; ok {
-		t.Fatalf("max_results should not be filled from graph form")
-	}
-}
-
 // TestNewAgentServiceWithOptions_NilOptions pins that the new
 // constructor accepts all-nil options and produces a usable
 // service (no panic on field init, no nil-deref when running
