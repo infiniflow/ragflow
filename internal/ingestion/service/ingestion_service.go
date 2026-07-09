@@ -30,31 +30,14 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	taskpkg "ragflow/internal/ingestion/task"
-	"ragflow/internal/storage"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"gorm.io/gorm"
 )
-
-// pdfParser is the interface for PDF parsing, made injectable for tests.
-type pdfParser interface {
-	ParseWithDeepDoc(ctx context.Context, filename string, data []byte, config doctype.ParserConfig) ([]map[string]any, error)
-}
-
-// DAO interfaces — injectable for tests.
-type docGetter interface {
-	GetByID(id string) (*entity.Document, error)
-}
-type f2dGetter interface {
-	GetByDocumentID(docID string) ([]*entity.File2Document, error)
-}
-type fileGetter interface {
-	GetByID(id string) (*entity.File, error)
-}
 
 type Ingestor struct {
 	id          string
@@ -86,13 +69,6 @@ type Ingestor struct {
 	ingestionTaskLogDAO    *dao.IngestionTaskLogDAO
 	ingestionTaskletDAO    *dao.IngestionTaskletDAO
 	ingestionTaskletLogDAO *dao.IngestionTaskletLogDAO
-
-	// Injected dependencies for parseDocument (overridable in tests)
-	documentDAO docGetter
-	f2dDAO      f2dGetter
-	fileDAO     fileGetter
-	storageImpl storage.Storage
-	pdfParser   pdfParser
 
 	// runDocumentTask dispatches to the migrated task handler path.
 	// Tests may override this to verify branch routing without invoking
@@ -248,6 +224,13 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 
 	latestLog, err := e.ingestionTaskLogDAO.LatestLogByTaskID(task.ID)
 	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			common.Error(fmt.Sprintf("Failed to get latest task log for task %s", task.ID), err)
+			if uErr := e.ingestionTaskDAO.UpdateStatus(task.ID, common.FAILED); uErr != nil {
+				common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
+			}
+			return
+		}
 		latestLog = &entity.IngestionTaskLog{
 			ID:     0,
 			TaskID: task.ID,
@@ -259,6 +242,9 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 		err = e.ingestionTaskLogDAO.Create(latestLog)
 		if err != nil {
 			common.Error(fmt.Sprintf("Failed to create task log for task %s", task.ID), err)
+			if uErr := e.ingestionTaskDAO.UpdateStatus(task.ID, common.FAILED); uErr != nil {
+				common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
+			}
 			return
 		}
 	}
@@ -267,12 +253,18 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 	checkpointMap = latestLog.Checkpoint
 	currentStep, ok := common.GetInt(checkpointMap["current_step"])
 	if !ok {
-		common.Fatal(fmt.Sprintf("Failed to get current step from task log for task %s", task.ID))
+		common.Error(fmt.Sprintf("Failed to get current step from task log for task %s", task.ID), nil)
+		if uErr := e.ingestionTaskDAO.UpdateStatus(task.ID, common.FAILED); uErr != nil {
+			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
+		}
 		return
 	}
 	totalStep, ok := common.GetInt(checkpointMap["total_step"])
 	if !ok {
-		common.Fatal(fmt.Sprintf("Failed to get current step from task log for task %s", task.ID))
+		common.Error(fmt.Sprintf("Failed to get total step from task log for task %s", task.ID), nil)
+		if uErr := e.ingestionTaskDAO.UpdateStatus(task.ID, common.FAILED); uErr != nil {
+			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
+		}
 		return
 	}
 	// Bump checkpoint to signal we started processing
@@ -322,11 +314,6 @@ func (e *Ingestor) getPipelineID(tenantID string) (string, error) {
 		return "", err
 	}
 
-	templateBytes, err = disableTokenizerEmbeddingForTaskTemplate(templateBytes)
-	if err != nil {
-		return "", err
-	}
-
 	var templateDSL entity.JSONMap
 	if err := json.Unmarshal(templateBytes, &templateDSL); err != nil {
 		return "", err
@@ -343,41 +330,6 @@ func (e *Ingestor) getPipelineID(tenantID string) (string, error) {
 	}
 
 	return ID, nil
-}
-
-func disableTokenizerEmbeddingForTaskTemplate(raw []byte) ([]byte, error) {
-	var tpl map[string]any
-	if err := json.Unmarshal(raw, &tpl); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal")
-	}
-	dsl, ok := tpl["dsl"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("failed to do dsl convert")
-	}
-	components, ok := dsl["components"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("template components = %T, want map[string]any", dsl["components"])
-	}
-	for _, rawComp := range components {
-		comp, ok := rawComp.(map[string]any)
-		if !ok {
-			continue
-		}
-		obj, ok := comp["obj"].(map[string]any)
-		if !ok || obj["component_name"] != "Tokenizer" {
-			continue
-		}
-		params, ok := obj["params"].(map[string]any)
-		if !ok {
-			continue
-		}
-		params["search_method"] = []string{"full_text"}
-	}
-	out, err := json.Marshal(tpl)
-	if err != nil {
-		return nil, fmt.Errorf("marshal modified template: %v", err)
-	}
-	return out, nil
 }
 
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {

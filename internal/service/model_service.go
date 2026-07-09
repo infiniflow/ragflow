@@ -2127,7 +2127,7 @@ func (m *ModelProviderService) GetTenantDefaultModelByType(tenantID string, mode
 	tenantSvc := NewTenantService()
 	modelName, err := tenantSvc.GetDefaultModelName(tenantID, modelType)
 	if err != nil {
-		return nil, "", nil, 0, fmt.Errorf("failed to get default model name for type %s: %w", modelType, err)
+		return nil, "", nil, 0, fmt.Errorf("failed to get default model name for tenant: %s type %s: %w", tenantID, modelType, err)
 	}
 	if modelName == "" {
 		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)

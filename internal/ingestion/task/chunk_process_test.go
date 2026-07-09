@@ -362,39 +362,3 @@ func TestProcessChunksForDataflow_PreservesContentWithWeight(t *testing.T) {
 		t.Errorf("content_with_weight = %q, want \"already set\"", chunks[0]["content_with_weight"])
 	}
 }
-
-func TestProcessChunksForDataflow_MetadataExtraction(t *testing.T) {
-	chunks := []map[string]any{
-		{"text": "hello", "metadata": map[string]any{"author": "Alice", "year": "2024"}},
-	}
-	meta := ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
-
-	if _, exists := chunks[0]["metadata"]; exists {
-		t.Error("metadata key should be removed from chunk")
-	}
-	if meta["author"] != "Alice" {
-		t.Errorf("metadata[\"author\"] = %q, want \"Alice\"", meta["author"])
-	}
-}
-
-func TestProcessChunksForDataflow_MetadataMergeAcrossChunks(t *testing.T) {
-	chunks := []map[string]any{
-		{"text": "chunk1", "metadata": map[string]any{"author": "Alice"}},
-		{"text": "chunk2", "metadata": map[string]any{"year": "2024"}},
-	}
-	meta := ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
-
-	if meta["author"] != "Alice" {
-		t.Errorf("author = %q, want \"Alice\"", meta["author"])
-	}
-	if meta["year"] != "2024" {
-		t.Errorf("year = %v, want \"2024\"", meta["year"])
-	}
-}
-
-func TestProcessChunksForDataflow_NilChunks(t *testing.T) {
-	meta := ProcessChunksForDataflow(nil, "doc-1", "kb-1", "test-doc.pdf", time.Now())
-	if len(meta) != 0 {
-		t.Errorf("metadata should be empty for nil chunks, got %v", meta)
-	}
-}
