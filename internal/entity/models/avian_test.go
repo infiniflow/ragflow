@@ -63,8 +63,8 @@ func newAvianForTest(baseURL string) *AvianModel {
 }
 
 func TestAvianName(t *testing.T) {
-	if got := newAvianForTest("http://unused").Name(); got != "avian" {
-		t.Errorf("Name()=%q, want avian", got)
+	if got := newAvianForTest("http://unused").Name(); got != "Avian" {
+		t.Errorf("Name()=%q, want Avian", got)
 	}
 }
 

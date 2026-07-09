@@ -26,7 +26,7 @@ from rag.utils.redis_conn import REDIS_CONN
 
 
 class Pipeline(Graph):
-    def __init__(self, dsl: str | dict, tenant_id=None, doc_id=None, task_id=None, flow_id=None):
+    def __init__(self, dsl: str | dict, tenant_id=None, doc_id=None, task_id=None, flow_id=None, language=None):
         if isinstance(dsl, dict):
             dsl = json.dumps(dsl, ensure_ascii=False)
         super().__init__(dsl, tenant_id, task_id)
@@ -34,6 +34,7 @@ class Pipeline(Graph):
             doc_id = None
         self._doc_id = doc_id
         self._flow_id = flow_id
+        self._language = language
         self._kb_id = None
         if self._doc_id:
             self._kb_id = DocumentService.get_knowledgebase_id(doc_id)

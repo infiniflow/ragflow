@@ -53,11 +53,15 @@ import (
 // The underlying tool makes a real HTTP call; the wrapper is the
 // canvas-facing surface.
 type tavilySearchComponent struct {
-	inner *agenttool.TavilyTool
+	inner  *agenttool.TavilyTool
+	apiKey string
 }
 
-func newTavilySearchComponent(_ map[string]any) (Component, error) {
-	return &tavilySearchComponent{inner: agenttool.NewTavilyTool()}, nil
+func newTavilySearchComponent(params map[string]any) (Component, error) {
+	return &tavilySearchComponent{
+		inner:  agenttool.NewTavilyTool(),
+		apiKey: stringParam(params["api_key"]),
+	}, nil
 }
 
 func (c *tavilySearchComponent) Name() string { return "TavilySearch" }
@@ -74,20 +78,233 @@ func (c *tavilySearchComponent) Inputs() map[string]string {
 func (c *tavilySearchComponent) Outputs() map[string]string {
 	return map[string]string{
 		"formalized_content": "Rendered search results for downstream LLM prompts.",
-		"results":            "Raw result list (url, title, content).",
+		"json":               "Raw result list (url, title, content, score).",
+	}
+}
+
+func (c *tavilySearchComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
 	}
 }
 
 func (c *tavilySearchComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	if c.apiKey != "" && stringParam(inputs["api_key"]) == "" {
+		inputs["api_key"] = c.apiKey
+	}
+	if strings.TrimSpace(stringParam(inputs["query"])) == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
 	argsJSON, _ := json.Marshal(inputs)
 	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
 	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
 		return nil, fmt.Errorf("canvas: TavilySearch: %w", err)
 	}
-	return parseToolEnvelope(out), nil
+	results := anySlice(decoded["results"])
+	return map[string]any{
+		"formalized_content": renderTavilySearchResults(results),
+		"json":               results,
+	}, nil
 }
 
 func (c *tavilySearchComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+// googleComponent wraps internal/agent/tool/GoogleTool for canvas execution and
+// adapts the tool envelope to the Google component outputs.
+type googleComponent struct {
+	inner  *agenttool.GoogleTool
+	params map[string]any
+}
+
+func newGoogleComponent(params map[string]any) (Component, error) {
+	cloned := make(map[string]any, len(params))
+	for k, v := range params {
+		cloned[k] = v
+	}
+	return &googleComponent{inner: agenttool.NewGoogleTool(), params: cloned}, nil
+}
+
+func (c *googleComponent) Name() string { return "Google" }
+
+func (c *googleComponent) Inputs() map[string]string {
+	return map[string]string{
+		"q":        "Search query.",
+		"api_key":  "SerpApi API key.",
+		"start":    "Result offset.",
+		"num":      "Maximum number of results.",
+		"country":  "Google country code.",
+		"language": "Google language code.",
+	}
+}
+
+func (c *googleComponent) GetInputForm() map[string]any {
+	return agenttool.NewGoogleTool().InputForm()
+}
+
+func (c *googleComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered search results for downstream LLM prompts.",
+		"json":               "Raw Google organic result list.",
+	}
+}
+
+func (c *googleComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	merged := make(map[string]any, len(c.params)+len(inputs)+2)
+	for k, v := range c.params {
+		merged[k] = v
+	}
+	for k, v := range inputs {
+		merged[k] = v
+	}
+	if _, ok := merged["q"]; !ok {
+		if query, ok := merged["query"]; ok {
+			merged["q"] = query
+		}
+	}
+	if _, ok := merged["num"]; !ok {
+		if maxResults, ok := merged["max_results"]; ok {
+			merged["num"] = maxResults
+		}
+	}
+
+	argsJSON, _ := json.Marshal(merged)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	results := anySlice(decoded["organic_results"])
+	if len(results) == 0 {
+		results = anySlice(decoded["results"])
+	}
+	formalized := renderGoogleResults(results)
+	if existing, _ := decoded["_ERROR"].(string); strings.TrimSpace(existing) != "" {
+		return map[string]any{"formalized_content": formalized, "json": results, "_ERROR": existing}, nil
+	}
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{"formalized_content": formalized, "json": results, "_ERROR": decoded["_ERROR"]}, nil
+		}
+		return nil, fmt.Errorf("canvas: Google: %w", err)
+	}
+	return map[string]any{"formalized_content": formalized, "json": results}, nil
+}
+
+func (c *googleComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func renderGoogleResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		title := strings.TrimSpace(stringParam(m["title"]))
+		link := strings.TrimSpace(stringParam(m["link"]))
+		content := strings.TrimSpace(stringParam(m["snippet"]))
+		if content == "" {
+			content = strings.TrimSpace(googleAboutDescription(m["about_this_result"]))
+		}
+		if content == "" {
+			continue
+		}
+		lines := []string{}
+		if title != "" {
+			lines = append(lines, "Title: "+title)
+		}
+		if link != "" {
+			lines = append(lines, "URL: "+link)
+		}
+		lines = append(lines, "Content: "+content)
+		blocks = append(blocks, strings.Join(lines, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
+}
+
+func googleAboutDescription(v any) string {
+	about, ok := v.(map[string]any)
+	if !ok {
+		return ""
+	}
+	source, ok := about["source"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	return stringParam(source["description"])
+}
+
+// tavilyExtractComponent delegates to internal/agent/tool/TavilyExtractTool.
+type tavilyExtractComponent struct {
+	inner  *agenttool.TavilyExtractTool
+	apiKey string
+}
+
+func newTavilyExtractComponent(params map[string]any) (Component, error) {
+	return &tavilyExtractComponent{
+		inner:  agenttool.NewTavilyExtractTool(),
+		apiKey: stringParam(params["api_key"]),
+	}, nil
+}
+
+func (c *tavilyExtractComponent) Name() string { return "TavilyExtract" }
+
+func (c *tavilyExtractComponent) Inputs() map[string]string {
+	return map[string]string{
+		"urls":          "URLs to extract content from. Accepts a comma-separated string or array.",
+		"api_key":       "Tavily API key (overrides TAVILY_API_KEY env var).",
+		"extract_depth": "\"basic\" (default) or \"advanced\".",
+		"format":        "\"markdown\" (default) or \"text\".",
+	}
+}
+
+func (c *tavilyExtractComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"urls": map[string]any{
+			"name": "URLs",
+			"type": "line",
+		},
+	}
+}
+
+func (c *tavilyExtractComponent) Outputs() map[string]string {
+	return map[string]string{
+		"json": "Raw Tavily Extract results.",
+	}
+}
+
+func (c *tavilyExtractComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	if c.apiKey != "" && stringParam(inputs["api_key"]) == "" {
+		inputs["api_key"] = c.apiKey
+	}
+
+	argsJSON, _ := json.Marshal(inputs)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{"json": []any{}, "_ERROR": decoded["_ERROR"]}, nil
+		}
+		return nil, fmt.Errorf("canvas: TavilyExtract: %w", err)
+	}
+	return map[string]any{"json": anySlice(decoded["results"])}, nil
+}
+
+func (c *tavilyExtractComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
 }
 
@@ -99,15 +316,20 @@ type bgptInvoker interface {
 // bgptComponent delegates to internal/agent/tool/BGPTTool and adapts
 // the tool envelope to the BGPT canvas output contract.
 type bgptComponent struct {
-	inner bgptInvoker
+	inner  bgptInvoker
+	apiKey string
 }
 
-func newBGPTComponent(_ map[string]any) (Component, error) {
-	return newBGPTComponentWithInvoker(agenttool.NewBGPTTool()), nil
+func newBGPTComponent(params map[string]any) (Component, error) {
+	return newBGPTComponentWithInvoker(agenttool.NewBGPTTool(), stringParam(params["api_key"])), nil
 }
 
-func newBGPTComponentWithInvoker(inner bgptInvoker) Component {
-	return &bgptComponent{inner: inner}
+func newBGPTComponentWithInvoker(inner bgptInvoker, apiKey ...string) Component {
+	c := &bgptComponent{inner: inner}
+	if len(apiKey) > 0 {
+		c.apiKey = apiKey[0]
+	}
+	return c
 }
 
 func (c *bgptComponent) Name() string { return "BGPT" }
@@ -138,6 +360,10 @@ func (c *bgptComponent) Outputs() map[string]string {
 }
 
 func (c *bgptComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	if c.apiKey != "" && stringParam(inputs["api_key"]) == "" {
+		inputs["api_key"] = c.apiKey
+	}
+
 	query := strings.TrimSpace(stringParam(inputs["query"]))
 	if query == "" {
 		return map[string]any{"formalized_content": "", "json": []any{}}, nil
@@ -200,6 +426,38 @@ func anySlice(v any) []any {
 	default:
 		return []any{}
 	}
+}
+
+func renderTavilySearchResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		title := strings.TrimSpace(fmt.Sprint(m["title"]))
+		url := strings.TrimSpace(fmt.Sprint(m["url"]))
+		content := strings.TrimSpace(fmt.Sprint(m["raw_content"]))
+		if content == "" || content == "<nil>" {
+			content = strings.TrimSpace(fmt.Sprint(m["content"]))
+		}
+		if content == "" || content == "<nil>" {
+			continue
+		}
+		lines := []string{}
+		if title != "" && title != "<nil>" {
+			lines = append(lines, fmt.Sprintf("Title: %s", title))
+		}
+		if url != "" && url != "<nil>" {
+			lines = append(lines, fmt.Sprintf("URL: %s", url))
+		}
+		lines = append(lines, content)
+		blocks = append(blocks, strings.Join(lines, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
 }
 
 func renderBGPTResults(results []any) string {
@@ -1049,6 +1307,8 @@ func (c *yahooFinanceComponent) Stream(_ context.Context, _ map[string]any) (<-c
 var (
 	_ Component = (*retrievalComponent)(nil)
 	_ Component = (*tavilySearchComponent)(nil)
+	_ Component = (*googleComponent)(nil)
+	_ Component = (*tavilyExtractComponent)(nil)
 	_ Component = (*exesqlComponent)(nil)
 	_ Component = (*codeExecComponent)(nil)
 	_ Component = (*yahooFinanceComponent)(nil)
@@ -1057,4 +1317,6 @@ var (
 // Compile-time check that the eino InvokableTool methods we call
 // are reachable (catches a future refactor that renames them).
 var _ einotool.InvokableTool = (*agenttool.TavilyTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.GoogleTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.TavilyExtractTool)(nil)
 var _ einotool.InvokableTool = (*agenttool.YahooFinanceTool)(nil)

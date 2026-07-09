@@ -46,8 +46,8 @@ func newVoyageForTest(baseURL string) *VoyageModel {
 }
 
 func TestVoyageName(t *testing.T) {
-	if got := newVoyageForTest("http://unused").Name(); got != "voyage" {
-		t.Errorf("Name()=%q, want %q", got, "voyage")
+	if got := newVoyageForTest("http://unused").Name(); got != "Voyage AI" {
+		t.Errorf("Name()=%q, want %q", got, "Voyage AI")
 	}
 }
 

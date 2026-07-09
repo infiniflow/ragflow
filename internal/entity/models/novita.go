@@ -48,7 +48,7 @@ func (n *NovitaModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (n *NovitaModel) Name() string {
-	return "novita"
+	return "NovitaAI"
 }
 
 const (

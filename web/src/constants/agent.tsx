@@ -66,16 +66,6 @@ export enum AgentQuery {
   Category = 'category',
 }
 
-export enum DataflowOperator {
-  Begin = 'File',
-  Note = 'Note',
-  Parser = 'Parser',
-  Tokenizer = 'Tokenizer',
-  TokenChunker = 'TokenChunker',
-  TitleChunker = 'TitleChunker',
-  Extractor = 'Extractor',
-}
-
 export enum Operator {
   Begin = 'Begin',
   Retrieval = 'Retrieval',
@@ -124,6 +114,7 @@ export enum Operator {
   TokenChunker = 'TokenChunker',
   TitleChunker = 'TitleChunker',
   Extractor = 'Extractor',
+  Compilation = 'Compiler',
   Loop = 'Loop',
   LoopStart = 'LoopItem',
   ExitLoop = 'ExitLoop',
