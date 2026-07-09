@@ -200,7 +200,9 @@ class Graph:
         return self._tenant_id
 
     def get_value_with_variable(self, value: str) -> Any:
-        pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*")
+        # `cpn_id` allows underscores so genuine component ids emitted by
+        # the frontend (e.g. `userfillup_abc`, `retrieval_xyz`) are recognised.
+        pat = re.compile(r"\{* *\{([a-zA-Z0-9_]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*")
         out_parts = []
         last = 0
 
