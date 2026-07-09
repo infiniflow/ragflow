@@ -76,7 +76,7 @@ async def main():
     _, kb = KnowledgebaseService.get_by_id(kb_id)
     if kb.tenant_embd_id:
         try:
-            embd_model_config = get_model_config_by_id(args.tenant_id, kb.tenant_embd_id)
+            embd_model_config = get_model_config_by_id(args.tenant_id, LLMType.EMBEDDING, kb.tenant_embd_id)
         except LookupError:
             embd_model_config = resolve_model_config(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
     else:

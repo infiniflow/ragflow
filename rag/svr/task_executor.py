@@ -813,7 +813,7 @@ async def run_dataflow(task: dict):
             embedding_id = kb.embd_id
             if kb.tenant_embd_id:
                 try:
-                    embd_model_config = get_model_config_by_id(task["tenant_id"], kb.tenant_embd_id)
+                    embd_model_config = get_model_config_by_id(task["tenant_id"], LLMType.EMBEDDING, kb.tenant_embd_id)
                 except LookupError:
                     embd_model_config = resolve_model_config(task["tenant_id"], LLMType.EMBEDDING, embedding_id)
             else:

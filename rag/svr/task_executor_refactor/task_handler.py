@@ -322,7 +322,7 @@ class TaskHandler:
             if ctx.tenant_embd_id:
                 try:
                     embd_model_config = get_model_config_by_id(
-                        task_tenant_id, ctx.tenant_embd_id
+                        task_tenant_id, LLMType.EMBEDDING, ctx.tenant_embd_id
                     )
                 except LookupError:
                     embd_model_config = resolve_model_config(

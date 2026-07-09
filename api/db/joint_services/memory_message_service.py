@@ -169,7 +169,7 @@ async def extract_by_llm(tenant_id: str, tenant_llm_id: str | None, extract_conf
         user_prompts.append({"role": "user", "content": PromptAssembler.assemble_user_prompt(conversation_content, conversation_time, conversation_time)})
     if tenant_llm_id:
         try:
-            llm_config = get_model_config_by_id(tenant_id, tenant_llm_id)
+            llm_config = get_model_config_by_id(tenant_id, LLMType.CHAT, tenant_llm_id)
         except LookupError:
             llm_config = resolve_model_config(tenant_id, LLMType.CHAT, llm_id)
     else:
@@ -196,7 +196,7 @@ async def extract_by_llm(tenant_id: str, tenant_llm_id: str | None, extract_conf
 async def embed_and_save(memory, message_list: list[dict], task_id: str=None):
     if memory.tenant_embd_id:
         try:
-            embd_model_config = get_model_config_by_id(memory.tenant_id, memory.tenant_embd_id)
+            embd_model_config = get_model_config_by_id(memory.tenant_id, LLMType.EMBEDDING, memory.tenant_embd_id)
         except LookupError:
             embd_model_config = resolve_model_config(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
     else:

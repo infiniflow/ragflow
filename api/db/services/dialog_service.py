@@ -297,7 +297,7 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
             try:
                 llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
                 if "chat" in llm_types:
-                    model_config = get_model_config_by_id(dialog.tenant_id, dialog.tenant_llm_id)
+                    model_config = get_model_config_by_id(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.tenant_llm_id)
                 else:
                     model_config = resolve_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
             except LookupError:
@@ -372,7 +372,7 @@ def get_models(dialog, trace_context=None, langfuse_session_id=None):
     if dialog.llm_id:
         if dialog.tenant_llm_id:
             try:
-                chat_model_config = get_model_config_by_id(dialog.tenant_id, dialog.tenant_llm_id)
+                chat_model_config = get_model_config_by_id(dialog.tenant_id, LLMType.CHAT, dialog.tenant_llm_id)
             except LookupError:
                 chat_model_config = resolve_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
         else:
@@ -385,7 +385,7 @@ def get_models(dialog, trace_context=None, langfuse_session_id=None):
     if dialog.rerank_id:
         if dialog.tenant_rerank_id:
             try:
-                rerank_model_config = get_model_config_by_id(dialog.tenant_id, dialog.tenant_rerank_id)
+                rerank_model_config = get_model_config_by_id(dialog.tenant_id, LLMType.RERANK, dialog.tenant_rerank_id)
             except LookupError:
                 rerank_model_config = resolve_model_config(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
         else:
@@ -585,7 +585,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             try:
                 llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
                 if "chat" in llm_types:
-                    llm_model_config = get_model_config_by_id(dialog.tenant_id, dialog.tenant_llm_id)
+                    llm_model_config = get_model_config_by_id(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.tenant_llm_id)
                 else:
                     llm_model_config = resolve_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
             except LookupError:

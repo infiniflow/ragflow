@@ -63,7 +63,7 @@ class Tokenizer(ProcessBase):
             e, kb = KnowledgebaseService.get_by_id(self._canvas._kb_id)
             if kb.tenant_embd_id:
                 try:
-                    embd_model_config = get_model_config_by_id(self._canvas._tenant_id, kb.tenant_embd_id)
+                    embd_model_config = get_model_config_by_id(self._canvas._tenant_id, LLMType.EMBEDDING, kb.tenant_embd_id)
                 except LookupError:
                     embd_model_config = resolve_model_config(self._canvas._tenant_id, LLMType.EMBEDDING, kb.embd_id)
             else:

@@ -195,7 +195,7 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str | enum.Enum
     # Prefer resolving by tenant_model.id when available
     if model_id:
         try:
-            return get_model_config_by_id(tenant_id, model_id)
+            return get_model_config_by_id(tenant_id, model_type, model_id)
         except LookupError:
             logger.warning("tenant_model id=%s not found, falling back to model_name lookup for %s", model_id, model_name)
     return resolve_model_config(tenant_id, model_type, model_name)
@@ -251,7 +251,7 @@ def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: st
 
 def resolve_model_config(tenant_id, model_type: str | enum.Enum, model_ref: str):
     try:
-        return get_model_config_by_id(tenant_id, model_ref)
+        return get_model_config_by_id(tenant_id, model_type, model_ref)
     except LookupError:
         return get_model_config_from_provider_instance(tenant_id, model_type, model_ref)
 
@@ -317,13 +317,19 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
         raise LookupError(f"Model {model_name} not found for model {model_type_val}")
 
 
-def get_model_config_by_id(tenant_id: str, model_id: str):
+def get_model_config_by_id(tenant_id: str, model_type: str | enum.Enum, model_id: str):
     """Get model config from tenant_model by its id (CharField PK)."""
+    model_type_val = model_type if isinstance(model_type, str) else model_type.value
+    model_type_bin = calculate_model_type(model_type_val)
     exist, model_obj = TenantModelService.get_by_id(model_id)
     if not exist:
         raise LookupError(f"TenantModel id={model_id} not found.")
-    if model_obj.status != ActiveStatusEnum.ACTIVE.value:
+    if model_obj.status == ActiveStatusEnum.INACTIVE.value:
         raise LookupError(f"TenantModel id={model_id} is disabled.")
+    if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value:
+        raise LookupError(f"TenantModel id={model_id} cannot be used as {model_type_val} model.")
+    if not (model_obj.model_type & model_type_bin):
+        raise LookupError(f"TenantModel id={model_id} cannot be used as {model_type_val} model.")
 
     ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
     if not ok:
@@ -349,7 +355,7 @@ def get_model_config_by_id(tenant_id: str, model_id: str):
         "api_key": api_key,
         "llm_name": model_obj.model_name,
         "api_base": extra_fields.get("base_url", ""),
-        "model_type": model_obj.model_type,
+        "model_type": model_type_val,
         "is_tools": model_extra.get("is_tools", is_tool),
         "max_tokens": model_extra.get("max_tokens") or 8192,
     }
