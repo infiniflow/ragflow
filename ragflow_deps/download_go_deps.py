@@ -36,6 +36,7 @@ import sys
 import requests
 from typing import Union
 
+
 def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
     if use_china_mirrors:
         return [
@@ -91,10 +92,10 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
 
 def download_with_progress(url, filename):
     response = requests.get(url, stream=True)
-    total_size = int(response.headers.get('content-length', 0))
+    total_size = int(response.headers.get("content-length", 0))
     block_size = 1024
 
-    with open(filename, 'wb') as file:
+    with open(filename, "wb") as file:
         downloaded = 0
         for data in response.iter_content(block_size):
             file.write(data)
@@ -102,7 +103,7 @@ def download_with_progress(url, filename):
 
             if total_size > 0:
                 progress = (downloaded / total_size) * 100
-                sys.stdout.write(f'\rProgress: {progress:.1f}% ({downloaded}/{total_size} bytes)')
+                sys.stdout.write(f"\rProgress: {progress:.1f}% ({downloaded}/{total_size} bytes)")
                 sys.stdout.flush()
 
     print()
@@ -123,9 +124,9 @@ if __name__ == "__main__":
 
     # Some mirrors (e.g. archive.ubuntu.com) reject the default urllib
     # User-Agent with HTTP 403, so install an opener with a browser-like UA.
-#     opener = urllib.request.build_opener()
-#     opener.addheaders = [("User-Agent", "Mozilla/5.0")]
-#     urllib.request.install_opener(opener)
+    #     opener = urllib.request.build_opener()
+    #     opener.addheaders = [("User-Agent", "Mozilla/5.0")]
+    #     urllib.request.install_opener(opener)
 
     for url in urls:
         download_url = url[0] if isinstance(url, list) else url

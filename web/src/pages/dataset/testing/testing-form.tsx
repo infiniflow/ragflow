@@ -40,6 +40,7 @@ import { Send } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
+import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 
 type TestingFormProps = Pick<
   ReturnType<typeof useTestRetrieval>,
@@ -103,7 +104,9 @@ export default function TestingForm({
             <SimilaritySliderFormField
               isTooltipShown={true}
             ></SimilaritySliderFormField>
-            <RerankFormFields></RerankFormFields>
+            <RerankFormFields
+              ownerTenantId={useKnowledgeBaseContext().knowledgeBase?.tenant_id}
+            ></RerankFormFields>
             <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
             <CrossLanguageFormField
               name={'cross_languages'}

@@ -47,6 +47,46 @@ func (c *CLI) PingAdmin(cmd *Command) (ResponseIf, error) {
 	return HandleSimpleResponse(resp, "ping admin")
 }
 
+// AdminPingStoreCommand ping object store
+func (c *CLI) AdminPingStoreCommand(cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request("GET", "/admin/store", "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ping object store: %w", err)
+	}
+
+	return HandleSimpleResponse(resp, fmt.Sprintf("ping object store"))
+}
+
+// AdminPingEngineCommand ping document engine
+func (c *CLI) AdminPingEngineCommand(cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request("GET", "/admin/engine", "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ping document engine: %w", err)
+	}
+
+	return HandleSimpleResponse(resp, fmt.Sprintf("ping document engine"))
+}
+
+// AdminPingMQCommand ping message queue
+func (c *CLI) AdminPingMQCommand(cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request("GET", "/admin/queue", "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ping message queue: %w", err)
+	}
+
+	return HandleSimpleResponse(resp, fmt.Sprintf("ping message queue"))
+}
+
+// AdminPingCacheCommand ping cache
+func (c *CLI) AdminPingCacheCommand(cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request("GET", "/admin/cache", "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ping cache: %w", err)
+	}
+
+	return HandleSimpleResponse(resp, fmt.Sprintf("ping cache"))
+}
+
 // AdminShowVersionCommand show RAGFlow admin version
 func (c *CLI) AdminShowVersionCommand(cmd *Command) (ResponseIf, error) {
 	resp, err := c.AdminServerClient.Request("GET", "/admin/version", "web", nil, nil)
@@ -2632,4 +2672,25 @@ func (c *CLI) AdminShowLogLevelCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	return HandleCommonDataResponse(resp, fmt.Sprintf("get log level config"))
+}
+
+func (c *CLI) AdminListBucketObjects(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	bucketID, ok := cmd.Params["bucket_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("bucket_id not provided")
+	}
+
+	endPoint := fmt.Sprintf("/admin/bucket/%s/objects", bucketID)
+
+	resp, err := c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get bucket objects: %w", err)
+	}
+
+	return HandleCommonResponse(resp, fmt.Sprintf("get bucket objects"))
 }

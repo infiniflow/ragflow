@@ -50,16 +50,16 @@ func TestChatStreamLargeChunkNotTruncated(t *testing.T) {
 		build func(string) chatStreamer
 	}{
 		{"deepinfra", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewDeepInfraModel(b, s) })},
-		{"vllm", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewVllmModel(b, s) })},
+		{"VLLM", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewVllmModel(b, s) })},
 		{"openrouter", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewOpenRouterModel(b, s) })},
-		{"siliconflow", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewSiliconflowModel(b, s) })},
+		{"SILICONFLOW", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewSiliconflowModel(b, s) })},
 		{"moonshot", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewMoonshotModel(b, s) })},
 		{"deepseek", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewDeepSeekModel(b, s) })},
 		{"nvidia", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewNvidiaModel(b, s) })},
-		{"lmstudio", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewLmStudioModel(b, s) })},
-		{"gitee", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewGiteeModel(b, s) })},
+		{"LM-Studio", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewLmStudioModel(b, s) })},
+		{"GiteeAI", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewGiteeModel(b, s) })},
 		{"tokenhub", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewTokenHubModel(b, s) })},
-		{"jiekouai", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewJieKouAIModel(b, s) })},
+		{"Jiekou.AI", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewJieKouAIModel(b, s) })},
 	}
 
 	for _, tc := range cases {

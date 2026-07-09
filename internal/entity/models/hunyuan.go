@@ -47,7 +47,7 @@ func (h *HunyuanModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (h *HunyuanModel) Name() string {
-	return "hunyuan"
+	return "Tencent Hunyuan"
 }
 
 func (h *HunyuanModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {

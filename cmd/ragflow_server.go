@@ -29,7 +29,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/handler"
-	"ragflow/internal/ingestion"
+	ingestion "ragflow/internal/ingestion/service"
 	"ragflow/internal/mcp"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
@@ -52,7 +52,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
-	_ "ragflow/internal/ingestion/wire" // single owner for ingestion-component registration (File / Parser / Tokenizer / Extractor + 4 Chunker variants)
+	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 )
@@ -355,11 +355,12 @@ func main() {
 	defer redis.Close()
 
 	if err = storage.InitStorageFactory(); err != nil {
-		common.Fatal("Failed to initialize storage factory", zap.Error(err))
+		common.Error("Failed to initialize storage factory", err)
 	}
+	defer storage.CloseStorage()
 
 	if err = engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
-		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
+		common.Error("Failed to initialize message queue engine", err)
 	}
 
 	// Initialize server variables (runtime variables that can change during operation)
@@ -472,6 +473,18 @@ func runAdmin(args *serverArgs) error {
 }
 
 func runIngestor(args *serverArgs) error {
+	// Initialize tokenizer (rag_analyzer)
+	dictPath := os.Getenv("RAGFLOW_DICT_PATH")
+	if dictPath == "" {
+		dictPath = "/usr/share/infinity/resource"
+	}
+	tokenizerCfg := &tokenizer.PoolConfig{
+		DictPath: dictPath,
+	}
+	if err := tokenizer.Init(tokenizerCfg); err != nil {
+		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
+	}
+	defer tokenizer.Close()
 
 	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
 
@@ -801,7 +814,8 @@ func startServer(config *server.Config) {
 		}
 	}
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
-	componentsHandler := handler.NewComponentsHandler(service.NewComponentsService())
+	componentsSvc := service.NewComponentsService()
+	componentsHandler := handler.NewComponentsHandler(componentsSvc)
 
 	// Initialize router
 	r := router.NewRouter(authHandler,
