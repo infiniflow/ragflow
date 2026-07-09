@@ -47,6 +47,7 @@ const (
 	CodeNotFound               ErrorCode = 404
 	CodeConflict               ErrorCode = 409
 	CodeServerError            ErrorCode = 500
+	CodeNotImplemented         ErrorCode = 501
 )
 
 var errorMessages = map[ErrorCode]string{

@@ -17,6 +17,7 @@ import pytest
 from ragflow_sdk import RAGFlow, Memory
 from configs import INVALID_API_TOKEN, HOST_ADDRESS
 
+
 class TestAuthorization:
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -35,7 +36,6 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_multiple_type_message_func")
 class TestSearchMessage:
-
     @pytest.mark.p1
     def test_query(self, client):
         memory_id = self.memory_id
@@ -69,11 +69,7 @@ class TestSearchMessage:
         assert list_res["messages"]["total_count"] > 0
 
         query = "Coriander is a versatile herb with two main edible parts. What's its name can refer to?"
-        params = {
-            "similarity_threshold": 0.1,
-            "keywords_similarity_weight": 0.6,
-            "top_n": 4
-        }
+        params = {"similarity_threshold": 0.1, "keywords_similarity_weight": 0.6, "top_n": 4}
         res = client.search_message(**{"memory_id": [memory_id], "query": query, **params})
         assert len(res) > 0
         assert len(res) <= params["top_n"]

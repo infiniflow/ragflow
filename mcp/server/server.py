@@ -163,6 +163,36 @@ class RAGFlowConnector:
 
         return res_json
 
+    async def list_chats(self, *, api_key: str, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True):
+        """Return accessible chat assistants as newline-delimited JSON for MCP tool descriptions."""
+        logging.info("Listing chat assistants via MCP (page=%s, page_size=%s)", page, page_size)
+        params = {"page": page, "page_size": page_size, "orderby": orderby, "desc": json.dumps(desc)}
+        res = await self._get("/chats", params, api_key=api_key)
+        if not res or res.status_code != 200:
+            error_message = None
+            if res is not None:
+                try:
+                    error_message = res.json().get("message")
+                    logging.warning("list_chats request failed: status=%s message=%s", res.status_code, error_message)
+                except Exception:
+                    error_message = None
+                    logging.warning("list_chats request failed: status=%s (parse error)", res.status_code)
+            raise Exception([types.TextContent(type="text", text=error_message or "Cannot list chats.")])
+        res_json = res.json()
+        if res_json.get("code") != 0:
+            logging.warning("list_chats API error: code=%s message=%s", res_json.get("code"), res_json.get("message"))
+            raise Exception([types.TextContent(type="text", text=res_json.get("message", "Cannot list chats."))])
+        _chats_data = res_json.get("data", [])
+        if isinstance(_chats_data, dict):
+            _chats_data = _chats_data.get("chats", [])
+        chat_count = len(_chats_data)
+        logging.info("list_chats returned %d chat(s)", chat_count)
+        result_list = []
+        for data in _chats_data:
+            d = {"id": data.get("id"), "name": data.get("name"), "description": data.get("description", "")}
+            result_list.append(json.dumps(d, ensure_ascii=False))
+        return "\n".join(result_list)
+
     async def _fetch_all_datasets(
         self,
         *,
@@ -334,38 +364,47 @@ class RAGFlowConnector:
                     page_size = 30
                     doc_id_meta_list = []
                     docs = {}
-                    while page:
-                        docs_res = await self._get(f"/datasets/{dataset_id}/documents?page={page}", api_key=api_key)
+                    while True:
+                        docs_res = await self._get(f"/datasets/{dataset_id}/documents?page={page}&page_size={page_size}", api_key=api_key)
                         if not docs_res:
+                            # Transport-level failure: stop without caching a partial result.
                             break
                         docs_data = docs_res.json()
-                        if docs_data.get("code") == 0 and docs_data.get("data", {}).get("docs"):
-                            for doc in docs_data["data"]["docs"]:
-                                doc_id = doc.get("id")
-                                if not doc_id:
-                                    continue
-                                doc_meta = {
-                                    "document_id": doc_id,
-                                    "name": doc.get("name", ""),
-                                    "location": doc.get("location", ""),
-                                    "type": doc.get("type", ""),
-                                    "size": doc.get("size"),
-                                    "chunk_count": doc.get("chunk_count"),
-                                    "create_date": doc.get("create_date", ""),
-                                    "update_date": doc.get("update_date", ""),
-                                    "token_count": doc.get("token_count"),
-                                    "thumbnail": doc.get("thumbnail", ""),
-                                    "dataset_id": doc.get("dataset_id", dataset_id),
-                                    "meta_fields": doc.get("meta_fields", {}),
-                                }
-                                doc_id_meta_list.append((doc_id, doc_meta))
-                                docs[doc_id] = doc_meta
-
-                            page += 1
-                            if docs_data.get("data", {}).get("total", 0) - page * page_size <= 0:
-                                page = None
+                        if docs_data.get("code") != 0:
+                            # API error: stop instead of re-requesting the same page forever.
+                            break
+                        page_docs = docs_data.get("data", {}).get("docs") or []
+                        for doc in page_docs:
+                            doc_id = doc.get("id")
+                            if not doc_id:
+                                continue
+                            doc_meta = {
+                                "document_id": doc_id,
+                                "name": doc.get("name", ""),
+                                "location": doc.get("location", ""),
+                                "type": doc.get("type", ""),
+                                "size": doc.get("size"),
+                                "chunk_count": doc.get("chunk_count"),
+                                "create_date": doc.get("create_date", ""),
+                                "update_date": doc.get("update_date", ""),
+                                "token_count": doc.get("token_count"),
+                                "thumbnail": doc.get("thumbnail", ""),
+                                "dataset_id": doc.get("dataset_id", dataset_id),
+                                "meta_fields": doc.get("meta_fields", {}),
+                            }
+                            doc_id_meta_list.append((doc_id, doc_meta))
+                            docs[doc_id] = doc_meta
 
                         self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
+
+                        # A page smaller than page_size (including an empty one) is the
+                        # last page. This terminates empty/exhausted result sets, which
+                        # previously looped forever re-requesting the same page (#16248),
+                        # and replaces the old `total - page * page_size` check that
+                        # stopped one page early and silently dropped documents.
+                        if len(page_docs) < page_size:
+                            break
+                        page += 1
                 if docs:
                     document_cache.update(docs)
 
@@ -497,6 +536,7 @@ def with_api_key(required: bool = True):
 @with_api_key(required=True)
 async def list_tools(*, connector: RAGFlowConnector, api_key: str) -> list[types.Tool]:
     dataset_description = await connector.list_datasets(api_key=api_key)
+    chat_description = await connector.list_chats(api_key=api_key)
 
     return [
         types.Tool(
@@ -561,6 +601,52 @@ async def list_tools(*, connector: RAGFlowConnector, api_key: str) -> list[types
                 "required": ["question"],
             },
         ),
+        types.Tool(
+            name="ragflow_list_datasets",
+            description="List all accessible datasets (knowledge bases) in RAGFlow. Returns dataset IDs, names, and descriptions. Use this tool to discover which datasets are available before performing retrieval."
+            + dataset_description,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "page": {
+                        "type": "integer",
+                        "description": "Page number",
+                        "default": 1,
+                        "minimum": 1,
+                    },
+                    "page_size": {
+                        "type": "integer",
+                        "description": "Results per page",
+                        "default": 100,
+                        "minimum": 1,
+                        "maximum": 1000,
+                    },
+                },
+            },
+        ),
+        types.Tool(
+            name="ragflow_list_chats",
+            description="List all accessible chat assistants in RAGFlow. Returns chat assistant IDs, names, and descriptions. Use this tool to discover available chat assistants that can be used for conversations."
+            + chat_description,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "page": {
+                        "type": "integer",
+                        "description": "Page number",
+                        "default": 1,
+                        "minimum": 1,
+                    },
+                    "page_size": {
+                        "type": "integer",
+                        "description": "Results per page",
+                        "default": 30,
+                        "minimum": 1,
+                        "maximum": 100,
+                    },
+                },
+            },
+        ),
     ]
 
 
@@ -600,6 +686,19 @@ async def call_tool(
             rerank_id=rerank_id,
             force_refresh=force_refresh,
         )
+
+    if name == "ragflow_list_datasets":
+        page = arguments.get("page", 1)
+        page_size = arguments.get("page_size", 100)
+        result = await connector.list_datasets(api_key=api_key, page=page, page_size=page_size)
+        return [types.TextContent(type="text", text=result)]
+
+    if name == "ragflow_list_chats":
+        page = arguments.get("page", 1)
+        page_size = arguments.get("page_size", 30)
+        result = await connector.list_chats(api_key=api_key, page=page, page_size=page_size)
+        return [types.TextContent(type="text", text=result)]
+
     raise ValueError(f"Tool not found: {name}")
 
 

@@ -19,6 +19,7 @@ import pytest
 from ragflow_sdk import RAGFlow, Memory
 from configs import INVALID_API_TOKEN, HOST_ADDRESS
 
+
 class TestAuthorization:
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -38,9 +39,8 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_multiple_type_message_func")
 class TestGetMessageContent:
-
     @pytest.mark.p1
-    def test_get_message_content(self,client):
+    def test_get_message_content(self, client):
         memory_id = self.memory_id
         recent_messages = client.get_recent_messages([memory_id])
         assert len(recent_messages) > 0, recent_messages

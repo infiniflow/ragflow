@@ -41,6 +41,8 @@ export default {
       previousPage: '上一頁',
       nextPage: '下一頁',
       add: '添加',
+      owner: '擁有者',
+      running: '執行中...',
     },
     login: {
       login: '登入',
@@ -400,6 +402,8 @@ export default {
     },
     chunk: {
       chunk: '解析塊',
+      createChunk: '建立解析塊',
+      editChunk: '編輯解析塊',
       bulk: '批量',
       selectAll: '選擇所有',
       enabledSelected: '啟用選定的',
@@ -502,6 +506,12 @@ export default {
       maxTokensTip: `模型的最大上下文大小；無效或不正確的值會導致錯誤。預設為 512。`,
       maxTokensInvalidMessage: '請輸入有效的最大標記數。',
       maxTokensMinMessage: '最大標記數不能小於 0。',
+      thinking: '思考',
+      thinkingDefault: '系統預設',
+      thinkingEnabled: '開啟',
+      thinkingDisabled: '關閉',
+      thinkingTip:
+        '僅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系統預設會關閉 Qwen 思考，以避免任務長時間執行。',
       quote: '顯示引文',
       quoteTip: '是否應該顯示原文出處？',
       selfRag: 'Self-RAG',
@@ -562,6 +572,11 @@ export default {
       tavilyApiKeyHelp: '如何獲取？',
       crossLanguage: '跨語言搜尋',
       crossLanguageTip: `選擇一種或多種語言進行跨語言搜尋。如果沒有選擇語言，系統將使用原始查詢進行搜尋。 `,
+      showChunkMetadata: '顯示區塊中繼資料',
+      showChunkMetadataTip:
+        '在擷取的文字區塊旁顯示文件中繼資料（如標題、頁碼、上傳日期）',
+      metadataFields: '中繼資料欄位',
+      metadataFieldsTip: '選擇要與每個區塊一起顯示的中繼資料欄位',
     },
     setting: {
       profile: '概述',
@@ -1278,6 +1293,11 @@ export default {
       openingSwitchTip: '您的用戶將在開始時看到此歡迎訊息。',
       modeTip: '模式定義工作流程如何啟動。 ',
       beginInputTip: `透過定義輸入參數，這些內容可以在後續流程中被其他元件存取。`,
+      canvasCategory: '畫布分類',
+      tags: '標籤',
+      created: '建立於',
+      id: 'ID',
+      logTitle: '標題',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
@@ -1309,6 +1329,7 @@ export default {
       id: 'ID',
       copySuccess: '複製成功',
       welcomeBack: '歡迎回來',
+      selectLocalePlaceholder: '選擇語言',
     },
   },
 };

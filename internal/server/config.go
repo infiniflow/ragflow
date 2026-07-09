@@ -53,6 +53,7 @@ type Config struct {
 	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`
 	Language         string                 `mapstructure:"language"`
 	TaskExecutor     TaskExecutorConfig     `mapstructure:"task_executor"`
+	FileSyncer       FileSyncerConfig       `mapstructure:"file_syncer"`
 }
 
 // AdminConfig admin server configuration
@@ -74,6 +75,11 @@ type DefaultSuperUser struct {
 
 type TaskExecutorConfig struct {
 	MessageQueueType string `mapstructure:"message_queue_type"`
+}
+
+type FileSyncerConfig struct {
+	MaxConcurrentSyncs int `mapstructure:"max_concurrent_syncs"`
+	SyncInterval       int `mapstructure:"sync_interval"`
 }
 
 // UserDefaultLLMConfig user default LLM configuration
@@ -138,10 +144,31 @@ type DatabaseConfig struct {
 	Charset  string `mapstructure:"charset"`
 }
 
-// LogConfig logging configuration
+// LogConfig logging configuration.
+//
+// Path, MaxSize, MaxBackups, MaxAge, and Compress configure the rotated
+// log file. The cmd/* entry points hardcode per-service defaults
+// (e.g. "server_main.log" for the API server, "admin_server.log" for
+// the admin server, "ingestion_server.log" for the ingestion worker),
+// so a typical deployment gets a rotated file without any YAML
+// configuration. When Path is empty (the default) the binary's
+// hardcoded default filename is used — it does NOT disable file
+// output. Set log.path in service_conf.yaml to override the
+// per-service default filename.
+//
+// Compress is a pointer so callers can distinguish "not set" (nil,
+// defaults to true) from "explicitly false" (*bool=false). All other
+// numeric fields use plain int because their zero values are sensible
+// defaults (100 MB / 10 files / 30 days) and there is no operator-meaningful
+// reason to distinguish "not set" from "0".
 type LogConfig struct {
-	Level  string `mapstructure:"level"`  // debug, info, warn, error
-	Format string `mapstructure:"format"` // json, text
+	Level      string `mapstructure:"level"`       // debug, info, warn, error
+	Format     string `mapstructure:"format"`      // json, text (reserved for future use)
+	Path       string `mapstructure:"path"`        // per-binary file override; empty = use cmd/* hardcoded default
+	MaxSize    int    `mapstructure:"max_size"`    // MB before rotation; default 100
+	MaxBackups int    `mapstructure:"max_backups"` // retained rotated files; default 10
+	MaxAge     int    `mapstructure:"max_age"`     // days; default 30
+	Compress   *bool  `mapstructure:"compress"`    // gzip rotated files; nil = default true
 }
 
 // DocEngineConfig document engine configuration
@@ -183,12 +210,14 @@ type StorageConfig struct {
 	Minio *MinioConfig `mapstructure:"minio"`
 	S3    *S3Config    `mapstructure:"s3"`
 	OSS   *OSSConfig   `mapstructure:"oss"`
+	GCS   *GCSConfig   `mapstructure:"gcs"`
 }
 
 const (
 	StorageOSS   StorageType = "oss"
 	StorageS3    StorageType = "s3"
 	StorageMinio StorageType = "minio"
+	StorageGCS   StorageType = "gcs"
 )
 
 // OSSConfig holds Aliyun OSS storage configuration
@@ -202,6 +231,12 @@ type OSSConfig struct {
 	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
 	SignatureVersion string `mapstructure:"signature_version"` // Signature version
 	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
+}
+
+type GCSConfig struct {
+	Bucket      string `mapstructure:"bucket"`       // Default bucket (optional)
+	PrefixPath  string `mapstructure:"prefix_path"`  // Path prefix (optional)
+	EndpointURL string `mapstructure:"endpoint_url"` // Custom endpoint (optional)
 }
 
 // MinioConfig holds MinIO storage configuration
@@ -390,6 +425,7 @@ func Init(configPath string) error {
 			configDict["name"] = "nats"
 			configDict["host"] = host
 			configDict["port"] = port
+			configDict["service_type"] = "message_queue"
 		case "admin":
 			// Skip admin section
 			continue
@@ -506,6 +542,8 @@ func FromEnvironments() error {
 		globalConfig.StorageEngine.Type = StorageS3
 	case "oss":
 		globalConfig.StorageEngine.Type = StorageOSS
+	case "gcs":
+		globalConfig.StorageEngine.Type = StorageGCS
 	case "":
 		// Default
 		if globalConfig.StorageEngine.Type == "" {
@@ -528,18 +566,18 @@ func FromEnvironments() error {
 		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", minioIP, port)
 	}
 
-	minioPort := strings.ToLower(os.Getenv("MINIO_PORT"))
-	// println(fmt.Sprintf("MINIO ip and port from env: %s:%s", minioIP, minioPort))
-	if minioPort != "" {
-		if globalConfig.StorageEngine.Minio == nil {
-			return fmt.Errorf("Minio config not found")
-		}
-		ip, _, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
-		if err != nil {
-			return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
-		}
-		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", ip, minioPort)
-	}
+	//minioPort := strings.ToLower(os.Getenv("MINIO_PORT"))
+	//// println(fmt.Sprintf("MINIO ip and port from env: %s:%s", minioIP, minioPort))
+	//if minioPort != "" {
+	//	if globalConfig.StorageEngine.Minio == nil {
+	//		return fmt.Errorf("Minio config not found")
+	//	}
+	//	ip, _, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
+	//	if err != nil {
+	//		return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
+	//	}
+	//	globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", ip, minioPort)
+	//}
 
 	minioRegion := strings.ToLower(os.Getenv("MINIO_REGION"))
 	if minioRegion != "" {
@@ -760,6 +798,19 @@ func FromConfigFile(configPath string) error {
 			}
 		}
 
+		if v.IsSet("gcs") {
+			gcsConfig := v.Sub("gcs")
+			if gcsConfig != nil {
+				if globalConfig.StorageEngine.GCS == nil {
+					globalConfig.StorageEngine.GCS = &GCSConfig{
+						Bucket:      gcsConfig.GetString("bucket"),
+						PrefixPath:  gcsConfig.GetString("prefix_path"),
+						EndpointURL: gcsConfig.GetString("endpoint_url"),
+					}
+				}
+			}
+		}
+
 		if v.IsSet("minio_0") {
 			minioConfig := v.Sub("minio_0")
 			if minioConfig != nil {
@@ -884,11 +935,11 @@ func PrintAll() {
 	}
 
 	allSettings := globalViper.AllSettings()
-	zapLogger.Info("=== All Configuration Settings ===")
+	zapLogger.Info("=== All Configurations ===")
 	for key, value := range allSettings {
 		zapLogger.Info("config", zap.String("key", key), zap.Any("value", value))
 	}
-	zapLogger.Info("=== End Configuration ===")
+	zapLogger.Info("=== End Configurations ===")
 }
 
 // parseHostPort parses host:port string and returns host and port

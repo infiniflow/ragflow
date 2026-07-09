@@ -39,6 +39,7 @@ The following v0.24.0 REST API paths are deprecated. They remain available throu
 | **POST** `/api/v1/sessions/related_questions` | **POST** `/api/v1/chat/recommandation` |
 | **PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` | **PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` |
 | **GET** `/v1/system/healthz` | **GET** `/api/v1/system/healthz` |
+| **POST** `/v1/document/upload_info` | **POST** `/api/v1/documents/upload` |
 | **POST** `/api/v1/file/upload` | **POST** `/api/v1/files` |
 | **POST** `/api/v1/file/create` | **POST** `/api/v1/files` |
 | **GET** `/api/v1/file/list` | **GET** `/api/v1/files` |
@@ -1951,7 +1952,11 @@ Failure:
 
 **POST** `/api/v1/datasets/{dataset_id}/chunks`
 
-Parses documents in a specified dataset.
+Parses documents in a specified dataset using the built-in chunking pipeline.
+
+:::note
+This endpoint only supports datasets that use the built-in chunking pipeline. For datasets configured with an ingestion pipeline, use `POST /api/v1/documents/ingest` instead.
+:::
 
 #### Request
 
@@ -1999,6 +2004,70 @@ Failure:
 {
     "code": 102,
     "message": "`document_ids` is required"
+}
+```
+
+---
+
+### Ingest documents
+
+**POST** `/api/v1/documents/ingest`
+
+Starts, cancels, or reruns ingestion for documents. Use this endpoint for documents in datasets configured with an ingestion pipeline.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/documents/ingest`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"doc_ids"`: `list[string]`
+  - `"run"`: `string`
+  - `"delete"`: `boolean`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/documents/ingest \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '
+     {
+          "doc_ids": ["97a5f1c2759811efaa500242ac120004"],
+          "run": "1",
+          "delete": true
+     }'
+```
+
+##### Request parameters
+
+- `"doc_ids"`: (*Body parameter*), `list[string]`, *Required*
+  The IDs of the documents to ingest.
+- `"run"`: (*Body parameter*), `string`, *Required*
+  The ingestion action. Use `"1"` to start ingestion and `"2"` to cancel ingestion.
+- `"delete"`: (*Body parameter*), `boolean`
+  Whether to delete existing tasks and chunks before rerunning. Defaults to `false`.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Document not found!"
 }
 ```
 
@@ -6928,14 +6997,18 @@ Failure:
 
 ### Upload document
 
-**POST** `/v1/document/upload_info`
+**POST** `/api/v1/documents/upload`
 
 Uploads a file and creates the respective document.
+
+:::caution DEPRECATED
+`POST /v1/document/upload_info` and `POST /api/v1/file/upload_info` are deprecated. Use this endpoint instead.
+:::
 
 #### Request
 
 - Method: POST
-- URL: `/v1/document/upload_info`
+- URL: `/api/v1/documents/upload`
 - Headers:
   - `'Content-Type: multipart/form-data'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -6950,7 +7023,7 @@ Upload a local file:
 
 ```bash
 curl --request POST \
-     --url http://{address}/v1/document/upload_info \
+     --url http://{address}/api/v1/documents/upload \
      --header 'Content-Type: multipart/form-data' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --form 'file=@./test1.pdf'
@@ -6960,7 +7033,7 @@ Crawl a URL:
 
 ```bash
 curl --request POST \
-     --url 'http://{address}/v1/document/upload_info?url=https://example.com/page' \
+     --url 'http://{address}/api/v1/documents/upload?url=https://example.com/page' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 

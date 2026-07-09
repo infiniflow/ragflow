@@ -38,6 +38,13 @@ export interface IAddProviderRequestBody {
 export type IAddProviderInstanceRequestBody = IAddLlmRequestBody & {
   instance_name: string;
   region?: string;
+  /**
+   * Optional id of an existing instance. When present the backend
+   * treats the call as an update of that row (rather than a create),
+   * which is what the inline "blur-save" flow on saved instance cards
+   * needs.
+   */
+  id?: string;
 };
 
 export interface IDeleteProviderInstanceRequestBody {
@@ -64,6 +71,7 @@ export interface IEditInstanceModelRequestBody {
 
 export interface IListAllModelsRequestParams {
   type?: string;
+  owner_tenant_id?: string;
 }
 
 export interface IUpdateModelStatusRequestBody {
@@ -71,6 +79,42 @@ export interface IUpdateModelStatusRequestBody {
   instance_name: string;
   model_name: string;
   status: 'active' | 'inactive';
+}
+
+/**
+ * Body shape for PATCH `/providers/{name}/instances/{name}/models/{model_name}`.
+ * All fields are optional; only the supplied keys are updated server-side.
+ */
+export interface IPatchInstanceModelRequestBody {
+  provider_name: string;
+  instance_name: string;
+  model_name: string;
+  status?: 'active' | 'inactive';
+  max_tokens?: number;
+  model_type?: string[];
+  extra?: Record<string, any>;
+}
+
+export interface IDeleteInstanceModelsRequestBody {
+  provider_name: string;
+  instance_name: string;
+  model_name: string[];
+}
+
+export interface IUpdateProviderInstanceRequestBody {
+  provider_name: string;
+  instance_name: string;
+  id?: string;
+  /**
+   * Either a plain API-key string, or — for providers that need an
+   * extra credential such as MiniMax's `group_id` — an object bundling
+   * the key with those fields: `{ api_key, group_id }`.
+   */
+  api_key?: string | Record<string, any>;
+  base_url?: string;
+  region?: string;
+  model_info?: IModelInfo[];
+  verify?: boolean;
 }
 
 export interface ISetDefaultModelRequestBody {
@@ -98,7 +142,7 @@ export interface IProviderModelItem {
  */
 export interface IListProviderModelsRequestBody {
   provider_name: string;
-  api_key: string;
+  api_key?: string;
   base_url?: string;
   region?: string;
   model_info?: IModelInfo[];

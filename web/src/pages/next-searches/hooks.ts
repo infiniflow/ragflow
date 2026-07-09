@@ -1,5 +1,6 @@
 // src/pages/next-searches/hooks.ts
 
+import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
@@ -90,7 +91,7 @@ export const useFetchSearchList = () => {
   const { handleInputChange, searchString, pagination, setPagination } =
     useHandleSearchChange();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-
+  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
   const { data, isLoading, isError, refetch } = useQuery<
     SearchListResponse,
     Error
@@ -99,6 +100,7 @@ export const useFetchSearchList = () => {
       'searchList',
       {
         debouncedSearchString,
+        filterValue,
         ...pagination,
       },
     ],
@@ -109,7 +111,9 @@ export const useFetchSearchList = () => {
             keywords: debouncedSearchString,
             page_size: pagination.pageSize,
             page: pagination.current,
+            owner_ids: filterValue.owner,
           },
+          paramsSerializer: { indexes: null },
         },
         true,
       );
@@ -129,6 +133,8 @@ export const useFetchSearchList = () => {
     handleInputChange,
     setPagination,
     refetch,
+    filterValue,
+    handleFilterSubmit,
   };
 };
 
@@ -294,9 +300,6 @@ export const useUpdateSearch = () => {
         queryKey: ['searchDetail', variables.search_id],
       });
     },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
-    },
   });
 
   const updateSearch = useCallback(
@@ -346,7 +349,6 @@ export const useRenameSearch = () => {
             search_id: search?.id,
           });
           const detail = response.data?.data;
-          console.log('detail-->', detail);
 
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { id, created_by, update_time, ...searchDataTemp } = detail;

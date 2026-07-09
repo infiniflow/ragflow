@@ -107,9 +107,7 @@ class TestAddChunk:
             assert False, res
         chunks_count = res["data"]["doc"]["chunk_count"]
         res = add_chunk(HttpApiAuth, dataset_id, document_id, payload)
-        assert res["code"] == expected_code, (
-            f"Expected code: {expected_code}, got: {res['code']}, message: {res.get('message')}"
-        )
+        assert res["code"] == expected_code, f"Expected code: {expected_code}, got: {res['code']}, message: {res.get('message')}"
         if expected_code == 0:
             validate_chunk_details(dataset_id, document_id, payload, res)
             res = list_chunks(HttpApiAuth, dataset_id, document_id)

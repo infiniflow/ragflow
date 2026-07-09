@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { initialCategorizeValues } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
@@ -30,11 +31,13 @@ function CategorizeForm({ node }: INextOperatorForm) {
 
   useWatchFormChange(node?.id, form);
 
+  const ownerTenantId = useOwnerTenantId();
+
   return (
     <Form {...form}>
       <FormWrapper>
         <QueryVariable></QueryVariable>
-        <LargeModelFormField></LargeModelFormField>
+        <LargeModelFormField ownerTenantId={ownerTenantId}></LargeModelFormField>
         <MessageHistoryWindowSizeFormField
           min={0}
         ></MessageHistoryWindowSizeFormField>

@@ -30,7 +30,8 @@ from rag.svr.task_executor_refactor.recording_context import (
     BaseRecordingContext,
     RecordingContext,
     _NULL_RECORDING_CONTEXT,
-    set_recording_context, recording_context_manager,
+    set_recording_context,
+    recording_context_manager,
 )
 from rag.svr.task_executor_refactor.task_context import TaskContext
 from rag.svr.task_executor_refactor.task_handler import TaskHandler
@@ -166,9 +167,11 @@ class TaskManager:
             comp_result = comp.compare(task_context.id, recording_ctx1, recording_ctx2)
             logging.info(f"-------{task_context.name}, compare result:{comp_result.to_markdown()}")
             if interceptor.remaining_values_count() > 0 or comp_result.mismatched_keys > 0:
-                logging.info(f"------task:{task_context.id} {task_context.name} differs, "
-                             f"interceptor.remaining_values_count():{interceptor.remaining_values_count()}, "
-                             f"mismatched_keys:{comp_result.mismatched_keys}")
+                logging.info(
+                    f"------task:{task_context.id} {task_context.name} differs, "
+                    f"interceptor.remaining_values_count():{interceptor.remaining_values_count()}, "
+                    f"mismatched_keys:{comp_result.mismatched_keys}"
+                )
                 if interceptor.remaining_values_count() > 0:
                     logging.info(f"------task:{task_context.id}, remaining values:{interceptor.remaining_values()}")
                 if comp_result.mismatched_keys > 0:

@@ -20,12 +20,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/utility"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
@@ -101,9 +101,9 @@ func parseAgentSessionDate(value string, isEnd bool) (*time.Time, error) {
 		return nil, nil
 	}
 
+	// Try flexible ISO 8601 / RFC3339 parsing first (PR #16483).
 	if strings.Contains(value, "T") {
-		normalized := strings.ReplaceAll(value, "Z", "+00:00")
-		parsed, err := time.Parse(time.RFC3339, normalized)
+		parsed, err := common.ParseISO8601(value)
 		if err != nil {
 			return nil, err
 		}
@@ -511,6 +511,41 @@ func (s *AgentService) DeleteAgentSessions(userID, agentID string, ids []string,
 	return &DeleteAgentSessionsResult{}, common.CodeSuccess, nil
 }
 
+// ListAgentTags list agent tags
+func (s *AgentService) ListAgentTags(userID, canvasCategory string) ([]AgentTagCount, common.ErrorCode, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	ownerSet := make(map[string]struct{}, len(tenantIDs)+1)
+	ownerSet[userID] = struct{}{}
+	for _, id := range tenantIDs {
+		ownerSet[id] = struct{}{}
+	}
+	ownerIDs := make([]string, 0, len(ownerSet))
+	for id := range ownerSet {
+		ownerIDs = append(ownerIDs, id)
+	}
+
+	counts, err := s.canvasDAO.ListTags(ownerIDs, userID, canvasCategory)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	tags := make([]AgentTagCount, 0, len(counts))
+	for tag, count := range counts {
+		tags = append(tags, AgentTagCount{Tag: tag, Count: count})
+	}
+	sort.Slice(tags, func(i, j int) bool {
+		if tags[i].Count == tags[j].Count {
+			return tags[i].Tag < tags[j].Tag
+		}
+		return tags[i].Count > tags[j].Count
+	})
+	return tags, common.CodeSuccess, nil
+}
+
 // normalizeAgentTags returns an error for unsupported tag payload types.
 // The branch behaviour intentionally mirrors the Python implementation:
 //   - string: treat the value as a CSV — split on "," and use each piece
@@ -644,9 +679,9 @@ type CreateAgentSessionRequest struct {
 //   - user_id     : caller's id
 //   - message     : JSON array (default []); GET path normalises it
 //   - reference   : JSON object (default {}) so GET-side parsing
-//                   does not crash on .chunks
+//     does not crash on .chunks
 //   - dsl         : JSON map; copied from user_canvas.dsl if the
-//                   caller did not pass one
+//     caller did not pass one
 //   - create_time : unix-millis
 //   - update_time : unix-millis
 //   - create_date : local-time.Truncate(time.Second)
@@ -701,7 +736,7 @@ func (s *AgentService) CreateAgentSession(req *CreateAgentSessionRequest) (*enti
 		sourcePtr = &req.Source
 	}
 
-	id := strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
+	id := utility.GenerateUUID()
 
 	// CreateTime / UpdateTime / CreateDate / UpdateDate are filled in
 	// by entity.BaseModel.BeforeCreate when the DAO Create() call runs,

@@ -13,8 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Translate RAGflow document-metadata filter lists into Infinity SQL filter expressions.
-"""
+"""Translate RAGflow document-metadata filter lists into Infinity SQL filter expressions."""
 
 from __future__ import annotations
 
@@ -28,6 +27,7 @@ _KEY_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 def _validate_key(key: str, flt: Dict[str, Any]) -> None:
     if not _KEY_PATTERN.match(key):
         raise ValueError(f"invalid key format (must be identifier-like): {flt}")
+
 
 SUPPORTED_OPERATORS: frozenset[str] = frozenset(
     {
@@ -54,6 +54,7 @@ _RANGE_OPS: Dict[str, str] = {
     "≥": ">=",
     "≤": "<=",
 }
+
 
 class MetaFilterTranslator:
     """Translate one user filter clause at a time into Infinity SQL filter strings."""

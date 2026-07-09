@@ -40,6 +40,7 @@ from pydantic import BaseModel, conint
 
 from common.http_client import sync_request
 from common.token_utils import num_tokens_from_string
+from rag.utils.url_utils import ensure_v1
 
 
 class ServeReferenceAudio(BaseModel):
@@ -85,28 +86,22 @@ class HTTPBasedTTS(Base):
     Base class for HTTP-based TTS services.
     Provides common HTTP request handling and response processing.
     """
-    
+
     def __init__(self, key, model_name, base_url, **kwargs):
         self.model_name = model_name
-        self.base_url = base_url
+        self.base_url = ensure_v1(base_url)
         self.api_key = key
-        self.headers = {
-            "Content-Type": "application/json"
-        }
+        self.headers = {"Content-Type": "application/json"}
         if key and key != "x":
             self.headers["Authorization"] = f"Bearer {self.api_key}"
-    
+
     def _build_payload(self, text, voice, **kwargs):
         """
         Build payload for TTS request.
         Subclasses should override this method if they need custom payload structure.
         """
-        return {
-            "model": self.model_name,
-            "voice": voice,
-            "input": text
-        }
-    
+        return {"model": self.model_name, "voice": voice, "input": text}
+
     def _send_request(self, endpoint, payload, stream=True):
         """
         Send HTTP request to TTS service.
@@ -119,12 +114,12 @@ class HTTPBasedTTS(Base):
             stream=stream,
             timeout=60,
         )
-        
+
         if response.status_code != 200:
             raise Exception(f"**Error**: {response.status_code}, {response.text}")
-        
+
         return response
-    
+
     def _process_response(self, response):
         """
         Process streaming response from TTS service.
@@ -132,7 +127,7 @@ class HTTPBasedTTS(Base):
         for chunk in response.iter_content():
             if chunk:
                 yield chunk
-    
+
     def tts(self, text, voice="alloy"):
         """
         Generate speech from text.
@@ -499,36 +494,29 @@ class StepFunTTS(OpenAITTS):
 class RAGconTTS(Base):
     """
     RAGcon TTS Provider - routes through LiteLLM proxy
-    
+
     Text-to-speech models routed through LiteLLM.
     Default Base URL: https://connect.ragcon.ai/v1
     """
+
     _FACTORY_NAME = "RAGcon"
-    
+
     def __init__(self, key, model_name, base_url=None, **kwargs):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
-        
-        self.base_url = base_url
+
+        self.base_url = ensure_v1(base_url)
         self.api_key = key
         self.model_name = model_name
-        self.headers = {
-            "accept": "application/json",
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
-    
+        self.headers = {"accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}
+
     def tts(self, text, voice="English Female", stream=True):
         """
         Uses LiteLLM's /v1/audio/speech endpoint
         """
 
-        payload = {
-            "model": self.model_name,
-            "input": text,
-            "voice": voice
-        }
-        
+        payload = {"model": self.model_name, "input": text, "voice": voice}
+
         response = requests.post(
             f"{self.base_url}/audio/speech",
             headers=self.headers,
@@ -536,10 +524,20 @@ class RAGconTTS(Base):
             stream=stream,
             timeout=60,
         )
-        
+
         if response.status_code != 200:
             raise Exception(f"**Error**: {response.status_code}, {response.text}")
-        
+
         for chunk in response.iter_content(chunk_size=1024):
             if chunk:
                 yield chunk
+
+
+class NewAPITTS(OpenAITTS):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, base_url="", **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        model_name = model_name.split("___")[0]
+        super().__init__(key, model_name, base_url, **kwargs)

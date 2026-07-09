@@ -20,6 +20,7 @@ from abc import ABC
 import requests
 from agent.tools.base import ToolParamBase, ToolMeta, ToolBase
 from common.connection_utils import timeout
+from common.http_client import DEFAULT_TIMEOUT
 
 
 class GitHubParam(ToolParamBase):
@@ -28,7 +29,7 @@ class GitHubParam(ToolParamBase):
     """
 
     def __init__(self):
-        self.meta:ToolMeta = {
+        self.meta: ToolMeta = {
             "name": "github_search",
             "description": """GitHub repository search is a feature that enables users to find specific repositories on the GitHub platform. This search functionality allows users to locate projects, codebases, and other content hosted on GitHub based on various criteria.""",
             "parameters": {
@@ -36,9 +37,9 @@ class GitHubParam(ToolParamBase):
                     "type": "string",
                     "description": "The search keywords to execute with GitHub. The keywords should be the most important words/terms(includes synonyms) from the original request.",
                     "default": "{sys.query}",
-                    "required": True
+                    "required": True,
                 }
-            }
+            },
         }
         super().__init__()
         self.top_n = 10
@@ -47,12 +48,8 @@ class GitHubParam(ToolParamBase):
         self.check_positive_integer(self.top_n, "Top N")
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "query": {
-                "name": "Query",
-                "type": "line"
-            }
-        }
+        return {"query": {"name": "Query", "type": "line"}}
+
 
 class GitHub(ToolBase, ABC):
     component_name = "GitHub"
@@ -67,24 +64,20 @@ class GitHub(ToolBase, ABC):
             return ""
 
         last_e = ""
-        for _ in range(self._param.max_retries+1):
+        for _ in range(self._param.max_retries + 1):
             if self.check_if_canceled("GitHub processing"):
                 return
 
             try:
-                url = 'https://api.github.com/search/repositories?q=' + kwargs["query"] + '&sort=stars&order=desc&per_page=' + str(
-                    self._param.top_n)
-                headers = {"Content-Type": "application/vnd.github+json", "X-GitHub-Api-Version": '2022-11-28'}
-                response = requests.get(url=url, headers=headers).json()
+                url = "https://api.github.com/search/repositories?q=" + kwargs["query"] + "&sort=stars&order=desc&per_page=" + str(self._param.top_n)
+                headers = {"Content-Type": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+                response = requests.get(url=url, headers=headers, timeout=DEFAULT_TIMEOUT).json()
 
                 if self.check_if_canceled("GitHub processing"):
                     return
 
-                self._retrieve_chunks(response['items'],
-                                      get_title=lambda r: r["name"],
-                                      get_url=lambda r: r["html_url"],
-                                      get_content=lambda r: str(r["description"]) + '\n stars:' + str(r['watchers']))
-                self.set_output("json", response['items'])
+                self._retrieve_chunks(response["items"], get_title=lambda r: r["name"], get_url=lambda r: r["html_url"], get_content=lambda r: str(r["description"]) + "\n stars:" + str(r["watchers"]))
+                self.set_output("json", response["items"])
                 return self.output("formalized_content")
             except Exception as e:
                 if self.check_if_canceled("GitHub processing"):

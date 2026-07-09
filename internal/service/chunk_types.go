@@ -20,16 +20,29 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
+	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"strings"
-
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
+)
+
+var (
+	UNSTART  = "0"
+	RUNNING  = "1"
+	CANCEL   = "2"
+	DONE     = "3"
+	FAIL     = "4"
+	SCHEDULE = "5"
 )
 
 // ChunkService chunk service
@@ -38,15 +51,17 @@ type ChunkService struct {
 	engineType     server.EngineType
 	embeddingCache *utility.EmbeddingLRU
 	kbDAO          *dao.KnowledgebaseDAO
+	taskDAO        *dao.TaskDAO
 	userTenantDAO  *dao.UserTenantDAO
 	documentDAO    *dao.DocumentDAO
 	searchService  *SearchService
-}
 
+	decrementChunkStatsFunc func(string, string, int64, int64, float64) error
+}
 
 // RetrievalTestRequest retrieval test request
 type RetrievalTestRequest struct {
-	Datasets               common.StringSlice      `json:"dataset_ids" binding:"required"` // string or []string
+	Datasets               common.StringSlice     `json:"dataset_ids" binding:"required"` // string or []string
 	Question               string                 `json:"question"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
@@ -79,6 +94,34 @@ type GetChunkRequest struct {
 // GetChunkResponse response for getting a chunk
 type GetChunkResponse struct {
 	Chunk map[string]interface{} `json:"chunk"`
+}
+
+// ParseFileRequest is the request body for reparsing documents in a dataset.
+type ParseFileRequest struct {
+	DocumentIDs []string `json:"document_ids"`
+}
+
+// AddChunkRequest request for adding a chunk
+type AddChunkRequest struct {
+	DatasetID         string      `json:"dataset_id"`
+	DocumentID        string      `json:"document_id"`
+	Content           string      `json:"content"`
+	ImportantKeywords []string    `json:"important_keywords,omitempty"`
+	Questions         []string    `json:"questions,omitempty"`
+	TagKwd            []string    `json:"tag_kwd,omitempty"`
+	TagFeas           interface{} `json:"tag_feas,omitempty"`
+	ImageBase64       *string     `json:"image_base64,omitempty"`
+}
+
+// AddChunkResponse response for adding a chunk
+type AddChunkResponse struct {
+	Chunk map[string]interface{} `json:"chunk"`
+}
+
+// ErrorCoder exposes an application error code alongside an error string.
+type ErrorCoder interface {
+	error
+	Code() common.ErrorCode
 }
 
 // Get retrieves a chunk by ID
@@ -159,8 +202,134 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 	return &GetChunkResponse{Chunk: chunk}, nil
 }
 
+type StopParsingRequest struct {
+	DocumentIDs []string `json:"document_ids"`
+}
+
+type StopParsingResponse struct {
+	Data    map[string]interface{}
+	Message string
+}
+
+func (s *ChunkService) cancelAllTasksOfDoc(docID string) error {
+	tasks, err := s.taskDAO.GetByDocID(docID)
+	if err != nil {
+		return fmt.Errorf("failed to get tasks for document %s: %w", docID, err)
+	}
+
+	redisClient := redis.Get()
+	if redisClient == nil {
+		common.Logger.Warn(fmt.Sprintf("Redis unavailable; cannot cancel tasks for document %s", docID))
+		return nil
+	}
+
+	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
+		redisClient.Set(fmt.Sprintf("%s-cancel", task.ID), "x", 0)
+	}
+
+	return nil
+}
+
+func CheckDuplicateIDs(docList []string, idType string) ([]string, []string) {
+	uniqueDocIDs := make([]string, 0)
+	duplicateMessages := make([]string, 0)
+	idCount := make(map[string]int)
+
+	for _, docID := range docList {
+		idCount[docID] += 1
+	}
+
+	for id, count := range idCount {
+		if count > 1 {
+			duplicateMessages = append(duplicateMessages, fmt.Sprintf("Duplicate %s ids: %s", idType, id))
+		}
+		uniqueDocIDs = append(uniqueDocIDs, id)
+	}
+	return uniqueDocIDs, duplicateMessages
+}
+
+func IndexName(uid string) string {
+	return fmt.Sprintf("ragflow_%s", uid)
+}
+
+func (s *ChunkService) StopParsing(userID, datasetID string, req StopParsingRequest) (map[string]interface{}, common.ErrorCode, error) {
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("You don't own the dataset %s", datasetID)
+	}
+
+	if req.DocumentIDs == nil || len(req.DocumentIDs) == 0 {
+		return nil, common.CodeDataError, fmt.Errorf("document_ids is required")
+	}
+
+	docList, duplicateMessages := CheckDuplicateIDs(req.DocumentIDs, "document")
+
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
+	}
+
+	successCount := 0
+	for _, id := range docList {
+		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(id, datasetID)
+		if err != nil {
+			return nil, common.CodeDataError, fmt.Errorf("You don't own the document %s", id)
+		}
+		if doc == nil {
+			return nil, common.CodeDataError, fmt.Errorf("You don't own the document %s", id)
+		}
+
+		if doc.Run == nil || *doc.Run != RUNNING {
+			return nil, common.CodeDataError, fmt.Errorf("Can't stop parsing document that has not started or already completed")
+		}
+
+		err = s.cancelAllTasksOfDoc(id)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		info := map[string]interface{}{
+			"run":       "2",
+			"progress":  0,
+			"chunk_num": 0,
+		}
+		if err := s.documentDAO.UpdateByID(doc.ID, info); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to update document %s: %w", doc.ID, err)
+		}
+
+		indexName := IndexName(kb.TenantID)
+
+		exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, datasetID)
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to check chunk store %s/%s: %w", indexName, datasetID, err)
+		}
+		if exists {
+			if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
+				return nil, common.CodeServerError, fmt.Errorf("failed to delete chunks for document %s: %w", doc.ID, err)
+			}
+		} else {
+			common.Logger.Info(fmt.Sprintf("Skipping chunk delete during stop_parsing for doc %s: index %s/%s does not exist", doc.ID, indexName, datasetID))
+		}
+		successCount++
+	}
+	if len(duplicateMessages) > 0 {
+		if successCount > 0 {
+			return map[string]interface{}{
+				"success_count": successCount,
+				"errors":        duplicateMessages,
+				"message":       fmt.Sprintf("Partially stopped %d documents with %d errors", successCount, len(duplicateMessages)),
+			}, common.CodeSuccess, nil
+		}
+		return nil, common.CodeDataError, fmt.Errorf("%s", strings.Join(duplicateMessages, ";"))
+	}
+	return nil, common.CodeSuccess, nil
+}
+
 // ListChunksRequest request for listing chunks
 type ListChunksRequest struct {
+	DatasetID    string `json:"dataset_id,omitempty"`
 	DocID        string `json:"doc_id" binding:"required"`
 	Page         *int   `json:"page,omitempty"`
 	Size         *int   `json:"size,omitempty"`
@@ -200,6 +369,9 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(req.DocID)
 	if err != nil || doc == nil {
+		return nil, fmt.Errorf("document not found")
+	}
+	if req.DatasetID != "" && doc.KbID != req.DatasetID {
 		return nil, fmt.Errorf("document not found")
 	}
 
@@ -465,7 +637,11 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 
 	// Tag features
 	if req.TagFeas != nil {
-		d["tag_feas"] = req.TagFeas
+		tagFeas, err := validateUpdateTagFeatures(req.TagFeas)
+		if err != nil {
+			return updateChunkError{code: common.CodeArgumentError, message: "`tag_feas` " + err.Error()}
+		}
+		d["tag_feas"] = tagFeas
 	}
 
 	// Always include id
@@ -482,6 +658,57 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 	}
 
 	return nil
+}
+
+type updateChunkError struct {
+	code    common.ErrorCode
+	message string
+}
+
+func (e updateChunkError) Error() string {
+	return e.message
+}
+
+func (e updateChunkError) Code() common.ErrorCode {
+	return e.code
+}
+
+func validateUpdateTagFeatures(raw interface{}) (map[string]float64, error) {
+	parsed, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("must be an object mapping string tags to finite numeric scores greater than 0")
+	}
+	cleaned := make(map[string]float64, len(parsed))
+	for key, value := range parsed {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("keys must be non-empty strings")
+		}
+		var numeric float64
+		switch typed := value.(type) {
+		case float64:
+			numeric = typed
+		case float32:
+			numeric = float64(typed)
+		case int:
+			numeric = float64(typed)
+		case int8:
+			numeric = float64(typed)
+		case int16:
+			numeric = float64(typed)
+		case int32:
+			numeric = float64(typed)
+		case int64:
+			numeric = float64(typed)
+		default:
+			return nil, fmt.Errorf("values must be finite numbers greater than 0")
+		}
+		if math.IsNaN(numeric) || math.IsInf(numeric, 0) || numeric <= 0 {
+			return nil, fmt.Errorf("values must be finite numbers greater than 0")
+		}
+		cleaned[key] = numeric
+	}
+	return cleaned, nil
 }
 
 // RemoveChunksRequest request for removing chunks
@@ -561,7 +788,48 @@ func (s *ChunkService) RemoveChunks(req *RemoveChunksRequest, userID string) (in
 		return 0, fmt.Errorf("failed to delete chunks: %w", err)
 	}
 
+	if deletedCount > 0 {
+		if err := s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
+			return deletedCount, fmt.Errorf("failed to update chunk stats: %w", err)
+		}
+	}
+
 	return deletedCount, nil
+}
+
+func (s *ChunkService) decrementChunkStats(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {
+	if s.decrementChunkStatsFunc != nil {
+		return s.decrementChunkStatsFunc(docID, kbID, tokenNum, chunkNum, duration)
+	}
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&entity.Document{}).
+			Where("id = ? AND kb_id = ?", docID, kbID).
+			Updates(map[string]interface{}{
+				"token_num":        gorm.Expr("CASE WHEN token_num - ? >= 0 THEN token_num - ? ELSE 0 END", tokenNum, tokenNum),
+				"chunk_num":        gorm.Expr("CASE WHEN chunk_num - ? >= 0 THEN chunk_num - ? ELSE 0 END", chunkNum, chunkNum),
+				"process_duration": gorm.Expr("CASE WHEN process_duration + ? >= 0 THEN process_duration + ? ELSE 0 END", duration, duration),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("document not found")
+		}
+
+		result = tx.Model(&entity.Knowledgebase{}).
+			Where("id = ?", kbID).
+			Updates(map[string]interface{}{
+				"token_num": gorm.Expr("CASE WHEN token_num - ? >= 0 THEN token_num - ? ELSE 0 END", tokenNum, tokenNum),
+				"chunk_num": gorm.Expr("CASE WHEN chunk_num - ? >= 0 THEN chunk_num - ? ELSE 0 END", chunkNum, chunkNum),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("knowledgebase not found")
+		}
+		return nil
+	})
 }
 
 // SourcedChunk is a typed, normalized view over a retrieval result chunk.

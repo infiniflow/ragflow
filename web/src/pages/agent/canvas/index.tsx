@@ -89,7 +89,7 @@ export const nodeTypes: NodeTypes = {
   rewriteNode: RewriteNode,
   keywordNode: KeywordNode,
   // emailNode: EmailNode,
-  group: IterationNode,
+  iterationNode: IterationNode,
   iterationStartNode: IterationStartNode,
   agentNode: AgentNode,
   toolNode: ToolNode,
@@ -165,11 +165,14 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     setCurrentMessageId,
   });
 
-  const { stopMessage } = useStopMessageUnmount(chatVisible, latestTaskId);
-
   const [lastSendLoading, setLastSendLoading] = useState(false);
 
   const [currentSendLoading, setCurrentSendLoading] = useState(false);
+
+  const { stopMessage } = useStopMessageUnmount(
+    chatVisible && currentSendLoading,
+    latestTaskId,
+  );
 
   const { handleBeforeDelete } = useBeforeDelete();
 
@@ -181,10 +184,18 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   useEffect(() => {
     if (!chatVisible) {
-      stopMessage(latestTaskId);
+      if (currentSendLoading) {
+        stopMessage(latestTaskId);
+      }
       clearEventList();
     }
-  }, [chatVisible, clearEventList, latestTaskId, stopMessage]);
+  }, [
+    chatVisible,
+    clearEventList,
+    currentSendLoading,
+    latestTaskId,
+    stopMessage,
+  ]);
 
   const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
     setCurrentSendLoading(!!loading);

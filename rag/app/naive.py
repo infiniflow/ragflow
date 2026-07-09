@@ -36,7 +36,7 @@ from api.db.joint_services.tenant_model_service import (
     ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
     get_first_provider_model_name,
-    get_model_config_from_provider_instance,
+    resolve_model_config,
     get_tenant_default_model_by_type,
 )
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
@@ -66,21 +66,21 @@ from rag.nlp import (
 def _is_short_header(text, max_tokens=50):
     """
     Check if text is a short markdown header.
-    
+
     Args:
         text: The text to check
         max_tokens: Maximum tokens for a header to be considered "short"
-    
+
     Returns:
         bool: True if text is a short markdown header, False otherwise
     """
     if not text or not text.strip():
         return False
-    
+
     # Check if it matches markdown header pattern: 1-6 # followed by space
     if not re.match(r"^#{1,6}\s+", text.strip()):
         return False
-    
+
     # Check if token count is below threshold
     return num_tokens_from_string(text) < max_tokens
 
@@ -150,7 +150,7 @@ def by_mineru(
 
         if mineru_llm_name:
             try:
-                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, mineru_llm_name)
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, mineru_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
 
@@ -226,7 +226,7 @@ def by_opendataloader(
 
         if opendataloader_llm_name:
             try:
-                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, opendataloader_llm_name)
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, opendataloader_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 parse_options = {k: kwargs[k] for k in ("hybrid", "image_output", "sanitize") if k in kwargs}
@@ -280,7 +280,7 @@ def by_paddleocr(
 
         if paddleocr_llm_name:
             try:
-                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, paddleocr_llm_name)
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, paddleocr_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
@@ -301,6 +301,53 @@ def by_paddleocr(
     return None, None, None
 
 
+def by_somark(
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=MAXIMUM_PAGE_NUMBER,
+    lang="Chinese",
+    callback=None,
+    pdf_cls=None,
+    parse_method: str = "raw",
+    somark_llm_name: str | None = None,
+    tenant_id: str | None = None,
+    **kwargs,
+):
+    pdf_parser = None
+    if tenant_id:
+        if not somark_llm_name:
+            try:
+                from api.db.joint_services.tenant_model_service import ensure_somark_from_env
+
+                somark_llm_name = ensure_somark_from_env(tenant_id)
+            except Exception as e:
+                logging.warning(f"fallback to env somark: {e}")
+
+        if somark_llm_name:
+            try:
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, somark_llm_name)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
+                pdf_parser = ocr_model.mdl
+                sections, tables = pdf_parser.parse_pdf(
+                    filepath=filename,
+                    binary=binary,
+                    callback=callback,
+                    parse_method=parse_method,
+                    **kwargs,
+                )
+                return sections, tables, pdf_parser
+            except Exception as e:
+                logging.error(f"Failed to parse pdf via LLMBundle SoMark ({somark_llm_name}): {e}")
+                if callback:
+                    callback(-1, f"Failed to parse pdf via SoMark ({somark_llm_name}): {e}")
+                return None, None, None
+
+    if callback:
+        callback(-1, "SoMark not found.")
+    return None, None, None
+
+
 def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None, **kwargs):
     layout_recognizer = (kwargs.get("layout_recognizer") or "").strip()
     if (not layout_recognizer) or (layout_recognizer == "Plain Text"):
@@ -309,7 +356,7 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER
         tenant_id = kwargs.get("tenant_id")
         if not tenant_id:
             raise ValueError("tenant_id is required when using vision layout recognizer")
-        vision_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, layout_recognizer)
+        vision_model_config = resolve_model_config(tenant_id, LLMType.IMAGE2TEXT, layout_recognizer)
         vision_model = LLMBundle(
             tenant_id,
             model_config=vision_model_config,
@@ -328,6 +375,7 @@ PARSERS = {
     "opendataloader": by_opendataloader,
     "tcadp parser": by_tcadp,
     "paddleocr": by_paddleocr,
+    "somark": by_somark,
     "plaintext": by_plaintext,  # default
 }
 
@@ -781,6 +829,7 @@ class Markdown(MarkdownParser):
         return images, cache
 
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
+        """Parse markdown into text sections and optional standalone table chunks."""
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
@@ -789,10 +838,9 @@ class Markdown(MarkdownParser):
                 txt = f.read()
 
         remainder, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
-        # To eliminate duplicate tables in chunking result, uncomment code below and set separate_tables to True in line 410.
-        # extractor = MarkdownElementExtractor(remainder)
-        extractor = MarkdownElementExtractor(txt)
-        image_refs = self.extract_image_urls_with_lines(txt)
+        parsing_text = remainder if separate_tables else txt
+        extractor = MarkdownElementExtractor(parsing_text)
+        image_refs = self.extract_image_urls_with_lines(parsing_text)
         element_sections = extractor.extract_elements(delimiter, include_meta=True)
 
         sections = []
@@ -921,7 +969,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.8, "Finish parsing.")
         st = timer()
 
-        res.extend(doc_tokenize_chunks_with_images(chunks, doc, is_english, child_delimiters_pattern=child_deli))
+        res.extend(doc_tokenize_chunks_with_images(chunks, doc, is_english, child_delimiters_pattern=child_deli, language=lang))
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
         res.extend(embed_res)
         res.extend(url_res)
@@ -954,6 +1002,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             mineru_llm_name=parser_model_name,
             paddleocr_llm_name=parser_model_name,
             opendataloader_llm_name=opendataloader_llm_name,
+            somark_llm_name=parser_model_name,
             **kwargs,
         )
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
@@ -964,11 +1013,11 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if table_context_size or image_context_size:
             tables = append_context2table_image4pdf(sections, tables, image_context_size)
 
-        if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader"]:
+        if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark"]:
             if int(parser_config.get("chunk_token_num", 0)) <= 0:
                 parser_config["chunk_token_num"] = 0
 
-        res = tokenize_table(tables, doc, is_english)
+        res = tokenize_table(tables, doc, is_english, language=lang)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
@@ -990,7 +1039,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             sections, tables = tcadp_parser.parse_pdf(filepath=filename, binary=binary, callback=callback, output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""), file_type=file_type)
             sections = _normalize_section_text_for_rtl_presentation_forms(sections)
             parser_config["chunk_token_num"] = 0
-            res = tokenize_table(tables, doc, is_english)
+            res = tokenize_table(tables, doc, is_english, language=lang)
             callback(0.8, "Finish parsing.")
         else:
             # Default DeepDOC parser
@@ -1006,9 +1055,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.1, "Start to parse.")
         sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?;。；！？"))
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
-        print("\n", "-"*150, "\n")
+        print("\n", "-" * 150, "\n")
         print(sections)
-        print("\n", "-"*150, "\n")
+        print("\n", "-" * 150, "\n")
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(md|markdown|mdx)$", filename, re.IGNORECASE):
@@ -1017,7 +1066,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         sections, tables, section_images = markdown_parser(
             filename,
             binary,
-            separate_tables=False,
+            separate_tables=True,
             delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
             return_section_images=True,
         )
@@ -1060,7 +1109,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 soup = markdown_parser.md_to_html(section_text)
                 hyperlink_urls = markdown_parser.get_hyperlink_urls(soup)
                 urls.update(hyperlink_urls)
-        res = tokenize_table(tables, doc, is_english)
+        res = tokenize_table(tables, doc, is_english, language=lang)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
@@ -1114,7 +1163,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     st = timer()
     overlapped_percent = normalize_overlapped_percent(parser_config.get("overlapped_percent", 0))
-    
+
     if is_markdown:
         merged_chunks = []
         merged_images = []
@@ -1159,9 +1208,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         has_images = merged_images and any(img is not None for img in merged_images)
 
         if has_images:
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli, language=lang))
         else:
-            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli, language=lang))
     else:
         if section_images:
             if all(image is None for image in section_images):
@@ -1169,11 +1218,11 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         if section_images:
             chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli, language=lang))
         else:
             chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
 
-            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli, language=lang))
 
     if urls and parser_config.get("analyze_hyperlink", False) and is_root:
         for index, url in enumerate(urls):
@@ -1199,10 +1248,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     # Attach PDF outline as transient metadata on the first chunk.
     # task_executor.py will extract and persist it as document metadata.
     if res and pdf_parser and getattr(pdf_parser, "outlines", None):
-        res[0]["__outline__"] = [
-            {"title": title, "depth": depth}
-            for title, depth, *_ in pdf_parser.outlines
-        ]
+        res[0]["__outline__"] = [{"title": title, "depth": depth} for title, depth, *_ in pdf_parser.outlines]
 
     return res
 

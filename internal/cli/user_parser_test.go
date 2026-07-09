@@ -5,6 +5,32 @@ import (
 	"testing"
 )
 
+func TestParseChatMessageUsesCurrentModel(t *testing.T) {
+	p := NewParser("chat message 'hi';")
+	cmd, err := p.Parse(APIMode)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	if cmd.Type != "api_chat_to_model" {
+		t.Fatalf("Command Type = %v, expected api_chat_to_model", cmd.Type)
+	}
+	if _, ok := cmd.Params["composite_model_name"]; ok {
+		t.Fatal("composite_model_name should not be set")
+	}
+	if _, ok := cmd.Params["model_id"]; ok {
+		t.Fatal("model_id should not be set")
+	}
+
+	gotMessages, ok := cmd.Params["messages"].([]string)
+	if !ok {
+		t.Fatalf("messages param has type %T, expected []string", cmd.Params["messages"])
+	}
+	if !reflect.DeepEqual(gotMessages, []string{"hi"}) {
+		t.Fatalf("messages = %v, expected [hi]", gotMessages)
+	}
+}
+
 func TestParseAddModelWithDimensions(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -14,9 +40,9 @@ func TestParseAddModelWithDimensions(t *testing.T) {
 	}{
 		{
 			name:  "Add model with detailed embedding dimensions",
-			input: "add model 'x1 x2 x3 x4 x5' to provider 'vllm' instance 'test' with tokens 1024 chat think vision, token 2048 chat, token 1024 think vision, token 0 embedding 2048 64 1024 2048, token 0 embedding 2048;",
+			input: "add model 'x1 x2 x3 x4 x5' to provider 'vllm' instance 'test' tokens 1024 chat think vision, token 2048 chat, token 1024 think vision, token 0 embedding 2048 64 1024 2048, token 0 embedding 2048;",
 			expected: &Command{
-				Type: "add_custom_model",
+				Type: "api_add_custom_model",
 				Params: map[string]interface{}{
 					"provider_name": "vllm",
 					"instance_name": "test",

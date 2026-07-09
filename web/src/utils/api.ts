@@ -69,6 +69,13 @@ export default {
     `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
   deleteProviderInstance: ({ provider_name }: { provider_name: string }) =>
     `${restAPIv1}/providers/${provider_name}/instances`,
+  updateProviderInstance: ({
+    provider_name,
+    instance_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+  }) => `${restAPIv1}/providers/${provider_name}/instances/${instance_name}`,
   updateModelStatus: ({
     provider_name,
     instance_name,
@@ -79,6 +86,24 @@ export default {
     model_name: string;
   }) =>
     `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models/${model_name}`,
+  patchInstanceModel: ({
+    provider_name,
+    instance_name,
+    model_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+    model_name: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models/${model_name}`,
+  deleteInstanceModels: ({
+    provider_name,
+    instance_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
 
   // data source
   dataSourceUpdate: (id: string) => `${restAPIv1}/connectors/${id}`,
@@ -102,6 +127,8 @@ export default {
   chatChannelDetail: (id: string) => `${restAPIv1}/chat-channels/${id}`,
   chatChannelUpdate: (id: string) => `${restAPIv1}/chat-channels/${id}`,
   chatChannelDel: (id: string) => `${restAPIv1}/chat-channels/${id}`,
+  chatChannelRuntime: (id: string) =>
+    `${restAPIv1}/chat-channels/${id}/runtime`,
 
   // plugin
   llmTools: `${restAPIv1}/plugin/tools`,
@@ -160,7 +187,7 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   unbindPipelineTask: (datasetId: string, indexType: string, wipe?: boolean) =>
     `${restAPIv1}/datasets/${datasetId}/${indexType.toLowerCase()}${wipe === false ? '?wipe=false' : ''}`,
-  pipelineRerun: `${webAPI}/canvas/rerun`,
+  pipelineRerun: `${restAPIv1}/agents/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
   updateDocumentsMetadata: (datasetId: string) =>
@@ -277,6 +304,8 @@ export default {
     `${restAPIv1}/agents/${agentId}/components/${componentId}/debug`,
   trace: (agentId: string, messageId: string) =>
     `${restAPIv1}/agents/${agentId}/logs/${messageId}`,
+  sharedTrace: (sharedId: string, messageId: string) =>
+    `${restAPIv1}/agentbots/${sharedId}/logs/${messageId}`,
   cancelCanvas: (taskId: string) => `${restAPIv1}/tasks/${taskId}/cancel`,
   // agent
   inputForm: (agentId: string, componentId: string) =>
@@ -299,6 +328,24 @@ export default {
   cancelDataflow: (id: string) => `${restAPIv1}/tasks/${id}/cancel`,
   getAttachmentFileDownload: (docId: string) =>
     `${restAPIv1}/agents/attachments/${docId}/download`,
+  getAttachmentFilePreview: ({
+    docId,
+    ext,
+    mimeType,
+    filename,
+  }: {
+    docId: string;
+    ext?: string;
+    mimeType?: string;
+    filename?: string;
+  }) => {
+    const params = new URLSearchParams();
+    if (ext) params.set('ext', ext);
+    if (mimeType) params.set('mime_type', mimeType);
+    if (filename) params.set('filename', filename);
+    const query = params.toString();
+    return `${restAPIv1}/agents/attachments/${docId}/preview${query ? `?${query}` : ''}`;
+  },
   downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,

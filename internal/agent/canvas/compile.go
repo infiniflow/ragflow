@@ -11,10 +11,12 @@ package canvas
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/cloudwego/eino/compose"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // CheckPointStore is the minimal interface Compile needs at compile time.
@@ -115,7 +117,7 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 			}
 		}
 		if n > 0 {
-			log.Printf("canvas: Compile received Canvas with %d legacy LoopItem/IterationItem/Iteration nodes; this path bypassed dsl.NormalizeForCanvas — the fold step is not applied", n)
+			common.Info("canvas: Compile received Canvas with legacy LoopItem/IterationItem/Iteration nodes; this path bypassed dsl.NormalizeForCanvas — the fold step is not applied", zap.Int("n", n))
 		}
 	}
 

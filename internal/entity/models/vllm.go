@@ -49,7 +49,7 @@ func (v *VllmModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (v *VllmModel) Name() string {
-	return "vllm"
+	return "VLLM"
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response

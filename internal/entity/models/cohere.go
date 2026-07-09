@@ -49,7 +49,7 @@ func NewCoHereModel(baseURL map[string]string, urlSuffix URLSuffix) *CoHereModel
 }
 
 func (c *CoHereModel) Name() string {
-	return "cohere"
+	return "Cohere"
 }
 
 func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
@@ -526,6 +526,8 @@ func (c *CoHereModel) TranscribeAudio(modelName *string, file *string, apiConfig
 	writer := multipart.NewWriter(&body)
 
 	// open audio file
+
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
 	audioFile, err := os.Open(*file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)

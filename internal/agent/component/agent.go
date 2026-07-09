@@ -13,7 +13,9 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -24,8 +26,41 @@ import (
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+
+	"go.uber.org/zap"
 )
+
+// agentLLMIDPattern matches `<model>@<provider>` and
+// `<model>@<instance>@<provider>` (the trailing `@<provider>` is
+// always the last segment — the segment just before the last `@`
+// is treated as the bare model name for upstream API calls). The
+// browser component has the same idea at browser.go:88-92, but
+// keeps the regex greedy for its 2-part fixture; we keep both
+// behaviours here via the in-function split below.
+
+// agentProviderLastSegmentSplit takes a composite llm_id and
+// returns (bareModelName, providerName, true) — or ("", "", false)
+// when no `@<provider>` suffix exists. The bare model name is
+// always `parts[0]` (the FIRST `@`-delimited segment); the
+// provider is `parts[1]` for the 2-part shape and `parts[2]` for
+// the 3+ shape. Any middle `@<seg>` segments (the "instance" in
+// Python's split_model_name) are intentionally dropped — the Go
+// drivers and the tenant_llm lookup both key on the bare model
+// name + factory, not on the instance.
+//
+// Mirrors Python's split_model_name at
+// api/db/joint_services/tenant_model_service.py:163-178:
+//   - "model"                     → ("model", "",       false)
+//   - "model@provider"            → ("model", "provider", true)
+//   - "model@instance@provider"   → ("model", "provider", true)
+//   - 4+ parts                    → ("parts[0]", "parts[2]", true) —
+//     the trailing segment wins, anything between instance and
+//     provider is dropped (Python uses parts[2] unconditionally).
+func agentProviderLastSegmentSplit(s string) (modelName, providerName string, hasProvider bool) {
+	return splitCompositeLLMID(s)
+}
 
 // AgentComponent is a multi-turn ReAct agent.
 type AgentComponent struct {
@@ -59,6 +94,8 @@ type AgentParam struct {
 	APIKey  string
 	BaseURL string
 }
+
+const agentUserPromptSchemaDefault = "This is the order you need to send to the agent."
 
 // AgentMeta declares the OpenAI-style function-call interface for the
 // Agent component. Mirrors ragflow Python's ToolMeta shape.
@@ -125,7 +162,13 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	}
 
 	input := []*schema.Message{schema.UserMessage(p.UserPrompt)}
-	return agent.Generate(ctx, input)
+	opt, future := react.WithMessageFuture()
+	ctx = setArtifactCollector(ctx, future)
+	msg, err := agent.Generate(ctx, input, opt)
+	if err != nil {
+		return nil, err
+	}
+	return msg, nil
 }
 
 // addToolCallMemory summarizes the tool calls observed in msg via
@@ -240,17 +283,16 @@ func chunksFromState(ctx context.Context) []prompts.CitationSource {
 	return out
 }
 
-// GetInputForm aggregates the Agent's own meta-schema with each
-// sub-tool's input form. Mirrors Python's `Agent.get_input_form`.
+// GetInputForm aggregates the Agent's own user-callable parameters with each
+// sub-tool's input form. Mirrors Python's `Agent.get_input_form`, which
+// returns a flat field-definition map keyed by input name.
 //
 // Today the sub-tool input forms are aggregated via an optional
 // `InputForm() map[string]any` method on the eino tool (when tools
 // implement it); tools that don't expose a structured input form
 // are skipped silently.
 func (c *AgentComponent) GetInputForm() map[string]any {
-	out := map[string]any{
-		"self": c.param.Meta,
-	}
+	out := extractAgentPromptInputForm(c.param.SystemPrompt, c.param.UserPrompt)
 	tools, err := buildAgentTools(c.param)
 	if err != nil {
 		return out
@@ -270,6 +312,41 @@ func (c *AgentComponent) GetInputForm() map[string]any {
 		}
 	}
 	return out
+}
+
+func extractAgentPromptInputForm(systemPrompt, userPrompt string) map[string]any {
+	out := map[string]any{}
+	seen := map[string]struct{}{}
+	matches := append(runtime.VarRefPattern.FindAllStringSubmatch(systemPrompt, -1), runtime.VarRefPattern.FindAllStringSubmatch(userPrompt, -1)...)
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		key := strings.TrimSpace(match[1])
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out[key] = map[string]any{
+			"type":     "line",
+			"name":     key,
+			"optional": false,
+		}
+	}
+	return out
+}
+
+func sortedAgentPromptInputKeys(systemPrompt, userPrompt string) []string {
+	form := extractAgentPromptInputForm(systemPrompt, userPrompt)
+	keys := make([]string, 0, len(form))
+	for key := range form {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // Reset calls Reset on every sub-tool that implements the Resetter
@@ -361,6 +438,58 @@ func (c *AgentComponent) Name() string { return "Agent" }
 // the output map.
 func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	p := mergeAgentParam(c.param, inputs)
+	hasRuntimeUserPrompt := false
+	if v, ok := stringFrom(inputs, "user_prompt"); ok {
+		hasRuntimeUserPrompt = !shouldFallbackToSysQuery(v)
+	}
+
+	// v3.6.1: derive the driver and bare model name from the
+	// composite llm_id when the Agent DSL didn't set `driver`. The
+	// Python side does the same in split_model_name at
+	// api/db/joint_services/tenant_model_service.py:163-178. We
+	// also use this opportunity to look up the tenant's LLM
+	// credentials from `tenant_llm` when the DSL omitted `api_key`
+	// — mirrors Python's get_model_config_from_provider_instance,
+	// which is how the Python canvas finds the tenant's
+	// provider-specific API key + base URL without storing them
+	// in the canvas DSL.
+	// Save the original composite llm_id before the split drops the
+	// instance-name segment. We need it for the tenant_model_instance
+	// fallback path below.
+	originalModelID := p.ModelID
+
+	if p.Driver == "" && p.ModelID != "" {
+		if m, prov, ok := agentProviderLastSegmentSplit(p.ModelID); ok {
+			p.Driver = prov
+			p.ModelID = m
+		}
+	}
+	p.APIKey, p.BaseURL = resolveTenantLLMConfig(ctx, p.Driver, p.ModelID, p.APIKey, p.BaseURL, originalModelID)
+
+	var state *runtime.CanvasState
+	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
+		state = s
+		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
+			p.SystemPrompt = resolved
+			if rerr != nil {
+				common.Debug("agent: resolve system_prompt", zap.Error(rerr))
+			}
+		}
+		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); resolved != p.UserPrompt || rerr == nil {
+			p.UserPrompt = resolved
+			if rerr != nil {
+				common.Debug("agent: resolve user_prompt", zap.Error(rerr))
+			}
+		}
+	}
+	if hasRuntimeUserPrompt {
+		p.UserPrompt = formatAgentRuntimePrompt(inputs, p.UserPrompt)
+	} else if shouldFallbackToSysQuery(p.UserPrompt) && state != nil {
+		if query, ok := stringFromState(state, "query"); ok {
+			p.UserPrompt = query
+		}
+	}
+
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
@@ -412,6 +541,21 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	// grounding call is best-effort — on failure the original
 	// content is kept and the error is surfaced under
 	// outputs["grounding_error"].
+	// Diagnostic sentinel (temporary — see plan): log the post-
+	// agentRunner state right before the `msg.Content` deref so a
+	// subsequent panic shows whether the agent returned (nil, nil).
+	if msg == nil {
+		common.Debug("agent.Invoke: msg is NIL after agentRunner",
+			zap.String("driver", p.Driver),
+			zap.String("modelID", p.ModelID),
+			zap.Int("userPrompt_len", len(p.UserPrompt)),
+			zap.Error(err))
+		return nil, fmt.Errorf("component: Agent.Invoke: agent runner returned nil message (driver=%q modelID=%q): %w", p.Driver, p.ModelID, err)
+	}
+	common.Debug("agent.Invoke: msg OK",
+		zap.String("driver", p.Driver),
+		zap.String("modelID", p.ModelID),
+		zap.Int("content_len", len(msg.Content)))
 	content := msg.Content
 	var groundingStatus string
 	if p.Cite {
@@ -428,7 +572,7 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 			}
 		}
 	}
-	artifacts := collectArtifactsFromToolCalls(msg)
+	artifacts := collectArtifactsFromToolCalls(ctx, msg)
 	artifactMD := formatArtifactMarkdown(artifacts, content)
 	out := map[string]any{
 		"content":    content + artifactMD,
@@ -460,16 +604,19 @@ func (c *AgentComponent) Stream(ctx context.Context, inputs map[string]any) (<-c
 // Inputs returns parameter metadata for tooling.
 func (c *AgentComponent) Inputs() map[string]string {
 	return map[string]string{
-		"model_id":      "Provider-side model identifier (e.g. \"gpt-4o-mini\")",
-		"system_prompt": "Optional system prompt",
-		"user_prompt":   "User prompt; supports {{cpn_id@param}} references",
-		"top_p":         "Top-p (nucleus) sampling cutoff (0.0-1.0). Optional.",
-		"tools":         "List of tool names to make available to the ReAct agent.",
-		"tool_params":   "Optional node-level tool constructor params keyed by tool name (e.g. execute_sql DB config).",
-		"max_rounds":    "Maximum ReAct rounds (default 3).",
-		"driver":        "Provider driver name",
-		"api_key":       "Override API key for this call.",
-		"cite":          "When true, make a post-stream citation-grounding call (reads chunks from state.Retrieval).",
+		"model_id":                "Provider-side model identifier (e.g. \"gpt-4o-mini\")",
+		"system_prompt":           "Optional system prompt",
+		"user_prompt":             "User prompt; supports {{cpn_id@param}} references",
+		"top_p":                   "Top-p (nucleus) sampling cutoff (0.0-1.0). Optional.",
+		"tools":                   "List of tool names to make available to the ReAct agent.",
+		"tool_params":             "Optional node-level tool constructor params keyed by tool name (e.g. execute_sql DB config).",
+		"max_rounds":              "Maximum ReAct rounds (default 3).",
+		"optimize_multi_turn":     "When true (default), multi-turn history is condensed via full_question LLM call.",
+		"optimize_history_window": "Number of history turns to include in the optimization prompt (default 3).",
+		"driver":                  "Provider driver name",
+		"api_key":                 "Override API key for this call.",
+		"base_url":                "Override the driver default endpoint URL.",
+		"cite":                    "When true, make a post-stream citation-grounding call (reads chunks from state.Retrieval).",
 	}
 }
 
@@ -487,13 +634,31 @@ func (c *AgentComponent) Outputs() map[string]string {
 // resolving the driver through the RAGFlow provider manager.
 func buildAgentChatModel(p AgentParam) (*models.EinoChatModel, error) {
 	driver := p.Driver
+	modelID := p.ModelID
+
+	// When the Agent DSL omits `driver`, derive it from the composite
+	// llm_id format. The RAGFlow DSL stores the model identifier as
+	// "<model>@<instance>@<provider>" (mirrors Python's
+	// split_model_name at
+	// api/db/joint_services/tenant_model_service.py:163-178 and the
+	// Go-side SplitModelNameAndFactory at
+	// internal/service/tenant.go:168). Two-part
+	// "<model>@<provider>" and bare "<model>" are also accepted —
+	// bare means no driver known, which falls through to the dummy
+	// driver below. The trailing "@<provider>" suffix must also be
+	// stripped from the model id before passing to the driver — the
+	// upstream APIs (ZhipuAI, OpenAI, …) do not accept composite
+	// names and would 400 on the "@<provider>" tail.
+	if driver == "" && modelID != "" {
+		if bareModelName, providerName, ok := splitCompositeLLMID(modelID); ok {
+			driver = providerName
+			modelID = bareModelName
+		}
+	}
 	if driver == "" {
 		driver = "dummy"
 	}
-	var baseURL map[string]string
-	if p.BaseURL != "" {
-		baseURL = map[string]string{"default": p.BaseURL}
-	}
+	baseURL := baseURLMapForDriver(driver, p.BaseURL)
 	// urlSuffix: see chatURLSuffixFor in llm.go for the rationale.
 	// The factory's NewModelDriver stores URLSuffix verbatim; the
 	// driver then appends URLSuffix.Chat to baseURL to build the
@@ -509,7 +674,7 @@ func buildAgentChatModel(p AgentParam) (*models.EinoChatModel, error) {
 	}
 	apiKey := p.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
-	cm := models.NewChatModel(d, &p.ModelID, cfg)
+	cm := models.NewChatModel(d, &modelID, cfg)
 	// ChatConfig construction is conditional on TopP being set, unlike
 	// the LLM path which always builds a ChatConfig (Temperature/MaxTokens
 	// pass-through). The asymmetry is intentional: AgentParam has no
@@ -530,22 +695,130 @@ type artifactEntry struct {
 	URL  string `json:"url"`
 }
 
-// collectArtifactsFromToolCalls extracts artifact entries from a
-// ReAct final message. Today, eino's react.Agent.Generate returns only
-// the final message — the tool-response state lives inside the agent
-// runtime and is not directly accessible. So this v1 returns an empty
-// slice; the wiring lives in a follow-up that hoists the eino state
-// into a place AgentComponent can read.
-//
-// When the tool response state becomes accessible (a future phase),
-// the entry point to wire it is here: scan the eino conversation
-// messages for entries whose `Extra["_ARTIFACTS"]` carries the
-// per-tool artifact metadata, decode the JSON, and append to the
-// returned slice. The shape expected from each tool is:
-//
-//	{ "name": "report.pdf", "url": "https://..." }
-func collectArtifactsFromToolCalls(_ *schema.Message) []artifactEntry {
+// artifactCollectorKey is the context key used to stash the
+// MessageFuture from react.WithMessageFuture() so the AgentComponent
+// can collect artifacts after the ReAct loop finishes. The collector
+// is created per-invocation in runEinoReActAgent.
+type artifactCollectorKey struct{}
+
+// setArtifactCollector registers the MessageFuture for this agent run
+// in the context. It is called from runEinoReActAgent after
+// react.WithMessageFuture() returns a future.
+func setArtifactCollector(ctx context.Context, future react.MessageFuture) context.Context {
+	return context.WithValue(ctx, artifactCollectorKey{}, future)
+}
+
+// getArtifactCollector retrieves the MessageFuture registered for the
+// current agent run. Returns nil when no collector was registered
+// (e.g., tests that stub agentRunner).
+func getArtifactCollector(ctx context.Context) react.MessageFuture {
+	v := ctx.Value(artifactCollectorKey{})
+	if v == nil {
+		return nil
+	}
+	if f, ok := v.(react.MessageFuture); ok {
+		return f
+	}
 	return nil
+}
+
+// collectArtifactsFromToolCalls drains the MessageFuture stored in
+// ctx (if any) and extracts artifact entries from every tool response
+// message that carries a `_ARTIFACTS` payload in its Extra field.
+// The final message is ignored because it is an assistant message and
+// does not contain tool results. Returns a de-duplicated list ordered
+// by first appearance.
+//
+// The expected payload shape in each tool response is:
+//
+//	{ "_ARTIFACTS": [{ "name": "report.pdf", "url": "https://..." }, ...] }
+func collectArtifactsFromToolCalls(ctx context.Context, _ *schema.Message) []artifactEntry {
+	future := getArtifactCollector(ctx)
+	if future == nil {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	var out []artifactEntry
+
+	iter := future.GetMessages()
+	for {
+		msg, ok, err := iter.Next()
+		if err != nil {
+			common.Debug("agent: artifact collection iterator error", zap.Error(err))
+			break
+		}
+		if !ok {
+			break
+		}
+		if msg == nil || msg.Role != schema.Tool {
+			continue
+		}
+		rawArtifacts := extractArtifactsFromToolMessage(msg)
+		for _, a := range rawArtifacts {
+			if a.URL == "" || a.Name == "" {
+				continue
+			}
+			if _, exists := seen[a.URL]; exists {
+				continue
+			}
+			seen[a.URL] = struct{}{}
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// extractArtifactsFromToolMessage parses the JSON payload of a tool
+// response message and returns the `_ARTIFACTS` list. The payload is
+// read from msg.Content when it is non-empty; otherwise the first text
+// element of msg.UserInputMultiContent is used. This matches the eino
+// tool contract where tool results are delivered as a string.
+func extractArtifactsFromToolMessage(msg *schema.Message) []artifactEntry {
+	payload := msg.Content
+	if payload == "" && len(msg.UserInputMultiContent) > 0 {
+		payload = toolMessageTextContent(msg)
+	}
+	if payload == "" {
+		return nil
+	}
+
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(payload), &envelope); err != nil {
+		return nil
+	}
+
+	raw, ok := envelope["_ARTIFACTS"].([]any)
+	if !ok {
+		return nil
+	}
+
+	out := make([]artifactEntry, 0, len(raw))
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := m["name"].(string)
+		url, _ := m["url"].(string)
+		if name == "" || url == "" {
+			continue
+		}
+		out = append(out, artifactEntry{Name: name, URL: url})
+	}
+	return out
+}
+
+// toolMessageTextContent returns the first text content part of a tool
+// message, or an empty string if no text part is found.
+func toolMessageTextContent(msg *schema.Message) string {
+	for i := range msg.UserInputMultiContent {
+		part := &msg.UserInputMultiContent[i]
+		if part.Type == schema.ChatMessagePartTypeText && part.Text != "" {
+			return part.Text
+		}
+	}
+	return ""
 }
 
 // formatArtifactMarkdown renders a slice of artifacts as markdown
@@ -600,6 +873,95 @@ func extractToolCalls(msg *schema.Message) []map[string]any {
 	return calls
 }
 
+// promptMessagesFromParams extracts the Python DSL `prompts` list into
+// the single system/user prompt shape supported by the Go ReAct runner.
+func promptMessagesFromParams(params map[string]any) (systemPrompt, userPrompt string, ok bool) {
+	raw, exists := params["prompts"]
+	if !exists {
+		return "", "", false
+	}
+	switch v := raw.(type) {
+	case string:
+		return "", v, true
+	case []any:
+		var systems, users []string
+		for _, item := range v {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			content, ok := stringFrom(m, "content")
+			if !ok {
+				continue
+			}
+			role, _ := stringFrom(m, "role")
+			switch strings.ToLower(strings.TrimSpace(role)) {
+			case "system":
+				systems = append(systems, content)
+			case "user", "":
+				users = append(users, content)
+			}
+		}
+		if len(systems) == 0 && len(users) == 0 {
+			return "", "", false
+		}
+		return strings.Join(systems, "\n"), strings.Join(users, "\n"), true
+	case []map[string]any:
+		items := make([]any, 0, len(v))
+		for _, item := range v {
+			items = append(items, item)
+		}
+		return promptMessagesFromParams(map[string]any{"prompts": items})
+	}
+	return "", "", false
+}
+
+func appendPromptText(base, extra string) string {
+	if strings.TrimSpace(extra) == "" {
+		return base
+	}
+	if strings.TrimSpace(base) == "" {
+		return extra
+	}
+	return base + "\n" + extra
+}
+
+func hasNonEmptyString(inputs map[string]any, name string) bool {
+	v, ok := stringFrom(inputs, name)
+	return ok && strings.TrimSpace(v) != ""
+}
+
+func shouldFallbackToSysQuery(prompt string) bool {
+	p := strings.TrimSpace(prompt)
+	return p == "" || p == agentUserPromptSchemaDefault
+}
+
+func stringFromState(state *runtime.CanvasState, name string) (string, bool) {
+	if state == nil {
+		return "", false
+	}
+	v, ok := state.Sys[name].(string)
+	if !ok || strings.TrimSpace(v) == "" {
+		return "", false
+	}
+	return v, true
+}
+
+func formatAgentRuntimePrompt(inputs map[string]any, userPrompt string) string {
+	var b strings.Builder
+	if reasoning, ok := stringFrom(inputs, "reasoning"); ok && reasoning != "" {
+		fmt.Fprintf(&b, "\nREASONING:\n%s\n", reasoning)
+	}
+	if contextText, ok := stringFrom(inputs, "context"); ok && contextText != "" {
+		fmt.Fprintf(&b, "\nCONTEXT:\n%s\n", contextText)
+	}
+	if b.Len() == 0 {
+		return userPrompt
+	}
+	fmt.Fprintf(&b, "\nQUERY:\n%s\n", userPrompt)
+	return b.String()
+}
+
 // mergeAgentParam layers raw inputs over the receiver's default param set.
 //
 // v1 aliases accepted alongside the v2 names: "llm_id" → "model_id",
@@ -618,7 +980,13 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	} else if v, ok := stringFrom(inputs, "sys_prompt"); ok {
 		p.SystemPrompt = v
 	}
-	if v, ok := stringFrom(inputs, "user_prompt"); ok {
+	if promptSystem, promptUser, ok := promptMessagesFromParams(inputs); ok {
+		p.SystemPrompt = appendPromptText(p.SystemPrompt, promptSystem)
+		if strings.TrimSpace(promptUser) != "" {
+			p.UserPrompt = promptUser
+		}
+	}
+	if v, ok := stringFrom(inputs, "user_prompt"); ok && !shouldFallbackToSysQuery(v) {
 		p.UserPrompt = v
 	}
 	if v, ok := floatFrom(inputs, "top_p"); ok {
@@ -642,6 +1010,12 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	}
 	if v, ok := nestedMapFrom(inputs, "tool_params"); ok {
 		p.ToolParams = v
+	}
+	if v, ok := boolFrom(inputs, "optimize_multi_turn"); ok {
+		p.OptimizeMultiTurn = v
+	}
+	if v, ok := intFrom(inputs, "optimize_history_window"); ok {
+		p.OptimizeHistoryWindow = v
 	}
 	if v, ok := boolFrom(inputs, "cite"); ok {
 		p.Cite = v
@@ -705,7 +1079,11 @@ func init() {
 		} else if v, ok := stringFrom(params, "sys_prompt"); ok {
 			p.SystemPrompt = v
 		}
-		if v, ok := stringFrom(params, "user_prompt"); ok {
+		if promptSystem, promptUser, ok := promptMessagesFromParams(params); ok {
+			p.SystemPrompt = appendPromptText(p.SystemPrompt, promptSystem)
+			p.UserPrompt = promptUser
+		}
+		if v, ok := stringFrom(params, "user_prompt"); ok && p.UserPrompt == "" {
 			p.UserPrompt = v
 		}
 		if v, ok := floatFrom(params, "top_p"); ok {

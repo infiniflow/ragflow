@@ -159,6 +159,7 @@ func (t *TavilySearchStub) Outputs() map[string]string {
 // ----- ExeSQL -----
 
 const componentNameExeSQL = "ExeSQL"
+const componentNameCodeExec = "CodeExec"
 
 // ExeSQLStub is a fixture stub for the ExeSQL component. The real
 // implementation (see internal/agent/tool/exesql.go) opens a MySQL
@@ -499,8 +500,11 @@ func init() {
 	Register("search_my_dateset", newRetrievalComponent)
 	Register(componentNameTavilySearch, NewTavilySearchStub)
 	Register(componentNameExeSQL, newExeSQLComponent)
+	Register(componentNameCodeExec, newCodeExecComponent)
 	Register(componentNameGenerate, NewGenerateStub)
 	Register(componentNameAnswer, NewAnswerStub)
 	Register(componentNameIteration, NewIterationStub)
 	Register(componentNameIterationItem, NewIterationItemStub)
+	Register("BGPT", newBGPTComponent)
+	Register("YahooFinance", newYahooFinanceComponent)
 }

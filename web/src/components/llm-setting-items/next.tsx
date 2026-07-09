@@ -38,8 +38,10 @@ interface LlmSettingFieldItemsProps {
     | 'presence_penalty'
     | 'frequency_penalty'
     | 'max_tokens'
+    | 'thinking'
   >;
   showCollapse?: boolean;
+  ownerTenantId?: string;
 }
 
 export const LLMIdFormField = {
@@ -61,6 +63,7 @@ export const LlmSettingFieldSchema = {
   frequency_penalty: z.coerce.number().optional(),
   max_tokens: z.number().optional(),
   parameter: z.string().optional(),
+  thinking: z.enum(['default', 'enabled', 'disabled']).optional(),
 };
 
 export const LlmSettingSchema = {
@@ -80,9 +83,11 @@ export function LlmSettingFieldItems({
     'presence_penalty',
     'frequency_penalty',
     'max_tokens',
+    'thinking',
   ],
   llmId,
   showCollapse = false,
+  ownerTenantId,
 }: LlmSettingFieldItemsProps) {
   const form = useFormContext();
   const { t } = useTranslate('chat');
@@ -151,6 +156,7 @@ export function LlmSettingFieldItems({
         name={llmId ?? getFieldWithPrefix('llm_id')}
         testId={llmSelectTestId}
         optionTestIdPrefix={llmOptionTestIdPrefix}
+        ownerTenantId={ownerTenantId}
       ></LLMFormField>
       <CollapseComponent {...collapseProps}>
         <section className="space-y-5">
@@ -248,6 +254,41 @@ export function LlmSettingFieldItems({
                 checkParameterIsEqual();
               }}
             ></SliderInputSwitchFormField>
+          )}
+          {showFields.some((item) => item === 'thinking') && (
+            <FormField
+              control={form.control}
+              name={getFieldWithPrefix('thinking')}
+              render={({ field }) => (
+                <FormItem className="flex justify-between items-center">
+                  <FormLabel className="flex-1" tooltip={t('thinkingTip')}>
+                    {t('thinking')}
+                  </FormLabel>
+                  <FormControl>
+                    <Select
+                      value={field.value ?? 'default'}
+                      onValueChange={field.onChange}
+                    >
+                      <SelectTrigger className="flex-1 !m-0">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="default">
+                          {t('thinkingDefault')}
+                        </SelectItem>
+                        <SelectItem value="enabled">
+                          {t('thinkingEnabled')}
+                        </SelectItem>
+                        <SelectItem value="disabled">
+                          {t('thinkingDisabled')}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           )}
         </section>
       </CollapseComponent>

@@ -111,7 +111,10 @@ def _load_provider_from_settings() -> None:
     except Exception as e:
         logger.error(f"Failed to load sandbox provider from settings: {e}")
         import traceback
+
         traceback.print_exc()
+
+
 def _load_provider_config_from_settings(provider_type: str) -> Dict[str, Any]:
     provider_config_settings = SystemSettingsService.get_by_name(f"sandbox.{provider_type}")
     if not provider_config_settings:
@@ -147,12 +150,7 @@ def reload_provider() -> None:
     _load_provider_from_settings()
 
 
-def execute_code(
-    code: str,
-    language: str = "python",
-    timeout: int = 30,
-    arguments: Optional[Dict[str, Any]] = None
-) -> ExecutionResult:
+def execute_code(code: str, language: str = "python", timeout: int = 30, arguments: Optional[Dict[str, Any]] = None) -> ExecutionResult:
     """
     Execute code in the configured sandbox.
 
@@ -173,9 +171,7 @@ def execute_code(
     provider_manager = get_provider_manager()
 
     if not provider_manager.is_configured():
-        raise RuntimeError(
-            "No sandbox provider configured. Please configure sandbox settings in the admin panel."
-        )
+        raise RuntimeError("No sandbox provider configured. Please configure sandbox settings in the admin panel.")
 
     provider = provider_manager.get_provider()
     provider_name = provider_manager.get_provider_name() or getattr(provider, "__class__", type(provider)).__name__
@@ -192,13 +188,7 @@ def execute_code(
 
     try:
         # Execute the code
-        result = provider.execute_code(
-            instance_id=instance.instance_id,
-            code=code,
-            language=language,
-            timeout=timeout,
-            arguments=arguments
-        )
+        result = provider.execute_code(instance_id=instance.instance_id, code=code, language=language, timeout=timeout, arguments=arguments)
 
         return result
 

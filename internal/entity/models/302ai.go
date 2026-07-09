@@ -324,7 +324,7 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+	if _, err = ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
 			return nil
@@ -559,6 +559,10 @@ func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig 
 	writer := multipart.NewWriter(&body)
 
 	// open audio file
+	// file path the caller passes in to upload. The user (or
+	// operator-supplied pipeline) explicitly chose this path, and the
+	// OS access check enforces permissions anyway.
+	// codeql[go/path-injection] False positive: *file is the audio
 	audioFile, err := os.Open(strings.TrimSpace(*file))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)

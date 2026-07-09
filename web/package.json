@@ -11,18 +11,11 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
     "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives",
-    "prepare": "cd .. && husky web/.husky",
+    "prepare": "cd .. && git rev-parse --git-dir >/dev/null 2>&1 && lefthook install || true",
     "preview": "vite preview",
     "storybook": "storybook dev -p 6006",
     "test": "jest --no-cache --coverage",
     "type-check": "tsc --noEmit"
-  },
-  "lint-staged": {
-    "*.{css,less,json}": "prettier --write --ignore-unknown",
-    "*.{js,jsx,ts,tsx}": [
-      "prettier --write --ignore-unknown",
-      "eslint"
-    ]
   },
   "overrides": {
     "@radix-ui/react-dismissable-layer": "1.1.4",
@@ -108,7 +101,7 @@
     "jsencrypt": "^3.3.2",
     "jsoneditor": "^10.4.2",
     "lexical": "^0.45.0",
-    "lodash": "^4.17.23",
+    "lodash": "^4.18.1",
     "lucide-react": "^1.7.0",
     "mermaid": "^11.15.0",
     "next-themes": "^0.4.6",
@@ -162,6 +155,7 @@
     "@storybook/addon-webpack5-compiler-swc": "^4.0.1",
     "@storybook/react-webpack5": "^9.1.4",
     "@tailwindcss/container-queries": "^0.1.1",
+    "@tailwindcss/typography": "^0.5.20",
     "@testing-library/jest-dom": "^6.4.5",
     "@testing-library/react": "^15.0.7",
     "@types/dompurify": "^3.0.5",
@@ -188,12 +182,11 @@
     "eslint-plugin-react-refresh": "^0.4.26",
     "eslint-plugin-storybook": "^9.1.4",
     "html-loader": "^5.1.0",
-    "husky": "^9.0.11",
     "identity-obj-proxy": "^3.0.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
+    "lefthook": "^1.13.6",
     "less": "^4.4.2",
-    "lint-staged": "^15.2.7",
     "postcss": "^8.5.6",
     "postcss-loader": "^8.2.0",
     "prettier": "^3.2.4",

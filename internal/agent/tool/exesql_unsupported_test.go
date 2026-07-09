@@ -22,25 +22,25 @@ import (
 	"testing"
 )
 
-// TestExeSQL_TrinoUnsupported verifies the Trino dialect
-// (currently via the trinoDSN stub; see exesql_trino_stub.go) is
-// recognized by the unsupported path. The actual driver lands
-// when a use-case surfaces.
-func TestExeSQL_TrinoUnsupported(t *testing.T) {
-	conn := exesqlConnParams{DBType: "trino", Host: "h", Port: 8080, Database: "d", Username: "u"}
+// TestExeSQL_TrinoDriverMissing verifies Trino is now routed through the
+// Trino DSN path. In this workspace we do not register a real "trino"
+// database/sql driver, so InvokableRun should fail at sql.Open with an
+// unknown-driver error rather than the old unsupported-db sentinel.
+func TestExeSQL_TrinoDriverMissing(t *testing.T) {
+	conn := exesqlConnParams{DBType: "trino", Host: "1.1.1.1", Port: 8080, Database: "d", Username: "u"}
 	tool := NewExeSQLTool(conn)
 	_, err := tool.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
 	if err == nil {
-		t.Fatal("expected ErrExeSQLUnsupportedDB for trino")
+		t.Fatal("expected driver error for trino")
 	}
-	if !errors.Is(err, ErrExeSQLUnsupportedDB) {
-		t.Errorf("err=%v, want ErrExeSQLUnsupportedDB", err)
+	if errors.Is(err, ErrExeSQLUnsupportedDB) {
+		t.Fatalf("err=%v, did not want ErrExeSQLUnsupportedDB after trino wiring", err)
 	}
 }
 
 // TestExeSQL_IBMDB2Unsupported: same as above for IBM DB2.
 func TestExeSQL_IBMDB2Unsupported(t *testing.T) {
-	conn := exesqlConnParams{DBType: "ibm db2", Host: "h", Port: 50000, Database: "d", Username: "u"}
+	conn := exesqlConnParams{DBType: "ibm db2", Host: "1.1.1.1", Port: 50000, Database: "d", Username: "u"}
 	tool := NewExeSQLTool(conn)
 	_, err := tool.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
 	if err == nil {
@@ -57,7 +57,7 @@ func TestExeSQL_IBMDB2Unsupported(t *testing.T) {
 // follow-up should normalize the error. The regression guard here
 // is "doesn't panic, returns a non-nil error".
 func TestExeSQL_UnknownDB(t *testing.T) {
-	conn := exesqlConnParams{DBType: "fake-db", Host: "h", Port: 1234, Database: "d", Username: "u"}
+	conn := exesqlConnParams{DBType: "fake-db", Host: "1.1.1.1", Port: 1234, Database: "d", Username: "u"}
 	tool := NewExeSQLTool(conn)
 	_, err := tool.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
 	if err == nil {

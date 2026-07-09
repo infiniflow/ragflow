@@ -1,5 +1,6 @@
 {
-  "name": "SiliconFlow",
+  "name": "SILICONFLOW",
+  "rank": 980,
   "url": {
     "default": "https://api.siliconflow.cn/v1"
   },
@@ -92,6 +93,15 @@
       "model_types": [
         "embedding"
       ]
+    },
+    {
+      "name": "BAAI/bge-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ],
+      "max_dimension": 1024,
+      "dimensions": []
     },
     {
       "name": "fnlp/MOSS-TTSD-v0.5",

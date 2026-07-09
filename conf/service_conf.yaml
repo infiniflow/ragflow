@@ -49,10 +49,13 @@ redis:
   password: 'infini_rag_flow'
   host: 'localhost:6379'
 nats:
-  host: "0.0.0.0"
+  host: "localhost"
   port: 4222
 task_executor:
   message_queue_type: 'nats'
+file_syncer:
+  max_concurrent_syncs: 4
+  sync_interval: 3
 user_default_llm:
   default_models:
     embedding_model:
@@ -60,6 +63,10 @@ user_default_llm:
       factory: 'xxxx'
       api_key: 'xxx'
       base_url: 'http://localhost:6380'
+gcs:
+  bucket: '${GCS_BUCKET:-ragflow}'
+  prefix_path: '${GCS_PREFIX_PATH:-}'
+  endpoint_url: '${GCS_ENDPOINT:-}'
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'

@@ -146,7 +146,10 @@ func (s *CanvasState) MarshalJSON() ([]byte, error) {
 		RunID:      s.RunID,
 		TaskID:     s.TaskID,
 	}
-	return json.Marshal(snap)
+	// Use SafeJSONMarshal to handle non-serializable values (funcs,
+	// channels) that may have leaked into state maps. Mirrors the
+	// Python PR #14210 _serialize_default fallback in Graph.__str__.
+	return SafeJSONMarshal(snap)
 }
 
 // UnmarshalJSON restores the wire shape produced by MarshalJSON.
@@ -260,6 +263,28 @@ func (s *CanvasState) Snapshot() map[string]map[string]any {
 		out[k] = cp
 	}
 	return out
+}
+
+// SnapshotNamespaces returns shallow copies of the non-Outputs state
+// namespaces that components may read/write directly via GetVar /
+// writeVar, namely sys.*, env.*, and the iteration/global aliases.
+func (s *CanvasState) SnapshotNamespaces() (sys map[string]any, env map[string]any, globals map[string]any) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sys = make(map[string]any, len(s.Sys))
+	for k, v := range s.Sys {
+		sys[k] = v
+	}
+	env = make(map[string]any, len(s.Env))
+	for k, v := range s.Env {
+		env[k] = v
+	}
+	globals = make(map[string]any, len(s.Globals))
+	for k, v := range s.Globals {
+		globals[k] = v
+	}
+	return sys, env, globals
 }
 
 // RecordOutput stores payload under Outputs[cpnID][bucket]. Used by the

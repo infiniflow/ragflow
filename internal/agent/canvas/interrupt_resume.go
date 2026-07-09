@@ -113,11 +113,20 @@ func UserFillUpNodeBody(cpnID string, params map[string]any) func(ctx context.Co
 		// isResumeFlow is true when THIS node is the explicit target;
 		// hasData is true when the caller supplied non-nil resume data.
 		if isResume, hasData, data := compose.GetResumeContext[any](ctx); isResume && hasData {
-			return map[string]any{
-				"user_input": data,
-				cpnID:        data,
-				"__cpn_id__": cpnID,
-			}, nil
+			out := buildUserFillUpResumeOutput(cpnID, inputSpec, data)
+			out["__cpn_id__"] = cpnID
+			return out, nil
+		}
+
+		// Initial-run fast path: match the legacy Python canvas behavior
+		// where Begin/UserFillUp consume the current run's inputs
+		// directly. We only auto-consume when the node declares form
+		// fields; plain wait-for-user nodes (no inputs schema) still
+		// interrupt on first execution.
+		if data, ok := initialUserFillUpData(ctx, inputSpec); ok {
+			out := buildUserFillUpResumeOutput(cpnID, inputSpec, data)
+			out["__cpn_id__"] = cpnID
+			return out, nil
 		}
 
 		// First-call branch: emit the interrupt signal. The returned
@@ -134,6 +143,62 @@ func UserFillUpNodeBody(cpnID string, params map[string]any) func(ctx context.Co
 		return nil, fmt.Errorf("canvas: UserFillUp %q: interrupt did not halt execution", cpnID)
 	}
 	return body
+}
+
+func buildUserFillUpResumeOutput(cpnID string, inputSpec map[string]any, data any) map[string]any {
+	out := map[string]any{
+		"user_input": data,
+		cpnID:        data,
+	}
+
+	fields, _ := inputSpec["inputs"].(map[string]any)
+	if _, hasValue := fields["value"]; hasValue {
+		out["value"] = data
+	}
+	if len(fields) == 1 {
+		for name := range fields {
+			out[name] = data
+		}
+		return out
+	}
+
+	if values, ok := data.(map[string]any); ok {
+		for name := range fields {
+			if v, exists := values[name]; exists {
+				out[name] = v
+			}
+		}
+	}
+	return out
+}
+
+func initialUserFillUpData(ctx context.Context, inputSpec map[string]any) (any, bool) {
+	fields, _ := inputSpec["inputs"].(map[string]any)
+	if len(fields) == 0 {
+		return nil, false
+	}
+
+	state, _, err := GetStateFromContext[*CanvasState](ctx)
+	if err != nil || state == nil {
+		return nil, false
+	}
+	if consumed, _ := state.Sys["__initial_user_input_consumed__"].(bool); consumed {
+		return nil, false
+	}
+	raw, err := state.GetVar("sys.query")
+	if err != nil || raw == nil {
+		return nil, false
+	}
+	if values, ok := raw.(map[string]any); ok {
+		state.Sys["__initial_user_input_consumed__"] = true
+		return values, true
+	}
+	text, ok := raw.(string)
+	if !ok || text == "" {
+		return nil, false
+	}
+	state.Sys["__initial_user_input_consumed__"] = true
+	return text, true
 }
 
 // IsInterruptError reports whether err carries an eino interrupt signal.
@@ -190,9 +255,10 @@ func ExtractInterruptContexts(err error) []*compose.InterruptCtx {
 	if err == nil {
 		return nil
 	}
-	if info, ok := compose.ExtractInterruptInfo(err); ok && info != nil {
-		if len(info.InterruptContexts) > 0 {
-			return info.InterruptContexts
+	if info, ok := extractInterruptInfoDeep(err); ok && info != nil {
+		ctxs := collectInterruptContexts(info)
+		if len(ctxs) > 0 {
+			return ctxs
 		}
 	}
 	// Fallback: raw signal. Use the deprecated IsInterruptRerunError
@@ -207,15 +273,112 @@ func ExtractInterruptContexts(err error) []*compose.InterruptCtx {
 	return nil
 }
 
+func extractInterruptInfoDeep(err error) (*compose.InterruptInfo, bool) {
+	if err == nil {
+		return nil, false
+	}
+	if info, ok := compose.ExtractInterruptInfo(err); ok {
+		return info, true
+	}
+	type multiUnwrapper interface {
+		Unwrap() []error
+	}
+	if mw, ok := err.(multiUnwrapper); ok {
+		for _, sub := range mw.Unwrap() {
+			if info, ok := extractInterruptInfoDeep(sub); ok {
+				return info, true
+			}
+		}
+	}
+	if unwrapped := errors.Unwrap(err); unwrapped != nil {
+		return extractInterruptInfoDeep(unwrapped)
+	}
+	return nil, false
+}
+
+func collectInterruptContexts(info *compose.InterruptInfo) []*compose.InterruptCtx {
+	if info == nil {
+		return nil
+	}
+	var out []*compose.InterruptCtx
+	out = append(out, info.InterruptContexts...)
+	for _, sub := range info.SubGraphs {
+		out = append(out, collectInterruptContexts(sub)...)
+	}
+	return out
+}
+
 // FirstInterruptID is a tiny convenience used by the Driver when it
 // picks a single target for the SSE `cpn_id` field. Returns "" when
 // no contexts are present. Keeps the Driver code from doing its own
 // nil-check dance.
 func FirstInterruptID(ctxs []*compose.InterruptCtx) string {
+	if ctx := FirstUserFillUpInterrupt(ctxs); ctx != nil {
+		return ctx.ID
+	}
 	if len(ctxs) == 0 {
 		return ""
 	}
 	return ctxs[0].ID
+}
+
+// RootInterruptID returns the interrupt id that should be passed to
+// compose.ResumeWithData. In composite/subgraph cases this is the
+// root-cause context, which is not necessarily the same leaf context we
+// want to expose to the front-end as the waiting UserFillUp node.
+func RootInterruptID(ctxs []*compose.InterruptCtx) string {
+	for _, ctx := range ctxs {
+		for cur := ctx; cur != nil; cur = cur.Parent {
+			if cur.IsRootCause {
+				return cur.ID
+			}
+		}
+	}
+	if len(ctxs) == 0 {
+		return ""
+	}
+	return ctxs[0].ID
+}
+
+func FirstUserFillUpInterrupt(ctxs []*compose.InterruptCtx) *compose.InterruptCtx {
+	for _, ctx := range ctxs {
+		for cur := ctx; cur != nil; cur = cur.Parent {
+			if info, ok := cur.Info.(map[string]any); ok {
+				if kind, _ := info["kind"].(string); kind == "user_fill_up" {
+					return cur
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func formatInterruptContexts(ctxs []*compose.InterruptCtx) string {
+	if len(ctxs) == 0 {
+		return "[]"
+	}
+	parts := make([]string, 0, len(ctxs))
+	for _, ctx := range ctxs {
+		if ctx == nil {
+			parts = append(parts, "<nil>")
+			continue
+		}
+		kind := ""
+		if info, ok := ctx.Info.(map[string]any); ok {
+			kind, _ = info["kind"].(string)
+		}
+		addr := ctx.Address.String()
+		parentAddr := ""
+		if ctx.Parent != nil {
+			parentAddr = ctx.Parent.Address.String()
+		}
+		if kind != "" {
+			parts = append(parts, fmt.Sprintf("{id:%q kind:%q addr:%q parent:%q}", ctx.ID, kind, addr, parentAddr))
+		} else {
+			parts = append(parts, fmt.Sprintf("{id:%q info:%T addr:%q parent:%q}", ctx.ID, ctx.Info, addr, parentAddr))
+		}
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 // AutoDiscoverUserFillUpIDs returns the cpnIDs of every component whose

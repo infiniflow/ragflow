@@ -71,7 +71,7 @@
 #     "rag.utils.base64_image",
 
 #     "rag.prompts.generator",
-#     "rag.raptor",
+#     "rag.advanced_rag.knowlege_compile.raptor",
 #     "rag.app",
 #     "rag.graphrag.utils",
 # ]

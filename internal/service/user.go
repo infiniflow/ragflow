@@ -202,7 +202,7 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		RerankID:  rerankID,
 		TTSID:     ttsID,
 		OCRID:     ocrID,
-		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
+		ParserIDs: "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
 	userTenantID := utility.GenerateToken()
@@ -270,11 +270,11 @@ func (s *UserService) getInitTenantLLM(userID string) ([]*entity.TenantLLM, erro
 	}
 
 	modelConfigs := map[string]server.ModelConfig{
-		string(entity.ModelTypeChat):        cfg.UserDefaultLLM.DefaultModels.ChatModel,
-		string(entity.ModelTypeEmbedding):   cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
-		string(entity.ModelTypeSpeech2Text): cfg.UserDefaultLLM.DefaultModels.ASRModel,
-		string(entity.ModelTypeImage2Text):  cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
-		string(entity.ModelTypeRerank):      cfg.UserDefaultLLM.DefaultModels.RerankModel,
+		entity.ModelTypeChat.String():        cfg.UserDefaultLLM.DefaultModels.ChatModel,
+		entity.ModelTypeEmbedding.String():   cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
+		entity.ModelTypeSpeech2Text.String(): cfg.UserDefaultLLM.DefaultModels.ASRModel,
+		entity.ModelTypeImage2Text.String():  cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
+		entity.ModelTypeRerank.String():      cfg.UserDefaultLLM.DefaultModels.RerankModel,
 	}
 
 	seenFactories := make(map[string]bool)
@@ -1064,6 +1064,85 @@ func (s *UserService) GetUserByAPIToken(authorization string) (*entity.User, com
 
 	return user, common.CodeSuccess, nil
 
+}
+
+// GetAPITokenByBeta returns the APIToken row whose `beta` column
+// matches the given raw token. Used by the beta-auth middleware
+// to expose DialogID (the real agent_id) to downstream handlers
+// without re-parsing the Authorization header. Mirrors
+// `APIToken.query(beta=token)` from python bot_api.py:agent_bot_logs.
+func (s *UserService) GetAPITokenByBeta(authorization string) (*entity.APIToken, error) {
+	authorization = strings.TrimSpace(authorization)
+	if authorization == "" {
+		return nil, fmt.Errorf("authorization header is empty")
+	}
+	parts := strings.Fields(authorization)
+	var token string
+	if len(parts) == 2 {
+		token = parts[1]
+	} else if len(parts) == 1 {
+		if strings.EqualFold(parts[0], "Bearer") {
+			return nil, fmt.Errorf("invalid authorization format")
+		}
+		token = parts[0]
+	} else {
+		return nil, fmt.Errorf("invalid authorization format")
+	}
+	if token == "" {
+		return nil, fmt.Errorf("invalid authorization format")
+	}
+	apiTokenDAO := dao.NewAPITokenDAO()
+	tokens, err := apiTokenDAO.GetByBeta(token)
+	if err != nil {
+		return nil, err
+	}
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("invalid API token")
+	}
+	return tokens[0], nil
+}
+
+// GetUserByBetaAPIToken gets user by beta access key from Authorization
+// header. This mirrors Python's AUTH_BETA flow used by public bot endpoints.
+func (s *UserService) GetUserByBetaAPIToken(authorization string) (*entity.User, common.ErrorCode, error) {
+	authorization = strings.TrimSpace(authorization)
+	if authorization == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
+	}
+
+	parts := strings.Fields(authorization)
+	var token string
+	if len(parts) == 2 {
+		token = parts[1]
+	} else if len(parts) == 1 {
+		if strings.EqualFold(parts[0], "Bearer") {
+			return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+		}
+		token = parts[0]
+	} else {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+	}
+	if token == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+	}
+
+	apiTokenDAO := dao.NewAPITokenDAO()
+	userTokens, err := apiTokenDAO.GetByBeta(token)
+	if err != nil || len(userTokens) == 0 {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid beta access token")
+	}
+	userToken := userTokens[0]
+
+	user, err := s.userDAO.GetByTenantID(userToken.TenantID)
+	if err != nil {
+		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for this beta access token")
+	}
+
+	if user.AccessToken == nil || *user.AccessToken == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("user has empty access_token in database")
+	}
+
+	return user, common.CodeSuccess, nil
 }
 
 // ---- Forgot-password flow (mirrors api/apps/restful_apis/user_api.py

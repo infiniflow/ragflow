@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.26.1"
+version = "0.26.4"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -28,7 +28,7 @@ dependencies = [
     "chardet>=5.2.0,<6.0.0",
     "cn2an==0.5.22",
     "cohere==5.6.2",
-    "crawl4ai>=0.8.0",
+    "crawl4ai>=0.9.0,<0.9.1",
     "dashscope==1.25.11",
     "deepl==1.18.0",
     "debugpy>=1.8.13",
@@ -49,6 +49,7 @@ dependencies = [
     "flask-session==0.8.0",
     "google-api-python-client>=2.190.0,<3.0.0",
     "google-auth-oauthlib>=1.2.0,<2.0.0",
+    "google-cloud-bigquery>=3.25.0,<4.0.0",
     "google-cloud-storage>=2.19.0,<3.0.0",
     "google-genai>=1.41.0,<2.0.0",
     "google-search-results==2.4.2",
@@ -112,7 +113,7 @@ dependencies = [
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
     "slack-sdk==3.37.0",
     "socksio==1.0.0",
-    "agentrun-sdk>=0.0.16,<1.0.0",
+    "agentrun-sdk>=0.0.51,<1.0.0",
     "nest-asyncio>=1.6.0,<2.0.0",  # Needed for agent/component/message.py
     "sqlglotrs==0.9.0",
     "tavily-python==0.5.1",
@@ -214,6 +215,8 @@ exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same
     # `litellm` package namespace as upstream litellm and can corrupt imports.
     "unclecode-litellm",
+    # Transitive dep of agentrun-sdk; not imported anywhere in RAGFlow code.
+    "agentrun-mem0ai",
 ]
 override-dependencies = [
     # moodlepy<=0.24.1 pins attrs<23.0.0, but trio>=0.26.0 requires attrs>=23.2.0.
@@ -238,12 +241,18 @@ packages = [
     'agent',
     'api',
     'deepdoc',
-    'graphrag',
-    'intergrations.chatgpt-on-wechat.plugins',
+    'rag.graphrag',
+    'tools.chatgpt_on_wechat.plugins',
     'mcp.server',
     'rag',
     'sdk.python.ragflow_sdk',
 ]
+
+# tools/ holds standalone Python projects whose names contain hyphens
+# (chatgpt-on-wechat). Python package names cannot contain hyphens, so
+# we map the underscored Python name to the hyphenated filesystem path.
+[tool.setuptools.package-dir]
+"tools.chatgpt_on_wechat.plugins" = "tools/chatgpt-on-wechat/plugins"
 
 [tool.ruff]
 line-length = 200

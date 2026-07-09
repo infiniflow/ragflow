@@ -25,6 +25,7 @@ from api.db import FileType
 def _install_cv2_stub_if_unavailable():
     try:
         import cv2  # noqa: F401
+
         return
     except Exception:
         pass

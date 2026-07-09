@@ -31,12 +31,22 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
+	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 
+	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // tavilySearchComponent delegates to internal/agent/tool/TavilyTool.
@@ -79,6 +89,165 @@ func (c *tavilySearchComponent) Invoke(ctx context.Context, inputs map[string]an
 
 func (c *tavilySearchComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
+}
+
+// bgptInvoker is the subset of BGPTTool used by the canvas wrapper.
+type bgptInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
+// bgptComponent delegates to internal/agent/tool/BGPTTool and adapts
+// the tool envelope to the BGPT canvas output contract.
+type bgptComponent struct {
+	inner bgptInvoker
+}
+
+func newBGPTComponent(_ map[string]any) (Component, error) {
+	return newBGPTComponentWithInvoker(agenttool.NewBGPTTool()), nil
+}
+
+func newBGPTComponentWithInvoker(inner bgptInvoker) Component {
+	return &bgptComponent{inner: inner}
+}
+
+func (c *bgptComponent) Name() string { return "BGPT" }
+
+func (c *bgptComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query":     "Scientific search query.",
+		"api_key":   "Optional BGPT API key.",
+		"days_back": "Optional recency filter in days.",
+		"top_n":     "Maximum number of results.",
+	}
+}
+
+func (c *bgptComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
+func (c *bgptComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered scientific paper evidence for downstream LLM prompts.",
+		"json":               "Raw BGPT result list.",
+	}
+}
+
+func (c *bgptComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	args := map[string]any{
+		"query": query,
+	}
+	if apiKey := strings.TrimSpace(stringParam(inputs["api_key"])); apiKey != "" {
+		args["api_key"] = apiKey
+	}
+	if daysBack := toIntParam(inputs["days_back"]); daysBack > 0 {
+		args["days_back"] = daysBack
+	}
+	if topN := toIntParam(inputs["top_n"]); topN > 0 {
+		args["num_results"] = topN
+	}
+
+	argsJSON, _ := json.Marshal(args)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: BGPT: %w", err)
+	}
+
+	results := anySlice(decoded["results"])
+	return map[string]any{
+		"formalized_content": renderBGPTResults(results),
+		"json":               results,
+	}, nil
+}
+
+func (c *bgptComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func stringParam(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func anySlice(v any) []any {
+	switch x := v.(type) {
+	case []any:
+		return x
+	case []map[string]any:
+		out := make([]any, 0, len(x))
+		for _, item := range x {
+			out = append(out, item)
+		}
+		return out
+	default:
+		return []any{}
+	}
+}
+
+func renderBGPTResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		bgptField := func(key string) string {
+			v, ok := m[key]
+			if !ok || v == nil {
+				return "-"
+			}
+			switch vv := v.(type) {
+			case string:
+				if text := strings.TrimSpace(vv); text != "" {
+					return text
+				}
+			default:
+				if text := strings.TrimSpace(fmt.Sprintf("%v", vv)); text != "" {
+					return text
+				}
+			}
+			return "-"
+		}
+		lines := []string{
+			fmt.Sprintf("Title: %s", bgptField("title")),
+			fmt.Sprintf("Authors: %s", bgptField("authors")),
+			fmt.Sprintf("Journal: %s", bgptField("journal")),
+			fmt.Sprintf("Year: %s", bgptField("year")),
+			fmt.Sprintf("DOI: %s", bgptField("doi")),
+			fmt.Sprintf("Abstract: %s", bgptField("abstract")),
+			fmt.Sprintf("Methods: %s", bgptField("methods")),
+			fmt.Sprintf("Sample size / population: %s", bgptField("sample_size")),
+			fmt.Sprintf("Results: %s", bgptField("results")),
+			fmt.Sprintf("Limitations: %s", bgptField("limitations")),
+			fmt.Sprintf("Conflicts of interest: %s", bgptField("conflict_of_interest")),
+			fmt.Sprintf("Data availability: %s", bgptField("data_availability")),
+			fmt.Sprintf("Blind spots: %s", bgptField("blind_spots")),
+			fmt.Sprintf("How to falsify: %s", bgptField("falsify")),
+		}
+		blocks = append(blocks, strings.Join(lines, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
 }
 
 // retrievalParams mirrors the Python RetrievalParam shape: the
@@ -149,6 +318,8 @@ type retrievalComponent struct {
 	params retrievalParams
 }
 
+var legacyRetrievalQueryPattern = regexp.MustCompile(`(?s)^\s*UserFillUp:\s*(.*?)\s+Input\s+(.*?)\s*$`)
+
 func newRetrievalComponent(params map[string]any) (Component, error) {
 	return &retrievalComponent{
 		inner:  agenttool.NewRetrievalTool(),
@@ -176,11 +347,19 @@ func (c *retrievalComponent) Outputs() map[string]string {
 
 func (c *retrievalComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	merged := c.applyDefaults(inputs)
+	normalizeLegacyRetrievalInputs(ctx, merged)
+	common.Debug("agent retrieval component: invoke",
+		zap.Any("inputs", inputs),
+		zap.Any("merged", merged),
+	)
 	argsJSON, _ := json.Marshal(merged)
 	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("canvas: Retrieval: %w", err)
 	}
+	common.Debug("agent retrieval component: output",
+		zap.String("tool_output", out),
+	)
 	return parseToolEnvelope(out), nil
 }
 
@@ -255,6 +434,148 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 		delete(out, "kb_ids")
 	}
 	return out
+}
+
+func normalizeLegacyRetrievalInputs(ctx context.Context, out map[string]any) {
+	if normalizeStructuredRetrievalInputs(ctx, out) {
+		return
+	}
+	rawQuery, _ := out["query"].(string)
+	rawQuery = strings.TrimSpace(rawQuery)
+	if rawQuery == "" {
+		return
+	}
+	matches := legacyRetrievalQueryPattern.FindStringSubmatch(rawQuery)
+	if len(matches) != 3 {
+		return
+	}
+	kbName := strings.TrimSpace(matches[1])
+	queryText := strings.TrimSpace(matches[2])
+	if queryText != "" {
+		out["query"] = queryText
+	}
+	if _, hasDatasetIDs := out["dataset_ids"]; hasDatasetIDs {
+		return
+	}
+	if kbName == "" {
+		return
+	}
+	if datasetID := resolveRetrievalDatasetID(ctx, kbName); datasetID != "" {
+		out["dataset_ids"] = []string{datasetID}
+	}
+}
+
+func normalizeStructuredRetrievalInputs(ctx context.Context, out map[string]any) bool {
+	_, hasDatasetIDs := out["dataset_ids"]
+	candidateMaps := []map[string]any{}
+	if stateMap, ok := out["state"].(map[string]any); ok {
+		if raw, ok := stateMap["UserFillUp:KBInput"].(map[string]any); ok {
+			candidateMaps = append(candidateMaps, raw)
+		}
+	}
+	candidateMaps = append(candidateMaps, out)
+
+	consumed := false
+	for _, candidate := range candidateMaps {
+		kbName, _ := candidate["kb"].(string)
+		queryText, _ := candidate["query"].(string)
+		if kbName == "" && legacyRetrievalQueryPattern.MatchString(strings.TrimSpace(queryText)) {
+			continue
+		}
+		if kbName == "" && queryText == "" {
+			continue
+		}
+		consumed = true
+		if queryText != "" {
+			out["query"] = queryText
+		}
+		if kbName != "" && !hasDatasetIDs {
+			if datasetID := resolveRetrievalDatasetID(ctx, strings.TrimSpace(kbName)); datasetID != "" {
+				out["dataset_ids"] = []string{datasetID}
+				common.Debug("agent retrieval component: resolved dataset id",
+					zap.String("kb", strings.TrimSpace(kbName)),
+					zap.String("dataset_id", datasetID))
+			}
+		}
+		if queryText != "" {
+			return true
+		}
+		if kbName != "" && out["dataset_ids"] != nil {
+			return true
+		}
+	}
+	return consumed
+}
+
+func resolveRetrievalDatasetID(ctx context.Context, kbName string) string {
+	if kbName == "" {
+		return ""
+	}
+	if kb, err := dao.NewKnowledgebaseDAO().GetByID(kbName); err == nil && kb != nil {
+		common.Debug("agent retrieval component: resolved dataset id by direct id",
+			zap.String("kb", kbName),
+			zap.String("dataset_id", kb.ID))
+		return kb.ID
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		common.Warn("agent retrieval component: resolve dataset id by id failed",
+			zap.String("kb", kbName),
+			zap.Error(err))
+	}
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		common.Debug("agent retrieval component: resolve dataset id context",
+			zap.String("kb", kbName),
+			zap.Any("sys_query", state.Sys["query"]),
+			zap.Any("tenant_id", state.Sys["tenant_id"]),
+			zap.Any("user_id", state.Sys["user_id"]))
+		if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
+			if kb, lookupErr := dao.NewKnowledgebaseDAO().GetByName(kbName, tenantID); lookupErr == nil && kb != nil {
+				common.Debug("agent retrieval component: resolved dataset id by tenant",
+					zap.String("kb", kbName),
+					zap.String("tenant_id", tenantID),
+					zap.String("dataset_id", kb.ID))
+				return kb.ID
+			} else if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+				common.Warn("agent retrieval component: resolve dataset id by tenant failed",
+					zap.String("kb", kbName),
+					zap.String("tenant_id", tenantID),
+					zap.Error(lookupErr))
+			} else {
+				common.Debug("agent retrieval component: tenant lookup missed",
+					zap.String("kb", kbName),
+					zap.String("tenant_id", tenantID))
+			}
+		}
+		if userID, _ := state.Sys["user_id"].(string); userID != "" {
+			if kbs, lookupErr := dao.NewKnowledgebaseDAO().GetKBByNameAndUserID(kbName, userID); lookupErr == nil && len(kbs) > 0 {
+				for _, kb := range kbs {
+					if kb == nil || kb.Status == nil || *kb.Status != string(entity.StatusValid) {
+						continue
+					}
+					common.Debug("agent retrieval component: resolved dataset id by user visibility",
+						zap.String("kb", kbName),
+						zap.String("user_id", userID),
+						zap.String("dataset_id", kb.ID))
+					return kb.ID
+				}
+			} else if lookupErr != nil {
+				common.Warn("agent retrieval component: resolve dataset id by name failed",
+					zap.String("kb", kbName),
+					zap.String("user_id", userID),
+					zap.Error(lookupErr))
+			} else {
+				common.Debug("agent retrieval component: user visibility lookup missed",
+					zap.String("kb", kbName),
+					zap.String("user_id", userID))
+			}
+		}
+	} else {
+		common.Debug("agent retrieval component: resolve dataset id missing canvas state",
+			zap.String("kb", kbName),
+			zap.Error(err))
+	}
+	common.Debug("agent retrieval component: dataset id unresolved",
+		zap.String("kb", kbName))
+	return ""
 }
 
 // exesqlComponent delegates to internal/agent/tool/ExeSQLTool. The
@@ -355,6 +676,15 @@ func (c *exesqlComponent) Inputs() map[string]string {
 	}
 }
 
+func (c *exesqlComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"sql": map[string]any{
+			"name": "SQL",
+			"type": "line",
+		},
+	}
+}
+
 func (c *exesqlComponent) Outputs() map[string]string {
 	return map[string]string{
 		"columns": "Result-set column names.",
@@ -376,6 +706,94 @@ func (c *exesqlComponent) Stream(_ context.Context, _ map[string]any) (<-chan ma
 	return nil, nil
 }
 
+// codeExecComponent delegates to internal/agent/tool/CodeExecTool.
+// The node-level params map carries the legacy v1 DSL surface
+// (`lang`, `script`, `arguments`, optional `timeout`). Per-call inputs
+// override those defaults so resolved canvas refs win at invocation
+// time, while static DSL-provided literals still flow through.
+type codeExecComponent struct {
+	inner   *agenttool.CodeExecTool
+	params  map[string]any
+	outputs map[string]any
+}
+
+func newCodeExecComponent(params map[string]any) (Component, error) {
+	cloned := make(map[string]any, len(params))
+	for k, v := range params {
+		cloned[k] = v
+	}
+	return &codeExecComponent{
+		inner:   agenttool.NewCodeExecTool(),
+		params:  cloned,
+		outputs: cloneAnyMap(asAnyMap(params["outputs"])),
+	}, nil
+}
+
+func (c *codeExecComponent) Name() string { return "CodeExec" }
+
+func (c *codeExecComponent) Inputs() map[string]string {
+	return map[string]string{
+		"lang":      "Programming language: python/python3/javascript/nodejs.",
+		"script":    "Code to execute. Should define main(...).",
+		"arguments": "Arguments passed to main(...) as keyword args / object fields.",
+		"timeout":   "Optional per-execution timeout in seconds.",
+	}
+}
+
+func (c *codeExecComponent) Outputs() map[string]string {
+	return map[string]string{
+		"result":      "The main(...) return value rendered as the legacy CodeExec result field.",
+		"content":     "Raw CodeExec tool content field.",
+		"_ERROR":      "Execution or sandbox error message.",
+		"actual_type": "Runtime type inferred by the sandbox bridge.",
+		"stdout":      "Captured stdout.",
+		"stderr":      "Captured stderr.",
+		"exit_code":   "Process exit code.",
+	}
+}
+
+func (c *codeExecComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	merged := make(map[string]any, len(c.params)+len(inputs))
+	for k, v := range c.params {
+		merged[k] = v
+	}
+	for k, v := range inputs {
+		merged[k] = v
+	}
+	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
+		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged)
+	}
+	common.Debug("CodeExec wrapper invoke",
+		zap.Int("params_keys", len(c.params)),
+		zap.Int("inputs_keys", len(inputs)),
+		zap.Int("merged_keys", len(merged)),
+		zap.Bool("has_arguments", merged["arguments"] != nil))
+	argsJSON, _ := json.Marshal(merged)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if c.outputs != nil {
+		applyCodeExecBusinessOutputs(decoded, c.outputs)
+	} else if rawResult, ok := decoded["raw_result"]; ok {
+		decoded["result"] = rawResult
+		if _, ok := decoded["_ERROR"]; !ok {
+			decoded["_ERROR"] = ""
+		}
+	} else if content, ok := decoded["content"]; ok {
+		decoded["result"] = content
+		if _, ok := decoded["_ERROR"]; !ok {
+			decoded["_ERROR"] = ""
+		}
+	}
+	if err != nil {
+		return decoded, fmt.Errorf("canvas: CodeExec: %w", err)
+	}
+	return decoded, nil
+}
+
+func (c *codeExecComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
 // parseToolEnvelope decodes the JSON envelope returned by eino tool
 // InvokableRun into a map[string]any. The result has whatever keys
 // the tool's result type carries (rows/columns/chunks/etc.).
@@ -387,6 +805,151 @@ func parseToolEnvelope(jsonStr string) map[string]any {
 		return map[string]any{"_raw": jsonStr}
 	}
 	return out
+}
+
+func applyCodeExecBusinessOutputs(decoded map[string]any, outputs map[string]any) {
+	if decoded == nil {
+		return
+	}
+	rawResult := resolveCodeExecBusinessResult(decoded)
+	common.Debug("CodeExec wrapper",
+		zap.Int("decoded_keys", len(decoded)),
+		zap.Bool("has_raw_result", rawResult != nil),
+		zap.Bool("has_content", decoded["content"] != nil),
+		zap.Int("outputs_keys", len(outputs)))
+	if existingErr, _ := decoded["_ERROR"].(string); strings.TrimSpace(existingErr) != "" {
+		for name := range outputs {
+			if isCodeExecSystemOutput(name) {
+				continue
+			}
+			decoded[name] = nil
+		}
+		if _, ok := decoded["actual_type"]; !ok {
+			decoded["actual_type"] = agenttool.InferCodeExecActualType(rawResult)
+		}
+		if _, ok := decoded["content"]; !ok {
+			decoded["content"] = agenttool.RenderCodeExecCanonicalContent(rawResult)
+		}
+		return
+	}
+	contract, err := agenttool.BuildCodeExecContract(outputs, rawResult)
+	if err != nil {
+		for name := range outputs {
+			if isCodeExecSystemOutput(name) {
+				continue
+			}
+			decoded[name] = nil
+		}
+		decoded["actual_type"] = agenttool.InferCodeExecActualType(rawResult)
+		decoded["_ERROR"] = err.Error()
+		if _, ok := decoded["content"]; !ok {
+			decoded["content"] = agenttool.RenderCodeExecCanonicalContent(rawResult)
+		}
+		return
+	}
+
+	decoded["_ERROR"] = ""
+	decoded["actual_type"] = contract.ActualType
+	decoded["content"] = contract.Content
+	decoded[contract.BusinessOutput] = contract.Value
+}
+
+func resolveCodeExecBusinessResult(decoded map[string]any) any {
+	if decoded == nil {
+		return nil
+	}
+	if rawResult, ok := decoded["raw_result"]; ok {
+		return rawResult
+	}
+	content, _ := decoded["content"].(string)
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(content), &parsed); err == nil {
+		return parsed
+	}
+	return content
+}
+
+func isCodeExecSystemOutput(name string) bool {
+	switch name {
+	case "content", "actual_type", "attachments", "_ERROR", "_ARTIFACTS", "_ATTACHMENT_CONTENT", "raw_result", "_created_time", "_elapsed_time":
+		return true
+	default:
+		return false
+	}
+}
+
+func asAnyMap(v any) map[string]any {
+	if m, ok := v.(map[string]any); ok {
+		return m
+	}
+	return nil
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func resolveCodeExecArguments(args map[string]any, merged map[string]any) map[string]any {
+	if args == nil {
+		return nil
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = resolveCodeExecArgumentValue(v, merged)
+	}
+	return out
+}
+
+func resolveCodeExecArgumentValue(v any, merged map[string]any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		return resolveCodeExecArguments(x, merged)
+	case []any:
+		out := make([]any, 0, len(x))
+		for _, item := range x {
+			out = append(out, resolveCodeExecArgumentValue(item, merged))
+		}
+		return out
+	case string:
+		if resolved, ok := lookupCodeExecArgumentRef(x, merged); ok {
+			return resolved
+		}
+		return x
+	default:
+		return v
+	}
+}
+
+func lookupCodeExecArgumentRef(ref string, merged map[string]any) (any, bool) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, false
+	}
+	at := strings.Index(ref, "@")
+	if at <= 0 || at >= len(ref)-1 {
+		return nil, false
+	}
+	cpnID := ref[:at]
+	param := ref[at+1:]
+
+	stateByNode, _ := merged["state"].(map[string]map[string]any)
+	if bucket, ok := stateByNode[cpnID]; ok {
+		if v, ok := bucket[param]; ok {
+			return v, true
+		}
+	}
+	return nil, false
 }
 
 // toIntParam coerces a node-param int value to int. JSON-decoded
@@ -426,13 +989,72 @@ func toFloatParam(v any) float64 {
 	return 0
 }
 
+// yahooFinanceComponent delegates to internal/agent/tool/YahooFinanceTool.
+type yahooFinanceComponent struct {
+	inner *agenttool.YahooFinanceTool
+}
+
+func newYahooFinanceComponent(_ map[string]any) (Component, error) {
+	return &yahooFinanceComponent{inner: agenttool.NewYahooFinanceTool()}, nil
+}
+
+func (c *yahooFinanceComponent) Name() string { return "YahooFinance" }
+
+func (c *yahooFinanceComponent) Inputs() map[string]string {
+	return map[string]string{
+		"stock_code": "Stock symbol to look up (e.g. AAPL, MSFT, 0005.HK).",
+	}
+}
+
+func (c *yahooFinanceComponent) Outputs() map[string]string {
+	return map[string]string{
+		"report": "Stock quote data (JSON).",
+	}
+}
+
+func (c *yahooFinanceComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	stockCode, _ := inputs["stock_code"].(string)
+	if strings.TrimSpace(stockCode) == "" {
+		return map[string]any{"_ERROR": "stock_code is required"}, nil
+	}
+	toolInput := map[string]any{
+		"symbols": []string{stockCode},
+	}
+	argsJSON, _ := json.Marshal(toolInput)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	if err != nil {
+		if out != "" {
+			return parseToolEnvelope(out), nil
+		}
+		return nil, fmt.Errorf("canvas: YahooFinance: %w", err)
+	}
+	result := parseToolEnvelope(out)
+	return map[string]any{"report": result["results"]}, nil
+}
+
+func (c *yahooFinanceComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"stock_code": map[string]any{
+			"type": "line",
+			"name": "Stock code/Company name",
+		},
+	}
+}
+
+func (c *yahooFinanceComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
 // Compile-time interface checks.
 var (
 	_ Component = (*retrievalComponent)(nil)
 	_ Component = (*tavilySearchComponent)(nil)
 	_ Component = (*exesqlComponent)(nil)
+	_ Component = (*codeExecComponent)(nil)
+	_ Component = (*yahooFinanceComponent)(nil)
 )
 
 // Compile-time check that the eino InvokableTool methods we call
 // are reachable (catches a future refactor that renames them).
 var _ einotool.InvokableTool = (*agenttool.TavilyTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.YahooFinanceTool)(nil)

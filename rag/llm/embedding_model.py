@@ -18,7 +18,7 @@ import os
 import threading
 from abc import ABC
 from contextlib import contextmanager
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from json.decoder import JSONDecodeError
 
 import dashscope
@@ -32,6 +32,7 @@ from common import settings
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from rag.llm.key_utils import _normalize_replicate_key
+from rag.utils.url_utils import ensure_v1
 import logging
 import base64
 
@@ -93,8 +94,14 @@ def _dashscope_native_http_api_url(base_url: str | None) -> str | None:
     if u.endswith("/api/v1"):
         logger.debug("DashScope Tongyi-Qianwen embedding: using native API base as configured (%s)", safe)
         return u
+    # Compare against the URL's hostname (not a substring of the full URL),
+    # so a base_url like https://attacker.example/?u=dashscope-intl.aliyuncs.com
+    # doesn't accidentally match. urlparse() requires a scheme; if the
+    # configured base_url is bare, treat the whole string as a hostname.
+    parsed = urlparse(u if "://" in u else "http://" + u)
+    host = (parsed.hostname or "").lower()
     # International (Singapore) DashScope — required for overseas Tongyi-Qianwen accounts.
-    if "dashscope-intl.aliyuncs.com" in u:
+    if host == "dashscope-intl.aliyuncs.com" or host.endswith(".dashscope-intl.aliyuncs.com"):
         resolved = "https://dashscope-intl.aliyuncs.com/api/v1"
         logger.info(
             "DashScope Tongyi-Qianwen embedding: mapped configured base_url to intl native API (%s -> %s)",
@@ -103,7 +110,7 @@ def _dashscope_native_http_api_url(base_url: str | None) -> str | None:
         )
         return resolved
     # China mainland DashScope default host.
-    if "dashscope.aliyuncs.com" in u:
+    if host == "dashscope.aliyuncs.com" or host.endswith(".dashscope.aliyuncs.com"):
         resolved = "https://dashscope.aliyuncs.com/api/v1"
         logger.info(
             "DashScope Tongyi-Qianwen embedding: mapped configured base_url to CN native API (%s -> %s)",
@@ -253,7 +260,8 @@ class OpenAIEmbed(Base):
     def __init__(self, key, model_name="text-embedding-ada-002", base_url="https://api.openai.com/v1"):
         if not base_url:
             base_url = "https://api.openai.com/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
 
     def _call(self, batch):
@@ -275,7 +283,7 @@ class LocalAIEmbed(Base):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local embedding model url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
 
@@ -301,9 +309,7 @@ def _resolve_azure_credentials(key):
         key_obj = json.loads(key)
         if isinstance(key_obj, dict):
             return key_obj.get("api_key", ""), key_obj.get("api_version", "2024-02-01")
-        logging.warning(
-            "Azure credential payload parsed as JSON but is not an object; using raw api_key string"
-        )
+        logging.warning("Azure credential payload parsed as JSON but is not an object; using raw api_key string")
     except (json.JSONDecodeError, TypeError):
         logging.warning("Azure credential payload is not valid JSON; using raw api_key string")
     return key, "2024-02-01"
@@ -316,7 +322,9 @@ class AzureEmbed(OpenAIEmbed):
         from openai.lib.azure import AzureOpenAI
 
         api_key, api_version = _resolve_azure_credentials(key)
-        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
+        self.base_url = ensure_v1(kwargs["base_url"])
+        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=self.base_url, api_version=api_version)
+
         self.model_name = model_name
 
 
@@ -461,7 +469,8 @@ class OllamaEmbed(Base):
     _special_tokens = ["<|endoftext|>"]
 
     def __init__(self, key, model_name, **kwargs):
-        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bearer {key}"})
+        self.base_url = ensure_v1(kwargs["base_url"])
+        self.client = Client(host=self.base_url) if not key or key == "x" else Client(host=self.base_url, headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
         self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
 
@@ -498,7 +507,7 @@ class XinferenceEmbed(Base):
     _FACTORY_NAME = "Xinference"
 
     def __init__(self, key, model_name="", base_url=""):
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
@@ -801,7 +810,7 @@ class NvidiaEmbed(Base):
         if not base_url:
             base_url = "https://integrate.api.nvidia.com/v1/embeddings"
         self.api_key = key
-        self.base_url = base_url
+        self.base_url = ensure_v1(base_url)
         self.headers = {
             "accept": "application/json",
             "Content-Type": "application/json",
@@ -840,7 +849,7 @@ class LmStudioEmbed(LocalAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key="lm-studio", base_url=base_url)
         self.model_name = model_name
 
@@ -851,7 +860,7 @@ class OpenAI_APIEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
 
@@ -1143,7 +1152,7 @@ class GPUStackEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
 
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
@@ -1300,3 +1309,13 @@ class PerplexityEmbed(Base):
     def encode_queries(self, text):
         embds, cnt = self.encode([text])
         return np.array(embds[0]), cnt
+
+
+class NewAPIEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, base_url):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name.split("___")[0]

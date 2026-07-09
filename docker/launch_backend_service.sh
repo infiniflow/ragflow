@@ -118,7 +118,7 @@ run_server(){
     if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         prepare_for_go
         server_name="ragflow_server"
-        server_cmd=("bin/ragflow_server")
+        server_cmd=("bin/ragflow_server" "--api")
     fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
@@ -148,7 +148,7 @@ run_admin_server(){
     if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         prepare_for_go
         server_name="admin_server"
-        server_cmd=("bin/admin_server")
+        server_cmd=("bin/ragflow_server" "--admin")
     fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
@@ -200,14 +200,7 @@ ensure_db_init() {
 }
 
 run_mysql_migrations() {
-    echo "Running model provider table migrations..."
-    "$PY" tools/scripts/mysql_migration.py \
-        --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
-        --config conf/service_conf.yaml \
-        --execute \
-        --database-version "v0.26.1" \
-        --mark-database-version-on-success
-    echo "Model provider table migrations completed."
+    tools/scripts/run_migrations.sh
 }
 
 prepare_for_go() {

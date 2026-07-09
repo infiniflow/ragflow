@@ -9,6 +9,9 @@ package canvas
 
 import (
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
+
+	"go.uber.org/zap"
 )
 
 // legacyNoOpNames is the set of component names that the Go port
@@ -47,6 +50,12 @@ type Canvas struct {
 	History    []map[string]any           `json:"history,omitempty"`
 	Retrieval  map[string]any             `json:"retrieval,omitempty"`
 	Globals    map[string]any             `json:"globals,omitempty"`
+	// NodeParents preserves the front-end graph's grouping metadata
+	// (graph.nodes[*].parentId) for runtime-only subgraph expansion.
+	// The backend treats the incoming DSL as read-only; this is a
+	// decoder-side mirror used only to decide which nodes belong to a
+	// Loop / Parallel body during compilation.
+	NodeParents map[string]string `json:"-"`
 }
 
 // CanvasComponent is the in-memory DSL node. The Obj.ComponentName
@@ -61,6 +70,64 @@ type CanvasComponent struct {
 type CanvasComponentObj struct {
 	ComponentName string         `json:"component_name"`
 	Params        map[string]any `json:"params"`
+}
+
+// Close releases resources held by components referenced in the canvas
+// DSL. It walks every component's params map and calls Close() on any
+// value that implements a Close() method (MCPToolAdapters, HTTP
+// clients, etc.). Mirrors Python's Graph.close() in agent/canvas.py.
+//
+// In Go's architecture MCP sessions are per-invocation and auto-torn
+// down; Close() is a best-effort hook that ensures idle HTTP
+// connections are released even when adapters outlive a single call.
+func (c *Canvas) Close() {
+	if c == nil {
+		return
+	}
+	seen := make(map[any]bool)
+	for _, comp := range c.Components {
+		for _, v := range comp.Obj.Params {
+			walkAndClose(v, seen)
+		}
+	}
+}
+
+// walkAndClose recursively walks a value and calls Close() on any
+// objects that implement a Close() method. Maps, slices, and pointers
+// are recursed into; other types are skipped. Already-seen objects
+// (by interface identity) are skipped to avoid double-close.
+func walkAndClose(v any, seen map[any]bool) {
+	if v == nil {
+		return
+	}
+	if closer, ok := v.(interface{ Close() }); ok {
+		if !seen[closer] {
+			seen[closer] = true
+			safeClose(closer)
+		}
+		return
+	}
+	switch val := v.(type) {
+	case map[string]any:
+		for _, child := range val {
+			walkAndClose(child, seen)
+		}
+	case []any:
+		for _, child := range val {
+			walkAndClose(child, seen)
+		}
+	}
+}
+
+// safeClose calls Close() on a closer value, swallowing panics so a
+// misbehaving resource doesn't crash the canvas tear-down path.
+func safeClose(closer interface{ Close() }) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			common.Warn("canvas: Close() panicked", zap.Any("recover", rec))
+		}
+	}()
+	closer.Close()
 }
 
 // Component is an alias for runtime.Component — the minimal runtime

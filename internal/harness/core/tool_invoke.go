@@ -275,8 +275,8 @@ func NewCancelToolMiddleware() ToolInvokeMiddleware {
 
 // rateLimiter implements a simple per-tool token bucket.
 type rateLimiter struct {
-	mu       sync.Mutex
-	tokens   map[string]*tokenBucket
+	mu     sync.Mutex
+	tokens map[string]*tokenBucket
 }
 
 type tokenBucket struct {

@@ -1,6 +1,6 @@
 <div align="center">
 <a href="https://cloud.ragflow.io/">
-<img src="web/src/assets/logo-with-text.svg" width="520" alt="ragflow logo">
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow/main/web/src/assets/logo-with-text.svg" width="520" alt="ragflow logo">
 </a>
 </div>
 
@@ -25,10 +25,10 @@
         <img alt="Çevrimiçi Demo" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.1">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.26.4">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
-        <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Son%20Sürüm" alt="Son Sürüm">
+        <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Son%20S%C3%BCr%C3%BCm" alt="Son Sürüm">
     </a>
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/Lisans-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="lisans">
@@ -42,7 +42,7 @@
   <a href="https://cloud.ragflow.io">Cloud</a> |
   <a href="https://ragflow.io/docs/dev/">Dokümantasyon</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/12241">Yol Haritası</a> |
-  <a href="https://discord.gg/NjYzJD3GM3">Discord</a> 
+  <a href="https://discord.gg/NjYzJD3GM3">Discord</a>
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -191,12 +191,12 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 > Tüm Docker imajları x86 platformları için oluşturulmuştur. Şu anda ARM64 için Docker imajı sunmuyoruz.
 > ARM64 platformundaysanız, sisteminizle uyumlu bir Docker imajı oluşturmak için [bu kılavuzu](https://ragflow.io/docs/dev/build_docker_image) takip edin.
 
-> Aşağıdaki komut RAGFlow Docker imajının `v0.26.1` sürümünü indirir. Farklı RAGFlow sürümleri için aşağıdaki tabloya bakın. `v0.26.1` dışında bir sürüm indirmek için, `docker compose` ile sunucuyu başlatmadan önce **docker/.env** dosyasındaki `RAGFLOW_IMAGE` değişkenini güncelleyin.
+> Aşağıdaki komut RAGFlow Docker imajının `v0.26.4` sürümünü indirir. Farklı RAGFlow sürümleri için aşağıdaki tabloya bakın. `v0.26.4` dışında bir sürüm indirmek için, `docker compose` ile sunucuyu başlatmadan önce **docker/.env** dosyasındaki `RAGFLOW_IMAGE` değişkenini güncelleyin.
 
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.26.1
+   git checkout v0.26.4
    # İsteğe bağlı: Kararlı bir etiket kullanın (sürümler: https://github.com/infiniflow/ragflow/releases)
    # Bu adım, koddaki **entrypoint.sh** dosyasının Docker imaj sürümüyle eşleşmesini sağlar.
 
@@ -314,10 +314,10 @@ docker build --platform linux/amd64 \
 
 ## 🔨 Geliştirme İçin Kaynaktan Hizmet Başlatma
 
-1. `uv` ve `pre-commit` yükleyin veya zaten yüklüyse bu adımı atlayın:
+1. `uv` yükleyin veya zaten yüklüyse bu adımı atlayın:
 
    ```bash
-   pipx install uv pre-commit
+   pipx install uv
    ```
 2. Kaynak kodunu klonlayın ve Python bağımlılıklarını yükleyin:
 
@@ -325,8 +325,8 @@ docker build --platform linux/amd64 \
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.13 # RAGFlow'un bağımlı Python modüllerini yükler
-   uv run python3 download_deps.py
-   pre-commit install
+   uv run python3 ragflow_deps/download_deps.py
+   lefthook install
    ```
 3. Bağımlı hizmetleri (MinIO, Elasticsearch, Redis ve MySQL) Docker Compose kullanarak başlatın:
 

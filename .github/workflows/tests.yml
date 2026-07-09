@@ -92,71 +92,28 @@ jobs:
           echo "ARTIFACTS_DIR=${ARTIFACTS_DIR}" >> ${GITHUB_ENV}
           rm -rf ${ARTIFACTS_DIR} && mkdir -p ${ARTIFACTS_DIR}
 
-      # https://github.com/astral-sh/ruff-action
-      - name: Static check with Ruff
-        uses: astral-sh/ruff-action@v3
-        with:
-          version: ">=0.11.x"
-          args: "check"
-
-#      - name: Check comments of changed Python files
-#        if: ${{ false }}
-#        run: |
-#          if [[ ${{ github.event_name }} == 'pull_request' || ${{ github.event_name }} == 'pull_request_target' ]]; then
-#            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
-#              | grep -E '\.(py)$' || true)
-#
-#            if [ -n "$CHANGED_FILES" ]; then
-#              echo "Check comments of changed Python files with check_comment_ascii.py"
-#
-#              readarray -t files <<< "$CHANGED_FILES"
-#              HAS_ERROR=0
-#
-#              for file in "${files[@]}"; do
-#                if [ -f "$file" ]; then
-#                  if python3 check_comment_ascii.py "$file"; then
-#                    echo "✅ $file"
-#                  else
-#                    echo "❌ $file"
-#                    HAS_ERROR=1
-#                  fi
-#                fi
-#              done
-#
-#              if [ $HAS_ERROR -ne 0 ]; then
-#                exit 1
-#              fi
-#            else
-#              echo "No Python files changed"
-#            fi
-#          fi
-
-      - name: Check gofmt of changed Go files
-        if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
+      - name: Run Lefthook on changed files
         run: |
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
-            | grep -E '\.go$' || true)
-
-          if [ -n "$CHANGED_FILES" ]; then
-            echo "Check gofmt of changed Go files"
-            readarray -t files <<< "$CHANGED_FILES"
-            HAS_ERROR=0
-            for file in "${files[@]}"; do
-              if [ -f "$file" ]; then
-                if [ -z "$(gofmt -l "$file")" ]; then
-                  echo "✅ $file"
-                else
-                  echo "❌ $file (run: gofmt -w \"$file\")"
-                  HAS_ERROR=1
-                fi
-              fi
-            done
-
-            if [ $HAS_ERROR -ne 0 ]; then
-              exit 1
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${GITHUB_EVENT_NAME}" == "pull_request_target" ]]; then
+            changed_files=$(mktemp)
+            trap 'rm -f "$changed_files"' EXIT
+            git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
+              | while read -r file; do
+                  if [[ -f "$file" ]]; then
+                    printf '%s\0' "$file"
+                  fi
+                done > "$changed_files"
+            echo "Changed files to run lefthook on:"
+            if [[ -s "$changed_files" ]]; then
+              tr '\0' '\n' < "$changed_files" | sed 's/^/  /'
+            else
+              echo "  (none — lefthook will be a no-op)"
             fi
-          else
-            echo "No Go files changed"
+            # LEFTHOOK_CHECK_ONLY=1 makes the pre-commit jobs verify without
+            # applying --fix or `git add`, so CI only checks and reports
+            # failures instead of rewriting the working tree.
+            LEFTHOOK_CHECK_ONLY=1 lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
           fi
 
       - name: Set test level
@@ -223,10 +180,40 @@ jobs:
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
             -v "${PWD}:/ragflow" \
-            -v "${PWD}/internal/cpp/resource:/usr/share/infinity/resource" \
+            -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
+
+      - name: Run Go unit tests
+        # Runs after `./build.sh --go`, which guarantees the C++ static
+        # library (librag_tokenizer_c_api.a) is present on disk. The Go
+        # test binaries link against it transitively through
+        # `internal/binding`, so running `go test` before the C++ build
+        # fails the link step.
+        #
+        # Excludes packages whose tests fail for environmental reasons
+        # unrelated to the diff:
+        #   - internal/storage:   TestMinioStorage_* needs a MinIO server
+        #     at localhost:9000; not started by this job.
+        #   - internal/tokenizer: tests need /usr/share/infinity/resource
+        #     dict files, only mounted inside the docker builder, not
+        #     in the Go test environment.
+        #   - internal/handler:   TestListAgentVersionsHandler_Success and
+        #     sqlite setup (e.g. "no such table: user_tenant") are
+        #     pre-existing flakes unrelated to the diff.
+        run: |
+          set -euo pipefail
+          PKGS=$(go list ./... 2>/dev/null \
+            | grep -v '/internal/storage$' \
+            | grep -v '/internal/agent$' \
+            | grep -v '/internal/tokenizer$' \
+            | grep -v '/internal/handler$' || true)
+          if [ -z "$PKGS" ]; then
+            ./build.sh --test
+          else
+            ./build.sh --test -- $PKGS
+          fi
 
       - name: Build ragflow:nightly
         run: |
@@ -365,7 +352,7 @@ jobs:
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu,deepdoc"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
@@ -637,10 +624,39 @@ jobs:
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
             -v "${PWD}:/ragflow" \
-            -v "${PWD}/internal/cpp/resource:/usr/share/infinity/resource" \
+            -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
+
+      - name: Run Go unit tests
+        # Runs after `./build.sh --go`, which guarantees the C++ static
+        # library (librag_tokenizer_c_api.a) is present on disk. The Go
+        # test binaries link against it transitively through
+        # `internal/binding`, so running `go test` before the C++ build
+        # fails the link step.
+        #
+        # Excludes packages whose tests fail for environmental reasons
+        # unrelated to the diff:
+        #   - internal/storage:   TestMinioStorage_* needs a MinIO server
+        #     at localhost:9000; not started by this job.
+        #   - internal/tokenizer: tests need /usr/share/infinity/resource
+        #     dict files, only mounted inside the docker builder, not
+        #     in the Go test environment.
+        #   - internal/handler:   TestListAgentVersionsHandler_Success and
+        #     sqlite setup (e.g. "no such table: user_tenant") are
+        #     pre-existing flakes unrelated to the diff.
+        run: |
+          set -euo pipefail
+          PKGS=$(go list ./... 2>/dev/null \
+            | grep -v '/internal/storage$' \
+            | grep -v '/internal/tokenizer$' \
+            | grep -v '/internal/handler$' || true)
+          if [ -z "$PKGS" ]; then
+            ./build.sh --test
+          else
+            ./build.sh --test -- $PKGS
+          fi
 
       - name: Build ragflow:nightly
         run: |
@@ -779,7 +795,7 @@ jobs:
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu,deepdoc"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"

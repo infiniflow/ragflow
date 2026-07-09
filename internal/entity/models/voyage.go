@@ -47,7 +47,7 @@ func (v *VoyageModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (v *VoyageModel) Name() string {
-	return "voyage"
+	return "Voyage AI"
 }
 
 type voyageEmbeddingData struct {

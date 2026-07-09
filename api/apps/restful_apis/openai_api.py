@@ -23,7 +23,7 @@ from api.apps import current_user, login_required
 from api.apps.restful_apis._generation_params import extract_generation_config, merge_generation_config
 from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.doc_metadata_service import DocMetadataService
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_api_key
+from api.db.joint_services.tenant_model_service import resolve_model_config, get_api_key
 from api.utils.api_utils import get_error_data_result, get_request_json, validate_request
 from common.constants import RetCode, StatusEnum
 from common.metadata_utils import convert_conditions, meta_filter
@@ -40,9 +40,9 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
         model_type = "chat"
 
     try:
-        get_model_config_from_provider_instance(
+        resolve_model_config(
             tenant_id=tenant_id,
-            model_name=llm_id,
+            model_ref=llm_id,
             model_type=model_type,
         )
     except Exception as e:
@@ -53,6 +53,7 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
 
 import logging
 from api.utils.reference_metadata_utils import enrich_chunks_with_document_metadata
+
 
 def _build_reference_chunks(reference, include_metadata=False, metadata_fields=None):
     chunks = chunks_format(reference)
@@ -194,6 +195,7 @@ async def _stream_chat_completion_sse(
         response["choices"][0]["delta"]["final_content"] = final_answer if final_answer is not None else full_content
     yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
     yield "data:[DONE]\n\n"
+
 
 def _normalize_message_content(content):
     """Convert OpenAI message content to a string for the dialog layer.

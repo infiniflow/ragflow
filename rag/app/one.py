@@ -163,7 +163,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
-    tokenize(doc, "\n".join(sections), eng)
+    tokenize(doc, "\n".join(sections), eng, language=lang)
     return [doc]
 
 

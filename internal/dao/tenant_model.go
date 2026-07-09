@@ -54,6 +54,11 @@ func (dao *TenantModelDAO) DeleteByModelID(modelID string) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
+func (dao *TenantModelDAO) DeleteByModelIDAndProviderIDAndInstanceID(modelID, providerID, instanceID string) (int64, error) {
+	result := DB.Unscoped().Where("id = ? AND provider_id = ? AND instance_id = ?", modelID, providerID, instanceID).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
 func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceID(provideID, instanceID string) (int64, error) {
 	result := DB.Unscoped().Where("provider_id = ? AND instance_id = ?", provideID, instanceID).Delete(&entity.TenantModel{})
 	return result.RowsAffected, result.Error
@@ -61,6 +66,11 @@ func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceID(provideID, instanceID
 
 func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceIDAndModelName(provideID, instanceID, modelName string) (int64, error) {
 	result := DB.Unscoped().Where("provider_id = ? AND instance_id = ? AND model_name = ?", provideID, instanceID, modelName).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
+func (dao *TenantModelDAO) UpdateStatusByIDAndScope(modelID, providerID, instanceID, status string) (int64, error) {
+	result := DB.Model(&entity.TenantModel{}).Where("id = ? AND provider_id = ? AND instance_id = ?", modelID, providerID, instanceID).Update("status", status)
 	return result.RowsAffected, result.Error
 }
 
@@ -92,9 +102,11 @@ func (dao *TenantModelDAO) GetModelsByProviderIDAndInstanceIDAndModelName(provid
 	return models, nil
 }
 
-func (dao *TenantModelDAO) GetByProviderIDAndInstanceIDAndModelTypeAndModelName(providerID, instanceID, modelType, modelName string) (*entity.TenantModel, error) {
+func (dao *TenantModelDAO) GetByProviderIDAndInstanceIDAndModelTypeAndModelName(providerID, instanceID string, modelType int, modelName string) (*entity.TenantModel, error) {
 	var model entity.TenantModel
-	err := DB.Where("provider_id = ? AND instance_id = ? AND model_type = ? AND model_name = ?", providerID, instanceID, modelType, modelName).First(&model).Error
+	// Use bitwise AND to match Python's bin_and(model_type) > 0 pattern.
+	// A model_type value of 0 (unknown type) matches no row.
+	err := DB.Where("provider_id = ? AND instance_id = ? AND model_type & ? > 0 AND model_name = ?", providerID, instanceID, modelType, modelName).First(&model).Error
 	if err != nil {
 		return nil, err
 	}

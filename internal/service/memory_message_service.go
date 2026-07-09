@@ -14,33 +14,31 @@
 //  limitations under the License.
 //
 
-// memory_message_service.go — Phase 8b real MemorySaver port.
+// memory_message_service.go — real MemorySaver port.
 //
 // Port of api.db.joint_services.memory_message_service.queue_save_to_memory_task
-// from the Python runtime. The Go port is a partial implementation
-// (synchronous parts land here; the embedding-model call is loud-failed
-// with ErrEmbedderNotWired until a Go embedding port lands).
+// from the Python runtime.
 //
 // Python signature (api/db/joint_services/memory_message_service.py:344):
 //
-//   async def queue_save_to_memory_task(
-//       memory_ids: list[str],
-//       message_dict: dict,
-//   ) -> tuple[list[str], list[dict]]
-//   # (not_found_memory, failed_memory)
+//	async def queue_save_to_memory_task(
+//	    memory_ids: list[str],
+//	    message_dict: dict,
+//	) -> tuple[list[str], list[dict]]
+//	# (not_found_memory, failed_memory)
 //
 // Go equivalent:
 //
-//   type QueueSaveResult struct {
-//       NotFound []string
-//       Failed   []MemoryFailure
-//   }
+//	type QueueSaveResult struct {
+//	    NotFound []string
+//	    Failed   []MemoryFailure
+//	}
 //
-//   func (s *MemoryMessageService) QueueSaveToMemoryTask(
-//       ctx context.Context,
-//       memoryIDs []string,
-//       msg MemoryMessage,
-//   ) (*QueueSaveResult, error)
+//	func (s *MemoryMessageService) QueueSaveToMemoryTask(
+//	    ctx context.Context,
+//	    memoryIDs []string,
+//	    msg MemoryMessage,
+//	) (*QueueSaveResult, error)
 //
 // The function is the entry point the Message component calls
 // after a conversation turn when `memory_save=true` is set. It
@@ -49,21 +47,22 @@
 //  1. For each memory id: look up the Memory (via MemoryService).
 //  2. Generate a raw_message_id from Redis auto-increment (namespace "memory").
 //  3. Build the raw_message envelope (mirrors Python:344-386).
-//  4. Call embed_and_save on the memory + [raw_message]. ← DEFERRED
+//  4. Call embed_and_save on the memory + [raw_message].
 //  5. Insert a Task row in the task table for the async extractor.
 //  6. Return not-found + failed lists.
-//
-// Steps 1, 2, 3, 5, 6 are implemented here. Step 4 (the
-// embed_and_save call) is wrapped in a loud-fail gate that returns
-// ErrEmbedderNotWired until the Go embedding layer ships.
-
 package service
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/utility"
 	"time"
+
+	"ragflow/internal/dao"
+	redisengine "ragflow/internal/engine/redis"
+	"ragflow/internal/entity"
+	models "ragflow/internal/entity/models"
 )
 
 // ErrEmbedderNotWired is returned by QueueSaveToMemoryTask when
@@ -96,9 +95,7 @@ type MemoryMessage struct {
 	AgentResponse string
 }
 
-// MemoryFailure describes one memory that failed to save. The
-// FailMsg is the underlying error (or "embedder not wired" until
-// the embedder port lands).
+// MemoryFailure describes one memory that failed to save.
 type MemoryFailure struct {
 	MemoryID string
 	FailMsg  string
@@ -112,11 +109,10 @@ type QueueSaveResult struct {
 }
 
 // MemoryMessageService is the Go port of
-// api.db.joint_services.memory_message_service. It depends on a
-// MemoryService instance for the lookup; the embedder is
-// hard-coded to loud-fail (see ErrEmbedderNotWired).
+// api.db.joint_services.memory_message_service.
 type MemoryMessageService struct {
 	memories *MemoryService
+	taskDAO  *dao.TaskDAO
 }
 
 // NewMemoryMessageService constructs a service bound to the
@@ -124,15 +120,17 @@ type MemoryMessageService struct {
 // the default MemorySaver in the Message component via
 // `component.SetMemorySaver(...)` at boot.
 func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
-	return &MemoryMessageService{memories: memories}
+	return &MemoryMessageService{
+		memories: memories,
+		taskDAO:  dao.NewTaskDAO(),
+	}
 }
 
 // QueueSaveToMemoryTask runs the memory-persistence flow for the
 // supplied memory_ids + message. See package comment for the
 // step-by-step contract. The function is synchronous — the Python
-// async version awaits `embed_and_save` and a Redis call; both are
-// replaced here with synchronous equivalents (and a loud-fail
-// embedder).
+// async version awaits `embed_and_save` and Redis calls; this Go port does the
+// same work synchronously from the HTTP request path.
 //
 // Returned QueueSaveResult has NotFound / Failed populated for
 // the per-memory outcomes. The outer error is reserved for
@@ -168,11 +166,7 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(
 		rawMessageID := generateRawMessageID()
 		rawMessage := buildRawMessage(rawMessageID, memoryID, mem, msg)
 
-		// (4) embed_and_save. Loud-fail: the embedder is the
-		// only step the Go runtime can't do yet. When it
-		// ships, replace this branch with a call into
-		// internal/rag/llm/embedding_model.
-		if err := embedAndSave(ctx, mem, rawMessage); err != nil {
+		if err := s.embedAndSave(ctx, mem, rawMessage); err != nil {
 			res.Failed = append(res.Failed, MemoryFailure{
 				MemoryID: memoryID,
 				FailMsg:  err.Error(),
@@ -180,13 +174,6 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(
 			continue
 		}
 
-		// (5) Task row insertion. The Python side bulk-inserts
-		// a Task row with digest=str(raw_message_id); the
-		// extractor's task_type is "memory". The Go port
-		// constructs the same row shape and defers the actual
-		// insert to TaskDAO when the project adds one (today
-		// TaskDAO is in internal/dao; the API mirrors the
-		// Python Task entity closely).
 		task := buildTaskRow(rawMessageID, memoryID)
 		if err := s.insertTask(ctx, task); err != nil {
 			res.Failed = append(res.Failed, MemoryFailure{
@@ -195,21 +182,25 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(
 			})
 			continue
 		}
+		if err := queueMemoryTask(memoryID, mem.TenantID, rawMessageID, task, msg); err != nil {
+			res.Failed = append(res.Failed, MemoryFailure{
+				MemoryID: memoryID,
+				FailMsg:  err.Error(),
+			})
+		}
 	}
 	return res, nil
 }
 
-// generateRawMessageID is a placeholder for the Redis auto-
-// increment the Python side uses (`REDIS_CONN.generate_auto_increment_id
-// (namespace="memory")`). The Go port generates a UUID-shaped
-// integer now; replace with a Redis-backed counter when the
-// project's Redis client lands.
+// generateRawMessageID returns the Redis auto-increment id used by the Python
+// side (`REDIS_CONN.generate_auto_increment_id(namespace="memory")`).
 func generateRawMessageID() int64 {
-	// seconds-since-epoch is unique enough for the Go port's
-	// own bookkeeping. The Redis-backed counter is the source
-	// of truth in production; this fallback only matters for
-	// the tests that don't need cross-process uniqueness.
-	return time.Now().Unix()
+	if redisClient := redisengine.Get(); redisClient != nil {
+		if id := redisClient.GenerateAutoIncrementID("id_generator", "memory", 1, nil); id > 0 {
+			return id
+		}
+	}
+	return time.Now().UnixNano()
 }
 
 // buildRawMessage constructs the raw_message envelope that gets
@@ -224,18 +215,22 @@ func buildRawMessage(
 	content := fmt.Sprintf("User Input: %s\nAgent Response: %s",
 		msg.UserInput, msg.AgentResponse)
 	out := map[string]any{
-		"message_id":   rawMessageID,
-		"message_type": "raw",
-		"source_id":    0,
-		"memory_id":    memoryID,
-		"user_id":      msg.UserID,
-		"agent_id":     msg.AgentID,
-		"session_id":   msg.SessionID,
-		"content":      content,
-		"valid_at":     time.Now().UTC().Format(time.RFC3339),
-		"invalid_at":   nil,
-		"forget_at":    nil,
-		"status":       true,
+		"message_id":             rawMessageID,
+		"message_type":           "raw",
+		"message_type_kwd":       "raw",
+		"source_id":              0,
+		"memory_id":              memoryID,
+		"user_id":                msg.UserID,
+		"agent_id":               msg.AgentID,
+		"session_id":             msg.SessionID,
+		"content":                content,
+		"content_ltks":           content,
+		"tokenized_content_ltks": content,
+		"valid_at":               time.Now().UTC().Format("2006-01-02 15:04:05"),
+		"invalid_at":             nil,
+		"forget_at":              nil,
+		"status":                 true,
+		"status_int":             1,
 	}
 	if mem != nil {
 		// The embedder uses the memory's embd_id; keep the
@@ -253,29 +248,125 @@ func buildTaskRow(rawMessageID int64, memoryID string) map[string]any {
 		"doc_id":    memoryID,
 		"task_type": "memory",
 		"progress":  0.0,
+		"begin_at":  time.Now(),
 		"digest":    fmt.Sprintf("%d", rawMessageID),
 	}
 }
 
-// embedAndSave is the deferred gate. Replace with a call to the
-// real embedding model + memory_message table insert when those
-// land.
+func (s *MemoryMessageService) embedAndSave(ctx context.Context, mem *CreateMemoryResponse, rawMessage map[string]any) error {
+	if mem == nil {
+		return errors.New("memory not found")
+	}
+	if s == nil || s.memories == nil || s.memories.docEngine == nil {
+		return errors.New("message store is not initialized")
+	}
+
+	content, _ := rawMessage["content"].(string)
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().GetModelConfigFromProviderInstance(mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
+	if err != nil {
+		return err
+	}
+	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{content}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0})
+	if err != nil {
+		return err
+	}
+	if len(embeddings) == 0 || len(embeddings[0].Embedding) == 0 {
+		return errors.New("embedding response is empty")
+	}
+
+	vector := embeddings[0].Embedding
+	rawMessage[fmt.Sprintf("q_%d_vec", len(vector))] = vector
+	rawMessage["id"] = fmt.Sprintf("%s_%d", rawMessage["memory_id"], rawMessage["message_id"])
+	rawMessage["doc_id"] = rawMessage["memory_id"]
+
+	indexName := memoryIndexName(mem.TenantID)
+	exists, err := s.memories.docEngine.ChunkStoreExists(ctx, indexName, mem.ID)
+	if err != nil {
+		return fmt.Errorf("check message index: %w", err)
+	}
+	if !exists {
+		if err := s.memories.docEngine.CreateChunkStore(ctx, indexName, mem.ID, len(vector), ""); err != nil {
+			return fmt.Errorf("create message index: %w", err)
+		}
+	}
+	if _, err := s.memories.docEngine.InsertChunks(ctx, []map[string]interface{}{mapStringAny(rawMessage)}, indexName, mem.ID); err != nil {
+		return fmt.Errorf("insert message into memory: %w", err)
+	}
+
+	return nil
+}
+
+// embedAndSave is kept for older unit tests; production uses the method above.
 func embedAndSave(_ context.Context, _ *CreateMemoryResponse, _ map[string]any) error {
 	return ErrEmbedderNotWired
 }
 
-// insertTask is a placeholder for the bulk_insert_into_db call
-// the Python side makes. The Go side needs a TaskDAO write path
-// (the Python Task entity is mirrored in internal/entity); until
-// that lands this is a no-op that returns nil so the rest of
-// the flow can be exercised.
-func (s *MemoryMessageService) insertTask(_ context.Context, _ map[string]any) error {
-	return nil
+func (s *MemoryMessageService) insertTask(_ context.Context, row map[string]any) error {
+	if s == nil {
+		return errors.New("nil MemoryMessageService")
+	}
+	if s.taskDAO == nil {
+		s.taskDAO = dao.NewTaskDAO()
+	}
+	return s.taskDAO.Create(taskFromRow(row))
 }
 
 // newUUIDString is a thin wrapper so we can swap in a real UUID
 // generator later without changing call sites. Avoids an
 // import-cycle with internal/uuid at the package boundary.
 func newUUIDString() string {
-	return fmt.Sprintf("mem-%d", time.Now().UnixNano())
+	return utility.GenerateUUID()
+}
+
+func taskFromRow(row map[string]any) *entity.Task {
+	digest := fmt.Sprint(row["digest"])
+	beginAt, _ := row["begin_at"].(time.Time)
+	if beginAt.IsZero() {
+		now := time.Now()
+		beginAt = now
+	}
+	return &entity.Task{
+		ID:       fmt.Sprint(row["id"]),
+		DocID:    fmt.Sprint(row["doc_id"]),
+		TaskType: fmt.Sprint(row["task_type"]),
+		Progress: 0,
+		BeginAt:  &beginAt,
+		Digest:   &digest,
+	}
+}
+
+func queueMemoryTask(memoryID, tenantID string, rawMessageID int64, task map[string]any, msg MemoryMessage) error {
+	taskID := fmt.Sprint(task["id"])
+	message := map[string]any{
+		"id":        taskID,
+		"task_id":   taskID,
+		"task_type": task["task_type"],
+		"memory_id": memoryID,
+		"tenant_id": tenantID,
+		"source_id": rawMessageID,
+		"message_dict": map[string]any{
+			"user_id":        msg.UserID,
+			"agent_id":       msg.AgentID,
+			"session_id":     msg.SessionID,
+			"user_input":     msg.UserInput,
+			"agent_response": msg.AgentResponse,
+		},
+	}
+	if redisClient := redisengine.Get(); redisClient == nil || !redisClient.QueueProduct(memoryTaskQueueName(0), message) {
+		return errors.New("Can't access Redis.")
+	}
+	return nil
+}
+
+func memoryTaskQueueName(priority int) string {
+	return fmt.Sprintf("te.%d.common", priority)
+}
+
+func mapStringAny(in map[string]any) map[string]interface{} {
+	out := make(map[string]interface{}, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }

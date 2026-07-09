@@ -18,6 +18,7 @@ from api.db.db_models import DB, TenantModelInstance
 from api.db.services.common_service import CommonService
 from api.db.services import duplicate_name
 
+
 class TenantModelInstanceService(CommonService):
     model = TenantModelInstance
 
@@ -48,22 +49,21 @@ class TenantModelInstanceService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_provider_id_and_api_key(cls, provider_id, api_key):
-        return cls.model.get_or_none(
-            cls.model.provider_id == provider_id,
-            cls.model.api_key == api_key
-        )
+        return cls.model.get_or_none(cls.model.provider_id == provider_id, cls.model.api_key == api_key)
 
     @classmethod
     @DB.connection_context()
     def delete_by_provider_id_and_instance_name(cls, provider_id, instance_name):
-        return cls.model.delete().where(
-            cls.model.provider_id == provider_id,
-            cls.model.instance_name == instance_name,
-        ).execute()
+        return (
+            cls.model.delete()
+            .where(
+                cls.model.provider_id == provider_id,
+                cls.model.instance_name == instance_name,
+            )
+            .execute()
+        )
 
     @classmethod
     @DB.connection_context()
     def delete_by_provider_ids(cls, provider_ids):
-        return cls.model.delete().where(
-            cls.model.provider_id.in_(provider_ids)
-        ).execute()
+        return cls.model.delete().where(cls.model.provider_id.in_(provider_ids)).execute()

@@ -79,12 +79,12 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.file2document_service import File2DocumentService
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config, get_model_config_by_id
 from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, email, tag
 from rag.nlp import search, rag_tokenizer, add_positions
-from rag.raptor import (
+from rag.advanced_rag.knowlege_compile.raptor import (
     RAPTOR_TREE_BUILDER,
 )
 from common.token_utils import num_tokens_from_string, truncate
@@ -136,6 +136,8 @@ TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
     "graphrag": PipelineTaskType.GRAPH_RAG,
     "mindmap": PipelineTaskType.MINDMAP,
     "memory": PipelineTaskType.MEMORY,
+    "artifact": PipelineTaskType.ARTIFACT,
+    "skill": PipelineTaskType.SKILL,
 }
 
 UNACKED_ITERATOR = None
@@ -250,6 +252,13 @@ async def collect():
 
     task_type = msg.get("task_type", "")
     task["task_type"] = task_type
+    # Per-doc fan-out task types (today: doc-scoped raptor) carry their
+    # participating doc id list on the Redis message but not on the DB
+    # row. The KB-scoped branch above already does this for FAKE doc
+    # tasks; mirror here so ``ctx.doc_ids`` is populated for the
+    # per-doc path too.
+    if "doc_ids" in msg and not task.get("doc_ids"):
+        task["doc_ids"] = msg.get("doc_ids", []) or []
     if task_type[:8] == "dataflow":
         task["tenant_id"] = msg["tenant_id"]
         task["dataflow_id"] = msg["dataflow_id"]
@@ -410,10 +419,12 @@ async def build_chunks(task, progress_callback):
     # Record docs after MinIO upload
     get_recording_context().record("docs_after_prep", docs)
 
+    rag_tokenizer.tokenizer.set_language(task["language"])
+
     if task["parser_config"].get("auto_keywords", 0):
         st = timer()
         progress_callback(msg="Start to generate keywords for every chunk ...")
-        chat_model_config = get_model_config_from_provider_instance(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+        chat_model_config = resolve_model_config(task["tenant_id"], LLMType.CHAT, task["llm_id"])
         chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         async def doc_keyword_extraction(chat_mdl, d, topn):
@@ -450,7 +461,7 @@ async def build_chunks(task, progress_callback):
     if task["parser_config"].get("auto_questions", 0):
         st = timer()
         progress_callback(msg="Start to generate questions for every chunk ...")
-        chat_model_config = get_model_config_from_provider_instance(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+        chat_model_config = resolve_model_config(task["tenant_id"], LLMType.CHAT, task["llm_id"])
         chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         async def doc_question_proposal(chat_mdl, d, topn):
@@ -486,7 +497,7 @@ async def build_chunks(task, progress_callback):
     if task["parser_config"].get("enable_metadata", False) and (task["parser_config"].get("metadata") or task["parser_config"].get("built_in_metadata")):
         st = timer()
         progress_callback(msg="Start to generate meta-data for every chunk ...")
-        chat_model_config = get_model_config_from_provider_instance(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+        chat_model_config = resolve_model_config(task["tenant_id"], LLMType.CHAT, task["llm_id"])
         chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         async def gen_metadata_task(chat_mdl, d):
@@ -559,7 +570,7 @@ async def build_chunks(task, progress_callback):
             set_tags_to_cache(kb_ids, all_tags)
         else:
             all_tags = json.loads(all_tags)
-        chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, task["llm_id"])
+        chat_model_config = resolve_model_config(tenant_id, LLMType.CHAT, task["llm_id"])
         chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         docs_to_tag = []
@@ -624,7 +635,7 @@ async def build_chunks(task, progress_callback):
 @timed_with_recording
 def build_TOC(task, docs, progress_callback):
     progress_callback(msg="Start to generate table of content ...")
-    chat_model_config = get_model_config_from_provider_instance(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+    chat_model_config = resolve_model_config(task["tenant_id"], LLMType.CHAT, task["llm_id"])
     chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
     docs = sorted(
         docs,
@@ -749,7 +760,15 @@ async def run_dataflow(task: dict):
         assert e, "Pipeline log not found."
         dsl = pipeline_log.dsl
         dataflow_id = pipeline_log.pipeline_id
-    pipeline = Pipeline(dsl, tenant_id=task["tenant_id"], doc_id=doc_id, task_id=task_id, flow_id=dataflow_id)
+    pipeline = Pipeline(
+        dsl,
+        tenant_id=task["tenant_id"],
+        doc_id=doc_id,
+        task_id=task_id,
+        flow_id=dataflow_id,
+        language=task.get("language"),
+    )
+    rag_tokenizer.tokenizer.set_language(task.get("language", "English"))
     chunks = await pipeline.run(file=task["file"]) if task.get("file") else await pipeline.run()
     if doc_id == CANVAS_DEBUG_DOC_ID:
         get_recording_context().record("dataflow_debug_result", "canvas_debug_mode")
@@ -799,7 +818,13 @@ async def run_dataflow(task: dict):
             set_progress(task_id, prog=0.82, msg="\n-------------------------------------\nStart to embedding...")
             e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
             embedding_id = kb.embd_id
-            embd_model_config = get_model_config_from_provider_instance(task["tenant_id"], LLMType.EMBEDDING, embedding_id)
+            if kb.tenant_embd_id:
+                try:
+                    embd_model_config = get_model_config_by_id(task["tenant_id"], LLMType.EMBEDDING, kb.tenant_embd_id)
+                except LookupError:
+                    embd_model_config = resolve_model_config(task["tenant_id"], LLMType.EMBEDDING, embedding_id)
+            else:
+                embd_model_config = resolve_model_config(task["tenant_id"], LLMType.EMBEDDING, embedding_id)
             embedding_model = LLMBundle(task["tenant_id"], embd_model_config)
 
             @timeout(60)
@@ -1014,6 +1039,8 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
     """Generate RAPTOR summaries for selected documents in a knowledge base."""
     fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
 
+    rag_tokenizer.tokenizer.set_language(row.get("language", "English"))
+
     raptor_config = kb_parser_config.get("raptor", {})
     raptor_ext_config = raptor_config.get("ext") or {}
     tree_builder = get_raptor_tree_builder(raptor_config)
@@ -1060,7 +1087,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
         """Run RAPTOR and append generated summary chunks for one doc id."""
         nonlocal tk_count, res
         logging.info("RAPTOR: using tree_builder=%s clustering_method=%s for doc %s", tree_builder, clustering_method, did)
-        from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor  # Lazy load, save around 8s
+        from rag.advanced_rag.knowlege_compile.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor  # Lazy load, save around 8s
 
         raptor = Raptor(
             raptor_config.get("max_cluster", 64),
@@ -1376,6 +1403,7 @@ async def do_handle_task(task):
     task_language = task.get("language") or "Chinese"
     if not task.get("language"):
         logging.warning("Task %s has no language set, falling back to Chinese", task_id)
+    rag_tokenizer.tokenizer.set_language(task_language)
     doc_task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
     kb_task_llm_id = task["kb_parser_config"].get("llm_id") or task["llm_id"]
     task["llm_id"] = kb_task_llm_id
@@ -1398,7 +1426,7 @@ async def do_handle_task(task):
     try:
         # bind embedding model
         if task_embedding_id:
-            embd_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+            embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
         else:
             embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
         embedding_model = LLMBundle(task_tenant_id, embd_model_config, lang=task_language)
@@ -1446,7 +1474,7 @@ async def do_handle_task(task):
                 return
 
         # bind LLM for raptor
-        chat_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model_config = resolve_model_config(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
         chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language)
         # run RAPTOR
         async with kg_limiter:
@@ -1505,7 +1533,7 @@ async def do_handle_task(task):
 
         graphrag_conf = kb_parser_config.get("graphrag", {})
         start_ts = timer()
-        chat_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model_config = resolve_model_config(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
         chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language)
         with_resolution = graphrag_conf.get("resolution", False)
         with_community = graphrag_conf.get("community", False)
@@ -1531,6 +1559,9 @@ async def do_handle_task(task):
     elif task_type == "mindmap":
         progress_callback(1, "place holder")
         pass
+        return
+    elif task_type == "skill":
+        progress_callback(-1, "Skill generation requires the refactored task executor (TE_RUN_MODE=0).")
         return
     else:
         # Standard chunking methods
@@ -1563,6 +1594,7 @@ async def do_handle_task(task):
         progress_message = "Embedding chunks ({:.2f}s)".format(timer() - start_ts)
         logging.info(progress_message)
         progress_callback(msg=progress_message)
+
         if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", False):
             toc_thread = asyncio.create_task(asyncio.to_thread(build_TOC, task, chunks, progress_callback))
 
@@ -1739,8 +1771,11 @@ async def handle_task():
     finally:
         if not task.get("dataflow_id", ""):
             referred_document_id = None
-            if task_type in ["graphrag", "raptor", "mindmap"]:
-                referred_document_id = task["doc_ids"][0]
+            if task_type in ["graphrag", "raptor", "mindmap", "artifact", "skill"]:
+                # KB-level fan-out tasks store the participating doc list in
+                # task["doc_ids"]; the first entry is used as a referent so
+                # the pipeline operation log has something to anchor to.
+                referred_document_id = (task.get("doc_ids") or [None])[0]
             ret = PipelineOperationLogService.record_pipeline_operation(
                 document_id=task["doc_id"], pipeline_id="", task_type=pipeline_task_type, task_id=task_id, referred_document_id=referred_document_id
             )
@@ -1871,7 +1906,6 @@ async def main():
           /____/
     """)
     logging.info(f"RAGFlow ingestion version: {get_ragflow_version()}")
-    logging.info(f"ENABLE_DRY_RUN_COMPARISON: {os.environ.get('ENABLE_DRY_RUN_COMPARISON', '0')}")
     show_configs()
     settings.init_settings()
     settings.check_and_install_torch()
